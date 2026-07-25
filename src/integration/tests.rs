@@ -1,0 +1,796 @@
+//! Conformance tests for the agent observer.
+//!
+//! These drive the observer's [`poll`] loop over synthetic panes and a
+//! synthetic process table, then assert on the tracing events it emits. The
+//! process table is injected through [`ProcessSource`] so attribution is
+//! exercised without a real OS process table, and the pane replays a scripted
+//! stream of screen/title frames so a full lifecycle can be checked
+//! deterministically.
+//!
+//! The regression these guard against: on kernels without `CONFIG_PROC_CHILDREN`
+//! the old descent (via `/proc/<pid>/task/<pid>/children`) could not reach an
+//! agent running below the pane's shell, so the observer reported `Unknown` /
+//! `agent=None` forever and logged nothing after startup.
+
+use std::collections::HashMap;
+use std::ffi::OsString;
+use std::io;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+
+use tracing_subscriber::fmt::MakeWriter;
+
+use super::status::{AgentStatus, StatusHub};
+use super::*;
+use crate::observability::v1::{PaneProcess, ScreenSource, ScreenTail};
+
+/// A synthetic process table: `(pid, ppid)` edges plus per-pid program names.
+struct FakeProcessSource {
+    table: Vec<(u32, u32)>,
+    programs: HashMap<u32, Vec<OsString>>,
+    arguments: HashMap<u32, Vec<OsString>>,
+    /// Per-pid working directory, seeded with [`with_cwd`](Self::with_cwd).
+    cwd: HashMap<u32, PathBuf>,
+    /// Per-directory file listing, newest first, seeded with
+    /// [`with_files`](Self::with_files).
+    files: HashMap<PathBuf, Vec<PathBuf>>,
+    open_files: HashMap<u32, Vec<PathBuf>>,
+    has_process_table: bool,
+    /// Number of full-table scans, so tests can assert the process table is read
+    /// once per poll cadence rather than once per pane or per output frame.
+    scans: Arc<AtomicUsize>,
+}
+
+impl FakeProcessSource {
+    fn new(
+        table: Vec<(u32, u32)>,
+        programs: HashMap<u32, Vec<OsString>>,
+        arguments: HashMap<u32, Vec<OsString>>,
+        has_process_table: bool,
+    ) -> Self {
+        Self {
+            table,
+            programs,
+            arguments,
+            cwd: HashMap::new(),
+            files: HashMap::new(),
+            open_files: HashMap::new(),
+            has_process_table,
+            scans: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    /// Seed `pid`'s working directory.
+    fn with_cwd(mut self, pid: u32, cwd: PathBuf) -> Self {
+        self.cwd.insert(pid, cwd);
+        self
+    }
+
+    /// Seed `dir`'s file listing, newest modified first.
+    fn with_files(mut self, dir: PathBuf, files: Vec<PathBuf>) -> Self {
+        self.files.insert(dir, files);
+        self
+    }
+
+    fn with_open_file(mut self, pid: u32, path: &str) -> Self {
+        self.open_files
+            .entry(pid)
+            .or_default()
+            .push(PathBuf::from(path));
+        self
+    }
+}
+
+impl ProcessSource for FakeProcessSource {
+    fn process_table(&self) -> Option<Vec<(u32, u32)>> {
+        self.scans.fetch_add(1, Ordering::Relaxed);
+        self.has_process_table.then(|| self.table.clone())
+    }
+
+    fn programs(&self, pid: u32) -> Vec<OsString> {
+        self.programs.get(&pid).cloned().unwrap_or_default()
+    }
+
+    fn arguments(&self, pid: u32) -> Vec<OsString> {
+        self.arguments.get(&pid).cloned().unwrap_or_default()
+    }
+
+    fn cwd(&self, pid: u32) -> Option<PathBuf> {
+        self.cwd.get(&pid).cloned()
+    }
+
+    fn files_newest_first(&self, dir: &Path) -> Vec<PathBuf> {
+        self.files.get(dir).cloned().unwrap_or_default()
+    }
+
+    fn open_files(&self, pid: u32) -> Vec<PathBuf> {
+        self.open_files.get(&pid).cloned().unwrap_or_default()
+    }
+}
+
+/// One replayed observation: an optional window title and a screen tail.
+#[derive(Clone)]
+struct Frame {
+    title: Option<String>,
+    screen: String,
+}
+
+fn frame(title: Option<&str>, screen: &str) -> Frame {
+    Frame {
+        title: title.map(str::to_owned),
+        screen: screen.to_owned(),
+    }
+}
+
+/// A pane that replays scripted frames. `output_revision` and the tail's
+/// revision advance with the cursor, so each [`step`](Self::step) presents new
+/// output to the observer's revision guard.
+struct ScriptedPane {
+    child_pid: u32,
+    frames: Vec<Frame>,
+    cursor: Mutex<usize>,
+}
+
+impl ScriptedPane {
+    fn new(child_pid: u32, frames: Vec<Frame>) -> Arc<Self> {
+        Arc::new(Self {
+            child_pid,
+            frames,
+            cursor: Mutex::new(0),
+        })
+    }
+
+    fn step(&self) {
+        let mut cursor = self.cursor.lock().unwrap();
+        if *cursor + 1 < self.frames.len() {
+            *cursor += 1;
+        }
+    }
+
+    fn current(&self) -> (usize, Frame) {
+        let cursor = *self.cursor.lock().unwrap();
+        (cursor, self.frames[cursor].clone())
+    }
+}
+
+impl PaneObservability for ScriptedPane {
+    fn process(&self) -> io::Result<PaneProcess> {
+        Ok(PaneProcess {
+            child_pid: Some(self.child_pid),
+            exited: false,
+        })
+    }
+
+    fn output_revision(&self) -> io::Result<u64> {
+        Ok(*self.cursor.lock().unwrap() as u64)
+    }
+
+    fn screen(&self, _source: ScreenSource, _lines: usize) -> io::Result<ScreenTail> {
+        let (revision, frame) = self.current();
+        Ok(ScreenTail {
+            revision: revision as u64,
+            text: frame.screen,
+            cursor_visible: false,
+            cursor_shape: 0,
+        })
+    }
+
+    fn scrollback_rows(&self) -> io::Result<usize> {
+        Ok(0)
+    }
+
+    fn title(&self) -> io::Result<Option<String>> {
+        Ok(self.current().1.title)
+    }
+}
+
+/// A server exposing a single fixed pane.
+struct FakeServer {
+    pane: Arc<ScriptedPane>,
+}
+
+impl ServerObservability for FakeServer {
+    fn pane_ids(&self) -> io::Result<Vec<PaneId>> {
+        Ok(vec![PaneId(0)])
+    }
+
+    fn resolve_pane(&self, _id: PaneId) -> io::Result<Option<Arc<dyn PaneObservability>>> {
+        Ok(Some(self.pane.clone()))
+    }
+}
+
+/// A server exposing several fixed panes, one per `PaneId(index)`.
+struct MultiPaneServer {
+    panes: Vec<Arc<ScriptedPane>>,
+}
+
+impl ServerObservability for MultiPaneServer {
+    fn pane_ids(&self) -> io::Result<Vec<PaneId>> {
+        Ok((0..self.panes.len()).map(|i| PaneId(i as u32)).collect())
+    }
+
+    fn resolve_pane(&self, id: PaneId) -> io::Result<Option<Arc<dyn PaneObservability>>> {
+        Ok(self
+            .panes
+            .get(id.0 as usize)
+            .map(|pane| pane.clone() as Arc<dyn PaneObservability>))
+    }
+}
+
+/// A `MakeWriter` that appends every formatted event to a shared buffer.
+#[derive(Clone)]
+struct CaptureWriter(Arc<Mutex<Vec<u8>>>);
+
+struct CaptureHandle(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for CaptureHandle {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> MakeWriter<'a> for CaptureWriter {
+    type Writer = CaptureHandle;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        CaptureHandle(self.0.clone())
+    }
+}
+
+/// Serializes the log-capturing tests. `tracing`'s callsite-interest cache is
+/// global, so two scoped subscribers installed on different test threads at once
+/// can race — one capture ends up missing events the other's poll churn emitted
+/// through the shared `info!` callsite. Holding this lock for the whole scoped
+/// subscriber's lifetime keeps those tests from overlapping.
+static LOG_CAPTURE_LOCK: Mutex<()> = Mutex::new(());
+
+/// Run `body` with a scoped subscriber and return everything it logged.
+fn capture_logs(body: impl FnOnce()) -> String {
+    let _guard = LOG_CAPTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(CaptureWriter(buffer.clone()))
+        .with_ansi(false)
+        .with_max_level(tracing::Level::INFO)
+        .finish();
+    tracing::subscriber::with_default(subscriber, body);
+    let bytes = buffer.lock().unwrap().clone();
+    String::from_utf8(bytes).unwrap()
+}
+
+/// Assert `haystack` contains each of `needles` in order.
+fn assert_ordered(haystack: &str, needles: &[&str]) {
+    let mut from = 0;
+    for needle in needles {
+        match haystack[from..].find(needle) {
+            Some(offset) => from += offset + needle.len(),
+            None => panic!("expected {needle:?} after offset {from} in:\n{haystack}"),
+        }
+    }
+}
+
+/// The heart of the reproduction: a `claude` process running *below* the pane's
+/// shell must be attributed, and its lifecycle transitions must be logged with
+/// the detected agent. Before the fix the tree walk could not descend to the
+/// grandchild and the observer logged only the startup `Unknown`.
+#[test]
+fn claude_below_shell_is_detected_and_transitions_are_logged() {
+    // Pane child (100) is a shell; claude (200) runs beneath it. Only the
+    // parent-pid edges are provided — there is no children list to fall back on.
+    let source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100)],
+        HashMap::from([
+            (100u32, vec![OsString::from("zsh")]),
+            (
+                200u32,
+                vec![OsString::from("/usr/local/bin/claude_code/claude")],
+            ),
+        ]),
+        HashMap::new(),
+        true,
+    );
+
+    let pane = ScriptedPane::new(
+        100,
+        vec![
+            // A resting prompt box: idle.
+            frame(Some("✳ hmux"), "earlier output\n──────────\n❯ "),
+            // Braille spinner in the title: working.
+            frame(Some("⠹ hmux"), "running a tool…"),
+            // A permission prompt: blocked.
+            frame(
+                None,
+                "Edit file src/main.rs?\n\
+                 ──────────────────────\n\
+                 ❯ 1. Yes\n  2. No\n\
+                 Do you want to proceed? · Esc to cancel",
+            ),
+            // Back to a resting prompt box: idle.
+            frame(Some("✳ hmux"), "done\n──────────\n❯ "),
+        ],
+    );
+    let server = FakeServer { pane: pane.clone() };
+    let detectors = default_detectors();
+
+    let hub = StatusHub::new();
+    let logs = capture_logs(|| {
+        let mut panes = HashMap::new();
+        for _ in 0..pane.frames.len() {
+            poll(&server, &detectors, &source, Some(&hub), &mut panes);
+            pane.step();
+        }
+    });
+
+    // The hub mirrors the observer's terminal classification: the pane ends
+    // Idle, attributed to claude, and the revision advanced past its initial 1.
+    let snap = hub.snapshot();
+    assert_eq!(
+        snap.panes.get(&PaneId(0)),
+        Some(&AgentStatus {
+            agent: "claude",
+            pid: Some(200),
+            session_id: None,
+            state: AgentState::Idle,
+        }),
+        "hub should reflect the final classified status"
+    );
+    assert!(
+        snap.revision > 1,
+        "hub revision should advance on transitions"
+    );
+
+    // Every transition is attributed to claude and the full lifecycle is logged.
+    assert!(
+        logs.contains("agent=Some(\"claude\")"),
+        "expected the detected agent to be logged:\n{logs}"
+    );
+    assert_ordered(
+        &logs,
+        &["state=Idle", "state=Working", "state=Blocked", "state=Idle"],
+    );
+    assert!(
+        !logs.contains("agent=None"),
+        "claude should never be reported as an unidentified pane:\n{logs}"
+    );
+}
+
+/// When a `claude` process is attributed to a pane, its session id is read from
+/// the newest transcript in the project directory derived from the agent's cwd,
+/// and published on the pane's status so it can surface as
+/// `#{pane_agent_session_id}`.
+#[test]
+fn claude_session_id_is_read_from_the_newest_cwd_transcript() {
+    let session_id = "df817fbe-b190-483c-ba9c-a4c5d2f9d04c";
+    let cwd = PathBuf::from("/work/proj");
+    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+
+    // Pane child (100) is a shell; claude (200) runs beneath it in `cwd`. The
+    // newest transcript in the project directory names the live session; an older
+    // transcript for a previous session sits behind it.
+    let source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100)],
+        HashMap::from([
+            (100u32, vec![OsString::from("zsh")]),
+            (
+                200u32,
+                vec![OsString::from("/usr/local/bin/claude_code/claude")],
+            ),
+        ]),
+        HashMap::new(),
+        true,
+    )
+    .with_cwd(200, cwd)
+    .with_files(
+        transcript_dir.clone(),
+        vec![
+            transcript_dir.join(format!("{session_id}.jsonl")),
+            transcript_dir.join("5f0b4e66-2f15-406d-bbd1-fb4eaa4284a5.jsonl"),
+        ],
+    );
+
+    let pane = ScriptedPane::new(
+        100,
+        vec![frame(Some("✳ hmux"), "earlier output\n──────────\n❯ ")],
+    );
+    let server = FakeServer { pane: pane.clone() };
+    let detectors = default_detectors();
+
+    let hub = StatusHub::new();
+    // Route the poll through `capture_logs` like every other poll test: it holds
+    // the shared subscriber lock, so the `info!` callsite is evaluated under a
+    // real subscriber rather than poisoning the global interest cache for the
+    // concurrent capture tests.
+    capture_logs(|| {
+        let mut panes = HashMap::new();
+        poll(&server, &detectors, &source, Some(&hub), &mut panes);
+    });
+
+    let snap = hub.snapshot();
+    let status = snap.panes.get(&PaneId(0)).expect("status published");
+    assert_eq!(status.agent, "claude");
+    assert_eq!(status.pid, Some(200));
+    assert_eq!(
+        status.session_id.as_deref(),
+        Some(session_id),
+        "the newest transcript in the cwd's project directory should be attributed"
+    );
+}
+
+/// Pi keeps one static title across its lifecycle, so its current TUI controls
+/// and status line must drive state while the newest cwd-scoped session file
+/// supplies the session id.
+#[test]
+fn pi_lifecycle_and_session_are_published() {
+    let session_id = "019f9757-7c53-7898-a7d1-c8c780212888";
+    let cwd = PathBuf::from("/work/proj");
+    let transcript_dir = super::pi::session_dir(&cwd).expect("HOME set in test environment");
+    let source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100)],
+        HashMap::from([
+            (100u32, vec![OsString::from("zsh")]),
+            (200u32, vec![OsString::from("/usr/local/bin/pi")]),
+        ]),
+        HashMap::from([(200u32, vec![OsString::from("pi")])]),
+        true,
+    )
+    .with_cwd(200, cwd)
+    .with_files(
+        transcript_dir.clone(),
+        vec![transcript_dir.join(format!("2026-07-25T03-35-20-915Z_{session_id}.jsonl"))],
+    );
+    let pane = ScriptedPane::new(
+        100,
+        vec![
+            frame(
+                Some("π - proj"),
+                "pi v0.80.6\n────────\n \n────────\n/work/proj",
+            ),
+            frame(
+                Some("π - proj"),
+                "running a tool\n⠹ Working...\n────────\n────────\n/work/proj",
+            ),
+            frame(
+                Some("π - proj"),
+                "⠹ Working...\n────────\nAllow command?\n→ Yes\n  No\n↑↓ navigate  enter select  esc cancel\n────────",
+            ),
+            frame(
+                Some("π - proj"),
+                "done\n────────\n \n────────\n/work/proj",
+            ),
+        ],
+    );
+    let server = FakeServer { pane: pane.clone() };
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+
+    let logs = capture_logs(|| {
+        let mut panes = HashMap::new();
+        for _ in 0..pane.frames.len() {
+            poll(&server, &detectors, &source, Some(&hub), &mut panes);
+            pane.step();
+        }
+    });
+
+    assert_eq!(
+        hub.snapshot().panes.get(&PaneId(0)),
+        Some(&AgentStatus {
+            agent: "pi",
+            pid: Some(200),
+            session_id: Some(session_id.to_string()),
+            state: AgentState::Idle,
+        })
+    );
+    assert_ordered(
+        &logs,
+        &["state=Idle", "state=Working", "state=Blocked", "state=Idle"],
+    );
+}
+
+/// A Codex thread keeps its rollout file open; the filename is a persistent
+/// source that does not depend on observing a short-lived tool subprocess.
+#[test]
+fn resumed_codex_session_id_is_read_from_its_open_rollout() {
+    let session_id = "019f70ff-c7cc-7061-8d8d-870e288c61cd";
+    let source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100), (250, 200), (300, 250)],
+        HashMap::from([
+            (100u32, vec![OsString::from("zsh")]),
+            (200u32, vec![OsString::from("codex")]),
+            (250u32, vec![OsString::from("codex.real")]),
+            (300u32, vec![OsString::from("tool")]),
+        ]),
+        HashMap::new(),
+        true,
+    )
+    .with_open_file(
+        250,
+        &format!(
+            "/home/me/.codex/sessions/2026/07/17/rollout-2026-07-17T09-53-58-{session_id}.jsonl"
+        ),
+    );
+    let pane = ScriptedPane::new(
+        100,
+        vec![frame(Some("codex - project"), "OpenAI Codex\n› ")],
+    );
+    let server = FakeServer { pane };
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+
+    capture_logs(|| {
+        let mut panes = HashMap::new();
+        poll(&server, &detectors, &source, Some(&hub), &mut panes);
+    });
+
+    let status = &hub.snapshot().panes[&PaneId(0)];
+    assert_eq!(status.agent, "codex");
+    assert_eq!(status.pid, Some(200));
+    assert_eq!(status.session_id.as_deref(), Some(session_id));
+}
+
+/// Non-interactive Codex has no TUI prompt or OSC lifecycle title. Its explicit
+/// `exec` invocation is the lifecycle signal: it remains working while the
+/// process exists, even when a static unrelated pane title looks like the
+/// interactive detector's last-resort idle signal.
+#[test]
+fn headless_codex_is_working_for_the_process_lifetime() {
+    let source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100)],
+        HashMap::from([
+            (100, vec![OsString::from("zsh")]),
+            (200, vec![OsString::from("codex")]),
+        ]),
+        HashMap::from([(
+            200,
+            vec![
+                OsString::from("codex"),
+                OsString::from("e"),
+                OsString::from("--yolo"),
+                OsString::from("review the repository"),
+            ],
+        )]),
+        true,
+    );
+    let pane = ScriptedPane::new(
+        100,
+        vec![
+            frame(Some("bn4"), "diff --git a/src/main.rs b/src/main.rs"),
+            frame(Some("bn4"), "running cargo test"),
+        ],
+    );
+    let server = FakeServer { pane: pane.clone() };
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+    let mut panes = HashMap::new();
+
+    // Run under the serialized scoped subscriber like the other poll-driving
+    // tests: driving `poll` bare emits the observer's `info!` callsite with no
+    // subscriber installed, which can poison `tracing`'s global interest cache
+    // for a parallel log-capturing test.
+    capture_logs(|| {
+        poll(&server, &detectors, &source, Some(&hub), &mut panes);
+        pane.step();
+        poll(&server, &detectors, &source, Some(&hub), &mut panes);
+    });
+
+    assert_eq!(
+        hub.snapshot().panes.get(&PaneId(0)),
+        Some(&AgentStatus {
+            agent: "codex",
+            pid: Some(200),
+            session_id: None,
+            state: AgentState::Working,
+        })
+    );
+}
+
+/// When process attribution is unavailable, a normal terminal title must not be
+/// enough to claim that an ordinary pane is Codex. This was the macOS failure:
+/// the production source had no `/proc`, so the screen-only fallback passed a
+/// static hostname title to the Codex detector, whose title idle signal is only
+/// valid after a Codex process has already been identified.
+#[test]
+fn no_process_table_static_title_does_not_identify_codex() {
+    let source = FakeProcessSource::new(Vec::new(), HashMap::new(), HashMap::new(), false);
+    let pane = ScriptedPane::new(
+        100,
+        vec![frame(
+            Some("hun-mbp"),
+            "agentmon    no active runs\n\nPress n to prepare one",
+        )],
+    );
+    let server = FakeServer { pane };
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+    let mut panes = HashMap::new();
+
+    capture_logs(|| {
+        poll(&server, &detectors, &source, Some(&hub), &mut panes);
+    });
+
+    assert_eq!(
+        hub.snapshot().panes.get(&PaneId(0)),
+        Some(&AgentStatus {
+            agent: "",
+            pid: None,
+            session_id: None,
+            state: AgentState::Unknown,
+        })
+    );
+}
+
+/// Unit-level guard on the descent itself: attribution must follow parent-pid
+/// edges to a grandchild, not a per-process children list.
+#[test]
+fn tree_walk_descends_to_grandchild_via_parent_edges() {
+    let source = FakeProcessSource::new(
+        // root(10) → shell(11) → node(12) wrapping the claude CLI script.
+        vec![(11, 10), (12, 11)],
+        HashMap::from([
+            (10u32, vec![OsString::from("hmux")]),
+            (11u32, vec![OsString::from("bash")]),
+            (12u32, vec![OsString::from("node")]),
+        ]),
+        HashMap::from([(
+            12u32,
+            vec![OsString::from("node"), OsString::from("claude.js")],
+        )]),
+        true,
+    );
+    let detectors = default_detectors();
+
+    let scan = find_agent_in_tree(&ProcessSnapshot::capture(&source), 10, &detectors);
+    let claude = detectors
+        .iter()
+        .position(|d| d.label() == "claude")
+        .unwrap();
+    assert!(matches!(scan, TreeScan::Found { detector, pid: 12, .. } if detector == claude));
+}
+
+/// No agent anywhere in the tree resolves to `NotFound` (an ordinary pane).
+#[test]
+fn tree_walk_without_agent_reports_not_found() {
+    let source = FakeProcessSource::new(
+        vec![(21, 20)],
+        HashMap::from([
+            (20u32, vec![OsString::from("zsh")]),
+            (21u32, vec![OsString::from("vim")]),
+        ]),
+        HashMap::new(),
+        true,
+    );
+    let detectors = default_detectors();
+    assert!(matches!(
+        find_agent_in_tree(&ProcessSnapshot::capture(&source), 20, &detectors),
+        TreeScan::NotFound
+    ));
+}
+
+/// Live smoke test against the real `/proc` on the running machine. Ignored by
+/// default because it needs an agent process actually running below the pid in
+/// `HMUX_TEST_ROOT_PID`. Run with, e.g.:
+///
+/// ```text
+/// HMUX_TEST_ROOT_PID=$(pgrep -f claude_code/claude | head -1 | xargs -I{} \
+///   sed -E 's/^[0-9]+ \(.*\) . ([0-9]+).*/\1/' /proc/{}/stat) \
+///   cargo test --lib real_proc -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "requires a live agent process under HMUX_TEST_ROOT_PID"]
+fn real_proc_attributes_a_live_agent() {
+    let root: u32 = std::env::var("HMUX_TEST_ROOT_PID")
+        .expect("set HMUX_TEST_ROOT_PID")
+        .parse()
+        .expect("numeric pid");
+    let detectors = default_detectors();
+    let scan = find_agent_in_tree(
+        &ProcessSnapshot::capture(&SystemProcesses),
+        root,
+        &detectors,
+    );
+    match scan {
+        TreeScan::Found { detector, pid, .. } => {
+            eprintln!(
+                "attributed to agent: {} pid {pid}",
+                detectors[detector].label()
+            )
+        }
+        other => panic!("expected Found, got {other:?}"),
+    }
+    assert!(matches!(scan, TreeScan::Found { .. }));
+}
+
+/// A steady, busy server must scan the process table on the poll cadence, not on
+/// output churn. Several agents stream new output every poll (advancing their
+/// revision), yet the dedicated poller captures one shared process snapshot per
+/// tick — so the whole process table is scanned exactly once per poll regardless
+/// of how many panes there are or how much output they produce. Before the
+/// caching refactor each pane re-scanned the process table on every poll, so a
+/// busy server burned a CPU core re-reading an identical table `panes × polls`
+/// times.
+#[test]
+fn steady_server_scans_proc_once_per_poll_not_per_pane_or_output() {
+    const PANES: u32 = 4;
+    const POLLS: usize = 6;
+
+    // Each pane (100, 200, 300, 400) is a shell with a claude process below it.
+    let mut table = Vec::new();
+    let mut programs = HashMap::new();
+    for n in 1..=PANES {
+        let shell = n * 100;
+        let agent = shell + 1;
+        table.push((shell, 1));
+        table.push((agent, shell));
+        programs.insert(shell, vec![OsString::from("zsh")]);
+        programs.insert(agent, vec![OsString::from("claude")]);
+    }
+    let source = FakeProcessSource::new(table, programs, HashMap::new(), true);
+    let scans = source.scans.clone();
+
+    // Every frame is a working spinner; distinct screen text per frame means the
+    // pane's output revision advances on every poll (output churn) so the
+    // revision guard never short-circuits the inspection.
+    let working_frames = (0..POLLS)
+        .map(|i| frame(Some("⠹ hmux"), &format!("running tool step {i}…")))
+        .collect::<Vec<_>>();
+    let server = MultiPaneServer {
+        panes: (1..=PANES)
+            .map(|n| ScriptedPane::new(n * 100, working_frames.clone()))
+            .collect(),
+    };
+
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+    let mut panes = HashMap::new();
+    // Drive the polling under a scoped subscriber (like the other poll-driving
+    // tests) so the observer's per-poll `info!` churn can't race the global
+    // callsite-interest cache against a parallel log-capturing test.
+    capture_logs(|| {
+        for _ in 0..POLLS {
+            poll(&server, &detectors, &source, Some(&hub), &mut panes);
+            for pane in &server.panes {
+                pane.step();
+            }
+        }
+    });
+
+    // One process-table scan per poll — not one per pane, and not one per output frame.
+    assert_eq!(
+        scans.load(Ordering::Relaxed),
+        POLLS,
+        "process table should be scanned once per poll cadence, \
+         independent of pane count and output churn"
+    );
+
+    // Sanity: the panes really were classified as working agents the whole time,
+    // i.e. this measured a steady/working server rather than an idle one.
+    let snap = hub.snapshot();
+    for n in 0..PANES {
+        assert_eq!(
+            snap.panes.get(&PaneId(n)),
+            Some(&AgentStatus {
+                agent: "claude",
+                pid: Some((n + 1) * 100 + 1),
+                session_id: None,
+                state: AgentState::Working,
+            }),
+            "pane {n} should be a working claude agent"
+        );
+    }
+}
+
+/// An unavailable process table resolves to `NoProcessTable` so callers can fall
+/// back to screen-only detection.
+#[test]
+fn tree_walk_without_process_table_reports_unavailable() {
+    let source = FakeProcessSource::new(Vec::new(), HashMap::new(), HashMap::new(), false);
+    let detectors = default_detectors();
+    assert!(matches!(
+        find_agent_in_tree(&ProcessSnapshot::capture(&source), 1, &detectors),
+        TreeScan::NoProcessTable
+    ));
+}
