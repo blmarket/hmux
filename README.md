@@ -1,7 +1,6 @@
 # hmux
 
 hmux is a **tmux-compatible** server built for the people who work with coding
-
 agents. All you get is almost tmux, with rich agent integrations as a plus.
 
 It speaks tmux's own wire protocols, with the standard `tmux attach`
