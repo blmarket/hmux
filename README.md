@@ -8,26 +8,23 @@ intended as the main client communicating with this server.
 
 ## What agent control? Why?
 
-It recognize and provide basic agent stuff via tmux placeholders - see
-`PROTOCOL.md` for details. Everything is interfaced with tmux wire protocol -
-and you're more than welcome to implement your own agent control dashboard.
+It recognize and provide basic agent stuff via tmux placeholders, only when the
+existing tmux control plane does not support the feature necessary for agent
+control. See ./agentmon/ to see an example agent integration.
 
-Agentmon is one possible example of such integrations.
+## Why not tmux, cmux, or herdr?
 
-## My take on tmux / cmux / herdr
-
-- tmux is de facto standard of terminal multiplexer - you MUST know to use it
-  when you ever ssh into some host.
-  - But agent integration can be better with our own addition
+- tmux is de facto standard of terminal multiplexer, broadly available.
+  - But agent integration can greatly improved with native code, which hmux
+    tries to achieve.
 - cmux tries to replace your terminal (e.g. Alacritty, Ghostty)
-  - Need to replace whole your terminal application stacks with cmux.
+  - Need to replace whole your terminal application stacks with cmux. hmux can
+    be a good alternative if you prefer smaller change for agents.
 - herdr tries to replace tmux with better agent integrations
-  - But "agent control" is owned by first party, hard to extend
+  - Hard to co-exist with tmux and limited flexibility on agent control UX. hmux
+    can be a good alternative if you prefer to define your own agent control.
 
-hmux tries to be a drop-in replacement of tmux - so that you can use it in the
-same way in your local / remote in a same way + enjoy the agent integrations.
-
-## See it with agentmon
+## Example
 
 `agentmon` is the first product built on hmux's agent integration. Its terminal
 UI brings agent runs together in one live view, shows which runs need attention,
