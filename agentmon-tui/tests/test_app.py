@@ -1,0 +1,691 @@
+from __future__ import annotations
+
+import asyncio
+import threading
+from pathlib import Path
+
+from textual.widgets import Button, DataTable, Input, Select, Static
+
+from agentmon.app import (
+    AgentmonApp,
+    ConfirmScreen,
+    CleanupScreen,
+    DashboardScreen,
+    DemoService,
+    HistoryScreen,
+    LaunchScreen,
+    NewRunScreen,
+    agent_badge,
+)
+from agentmon.model import AgentRun, LaunchDraft, PromptHistory, Repository
+from agentmon.transcript import TranscriptMessage
+
+
+def test_transcript_renders_goal_updates_distinctly() -> None:
+    rendered = DashboardScreen._render_transcript(
+        (
+            TranscriptMessage(
+                role="goal",
+                text="/goal Reach 80% test coverage.",
+                timestamp="2026-07-16T20:23:27Z",
+            ),
+        ),
+        (),
+    )
+
+    assert rendered.plain == (
+        "GOAL · 2026-07-16T20:23:27Z\n/goal Reach 80% test coverage."
+    )
+
+
+def test_agent_badges_are_compact_and_have_a_future_agent_fallback() -> None:
+    assert agent_badge("codex") == "CODX"
+    assert agent_badge("claude-code") == "CLDE"
+    assert agent_badge("gemini-cli") == "GEMI"
+    assert agent_badge("aider") == "AIDE"
+    assert agent_badge("window") == "----"
+    assert agent_badge("app") == "????"
+
+
+def test_enter_on_run_switches_hmux_window() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        service = DemoService(repo, socket="/tmp/demo")
+        selected = []
+        service.select_window = selected.append  # type: ignore[method-assign]
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+
+        assert selected == [app.runs[0]]
+
+    asyncio.run(exercise())
+
+
+def test_enter_switch_does_not_depend_on_data_table_selection_message() -> None:
+    """The dashboard binding must win even while DataTable cannot post a row event."""
+
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        service = DemoService(repo, socket="/tmp/demo")
+        selected = []
+        service.select_window = selected.append  # type: ignore[method-assign]
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            table.action_select_cursor = lambda: None  # type: ignore[method-assign]
+            await pilot.press("enter")
+            await pilot.pause()
+
+        assert selected == [app.runs[0]]
+
+    asyncio.run(exercise())
+
+
+def test_j_and_k_navigate_dashboard_runs() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            assert table.cursor_row == 1
+
+            await pilot.press("j", "j")
+            assert table.cursor_row == 3
+
+            await pilot.press("k")
+            assert table.cursor_row == 2
+
+    asyncio.run(exercise())
+
+
+def test_dashboard_shows_compact_worktree_tree_and_transcript_side_by_side() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(120, 34)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            first_session = "019f6c99-2762-7dc2-9d93-a8a4b48a3a5e"
+            repository_row = " ".join(str(value) for value in table.get_row_at(0))
+            first_row = " ".join(str(value) for value in table.get_row_at(1))
+            assert "├─ 🔄 CODX auth-cleanup" in first_row
+            assert first_session not in first_row
+            assert [
+                str(table.get_row_at(row)[0]).split()[1:3]
+                for row in range(1, 5)
+            ] == [
+                ["🔄", "CODX"],
+                ["✋", "CLDE"],
+                ["💤", "CODX"],
+                ["🏁", "----"],
+            ]
+            assert not table.show_header
+            assert table.virtual_size.width <= table.content_region.width
+            assert app.screen.query_one("#notice", Static).region.height == 0
+
+            assert "▾ project  /demo/project" in repository_row
+            assert "base:main" in repository_row
+
+            runs_pane = app.screen.query_one("#runs-pane")
+            transcript_pane = app.screen.query_one("#transcript-pane")
+            assert runs_pane.region.right == transcript_pane.region.x
+            assert runs_pane.region.width > transcript_pane.region.width
+
+            meta = app.screen.query_one("#transcript-meta", Static)
+            content = app.screen.query_one("#transcript-content", Static)
+            assert first_session in str(meta.render())
+            assert "/demo/transcripts/" in str(meta.render())
+            assert "Fix authentication cleanup behavior" in str(content.render())
+            assert "Keep the existing CLI behavior unchanged" in str(content.render())
+
+            await pilot.press("j")
+            await pilot.pause()
+
+            assert "874085ab-4a17-4018-ac19-f0381bb7940a" in str(meta.render())
+            assert "test_reconnect_after_heartbeat" in str(content.render())
+
+    asyncio.run(exercise())
+
+
+def test_dashboard_uses_main_worktree_as_repository_tree_root() -> None:
+    async def exercise() -> None:
+        root = Path("/srv/ses")
+        repo = Repository(
+            root=root,
+            common_dir=Path("/srv/hmux/.git"),
+            branch="ses",
+        )
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(120, 24)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            repository_row = " ".join(str(value) for value in table.get_row_at(0))
+            assert "▾ hmux  /srv/hmux" in repository_row
+            assert "base:ses" in repository_row
+
+    asyncio.run(exercise())
+
+
+def test_dashboard_groups_runs_from_multiple_repositories() -> None:
+    async def exercise() -> None:
+        primary = Repository(
+            root=Path("/srv/ses"),
+            common_dir=Path("/srv/hmux/.git"),
+            branch="ses",
+        )
+        foreign = Repository(
+            root=Path("/work/other"),
+            common_dir=Path("/work/other/.git"),
+            branch="develop",
+        )
+        service = DemoService(primary, socket="/tmp/demo")
+        service.runs = lambda: [  # type: ignore[method-assign]
+            AgentRun(
+                "%1",
+                "dev:1.0",
+                "hmux-task",
+                "working",
+                "codex",
+                Path("/srv/hmux-task"),
+                worktree_state="dirty",
+                session_id="hmux-session",
+                repository=primary,
+            ),
+            AgentRun(
+                "%2",
+                "dev:2.0",
+                "other-task",
+                "blocked",
+                "claude",
+                Path("/work/other-task"),
+                worktree_state="unmerged",
+                session_id="other-session",
+                repository=foreign,
+            ),
+        ]
+        service.recent_finished_all = lambda _active: []  # type: ignore[method-assign]
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(120, 24)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            assert table.row_count == 4
+            assert "▾ hmux  /srv/hmux" in str(table.get_row_at(0)[0])
+            assert "└─ 🔄 CODX hmux-task" in str(table.get_row_at(1)[0])
+            assert "▾ other  /work/other" in str(table.get_row_at(2)[0])
+            assert "└─ ✋ CLDE other-task" in str(table.get_row_at(3)[0])
+            assert table.cursor_row == 1
+
+            await pilot.press("j")
+            assert table.cursor_row == 3
+
+    asyncio.run(exercise())
+
+
+def test_dashboard_groups_windows_without_a_git_repository() -> None:
+    async def exercise() -> None:
+        repo = Repository(
+            root=Path("/srv/hmux"),
+            common_dir=Path("/srv/hmux/.git"),
+            branch="main",
+        )
+        service = DemoService(repo, socket="/tmp/demo")
+        service.runs = lambda: [  # type: ignore[method-assign]
+            AgentRun(
+                "window:dev:7",
+                "dev:7",
+                "ses",
+                "working",
+                "codex",
+                Path("/srv/ses"),
+                worktree_state="not-git",
+                session_id="deleted-session",
+                repository=None,
+                window_name="deleted-worktree",
+            )
+        ]
+        service.recent_finished_all = lambda _active: []  # type: ignore[method-assign]
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(120, 24)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            assert table.row_count == 3
+            assert "▾ hmux  /srv/hmux" in str(table.get_row_at(0)[0])
+            assert "▾ non-Git windows" in str(table.get_row_at(1)[0])
+            assert "directories" in str(table.get_row_at(1)[1])
+            assert "└─ 🔄 CODX ses" in str(table.get_row_at(2)[0])
+            assert str(table.get_row_at(2)[1]) == "—"
+            assert table.cursor_row == 2
+
+    asyncio.run(exercise())
+
+
+def test_dashboard_shows_git_window_without_running_agent() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        service = DemoService(repo, socket="/tmp/demo")
+        service.runs = lambda: [  # type: ignore[method-assign]
+            AgentRun(
+                "window:dev:7",
+                "dev:7",
+                "topic",
+                "none",
+                "window",
+                root.parent / "topic",
+                worktree_state="dirty",
+                repository=repo,
+                window_name="review-shell",
+            )
+        ]
+        service.recent_finished_all = lambda _active: []  # type: ignore[method-assign]
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(120, 24)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            assert "🪟 ---- review-shell · topic" in str(table.get_row_at(1)[0])
+            assert "1 window" in str(
+                app.screen.query_one("#title", Static).render()
+            )
+            assert "Window · review-shell" in str(
+                app.screen.query_one("#transcript-title", Static).render()
+            )
+            assert "No coding agent is running" in str(
+                app.screen.query_one("#transcript-content", Static).render()
+            )
+
+    asyncio.run(exercise())
+
+
+def test_w_opens_shell_at_selected_agent_cwd() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        service = DemoService(repo, socket="/tmp/demo")
+        opened = []
+        service.open_shell_window = (  # type: ignore[method-assign]
+            lambda run: opened.append(run) or "0:6"
+        )
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            await pilot.press("w")
+            await pilot.pause()
+
+        assert opened == [app.runs[0]]
+
+    asyncio.run(exercise())
+
+
+def test_w_opens_shell_at_recent_finished_worktree() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        service = DemoService(repo, socket="/tmp/demo")
+        opened = []
+        service.open_shell_window = lambda run: opened.append(run) or "0:7"  # type: ignore[method-assign]
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            table.move_cursor(row=table.row_count - 1)
+            await pilot.press("w")
+            await pilot.pause()
+
+        assert opened[0].state == "exited"
+        assert opened[0].worktree == Path("/demo/old-fix")
+
+    asyncio.run(exercise())
+
+
+def test_x_confirms_cleanup_for_finished_merged_worktree() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        service = DemoService(repo, socket="/tmp/demo")
+        cleaned = []
+        service.cleanup_worktree = cleaned.append  # type: ignore[method-assign]
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            table.move_cursor(row=table.row_count - 1)
+            await pilot.press("x")
+            await pilot.pause()
+            assert isinstance(app.screen, CleanupScreen)
+            await pilot.press("enter")
+            await pilot.pause()
+
+        assert cleaned[0].branch == "old-fix"
+
+    asyncio.run(exercise())
+
+
+def test_p_populates_new_run_from_selected_finished_run() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        service = DemoService(repo, socket="/tmp/demo")
+        prompt = "Full original prompt.\n\nIncluding the details.\n"
+        service.populate_draft = lambda run: LaunchDraft(  # type: ignore[method-assign]
+            run.branch, run.worktree, prompt, True, True
+        )
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            table.move_cursor(row=table.row_count - 1)
+            await pilot.press("p")
+            await pilot.pause()
+
+            screen = app.screen
+            assert isinstance(screen, NewRunScreen)
+            assert screen.query_one("#branch", Input).value == "old-fix"
+            assert screen.query_one("#branch", Input).disabled
+            assert screen.prompt == prompt
+            assert not screen.query_one("#continue", Button).disabled
+
+    asyncio.run(exercise())
+
+
+def test_p_populates_dirty_run_as_editable_new_run() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        service = DemoService(repo, socket="/tmp/demo")
+        prompt = "Repeat this prompt on a fresh branch.\n"
+
+        service.populate_draft = lambda run: LaunchDraft(  # type: ignore[method-assign]
+            run.branch, root.parent / run.branch, prompt
+        )
+
+        def validate(branch: str, prompt_text: str) -> LaunchDraft:
+            if branch == "auth-cleanup":
+                raise ValueError("ERROR: Cannot overwrite dirty worktree: /demo/auth-cleanup")
+            return LaunchDraft(branch, root.parent / branch, prompt_text)
+
+        service.validate_draft = validate  # type: ignore[method-assign]
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            await pilot.press("p")
+            await pilot.pause()
+
+            screen = app.screen
+            assert isinstance(screen, NewRunScreen)
+            branch = screen.query_one("#branch", Input)
+            assert branch.value == "auth-cleanup"
+            assert not branch.disabled
+            assert screen.prompt == prompt
+            assert screen.query_one("#continue", Button).disabled
+
+            branch.value = "auth-cleanup-rerun"
+            screen._update_summary()
+            assert not screen.query_one("#continue", Button).disabled
+
+    asyncio.run(exercise())
+
+
+def test_demo_navigation() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            assert isinstance(app.screen, DashboardScreen)
+
+            await pilot.press("n")
+            await pilot.pause()
+            assert isinstance(app.screen, NewRunScreen)
+            continue_button = app.screen.query_one("#continue", Button)
+            assert continue_button.disabled
+            assert continue_button.variant == "default"
+
+            await pilot.click("#history")
+            await pilot.pause()
+            assert isinstance(app.screen, HistoryScreen)
+
+            await pilot.press("escape")
+            await pilot.pause()
+            new_run = app.screen
+            assert isinstance(new_run, NewRunScreen)
+            new_run.query_one("#branch").value = "review-run"
+            new_run.prompt = "Review this prototype.\n"
+            new_run._update_summary()
+            assert not continue_button.disabled
+
+            await pilot.click("#continue")
+            await pilot.pause()
+            assert isinstance(app.screen, ConfirmScreen)
+
+    asyncio.run(exercise())
+
+
+def test_history_button_is_not_clipped_by_history_table_styles() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+        draft = LaunchDraft(
+            "r7",
+            root.parent / "r7",
+            "Use a historical prompt.\n",
+            overwrite_worktree=True,
+            restart_worktree=True,
+        )
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            app.push_screen(NewRunScreen(restart_draft=draft))
+            await pilot.pause()
+
+            edit = app.screen.query_one("#edit", Button)
+            history = app.screen.query_one("#history", Button)
+            assert history.region.y == edit.region.y
+            assert history.region.height == edit.region.height == 3
+
+    asyncio.run(exercise())
+
+
+def test_refresh_runs_gathers_status_off_the_event_loop() -> None:
+    """Regression: the dashboard refresh must not run the blocking hmux/git scans
+    on the event-loop thread, or keypresses stall for the duration of every
+    refresh. Verify service.runs() executes on a worker thread, not the main one."""
+
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        call_threads: list[threading.Thread] = []
+
+        class RecordingService(DemoService):
+            def runs(self):  # type: ignore[override]
+                call_threads.append(threading.current_thread())
+                return super().runs()
+
+        app = AgentmonApp(RecordingService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+
+        assert call_threads, "service.runs() was never called"
+        assert all(
+            t is not threading.main_thread() for t in call_threads
+        ), "refresh ran on the event-loop thread (blocks input)"
+
+    asyncio.run(exercise())
+
+
+def test_new_run_agent_selector_is_used_for_confirmation() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            app.push_screen(NewRunScreen(branch="claude-run", prompt="Do it.\n"))
+            await pilot.pause()
+            form = app.screen
+            assert isinstance(form, NewRunScreen)
+            selector = form.query_one("#agent", Select)
+            assert selector.value == "codex"
+            selector.value = "claude"
+
+            await pilot.click("#continue")
+            await pilot.pause()
+
+            screen = app.screen
+            assert isinstance(screen, ConfirmScreen)
+            assert screen.draft.agent == "claude"
+
+    asyncio.run(exercise())
+
+
+def test_populate_preserves_selected_claude_agent() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            table.move_cursor(row=2)
+            await pilot.press("p")
+            await pilot.pause()
+
+            screen = app.screen
+            assert isinstance(screen, NewRunScreen)
+            assert screen.query_one("#agent", Select).value == "claude"
+
+    asyncio.run(exercise())
+
+
+def test_history_search_keeps_focus_while_arrows_select() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+        selected = []
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            app.push_screen(HistoryScreen(), selected.append)
+            await pilot.pause()
+
+            search = app.screen.query_one("#search", Input)
+            table = app.screen.query_one("#history", DataTable)
+            await pilot.press("/")
+            assert search.has_focus
+            assert table.cursor_row == 0
+
+            await pilot.press("down")
+            await pilot.pause()
+            assert search.has_focus
+            assert table.cursor_row == 1
+
+            await pilot.press("enter")
+            await pilot.pause()
+
+        assert selected[0].commit == "b" * 40
+
+    asyncio.run(exercise())
+
+
+def test_j_and_k_navigate_prompt_history() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            app.push_screen(HistoryScreen())
+            await pilot.pause()
+
+            table = app.screen.query_one("#history", DataTable)
+            assert table.has_focus
+            assert table.cursor_row == 0
+
+            await pilot.press("j")
+            assert table.cursor_row == 1
+
+            await pilot.press("k")
+            assert table.cursor_row == 0
+
+    asyncio.run(exercise())
+
+
+def test_history_choice_opens_editor_with_template() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+        editor_prompts = []
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            app.push_screen(NewRunScreen())
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, NewRunScreen)
+            screen._edit_prompt = lambda: editor_prompts.append(screen.prompt)  # type: ignore[method-assign]
+
+            screen._history_selected(
+                PromptHistory("a" * 40, "2026-07-09", "old-run", "Starting point.\n")
+            )
+
+        assert editor_prompts == ["Starting point.\n"]
+
+    asyncio.run(exercise())
+
+
+def test_failed_launch_returns_to_form_with_original_contents() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+        branch = "r2"
+        prompt = "Keep this detailed prompt.\n\nIt must survive a launch failure.\n"
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            app.push_screen(NewRunScreen(branch=branch, prompt=prompt))
+            await pilot.pause()
+            form = app.screen
+            assert isinstance(form, NewRunScreen)
+
+            draft = app.service.validate_draft(branch, prompt)
+            app.push_screen(ConfirmScreen(draft))
+            app.push_screen(LaunchScreen(draft))
+            await pilot.pause()
+            launch = app.screen
+            assert isinstance(launch, LaunchScreen)
+            launch.workers.cancel_all()
+            launch._failed("cleanup failed")
+
+            await pilot.click("#dashboard")
+            await pilot.pause()
+
+            assert app.screen is form
+            assert form.query_one("#branch", Input).value == branch
+            assert form.prompt == prompt
+
+    asyncio.run(exercise())

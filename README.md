@@ -1,10 +1,10 @@
 # hmux
 
-Agent control, hiding in plain sight
+hmux is a **tmux-compatible** server built for the people who work with coding
+agents. All you get is almost tmux, with rich agent integrations as a plus.
 
-hmux is a native, **tmux-compatible** server built for the people who work with
-coding agents. It speaks tmux's own wire protocols, with the standard `tmux
-attach` intended as the main client communicating with this server.
+It speaks tmux's own wire protocols, with the standard `tmux attach`
+intended as the main client communicating with this server.
 
 ## What agent control? Why?
 

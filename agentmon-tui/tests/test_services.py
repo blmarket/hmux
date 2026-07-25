@@ -1,0 +1,807 @@
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from agentmon.model import AgentRun, LaunchDraft, Repository
+from agentmon.services import (
+    AgentmonService,
+    CommandError,
+    discover_repository,
+    discover_socket,
+)
+from agentmon.transcript import Transcript
+
+
+def git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], text=True, capture_output=True, check=True
+    )
+
+
+@pytest.fixture
+def repository(tmp_path: Path) -> Repository:
+    root = tmp_path / "project"
+    root.mkdir()
+    git(root, "init", "-b", "main")
+    git(root, "config", "user.name", "Agentmon Test")
+    git(root, "config", "user.email", "agentmon@example.invalid")
+    (root / "README.md").write_text("test\n")
+    git(root, "add", "README.md")
+    git(root, "commit", "-m", "initial")
+    return discover_repository(root)
+
+
+def test_discovers_repository(repository: Repository) -> None:
+    assert repository.root.name == "project"
+    assert repository.branch == "main"
+    assert repository.common_dir.name == ".git"
+
+
+def test_discovers_current_hmux_session_socket_without_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("HMUX_SOCKET", raising=False)
+    monkeypatch.setenv("TMUX", "/tmp/tmux-1000/hmux,123,0")
+
+    def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if args[3:6] == ["list-panes", "-a", "-F"]:
+            return subprocess.CompletedProcess(args, 0, "none\n", "")
+        return subprocess.CompletedProcess(args, 0, "0: 1 windows\n", "")
+
+    monkeypatch.setattr("agentmon.services._run", run)
+
+    selection = discover_socket()
+
+    assert selection.path == "/tmp/tmux-1000/hmux"
+    assert not selection.warning
+
+
+def test_warns_when_selected_server_lacks_hmux_agent_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("HMUX_SOCKET", raising=False)
+    monkeypatch.setenv("TMUX", "/tmp/tmux-1000/default,123,0")
+
+    def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if args[3:6] == ["list-panes", "-a", "-F"]:
+            return subprocess.CompletedProcess(args, 0, "\n", "")
+        return subprocess.CompletedProcess(args, 0, "0: 1 windows\n", "")
+
+    monkeypatch.setattr("agentmon.services._run", run)
+
+    selection = discover_socket()
+
+    assert selection.path == "/tmp/tmux-1000/default"
+    assert "does not expose hmux agent status" in selection.warning
+
+
+def test_hmux_socket_takes_priority_without_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HMUX_SOCKET", "/tmp/hmux.sock")
+    monkeypatch.setenv("TMUX", "/tmp/tmux-1000/default,123,0")
+    monkeypatch.setattr(
+        "agentmon.services._run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, "0: 1 windows\n", ""),
+    )
+
+    selection = discover_socket()
+
+    assert selection.path == "/tmp/hmux.sock"
+    assert not selection.warning
+
+
+def test_socket_discovery_fails_with_actionable_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("HMUX_SOCKET", raising=False)
+    monkeypatch.delenv("TMUX", raising=False)
+    monkeypatch.setattr(
+        "agentmon.services._run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 1, "", "no server"),
+    )
+
+    with pytest.raises(CommandError, match="use --socket PATH"):
+        discover_socket(requested="/missing/hmux.sock")
+
+
+def test_validates_and_derives_sibling_worktree(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    draft = service.validate_draft("feature/auth", "Do the work.\n")
+    assert draft.branch == "feature/auth"
+    assert draft.worktree == repository.root.parent / "feature-auth"
+
+
+@pytest.mark.parametrize(
+    ("branch", "prompt", "message"),
+    [("", "hello", "branch"), ("bad branch", "hello", "branch"), ("valid", "", "prompt")],
+)
+def test_rejects_invalid_draft(
+    repository: Repository, branch: str, prompt: str, message: str
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    with pytest.raises(ValueError, match=message):
+        service.validate_draft(branch, prompt)
+
+
+def test_rejects_overwrite_of_non_worktree_path(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = service.suggested_worktree("occupied")
+    target.mkdir()
+
+    with pytest.raises(ValueError, match="ERROR: Cannot overwrite non-worktree"):
+        service.validate_draft("occupied", "Do the work.\n")
+
+
+def test_allows_overwrite_of_registered_worktree(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = service.suggested_worktree("replace-me")
+    git(repository.root, "worktree", "add", "-b", "old-run", str(target))
+
+    draft = service.validate_draft("replace-me", "Do the work.\n")
+
+    assert draft.worktree == target
+    assert draft.overwrite_worktree
+
+
+def test_rejects_overwrite_of_dirty_registered_worktree(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = service.suggested_worktree("dirty-replace")
+    git(repository.root, "worktree", "add", "-b", "old-dirty-run", str(target))
+    (target / "untracked.txt").write_text("keep me\n")
+
+    with pytest.raises(ValueError, match="ERROR: Cannot overwrite dirty worktree"):
+        service.validate_draft("dirty-replace", "Do the work.\n")
+
+
+def test_allows_new_worktree_for_existing_branch(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    git(repository.root, "branch", "f5")
+
+    draft = service.validate_draft("f5", "Continue the work.\n")
+
+    assert draft.worktree == repository.root.parent / "f5"
+    assert draft.existing_branch
+    assert not draft.overwrite_worktree
+
+
+def test_reads_prompt_history(repository: Repository) -> None:
+    (repository.root / "prompt.md").write_text("Investigate the race.\n")
+    git(repository.root, "add", "prompt.md")
+    git(repository.root, "commit", "-m", "agentmon: add prompt for race")
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    history = service.prompt_history()
+    assert history[0].subject == "agentmon: add prompt for race"
+    assert history[0].prompt == "Investigate the race.\n"
+
+
+def test_prompt_preview_uses_worktree_prompt(repository: Repository) -> None:
+    (repository.root / "prompt.md").write_text("First line.\n\nMore details here.\n")
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+
+    assert service._prompt_preview(repository.root) == "First line. More details here."
+
+
+def test_runs_include_hmux_agent_session_id(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    from agentmon import services
+
+    session_id = "019f6c99-2762-7dc2-9d93-a8a4b48a3a5e"
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], *, cwd=None, check=True):
+        calls.append(args)
+        row = (
+            f"%3\tdev:4.0\tagent-session\tcodex\tworking\t"
+            f"{repository.root}\t{session_id}\t1\tcodex\n"
+        )
+        return subprocess.CompletedProcess(args, 0, row, "")
+
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    monkeypatch.setattr(services, "_run", fake_run)
+    monkeypatch.setattr(service, "_git_common_dir", lambda _cwd: repository.common_dir)
+    monkeypatch.setattr(service, "_branch_at", lambda _cwd: "agent-session")
+    monkeypatch.setattr(service, "_prompt_preview", lambda _cwd: "Do it.")
+    monkeypatch.setattr(service, "_worktree_state", lambda _cwd: "dirty")
+
+    runs = service.runs()
+
+    assert len(runs) == 1
+    assert runs[0].session_id == session_id
+    assert "#{pane_agent_session_id}" in calls[0][-1]
+
+
+def test_runs_include_agents_from_multiple_git_repositories(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    from agentmon import services
+
+    foreign = Repository(
+        root=repository.root.parent / "foreign",
+        common_dir=repository.root.parent / "foreign" / ".git",
+        branch="develop",
+    )
+    rows = (
+        f"%1\tdev:1.0\tprimary\tcodex\tworking\t"
+        f"{repository.root}\tprimary-session\t1\tcodex\n"
+        f"%2\tdev:2.0\tforeign\tclaude\tblocked\t"
+        f"{foreign.root}\tforeign-session\t1\tclaude\n"
+    )
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    monkeypatch.setattr(
+        services,
+        "_run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, rows, ""),
+    )
+    monkeypatch.setattr(
+        service,
+        "_git_common_dir",
+        lambda cwd: (
+            repository.common_dir if cwd == repository.root else foreign.common_dir
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_repository_for_worktree",
+        lambda _cwd, common_dir: (
+            repository if common_dir == repository.common_dir else foreign
+        ),
+    )
+    monkeypatch.setattr(service, "for_repository", lambda _repo: service)
+    monkeypatch.setattr(
+        service,
+        "_branch_at",
+        lambda cwd: "primary-task" if cwd == repository.root else "foreign-task",
+    )
+    monkeypatch.setattr(service, "_prompt_preview", lambda _cwd: "Do it.")
+    monkeypatch.setattr(service, "_worktree_state", lambda _cwd: "dirty")
+
+    runs = service.runs()
+
+    assert [run.repository for run in runs] == [repository, foreign]
+    assert [run.branch for run in runs] == ["primary-task", "foreign-task"]
+
+
+def test_runs_track_each_window_and_prefer_its_agent_pane(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    from agentmon import services
+
+    rows = (
+        f"%1\tdev:4.0\treview\t\t\t{repository.root}\t\t1\tzsh\n"
+        f"%2\tdev:4.1\treview\tcodex\tworking\t"
+        f"{repository.root}\tagent-session\t0\tcodex\n"
+        f"%3\tdev:5.0\tshell\t\t\t{repository.root}\t\t1\tzsh\n"
+        f"%4\tdev:6.0\tfallback\t\t\t/tmp/non-git\t\t1\tzsh\n"
+        f"%5\tdev:6.1\tfallback\t\t\t{repository.root}\t\t0\tzsh\n"
+    )
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    monkeypatch.setattr(
+        services,
+        "_run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, rows, ""),
+    )
+    monkeypatch.setattr(
+        service,
+        "_git_common_dir",
+        lambda cwd: None if cwd == Path("/tmp/non-git") else repository.common_dir,
+    )
+    monkeypatch.setattr(
+        service,
+        "_repository_for_worktree",
+        lambda _cwd, _common_dir: repository,
+    )
+    monkeypatch.setattr(service, "_branch_at", lambda _cwd: "topic")
+    monkeypatch.setattr(service, "_prompt_preview", lambda _cwd: "Do it.")
+    monkeypatch.setattr(service, "_worktree_state", lambda _cwd: "dirty")
+
+    runs = service.runs()
+
+    assert len(runs) == 3
+    assert runs[0].location == "dev:4"
+    assert runs[0].agent == "codex"
+    assert runs[0].session_id == "agent-session"
+    assert runs[1].location == "dev:5"
+    assert runs[1].agent == "window"
+    assert runs[1].state == "none"
+    assert runs[1].window_name == "shell"
+    assert runs[2].location == "dev:6"
+    assert runs[2].worktree == repository.root
+
+
+def test_agentless_panes_distinguish_shell_from_app(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    from agentmon import services
+
+    rows = (
+        f"%1\tdev:1.0\tshell\t\t\t{repository.root}\t\t1\t-zsh\n"
+        f"%2\tdev:2.0\teditor\t\t\t{repository.root}\t\t1\tvim\n"
+    )
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    monkeypatch.setattr(
+        services,
+        "_run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, rows, ""),
+    )
+    monkeypatch.setattr(service, "_git_common_dir", lambda _cwd: repository.common_dir)
+    monkeypatch.setattr(service, "_repository_for_worktree", lambda *_: repository)
+    monkeypatch.setattr(service, "_branch_at", lambda _cwd: "topic")
+    monkeypatch.setattr(service, "_prompt_preview", lambda _cwd: "Do it.")
+    monkeypatch.setattr(service, "_worktree_state", lambda _cwd: "dirty")
+
+    runs = service.runs()
+
+    assert [run.agent for run in runs] == ["window", "app"]
+    assert all(run.state == "none" for run in runs)
+
+
+def test_agentless_pane_from_older_hmux_defaults_to_shell(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    from agentmon import services
+
+    rows = f"%1\tdev:1.0\tshell\t\t\t{repository.root}\t\t1\t\n"
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    monkeypatch.setattr(
+        services,
+        "_run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, rows, ""),
+    )
+    monkeypatch.setattr(service, "_git_common_dir", lambda _cwd: repository.common_dir)
+    monkeypatch.setattr(service, "_repository_for_worktree", lambda *_: repository)
+    monkeypatch.setattr(service, "_branch_at", lambda _cwd: "topic")
+    monkeypatch.setattr(service, "_prompt_preview", lambda _cwd: "Do it.")
+    monkeypatch.setattr(service, "_worktree_state", lambda _cwd: "dirty")
+
+    assert service.runs()[0].agent == "window"
+
+
+def test_runs_include_non_git_windows_and_retain_deleted_worktree_repository(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    from agentmon import services
+
+    deleted = repository.root.parent / "ses"
+    ordinary = repository.root.parent / "scratch"
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    worktree_exists = True
+    monkeypatch.setattr(
+        services,
+        "_run",
+        lambda args, **kwargs: subprocess.CompletedProcess(
+            args,
+            0,
+            (
+                f"%1\tdev:4.0\trepository\tcodex\tworking\t"
+                f"{repository.root}\trepo-session\t1\tcodex\n"
+                f"%2\tdev:5.0\tdeleted\tcodex\tblocked\t"
+                f"{deleted}{' (deleted)' if not worktree_exists else ''}"
+                "\tdeleted-session\t1\tcodex\n"
+                f"%3\tdev:6.0\tscratch\t\t\t{ordinary}\t\t1\tzsh\n"
+            ),
+            "",
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_git_common_dir",
+        lambda cwd: (
+            repository.common_dir
+            if cwd == repository.root or (cwd == deleted and worktree_exists)
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_repository_for_worktree",
+        lambda _cwd, _common_dir: repository,
+    )
+    monkeypatch.setattr(service, "for_repository", lambda _repo: service)
+    monkeypatch.setattr(
+        service, "_branch_at", lambda cwd: "ses" if cwd == deleted else "main"
+    )
+    monkeypatch.setattr(service, "_prompt_preview", lambda _cwd: "Do it.")
+    monkeypatch.setattr(service, "_worktree_state", lambda _cwd: "dirty")
+
+    initial = service.runs()
+    worktree_exists = False
+    runs = service.runs()
+
+    assert initial[1].repository == repository
+    assert [run.location for run in runs] == ["dev:4", "dev:5", "dev:6"]
+    assert runs[1].repository == repository
+    assert runs[1].worktree == deleted
+    assert runs[1].branch == "ses"
+    assert runs[1].agent == "codex"
+    assert runs[1].state == "blocked"
+    assert runs[1].session_id == "deleted-session"
+    assert runs[1].worktree_state == "unknown"
+    assert runs[2].repository is None
+    assert runs[2].branch == "scratch"
+    assert runs[2].agent == "window"
+
+
+@pytest.mark.parametrize("agent", ["codex", "claude"])
+def test_run_transcript_uses_agent_specific_loader(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository, agent: str
+) -> None:
+    from agentmon import services
+
+    session_id = "019f6c99-2762-7dc2-9d93-a8a4b48a3a5e"
+    expected = Transcript(session_id, Path("/tmp/transcript.jsonl"), ())
+    loaded_ids: list[str] = []
+    backend = services.codex_transcript if agent == "codex" else services.claude_transcript
+    monkeypatch.setattr(
+        backend,
+        "load_transcript",
+        lambda value: loaded_ids.append(value) or expected,
+    )
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    run = AgentRun(
+        "%1",
+        "dev:3.0",
+        "topic",
+        "working",
+        agent,
+        repository.root,
+        session_id=session_id,
+    )
+
+    assert service.run_transcript(run) is expected
+    assert loaded_ids == [session_id]
+
+
+def test_worktree_state_reports_dirty_unmerged_and_merged(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = repository.root.parent / "state-check"
+    git(repository.root, "worktree", "add", "-b", "state-check", str(target))
+
+    assert service._worktree_state(target) == "merged"
+
+    (target / "change.txt").write_text("not committed\n")
+    assert service._worktree_state(target) == "dirty"
+
+    git(target, "add", "change.txt")
+    git(target, "commit", "-m", "worktree-only change")
+    assert service._worktree_state(target) == "unmerged"
+
+    git(repository.root, "merge", "--ff-only", "state-check")
+    assert service._worktree_state(target) == "merged"
+
+
+def test_cleanup_removes_merged_worktree_but_preserves_branch(
+    repository: Repository,
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = repository.root.parent / "cleanup-run"
+    git(repository.root, "worktree", "add", "-b", "cleanup-run", str(target))
+    run = AgentRun(
+        "finished:cleanup", "0:", "cleanup-run", "exited", "finished", target,
+        worktree_state="merged",
+    )
+
+    service.cleanup_worktree(run)
+
+    assert not target.exists()
+    branches = git(repository.root, "branch", "--list", "cleanup-run").stdout
+    assert "cleanup-run" in branches
+
+
+def test_cleanup_refuses_dirty_worktree(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = repository.root.parent / "dirty-cleanup"
+    git(repository.root, "worktree", "add", "-b", "dirty-cleanup", str(target))
+    (target / "untracked.txt").write_text("keep me\n")
+    run = AgentRun(
+        "finished:dirty", "0:", "dirty-cleanup", "exited", "finished", target,
+        worktree_state="merged",
+    )
+
+    with pytest.raises(RuntimeError, match="state is dirty"):
+        service.cleanup_worktree(run)
+
+    assert target.exists()
+
+
+def test_restart_draft_reuses_finished_merged_run(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = repository.root.parent / "restart-run"
+    git(repository.root, "worktree", "add", "-b", "restart-run", str(target))
+    prompt = "Repeat the complete task.\n\nKeep all of these details.\n"
+    (target / "prompt.md").write_text(prompt)
+    git(target, "add", "prompt.md")
+    git(target, "commit", "-m", "agentmon: add prompt for restart-run")
+    git(repository.root, "merge", "--ff-only", "restart-run")
+    run = AgentRun(
+        "finished:restart", "0:", "restart-run", "exited", "finished", target,
+        prompt_preview="Repeat the complete task.", worktree_state="merged",
+    )
+
+    draft = service.restart_draft(run)
+
+    assert draft.branch == "restart-run"
+    assert draft.worktree == target.resolve()
+    assert draft.prompt == prompt
+    assert draft.overwrite_worktree
+    assert draft.restart_worktree
+
+
+def test_restart_draft_refuses_dirty_worktree(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = repository.root.parent / "dirty-restart"
+    git(repository.root, "worktree", "add", "-b", "dirty-restart", str(target))
+    (target / "prompt.md").write_text("Try again.\n")
+    run = AgentRun(
+        "finished:dirty", "0:", "dirty-restart", "exited", "finished", target,
+        worktree_state="dirty",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Worktree cleanup refused: state is dirty, not clean and merged",
+    ):
+        service.restart_draft(run)
+
+
+def test_populate_draft_from_dirty_worktree_keeps_form_editable(
+    repository: Repository,
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = repository.root.parent / "dirty-populate"
+    git(repository.root, "worktree", "add", "-b", "dirty-populate", str(target))
+    prompt = "Try this prompt on a fresh base.\n"
+    (target / "prompt.md").write_text(prompt)
+    git(target, "add", "prompt.md")
+    git(target, "commit", "-m", "agentmon: add prompt for dirty-populate")
+    (target / "untracked.txt").write_text("keep me\n")
+    run = AgentRun(
+        "finished:dirty", "0:", "dirty-populate", "exited", "finished", target,
+        worktree_state="dirty",
+    )
+
+    draft = service.populate_draft(run)
+
+    assert draft.branch == "dirty-populate"
+    assert draft.prompt == prompt
+    assert not draft.overwrite_worktree
+    assert not draft.restart_worktree
+
+
+def test_opens_shell_window_at_agent_cwd(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    from agentmon import services
+
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], *, cwd=None, check=True):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "dev:8\n", "")
+
+    monkeypatch.setattr(services, "_run", fake_run)
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    run = AgentRun("%1", "dev:3.0", "topic", "working", "codex", repository.root)
+
+    assert service.open_shell_window(run) == "dev:8"
+    assert calls == [
+        [
+            "tmux",
+            "-S",
+            "/tmp/hmux.sock",
+            "new-window",
+            "-t",
+            "dev:",
+            "-P",
+            "-F",
+            "#{session_name}:#{window_index}",
+            "-c",
+            str(repository.root),
+        ]
+    ]
+
+
+def test_recovers_recent_finished_worktree(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = repository.root.parent / "finished-run"
+    git(repository.root, "worktree", "add", "-b", "finished-run", str(target))
+    (target / "prompt.md").write_text("Remember where this finished.\n")
+    git(target, "add", "prompt.md")
+    git(target, "commit", "-m", "agentmon: add prompt for finished-run")
+
+    finished = service.recent_finished([])
+
+    assert len(finished) == 1
+    assert finished[0].branch == "finished-run"
+    assert finished[0].state == "exited"
+    assert finished[0].worktree == target.resolve()
+    assert finished[0].prompt_preview == "Remember where this finished."
+
+
+def test_active_worktree_is_not_shown_as_finished(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = repository.root.parent / "still-active"
+    git(repository.root, "worktree", "add", "-b", "still-active", str(target))
+    (target / "prompt.md").write_text("Still working.\n")
+    git(target, "add", "prompt.md")
+    git(target, "commit", "-m", "agentmon: add prompt for still-active")
+    subdirectory = target / "src"
+    subdirectory.mkdir()
+    active = AgentRun("%1", "0:3.0", "still-active", "working", "codex", subdirectory)
+
+    assert service.recent_finished([active]) == []
+
+
+def test_launch_records_steps(monkeypatch: pytest.MonkeyPatch, repository: Repository) -> None:
+    from agentmon import services
+
+    worktree = repository.root.parent / "new-worktree"
+    worktree.mkdir()
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], *, cwd=None, check=True):
+        calls.append(args)
+        stdout = ""
+        if args[-2:] == ["--short", "HEAD"]:
+            stdout = "abc123\n"
+        elif "new-window" in args:
+            stdout = "7\n"
+        return subprocess.CompletedProcess(args, 0, stdout, "")
+
+    monkeypatch.setattr(services, "_run", fake_run)
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    steps = []
+    window = service.launch(LaunchDraft("new-worktree", worktree, "Do it.\n"), steps.append)
+
+    assert window == "7"
+    assert (worktree / "prompt.md").read_text() == "Do it.\n"
+    assert [step.label for step in steps] == [
+        "Branch and worktree created",
+        "prompt.md committed",
+        "hmux window and agent started",
+    ]
+    assert any("worktree" in call for call in calls)
+    assert any("new-window" in call for call in calls)
+    launch_call = next(call for call in calls if "new-window" in call)
+    assert launch_call[-1] == 'exec codex --yolo "$(cat prompt.md)"'
+
+
+def test_launch_uses_claude_command_when_selected(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    from agentmon import services
+
+    worktree = repository.root.parent / "claude-worktree"
+    worktree.mkdir()
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], *, cwd=None, check=True):
+        calls.append(args)
+        stdout = "abc123\n" if args[-2:] == ["--short", "HEAD"] else ""
+        if "new-window" in args:
+            stdout = "7\n"
+        return subprocess.CompletedProcess(args, 0, stdout, "")
+
+    monkeypatch.setattr(services, "_run", fake_run)
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+
+    service.launch(
+        LaunchDraft("claude-worktree", worktree, "Do it.\n", agent="claude"),
+        lambda _step: None,
+    )
+
+    launch_call = next(call for call in calls if "new-window" in call)
+    assert launch_call[-1] == (
+        'exec claude --dangerously-skip-permissions "$(cat prompt.md)"'
+    )
+
+
+def test_launch_existing_branch_puts_worktree_path_before_branch(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    from agentmon import services
+
+    worktree = repository.root.parent / "existing-branch"
+    worktree.mkdir()
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], *, cwd=None, check=True):
+        calls.append(args)
+        stdout = "abc123\n" if args[-2:] == ["--short", "HEAD"] else ""
+        if "new-window" in args:
+            stdout = "7\n"
+        return subprocess.CompletedProcess(args, 0, stdout, "")
+
+    monkeypatch.setattr(services, "_run", fake_run)
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    service.launch(
+        LaunchDraft(
+            "existing-branch", worktree, "Continue.\n", existing_branch=True
+        ),
+        lambda _step: None,
+    )
+
+    add = next(call for call in calls if "worktree" in call and "add" in call)
+    assert add[-3:] == ["add", str(worktree), "existing-branch"]
+
+
+def test_launch_removes_overwritten_worktree_first(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    from agentmon import services
+
+    worktree = repository.root.parent / "replace-me"
+    worktree.mkdir()
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], *, cwd=None, check=True):
+        calls.append(args)
+        if "remove" in args:
+            (worktree / "prompt.md").unlink(missing_ok=True)
+        stdout = "abc123\n" if args[-2:] == ["--short", "HEAD"] else ""
+        if "new-window" in args:
+            stdout = "7\n"
+        return subprocess.CompletedProcess(args, 0, stdout, "")
+
+    monkeypatch.setattr(services, "_run", fake_run)
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    steps = []
+    service.launch(
+        LaunchDraft("replace-me", worktree, "Do it.\n", overwrite_worktree=True),
+        steps.append,
+    )
+
+    remove_index = next(i for i, call in enumerate(calls) if "remove" in call)
+    add_index = next(i for i, call in enumerate(calls) if "add" in call and "worktree" in call)
+    assert remove_index < add_index
+    assert steps[0].label == "Existing worktree removed"
+
+
+def test_launch_refuses_dirty_overwritten_worktree(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = service.suggested_worktree("dirty-launch")
+    git(repository.root, "worktree", "add", "-b", "dirty-launch", str(target))
+    (target / "untracked.txt").write_text("keep me\n")
+
+    with pytest.raises(CommandError, match="Worktree overwrite refused: state is dirty"):
+        service.launch(
+            LaunchDraft(
+                "dirty-launch", target, "Do it.\n", overwrite_worktree=True
+            ),
+            lambda _step: None,
+        )
+
+    assert target.exists()
+
+
+def test_restart_launch_recreates_existing_branch_from_dashboard_branch(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    from agentmon import services
+
+    worktree = repository.root.parent / "restart-me"
+    worktree.mkdir()
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], *, cwd=None, check=True):
+        calls.append(args)
+        stdout = "abc123\n" if args[-2:] == ["--short", "HEAD"] else ""
+        if "new-window" in args:
+            stdout = "7\n"
+        return subprocess.CompletedProcess(args, 0, stdout, "")
+
+    monkeypatch.setattr(services, "_run", fake_run)
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    monkeypatch.setattr(service, "_worktree_state", lambda _path: "merged")
+    service.launch(
+        LaunchDraft(
+            "restart-me", worktree, "Do it again.\n",
+            overwrite_worktree=True, restart_worktree=True,
+        ),
+        lambda _step: None,
+    )
+
+    remove = next(call for call in calls if "remove" in call)
+    add = next(call for call in calls if "worktree" in call and "add" in call)
+    assert "--force" not in remove
+    assert add[-4:] == ["add", "-B", "restart-me", str(worktree)]
