@@ -24,12 +24,3 @@ control. See ./agentmon/ to see an example agent integration.
   - Hard to co-exist with tmux and limited flexibility on agent control UX. hmux
     can be a good alternative if you prefer to define your own agent control.
 
-## Example
-
-`agentmon` is the first product built on hmux's agent integration. Its terminal
-UI brings agent runs together in one live view, shows which runs need attention,
-displays their prompt and transcript context, and switches directly to the
-corresponding hmux window. It can also launch new runs in separate Git
-worktrees, making parallel agent work easier to start, monitor, revisit, and
-clean up.
-
