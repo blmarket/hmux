@@ -1,6 +1,6 @@
 REPO   := https://github.com/ghostty-org/ghostty
 REF    := main
-COMMIT := 53bd14fecfd68c6c0ab64d37b5943247299e2b40
+COMMIT := 2de5e7d38e1354759211722a8687c0815d2cf02c
 DIR  := libghostty-vt
 WORK := .vendor-work
 ZIG  ?= zig

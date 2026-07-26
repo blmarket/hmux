@@ -1,21 +1,19 @@
 //! Hand-written FFI declarations for the subset of the libghostty-vt C API we
 //! use (terminal lifecycle + VT stream, formatters, and Unicode width).
 //!
-//! Mirrors `include/ghostty/vt/{types,terminal,formatter,mouse}.h` from the vendored
-//! source (pristine upstream `ghostty` main, commit `53bd14fe`, the 1.3.2-dev
-//! line — 1.3.1 is the latest tagged release but predates this terminal +
-//! formatter C API, so a release-pinned build is not yet possible). Written by
-//! hand from the MIT-licensed headers rather than generated, so we don't depend
-//! on `bindgen`/libclang. The `#[repr(C)]` layouts match the C structs
-//! field-for-field; the sized structs (`size` first) are versioned by the
-//! library via that `size` field.
+//! Mirrors `include/ghostty/vt/{types,terminal,formatter,mouse}.h` from the
+//! vendored upstream `ghostty` main commit `2de5e7d3` (the 1.3.2-dev line).
+//! Written by hand from the MIT-licensed headers rather than generated, so we
+//! don't depend on `bindgen`/libclang. The `#[repr(C)]` layouts match the C
+//! structs field-for-field; the sized structs (`size` first) are versioned by
+//! the library via that `size` field.
 //!
 //! The terminal subset declared here (lifecycle + VT stream + grid/cell/row
-//! inspection + the plain/VT formatter) is byte-for-byte compatible between the
-//! commit `ghostty-sys` pins (`0f7cd84b8`) and this one: `types.h`/`formatter.h`
-//! are identical and `terminal.h` only gained new (unused-here) enums,
-//! callbacks, options, and functions. Unicode declarations mirror
-//! `include/ghostty/vt/unicode.h` from the vendored source.
+//! inspection + the plain/VT formatter) remains byte-for-byte compatible with
+//! the prior pin: its structs and function signatures are unchanged, and the
+//! terminal header changes only affect options and data values unused here.
+//! Unicode declarations mirror `include/ghostty/vt/unicode.h` from the vendored
+//! source.
 
 #![allow(non_camel_case_types)]
 

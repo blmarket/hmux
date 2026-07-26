@@ -74,7 +74,7 @@
             src = ./.;
 
             cargoLock.lockFile = ./Cargo.lock;
-            nativeBuildInputs = [ pkgs.zig_0_15 ]
+            nativeBuildInputs = [ pkgs.zig_0_16 ]
               ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
                 pkgs.xcbuild
                 pkgs.darwin.cctools
@@ -117,7 +117,7 @@
           default = pkgs.mkShell {
             packages = [
               tmux37b
-              pkgs.zig_0_15
+              pkgs.zig_0_16
               pkgs.rustc
               pkgs.rustfmt
               pkgs.clippy
