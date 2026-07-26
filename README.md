@@ -24,6 +24,13 @@ control. See ./agentmon/ to see an example agent integration.
   - Hard to co-exist with tmux and limited flexibility on agent control UX. hmux
     can be a good alternative if you prefer to define your own agent control.
 
+## Usage
+
+`nix run` to start hmux server, then `tmux attach`.
+
+Optionally, also start agentmon (either by going into ./agentmon-tui/ then `uv
+run agentmon`, or `nix run .#agentmon`) for TUI experience.
+
 ## Example
 
 <img width="1273" height="698" alt="current-application-agent" src="https://github.com/user-attachments/assets/bd3d211e-5099-4bc4-b96d-fe97bedaab4d" />
