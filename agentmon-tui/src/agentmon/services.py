@@ -154,18 +154,24 @@ def discover_socket(
 
 
 class AgentmonService:
-    def __init__(self, repo: Repository, *, socket: str, tmux: str = "tmux") -> None:
+    def __init__(
+        self, repo: Repository | None, *, socket: str, tmux: str = "tmux"
+    ) -> None:
         self.repo = repo
         self.socket = socket
         self.tmux = tmux
-        self._repositories = {repo.common_dir: repo}
-        self._worktree_contexts = {
-            repo.root.resolve(): (repo, repo.branch),
-        }
+        self._repositories = {} if repo is None else {repo.common_dir: repo}
+        self._worktree_contexts = (
+            {}
+            if repo is None
+            else {repo.root.resolve(): (repo, repo.branch)}
+        )
 
     def for_repository(self, repo: Repository | None) -> AgentmonService:
         """Return a service whose Git operations are scoped to ``repo``."""
-        if repo is None or repo.common_dir == self.repo.common_dir:
+        if repo is None or (
+            self.repo is not None and repo.common_dir == self.repo.common_dir
+        ):
             return self
         return AgentmonService(repo, socket=self.socket, tmux=self.tmux)
 
@@ -454,7 +460,9 @@ class AgentmonService:
         self, active: list[AgentRun], limit_per_repository: int = 5
     ) -> list[AgentRun]:
         """Recover finished runs for every repository represented by active panes."""
-        repositories = {self.repo.common_dir: self.repo}
+        repositories = (
+            {} if self.repo is None else {self.repo.common_dir: self.repo}
+        )
         for run in active:
             if run.repository is not None:
                 repositories[run.repository.common_dir] = run.repository
@@ -465,7 +473,8 @@ class AgentmonService:
             repository_active = [
                 run
                 for run in active
-                if (run.repository or self.repo).common_dir == common_dir
+                if run.repository is not None
+                and run.repository.common_dir == common_dir
             ]
             finished.extend(
                 scoped.recent_finished(

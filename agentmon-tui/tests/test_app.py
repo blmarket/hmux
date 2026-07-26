@@ -16,8 +16,10 @@ from agentmon.app import (
     LaunchScreen,
     NewRunScreen,
     agent_badge,
+    main,
 )
 from agentmon.model import AgentRun, LaunchDraft, PromptHistory, Repository
+from agentmon.services import AgentmonService, CommandError, SocketSelection
 from agentmon.transcript import TranscriptMessage
 
 
@@ -331,6 +333,72 @@ def test_dashboard_groups_windows_without_a_git_repository() -> None:
             assert table.cursor_row == 2
 
     asyncio.run(exercise())
+
+
+def test_dashboard_without_a_startup_repository_can_monitor_non_git_windows() -> None:
+    async def exercise() -> None:
+        service = AgentmonService(None, socket="/tmp/demo")
+        service.runs = lambda: [  # type: ignore[method-assign]
+            AgentRun(
+                "window:dev:7",
+                "dev:7",
+                "scratch",
+                "none",
+                "window",
+                Path("/tmp/scratch"),
+                worktree_state="not-git",
+                repository=None,
+                window_name="scratch",
+            )
+        ]
+        service.recent_finished_all = lambda _active: []  # type: ignore[method-assign]
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(120, 24)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            assert table.row_count == 2
+            assert "▾ non-Git windows" in str(table.get_row_at(0)[0])
+
+            await pilot.press("n")
+            await pilot.pause()
+
+            assert isinstance(app.screen, DashboardScreen)
+            notice = app.screen.query_one("#notice", Static)
+            assert "Select a Git repository" in str(notice.render())
+
+    asyncio.run(exercise())
+
+
+def test_main_does_not_require_cwd_to_be_a_git_repository(
+    monkeypatch,
+) -> None:
+    from agentmon import app as app_module
+
+    captured: list[AgentmonService] = []
+
+    class FakeApp:
+        def __init__(self, service: AgentmonService, **_kwargs: object) -> None:
+            captured.append(service)
+
+        def run(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        app_module,
+        "discover_repository",
+        lambda: (_ for _ in ()).throw(CommandError("not a Git repository")),
+    )
+    monkeypatch.setattr(
+        app_module,
+        "discover_socket",
+        lambda **_kwargs: SocketSelection("/tmp/hmux.sock"),
+    )
+    monkeypatch.setattr(app_module, "AgentmonApp", FakeApp)
+
+    assert main([]) == 0
+    assert len(captured) == 1
+    assert captured[0].repo is None
 
 
 def test_dashboard_shows_git_window_without_running_agent() -> None:

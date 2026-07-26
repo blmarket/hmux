@@ -196,9 +196,10 @@ class DashboardScreen(Screen):
         self._row_runs = []
         self._row_repositories = []
 
-        grouped: dict[Path | None, tuple[Repository | None, list[AgentRun]]] = {
-            self.app.service.repo.common_dir: (self.app.service.repo, [])
-        }
+        default_repository = self.app.service.repo
+        grouped: dict[Path | None, tuple[Repository | None, list[AgentRun]]] = {}
+        if default_repository is not None:
+            grouped[default_repository.common_dir] = (default_repository, [])
         for run in runs:
             repository = run.repository
             key = repository.common_dir if repository is not None else None
@@ -447,11 +448,20 @@ class DashboardScreen(Screen):
         self.refresh_runs()
 
     def action_new_run(self) -> None:
-        self.app.push_screen(NewRunScreen(repository=self._selected_repository()))
+        repository = self._selected_repository() or self.app.service.repo
+        if repository is None:
+            self._set_notice(
+                "Select a Git repository or Git-backed window to create a run"
+            )
+            return
+        self.app.push_screen(NewRunScreen(repository=repository))
 
     def action_populate_run(self) -> None:
         run = self._selected_run()
         if run is None:
+            return
+        if run.repository is None:
+            self._set_notice("This window is not associated with a Git repository")
             return
         service = self.app.service.for_run(run)
         try:
@@ -1146,9 +1156,11 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
         repo = discover_repository()
-    except CommandError as exc:
-        print(f"agentmon: {exc}")
-        return 1
+    except CommandError:
+        repo = None
+    if args.demo and repo is None:
+        root = Path.cwd().resolve()
+        repo = Repository(root=root, common_dir=root / ".git", branch="demo")
     service_type = DemoService if args.demo else AgentmonService
     if args.demo:
         socket = args.socket or "/tmp/agentmon-demo.sock"

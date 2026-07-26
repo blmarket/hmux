@@ -40,6 +40,66 @@ def test_discovers_repository(repository: Repository) -> None:
     assert repository.common_dir.name == ".git"
 
 
+def test_service_without_startup_repository_discovers_repositories_from_panes(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    from agentmon import services
+
+    non_git = repository.root.parent / "scratch"
+    rows = (
+        f"%1\tdev:1.0\tscratch\t\t\t{non_git}\t\t1\tzsh\n"
+        f"%2\tdev:2.0\tproject\tcodex\tworking\t"
+        f"{repository.root}\tsession-id\t1\tcodex\n"
+    )
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+    monkeypatch.setattr(
+        services,
+        "_run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, rows, ""),
+    )
+    monkeypatch.setattr(
+        service,
+        "_git_common_dir",
+        lambda cwd: repository.common_dir if cwd == repository.root else None,
+    )
+    monkeypatch.setattr(
+        service,
+        "_repository_for_worktree",
+        lambda _cwd, _common_dir: repository,
+    )
+    monkeypatch.setattr(service, "for_repository", lambda _repo: service)
+    monkeypatch.setattr(service, "_branch_at", lambda _cwd: "main")
+    monkeypatch.setattr(service, "_prompt_preview", lambda _cwd: "Do it.")
+    monkeypatch.setattr(service, "_worktree_state", lambda _cwd: "dirty")
+
+    runs = service.runs()
+
+    assert service.repo is None
+    assert [run.repository for run in runs] == [None, repository]
+    assert [run.worktree_state for run in runs] == ["not-git", "dirty"]
+
+
+def test_service_without_any_repository_can_collect_non_git_windows(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import services
+
+    rows = f"%1\tdev:1.0\tscratch\t\t\t{tmp_path}\t\t1\tzsh\n"
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+    monkeypatch.setattr(
+        services,
+        "_run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, rows, ""),
+    )
+    monkeypatch.setattr(service, "_git_common_dir", lambda _cwd: None)
+
+    active = service.runs()
+
+    assert len(active) == 1
+    assert active[0].repository is None
+    assert service.recent_finished_all(active) == []
+
+
 def test_discovers_current_hmux_session_socket_without_warning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
