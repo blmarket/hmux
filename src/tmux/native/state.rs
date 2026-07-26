@@ -5410,9 +5410,9 @@ impl ServerState {
     pub fn select_window(&mut self, target: &str) -> io::Result<()> {
         let t = self.resolve_window_arg(target)?;
         let session_id = self.sessions[t.session].id;
-        let sess = &mut self.sessions[t.session];
-        if sess.active != t.window {
-            Self::select_window_position(sess, t.window);
+        if self.sessions[t.session].active != t.window {
+            Self::select_window_position(&mut self.sessions[t.session], t.window);
+            self.resize_active_window_to_session_size(t.session)?;
             self.invalidate_session(
                 session_id,
                 RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
@@ -5462,6 +5462,7 @@ impl ServerState {
             if self.sessions[session_pos].windows[position].alert_flags != 0 {
                 let session_id = self.sessions[session_pos].id;
                 Self::select_window_position(&mut self.sessions[session_pos], position);
+                self.resize_active_window_to_session_size(session_pos)?;
                 self.invalidate_session(
                     session_id,
                     RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
@@ -5640,6 +5641,7 @@ impl ServerState {
             (sess.active + n - 1) % n
         };
         Self::select_window_position(sess, next);
+        self.resize_active_window_to_session_size(pos)?;
         self.invalidate_session(
             session_id,
             RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
@@ -5667,6 +5669,7 @@ impl ServerState {
         {
             Some(last) => {
                 Self::select_window_position(sess, last);
+                self.resize_active_window_to_session_size(pos)?;
                 self.invalidate_session(
                     session_id,
                     RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
@@ -8118,6 +8121,15 @@ impl ServerState {
             .subscribe_output()
     }
 
+    fn resize_active_window_to_session_size(&mut self, session: usize) -> io::Result<()> {
+        let cols = self.sessions[session].cols;
+        let rows = self.sessions[session].rows;
+        let window_id = self.sessions[session].windows[self.sessions[session].active].id;
+        let window = self.windows.get_mut(&window_id).expect("window present");
+        window.layout.resize(cols, rows);
+        resize_panes_to_layout(window)
+    }
+
     /// Resize a session and its active pane to `cols`×`rows`.
     pub fn resize_session(&mut self, session_name: &str, cols: u16, rows: u16) -> io::Result<()> {
         let session = self.session_index(session_name).ok_or_else(|| {
@@ -8128,11 +8140,7 @@ impl ServerState {
         })?;
         self.sessions[session].cols = cols;
         self.sessions[session].rows = rows;
-        let win_idx = self.sessions[session].active;
-        let win = self.window_mut(session, win_idx);
-        win.layout.resize(cols, rows);
-        resize_panes_to_layout(win)?;
-        Ok(())
+        self.resize_active_window_to_session_size(session)
     }
 
     /// Send input bytes to the active pane of a session.
@@ -11459,6 +11467,29 @@ mod tests {
         assert_eq!(state.sessions().len(), 1);
         assert_eq!(state.sessions()[0].name, "0");
         assert!(state.summary_contains("0: 1 windows"));
+    }
+
+    #[test]
+    fn selecting_window_applies_the_sessions_current_size() {
+        let mut state = ServerState::with_test_session().expect("state");
+        state
+            .new_window("0", None, false)
+            .expect("create inactive window");
+        state.resize_session("0", 20, 4).expect("resize session");
+
+        assert_eq!(state.window(0, 0).panes[0].pane.size(), (20, 4));
+        assert_eq!(
+            state.window(0, 1).panes[0].pane.size(),
+            (80, 24),
+            "inactive window retains its previous size"
+        );
+
+        state.select_window("0:1").expect("select inactive window");
+        assert_eq!(
+            state.window(0, 1).panes[0].pane.size(),
+            (20, 4),
+            "selected window inherits the stored session viewport"
+        );
     }
 
     #[test]
