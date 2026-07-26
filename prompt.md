@@ -1,6 +1,6 @@
-See ./agentmon-tui
+At current window size, the dialog for creating a new agent run is quite
+insufficient - I see open prompt file button barely visible on the TUI, and
+bottom proceed button is not visible at all.
 
-Seems it's using textual with older version. Can we update it to be latest major
-version at least?
-
-If not possible, report why.
+Possibly overall UI layout has been changed due to recent library update. Can
+you check and see it can be fixed? At least UI components should be viewable.
