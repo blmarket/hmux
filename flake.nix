@@ -3,7 +3,7 @@
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
-  outputs = { nixpkgs, ... }:
+  outputs = { self, nixpkgs, ... }:
     let
       supportedSystems = [
         "aarch64-darwin"
@@ -21,12 +21,43 @@
             hash = "sha256-CTq06XP997M0ODxQihTq34dI9H6jSRLUXLYuTWOwDpc=";
           };
         };
+      agentmonFor = pkgs:
+        pkgs.python3Packages.buildPythonApplication {
+          pname = "hmux-agentmon";
+          version = "0.1.0";
+          pyproject = true;
+          src = ./agentmon-tui;
+
+          build-system = with pkgs.python3Packages; [
+            hatchling
+          ];
+          dependencies = with pkgs.python3Packages; [
+            textual
+          ];
+          nativeCheckInputs = [
+            pkgs.git
+            pkgs.python3Packages.pytestCheckHook
+          ];
+          pythonImportsCheck = [ "agentmon" ];
+          makeWrapperArgs = [
+            "--prefix"
+            "PATH"
+            ":"
+            (pkgs.lib.makeBinPath [
+              pkgs.git
+              pkgs.tmux
+            ])
+          ];
+
+          meta.mainProgram = "agentmon";
+        };
     in
     {
       packages = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
           tmux37b = tmux37bFor pkgs;
+          agentmon = agentmonFor pkgs;
           zigDeps = pkgs.callPackage ./ghostty-sys/vendor/libghostty-vt/build.zig.zon.nix {
             name = "libghostty-vt-zig-deps";
             linkFarm = name: entries:
@@ -64,10 +95,18 @@
           };
         in
         {
-          inherit hmux;
+          inherit agentmon hmux;
           tmux = tmux37b;
           default = hmux;
         });
+
+      apps = forAllSystems (system: {
+        agentmon = {
+          type = "app";
+          program = "${self.packages.${system}.agentmon}/bin/agentmon";
+          meta.description = "Create and monitor coding-agent runs through hmux";
+        };
+      });
 
       devShells = forAllSystems (system:
         let
