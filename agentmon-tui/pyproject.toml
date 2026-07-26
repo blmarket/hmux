@@ -5,7 +5,7 @@ description = "Create and monitor coding-agent runs in git worktrees through hmu
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "textual>=1.0,<2",
+    "textual>=8.0,<9",
 ]
 
 [dependency-groups]
