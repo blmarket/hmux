@@ -509,6 +509,74 @@ def test_history_button_is_not_clipped_by_history_table_styles() -> None:
     asyncio.run(exercise())
 
 
+def test_new_run_dialog_keeps_all_actions_visible_at_80x24() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(80, 24)) as pilot:
+            app.push_screen(NewRunScreen(branch="review-run", prompt="Review it.\n"))
+            await pilot.pause()
+
+            dialog = app.screen.query_one("#dialog")
+            assert dialog.region.right <= app.screen.region.right
+            assert dialog.region.bottom <= app.screen.region.bottom
+            for selector in ("#edit", "#history", "#continue", "#cancel"):
+                control = app.screen.query_one(selector, Button)
+                assert control.region.intersection(dialog.content_region) == control.region
+
+    asyncio.run(exercise())
+
+
+def test_short_dialogs_scroll_focused_actions_into_view() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(60, 18)) as pilot:
+            app.push_screen(NewRunScreen(branch="review-run", prompt="Review it.\n"))
+            await pilot.pause()
+
+            dialog = app.screen.query_one("#dialog")
+            assert dialog.region.right <= app.screen.region.right
+            await pilot.press("tab", "tab", "tab")
+            await pilot.pause()
+
+            continue_button = app.screen.query_one("#continue", Button)
+            assert continue_button.has_focus
+            assert dialog.scroll_offset.y > 0
+            assert (
+                continue_button.region.intersection(dialog.content_region)
+                == continue_button.region
+            )
+
+    asyncio.run(exercise())
+
+
+def test_history_dialog_scrolls_bottom_action_into_view() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(80, 24)) as pilot:
+            app.push_screen(HistoryScreen())
+            await pilot.pause()
+
+            await pilot.press("tab")
+            await pilot.pause()
+
+            dialog = app.screen.query_one("#dialog")
+            use_button = app.screen.query_one("#use", Button)
+            assert use_button.has_focus
+            assert dialog.scroll_offset.y > 0
+            assert use_button.region.intersection(dialog.content_region) == use_button.region
+
+    asyncio.run(exercise())
+
+
 def test_refresh_runs_gathers_status_off_the_event_loop() -> None:
     """Regression: the dashboard refresh must not run the blocking hmux/git scans
     on the event-loop thread, or keypresses stall for the duration of every

@@ -508,21 +508,29 @@ class NewRunScreen(Screen):
         return self.app.service.for_repository(self.repository)
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="dialog"):
+        with VerticalScroll(id="dialog", classes="new-run"):
             yield Label("New run", classes="dialog-title")
             yield Label(f"Repository     {self.service.repo.root}")
-            yield Label("Agent")
-            yield Select(
-                [(label, agent) for agent, label in LAUNCH_AGENT_LABELS.items()],
-                value=self.initial_agent,
-                allow_blank=False,
-                id="agent",
-            )
-            yield Label("Branch")
-            yield Input(
-                value=self.initial_branch, placeholder="feature-name", id="branch",
-                disabled=self.restart_draft is not None,
-            )
+            with Horizontal(id="draft-fields"):
+                with Vertical(classes="draft-field"):
+                    yield Label("Agent")
+                    yield Select(
+                        [
+                            (label, agent)
+                            for agent, label in LAUNCH_AGENT_LABELS.items()
+                        ],
+                        value=self.initial_agent,
+                        allow_blank=False,
+                        id="agent",
+                    )
+                with Vertical(classes="draft-field"):
+                    yield Label("Branch")
+                    yield Input(
+                        value=self.initial_branch,
+                        placeholder="feature-name",
+                        id="branch",
+                        disabled=self.restart_draft is not None,
+                    )
             yield Static("Worktree       —", id="worktree")
             yield Static("Prompt         Not written", id="prompt-status")
             with Horizontal(classes="buttons"):
@@ -661,7 +669,7 @@ class CleanupScreen(Screen):
         self.run = run
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="dialog"):
+        with VerticalScroll(id="dialog"):
             yield Label(f"Clean up {self.run.branch}?", classes="dialog-title")
             yield Static(
                 f"Remove registered worktree\n  {self.run.worktree}\n\n"
@@ -713,7 +721,7 @@ class HistoryScreen(Screen[PromptHistory | None]):
         self.repository = repository
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="dialog", classes="wide"):
+        with VerticalScroll(id="dialog", classes="wide"):
             yield Label("Choose a historical prompt as a template", classes="dialog-title")
             yield HistorySearchInput(placeholder="Filter by commit, run, or prompt text", id="search")
             yield NavigableDataTable(id="history", cursor_type="row", zebra_stripes=True)
@@ -823,7 +831,7 @@ class ConfirmScreen(Screen):
             if self.draft.existing_branch
             else "  1. Create branch and worktree\n"
         )
-        with Vertical(id="dialog", classes="wide"):
+        with VerticalScroll(id="dialog", classes="wide"):
             yield Label(f"Launch {self.draft.branch}?", classes="dialog-title")
             yield Static(
                 f"Repository     {self.service.repo.root}\n"
@@ -1061,17 +1069,21 @@ class AgentmonApp(App):
     #transcript-meta { height: auto; min-height: 3; padding: 1 2; color: #8ec8ff; }
     #transcript-scroll { height: 1fr; }
     #transcript-content { height: auto; padding: 1 2 2 2; }
-    #dialog { width: 72; height: auto; max-height: 90%; margin: 2 4; padding: 1 2;
+    #dialog { width: 72; height: auto; max-width: 100%; max-height: 100%;
+              margin: 1 2; padding: 1 2;
               border: round #6aa9d8; background: #171d24; }
     #dialog.wide { width: 92; }
+    #dialog.new-run { scrollbar-size: 1 1; }
     .dialog-title { height: 2; color: #ffffff; text-style: bold; }
+    #draft-fields { height: 4; }
+    #draft-fields .draft-field { width: 1fr; }
     .buttons { height: 3; margin-top: 0; }
     .buttons Button { margin-right: 1; }
     .buttons .dialog-action { background: #293440; color: #d7dde5; text-style: none; }
     .buttons .dialog-action:hover { background: #354555; color: #ffffff; }
     .buttons .dialog-action:focus { background: #3f8fc4; color: #ffffff; text-style: bold; }
     .buttons .dialog-action:disabled { background: #202832; color: #65717e; text-style: none; }
-    #worktree, #prompt-status { min-height: 2; margin-top: 1; }
+    #worktree, #prompt-status { min-height: 2; }
     #error { min-height: 1; }
     #error.guidance { color: #8492a0; }
     #error.validation-error { color: #ff6b6b; }
