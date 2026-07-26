@@ -20,6 +20,8 @@
             tag = "3.7b";
             hash = "sha256-CTq06XP997M0ODxQihTq34dI9H6jSRLUXLYuTWOwDpc=";
           };
+          # remove patches specified in pkgs.tmux
+          patches = [ ];
         };
       agentmonFor = pkgs:
         pkgs.python3Packages.buildPythonApplication {
