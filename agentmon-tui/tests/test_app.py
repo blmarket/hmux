@@ -4,7 +4,7 @@ import asyncio
 import threading
 from pathlib import Path
 
-from textual.widgets import Button, DataTable, Input, Select, Static
+from textual.widgets import Button, DataTable, Input, Label, Select, Static
 
 from agentmon.app import (
     AgentmonApp,
@@ -232,6 +232,64 @@ def test_dashboard_groups_runs_from_multiple_repositories() -> None:
 
             await pilot.press("j")
             assert table.cursor_row == 3
+
+    asyncio.run(exercise())
+
+
+def test_new_run_uses_repository_selected_on_dashboard() -> None:
+    async def exercise() -> None:
+        startup = Repository(
+            root=Path("/srv/hmux/hmux"),
+            common_dir=Path("/srv/hmux/.git/modules/hmux"),
+            branch="main",
+        )
+        selected = Repository(
+            root=Path("/srv/hmux"),
+            common_dir=Path("/srv/hmux/.git"),
+            branch="master",
+        )
+        service = DemoService(startup, socket="/tmp/demo")
+        runs = [
+            AgentRun(
+                "%1",
+                "dev:1.0",
+                "master",
+                "none",
+                "window",
+                selected.root,
+                worktree_state="dirty",
+                repository=selected,
+            )
+        ]
+        service.runs = lambda: runs  # type: ignore[method-assign]
+        service.recent_finished_all = lambda _active: []  # type: ignore[method-assign]
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(120, 24)) as pilot:
+            await pilot.pause()
+            dashboard = app.screen
+            assert isinstance(dashboard, DashboardScreen)
+            table = dashboard.query_one("#runs", DataTable)
+            assert "▾ hmux  /srv/hmux" in str(table.get_row_at(1)[0])
+
+            table.move_cursor(row=1)
+            dashboard._apply_runs(runs)
+            assert table.cursor_row == 1
+
+            await pilot.press("n")
+            await pilot.pause()
+
+            screen = app.screen
+            assert isinstance(screen, NewRunScreen)
+            assert screen.service.repo == selected
+            labels = [str(label.render()) for label in screen.query(Label)]
+            assert "Repository     /srv/hmux" in labels
+
+            screen.query_one("#branch", Input).value = "review-fix"
+            screen._update_summary()
+            assert "Worktree       /srv/review-fix" in str(
+                screen.query_one("#worktree", Static).render()
+            )
 
     asyncio.run(exercise())
 

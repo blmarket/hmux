@@ -151,6 +151,7 @@ class DashboardScreen(Screen):
         self._transcript_session_id: str | None = None
         self._transcript_signature: tuple[object, ...] | None = None
         self._row_runs: list[AgentRun | None] = []
+        self._row_repositories: list[Repository | None] = []
         table = self.query_one("#runs", DataTable)
         table.add_column("WORKTREE", width=36)
         table.add_column("GIT", width=12)
@@ -178,11 +179,22 @@ class DashboardScreen(Screen):
     def _apply_runs(self, runs: list[AgentRun]) -> None:
         selected = self._selected_run()
         selected_pane = selected.pane_id if selected is not None else None
-        self.app.runs = runs
         table = self.query_one("#runs", NavigableDataTable)
+        selected_repository = (
+            self._selected_repository()
+            if table.cursor_row in table.repository_rows
+            else None
+        )
+        selected_repository_key = (
+            selected_repository.common_dir
+            if selected_repository is not None
+            else None
+        )
+        self.app.runs = runs
         table.clear()
         table.repository_rows.clear()
         self._row_runs = []
+        self._row_repositories = []
 
         grouped: dict[Path | None, tuple[Repository | None, list[AgentRun]]] = {
             self.app.service.repo.common_dir: (self.app.service.repo, [])
@@ -216,6 +228,13 @@ class DashboardScreen(Screen):
                 key=f"repository:{group_index}",
             )
             self._row_runs.append(None)
+            self._row_repositories.append(repository)
+            if (
+                selected_pane is None
+                and key is not None
+                and key == selected_repository_key
+            ):
+                selected_row = repository_row
 
             for index, run in enumerate(repository_runs):
                 counts[run.state] = counts.get(run.state, 0) + 1
@@ -237,6 +256,7 @@ class DashboardScreen(Screen):
                 )
                 row = len(self._row_runs)
                 self._row_runs.append(run)
+                self._row_repositories.append(run.repository)
                 if first_worktree_row is None:
                     first_worktree_row = row
                 if run.pane_id == selected_pane:
@@ -266,6 +286,7 @@ class DashboardScreen(Screen):
         self.app.runs = []
         self.query_one("#runs", DataTable).clear()
         self._row_runs = []
+        self._row_repositories = []
         self.query_one("#title", Static).update("agentmon    disconnected")
         self._set_notice(f"Could not read hmux: {message}")
         self._clear_transcript("Agent runs are unavailable while hmux is disconnected.")
@@ -276,6 +297,13 @@ class DashboardScreen(Screen):
         if row >= len(self._row_runs):
             return None
         return self._row_runs[row]
+
+    def _selected_repository(self) -> Repository | None:
+        table = self.query_one("#runs", DataTable)
+        row = table.cursor_row
+        if row >= len(self._row_repositories):
+            return None
+        return self._row_repositories[row]
 
     def _clear_transcript(self, message: str) -> None:
         self._transcript_session_id = None
@@ -419,7 +447,7 @@ class DashboardScreen(Screen):
         self.refresh_runs()
 
     def action_new_run(self) -> None:
-        self.app.push_screen(NewRunScreen())
+        self.app.push_screen(NewRunScreen(repository=self._selected_repository()))
 
     def action_populate_run(self) -> None:
         run = self._selected_run()
