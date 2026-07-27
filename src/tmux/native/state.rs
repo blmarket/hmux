@@ -11216,8 +11216,13 @@ fn append_copy_cells(
         return;
     }
     for cell in &grid.rows[row].cells[from..to] {
-        if copy_cell_is_padding(cell) {
-            continue;
+        match cell.width {
+            ghostty_sys::GridCellWidth::SpacerTail => continue,
+            ghostty_sys::GridCellWidth::SpacerHead => {
+                output.push(' ');
+                continue;
+            }
+            ghostty_sys::GridCellWidth::Narrow | ghostty_sys::GridCellWidth::Wide => {}
         }
         if cell.text.is_empty() {
             output.push(' ');
