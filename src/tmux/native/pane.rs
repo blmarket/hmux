@@ -240,6 +240,29 @@ impl PaneInputStats {
 }
 
 impl OutputSubscription {
+    /// Subscribe one consumer wakeup to every pane currently displayed in a
+    /// window. The active pane supplies the optional latency timestamp, while
+    /// output from any pane wakes the compositor.
+    pub(crate) fn for_panes<'a>(
+        panes: impl IntoIterator<Item = &'a Pane>,
+        active_pane: &Pane,
+    ) -> io::Result<Self> {
+        let event = Arc::new(OutputEvent {
+            wakeup: CurrentPlatform::new_output_wakeup()?,
+        });
+        for pane in panes {
+            pane.observation.register_output_event(&event)?;
+        }
+        Ok(Self {
+            event,
+            output_timing: active_pane
+                .observation
+                .output_timing
+                .as_ref()
+                .map(Arc::clone),
+        })
+    }
+
     pub(crate) fn as_raw_fd(&self) -> c_int {
         self.event.wakeup.as_fd().as_raw_fd()
     }
@@ -330,16 +353,21 @@ impl NativePaneObservation {
         });
     }
 
+    fn register_output_event(&self, event: &Arc<OutputEvent>) -> io::Result<()> {
+        self.output_waiters
+            .lock()
+            .map_err(|_| io::Error::other("pane output waiters mutex poisoned"))?
+            .push(Arc::downgrade(event));
+        Ok(())
+    }
+
     pub(crate) fn subscribe_output(&self) -> io::Result<OutputSubscription> {
         // Start signalled so a subscriber performs one state scan and cannot
         // miss output or a terminal query queued just before registration.
         let event = Arc::new(OutputEvent {
             wakeup: CurrentPlatform::new_output_wakeup()?,
         });
-        self.output_waiters
-            .lock()
-            .map_err(|_| io::Error::other("pane output waiters mutex poisoned"))?
-            .push(Arc::downgrade(&event));
+        self.register_output_event(&event)?;
         Ok(OutputSubscription {
             event,
             output_timing: self.output_timing.as_ref().map(Arc::clone),
@@ -750,6 +778,7 @@ impl Pane {
         Arc::clone(&self.observation)
     }
 
+    #[cfg(test)]
     pub(crate) fn subscribe_output(&self) -> io::Result<OutputSubscription> {
         self.observation.subscribe_output()
     }

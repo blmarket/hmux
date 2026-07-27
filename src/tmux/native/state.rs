@@ -7965,15 +7965,23 @@ impl ServerState {
         Some(self.window(session, sess.active).active)
     }
 
-    /// Stable identity of the pane currently displayed for `session_name`.
-    /// Attach clients use this to notice active-pane changes made by another
-    /// command connection or by reaping an exited pane.
-    pub(crate) fn active_pane_identity(&self, session_name: &str) -> Option<(u32, u64)> {
+    /// Stable identities for every pane displayed in the active window plus
+    /// the active pane's position. Attach clients use this as the key for their
+    /// shared compositor-output subscription.
+    pub(crate) fn active_window_pane_identities(
+        &self,
+        session_name: &str,
+    ) -> Option<(Vec<(u32, u64)>, usize)> {
         let session = self.session_index(session_name)?;
         let sess = &self.sessions[session];
         let win = self.window(session, sess.active);
-        let pane = win.panes.get(win.active)?;
-        Some((pane.id, pane.pane.runtime_id()))
+        Some((
+            win.panes
+                .iter()
+                .map(|pane| (pane.id, pane.pane.runtime_id()))
+                .collect(),
+            win.active,
+        ))
     }
 
     pub(crate) fn control_snapshot(&self, session_name: &str) -> Option<ControlStateSnapshot> {
@@ -8112,6 +8120,7 @@ impl ServerState {
         (self.next_control_checkpoint, snapshots)
     }
 
+    #[cfg(test)]
     pub(crate) fn subscribe_active_pane_output(
         &self,
         session_name: &str,
@@ -8119,6 +8128,21 @@ impl ServerState {
         self.active_pane(session_name)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no active pane"))?
             .subscribe_output()
+    }
+
+    pub(crate) fn subscribe_active_window_output(
+        &self,
+        session_name: &str,
+    ) -> io::Result<super::pane::OutputSubscription> {
+        let (window, active) = self.active_window_panes(session_name)?;
+        let active_pane = window
+            .panes
+            .get(active)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no active pane"))?;
+        super::pane::OutputSubscription::for_panes(
+            window.panes.iter().map(|pane| &pane.pane),
+            &active_pane.pane,
+        )
     }
 
     fn resize_active_window_to_session_size(&mut self, session: usize) -> io::Result<()> {

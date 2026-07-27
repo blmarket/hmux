@@ -2688,48 +2688,54 @@ fn wait_for_attach_events(
     Err(error)
 }
 
-/// Return the current active pane's stable id and a notification subscription
-/// while the caller holds one coherent server-state snapshot.
-fn active_pane_subscription(
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ActiveWindowOutputKey {
+    panes: Vec<(u32, u64)>,
+    active: usize,
+}
+
+/// Return the active window's stable pane set and one notification subscription
+/// shared by all panes the compositor displays.
+fn active_window_output_subscription(
     state: &ServerState,
     session: &str,
-) -> io::Result<(u32, u64, OutputSubscription)> {
-    let (pane_id, runtime_id) = state.active_pane_identity(session).ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("no active pane for session: {session}"),
-        )
-    })?;
-    let subscription = state.subscribe_active_pane_output(session)?;
-    Ok((pane_id, runtime_id, subscription))
+) -> io::Result<(ActiveWindowOutputKey, OutputSubscription)> {
+    let (panes, active) = state
+        .active_window_pane_identities(session)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("no active window for session: {session}"),
+            )
+        })?;
+    let subscription = state.subscribe_active_window_output(session)?;
+    Ok((ActiveWindowOutputKey { panes, active }, subscription))
 }
 
 /// Replace `subscription` when another command client or pane reaping changed
-/// the active pane. Returns true when the caller must redraw and ignore any
-/// readiness reported for the old platform wakeup.
-fn refresh_active_pane_subscription(
+/// the active window's pane set or selection. Returns true when the caller must
+/// redraw and ignore readiness reported for the old platform wakeup.
+fn refresh_active_window_output_subscription(
     state: &Arc<Mutex<ServerState>>,
     session: &str,
-    subscribed_pane_id: &mut u32,
-    subscribed_runtime_id: &mut u64,
+    subscribed_window: &mut ActiveWindowOutputKey,
     subscription: &mut OutputSubscription,
 ) -> io::Result<bool> {
     let st = state
         .lock()
         .map_err(|_| io::Error::other("state poisoned"))?;
-    let (active_pane_id, active_runtime_id) =
-        st.active_pane_identity(session).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("no active pane for session: {session}"),
-            )
-        })?;
-    if active_pane_id == *subscribed_pane_id && active_runtime_id == *subscribed_runtime_id {
+    let (panes, active) = st.active_window_pane_identities(session).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("no active window for session: {session}"),
+        )
+    })?;
+    let current = ActiveWindowOutputKey { panes, active };
+    if current == *subscribed_window {
         return Ok(false);
     }
-    let new_subscription = st.subscribe_active_pane_output(session)?;
-    *subscribed_pane_id = active_pane_id;
-    *subscribed_runtime_id = active_runtime_id;
+    let new_subscription = st.subscribe_active_window_output(session)?;
+    *subscribed_window = current;
     *subscription = new_subscription;
     Ok(true)
 }
@@ -3336,11 +3342,11 @@ where
         );
     }
     let mut last_render: Vec<u8> = Vec::new();
-    let (mut subscribed_pane_id, mut subscribed_runtime_id, mut output_subscription) = {
+    let (mut subscribed_window, mut output_subscription) = {
         let st = state
             .lock()
             .map_err(|_| io::Error::other("state poisoned"))?;
-        active_pane_subscription(&st, target)?
+        active_window_output_subscription(&st, target)?
     };
     // Track what DECTCEM state we have actually sent to the outer terminal.
     // Synchronized terminals can omit a frame's defensive hide/show pair
@@ -3432,11 +3438,10 @@ where
         // Reaping an exited pane can select a survivor without going through
         // the prefix-key path. Refresh before blocking so the next output wake
         // always belongs to the pane we are about to compose.
-        if refresh_active_pane_subscription(
+        if refresh_active_window_output_subscription(
             state,
             target,
-            &mut subscribed_pane_id,
-            &mut subscribed_runtime_id,
+            &mut subscribed_window,
             &mut output_subscription,
         )? {
             last_render.clear();
@@ -3713,11 +3718,10 @@ where
         // is blocked in poll. Tty input or an old-pane notification wakes us;
         // replace the stale subscription before attributing output or sending
         // that input to the newly active pane.
-        if refresh_active_pane_subscription(
+        if refresh_active_window_output_subscription(
             state,
             target,
-            &mut subscribed_pane_id,
-            &mut subscribed_runtime_id,
+            &mut subscribed_window,
             &mut output_subscription,
         )? {
             output_ready = false;
@@ -3728,8 +3732,9 @@ where
         if output_ready {
             output_subscription.drain();
             status_cache.invalidate();
-            // The active pane's echo just landed in the grid; mark it so the
-            // upcoming compose is timed against the keystroke that caused it.
+            // If this wake came from the active pane, mark its latest output so
+            // the upcoming compose is timed against the keystroke that caused
+            // it. Background-pane wakes have no newer active timestamp.
             latmon.on_output(output_subscription.last_output_at());
         }
 
@@ -4692,11 +4697,8 @@ where
             let st = state
                 .lock()
                 .map_err(|_| io::Error::other("state poisoned"))?;
-            (
-                subscribed_pane_id,
-                subscribed_runtime_id,
-                output_subscription,
-            ) = active_pane_subscription(&st, target)?;
+            (subscribed_window, output_subscription) =
+                active_window_output_subscription(&st, target)?;
         }
 
         // 4. Render only when pane output or a layout/input action requests it.
@@ -6753,6 +6755,7 @@ fn write_all(fd: RawFd, mut data: &[u8]) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::super::pane::Pane;
+    use super::super::state::PaneSpec;
     use super::*;
 
     #[test]
@@ -7417,14 +7420,18 @@ mod tests {
         *pane = Pane::inert(cols, rows).expect("replace live pane with inert fixture");
     }
 
+    fn subscribed_active_identity(key: &ActiveWindowOutputKey) -> (u32, u64) {
+        key.panes[key.active]
+    }
+
     #[test]
     fn output_subscription_follows_external_active_window_change() {
         let state = fresh_state();
-        let (mut pane_id, mut runtime_id, mut subscription) = {
+        let (mut subscribed_window, mut subscription) = {
             let st = state.lock().unwrap();
-            active_pane_subscription(&st, "0").expect("initial subscription")
+            active_window_output_subscription(&st, "0").expect("initial subscription")
         };
-        let original_pane_id = pane_id;
+        let original_pane_id = subscribed_active_identity(&subscribed_window).0;
 
         // Model a separate tmux command connection selecting a newly-created
         // window while this attach loop is blocked on the original pane.
@@ -7435,27 +7442,28 @@ mod tests {
             .expect("external new-window");
 
         assert!(
-            refresh_active_pane_subscription(
+            refresh_active_window_output_subscription(
                 &state,
                 "0",
-                &mut pane_id,
-                &mut runtime_id,
+                &mut subscribed_window,
                 &mut subscription,
             )
             .expect("refresh subscription"),
             "the attach loop must replace a subscription to the old pane"
         );
-        assert_ne!(pane_id, original_pane_id);
+        assert_ne!(
+            subscribed_active_identity(&subscribed_window).0,
+            original_pane_id
+        );
         assert!(
-            !refresh_active_pane_subscription(
+            !refresh_active_window_output_subscription(
                 &state,
                 "0",
-                &mut pane_id,
-                &mut runtime_id,
+                &mut subscribed_window,
                 &mut subscription,
             )
             .expect("stable subscription"),
-            "an unchanged active pane must keep its existing subscription"
+            "an unchanged active-window pane set must keep its existing subscription"
         );
 
         // Closing the selected window chooses the survivor. This is the other
@@ -7467,40 +7475,96 @@ mod tests {
             .kill_window("0:1")
             .expect("close selected window");
         assert!(
-            refresh_active_pane_subscription(
+            refresh_active_window_output_subscription(
                 &state,
                 "0",
-                &mut pane_id,
-                &mut runtime_id,
+                &mut subscribed_window,
                 &mut subscription,
             )
             .expect("refresh survivor subscription"),
             "closing the selected window must subscribe to its survivor"
         );
-        assert_eq!(pane_id, original_pane_id);
+        assert_eq!(
+            subscribed_active_identity(&subscribed_window).0,
+            original_pane_id
+        );
     }
 
     #[test]
     fn output_subscription_follows_respawned_runtime_with_same_pane_id() {
         let state = fresh_state();
-        let (mut pane_id, mut runtime_id, mut subscription) = {
+        let (mut subscribed_window, mut subscription) = {
             let st = state.lock().unwrap();
-            active_pane_subscription(&st, "0").expect("initial subscription")
+            active_window_output_subscription(&st, "0").expect("initial subscription")
         };
-        let original_pane_id = pane_id;
-        let original_runtime_id = runtime_id;
+        let (original_pane_id, original_runtime_id) =
+            subscribed_active_identity(&subscribed_window);
         replace_active_pane_with_inert(&mut state.lock().unwrap());
 
-        assert!(refresh_active_pane_subscription(
+        assert!(refresh_active_window_output_subscription(
             &state,
             "0",
-            &mut pane_id,
-            &mut runtime_id,
+            &mut subscribed_window,
             &mut subscription,
         )
         .expect("refresh respawned runtime"));
+        let (pane_id, runtime_id) = subscribed_active_identity(&subscribed_window);
         assert_eq!(pane_id, original_pane_id);
         assert_ne!(runtime_id, original_runtime_id);
+    }
+
+    #[test]
+    fn output_subscription_wakes_for_visible_inactive_pane() {
+        let state = fresh_state();
+        let (mut subscribed_window, mut subscription) = {
+            let st = state.lock().unwrap();
+            active_window_output_subscription(&st, "0").expect("initial subscription")
+        };
+        state
+            .lock()
+            .unwrap()
+            .split_window_direction_with_spec(
+                "0",
+                false,
+                false,
+                super::super::state::SplitDirection::TopBottom,
+                PaneSpec::Inert,
+            )
+            .expect("split inactive pane");
+
+        assert!(refresh_active_window_output_subscription(
+            &state,
+            "0",
+            &mut subscribed_window,
+            &mut subscription,
+        )
+        .expect("refresh split subscription"));
+        assert_eq!(subscribed_window.panes.len(), 2);
+        subscription.drain();
+
+        {
+            let st = state.lock().unwrap();
+            let (window, active) = st.active_window_panes("0").expect("active window");
+            let inactive = window
+                .panes
+                .iter()
+                .enumerate()
+                .find(|(index, _)| *index != active)
+                .map(|(_, pane)| pane)
+                .expect("inactive pane");
+            inactive.pane.feed(b"BACKGROUND");
+        }
+
+        let mut pollfd = libc::pollfd {
+            fd: subscription.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        assert_eq!(
+            unsafe { libc::poll(&mut pollfd, 1, 100) },
+            1,
+            "inactive pane output must wake the shared compositor subscription"
+        );
     }
 
     /// (window count, active window index, active window's pane count) for
