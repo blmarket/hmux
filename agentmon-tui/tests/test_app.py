@@ -238,6 +238,27 @@ def test_dashboard_groups_runs_from_multiple_repositories() -> None:
     asyncio.run(exercise())
 
 
+def test_dashboard_shows_startup_repository_when_there_are_no_runs() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        service = DemoService(repo, socket="/tmp/demo")
+        service.runs = lambda: []  # type: ignore[method-assign]
+        service.recent_finished_all = lambda _active: []  # type: ignore[method-assign]
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(120, 24)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            assert table.row_count == 1
+            assert "▾ project  /demo/project" in str(table.get_row_at(0)[0])
+            assert "No agent runs found" in str(
+                app.screen.query_one("#notice", Static).render()
+            )
+
+    asyncio.run(exercise())
+
+
 def test_new_run_uses_repository_selected_on_dashboard() -> None:
     async def exercise() -> None:
         startup = Repository(

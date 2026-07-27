@@ -210,6 +210,9 @@ class DashboardScreen(Screen):
         first_worktree_row: int | None = None
         for group_index, (repository, repository_runs) in enumerate(grouped.values()):
             repository_row = len(self._row_runs)
+            repository_key = (
+                repository.common_dir if repository is not None else None
+            )
             table.repository_rows.add(repository_row)
             if repository is None:
                 group_label = Text("▾ non-Git windows", style="bold #8ec8ff")
@@ -232,8 +235,8 @@ class DashboardScreen(Screen):
             self._row_repositories.append(repository)
             if (
                 selected_pane is None
-                and key is not None
-                and key == selected_repository_key
+                and repository_key is not None
+                and repository_key == selected_repository_key
             ):
                 selected_row = repository_row
 
