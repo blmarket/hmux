@@ -1810,22 +1810,46 @@ fn bind_key(args: &[String], st: &mut ServerState) -> CommandResult {
 
 /// unbind-key [-anq] [-T table] key.
 fn unbind_key(args: &[String], st: &mut ServerState) -> CommandResult {
-    let table = if has_flag(args, "-n") {
-        "root"
-    } else {
-        flag_value(args, "-T").unwrap_or("prefix")
+    let quiet = has_flag(args, "-q");
+    let error = |message| {
+        if quiet {
+            CommandResult::err("")
+        } else {
+            CommandResult::err(message)
+        }
     };
     let key_name = positionals(args, &["-T"]).into_iter().next();
-    let key = match key_name {
-        Some(name) => match parse_key_name(name).filter(|key| key.is_bindable()) {
-            Some(key) => Some(key),
-            None if has_flag(args, "-q") => return CommandResult::err(""),
-            None => return CommandResult::err(format!("unknown key: {name}\n")),
-        },
-        None => None,
+    let table = flag_value(args, "-T").unwrap_or_else(|| {
+        if has_flag(args, "-n") {
+            "root"
+        } else {
+            "prefix"
+        }
+    });
+
+    if has_flag(args, "-a") {
+        if key_name.is_some() {
+            return error("key given with -a\n".to_string());
+        }
+        if !st.key_table_exists(table) {
+            return error(format!("table {table} doesn't exist\n"));
+        }
+        st.unbind_key(table, None, true);
+        return CommandResult::ok("");
+    }
+
+    let Some(key_name) = key_name else {
+        return error("missing key\n".to_string());
     };
-    // tmux treats an unbound key as a successful no-op. -a clears the table.
-    st.unbind_key(table, key, has_flag(args, "-a"));
+    let Some(key) = parse_key_name(key_name).filter(|key| key.is_bindable()) else {
+        return error(format!("unknown key: {key_name}\n"));
+    };
+    if flag_value(args, "-T").is_some() && !st.key_table_exists(table) {
+        return error(format!("table {table} doesn't exist\n"));
+    }
+
+    // tmux treats an unbound key in an existing table as a successful no-op.
+    st.unbind_key(table, Some(key), false);
     CommandResult::ok("")
 }
 
@@ -7480,6 +7504,36 @@ mod tests {
             run_str(&st, &["list-keys", "-q", "-T", "foo", "F1"]).stdout,
             ""
         );
+    }
+
+    #[test]
+    fn unbind_key_validates_all_key_and_explicit_table_forms() {
+        let st = state();
+
+        let key_with_all = run_str(&st, &["unbind-key", "-a", "F1"]);
+        assert_eq!(key_with_all.exit, 1);
+        assert_eq!(key_with_all.stderr, "key given with -a\n");
+
+        let missing_key = run_str(&st, &["unbind-key"]);
+        assert_eq!(missing_key.exit, 1);
+        assert_eq!(missing_key.stderr, "missing key\n");
+
+        for args in [
+            &["unbind-key", "-a", "-T", "absent-table"][..],
+            &["unbind-key", "-T", "absent-table", "F1"][..],
+        ] {
+            let missing_table = run_str(&st, args);
+            assert_eq!(missing_table.exit, 1);
+            assert_eq!(missing_table.stderr, "table absent-table doesn't exist\n");
+        }
+    }
+
+    #[test]
+    fn unbind_key_quiet_keeps_validation_failure_status() {
+        let st = state();
+        let result = run_str(&st, &["unbind-key", "-q"]);
+        assert_eq!(result.exit, 1);
+        assert_eq!(result.stderr, "");
     }
 
     #[test]
