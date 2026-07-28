@@ -6281,16 +6281,38 @@ fn compose_split_frame(
                 left_owner.is_some() && right_owner.is_some() && left_owner != right_owner;
             let horizontal =
                 above_owner.is_some() && below_owner.is_some() && above_owner != below_owner;
-            if !vertical && !horizontal {
-                continue;
-            }
 
-            let mut cell = if vertical && horizontal {
-                "┼"
-            } else if vertical {
-                "│"
-            } else {
-                "─"
+            // A separator can terminate into another separator, leaving the
+            // junction cell with no pane owner directly above or below it.
+            // The four surrounding pane quadrants reveal those side arms.
+            let separates = |first: Option<u32>, second: Option<u32>| {
+                first.is_some() && second.is_some() && first != second
+            };
+            let upper_left = x
+                .checked_sub(1)
+                .and_then(|px| y.checked_sub(1).and_then(|py| owner(px, py)));
+            let upper_right = x
+                .checked_add(1)
+                .and_then(|px| y.checked_sub(1).and_then(|py| owner(px, py)));
+            let lower_left = x
+                .checked_sub(1)
+                .and_then(|px| y.checked_add(1).and_then(|py| owner(px, py)));
+            let lower_right = x
+                .checked_add(1)
+                .and_then(|px| y.checked_add(1).and_then(|py| owner(px, py)));
+            let up = vertical || separates(upper_left, upper_right);
+            let right = horizontal || separates(upper_right, lower_right);
+            let down = vertical || separates(lower_left, lower_right);
+            let left = horizontal || separates(upper_left, lower_left);
+            let mut cell = match (up, right, down, left) {
+                (true, false, true, false) => "│",
+                (false, true, false, true) => "─",
+                (true, true, true, false) => "├",
+                (true, false, true, true) => "┤",
+                (false, true, true, true) => "┬",
+                (true, true, false, true) => "┴",
+                (true, true, true, true) => "┼",
+                _ => continue,
             };
             if indicators && vertical {
                 let pair = (left_owner, right_owner);
@@ -7655,6 +7677,21 @@ mod tests {
                 "split key {key:?} must draw a pane boundary"
             );
         }
+    }
+
+    #[test]
+    fn mixed_splits_compose_a_t_junction() {
+        let state = fresh_state();
+        dispatch_prefix_key(b'%', &state, "0", 20, 8);
+        dispatch_prefix_key(b'"', &state, "0", 20, 8);
+
+        let st = state.lock().unwrap();
+        let frame = compose_frame(&st, "0", 20, 9, 1, 0).expect("compose mixed splits");
+
+        assert!(
+            contains_seq(&frame, "\x1b[5;11H├".as_bytes()),
+            "mixed split boundary must join at a T: {frame:?}"
+        );
     }
 
     #[test]
