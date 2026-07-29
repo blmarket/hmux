@@ -1483,6 +1483,12 @@ fn parse_command_groups(groups: Vec<&[String]>) -> Result<Vec<ParsedCommand>, Co
                     command.name
                 )));
             }
+            if let Some(flag) = missing_flag_value(group, getopt) {
+                return Err(CommandResult::err(format!(
+                    "command {}: -{flag} expects an argument\n",
+                    command.name
+                )));
+            }
         }
     }
 
@@ -4847,7 +4853,9 @@ fn move_pane(args: &[String], st: &mut ServerState) -> CommandResult {
     let src = flag_value(args, "-s")
         .map(str::to_string)
         .or_else(|| current_session(st));
-    let dst = flag_value(args, "-t").map(str::to_string);
+    let dst = flag_value(args, "-t")
+        .map(str::to_string)
+        .or_else(|| current_session(st));
     let before = has_flag(args, "-b");
     match (src, dst) {
         (Some(s), Some(d)) => match st.move_pane(&s, &d, before) {
@@ -6919,6 +6927,44 @@ fn unknown_flag(args: &[String], spec: &str) -> Option<char> {
                     }
                     break;
                 }
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Return the first value-taking flag that has no attached or following value.
+///
+/// This runs after [`unknown_flag`], so every option letter is known. Like
+/// getopt, a following option-looking token is still the value; only reaching
+/// the end of argv is an error.
+fn missing_flag_value(args: &[String], spec: &str) -> Option<char> {
+    let mut i = 1;
+    while i < args.len() {
+        let argument = args[i].as_str();
+        if argument == "--" {
+            break;
+        }
+        if !argument.starts_with('-') || argument == "-" {
+            break;
+        }
+        let cluster = &argument[1..];
+        let bytes = cluster.as_bytes();
+        let mut j = 0;
+        while j < bytes.len() {
+            let flag = bytes[j] as char;
+            match registry::flag_kind(spec, flag) {
+                Some(true) => {
+                    if j + 1 == bytes.len() {
+                        if i + 1 == args.len() {
+                            return Some(flag);
+                        }
+                        i += 1;
+                    }
+                    break;
+                }
+                _ => j += 1,
             }
         }
         i += 1;
@@ -9093,6 +9139,26 @@ mod tests {
     }
 
     #[test]
+    fn move_window_session_only_destination_uses_lowest_free_index() {
+        let st = state();
+        run_str(&st, &["new-window", "-t", "0:2"]);
+        assert_eq!(
+            run_str(&st, &["move-window", "-s", "0:2", "-t", "0:"]).exit,
+            0
+        );
+        let windows = run_str(&st, &["list-windows", "-t", "0", "-F", "#{window_index}"]);
+        assert_eq!(windows.stdout, "0\n1\n");
+    }
+
+    #[test]
+    fn move_pane_without_destination_validates_the_source_first() {
+        let st = state();
+        let result = run_str(&st, &["move-pane", "-s", "missing"]);
+        assert_eq!(result.exit, 1);
+        assert_eq!(result.stderr, "can't find pane: missing\n");
+    }
+
+    #[test]
     fn break_pane_selects_broken_off_window() {
         let st = state();
         run_str(&st, &["split-window", "-t", "0"]);
@@ -9252,6 +9318,18 @@ mod tests {
         );
         let lw = run_str(&st, &["list-windows", "-t", "0", "-F", "#{window_index}"]);
         assert_eq!(lw.stdout, "0\n2\n3\n", "got {:?}", lw.stdout);
+    }
+
+    #[test]
+    fn link_window_session_only_destination_uses_lowest_free_index() {
+        let st = state();
+        run_str(&st, &["new-window", "-t", "0:2"]);
+        assert_eq!(
+            run_str(&st, &["link-window", "-s", "0:2", "-t", "0:"]).exit,
+            0
+        );
+        let windows = run_str(&st, &["list-windows", "-t", "0", "-F", "#{window_index}"]);
+        assert_eq!(windows.stdout, "0\n1\n2\n");
     }
 
     #[test]
@@ -9515,6 +9593,30 @@ mod tests {
         // `-a` is valid for kill-window, `-Z` is not; getopt reports the bad one.
         let r = run_str(&st, &["kill-window", "-aZ", "-t", "0"]);
         assert_eq!(r.stderr, "command kill-window: unknown flag -Z\n");
+    }
+
+    #[test]
+    fn value_flag_without_an_argument_reports_getopt_error() {
+        let st = state();
+        for (args, expected) in [
+            (
+                &["capture-pane", "-b"][..],
+                "command capture-pane: -b expects an argument\n",
+            ),
+            (
+                &["choose-buffer", "-F"][..],
+                "command choose-buffer: -F expects an argument\n",
+            ),
+            (
+                &["delete-buffer", "-b"][..],
+                "command delete-buffer: -b expects an argument\n",
+            ),
+        ] {
+            let result = run_str(&st, args);
+            assert_eq!(result.exit, 1);
+            assert_eq!(result.stderr, expected);
+            assert!(result.stdout.is_empty());
+        }
     }
 
     #[test]

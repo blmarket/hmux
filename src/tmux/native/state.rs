@@ -6366,28 +6366,13 @@ impl ServerState {
     ) -> io::Result<()> {
         let s = self.resolve_window(src)?;
         let src_session_id = self.sessions[s.session].id;
-        let (dst_sess_name, dst_idx) = parse_index_target(dst);
-        let dst_session = match dst_sess_name {
-            Some(name) => self.session_pos(name).ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    format!("can't find session: {name}"),
-                )
-            })?,
-            None => s.session,
-        };
+        let (dst_session, new_index) = self.window_destination(dst, s.session)?;
         let dst_session_id = self.sessions[dst_session].id;
         if s.session != dst_session
             && self.sessions[s.session].link_set_id == self.sessions[dst_session].link_set_id
         {
             return Err(io::Error::other("sessions are grouped"));
         }
-        let new_index = dst_idx.ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "move-window: missing destination index".to_string(),
-            )
-        })?;
         // A window already at the destination index blocks the move.
         let occupied = self.sessions[dst_session]
             .windows
@@ -6807,27 +6792,12 @@ impl ServerState {
     ) -> io::Result<()> {
         let s = self.resolve_window(src)?;
         let source_window_id = self.sessions[s.session].windows[s.window].id;
-        let (dst_sess_name, dst_idx) = parse_index_target(dst);
-        let dst_session = match dst_sess_name {
-            Some(name) => self.session_pos(name).ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    format!("can't find session: {name}"),
-                )
-            })?,
-            None => s.session,
-        };
+        let (dst_session, index) = self.window_destination(dst, s.session)?;
         if s.session != dst_session
             && self.sessions[s.session].link_set_id == self.sessions[dst_session].link_set_id
         {
             return Err(io::Error::other("sessions are grouped"));
         }
-        let index = dst_idx.ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "link-window: missing destination index".to_string(),
-            )
-        })?;
         if let Some(pos) = self.sessions[dst_session]
             .windows
             .iter()
@@ -6846,6 +6816,39 @@ impl ServerState {
             }
         }
         self.link_window_at(dst_session, index, source_window_id, select)
+    }
+
+    /// Resolve a plain link/move destination. An omitted index selects the
+    /// lowest free index at or above `base-index`, matching tmux's `session:`
+    /// destination behavior.
+    fn window_destination(
+        &self,
+        target: &str,
+        fallback_session: usize,
+    ) -> io::Result<(usize, u32)> {
+        let (session_name, requested_index) = parse_index_target(target);
+        let session = match session_name {
+            Some(name) => self.session_pos(name).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("can't find session: {name}"),
+                )
+            })?,
+            None => fallback_session,
+        };
+        let index = requested_index.unwrap_or_else(|| {
+            let destination = &self.sessions[session];
+            let mut index = destination
+                .options(&self.global_options)
+                .get("base-index")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0);
+            while destination.windows.iter().any(|link| link.index == index) {
+                index += 1;
+            }
+            index
+        });
+        Ok((session, index))
     }
 
     /// `link-window -a`/`-b`: link the source window relative to an anchor window
