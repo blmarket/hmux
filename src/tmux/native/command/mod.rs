@@ -1813,7 +1813,7 @@ fn unbind_key(args: &[String], st: &mut ServerState) -> CommandResult {
     let quiet = has_flag(args, "-q");
     let error = |message| {
         if quiet {
-            CommandResult::err("")
+            CommandResult::ok("")
         } else {
             CommandResult::err(message)
         }
@@ -3715,6 +3715,16 @@ fn pipe_pane(args: &[String], st: &mut ServerState) -> CommandResult {
         Some(t) => t,
         None => return CommandResult::err("can't establish current session\n"),
     };
+    // `pipe-pane` has a pane target, so tmux interprets an unqualified value
+    // as a pane before falling back to a window or session. Keep the existing
+    // fallback for targets that resolve, but report the target-type-specific
+    // diagnostic when a bare value cannot resolve at all.
+    if !target.contains([':', '.'])
+        && !target.starts_with(['$', '@', '%'])
+        && st.resolve(&target).is_none()
+    {
+        return CommandResult::err(format!("can't find pane: {target}\n"));
+    }
     let command = trailing_command(args, &["-t"]).join(" ");
     let only_toggle = has_flag(args, "-o");
     let input = has_flag(args, "-I");
@@ -4608,7 +4618,9 @@ fn show_hooks(args: &[String], st: &ServerState) -> CommandResult {
         let mut hook_args = args.to_vec();
         hook_args.push((*hook).to_string());
         let shown = show_options(&hook_args, st, false);
-        if !shown.stdout.is_empty() {
+        if shown.exit != 0 {
+            return shown;
+        } else if !shown.stdout.is_empty() {
             output.push_str(&shown.stdout);
         } else if has_flag(args, "-g") {
             output.push_str(hook);
@@ -7529,11 +7541,18 @@ mod tests {
     }
 
     #[test]
-    fn unbind_key_quiet_keeps_validation_failure_status() {
+    fn unbind_key_quiet_suppresses_validation_failures() {
         let st = state();
-        let result = run_str(&st, &["unbind-key", "-q"]);
-        assert_eq!(result.exit, 1);
-        assert_eq!(result.stderr, "");
+        for args in [
+            &["unbind-key", "-q"][..],
+            &["unbind-key", "-q", "DefinitelyNotAKey"][..],
+            &["unbind-key", "-q", "-a", "-T", "absent-table"][..],
+            &["unbind-key", "-q", "-T", "absent-table", "F1"][..],
+        ] {
+            let result = run_str(&st, args);
+            assert_eq!(result.exit, 0);
+            assert_eq!(result.stderr, "");
+        }
     }
 
     #[test]
@@ -8839,6 +8858,14 @@ mod tests {
         let r = run_str(&st, &["pipe-pane", "-t", "0:0.9", "cat"]);
         assert_eq!(r.exit, 1);
         assert!(r.stderr.contains("can't find pane"), "got {:?}", r.stderr);
+    }
+
+    #[test]
+    fn pipe_pane_missing_bare_target_reports_pane_error() {
+        let st = state();
+        let r = run_str(&st, &["pipe-pane", "-t", "missing"]);
+        assert_eq!(r.exit, 1);
+        assert_eq!(r.stderr, "can't find pane: missing\n");
     }
 
     #[test]

@@ -5269,7 +5269,18 @@ impl ServerState {
     /// a colon-less bare number is a window index in the current session, per
     /// tmux's `cmd_find_target`.
     fn resolve_window_arg(&self, target: &str) -> io::Result<Target> {
-        let (session, window) = self.resolve_window_positions(target, true)?;
+        let (session, window) = self
+            .resolve_window_positions(target, true)
+            .map_err(|error| {
+                if !target.contains(':')
+                    && !target.starts_with('$')
+                    && error.to_string().starts_with("can't find session:")
+                {
+                    window_not_found(target)
+                } else {
+                    error
+                }
+            })?;
         let pane = self.window(session, window).active;
         Ok(Target {
             session,
@@ -11667,6 +11678,11 @@ mod tests {
             state.sessions()[0].windows[state.sessions()[0].active].index,
             0
         );
+
+        let error = state
+            .select_window("missing")
+            .expect_err("missing bare target should fail");
+        assert_eq!(error.to_string(), "can't find window: missing");
     }
 
     impl ServerState {
