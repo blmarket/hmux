@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import nullcontext
+from datetime import datetime
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
+from rich.console import Console
+from textual.containers import Vertical
 from textual.widgets import Button, DataTable, Input, Label, Select, Static
 
 from agentmon.app import (
@@ -20,24 +25,162 @@ from agentmon.app import (
 )
 from agentmon.model import AgentRun, LaunchDraft, PromptHistory, Repository
 from agentmon.services import AgentmonService, CommandError, SocketSelection
-from agentmon.transcript import TranscriptMessage
+from agentmon.transcript import Transcript, TranscriptMessage
 
 
 def test_transcript_renders_goal_updates_distinctly() -> None:
+    timestamp = "2026-07-16T20:23:27Z"
     rendered = DashboardScreen._render_transcript(
         (
             TranscriptMessage(
                 role="goal",
                 text="/goal Reach 80% test coverage.",
-                timestamp="2026-07-16T20:23:27Z",
+                timestamp=timestamp,
             ),
         ),
         (),
     )
+    local_timestamp = (
+        datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        .astimezone()
+        .strftime("%Y-%m-%d %H:%M %Z")
+    )
 
     assert rendered.plain == (
-        "GOAL · 2026-07-16T20:23:27Z\n/goal Reach 80% test coverage."
+        f"GOAL · {local_timestamp}\n/goal Reach 80% test coverage."
     )
+
+
+def test_transcript_preview_keeps_first_and_most_recent_messages() -> None:
+    messages = tuple(
+        TranscriptMessage("user", f"message {number}", f"timestamp-{number}")
+        for number in range(1, 6)
+    )
+    console = Console(width=80, color_system=None)
+
+    rendered = DashboardScreen._render_transcript_preview(
+        messages,
+        (),
+        console=console,
+        width=42,
+        max_lines=8,
+    )
+
+    assert "message 1" in rendered.plain
+    assert "message 5" in rendered.plain
+    assert "message 2" not in rendered.plain
+    assert "message 4" not in rendered.plain
+    assert "3 hidden, press t: transcript" in rendered.plain
+    assert len(rendered.wrap(console, 42)) <= 8
+
+
+def test_transcript_collapse_marker_is_strictly_one_line() -> None:
+    console = Console(width=80, color_system=None)
+    marker = DashboardScreen._compact_preview_marker(9, ())
+
+    marker.truncate(20, overflow="ellipsis")
+
+    assert len(marker.wrap(console, 20)) == 1
+    assert marker.plain.endswith("…")
+
+
+def test_transcript_preview_prioritizes_last_first_then_second_last() -> None:
+    messages = tuple(
+        TranscriptMessage("user", f"message {number}", f"timestamp-{number}")
+        for number in range(1, 6)
+    )
+    console = Console(width=80, color_system=None)
+
+    rendered = DashboardScreen._render_transcript_preview(
+        messages,
+        (),
+        console=console,
+        width=42,
+        max_lines=10,
+    )
+
+    assert "message 1" in rendered.plain
+    assert "message 4" in rendered.plain
+    assert "message 5" in rendered.plain
+    assert "message 2" not in rendered.plain
+    assert "message 3" not in rendered.plain
+    assert rendered.plain.index("message 1") < rendered.plain.index("message 4")
+    assert rendered.plain.index("message 4") < rendered.plain.index("message 5")
+    assert len(rendered.wrap(console, 42)) <= 10
+
+
+def test_dashboard_preview_does_not_clip_the_latest_message() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        service = DemoService(repo, socket="/tmp/demo")
+        first = "first message " * 100
+        latest = (
+            "Latest message has the highest priority and its final words "
+            "must remain visible: latest message complete."
+        )
+
+        def transcript(run: AgentRun) -> Transcript:
+            assert run.session_id is not None
+            messages = (
+                TranscriptMessage("user", first, "timestamp-1"),
+                TranscriptMessage("user", "middle message 2", "timestamp-2"),
+                TranscriptMessage("user", "middle message 3", "timestamp-3"),
+                TranscriptMessage("user", "middle message 4", "timestamp-4"),
+                TranscriptMessage("user", latest, "timestamp-5"),
+            )
+            return Transcript(
+                run.session_id,
+                Path("/demo/transcripts/priority.jsonl"),
+                messages,
+            )
+
+        service.run_transcript = transcript  # type: ignore[method-assign]
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(119, 34)) as pilot:
+            await pilot.pause()
+            content = app.screen.query_one("#transcript-content", Static)
+            meta = app.screen.query_one("#transcript-meta", Static)
+            preview = app.screen.query_one("#transcript-scroll", Vertical)
+
+            assert "latest message complete" in str(content.render())
+            assert "…" in str(content.render())
+            assert not meta.display
+            assert content.region.height <= preview.content_region.height
+
+    asyncio.run(exercise())
+
+
+def test_t_opens_the_complete_transcript_in_less(monkeypatch) -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+        calls: list[tuple[list[str], dict[str, object]]] = []
+
+        def run(args: list[str], **kwargs: object) -> SimpleNamespace:
+            calls.append((args, kwargs))
+            return SimpleNamespace(returncode=0)
+
+        monkeypatch.setattr("agentmon.app.subprocess.run", run)
+        app.suspend = nullcontext  # type: ignore[method-assign]
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            await pilot.press("t")
+            await pilot.pause()
+
+        assert len(calls) == 1
+        args, kwargs = calls[0]
+        assert args == ["less"]
+        assert kwargs["text"] is True
+        document = str(kwargs["input"])
+        assert "Fix authentication cleanup behavior" in document
+        assert "Keep the existing CLI behavior unchanged" in document
+        assert "/demo/transcripts/" in document
+
+    asyncio.run(exercise())
 
 
 def test_agent_badges_are_compact_and_have_a_future_agent_fallback() -> None:
@@ -148,15 +291,14 @@ def test_dashboard_shows_compact_worktree_tree_and_transcript_side_by_side() -> 
 
             meta = app.screen.query_one("#transcript-meta", Static)
             content = app.screen.query_one("#transcript-content", Static)
-            assert first_session in str(meta.render())
-            assert "/demo/transcripts/" in str(meta.render())
+            assert not meta.display
             assert "Fix authentication cleanup behavior" in str(content.render())
             assert "Keep the existing CLI behavior unchanged" in str(content.render())
 
             await pilot.press("j")
             await pilot.pause()
 
-            assert "874085ab-4a17-4018-ac19-f0381bb7940a" in str(meta.render())
+            assert not meta.display
             assert "test_reconnect_after_heartbeat" in str(content.render())
 
     asyncio.run(exercise())

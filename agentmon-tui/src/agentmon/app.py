@@ -6,8 +6,10 @@ import shlex
 import subprocess
 import tempfile
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 
+from rich.console import Console
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
@@ -124,6 +126,7 @@ class DashboardScreen(Screen):
         ("w", "new_window", "New shell at CWD"),
         ("x", "cleanup", "Clean up worktree"),
         ("r", "reload", "Refresh"),
+        ("t", "view_transcript", "Full transcript"),
         ("q", "quit", "Quit"),
     ]
 
@@ -143,13 +146,14 @@ class DashboardScreen(Screen):
                 yield Static(
                     "Select a run to inspect its agent session.", id="transcript-meta"
                 )
-                with VerticalScroll(id="transcript-scroll"):
+                with Vertical(id="transcript-scroll"):
                     yield Static("", id="transcript-content")
         yield Footer()
 
     def on_mount(self) -> None:
         self._transcript_session_id: str | None = None
         self._transcript_signature: tuple[object, ...] | None = None
+        self._loaded_transcript: Transcript | None = None
         self._row_runs: list[AgentRun | None] = []
         self._row_repositories: list[Repository | None] = []
         table = self.query_one("#runs", DataTable)
@@ -309,11 +313,17 @@ class DashboardScreen(Screen):
             return None
         return self._row_repositories[row]
 
+    def _set_transcript_meta(self, message: str | None) -> None:
+        meta = self.query_one("#transcript-meta", Static)
+        meta.update(message or "")
+        meta.display = message is not None
+
     def _clear_transcript(self, message: str) -> None:
         self._transcript_session_id = None
         self._transcript_signature = None
+        self._loaded_transcript = None
         self.query_one("#transcript-title", Static).update("Transcript")
-        self.query_one("#transcript-meta", Static).update("Session ID  —")
+        self._set_transcript_meta(None)
         self.query_one("#transcript-content", Static).update(message)
 
     def _refresh_transcript(self) -> None:
@@ -327,10 +337,11 @@ class DashboardScreen(Screen):
         if run.state == "none":
             self._transcript_session_id = None
             self._transcript_signature = None
+            self._loaded_transcript = None
             self.query_one("#transcript-title", Static).update(
                 f"Window · {run.window_name or run.branch}"
             )
-            self.query_one("#transcript-meta", Static).update(
+            self._set_transcript_meta(
                 f"HMUX       {run.location}\nWorktree   {run.worktree}"
             )
             self.query_one("#transcript-content", Static).update(
@@ -340,10 +351,11 @@ class DashboardScreen(Screen):
         self.query_one("#transcript-title", Static).update(
             f"Transcript · {run.branch} · {agent_name}"
         )
+        self._set_transcript_meta(None)
         if not run.session_id:
             self._transcript_session_id = None
             self._transcript_signature = None
-            self.query_one("#transcript-meta", Static).update("Session ID  —")
+            self._loaded_transcript = None
             message = (
                 "This finished run no longer has an active agent session."
                 if run.state == "exited"
@@ -356,9 +368,7 @@ class DashboardScreen(Screen):
         self._transcript_session_id = run.session_id
         if changed_session:
             self._transcript_signature = None
-            self.query_one("#transcript-meta", Static).update(
-                f"Session ID  {run.session_id}"
-            )
+            self._loaded_transcript = None
             self.query_one("#transcript-content", Static).update("Loading transcript…")
         self._load_transcript(run)
 
@@ -389,6 +399,7 @@ class DashboardScreen(Screen):
         if not self._is_selected_session(pane_id, session_id):
             return
         self._transcript_signature = None
+        self._loaded_transcript = None
         self.query_one("#transcript-content", Static).update(
             Text.assemble(("Transcript unavailable\n", "bold #ffcb6b"), message)
         )
@@ -403,20 +414,35 @@ class DashboardScreen(Screen):
             loaded.skipped_lines,
             *((message.timestamp, message.text) for message in loaded.messages),
         )
+        self._loaded_transcript = loaded
         if signature == self._transcript_signature:
             return
-        first_render = self._transcript_signature is None
         self._transcript_signature = signature
-        self.query_one("#transcript-meta", Static).update(
-            f"Session ID  {loaded.session_id}\nSource      {loaded.rollout_path}"
+        self.call_after_refresh(self._update_transcript_preview)
+
+    def _update_transcript_preview(self) -> None:
+        loaded = self._loaded_transcript
+        if loaded is None:
+            return
+        preview = self.query_one("#transcript-scroll", Vertical)
+        content = self.query_one("#transcript-content", Static)
+        padding = content.styles.padding
+        width = max(
+            1,
+            preview.content_region.width - padding.left - padding.right,
+        )
+        max_lines = max(
+            1, preview.content_region.height - padding.top - padding.bottom
         )
         self.query_one("#transcript-content", Static).update(
-            self._render_transcript(loaded.messages, loaded.skipped_lines)
-        )
-        if first_render:
-            self.query_one("#transcript-scroll", VerticalScroll).scroll_home(
-                animate=False
+            self._render_transcript_preview(
+                loaded.messages,
+                loaded.skipped_lines,
+                console=self.app.console,
+                width=width,
+                max_lines=max_lines,
             )
+        )
 
     @staticmethod
     def _render_transcript(
@@ -430,7 +456,11 @@ class DashboardScreen(Screen):
         for index, message in enumerate(messages):
             if index:
                 rendered.append("\n\n")
-            timestamp = f" · {message.timestamp}" if message.timestamp else ""
+            timestamp = (
+                f" · {DashboardScreen._local_timestamp(message.timestamp)}"
+                if message.timestamp
+                else ""
+            )
             rendered.append(
                 f"{message.role.upper()}{timestamp}\n", style="bold #8ec8ff"
             )
@@ -442,6 +472,166 @@ class DashboardScreen(Screen):
                 style="#ffcb6b",
             )
         return rendered
+
+    @staticmethod
+    def _local_timestamp(timestamp: str) -> str:
+        try:
+            parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError:
+            return timestamp
+        if parsed.tzinfo is None:
+            return timestamp
+        return parsed.astimezone().strftime("%Y-%m-%d %H:%M %Z")
+
+    @classmethod
+    def _render_transcript_preview(
+        cls,
+        messages: tuple[TranscriptMessage, ...],
+        skipped_lines: tuple[int, ...],
+        *,
+        console: Console,
+        width: int,
+        max_lines: int,
+    ) -> Text:
+        """Fill the preview in last, first, second-last priority order."""
+
+        width = max(1, width)
+        full = cls._render_transcript(messages, skipped_lines)
+        full_lines = list(full.wrap(console, width))
+        if len(full_lines) <= max_lines:
+            return full
+        if not messages:
+            return cls._join_visual_lines(full_lines[:max_lines])
+
+        if len(messages) == 1:
+            visible = full_lines[:max_lines]
+            if len(full_lines) > max_lines and visible:
+                visible[-1].append(" …", style="italic #8492a0")
+            return cls._join_visual_lines(visible)
+
+        blocks = [
+            list(
+                cls._render_transcript((message,), ()).wrap(console, width)
+            )
+            for message in messages
+        ]
+        priority = [len(messages) - 1, 0, *range(len(messages) - 2, 0, -1)]
+        selected: dict[int, list[Text]] = {}
+
+        for message_index in priority:
+            block = blocks[message_index]
+            trial = {**selected, message_index: block}
+            visible = cls._compose_prioritized_preview(
+                trial,
+                message_count=len(messages),
+                skipped_lines=skipped_lines,
+                width=width,
+            )
+            if len(visible) <= max_lines:
+                selected = trial
+                continue
+
+            partial: list[Text] | None = None
+            for line_count in range(1, len(block)):
+                shortened_trial = {
+                    **selected,
+                    message_index: cls._ellipsize_visual_lines(
+                        block[:line_count], width
+                    ),
+                }
+                candidate = cls._compose_prioritized_preview(
+                    shortened_trial,
+                    message_count=len(messages),
+                    skipped_lines=skipped_lines,
+                    width=width,
+                )
+                if len(candidate) > max_lines:
+                    break
+                partial = candidate
+            if partial is not None:
+                return cls._join_visual_lines(partial)
+            if selected:
+                return cls._join_visual_lines(
+                    cls._compose_prioritized_preview(
+                        selected,
+                        message_count=len(messages),
+                        skipped_lines=skipped_lines,
+                        width=width,
+                    )[:max_lines]
+                )
+            return cls._join_visual_lines(block[:max_lines])
+
+        return cls._join_visual_lines(
+            cls._compose_prioritized_preview(
+                selected,
+                message_count=len(messages),
+                skipped_lines=skipped_lines,
+                width=width,
+            )[:max_lines]
+        )
+
+    @classmethod
+    def _compose_prioritized_preview(
+        cls,
+        selected: dict[int, list[Text]],
+        *,
+        message_count: int,
+        skipped_lines: tuple[int, ...],
+        width: int,
+    ) -> list[Text]:
+        hidden = message_count - len(selected)
+        marker = cls._compact_preview_marker(hidden, skipped_lines)
+        marker.truncate(width, overflow="ellipsis")
+        visible: list[Text] = []
+
+        first = selected.get(0)
+        if first is not None:
+            visible.extend(first)
+            visible.append(Text())
+        visible.append(marker)
+
+        recent = sorted(index for index in selected if index)
+        for index in recent:
+            visible.append(Text())
+            visible.extend(selected[index])
+        return visible
+
+    @staticmethod
+    def _compact_preview_marker(
+        hidden: int,
+        skipped_lines: tuple[int, ...],
+    ) -> Text:
+        details = []
+        if hidden:
+            details.append(f"{hidden} hidden")
+        if skipped_lines:
+            details.append(f"{len(skipped_lines)} malformed")
+        detail = ", ".join(details)
+        message = (
+            f"{detail}, press t: transcript"
+            if detail
+            else "press t: transcript"
+        )
+        return Text(
+            message,
+            style="italic #8492a0",
+        )
+
+    @staticmethod
+    def _ellipsize_visual_lines(lines: list[Text], width: int) -> list[Text]:
+        shortened = [line.copy() for line in lines]
+        if shortened:
+            shortened[-1].append(" …", style="italic #8492a0")
+            shortened[-1].truncate(width, overflow="ellipsis")
+        return shortened
+
+    @staticmethod
+    def _join_visual_lines(lines: list[Text]) -> Text:
+        return Text("\n").join(lines)
+
+    def on_resize(self) -> None:
+        if getattr(self, "_loaded_transcript", None) is not None:
+            self.call_after_refresh(self._update_transcript_preview)
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         if event.data_table.id == "runs":
@@ -516,6 +706,33 @@ class DashboardScreen(Screen):
             )
             return
         self.app.push_screen(CleanupScreen(run))
+
+    def action_view_transcript(self) -> None:
+        loaded = self._loaded_transcript
+        if loaded is None:
+            self._set_notice("No transcript is loaded for the selected run")
+            return
+        transcript = self._render_transcript(
+            loaded.messages, loaded.skipped_lines
+        ).plain
+        document = (
+            f"Session ID  {loaded.session_id}\n"
+            f"Source      {loaded.rollout_path}\n\n"
+            f"{transcript}\n"
+        )
+        try:
+            with self.app.suspend():
+                result = subprocess.run(
+                    ["less"],
+                    input=document,
+                    text=True,
+                    check=False,
+                )
+        except OSError as exc:
+            self._set_notice(f"Could not open transcript in less: {exc}")
+            return
+        if result.returncode not in (0, 130):
+            self._set_notice(f"less exited with status {result.returncode}")
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.data_table.id == "runs":
@@ -1108,7 +1325,7 @@ class AgentmonApp(App):
     #transcript-title { height: 3; padding: 1 2; background: #263442;
                         color: #b9dcf5; text-style: bold; }
     #transcript-meta { height: auto; min-height: 3; padding: 1 2; color: #8ec8ff; }
-    #transcript-scroll { height: 1fr; }
+    #transcript-scroll { height: 1fr; overflow: hidden; }
     #transcript-content { height: auto; padding: 1 2 2 2; }
     #dialog { width: 72; height: auto; max-width: 100%; max-height: 100%;
               margin: 1 2; padding: 1 2;
