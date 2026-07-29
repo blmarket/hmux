@@ -4832,7 +4832,7 @@ fn last_pane_cmd(args: &[String], st: &mut ServerState) -> CommandResult {
     match target {
         Some(t) => match st.last_pane(&t) {
             Ok(()) => CommandResult::ok(""),
-            Err(e) => CommandResult::err(format!("{e}\n")),
+            Err(error) => command_target_error(error, &t, "window"),
         },
         None => CommandResult::err("can't establish current session\n"),
     }
@@ -5472,7 +5472,7 @@ fn rotate_window(args: &[String], st: &mut ServerState) -> CommandResult {
             st.rotate_window(&t)
         } {
             Ok(()) => CommandResult::ok(""),
-            Err(e) => CommandResult::err(format!("{e}\n")),
+            Err(error) => command_target_error(error, &t, "window"),
         },
         None => CommandResult::err("can't establish current session\n"),
     }
@@ -5565,7 +5565,7 @@ fn resize_window(args: &[String], st: &mut ServerState) -> CommandResult {
     };
     match st.resize_window(&target, cols, rows) {
         Ok(()) => CommandResult::ok(""),
-        Err(e) => CommandResult::err(format!("{e}\n")),
+        Err(error) => command_target_error(error, &target, "window"),
     }
 }
 
@@ -5622,7 +5622,7 @@ fn select_layout(args: &[String], st: &mut ServerState) -> CommandResult {
             };
             return match st.select_named_layout(&target, layout) {
                 Ok(()) => CommandResult::ok(""),
-                Err(error) => CommandResult::err(format!("{error}\n")),
+                Err(error) => command_target_error(error, &target, "pane"),
             };
         }
         let target = flag_value(args, "-t")
@@ -5648,7 +5648,7 @@ fn cycle_layout(args: &[String], st: &mut ServerState, forward: bool) -> Command
     };
     match st.cycle_layout(&target, forward) {
         Ok(()) => CommandResult::ok(""),
-        Err(error) => CommandResult::err(format!("{error}\n")),
+        Err(error) => command_target_error(error, &target, "window"),
     }
 }
 
@@ -5725,9 +5725,21 @@ fn break_pane(args: &[String], st: &mut ServerState) -> CommandResult {
                 CommandResult::ok(format!("{line}\n"))
             }
             Ok(_) => CommandResult::ok(""),
-            Err(e) => CommandResult::err(format!("{e}\n")),
+            Err(error) => command_target_error(error, &d, "window"),
         },
         _ => CommandResult::err("can't establish current session\n"),
+    }
+}
+
+fn command_target_error(error: io::Error, target: &str, target_type: &str) -> CommandResult {
+    let message = error.to_string();
+    if !target.contains([':', '.'])
+        && !target.starts_with(['$', '@', '%'])
+        && message == format!("can't find session: {target}")
+    {
+        CommandResult::err(format!("can't find {target_type}: {target}\n"))
+    } else {
+        CommandResult::err(format!("{message}\n"))
     }
 }
 
@@ -9623,6 +9635,25 @@ mod tests {
     }
 
     #[test]
+    fn window_commands_report_missing_bare_targets_as_windows() {
+        for args in [
+            &["break-pane", "-t", "missing"][..],
+            &["last-pane", "-t", "missing"][..],
+            &["next-layout", "-t", "missing"][..],
+            &["previous-layout", "-t", "missing"][..],
+            &["resize-window", "-t", "missing", "-x", "10"][..],
+            &["rotate-window", "-t", "missing"][..],
+        ] {
+            let result = run_str(&state(), args);
+            assert_eq!(result.exit, 1, "args={args:?}");
+            assert_eq!(
+                result.stderr, "can't find window: missing\n",
+                "args={args:?}"
+            );
+        }
+    }
+
+    #[test]
     fn set_option_append_and_user_unset() {
         let st = state();
         run_str(&st, &["set-option", "-g", "@x", "a"]);
@@ -10143,6 +10174,16 @@ mod tests {
         assert_eq!(r.stderr, "invalid layout: no-such-layout\n");
         // A known name and a custom layout string are accepted.
         assert_eq!(run_str(&st, &["select-layout", "-t", "0", "tiled"]).exit, 0);
+    }
+
+    #[test]
+    fn select_layout_reports_missing_bare_target_as_a_pane() {
+        let result = run_str(
+            &state(),
+            &["select-layout", "-t", "missing", "even-horizontal"],
+        );
+        assert_eq!(result.exit, 1);
+        assert_eq!(result.stderr, "can't find pane: missing\n");
     }
 
     #[test]
