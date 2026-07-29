@@ -108,6 +108,11 @@ struct ObservedChild {
 pub(crate) struct NativePaneObservation {
     term: Arc<Mutex<Terminal>>,
     revision: AtomicU64,
+    /// Revision of the latest scroll operation whose vertical region is large
+    /// enough for tmux to prefer one deferred repaint over immediate row draws.
+    /// This is monotonic so each attached client can observe it independently.
+    large_scroll_revision: AtomicU64,
+    redraw_detector: Mutex<ScrollRedrawDetector>,
     control_output: Mutex<ControlOutputJournal>,
     /// Last DECSCUSR parameter emitted by the pane (0..=6). The VT formatter
     /// restores cursor position but does not serialize this terminal state.
@@ -123,6 +128,246 @@ pub(crate) struct NativePaneObservation {
 
 struct OutputEvent {
     wakeup: <CurrentPlatform as Platform>::OutputWakeup,
+}
+
+#[derive(Clone, Copy)]
+struct ScrollRegion {
+    top: u16,
+    bottom: u16,
+}
+
+#[derive(Clone, Copy)]
+enum ScrollEdge {
+    Top,
+    Bottom,
+    Inside,
+    Any,
+}
+
+#[derive(Clone, Copy)]
+struct ScrollAction {
+    byte_index: usize,
+    region: ScrollRegion,
+    edge: ScrollEdge,
+    rows: u16,
+}
+
+impl ScrollAction {
+    fn needs_large_redraw(self, cursor_y: u16) -> bool {
+        if self.region.bottom.saturating_sub(self.region.top) < self.rows / 2 {
+            return false;
+        }
+        match self.edge {
+            ScrollEdge::Top => cursor_y == self.region.top,
+            ScrollEdge::Bottom => cursor_y == self.region.bottom,
+            ScrollEdge::Inside => (self.region.top..=self.region.bottom).contains(&cursor_y),
+            ScrollEdge::Any => true,
+        }
+    }
+}
+
+#[derive(Default)]
+struct CsiState {
+    params: [u16; 2],
+    present: [bool; 2],
+    index: usize,
+    private: bool,
+    intermediate: Option<u8>,
+}
+
+impl CsiState {
+    fn parameter(&self, index: usize, default: u16) -> u16 {
+        self.present[index]
+            .then_some(self.params[index])
+            .filter(|value| *value != 0)
+            .unwrap_or(default)
+    }
+}
+
+#[derive(Default)]
+enum RedrawParserState {
+    #[default]
+    Ground,
+    Escape,
+    Csi(CsiState),
+    String,
+    StringEscape,
+}
+
+/// Minimal streaming VT parser for operations which can scroll a vertical
+/// region. Ghostty remains the terminal parser and source of truth; this only
+/// retains enough metadata to choose between row and pane repainting.
+struct ScrollRedrawDetector {
+    rows: u16,
+    explicit_region: Option<ScrollRegion>,
+    state: RedrawParserState,
+}
+
+impl ScrollRedrawDetector {
+    fn new(rows: u16) -> Self {
+        Self {
+            rows: rows.max(1),
+            explicit_region: None,
+            state: RedrawParserState::Ground,
+        }
+    }
+
+    fn resize(&mut self, rows: u16) {
+        self.rows = rows.max(1);
+        self.explicit_region = None;
+    }
+
+    fn region(&self) -> ScrollRegion {
+        self.explicit_region.unwrap_or(ScrollRegion {
+            top: 0,
+            bottom: self.rows.saturating_sub(1),
+        })
+    }
+
+    fn scan(&mut self, bytes: &[u8]) -> Vec<ScrollAction> {
+        let mut actions = Vec::new();
+        for (byte_index, &byte) in bytes.iter().enumerate() {
+            if let Some(edge) = self.feed_byte(byte) {
+                actions.push(ScrollAction {
+                    byte_index,
+                    region: self.region(),
+                    edge,
+                    rows: self.rows,
+                });
+            }
+        }
+        actions
+    }
+
+    fn feed_byte(&mut self, byte: u8) -> Option<ScrollEdge> {
+        let state = std::mem::take(&mut self.state);
+        match state {
+            RedrawParserState::Ground => match byte {
+                b'\n' | 0x0b | 0x0c => Some(ScrollEdge::Bottom),
+                0x1b => {
+                    self.state = RedrawParserState::Escape;
+                    None
+                }
+                0x9b => {
+                    self.state = RedrawParserState::Csi(CsiState::default());
+                    None
+                }
+                0x90 | 0x98 | 0x9d | 0x9e | 0x9f => {
+                    self.state = RedrawParserState::String;
+                    None
+                }
+                _ => None,
+            },
+            RedrawParserState::Escape => match byte {
+                b'[' => {
+                    self.state = RedrawParserState::Csi(CsiState::default());
+                    None
+                }
+                b'P' | b'X' | b']' | b'^' | b'_' => {
+                    self.state = RedrawParserState::String;
+                    None
+                }
+                b'D' => Some(ScrollEdge::Bottom),
+                b'M' => Some(ScrollEdge::Top),
+                b'c' => {
+                    self.explicit_region = None;
+                    None
+                }
+                0x1b => {
+                    self.state = RedrawParserState::Escape;
+                    None
+                }
+                _ => None,
+            },
+            RedrawParserState::Csi(mut csi) => match byte {
+                b'0'..=b'9' => {
+                    if csi.index < csi.params.len() {
+                        csi.present[csi.index] = true;
+                        csi.params[csi.index] = csi.params[csi.index]
+                            .saturating_mul(10)
+                            .saturating_add(u16::from(byte - b'0'));
+                    }
+                    self.state = RedrawParserState::Csi(csi);
+                    None
+                }
+                b';' => {
+                    csi.index = csi.index.saturating_add(1);
+                    self.state = RedrawParserState::Csi(csi);
+                    None
+                }
+                0x20..=0x2f => {
+                    csi.intermediate = Some(byte);
+                    self.state = RedrawParserState::Csi(csi);
+                    None
+                }
+                0x3c..=0x3f => {
+                    csi.private = true;
+                    self.state = RedrawParserState::Csi(csi);
+                    None
+                }
+                0x40..=0x7e => self.finish_csi(byte, &csi),
+                b'\n' | 0x0b | 0x0c => {
+                    self.state = RedrawParserState::Csi(csi);
+                    Some(ScrollEdge::Bottom)
+                }
+                0x1b => {
+                    self.state = RedrawParserState::Escape;
+                    None
+                }
+                _ => {
+                    self.state = RedrawParserState::Csi(csi);
+                    None
+                }
+            },
+            RedrawParserState::String => match byte {
+                0x07 | 0x9c => None,
+                0x1b => {
+                    self.state = RedrawParserState::StringEscape;
+                    None
+                }
+                _ => {
+                    self.state = RedrawParserState::String;
+                    None
+                }
+            },
+            RedrawParserState::StringEscape => {
+                if byte != b'\\' && byte != 0x9c {
+                    self.state = if byte == 0x1b {
+                        RedrawParserState::StringEscape
+                    } else {
+                        RedrawParserState::String
+                    };
+                }
+                None
+            }
+        }
+    }
+
+    fn finish_csi(&mut self, final_byte: u8, csi: &CsiState) -> Option<ScrollEdge> {
+        if final_byte == b'p' && csi.intermediate == Some(b'!') {
+            self.explicit_region = None;
+            return None;
+        }
+        if csi.private || csi.intermediate.is_some() {
+            return None;
+        }
+        match final_byte {
+            b'r' => {
+                let top = csi.parameter(0, 1);
+                let bottom = csi.parameter(1, self.rows);
+                if top < bottom && bottom <= self.rows {
+                    self.explicit_region = Some(ScrollRegion {
+                        top: top - 1,
+                        bottom: bottom - 1,
+                    });
+                }
+                None
+            }
+            b'S' | b'T' => Some(ScrollEdge::Any),
+            b'L' | b'M' => Some(ScrollEdge::Inside),
+            _ => None,
+        }
+    }
 }
 
 const CONTROL_OUTPUT_LIMIT: usize = 1024 * 1024;
@@ -282,7 +527,7 @@ impl OutputSubscription {
 }
 
 impl NativePaneObservation {
-    fn new(term: Arc<Mutex<Terminal>>, child: Option<ObservedChild>) -> Self {
+    fn new(term: Arc<Mutex<Terminal>>, child: Option<ObservedChild>, rows: u16) -> Self {
         let latency_enabled = matches!(
             std::env::var("HMUX_LATENCY"),
             Ok(value) if !value.is_empty() && value != "0"
@@ -290,6 +535,8 @@ impl NativePaneObservation {
         Self {
             term,
             revision: AtomicU64::new(0),
+            large_scroll_revision: AtomicU64::new(0),
+            redraw_detector: Mutex::new(ScrollRedrawDetector::new(rows)),
             control_output: Mutex::new(ControlOutputJournal::default()),
             cursor_shape: AtomicU8::new(0),
             bracketed_paste: AtomicBool::new(false),
@@ -306,11 +553,11 @@ impl NativePaneObservation {
         }
     }
 
-    fn record_output(&self, bytes: &[u8]) {
+    fn record_output(&self, bytes: &[u8], large_scroll: bool) {
         self.append_control_output(bytes);
         let mut detector = BellDetector::default();
         self.note_bells(bytes.iter().filter(|byte| detector.feed(**byte)).count() as u64);
-        self.record_change();
+        self.record_change(large_scroll);
     }
 
     fn note_bells(&self, count: u64) {
@@ -327,7 +574,7 @@ impl NativePaneObservation {
         }
     }
 
-    fn record_change(&self) {
+    fn record_change(&self, large_scroll: bool) {
         if let Ok(mut at) = self.last_output_at.lock() {
             *at = Some(Instant::now());
         }
@@ -336,8 +583,41 @@ impl NativePaneObservation {
                 *at = Some(Instant::now());
             }
         }
-        self.revision.fetch_add(1, Ordering::Release);
+        let revision = self.revision.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
+        if large_scroll {
+            self.large_scroll_revision
+                .store(revision, Ordering::Release);
+        }
         self.notify_output();
+    }
+
+    fn write_terminal(&self, terminal: &mut Terminal, bytes: &[u8]) -> bool {
+        let actions = self
+            .redraw_detector
+            .lock()
+            .map(|mut detector| detector.scan(bytes))
+            .unwrap_or_default();
+        if actions.is_empty() {
+            terminal.write(bytes);
+            return false;
+        }
+
+        let mut large_scroll = false;
+        let mut start = 0;
+        for action in actions {
+            terminal.write(&bytes[start..action.byte_index]);
+            if terminal
+                .cursor_position()
+                .ok()
+                .is_some_and(|(_, y)| action.needs_large_redraw(y))
+            {
+                large_scroll = true;
+            }
+            terminal.write(&bytes[action.byte_index..=action.byte_index]);
+            start = action.byte_index + 1;
+        }
+        terminal.write(&bytes[start..]);
+        large_scroll
     }
 
     fn notify_output(&self) {
@@ -383,6 +663,10 @@ impl NativePaneObservation {
 
     pub(crate) fn contract_revision(&self) -> u64 {
         self.revision.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn large_scroll_revision(&self) -> u64 {
+        self.large_scroll_revision.load(Ordering::Acquire)
     }
 
     pub(crate) fn alert_snapshot(&self) -> (u64, u64, Option<Instant>) {
@@ -506,7 +790,11 @@ impl Pane {
     pub fn inert(cols: u16, rows: u16) -> io::Result<Pane> {
         let term = Terminal::new(cols, rows).map_err(ghostty_err)?;
         Ok(Pane {
-            observation: Arc::new(NativePaneObservation::new(Arc::new(Mutex::new(term)), None)),
+            observation: Arc::new(NativePaneObservation::new(
+                Arc::new(Mutex::new(term)),
+                None,
+                rows,
+            )),
             terminal_queries: Arc::new(Mutex::new(VecDeque::new())),
             child: None,
             pending_input: Arc::new(Mutex::new(VecDeque::new())),
@@ -604,6 +892,7 @@ impl Pane {
                 pid: pid as u32,
                 alive: Arc::clone(&alive),
             }),
+            rows,
         ));
         let reader = spawn_reader(
             &master,
@@ -754,7 +1043,7 @@ impl Pane {
             return;
         }
         if let Ok(mut t) = self.observation.term.lock() {
-            t.write(bytes);
+            let large_scroll = self.observation.write_terminal(&mut t, bytes);
             let mut detector = CursorShapeDetector::default();
             for &byte in bytes {
                 if let Some(shape) = detector.feed_byte(byte) {
@@ -763,7 +1052,7 @@ impl Pane {
                         .store(shape, Ordering::Release);
                 }
             }
-            self.observation.record_output(bytes);
+            self.observation.record_output(bytes, large_scroll);
         }
     }
 
@@ -816,12 +1105,13 @@ impl Pane {
 
     /// Reset the emulated terminal state without sending bytes to the child.
     pub(crate) fn reset_terminal(&self) -> io::Result<()> {
-        self.observation
+        let mut terminal = self
+            .observation
             .term
             .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?
-            .write(b"\x1bc");
-        self.observation.record_change();
+            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?;
+        self.observation.write_terminal(&mut terminal, b"\x1bc");
+        self.observation.record_change(false);
         Ok(())
     }
 
@@ -906,6 +1196,9 @@ impl Pane {
         self.rows = rows;
         if let Ok(mut t) = self.observation.term.lock() {
             t.resize(cols, rows).map_err(ghostty_err)?;
+            if let Ok(mut detector) = self.observation.redraw_detector.lock() {
+                detector.resize(rows);
+            }
         }
         if let Some(child) = &self.child {
             let ws = libc::winsize {
@@ -1061,8 +1354,8 @@ impl Pane {
             .term
             .lock()
             .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?;
-        terminal.write(b"\x1b[3J");
-        self.observation.record_change();
+        self.observation.write_terminal(&mut terminal, b"\x1b[3J");
+        self.observation.record_change(false);
         Ok(())
     }
 
@@ -1414,17 +1707,19 @@ fn spawn_reader(
             let mut cursor_replies: Vec<Vec<u8>> = Vec::new();
             if let Ok(mut t) = observation.term.lock() {
                 let mut segment_start = 0usize;
+                let mut large_scroll = false;
                 for (query_end, kind) in cursor_report_queries {
-                    t.write(&bytes[segment_start..=query_end]);
+                    large_scroll |=
+                        observation.write_terminal(&mut t, &bytes[segment_start..=query_end]);
                     if let Some(response) = cursor_position_report(&t, kind) {
                         cursor_replies.push(response);
                     }
                     segment_start = query_end + 1;
                 }
                 if segment_start < bytes.len() {
-                    t.write(&bytes[segment_start..]);
+                    large_scroll |= observation.write_terminal(&mut t, &bytes[segment_start..]);
                 }
-                observation.record_change();
+                observation.record_change(large_scroll);
             }
             for reply in cursor_replies {
                 enqueue_pane_input(fd, &pending_input, &reply);
@@ -2256,6 +2551,28 @@ mod tests {
 
         // last_lines is the Recent shim.
         assert_eq!(obs.last_lines(100).expect("last_lines").text, recent);
+    }
+
+    #[test]
+    fn large_scroll_revision_only_advances_for_large_regions() {
+        let pane = Pane::inert(20, 24).expect("pane");
+        pane.feed(b"\x1b[1;6r\x1b[6;1H");
+        pane.feed(b"\n");
+        assert_eq!(pane.observation_state().large_scroll_revision(), 0);
+
+        pane.feed(b"\x1b[1;18r\x1b[18;1H");
+        pane.feed(b"\x1b]2;title\ncontinuation\x07");
+        assert_eq!(
+            pane.observation_state().large_scroll_revision(),
+            0,
+            "control-string payloads are not terminal linefeeds"
+        );
+        pane.feed(b"\n");
+        assert!(
+            pane.observation_state().large_scroll_revision() > 0,
+            "a linefeed at the bottom of a three-quarter-pane region must \
+             publish a large-scroll redraw hint"
+        );
     }
 
     #[test]

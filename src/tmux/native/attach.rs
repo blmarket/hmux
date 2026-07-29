@@ -2740,6 +2740,39 @@ fn refresh_active_window_output_subscription(
     Ok(true)
 }
 
+/// Observe pane-local large-scroll hints for this client and decide whether the
+/// client's terminal needs a software repaint. The revisions are retained per
+/// attach loop so one client cannot consume another client's notification.
+fn take_large_scroll_repaint(
+    state: &ServerState,
+    session: &str,
+    cols: u16,
+    terminal: &dyn TerminalCapabilities,
+    seen: &mut BTreeMap<u32, u64>,
+) -> bool {
+    let Ok((window, _)) = state.active_window_panes(session) else {
+        return false;
+    };
+    let has_scroll_region = term::string_capability(terminal, "csr").is_some();
+    let has_margins = term::string_capability(terminal, "Cmg").is_some()
+        && term::string_capability(terminal, "Clmg").is_some();
+    let mut repaint = false;
+    for node in &window.panes {
+        let revision = node.pane.observation_state().large_scroll_revision();
+        let previous = seen.insert(node.id, revision).unwrap_or(0);
+        if revision == 0 || revision == previous {
+            continue;
+        }
+        let partial_width = window
+            .pane_rect(node.id)
+            .is_some_and(|rect| rect.width < cols);
+        if !has_scroll_region || (partial_width && !has_margins) {
+            repaint = true;
+        }
+    }
+    repaint
+}
+
 /// The client's tty fds captured during identify.
 #[derive(Debug)]
 pub struct ClientTty {
@@ -3342,6 +3375,7 @@ where
         );
     }
     let mut last_render: Vec<u8> = Vec::new();
+    let mut seen_large_scroll = BTreeMap::new();
     let (mut subscribed_window, mut output_subscription) = {
         let st = state
             .lock()
@@ -4712,6 +4746,7 @@ where
 
         if should_render {
             let mut wrote_frame = false;
+            let mut large_scroll_repaint = false;
             if let Ok(st) = state.lock() {
                 let title = terminal_title_update(
                     &st,
@@ -4725,6 +4760,8 @@ where
                 if !title.is_empty() {
                     let _ = write_all(render_fd_owned.as_raw_fd(), &title);
                 }
+                large_scroll_repaint =
+                    take_large_scroll_repaint(&st, target, cols, &terminal, &mut seen_large_scroll);
             }
             let frame = command_prompt
                 .as_ref()
@@ -4896,14 +4933,15 @@ where
                         row, &rendered, &terminal,
                     ));
                 }
-                if frame != last_render {
-                    let (mut repaint, direct_cursor_safe) = if last_render.is_empty() {
-                        (frame.clone(), false)
-                    } else {
-                        let delta = diff_rendered_frame(&last_render, &frame);
-                        let direct_cursor_safe = delta.direct_cursor_safe();
-                        (delta.into_frame(), direct_cursor_safe)
-                    };
+                if frame != last_render || large_scroll_repaint {
+                    let (mut repaint, direct_cursor_safe) =
+                        if last_render.is_empty() || large_scroll_repaint {
+                            (frame.clone(), false)
+                        } else {
+                            let delta = diff_rendered_frame(&last_render, &frame);
+                            let direct_cursor_safe = delta.direct_cursor_safe();
+                            (delta.into_frame(), direct_cursor_safe)
+                        };
                     // A first paint, resize, or layout change still needs one
                     // full clear. Keep that control sequence out of `last_render`
                     // so subsequent frames compare canonical compositor output.
