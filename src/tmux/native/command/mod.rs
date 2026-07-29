@@ -2155,7 +2155,8 @@ fn rename_session(args: &[String], st: &mut ServerState) -> CommandResult {
 /// (or `NEW_WINDOW_TEMPLATE`).
 fn new_window(args: &[String], st: &mut ServerState, context: &ClientContext) -> CommandResult {
     const VALUE_FLAGS: &[&str] = &["-c", "-e", "-F", "-n", "-t"];
-    let (session, explicit) = match parse_window_target(flag_value(args, "-t"), st) {
+    let requested_target = flag_value(args, "-t");
+    let (session, explicit) = match parse_window_target(requested_target, st) {
         Some(x) => x,
         None => return CommandResult::err("can't establish current session\n"),
     };
@@ -2224,7 +2225,10 @@ fn new_window(args: &[String], st: &mut ServerState, context: &ClientContext) ->
                 CommandResult::ok("")
             }
         }
-        Err(e) => CommandResult::err(format!("{e}\n")),
+        Err(error) => match requested_target {
+            Some(target) => command_target_error(error, target, "window"),
+            None => CommandResult::err(format!("{error}\n")),
+        },
     }
 }
 
@@ -3858,7 +3862,7 @@ fn swap_window(args: &[String], st: &mut ServerState) -> CommandResult {
     match (src, dst) {
         (Some(s), Some(d)) => match st.swap_window(&s, &d, select) {
             Ok(()) => CommandResult::ok(""),
-            Err(e) => CommandResult::err(format!("{e}\n")),
+            Err(error) => command_target_error_candidates(error, &[(&s, "window"), (&d, "window")]),
         },
         _ => CommandResult::err("can't establish current session\n"),
     }
@@ -3900,7 +3904,7 @@ fn move_window(args: &[String], st: &mut ServerState) -> CommandResult {
             st.move_window(&s, &d, select)
         } {
             Ok(()) => CommandResult::ok(""),
-            Err(e) => CommandResult::err(format!("{e}\n")),
+            Err(error) => command_target_error_candidates(error, &[(&s, "window"), (&d, "window")]),
         },
         (None, _) => CommandResult::err("can't establish current session\n"),
         (_, None) => CommandResult::err("move-window: missing destination\n"),
@@ -5487,6 +5491,9 @@ fn resize_pane(args: &[String], st: &mut ServerState) -> CommandResult {
         Some(t) => t,
         None => return CommandResult::err("can't establish current session\n"),
     };
+    if st.resolve(&target).is_none() {
+        return CommandResult::err(format!("can't find pane: {target}\n"));
+    }
     if has_bool_flag(args, 'Z') {
         return match st.toggle_zoom(&target) {
             Ok(_) => CommandResult::ok(""),
@@ -5671,7 +5678,7 @@ fn link_window(args: &[String], st: &mut ServerState) -> CommandResult {
             st.link_window(&s, &d, has_flag(args, "-k"), select)
         } {
             Ok(()) => CommandResult::ok(""),
-            Err(e) => CommandResult::err(format!("{e}\n")),
+            Err(error) => command_target_error_candidates(error, &[(&s, "window"), (&d, "window")]),
         },
         (None, _) => CommandResult::err("can't establish current session\n"),
         (_, None) => CommandResult::err("link-window: missing destination\n"),
@@ -5732,15 +5739,20 @@ fn break_pane(args: &[String], st: &mut ServerState) -> CommandResult {
 }
 
 fn command_target_error(error: io::Error, target: &str, target_type: &str) -> CommandResult {
+    command_target_error_candidates(error, &[(target, target_type)])
+}
+
+fn command_target_error_candidates(error: io::Error, targets: &[(&str, &str)]) -> CommandResult {
     let message = error.to_string();
-    if !target.contains([':', '.'])
-        && !target.starts_with(['$', '@', '%'])
-        && message == format!("can't find session: {target}")
-    {
-        CommandResult::err(format!("can't find {target_type}: {target}\n"))
-    } else {
-        CommandResult::err(format!("{message}\n"))
+    for (target, target_type) in targets {
+        if !target.contains([':', '.'])
+            && !target.starts_with(['$', '@', '%'])
+            && message == format!("can't find session: {target}")
+        {
+            return CommandResult::err(format!("can't find {target_type}: {target}\n"));
+        }
     }
+    CommandResult::err(format!("{message}\n"))
 }
 
 /// `set-buffer [-b name] [-n new-name] [data]`. Stores or renames a paste buffer.
@@ -5853,6 +5865,15 @@ pub(crate) fn load_buffer_client_path(args: &[String], context: &ClientContext) 
 /// `paste-buffer`: transform buffer newlines and enqueue the result on the
 /// target pane's nonblocking PTY input path.
 fn paste_buffer(args: &[String], st: &mut ServerState) -> CommandResult {
+    let target = flag_value(args, "-t")
+        .map(str::to_string)
+        .or_else(|| current_session(st));
+    let Some(target) = target else {
+        return CommandResult::err("can't establish current session\n");
+    };
+    if st.resolve(&target).is_none() {
+        return CommandResult::err(format!("can't find pane: {target}\n"));
+    }
     let requested = flag_value(args, "-b");
     let selected = match requested {
         Some(name) => st
@@ -5867,12 +5888,6 @@ fn paste_buffer(args: &[String], st: &mut ServerState) -> CommandResult {
             Some(name) => CommandResult::err(format!("no buffer {name}\n")),
             None => CommandResult::ok(""),
         };
-    };
-    let target = flag_value(args, "-t")
-        .map(str::to_string)
-        .or_else(|| current_session(st));
-    let Some(target) = target else {
-        return CommandResult::err("can't establish current session\n");
     };
     let separator =
         flag_value(args, "-s").unwrap_or(if has_flag(args, "-r") { "\n" } else { "\r" });

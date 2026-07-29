@@ -126,6 +126,16 @@ fn enter_mode(args: &[String], state: &mut ServerState, view: ModeView) -> Comma
     }
 }
 
+fn validate_mode_target(args: &[String], state: &ServerState) -> Result<(), CommandResult> {
+    let Some(target) = mode_target(args, state) else {
+        return Err(CommandResult::err("no current session\n"));
+    };
+    if state.resolve(&target).is_none() {
+        return Err(CommandResult::err(format!("can't find pane: {target}\n")));
+    }
+    Ok(())
+}
+
 fn template_command(template: &str, value: &str) -> Vec<String> {
     let expanded = template.replace("%%", value);
     command_string_groups(&expanded)
@@ -188,6 +198,9 @@ fn choose_tree(args: &[String], state: &mut ServerState) -> CommandResult {
 }
 
 fn choose_client(args: &[String], state: &mut ServerState) -> CommandResult {
+    if let Err(error) = validate_mode_target(args, state) {
+        return error;
+    }
     let template = positionals(args, &["-F", "-f", "-K", "-O", "-t"])
         .first()
         .copied()
@@ -216,6 +229,9 @@ fn choose_client(args: &[String], state: &mut ServerState) -> CommandResult {
 }
 
 fn choose_buffer(args: &[String], state: &mut ServerState) -> CommandResult {
+    if let Err(error) = validate_mode_target(args, state) {
+        return error;
+    }
     let template = positionals(args, &["-F", "-f", "-K", "-O", "-t"])
         .first()
         .copied()
@@ -516,27 +532,27 @@ fn list_clients(args: &[String], state: &ServerState, agents: &PaneAgents) -> Co
 }
 
 fn detach_client(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {
-    match state.detach_client(flag_value(args, "-t"), client.tty_name.as_deref()) {
-        ClientActionResult::Queued => CommandResult::ok(""),
-        ClientActionResult::NoCurrentClient => CommandResult::err("no current client\n"),
-        ClientActionResult::TargetNotFound => CommandResult::err("can't find client\n"),
-    }
+    let target = flag_value(args, "-t");
+    overlay_result(
+        state.detach_client(target, client.tty_name.as_deref()),
+        target,
+    )
 }
 
 fn suspend_client(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {
-    match state.suspend_client(flag_value(args, "-t"), client.tty_name.as_deref()) {
-        ClientActionResult::Queued => CommandResult::ok(""),
-        ClientActionResult::NoCurrentClient => CommandResult::err("no current client\n"),
-        ClientActionResult::TargetNotFound => CommandResult::err("can't find client\n"),
-    }
+    let target = flag_value(args, "-t");
+    overlay_result(
+        state.suspend_client(target, client.tty_name.as_deref()),
+        target,
+    )
 }
 
 fn refresh_client(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {
-    match state.refresh_client(flag_value(args, "-t"), client.tty_name.as_deref()) {
-        ClientActionResult::Queued => CommandResult::ok(""),
-        ClientActionResult::NoCurrentClient => CommandResult::err("no current client\n"),
-        ClientActionResult::TargetNotFound => CommandResult::err("can't find client\n"),
-    }
+    let target = flag_value(args, "-t");
+    overlay_result(
+        state.refresh_client(target, client.tty_name.as_deref()),
+        target,
+    )
 }
 
 fn switch_client(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {
