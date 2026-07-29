@@ -60,6 +60,7 @@ const NEW_SESSION_TEMPLATE: &str = "#{session_name}:";
 const NEW_WINDOW_TEMPLATE: &str = "#{session_name}:#{window_index}.#{pane_index}";
 const DISPLAY_MESSAGE_TEMPLATE: &str = "[#{session_name}] #{window_index}:#{window_name}, current pane #{pane_index} - (%H:%M %d-%b-%y)";
 const NEW_SESSION_VALUE_FLAGS: &[&str] = &["-c", "-e", "-F", "-f", "-n", "-s", "-t", "-x", "-y"];
+const NEW_SESSION_MAX_SIZE: u16 = 10_000;
 
 /// The result of running a command: what to write to the client's stdout/stderr
 /// and the process exit code.
@@ -1748,6 +1749,10 @@ fn new_session(args: &[String], st: &mut ServerState, context: &ClientContext) -
     {
         return CommandResult::err("command or window name given with target\n");
     }
+    let dimensions = match new_session_dimensions(args) {
+        Ok(dimensions) => dimensions,
+        Err(error) => return CommandResult::err(error),
+    };
     let spec = new_session_pane_spec(args, st, context);
     let result = match flag_value(args, "-t") {
         Some(target) => st.create_grouped_session(&name, target, spec),
@@ -1755,7 +1760,7 @@ fn new_session(args: &[String], st: &mut ServerState, context: &ClientContext) -
     };
     match result {
         Ok(_) => {
-            apply_new_session_opts(args, &name, st);
+            apply_new_session_opts(args, &name, st, dimensions);
             if has_flag(args, "-P") {
                 let sess = st.find(&name).expect("session just created");
                 let template = flag_value(args, "-F").unwrap_or(NEW_SESSION_TEMPLATE);
@@ -1911,10 +1916,14 @@ fn list_keys(args: &[String], st: &ServerState) -> CommandResult {
 /// by the command-path [`new_session`] and the interactive
 /// [`new_session_for_attach`] so both create identical sessions. Assumes `args`
 /// is already normalized (see [`normalize_argv`]).
-fn apply_new_session_opts(args: &[String], name: &str, st: &mut ServerState) {
+fn apply_new_session_opts(
+    args: &[String],
+    name: &str,
+    st: &mut ServerState,
+    dimensions: (Option<u16>, Option<u16>),
+) {
     // `-x W -y H` sets the new session's client size.
-    let x = flag_value(args, "-x").and_then(|v| v.parse::<u16>().ok());
-    let y = flag_value(args, "-y").and_then(|v| v.parse::<u16>().ok());
+    let (x, y) = dimensions;
     let joined_existing_group = st
         .find(name)
         .is_some_and(|session| st.is_grouped(session) && st.session_group_size(session) > 1);
@@ -1945,6 +1954,42 @@ fn apply_new_session_opts(args: &[String], name: &str, st: &mut ServerState) {
         let command = trailing_command(args, NEW_SESSION_VALUE_FLAGS);
         apply_initial_window_name(st, name, 0, command.as_slice());
     }
+}
+
+fn new_session_dimensions(args: &[String]) -> Result<(Option<u16>, Option<u16>), String> {
+    Ok((
+        new_session_dimension(args, "-x", "width")?,
+        new_session_dimension(args, "-y", "height")?,
+    ))
+}
+
+fn new_session_dimension(args: &[String], flag: &str, label: &str) -> Result<Option<u16>, String> {
+    let Some(value) = flag_value(args, flag) else {
+        return Ok(None);
+    };
+    // tmux uses "-" to request the invoking client's size. Detached command
+    // clients have no usable dimensions, so preserve the existing fallback.
+    if value == "-" {
+        return Ok(None);
+    }
+    match value.parse::<i128>() {
+        Ok(value) if value < 1 => Err(format!("{label} too small\n")),
+        Ok(value) if value > i128::from(u16::MAX) => Err(format!("{label} too large\n")),
+        Ok(value) => Ok(Some((value as u16).min(NEW_SESSION_MAX_SIZE))),
+        Err(_) if numeric_with_sign(value, '-') => Err(format!("{label} too small\n")),
+        Err(_)
+            if numeric_with_sign(value, '+') || value.bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            Err(format!("{label} too large\n"))
+        }
+        Err(_) => Err(format!("{label} invalid\n")),
+    }
+}
+
+fn numeric_with_sign(value: &str, sign: char) -> bool {
+    value.strip_prefix(sign).is_some_and(|digits| {
+        !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+    })
 }
 
 fn apply_initial_window_name(
@@ -2077,6 +2122,7 @@ pub fn new_session_for_attach(
     {
         return Err("command or window name given with target\n".to_string());
     }
+    let dimensions = new_session_dimensions(&args)?;
     let spec = new_session_pane_spec(&args, st, context);
     let result = match flag_value(&args, "-t") {
         Some(target) => st.create_grouped_session(&name, target, spec),
@@ -2084,7 +2130,7 @@ pub fn new_session_for_attach(
     };
     match result {
         Ok(_) => {
-            apply_new_session_opts(&args, &name, st);
+            apply_new_session_opts(&args, &name, st, dimensions);
             Ok(name)
         }
         // create_session already yields tmux's "duplicate session: <name>".
@@ -2427,28 +2473,20 @@ fn display_message(
     let target = flag_value(args, "-t")
         .map(str::to_string)
         .or_else(|| current_session(st));
-    let target = match target {
-        Some(t) => t,
-        None if has_flag(args, "-p") && !has_flag(args, "-I") => {
-            let message = positionals(args, &["-t", "-c", "-d", "-F"])
-                .into_iter()
-                .next()
-                .or_else(|| flag_value(args, "-F"))
-                .unwrap_or("");
-            let expanded = if has_flag(args, "-l") {
-                message.to_string()
-            } else {
-                format::expand(message, &Vars::new())
-            };
-            return CommandResult::ok(format!("{expanded}\n"));
-        }
-        None => return CommandResult::err("can't establish current session\n"),
-    };
-    let resolved = match st.resolve(&target) {
-        Some(r) => r,
-        None => return CommandResult::err(format!("can't find session: {target}\n")),
-    };
+    if target.is_none() && !(has_flag(args, "-p") && !has_flag(args, "-I")) {
+        return CommandResult::err("can't establish current session\n");
+    }
+    // display-message uses tmux's can-fail target lookup. A missing explicit
+    // target supplies an empty format context rather than failing the command.
+    let resolved = target.as_deref().and_then(|target| st.resolve(target));
     if has_flag(args, "-I") {
+        let resolved = match resolved {
+            Some(resolved) => resolved,
+            None => {
+                let target = target.as_deref().unwrap_or_default();
+                return CommandResult::err(format!("can't find session: {target}\n"));
+            }
+        };
         let pane = &mut st.window_mut(resolved.session, resolved.window).panes[resolved.pane].pane;
         if !pane.is_empty() {
             return CommandResult::err("pane is not empty\n");
@@ -2476,32 +2514,41 @@ fn display_message(
         .unwrap_or(DISPLAY_MESSAGE_TEMPLATE);
     // Honor the *resolved* pane (e.g. `-t sess:win.{top}`), not just the window's
     // active pane, so pane-scoped variables reflect the target.
-    let mut vars = vars_full(
-        st,
-        &st.sessions()[resolved.session],
-        resolved.window,
-        resolved.pane,
-        agents,
-        st.marked_pane(),
-    );
+    let mut vars = match resolved {
+        Some(resolved) => vars_full(
+            st,
+            &st.sessions()[resolved.session],
+            resolved.window,
+            resolved.pane,
+            agents,
+            st.marked_pane(),
+        ),
+        None => Vars::new(),
+    };
     for (name, value) in st.env_iter() {
         vars.set(name, value);
     }
-    if let Ok(entries) = st.format_option_entries(&target) {
-        for (name, value) in entries {
-            vars.set(name, value);
+    if let Some(target) = target.as_deref() {
+        if let Ok(entries) = st.format_option_entries(target) {
+            for (name, value) in entries {
+                vars.set(name, value);
+            }
         }
     }
-    let loops = TreeLoops {
+    let loops = resolved.map(|resolved| TreeLoops {
         st,
         session: resolved.session,
         window: resolved.window,
         agents,
-    };
+    });
     let expanded = if has_flag(args, "-l") {
         message.to_string()
     } else {
-        format::expand_time_with(message, &vars, Some(&loops))
+        format::expand_time_with(
+            message,
+            &vars,
+            loops.as_ref().map(|loops| loops as &dyn format::LoopSource),
+        )
     };
     let mut out = String::new();
     // `-v` asks tmux's format engine to write its expansion trace to the
@@ -2521,9 +2568,12 @@ fn display_message(
                 Err(_) => return CommandResult::err(format!("delay {value}: invalid number\n")),
             },
             None => st
-                .option_for_target(&target, "display-time")
+                .option_for_target(target.as_deref().unwrap_or_default(), "display-time")
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(750),
+        };
+        let Some(resolved) = resolved else {
+            return CommandResult::ok(out);
         };
         let session_id = st.sessions()[resolved.session].id;
         match st.send_client_message(
@@ -7806,6 +7856,54 @@ mod tests {
     }
 
     #[test]
+    fn new_session_rejects_invalid_dimensions_before_creation() {
+        let st = state();
+        for (name, flag, value, expected) in [
+            ("bad-width", "-x", "invalid", "width invalid\n"),
+            ("bad-height", "-y", "invalid", "height invalid\n"),
+            ("small-width", "-x", "0", "width too small\n"),
+            ("small-height", "-y", "0", "height too small\n"),
+            ("large-width", "-x", "65536", "width too large\n"),
+            ("large-height", "-y", "65536", "height too large\n"),
+        ] {
+            let result = run_str(&st, &["new-session", "-d", "-s", name, flag, value]);
+            assert_eq!(result.exit, 1, "name={name}");
+            assert_eq!(result.stderr, expected, "name={name}");
+            assert_eq!(run_str(&st, &["has-session", "-t", name]).exit, 1);
+        }
+    }
+
+    #[test]
+    fn new_session_caps_large_valid_dimensions() {
+        let st = state();
+        let result = run_str(
+            &st,
+            &[
+                "new-session",
+                "-d",
+                "-s",
+                "large",
+                "-x",
+                "65535",
+                "-y",
+                "65535",
+            ],
+        );
+        assert_eq!(result.exit, 0, "stderr={:?}", result.stderr);
+        let size = run_str(
+            &st,
+            &[
+                "display-message",
+                "-p",
+                "-t",
+                "large",
+                "#{window_width}x#{window_height}",
+            ],
+        );
+        assert_eq!(size.stdout, "10000x10000\n");
+    }
+
+    #[test]
     fn unknown_command_errors() {
         let st = state();
         let r = run_str(&st, &["frobnicate"]);
@@ -7986,15 +8084,20 @@ mod tests {
     }
 
     #[test]
-    fn display_message_missing_session() {
+    fn display_message_missing_session_uses_empty_format_context() {
         let st = state();
         let r = run_str(&st, &["display-message", "-t", "nope", "-p", "x"]);
-        assert_eq!(r.exit, 1);
-        assert!(
-            r.stderr.contains("can't find session"),
-            "got {:?}",
-            r.stderr
+        assert_eq!(r.exit, 0);
+        assert_eq!(r.stdout, "x\n");
+        assert_eq!(r.stderr, "");
+
+        let format = run_str(
+            &st,
+            &["display-message", "-t", "nope", "-p", "#{pane_index}"],
         );
+        assert_eq!(format.exit, 0);
+        assert_eq!(format.stdout, "\n");
+        assert_eq!(format.stderr, "");
     }
 
     #[test]
