@@ -73,6 +73,9 @@ fn find_window(args: &[String], state: &mut ServerState) -> CommandResult {
     else {
         return CommandResult::err("no current session\n");
     };
+    if state.resolve(&target).is_none() {
+        return CommandResult::err(format!("can't find pane: {target}\n"));
+    }
     let mut items = Vec::new();
     for session in state.sessions() {
         for (position, link) in session.windows.iter().enumerate() {
