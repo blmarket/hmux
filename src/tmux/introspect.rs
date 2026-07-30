@@ -10,7 +10,9 @@ use std::{fmt, io};
 use tracing::info;
 
 use super::message::{Frame, Message};
-use super::traits::{FrameReader, FrameWriter, NonblockingFrameReader};
+use super::traits::{
+    FrameReader, FrameWriter, NonblockingFrameReader, NonblockingFrameWriter, WriteQueueFull,
+};
 
 /// Direction label for logged frames.
 #[derive(Clone, Copy)]
@@ -64,7 +66,7 @@ pub struct LoggingWriter<W> {
     dir: Direction,
 }
 
-impl<W: FrameWriter> LoggingWriter<W> {
+impl<W> LoggingWriter<W> {
     pub fn new(inner: W, dir: Direction) -> Self {
         LoggingWriter { inner, dir }
     }
@@ -74,6 +76,26 @@ impl<W: FrameWriter> FrameWriter for LoggingWriter<W> {
     fn send(&mut self, frame: Frame) -> io::Result<()> {
         log_frame(self.dir, &frame);
         self.inner.send(frame)
+    }
+}
+
+impl<W> NonblockingFrameWriter for LoggingWriter<W>
+where
+    W: NonblockingFrameWriter<Frame = Frame>,
+{
+    type Frame = Frame;
+
+    fn try_queue(&mut self, frame: Self::Frame) -> Result<(), WriteQueueFull<Self::Frame>> {
+        log_frame(self.dir, &frame);
+        self.inner.try_queue(frame)
+    }
+
+    fn try_flush(&mut self) -> io::Result<()> {
+        self.inner.try_flush()
+    }
+
+    fn has_pending(&self) -> bool {
+        self.inner.has_pending()
     }
 }
 

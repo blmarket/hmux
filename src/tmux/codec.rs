@@ -28,7 +28,9 @@ use std::os::unix::net::UnixStream;
 use libc::{c_int, c_void};
 
 use super::message::{Frame, Message};
-use super::traits::{FrameReader, FrameWriter, NonblockingFrameReader};
+use super::traits::{
+    FrameReader, FrameWriter, NonblockingFrameReader, NonblockingFrameWriter, WriteQueueFull,
+};
 
 /// `IMSG_HEADER_SIZE` — `sizeof(struct imsg_hdr)`.
 pub const HEADER_SIZE: usize = 16;
@@ -38,11 +40,13 @@ const IMSG_FD_MARK: u32 = 0x8000_0000;
 pub const MAX_IMSGSIZE: usize = 16384;
 /// `IBUF_READ_SIZE` — recvmsg chunk size (compat/imsg.h).
 const READ_CHUNK: usize = 65535;
+/// Default private output queue high-water mark: 64 maximum-sized imsg frames.
+const DEFAULT_WRITE_QUEUE_LIMIT: usize = MAX_IMSGSIZE * 64;
 
 /// Encode a frame to its on-wire header+payload bytes. The fd (if any) is
-/// carried separately by [`ImsgWriter::send`] as ancillary data; this returns
-/// only the stream bytes, with `IMSG_FD_MARK` set in `len` when `frame.fd` is
-/// present.
+/// carried separately by [`ImsgWriter`] and [`NonblockingImsgWriter`] as
+/// ancillary data; this returns only the stream bytes, with `IMSG_FD_MARK` set
+/// in `len` when `frame.fd` is present.
 pub fn encode_bytes(frame: &Frame) -> Vec<u8> {
     let (type_, payload) = frame.msg.encode();
     let mut len = (HEADER_SIZE + payload.len()) as u32;
@@ -70,9 +74,39 @@ pub struct ImsgReader {
     fds: VecDeque<OwnedFd>,
 }
 
-/// Write half of a connection: framed imsg writes over `sendmsg`.
+/// Blocking write half of a connection: framed imsg writes over `sendmsg`.
 pub struct ImsgWriter {
     fd: OwnedFd,
+}
+
+/// Nonblocking write half of a connection with a bounded private output queue.
+pub struct NonblockingImsgWriter {
+    fd: OwnedFd,
+    pending: VecDeque<ImsgWriteBuffer>,
+    pending_bytes: usize,
+    max_pending_bytes: usize,
+}
+
+#[derive(Debug)]
+struct ImsgWriteBuffer {
+    bytes: Vec<u8>,
+    written: usize,
+    fd: Option<OwnedFd>,
+}
+
+impl ImsgWriteBuffer {
+    fn new(frame: Frame) -> Self {
+        let bytes = encode_bytes(&frame);
+        Self {
+            bytes,
+            written: 0,
+            fd: frame.fd,
+        }
+    }
+
+    fn remaining(&self) -> usize {
+        self.bytes.len() - self.written
+    }
 }
 
 impl ImsgReader {
@@ -207,6 +241,18 @@ impl AsFd for ImsgWriter {
     }
 }
 
+impl AsRawFd for NonblockingImsgWriter {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd.as_raw_fd()
+    }
+}
+
+impl AsFd for NonblockingImsgWriter {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.fd.as_fd()
+    }
+}
+
 impl ImsgWriter {
     pub fn new(fd: OwnedFd) -> Self {
         ImsgWriter { fd }
@@ -214,9 +260,65 @@ impl ImsgWriter {
 
     /// Encode and send a frame, passing `frame.fd` as `SCM_RIGHTS` if present.
     pub fn send(&mut self, frame: Frame) -> io::Result<()> {
+        let mut buffer = ImsgWriteBuffer::new(frame);
+        sendmsg_buffer(self.fd.as_raw_fd(), &mut buffer, 0)
+    }
+}
+
+impl NonblockingImsgWriter {
+    pub fn new(fd: OwnedFd) -> Self {
+        Self::with_queue_limit(fd, DEFAULT_WRITE_QUEUE_LIMIT)
+    }
+
+    /// Construct a nonblocking writer with a private output queue high-water
+    /// mark.
+    pub fn with_queue_limit(fd: OwnedFd, max_pending_bytes: usize) -> Self {
+        NonblockingImsgWriter {
+            fd,
+            pending: VecDeque::new(),
+            pending_bytes: 0,
+            max_pending_bytes,
+        }
+    }
+
+    fn try_queue_frame(&mut self, frame: Frame) -> Result<(), WriteQueueFull<Frame>> {
         let bytes = encode_bytes(&frame);
-        let pass = frame.fd.as_ref().map(|f| f.as_raw_fd());
-        sendmsg_all(self.fd.as_raw_fd(), &bytes, pass)
+        let frame_bytes = bytes.len();
+        if frame_bytes > self.max_pending_bytes.saturating_sub(self.pending_bytes) {
+            return Err(WriteQueueFull::new(frame));
+        }
+
+        let buffer = ImsgWriteBuffer {
+            bytes,
+            written: 0,
+            fd: frame.fd,
+        };
+        self.pending_bytes += frame_bytes;
+        self.pending.push_back(buffer);
+        Ok(())
+    }
+
+    fn flush_queued(&mut self, flags: c_int) -> io::Result<()> {
+        while !self.pending.is_empty() {
+            let (result, written) = {
+                let buffer = self
+                    .pending
+                    .front_mut()
+                    .expect("pending queue is not empty");
+                let before = buffer.remaining();
+                let result = sendmsg_buffer(self.fd.as_raw_fd(), buffer, flags);
+                (result, before - buffer.remaining())
+            };
+            self.pending_bytes -= written;
+
+            match result {
+                Ok(()) => {
+                    self.pending.pop_front();
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
     }
 }
 
@@ -283,29 +385,23 @@ fn recvmsg_with_fds(fd: RawFd, buf: &mut [u8], flags: c_int) -> io::Result<(usiz
     Ok((n, fds))
 }
 
-/// `sendmsg` the whole buffer, attaching `pass_fd` as `SCM_RIGHTS` on the first
-/// write only (mirrors imsg: the fd is transferred with the first bytes).
-fn sendmsg_all(fd: RawFd, data: &[u8], pass_fd: Option<RawFd>) -> io::Result<()> {
-    let mut sent = 0usize;
-
-    // Prepare the one-fd control buffer once; used only for the first sendmsg.
+/// Advance a prepared imsg buffer, attaching its descriptor to the first
+/// successful write only.
+fn sendmsg_buffer(fd: RawFd, buffer: &mut ImsgWriteBuffer, flags: c_int) -> io::Result<()> {
     let cmsg_space = unsafe { libc::CMSG_SPACE(mem::size_of::<c_int>() as u32) } as usize;
     let mut cmsg_buf = vec![0u8; cmsg_space];
 
-    while sent < data.len() {
+    while buffer.written < buffer.bytes.len() {
         let mut iov = libc::iovec {
-            iov_base: data[sent..].as_ptr() as *mut c_void,
-            iov_len: data.len() - sent,
+            iov_base: buffer.bytes[buffer.written..].as_ptr() as *mut c_void,
+            iov_len: buffer.bytes.len() - buffer.written,
         };
         let mut msg: libc::msghdr = unsafe { mem::zeroed() };
         msg.msg_iov = &mut iov;
         msg.msg_iovlen = 1;
 
-        let attach_fd = pass_fd.filter(|_| sent == 0);
-        if let Some(raw) = attach_fd {
-            for b in cmsg_buf.iter_mut() {
-                *b = 0;
-            }
+        if let Some(raw) = buffer.fd.as_ref().map(AsRawFd::as_raw_fd) {
+            cmsg_buf.fill(0);
             msg.msg_control = cmsg_buf.as_mut_ptr() as *mut c_void;
             msg.msg_controllen = cmsg_buf.len() as _;
             unsafe {
@@ -321,7 +417,7 @@ fn sendmsg_all(fd: RawFd, data: &[u8], pass_fd: Option<RawFd>) -> io::Result<()>
             }
         }
 
-        let r = unsafe { libc::sendmsg(fd, &msg, 0) };
+        let r = unsafe { libc::sendmsg(fd, &msg, flags) };
         if r < 0 {
             let e = io::Error::last_os_error();
             if e.kind() == io::ErrorKind::Interrupted {
@@ -329,7 +425,18 @@ fn sendmsg_all(fd: RawFd, data: &[u8], pass_fd: Option<RawFd>) -> io::Result<()>
             }
             return Err(e);
         }
-        sent += r as usize;
+        if r == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                "sendmsg wrote zero bytes",
+            ));
+        }
+
+        // A descriptor attached to a successful stream write was transferred
+        // with its first byte. Drop our copy before continuing with the suffix
+        // so a retry cannot send it twice.
+        buffer.fd.take();
+        buffer.written += r as usize;
     }
     Ok(())
 }
@@ -347,6 +454,18 @@ pub fn split_stream(stream: UnixStream) -> io::Result<(ImsgReader, ImsgWriter)> 
     Ok((ImsgReader::new(read_fd), ImsgWriter::new(write_fd)))
 }
 
+/// Split a connected Unix stream into independent nonblocking framed handles.
+pub fn split_nonblocking_stream(
+    stream: UnixStream,
+) -> io::Result<(ImsgReader, NonblockingImsgWriter)> {
+    let read_fd: OwnedFd = stream.into();
+    let write_fd = dup_fd(read_fd.as_fd())?;
+    Ok((
+        ImsgReader::new(read_fd),
+        NonblockingImsgWriter::new(write_fd),
+    ))
+}
+
 impl FrameReader for ImsgReader {
     fn recv(&mut self) -> io::Result<Frame> {
         ImsgReader::recv(self)
@@ -356,6 +475,22 @@ impl FrameReader for ImsgReader {
 impl NonblockingFrameReader for ImsgReader {
     fn try_recv(&mut self) -> io::Result<Frame> {
         ImsgReader::try_recv(self)
+    }
+}
+
+impl NonblockingFrameWriter for NonblockingImsgWriter {
+    type Frame = Frame;
+
+    fn try_queue(&mut self, frame: Self::Frame) -> Result<(), WriteQueueFull<Self::Frame>> {
+        self.try_queue_frame(frame)
+    }
+
+    fn try_flush(&mut self) -> io::Result<()> {
+        self.flush_queued(libc::MSG_DONTWAIT)
+    }
+
+    fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
     }
 }
 
@@ -674,6 +809,148 @@ mod tests {
 
         assert_eq!(frame.msg, Message::IdentifyStdin);
         assert!(frame.fd.is_some());
+    }
+
+    #[test]
+    fn try_queue_performs_no_io_and_flushes_in_order() {
+        let (sender, receiver) = UnixStream::pair().unwrap();
+        let (_sender_reader, mut writer) = split_nonblocking_stream(sender).unwrap();
+        let mut reader = ImsgReader::new(receiver.into());
+        let first = Message::Command(vec!["first".into()]);
+        let second = Message::Command(vec!["second".into()]);
+
+        writer.try_queue(Frame::new(first.clone())).unwrap();
+        writer.try_queue(Frame::new(second.clone())).unwrap();
+        assert!(writer.has_pending());
+        let error = reader.try_recv().expect_err("queueing must not write");
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+
+        writer.try_flush().unwrap();
+        assert!(!writer.has_pending());
+        assert_eq!(reader.try_recv().unwrap().msg, first);
+        assert_eq!(reader.try_recv().unwrap().msg, second);
+    }
+
+    #[test]
+    fn try_queue_rejects_at_the_private_queue_limit() {
+        let (sender, receiver) = UnixStream::pair().unwrap();
+        let accepted = Message::Command(vec!["one".into()]);
+        let rejected_message = Message::Command(vec!["two".into()]);
+        let queue_limit = encode_bytes(&Frame::new(accepted.clone())).len();
+        let mut writer = NonblockingImsgWriter::with_queue_limit(sender.into(), queue_limit);
+        let mut reader = ImsgReader::new(receiver.into());
+
+        writer.try_queue(Frame::new(accepted.clone())).unwrap();
+        let rejected_frame = writer
+            .try_queue(Frame::new(rejected_message.clone()))
+            .expect_err("the queue is full")
+            .into_frame();
+        assert_eq!(rejected_frame.msg, rejected_message);
+        assert!(writer.has_pending());
+        let error = reader.try_recv().expect_err("queueing must not write");
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+
+        writer.try_flush().unwrap();
+        assert_eq!(reader.try_recv().unwrap().msg, accepted);
+        assert!(!writer.has_pending());
+
+        writer.try_queue(rejected_frame).unwrap();
+        writer.try_flush().unwrap();
+        assert_eq!(reader.try_recv().unwrap().msg, rejected_message);
+    }
+
+    #[test]
+    fn rejected_frame_preserves_its_descriptor_for_retry() {
+        let (sender, receiver) = UnixStream::pair().unwrap();
+        let queue_limit = encode_bytes(&Frame::new(Message::Ready)).len();
+        let mut writer = NonblockingImsgWriter::with_queue_limit(sender.into(), queue_limit);
+        let mut reader = ImsgReader::new(receiver.into());
+        let descriptor: OwnedFd = std::fs::File::open("/dev/null").unwrap().into();
+        let raw = descriptor.as_raw_fd();
+
+        writer.try_queue(Frame::new(Message::Ready)).unwrap();
+        let rejected = writer
+            .try_queue(Frame::with_fd(Message::IdentifyStdin, descriptor))
+            .expect_err("the queue is full");
+        assert!(rejected.frame().fd.is_some());
+        assert!(unsafe { libc::fcntl(raw, libc::F_GETFD) } >= 0);
+
+        writer.try_flush().unwrap();
+        writer.try_queue(rejected.into_frame()).unwrap();
+        writer.try_flush().unwrap();
+
+        assert_eq!(reader.try_recv().unwrap().msg, Message::Ready);
+        let retried = reader.try_recv().unwrap();
+        assert_eq!(retried.msg, Message::IdentifyStdin);
+        assert!(retried.fd.is_some());
+    }
+
+    #[test]
+    fn try_flush_retains_unwritten_frames_after_would_block() {
+        const FRAME_COUNT: i32 = 64;
+
+        let (sender, receiver) = UnixStream::pair().unwrap();
+        let send_buffer_bytes: c_int = 4096;
+        let result = unsafe {
+            libc::setsockopt(
+                sender.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_SNDBUF,
+                &send_buffer_bytes as *const _ as *const c_void,
+                mem::size_of_val(&send_buffer_bytes) as libc::socklen_t,
+            )
+        };
+        assert_eq!(result, 0, "setsockopt failed");
+
+        let mut writer = NonblockingImsgWriter::new(sender.into());
+        let mut reader = ImsgReader::new(receiver.into());
+        let payload_len = MAX_IMSGSIZE - HEADER_SIZE - mem::size_of::<i32>();
+        for stream in 0..FRAME_COUNT {
+            writer
+                .try_queue(Frame::new(Message::Write {
+                    stream,
+                    data: vec![stream as u8; payload_len],
+                }))
+                .unwrap();
+        }
+
+        let error = writer
+            .try_flush()
+            .expect_err("the small socket buffer must apply backpressure");
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert!(writer.has_pending());
+
+        let mut received = 0;
+        for _ in 0..4096 {
+            loop {
+                match reader.try_recv() {
+                    Ok(frame) => {
+                        let Message::Write { stream, data } = frame.msg else {
+                            panic!("unexpected frame");
+                        };
+                        assert_eq!(stream, received);
+                        assert_eq!(data.len(), payload_len);
+                        assert!(data.iter().all(|byte| *byte == received as u8));
+                        received += 1;
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                    Err(error) => panic!("receive failed: {error}"),
+                }
+            }
+
+            if received == FRAME_COUNT && !writer.has_pending() {
+                break;
+            }
+
+            match writer.try_flush() {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                Err(error) => panic!("flush failed: {error}"),
+            }
+        }
+
+        assert_eq!(received, FRAME_COUNT);
+        assert!(!writer.has_pending());
     }
 
     #[test]
