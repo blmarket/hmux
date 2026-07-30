@@ -12,4 +12,4 @@ pub use backing::Backing;
 pub use message::{msgtype, Frame, Message, PROTOCOL_VERSION};
 pub use native::NativeServer;
 pub use status_client::{PaneStatus, StatusClient, StatusUpdate};
-pub use traits::{FrameReader, FrameWriter, TmuxServer};
+pub use traits::{FrameReader, FrameWriter, NonblockingFrameReader, TmuxServer};

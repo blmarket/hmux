@@ -13,6 +13,8 @@
 //! - [`serve`] — the listener and per-connection pairing loop.
 
 pub mod error;
+#[allow(dead_code)]
+pub(crate) mod event_loop;
 /// Safe wrapper over libghostty-vt, the terminal-emulation core of the native
 /// path. Lives in the standalone `ghostty-sys` crate (which owns the raw FFI and
 /// the build/link logic); re-exported here so `hmux::ghostty::*` is unchanged.

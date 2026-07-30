@@ -10,7 +10,7 @@ use std::{fmt, io};
 use tracing::info;
 
 use super::message::{Frame, Message};
-use super::traits::{FrameReader, FrameWriter};
+use super::traits::{FrameReader, FrameWriter, NonblockingFrameReader};
 
 /// Direction label for logged frames.
 #[derive(Clone, Copy)]
@@ -36,7 +36,7 @@ pub struct LoggingReader<R> {
     dir: Direction,
 }
 
-impl<R: FrameReader> LoggingReader<R> {
+impl<R> LoggingReader<R> {
     pub fn new(inner: R, dir: Direction) -> Self {
         LoggingReader { inner, dir }
     }
@@ -45,6 +45,14 @@ impl<R: FrameReader> LoggingReader<R> {
 impl<R: FrameReader> FrameReader for LoggingReader<R> {
     fn recv(&mut self) -> io::Result<Frame> {
         let frame = self.inner.recv()?;
+        log_frame(self.dir, &frame);
+        Ok(frame)
+    }
+}
+
+impl<R: NonblockingFrameReader> NonblockingFrameReader for LoggingReader<R> {
+    fn try_recv(&mut self) -> io::Result<Frame> {
+        let frame = self.inner.try_recv()?;
         log_frame(self.dir, &frame);
         Ok(frame)
     }

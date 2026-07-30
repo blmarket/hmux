@@ -32,6 +32,20 @@ pub trait FrameReader: Send {
     fn recv(&mut self) -> io::Result<Frame>;
 }
 
+/// A receiving half that can be driven by an I/O readiness loop.
+///
+/// This trait is intentionally independent of [`FrameReader`]. Event-driven
+/// users should not need to implement or depend on the legacy blocking
+/// operation.
+pub trait NonblockingFrameReader: Send {
+    /// Return the next complete frame without blocking.
+    ///
+    /// Returns [`io::ErrorKind::WouldBlock`] when no complete frame is
+    /// currently available. Any partial frame bytes and received descriptors
+    /// are retained for a later call.
+    fn try_recv(&mut self) -> io::Result<Frame>;
+}
+
 /// The sending half of a connection.
 pub trait FrameWriter: Send {
     /// Send a frame, forwarding any attached `SCM_RIGHTS` fd.

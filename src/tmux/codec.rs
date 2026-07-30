@@ -28,7 +28,7 @@ use std::os::unix::net::UnixStream;
 use libc::{c_int, c_void};
 
 use super::message::{Frame, Message};
-use super::traits::{FrameReader, FrameWriter};
+use super::traits::{FrameReader, FrameWriter, NonblockingFrameReader};
 
 /// `IMSG_HEADER_SIZE` — `sizeof(struct imsg_hdr)`.
 pub const HEADER_SIZE: usize = 16;
@@ -91,7 +91,20 @@ impl ImsgReader {
             if let Some(frame) = self.try_parse()? {
                 return Ok(frame);
             }
-            self.fill()?;
+            self.fill(0)?;
+        }
+    }
+
+    /// Return the next complete frame without blocking.
+    ///
+    /// Partial bytes and received descriptors remain buffered when this
+    /// returns `WouldBlock`.
+    pub fn try_recv(&mut self) -> io::Result<Frame> {
+        loop {
+            if let Some(frame) = self.try_parse()? {
+                return Ok(frame);
+            }
+            self.fill(libc::MSG_DONTWAIT)?;
         }
     }
 
@@ -138,7 +151,7 @@ impl ImsgReader {
     }
 
     /// One `recvmsg`: append received bytes to `buf` and any fds to `fds`.
-    fn fill(&mut self) -> io::Result<()> {
+    fn fill(&mut self, flags: c_int) -> io::Result<()> {
         let start = self.buf.len();
         self.buf.resize(start + READ_CHUNK, 0);
 
@@ -149,7 +162,7 @@ impl ImsgReader {
         // next `try_parse` read a bogus all-zero header (`total == 0` →
         // `InvalidData`). Truncating back keeps the buffer at a clean frame
         // boundary so a subsequent `recv` resumes correctly.
-        let (n, fds) = match recvmsg_with_fds(self.fd.as_raw_fd(), &mut self.buf[start..]) {
+        let (n, fds) = match recvmsg_with_fds(self.fd.as_raw_fd(), &mut self.buf[start..], flags) {
             Ok(v) => v,
             Err(e) => {
                 self.buf.truncate(start);
@@ -176,9 +189,21 @@ impl AsRawFd for ImsgReader {
     }
 }
 
+impl AsFd for ImsgReader {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.fd.as_fd()
+    }
+}
+
 impl AsRawFd for ImsgWriter {
     fn as_raw_fd(&self) -> RawFd {
         self.fd.as_raw_fd()
+    }
+}
+
+impl AsFd for ImsgWriter {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.fd.as_fd()
     }
 }
 
@@ -199,7 +224,7 @@ impl ImsgWriter {
 
 /// `recvmsg` collecting up to one fd's worth of `SCM_RIGHTS` ancillary data per
 /// call (matching tmux's one-fd control buffer). Returns `(bytes_read, fds)`.
-fn recvmsg_with_fds(fd: RawFd, buf: &mut [u8]) -> io::Result<(usize, Vec<OwnedFd>)> {
+fn recvmsg_with_fds(fd: RawFd, buf: &mut [u8], flags: c_int) -> io::Result<(usize, Vec<OwnedFd>)> {
     // Space for one fd; padded per CMSG rules. A generous fixed buffer avoids a
     // heap alloc and still fits the single-fd control message.
     let cmsg_space = unsafe { libc::CMSG_SPACE(mem::size_of::<c_int>() as u32) } as usize;
@@ -216,7 +241,7 @@ fn recvmsg_with_fds(fd: RawFd, buf: &mut [u8]) -> io::Result<(usize, Vec<OwnedFd
     msg.msg_controllen = cmsg_buf.len() as _;
 
     let n = loop {
-        let r = unsafe { libc::recvmsg(fd, &mut msg, 0) };
+        let r = unsafe { libc::recvmsg(fd, &mut msg, flags) };
         if r < 0 {
             let e = io::Error::last_os_error();
             if e.kind() == io::ErrorKind::Interrupted {
@@ -328,6 +353,12 @@ impl FrameReader for ImsgReader {
     }
 }
 
+impl NonblockingFrameReader for ImsgReader {
+    fn try_recv(&mut self) -> io::Result<Frame> {
+        ImsgReader::try_recv(self)
+    }
+}
+
 impl FrameWriter for ImsgWriter {
     fn send(&mut self, frame: Frame) -> io::Result<()> {
         ImsgWriter::send(self, frame)
@@ -338,6 +369,7 @@ impl FrameWriter for ImsgWriter {
 mod tests {
     use super::*;
     use crate::tmux::message::{msgtype, Frame, Message, PROTOCOL_VERSION};
+    use std::io::Write as _;
 
     /// Decode a frame's bytes back into `(type, version, payload)` for
     /// round-trip assertions (no fd path — that needs a real socket).
@@ -576,6 +608,72 @@ mod tests {
         let frame = reader.recv().expect("decode after timeout");
         assert_eq!(frame.version, PROTOCOL_VERSION);
         assert_eq!(frame.msg, msg);
+    }
+
+    #[test]
+    fn try_recv_reports_would_block_without_changing_socket_mode() {
+        let (sender, receiver) = UnixStream::pair().unwrap();
+        let mut reader = ImsgReader::new(receiver.into());
+
+        let error = reader.try_recv().expect_err("no frame is available");
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+
+        let flags = unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_GETFL) };
+        assert!(flags >= 0);
+        assert_eq!(flags & libc::O_NONBLOCK, 0);
+
+        drop(sender);
+        let error = reader.try_recv().expect_err("closed peer is EOF");
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn try_recv_retains_partial_frame_until_complete() {
+        let (mut sender, receiver) = UnixStream::pair().unwrap();
+        let mut reader = ImsgReader::new(receiver.into());
+        let message = Message::Command(vec!["list-sessions".into()]);
+        let bytes = encode_bytes(&Frame::new(message.clone()));
+
+        sender.write_all(&bytes[..HEADER_SIZE - 1]).unwrap();
+        let error = reader.try_recv().expect_err("header is incomplete");
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+
+        sender.write_all(&bytes[HEADER_SIZE - 1..]).unwrap();
+        let frame = reader.try_recv().expect("completed frame");
+        assert_eq!(frame.version, PROTOCOL_VERSION);
+        assert_eq!(frame.msg, message);
+    }
+
+    #[test]
+    fn try_recv_drains_frames_already_buffered_in_userspace() {
+        let (mut sender, receiver) = UnixStream::pair().unwrap();
+        let mut reader = ImsgReader::new(receiver.into());
+        let first = Message::Command(vec!["first".into()]);
+        let second = Message::Command(vec!["second".into()]);
+        let mut bytes = encode_bytes(&Frame::new(first.clone()));
+        bytes.extend_from_slice(&encode_bytes(&Frame::new(second.clone())));
+        sender.write_all(&bytes).unwrap();
+
+        assert_eq!(reader.try_recv().unwrap().msg, first);
+        assert_eq!(reader.try_recv().unwrap().msg, second);
+        let error = reader.try_recv().expect_err("all frames were drained");
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+    }
+
+    #[test]
+    fn try_recv_preserves_received_descriptor_association() {
+        let (sender, receiver) = UnixStream::pair().unwrap();
+        let mut writer = ImsgWriter::new(sender.into());
+        let mut reader = ImsgReader::new(receiver.into());
+        let descriptor: OwnedFd = std::fs::File::open("/dev/null").unwrap().into();
+
+        writer
+            .send(Frame::with_fd(Message::IdentifyStdin, descriptor))
+            .unwrap();
+        let frame = reader.try_recv().expect("frame with descriptor");
+
+        assert_eq!(frame.msg, Message::IdentifyStdin);
+        assert!(frame.fd.is_some());
     }
 
     #[test]
