@@ -216,9 +216,7 @@ impl ClientIo {
             }
         }
 
-        if self.reader.has_buffered_frame() {
-            self.schedule_read_continuation(target, outbox);
-        }
+        self.schedule_read_continuation(target, outbox);
     }
 
     fn handle_send(&mut self, target: &ActorRef<Self>, frame: Frame, outbox: &mut Outbox) {

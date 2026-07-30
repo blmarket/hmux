@@ -1,11 +1,8 @@
-//! `hmux` binary: bind a socket and serve `tmux attach` with the native engine.
+//! `hmux` binary: bind a socket and serve `tmux attach`.
 //!
 //! ```text
-//! hmux [--foreground] [-S <sock>] [--engine native]
+//! hmux [--foreground] [-S <sock>] [--engine native|event-loop]
 //! ```
-//!
-//! `--engine native` remains accepted for command-line compatibility; native is
-//! the only implementation.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -21,6 +18,8 @@ use hmux::tmux::NativeServer;
 enum Engine {
     /// Native libghostty-vt server (owns ptys + screen state).
     Native,
+    /// Native server behind the readiness-driven forwarding adapter.
+    EventLoop,
 }
 
 #[derive(Parser, Debug)]
@@ -35,9 +34,9 @@ struct Args {
     #[arg(short = 'S', long = "socket")]
     socket: Option<PathBuf>,
 
-    /// Compatibility spelling for the native implementation.
-    #[arg(long, value_enum, default_value_t = Engine::Native, hide = true)]
-    _engine: Engine,
+    /// Connection forwarding implementation.
+    #[arg(long, value_enum, default_value_t = Engine::Native)]
+    engine: Engine,
 }
 
 fn main() -> ExitCode {
@@ -68,7 +67,7 @@ fn main() -> ExitCode {
         )
         .init();
 
-    let result = run_native(args);
+    let result = run_server(args);
 
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -131,12 +130,15 @@ fn daemonize() -> std::io::Result<DaemonOutcome> {
     Ok(DaemonOutcome::Child)
 }
 
-/// Serve the libghostty-vt server directly.
-fn run_native(args: Args) -> hmux::Result<()> {
+/// Serve the libghostty-vt server with the selected connection adapter.
+fn run_server(args: Args) -> hmux::Result<()> {
     let listen_socket = args.socket.as_deref().expect("socket resolved in main");
     install_signal_teardown(listen_socket.to_path_buf());
 
-    info!("engine: native (libghostty-vt)");
+    match args.engine {
+        Engine::Native => info!("engine: native (libghostty-vt)"),
+        Engine::EventLoop => info!("engine: event-loop proxy (libghostty-vt)"),
+    }
     // Start as a server only. The first untargeted `tmux attach` lazily creates
     // session 0, so launching hmux does not speculatively spawn a shell or
     // commit the first session to the 80x24 fallback geometry.
@@ -144,7 +146,12 @@ fn run_native(args: Args) -> hmux::Result<()> {
     // The observer publishes into the server's status hub; connection handlers
     // read the same hub for `#{pane_agent*}` and the push protocol.
     let _agent_observer = AgentObserver::start(server.clone(), server.status_hub())?;
-    let result = serve::run_until(listen_socket, server, |server| server.shutdown_requested());
+    let result = match args.engine {
+        Engine::Native => {
+            serve::run_until(listen_socket, server, |server| server.shutdown_requested())
+        }
+        Engine::EventLoop => serve::run_event_loop(listen_socket, server),
+    };
     // Unix socket pathnames outlive a closed listener. Remove ours on a normal
     // `exit-empty` shutdown just as the signal teardown path does.
     let _ = std::fs::remove_file(listen_socket);
@@ -196,5 +203,25 @@ fn install_signal_teardown(listen_socket: PathBuf) {
             let _ = std::fs::remove_file(&listen_socket);
             std::process::exit(0);
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_engine_remains_the_default() {
+        let args = Args::try_parse_from(["hmux", "--foreground"]).unwrap();
+
+        assert_eq!(args.engine, Engine::Native);
+    }
+
+    #[test]
+    fn event_loop_engine_is_selected_explicitly() {
+        let args =
+            Args::try_parse_from(["hmux", "--foreground", "--engine", "event-loop"]).unwrap();
+
+        assert_eq!(args.engine, Engine::EventLoop);
     }
 }

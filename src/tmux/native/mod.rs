@@ -46,7 +46,10 @@ use std::time::Duration;
 
 use crate::integration::status::StatusHub;
 use crate::observability::v1::{PaneId as PublicPaneId, PaneObservability, ServerObservability};
-use crate::tmux::codec::{split_stream, ImsgReader, ImsgWriter};
+use crate::tmux::codec::{
+    split_nonblocking_stream_with_queue_limit, split_stream, ImsgReader, ImsgWriter,
+    NonblockingImsgWriter,
+};
 use crate::tmux::traits::TmuxServer;
 
 use state::ServerState;
@@ -159,18 +162,42 @@ impl NativeServer {
             })
             .unwrap_or(true)
     }
-}
 
-impl TmuxServer for NativeServer {
-    type Reader = ImsgReader;
-    type Writer = ImsgWriter;
+    /// Nonblocking lifecycle check for the readiness-loop thread.
+    ///
+    /// Protocol workers may hold the state mutex while awaiting a client
+    /// response. The event loop must keep forwarding that response instead of
+    /// waiting for the same mutex; a busy state therefore defers the shutdown
+    /// decision to a later turn.
+    pub(crate) fn event_loop_shutdown_requested(&self) -> bool {
+        match self.state.try_lock() {
+            Ok(mut state) => {
+                state.reap_exited_panes();
+                state.shutdown_requested()
+            }
+            Err(std::sync::TryLockError::WouldBlock) => false,
+            Err(std::sync::TryLockError::Poisoned(_)) => true,
+        }
+    }
 
-    fn connect(&self) -> io::Result<(Self::Reader, Self::Writer)> {
-        // A connected pair: one end is the client (returned), the other is served
-        // by a handler thread. SCM_RIGHTS fd passing works across a socketpair,
-        // so the identify handshake behaves as over a real socket.
+    /// Open the concrete nonblocking client half used by the event-loop
+    /// forwarding adapter.
+    ///
+    /// This is an implementation seam rather than an optional
+    /// [`TmuxServer`] capability. The protocol handler on the other half is the
+    /// same one used by [`TmuxServer::connect`].
+    pub(crate) fn connect_nonblocking(
+        &self,
+        max_pending_bytes: usize,
+    ) -> io::Result<(ImsgReader, NonblockingImsgWriter)> {
+        split_nonblocking_stream_with_queue_limit(
+            self.spawn_protocol_connection()?,
+            max_pending_bytes,
+        )
+    }
+
+    fn spawn_protocol_connection(&self) -> io::Result<UnixStream> {
         let (client, server) = UnixStream::pair()?;
-        let (client_reader, client_writer) = split_stream(client)?;
         let (server_reader, server_writer) = split_stream(server)?;
 
         let state = Arc::clone(&self.state);
@@ -182,7 +209,18 @@ impl TmuxServer for NativeServer {
             let _ = protocol::handle(server_reader, server_writer, state, hub);
         });
 
-        Ok((client_reader, client_writer))
+        Ok(client)
+    }
+}
+
+impl TmuxServer for NativeServer {
+    type Reader = ImsgReader;
+    type Writer = ImsgWriter;
+
+    fn connect(&self) -> io::Result<(Self::Reader, Self::Writer)> {
+        // SCM_RIGHTS fd passing works across the socketpair, so the identify
+        // handshake behaves as over a real listener connection.
+        split_stream(self.spawn_protocol_connection()?)
     }
 }
 

@@ -314,7 +314,13 @@ where
         output: &mut Vec<Ready<R>>,
     ) -> io::Result<PollResult> {
         self.events.clear();
-        self.poll.poll(&mut self.events, timeout)?;
+        loop {
+            match self.poll.poll(&mut self.events, timeout) {
+                Ok(()) => break,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error),
+            }
+        }
 
         let output_start = output.len();
         let mut woken = false;
@@ -416,6 +422,54 @@ mod tests {
         assert_eq!(ready.len(), 1);
         assert_eq!(ready[0].token(), token);
         assert!(ready[0].readiness().is_writable());
+    }
+
+    #[test]
+    fn deregistering_duplicated_write_fd_preserves_read_readiness() {
+        use std::io::{Read as _, Write as _};
+        use std::os::fd::{AsFd as _, OwnedFd};
+
+        let mut reactor = MioReactor::new().expect("reactor");
+        let (client, mut peer) = UnixStream::pair().expect("socket pair");
+        let read_fd: OwnedFd = client.into();
+        let write_fd = read_fd.as_fd().try_clone_to_owned().expect("dup");
+        let read_token = reactor
+            .register(read_fd.as_fd(), Interest::READABLE, Recipient::Client(1))
+            .expect("register read");
+        let write_token = reactor
+            .register(write_fd.as_fd(), Interest::WRITABLE, Recipient::Client(2))
+            .expect("register write");
+
+        let mut ready = Vec::new();
+        reactor
+            .poll(Some(Duration::from_secs(1)), &mut ready)
+            .expect("initial writable poll");
+        assert!(ready.iter().any(|event| event.token() == write_token));
+        reactor.deregister(write_token).expect("deregister write");
+
+        let request_bytes = b"request";
+        let written = unsafe {
+            libc::write(
+                write_fd.as_raw_fd(),
+                request_bytes.as_ptr().cast(),
+                request_bytes.len(),
+            )
+        };
+        assert_eq!(written, request_bytes.len() as isize);
+        let mut request = [0; 7];
+        peer.read_exact(&mut request).expect("receive request");
+        peer.write_all(b"response").expect("send response");
+
+        ready.clear();
+        reactor
+            .poll(Some(Duration::from_secs(1)), &mut ready)
+            .expect("response poll");
+        assert!(
+            ready
+                .iter()
+                .any(|event| event.token() == read_token && event.readiness().is_readable()),
+            "read registration lost after duplicate write deregistration: {ready:?}"
+        );
     }
 
     #[test]

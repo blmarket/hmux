@@ -458,11 +458,18 @@ pub fn split_stream(stream: UnixStream) -> io::Result<(ImsgReader, ImsgWriter)> 
 pub fn split_nonblocking_stream(
     stream: UnixStream,
 ) -> io::Result<(ImsgReader, NonblockingImsgWriter)> {
+    split_nonblocking_stream_with_queue_limit(stream, DEFAULT_WRITE_QUEUE_LIMIT)
+}
+
+pub(crate) fn split_nonblocking_stream_with_queue_limit(
+    stream: UnixStream,
+    max_pending_bytes: usize,
+) -> io::Result<(ImsgReader, NonblockingImsgWriter)> {
     let read_fd: OwnedFd = stream.into();
     let write_fd = dup_fd(read_fd.as_fd())?;
     Ok((
         ImsgReader::new(read_fd),
-        NonblockingImsgWriter::new(write_fd),
+        NonblockingImsgWriter::with_queue_limit(write_fd, max_pending_bytes),
     ))
 }
 

@@ -3107,6 +3107,7 @@ where
             .map_err(|_| io::Error::other("state poisoned"))?;
         if st.find(&target).is_none() {
             let msg = format!("can't find session: {target}\n");
+            drop(st);
             return send_error_and_exit(reader, writer, &msg, 1);
         }
     }

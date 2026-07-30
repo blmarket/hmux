@@ -99,7 +99,7 @@ where
     }
 }
 
-fn log_frame(dir: Direction, frame: &Frame) {
+pub(crate) fn log_frame(dir: Direction, frame: &Frame) {
     info!(
         dir = dir.arrow(),
         msg = frame.msg.name(),
