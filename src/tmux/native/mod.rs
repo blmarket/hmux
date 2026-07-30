@@ -181,7 +181,7 @@ impl NativeServer {
     }
 
     /// Open the concrete nonblocking client half used by the event-loop
-    /// forwarding adapter.
+    /// compatibility handoff.
     ///
     /// This is an implementation seam rather than an optional
     /// [`TmuxServer`] capability. The protocol handler on the other half is the

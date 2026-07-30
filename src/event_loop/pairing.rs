@@ -188,6 +188,14 @@ impl Pairing {
             PairingEvent::Start => {
                 for endpoint in PairEndpoint::ALL {
                     outbox.set_pairing_interest(target.clone(), endpoint, PairIoSide::Read, true);
+                    if self.writers[endpoint.index()].has_pending() {
+                        outbox.set_pairing_interest(
+                            target.clone(),
+                            endpoint,
+                            PairIoSide::Write,
+                            true,
+                        );
+                    }
                 }
             }
             PairingEvent::Readable(endpoint) | PairingEvent::ReadContinuation(endpoint) => {

@@ -137,7 +137,7 @@ fn run_server(args: Args) -> hmux::Result<()> {
 
     match args.engine {
         Engine::Native => info!("engine: native (libghostty-vt)"),
-        Engine::EventLoop => info!("engine: event-loop proxy (libghostty-vt)"),
+        Engine::EventLoop => info!("engine: event-loop protocol (libghostty-vt)"),
     }
     // Start as a server only. The first untargeted `tmux attach` lazily creates
     // session 0, so launching hmux does not speculatively spawn a shell or

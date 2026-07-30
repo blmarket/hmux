@@ -1,9 +1,10 @@
-//! The hmux listener and per-connection pairing loops.
+//! The hmux listener and per-connection protocol loops.
 //!
 //! The generic [`TmuxServer`] path retains its blocking compatibility pumps.
-//! The concrete native path forwards all accepted pairings on one readiness
-//! loop. Both paths tap frames for introspection and preserve attached
-//! `SCM_RIGHTS` descriptors.
+//! The concrete event-loop path handles ordinary command clients directly and
+//! retains readiness-driven compatibility pairings for protocol modes that
+//! have not migrated. Both paths tap frames for introspection and preserve
+//! attached `SCM_RIGHTS` descriptors.
 
 use std::io;
 use std::os::fd::AsRawFd;
@@ -15,8 +16,8 @@ use std::time::Duration;
 
 use tracing::{info, warn};
 
-use crate::event_loop::driver::{EventLoop, PairingHandle};
-use crate::event_loop::pairing::PairingCloseReason;
+use crate::event_loop::driver::{EventLoop, ListenerHandle, ProtocolHandle};
+use crate::event_loop::protocol::ProtocolCloseReason;
 use crate::tmux::codec::{split_nonblocking_stream_with_queue_limit, split_stream, MAX_IMSGSIZE};
 use crate::tmux::introspect::{Direction, LoggingReader, LoggingWriter};
 use crate::tmux::native::NativeServer;
@@ -24,7 +25,7 @@ use crate::tmux::traits::{FrameReader, FrameWriter, TmuxServer};
 
 type NativeEventLoop =
     EventLoop<crate::event_loop::reactor::MioReactor<crate::event_loop::driver::IoRecipient>>;
-const FORWARDING_WRITE_QUEUE_LIMIT: usize = MAX_IMSGSIZE;
+const PROTOCOL_WRITE_QUEUE_LIMIT: usize = MAX_IMSGSIZE;
 
 /// Bind `listen_path` and serve clients from `server`, forever.
 pub fn run<T>(listen_path: &Path, server: T) -> io::Result<()>
@@ -59,37 +60,47 @@ where
 pub fn run_event_loop(listen_path: &Path, server: NativeServer) -> io::Result<()> {
     const ACCEPT_BUDGET: usize = 64;
     const DISPATCH_BUDGET: usize = 256;
-    const POLL_INTERVAL: Duration = Duration::from_millis(10);
+    const LIFECYCLE_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
-    let listener = bind_listener(listen_path)?;
     let mut event_loop = EventLoop::new()?;
-    let mut pairings = Vec::new();
+    let listener = event_loop.add_listener(bind_listener(listen_path)?, ACCEPT_BUDGET)?;
+    let mut clients = Vec::new();
 
     loop {
         if server.event_loop_shutdown_requested() {
             break;
         }
-        let accept_budget_exhausted = accept_native_clients(
-            &listener,
+        dispatch_native_events(
             &server,
             &mut event_loop,
-            &mut pairings,
-            ACCEPT_BUDGET,
-        );
-        event_loop.dispatch_with_budget(DISPATCH_BUDGET)?;
-        reap_pairings(&mut pairings);
-        if !accept_budget_exhausted && event_loop.pending_events() == 0 {
-            event_loop.poll(Some(POLL_INTERVAL))?;
+            &listener,
+            &mut clients,
+            DISPATCH_BUDGET,
+        )?;
+        reap_protocol_clients(&mut clients);
+        if event_loop.pending_events() == 0 {
+            // The remaining native protocol workers cannot wake the reactor
+            // when they change server lifecycle state. Keep that compatibility
+            // check bounded; listener acceptance itself is readiness-driven.
+            event_loop.poll(Some(LIFECYCLE_POLL_INTERVAL))?;
         }
     }
 
     // Match the compatibility listener's shutdown behavior: stop accepting,
     // then allow already accepted clients to finish their final handshake.
-    drop(listener);
-    while !pairings.is_empty() {
+    event_loop.shutdown_listener(&listener);
+    while listener.is_alive() {
+        if !event_loop.dispatch_one()? {
+            return Err(io::Error::other(
+                "listener shutdown event disappeared before deregistration",
+            ));
+        }
+        while listener.pop_accepted().is_some() {}
+    }
+    while !clients.is_empty() {
         event_loop.dispatch_with_budget(DISPATCH_BUDGET)?;
-        reap_pairings(&mut pairings);
-        if !pairings.is_empty() && event_loop.pending_events() == 0 {
+        reap_protocol_clients(&mut clients);
+        if !clients.is_empty() && event_loop.pending_events() == 0 {
             event_loop.poll(None)?;
         }
     }
@@ -170,56 +181,68 @@ fn bind_listener(listen_path: &Path) -> io::Result<UnixListener> {
     Ok(listener)
 }
 
-fn add_native_pairing(
+fn add_protocol_client(
     client: UnixStream,
     server: &NativeServer,
     event_loop: &mut NativeEventLoop,
-) -> io::Result<PairingHandle> {
-    let (client_reader, client_writer) =
-        split_nonblocking_stream_with_queue_limit(client, FORWARDING_WRITE_QUEUE_LIMIT)?;
-    let (server_reader, server_writer) =
-        server.connect_nonblocking(FORWARDING_WRITE_QUEUE_LIMIT)?;
-    Ok(event_loop.add_pairing(client_reader, client_writer, server_reader, server_writer))
+) -> io::Result<ProtocolHandle> {
+    let (reader, writer) =
+        split_nonblocking_stream_with_queue_limit(client, PROTOCOL_WRITE_QUEUE_LIMIT)?;
+    Ok(event_loop.add_protocol(reader, writer, server.clone()))
 }
 
-fn accept_native_clients(
-    listener: &UnixListener,
+fn dispatch_native_events(
     server: &NativeServer,
     event_loop: &mut NativeEventLoop,
-    pairings: &mut Vec<PairingHandle>,
+    listener: &ListenerHandle,
+    clients: &mut Vec<ProtocolHandle>,
     budget: usize,
-) -> bool {
+) -> io::Result<()> {
     for _ in 0..budget {
-        match listener.accept() {
-            Ok((stream, _)) => match add_native_pairing(stream, server, event_loop) {
-                Ok(pairing) => pairings.push(pairing),
-                Err(error) => warn!(error = %error, "failed to create native client pairing"),
-            },
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => return false,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            Err(error) => {
-                warn!(error = %error, "accept failed");
-                return false;
+        if !event_loop.dispatch_one()? {
+            break;
+        }
+        while let Some(stream) = listener.pop_accepted() {
+            match add_protocol_client(stream, server, event_loop) {
+                Ok(client) => clients.push(client),
+                Err(error) => warn!(error = %error, "failed to create event-loop protocol client"),
             }
         }
     }
-    true
+    Ok(())
 }
 
-fn reap_pairings(pairings: &mut Vec<PairingHandle>) {
-    pairings.retain(|pairing| {
-        if pairing.is_alive() {
+fn reap_protocol_clients(clients: &mut Vec<ProtocolHandle>) {
+    clients.retain(|client| {
+        if client.is_alive() {
             return true;
         }
-        match pairing.status().close_reason() {
-            Some(PairingCloseReason::PeerClosed | PairingCloseReason::Shutdown) => {}
-            Some(PairingCloseReason::Error(kind)) => {
-                warn!(?kind, "native client pairing ended with an I/O error");
+        match client.close_reason() {
+            Some(
+                ProtocolCloseReason::Completed
+                | ProtocolCloseReason::PeerClosed
+                | ProtocolCloseReason::Shutdown,
+            ) => {}
+            Some(ProtocolCloseReason::Fallback(reason)) => match reason {
+                crate::event_loop::pairing::PairingCloseReason::PeerClosed
+                | crate::event_loop::pairing::PairingCloseReason::Shutdown => {}
+                crate::event_loop::pairing::PairingCloseReason::Error(kind) => {
+                    warn!(?kind, "fallback client pairing ended with an I/O error");
+                }
+                crate::event_loop::pairing::PairingCloseReason::FrameExceedsQueueLimit => {
+                    warn!("fallback client frame exceeds forwarding queue limit");
+                }
+            },
+            Some(ProtocolCloseReason::Error(kind)) => {
+                warn!(?kind, "event-loop protocol client ended with an I/O error");
             }
-            Some(PairingCloseReason::FrameExceedsQueueLimit) => {
-                warn!("native client frame exceeds forwarding queue limit");
+            Some(ProtocolCloseReason::PreludeExceedsQueueLimit) => {
+                warn!("client identify prelude exceeds fallback queue limit");
             }
-            None => warn!("native client pairing stopped without a close reason"),
+            Some(ProtocolCloseReason::FrameExceedsQueueLimit) => {
+                warn!("protocol output frame exceeds queue limit");
+            }
+            None => warn!("event-loop protocol client stopped without a close reason"),
         }
         false
     });
@@ -303,12 +326,12 @@ mod tests {
     use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 
     #[test]
-    fn native_pairing_reaches_the_existing_protocol_handler() {
+    fn event_loop_protocol_rejects_a_bad_version_directly() {
         let server = NativeServer::new().unwrap();
         let (peer, endpoint) = UnixStream::pair().unwrap();
         let (mut reader, mut writer) = split_stream(peer).unwrap();
         let mut event_loop = EventLoop::new().unwrap();
-        let pairing = add_native_pairing(endpoint, &server, &mut event_loop).unwrap();
+        let client = add_protocol_client(endpoint, &server, &mut event_loop).unwrap();
 
         let mut frame = Frame::new(Message::Command(vec!["list-sessions".into()]));
         frame.version = PROTOCOL_VERSION - 1;
@@ -331,12 +354,128 @@ mod tests {
         assert_eq!(reply.msg, Message::Version);
         drop(reader);
         drop(writer);
-        while pairing.is_alive() && Instant::now() < deadline {
+        while client.is_alive() && Instant::now() < deadline {
             event_loop.dispatch_with_budget(256).unwrap();
-            if pairing.is_alive() && event_loop.pending_events() == 0 {
+            if client.is_alive() && event_loop.pending_events() == 0 {
                 event_loop.poll(Some(Duration::from_millis(10))).unwrap();
             }
         }
-        assert!(!pairing.is_alive());
+        assert!(!client.is_alive());
+    }
+
+    #[test]
+    fn event_loop_protocol_executes_a_command_without_native_pairing() {
+        let server = NativeServer::new().unwrap();
+        let (peer, endpoint) = UnixStream::pair().unwrap();
+        let (mut reader, mut writer) = split_stream(peer).unwrap();
+        let mut event_loop = EventLoop::new().unwrap();
+        let client = add_protocol_client(endpoint, &server, &mut event_loop).unwrap();
+
+        writer
+            .send(Frame::new(Message::Command(vec![
+                "new-session".into(),
+                "-d".into(),
+                "-s".into(),
+                "direct".into(),
+                ";".into(),
+                "list-sessions".into(),
+                "-F".into(),
+                "#{session_name}".into(),
+            ])))
+            .unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        event_loop.dispatch_with_budget(256).unwrap();
+        event_loop.poll(Some(Duration::from_secs(1))).unwrap();
+        event_loop.dispatch_with_budget(256).unwrap();
+        assert!(client.is_direct());
+
+        let mut stdout = Vec::new();
+        let mut exit_status = None;
+        let exit = loop {
+            event_loop.dispatch_with_budget(256).unwrap();
+            loop {
+                match reader.try_recv() {
+                    Ok(frame) => match frame.msg {
+                        Message::WriteOpen { stream, .. } => writer
+                            .send(Frame::new(Message::WriteReady { stream, error: 0 }))
+                            .unwrap(),
+                        Message::Write { stream: 1, data } => stdout.extend_from_slice(&data),
+                        Message::Exit(exit) => {
+                            exit_status = exit;
+                            break;
+                        }
+                        _ => {}
+                    },
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                    Err(error) => panic!("failed to receive command response: {error}"),
+                }
+            }
+            if let Some(exit) = exit_status {
+                break exit;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for command response"
+            );
+            if event_loop.pending_events() == 0 {
+                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            }
+        };
+
+        assert_eq!(exit, 0);
+        assert_eq!(stdout, b"direct\n");
+        drop((reader, writer));
+        while client.is_alive() && Instant::now() < deadline {
+            event_loop.dispatch_with_budget(256).unwrap();
+            if client.is_alive() && event_loop.pending_events() == 0 {
+                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            }
+        }
+        assert!(!client.is_alive());
+    }
+
+    #[test]
+    fn event_loop_protocol_hands_status_wait_to_native_compatibility() {
+        let server = NativeServer::new().unwrap();
+        let (peer, endpoint) = UnixStream::pair().unwrap();
+        let (mut reader, mut writer) = split_stream(peer).unwrap();
+        let mut event_loop = EventLoop::new().unwrap();
+        let client = add_protocol_client(endpoint, &server, &mut event_loop).unwrap();
+
+        writer
+            .send(Frame::new(Message::StatusWait { since: 0 }))
+            .unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let revision = loop {
+            event_loop.dispatch_with_budget(256).unwrap();
+            match reader.try_recv() {
+                Ok(frame) => match frame.msg {
+                    Message::Status { revision, .. } => break revision,
+                    message => panic!("unexpected status response: {message:?}"),
+                },
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                Err(error) => panic!("failed to receive status response: {error}"),
+            }
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for status response"
+            );
+            if event_loop.pending_events() == 0 {
+                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            }
+        };
+
+        assert!(revision > 0);
+        assert!(client.is_fallback());
+        drop((reader, writer));
+        while client.is_alive() && Instant::now() < deadline {
+            event_loop.dispatch_with_budget(256).unwrap();
+            if client.is_alive() && event_loop.pending_events() == 0 {
+                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            }
+        }
+        assert!(!client.is_alive());
     }
 }

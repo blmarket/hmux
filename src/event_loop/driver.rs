@@ -6,10 +6,15 @@ use std::time::Duration;
 
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 use crate::tmux::message::Frame;
+use crate::tmux::native::NativeServer;
 
 use super::actor::{ActorRef, WeakActorRef};
 use super::client::{dispatch_inbox, ClientInbox, ClientInboxEvent, ClientIo, ClientIoEvent};
+use super::listener::{AcceptedClients, Listener, ListenerEvent};
 use super::pairing::{PairEndpoint, PairIoSide, Pairing, PairingEvent, PairingStatus};
+use super::protocol::{
+    ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
+};
 use super::reactor::{Interest, MioReactor, PollResult, Reactor, Ready};
 
 /// One queued event with a direct reference to its destination.
@@ -26,6 +31,14 @@ pub(crate) enum Envelope {
         target: ActorRef<Pairing>,
         event: PairingEvent,
     },
+    Listener {
+        target: ActorRef<Listener>,
+        event: ListenerEvent,
+    },
+    Protocol {
+        target: ActorRef<ProtocolClient>,
+        event: ProtocolEvent,
+    },
 }
 
 impl Envelope {
@@ -41,6 +54,14 @@ impl Envelope {
             Envelope::Pairing { target, event } => {
                 let dispatch_target = target.clone();
                 target.with_mut(|pairing| pairing.handle(&dispatch_target, event, outbox));
+            }
+            Envelope::Listener { target, event } => {
+                let dispatch_target = target.clone();
+                target.with_mut(|listener| listener.handle(&dispatch_target, event, outbox));
+            }
+            Envelope::Protocol { target, event } => {
+                let dispatch_target = target.clone();
+                target.with_mut(|client| client.handle(&dispatch_target, event, outbox));
             }
         }
     }
@@ -62,8 +83,26 @@ enum Effect {
         side: PairIoSide,
         enabled: bool,
     },
+    SetListenerInterest {
+        target: ActorRef<Listener>,
+        enabled: bool,
+    },
+    SetProtocolInterest {
+        target: ActorRef<ProtocolClient>,
+        side: ProtocolIoSide,
+        enabled: bool,
+    },
+    HandoffProtocol {
+        target: ActorRef<ProtocolClient>,
+        client_reader: ImsgReader,
+        client_writer: NonblockingImsgWriter,
+        server_reader: ImsgReader,
+        server_writer: NonblockingImsgWriter,
+    },
     StopClient(ActorRef<ClientIo>),
     StopPairing(ActorRef<Pairing>),
+    StopListener(ActorRef<Listener>),
+    StopProtocol(ActorRef<ProtocolClient>),
 }
 
 /// Effects emitted by one handler and applied only after it returns.
@@ -84,6 +123,18 @@ impl Outbox {
 
     pub(crate) fn enqueue_pairing(&mut self, target: ActorRef<Pairing>, event: PairingEvent) {
         self.enqueue(Envelope::Pairing { target, event });
+    }
+
+    pub(crate) fn enqueue_listener(&mut self, target: ActorRef<Listener>, event: ListenerEvent) {
+        self.enqueue(Envelope::Listener { target, event });
+    }
+
+    pub(crate) fn enqueue_protocol(
+        &mut self,
+        target: ActorRef<ProtocolClient>,
+        event: ProtocolEvent,
+    ) {
+        self.enqueue(Envelope::Protocol { target, event });
     }
 
     pub(crate) fn set_read_interest(&mut self, target: ActorRef<ClientIo>, enabled: bool) {
@@ -111,12 +162,55 @@ impl Outbox {
         });
     }
 
+    pub(crate) fn set_listener_interest(&mut self, target: ActorRef<Listener>, enabled: bool) {
+        self.effects
+            .push(Effect::SetListenerInterest { target, enabled });
+    }
+
+    pub(crate) fn set_protocol_interest(
+        &mut self,
+        target: ActorRef<ProtocolClient>,
+        side: ProtocolIoSide,
+        enabled: bool,
+    ) {
+        self.effects.push(Effect::SetProtocolInterest {
+            target,
+            side,
+            enabled,
+        });
+    }
+
+    pub(crate) fn handoff_protocol(
+        &mut self,
+        target: ActorRef<ProtocolClient>,
+        client_reader: ImsgReader,
+        client_writer: NonblockingImsgWriter,
+        server_reader: ImsgReader,
+        server_writer: NonblockingImsgWriter,
+    ) {
+        self.effects.push(Effect::HandoffProtocol {
+            target,
+            client_reader,
+            client_writer,
+            server_reader,
+            server_writer,
+        });
+    }
+
     pub(crate) fn stop_client(&mut self, target: ActorRef<ClientIo>) {
         self.effects.push(Effect::StopClient(target));
     }
 
     pub(crate) fn stop_pairing(&mut self, target: ActorRef<Pairing>) {
         self.effects.push(Effect::StopPairing(target));
+    }
+
+    pub(crate) fn stop_listener(&mut self, target: ActorRef<Listener>) {
+        self.effects.push(Effect::StopListener(target));
+    }
+
+    pub(crate) fn stop_protocol(&mut self, target: ActorRef<ProtocolClient>) {
+        self.effects.push(Effect::StopProtocol(target));
     }
 }
 
@@ -142,6 +236,13 @@ enum IoTarget {
         endpoint: PairEndpoint,
         side: PairIoSide,
     },
+    Listener {
+        target: WeakActorRef<Listener>,
+    },
+    Protocol {
+        target: WeakActorRef<ProtocolClient>,
+        side: ProtocolIoSide,
+    },
 }
 
 /// References returned when a connection is added to the loop.
@@ -154,6 +255,62 @@ pub(crate) struct ClientHandle {
 pub(crate) struct PairingHandle {
     pairing: ActorRef<Pairing>,
     status: PairingStatus,
+}
+
+/// References returned when a Unix listener is added to the loop.
+pub(crate) struct ListenerHandle {
+    listener: ActorRef<Listener>,
+    accepted: AcceptedClients,
+}
+
+/// References returned when a protocol client is added to the loop.
+pub(crate) struct ProtocolHandle {
+    protocol: ActorRef<ProtocolClient>,
+    status: ProtocolStatus,
+}
+
+impl ProtocolHandle {
+    pub(crate) fn is_alive(&self) -> bool {
+        self.protocol
+            .with(ProtocolClient::is_active)
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn close_reason(&self) -> Option<ProtocolCloseReason> {
+        self.protocol
+            .with(ProtocolClient::close_reason)
+            .flatten()
+            .or_else(|| self.status.close_reason())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_direct(&self) -> bool {
+        self.protocol
+            .with(ProtocolClient::is_direct)
+            .unwrap_or(false)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_fallback(&self) -> bool {
+        self.protocol
+            .with(ProtocolClient::is_fallback)
+            .unwrap_or(false)
+    }
+}
+
+impl ListenerHandle {
+    pub(crate) fn pop_accepted(&self) -> Option<std::os::unix::net::UnixStream> {
+        self.accepted.pop_front()
+    }
+
+    #[cfg(test)]
+    fn accepted_len(&self) -> usize {
+        self.accepted.len()
+    }
+
+    pub(crate) fn is_alive(&self) -> bool {
+        self.listener.is_alive()
+    }
 }
 
 impl PairingHandle {
@@ -252,6 +409,36 @@ where
         PairingHandle { pairing, status }
     }
 
+    pub(crate) fn add_protocol(
+        &mut self,
+        reader: ImsgReader,
+        writer: NonblockingImsgWriter,
+        server: NativeServer,
+    ) -> ProtocolHandle {
+        let (protocol, status) = ProtocolClient::new(reader, writer, server);
+        let protocol = ActorRef::new(protocol);
+        self.events.push_back(Envelope::Protocol {
+            target: protocol.clone(),
+            event: ProtocolEvent::Start,
+        });
+        ProtocolHandle { protocol, status }
+    }
+
+    pub(crate) fn add_listener(
+        &mut self,
+        listener: std::os::unix::net::UnixListener,
+        accept_budget: usize,
+    ) -> io::Result<ListenerHandle> {
+        listener.set_nonblocking(true)?;
+        let (listener, accepted) = Listener::new(listener, accept_budget);
+        let listener = ActorRef::new(listener);
+        self.events.push_back(Envelope::Listener {
+            target: listener.clone(),
+            event: ListenerEvent::Start,
+        });
+        Ok(ListenerHandle { listener, accepted })
+    }
+
     pub(crate) fn try_send(
         &mut self,
         target: &ActorRef<ClientIo>,
@@ -282,6 +469,26 @@ where
         self.events.push_back(Envelope::Pairing {
             target: target.pairing.clone(),
             event: PairingEvent::Shutdown,
+        });
+    }
+
+    pub(crate) fn shutdown_listener(&mut self, target: &ListenerHandle) {
+        let should_enqueue = target
+            .listener
+            .with_mut(Listener::request_shutdown)
+            .unwrap_or(false);
+        if should_enqueue {
+            self.events.push_back(Envelope::Listener {
+                target: target.listener.clone(),
+                event: ListenerEvent::Shutdown,
+            });
+        }
+    }
+
+    pub(crate) fn shutdown_protocol(&mut self, target: &ProtocolHandle) {
+        self.events.push_back(Envelope::Protocol {
+            target: target.protocol.clone(),
+            event: ProtocolEvent::Shutdown,
         });
     }
 
@@ -388,6 +595,40 @@ where
                 };
                 self.events.push_back(Envelope::Pairing { target, event });
             }
+            IoTarget::Listener { target: recipient } => {
+                let Some(target) = recipient.upgrade() else {
+                    return;
+                };
+                let should_enqueue = target
+                    .with_mut(Listener::mark_accept_work_queued)
+                    .unwrap_or(false);
+                if should_enqueue {
+                    self.events.push_back(Envelope::Listener {
+                        target,
+                        event: ListenerEvent::Readable,
+                    });
+                }
+            }
+            IoTarget::Protocol {
+                target: recipient,
+                side,
+            } => {
+                let Some(target) = recipient.upgrade() else {
+                    return;
+                };
+                let should_enqueue = target
+                    .with_mut(|client| client.mark_work_queued(*side))
+                    .unwrap_or(false);
+                if !should_enqueue {
+                    return;
+                }
+                let event = match side {
+                    ProtocolIoSide::Read => ProtocolEvent::Readable,
+                    ProtocolIoSide::Write => ProtocolEvent::Writable,
+                    ProtocolIoSide::Command => ProtocolEvent::CommandCompleted,
+                };
+                self.events.push_back(Envelope::Protocol { target, event });
+            }
         }
     }
 
@@ -408,10 +649,37 @@ where
             } => {
                 self.set_pairing_interest(&target, endpoint, side, enabled)?;
             }
+            Effect::SetListenerInterest { target, enabled } => {
+                self.set_listener_interest(&target, enabled)?;
+            }
+            Effect::SetProtocolInterest {
+                target,
+                side,
+                enabled,
+            } => {
+                self.set_protocol_interest(&target, side, enabled)?;
+            }
+            Effect::HandoffProtocol {
+                target,
+                client_reader,
+                client_writer,
+                server_reader,
+                server_writer,
+            } => {
+                let pairing =
+                    self.add_pairing(client_reader, client_writer, server_reader, server_writer);
+                target.with_mut(|client| client.install_fallback(pairing));
+            }
             Effect::StopClient(target) => {
                 target.stop();
             }
             Effect::StopPairing(target) => {
+                target.stop();
+            }
+            Effect::StopListener(target) => {
+                target.stop();
+            }
+            Effect::StopProtocol(target) => {
                 target.stop();
             }
         }
@@ -518,12 +786,88 @@ where
         }
         Ok(())
     }
+
+    fn set_listener_interest(
+        &mut self,
+        target: &ActorRef<Listener>,
+        enabled: bool,
+    ) -> io::Result<()> {
+        let token = target.with(Listener::token).flatten();
+        match (enabled, token) {
+            (true, None) => {
+                let recipient = IoRecipient {
+                    target: IoTarget::Listener {
+                        target: target.downgrade(),
+                    },
+                };
+                if let Some(result) = target.with_mut(|listener| {
+                    let token =
+                        self.reactor
+                            .register(listener.fd(), Interest::READABLE, recipient)?;
+                    listener.set_token(Some(token));
+                    Ok::<(), io::Error>(())
+                }) {
+                    result?;
+                }
+            }
+            (false, Some(token)) => {
+                self.reactor.deregister(token)?;
+                target.with_mut(|listener| listener.set_token(None));
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn set_protocol_interest(
+        &mut self,
+        target: &ActorRef<ProtocolClient>,
+        side: ProtocolIoSide,
+        enabled: bool,
+    ) -> io::Result<()> {
+        let token = target.with(|client| client.token(side)).flatten();
+        match (enabled, token) {
+            (true, None) => {
+                let recipient = IoRecipient {
+                    target: IoTarget::Protocol {
+                        target: target.downgrade(),
+                        side,
+                    },
+                };
+                if let Some(result) = target.with_mut(|client| {
+                    let source = client.fd(side).ok_or_else(|| {
+                        io::Error::other("protocol readiness source is unavailable")
+                    })?;
+                    let token = self.reactor.register(
+                        source,
+                        match side {
+                            ProtocolIoSide::Read | ProtocolIoSide::Command => Interest::READABLE,
+                            ProtocolIoSide::Write => Interest::WRITABLE,
+                        },
+                        recipient,
+                    )?;
+                    client.set_token(side, Some(token));
+                    Ok::<(), io::Error>(())
+                }) {
+                    result?;
+                }
+            }
+            (false, Some(token)) => {
+                self.reactor.deregister(token)?;
+                target.with_mut(|client| client.set_token(side, None));
+            }
+            _ => {}
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::os::fd::{AsFd as _, OwnedFd};
-    use std::os::unix::net::UnixStream;
+    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::*;
     use crate::event_loop::client::{CloseReason, READ_FRAME_BUDGET};
@@ -532,6 +876,25 @@ mod tests {
     use crate::tmux::message::Message;
 
     const POLL_TIMEOUT: Duration = Duration::from_secs(1);
+    static NEXT_LISTENER_PATH: AtomicU64 = AtomicU64::new(0);
+
+    struct ListenerPath(PathBuf);
+
+    impl ListenerPath {
+        fn new() -> Self {
+            let sequence = NEXT_LISTENER_PATH.fetch_add(1, Ordering::Relaxed);
+            Self(PathBuf::from(format!(
+                "/tmp/hmux-event-loop-test-{}-{sequence}.sock",
+                std::process::id()
+            )))
+        }
+    }
+
+    impl Drop for ListenerPath {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
 
     fn dispatch_all(loop_: &mut EventLoop<MioReactor<IoRecipient>>) {
         let dispatched = loop_.dispatch_with_budget(4096).unwrap();
@@ -548,6 +911,59 @@ mod tests {
             ImsgReader::new(read_fd),
             NonblockingImsgWriter::with_queue_limit(write_fd, limit),
         ))
+    }
+
+    #[test]
+    fn listener_readiness_accepts_a_waiting_client() {
+        let path = ListenerPath::new();
+        let listener = UnixListener::bind(&path.0).unwrap();
+        let mut loop_ = EventLoop::new().unwrap();
+        let listener = loop_.add_listener(listener, 64).unwrap();
+        dispatch_all(&mut loop_);
+
+        let client = UnixStream::connect(&path.0).unwrap();
+        assert_eq!(listener.accepted_len(), 0);
+
+        let poll = loop_.poll(Some(POLL_TIMEOUT)).unwrap();
+        assert_eq!(poll.ready_count(), 1);
+        assert_eq!(listener.accepted_len(), 0);
+        assert!(loop_.dispatch_one().unwrap());
+
+        let accepted = listener.pop_accepted().expect("accepted client");
+        assert!(listener.pop_accepted().is_none());
+        drop((accepted, client));
+
+        loop_.shutdown_listener(&listener);
+        dispatch_all(&mut loop_);
+        assert!(!listener.is_alive());
+    }
+
+    #[test]
+    fn listener_budget_queues_one_accept_continuation() {
+        let path = ListenerPath::new();
+        let listener = UnixListener::bind(&path.0).unwrap();
+        let mut loop_ = EventLoop::new().unwrap();
+        let listener = loop_.add_listener(listener, 2).unwrap();
+        dispatch_all(&mut loop_);
+
+        let clients = (0..3)
+            .map(|_| UnixStream::connect(&path.0).unwrap())
+            .collect::<Vec<_>>();
+        loop_.poll(Some(POLL_TIMEOUT)).unwrap();
+
+        assert!(loop_.dispatch_one().unwrap());
+        assert_eq!(listener.accepted_len(), 2);
+        assert_eq!(loop_.pending_events(), 1);
+
+        assert!(loop_.dispatch_one().unwrap());
+        assert_eq!(listener.accepted_len(), 3);
+        assert_eq!(loop_.pending_events(), 0);
+
+        while listener.pop_accepted().is_some() {}
+        drop(clients);
+        loop_.shutdown_listener(&listener);
+        dispatch_all(&mut loop_);
+        assert!(!listener.is_alive());
     }
 
     #[test]
