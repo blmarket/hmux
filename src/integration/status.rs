@@ -12,7 +12,7 @@
 
 use std::collections::HashMap;
 use std::io;
-use std::os::fd::{AsFd, AsRawFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
 use std::sync::Weak;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
@@ -79,8 +79,12 @@ pub(crate) struct StatusSubscription {
 }
 
 impl StatusSubscription {
+    pub(crate) fn as_fd(&self) -> BorrowedFd<'_> {
+        self.event.wakeup.as_fd()
+    }
+
     pub(crate) fn as_raw_fd(&self) -> RawFd {
-        self.event.wakeup.as_fd().as_raw_fd()
+        self.as_fd().as_raw_fd()
     }
 
     pub(crate) fn drain(&self) {

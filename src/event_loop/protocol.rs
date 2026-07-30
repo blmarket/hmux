@@ -10,8 +10,9 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
-use crate::integration::status::StatusHub;
+use crate::integration::status::{StatusHub, StatusSnapshot, StatusSubscription};
 use crate::tmux::codec::{encode_bytes, ImsgReader, NonblockingImsgWriter, MAX_IMSGSIZE};
 use crate::tmux::introspect::{log_frame, Direction};
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
@@ -25,11 +26,16 @@ use super::client::READ_FRAME_BUDGET;
 use super::driver::{Outbox, PairingHandle};
 use super::pairing::PairingCloseReason;
 use super::reactor::Token;
+use super::timer::TimerId;
 
 const CLIENT_CONTROL: i64 = 0x2000;
 const FALLBACK_QUEUE_LIMIT: usize = MAX_IMSGSIZE * 64;
 const FILE_STREAM: i32 = 3;
 const OUTPUT_CHUNK: usize = 8 * 1024;
+#[cfg(not(test))]
+const STATUS_HEARTBEAT: Duration = Duration::from_secs(30);
+#[cfg(test)]
+const STATUS_HEARTBEAT: Duration = Duration::from_millis(20);
 
 /// A readiness source owned by a protocol actor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,6 +43,7 @@ pub(crate) enum ProtocolIoSide {
     Read,
     Write,
     Command,
+    Status,
 }
 
 /// Why an event-loop protocol client stopped.
@@ -59,6 +66,8 @@ pub(crate) enum ProtocolEvent {
     Writable,
     CommandCompleted,
     CommandStepReady(CommandStep),
+    StatusReady,
+    StatusHeartbeat(u64),
     Shutdown,
 }
 
@@ -107,6 +116,10 @@ enum DirectOperation {
     WaitingCommand {
         pending: bool,
     },
+    WaitingStatus {
+        since: u64,
+        generation: u64,
+    },
     Responding(CommandResponse),
 }
 
@@ -125,12 +138,17 @@ pub(crate) struct ProtocolClient {
     operation: DirectOperation,
     retry: Option<Frame>,
     completion: Option<PendingCommand>,
+    status_subscription: Option<StatusSubscription>,
     read_token: Option<Token>,
     write_token: Option<Token>,
     command_token: Option<Token>,
+    status_token: Option<Token>,
+    status_timer: Option<TimerId>,
+    status_generation: u64,
     read_work_queued: bool,
     write_work_queued: bool,
     command_work_queued: bool,
+    status_work_queued: bool,
     reads_paused: bool,
     close_after_flush: bool,
     status: ProtocolStatus,
@@ -163,12 +181,17 @@ impl ProtocolClient {
                 operation: DirectOperation::Idle,
                 retry: None,
                 completion: None,
+                status_subscription: None,
                 read_token: None,
                 write_token: None,
                 command_token: None,
+                status_token: None,
+                status_timer: None,
+                status_generation: 0,
                 read_work_queued: false,
                 write_work_queued: false,
                 command_work_queued: false,
+                status_work_queued: false,
                 reads_paused: false,
                 close_after_flush: false,
                 status: status.clone(),
@@ -182,6 +205,10 @@ impl ProtocolClient {
             ProtocolIoSide::Read => self.reader.as_ref().map(AsFd::as_fd),
             ProtocolIoSide::Write => self.writer.as_ref().map(AsFd::as_fd),
             ProtocolIoSide::Command => self.completion.as_ref().map(PendingCommand::fd),
+            ProtocolIoSide::Status => self
+                .status_subscription
+                .as_ref()
+                .map(StatusSubscription::as_fd),
         }
     }
 
@@ -190,6 +217,7 @@ impl ProtocolClient {
             ProtocolIoSide::Read => self.read_token,
             ProtocolIoSide::Write => self.write_token,
             ProtocolIoSide::Command => self.command_token,
+            ProtocolIoSide::Status => self.status_token,
         }
     }
 
@@ -203,7 +231,21 @@ impl ProtocolClient {
                     self.completion = None;
                 }
             }
+            ProtocolIoSide::Status => {
+                self.status_token = token;
+                if token.is_none() {
+                    self.status_subscription = None;
+                }
+            }
         }
+    }
+
+    pub(crate) fn status_timer(&self) -> Option<TimerId> {
+        self.status_timer
+    }
+
+    pub(crate) fn set_status_timer(&mut self, timer: Option<TimerId>) {
+        self.status_timer = timer;
     }
 
     pub(crate) fn mark_work_queued(&mut self, side: ProtocolIoSide) -> bool {
@@ -217,8 +259,13 @@ impl ProtocolClient {
             ProtocolIoSide::Read => &mut self.read_work_queued,
             ProtocolIoSide::Write => &mut self.write_work_queued,
             ProtocolIoSide::Command => &mut self.command_work_queued,
+            ProtocolIoSide::Status => &mut self.status_work_queued,
         };
-        if *queued || (side == ProtocolIoSide::Read && self.reads_paused) {
+        if *queued
+            || (side == ProtocolIoSide::Read
+                && (self.reads_paused
+                    || matches!(self.operation, DirectOperation::WaitingStatus { .. })))
+        {
             return false;
         }
         *queued = true;
@@ -281,6 +328,13 @@ impl ProtocolClient {
             ProtocolEvent::CommandStepReady(step) => {
                 self.handle_command_step(target, step, outbox);
             }
+            ProtocolEvent::StatusReady => {
+                self.status_work_queued = false;
+                self.handle_status_ready(target, outbox);
+            }
+            ProtocolEvent::StatusHeartbeat(generation) => {
+                self.handle_status_heartbeat(target, generation, outbox);
+            }
             ProtocolEvent::Shutdown => {
                 self.close(target, ProtocolCloseReason::Shutdown, outbox);
             }
@@ -326,7 +380,11 @@ impl ProtocolClient {
                 ProtocolMode::Direct => self.handle_direct_frame(target, frame, outbox),
                 ProtocolMode::HandingOff | ProtocolMode::Fallback(_) => return,
             }
-            if self.reader.is_none() || self.retry.is_some() || self.close_after_flush {
+            if self.reader.is_none()
+                || self.retry.is_some()
+                || self.close_after_flush
+                || matches!(self.operation, DirectOperation::WaitingStatus { .. })
+            {
                 return;
             }
         }
@@ -345,6 +403,12 @@ impl ProtocolClient {
                 self.prelude_bytes = 0;
                 self.mode = ProtocolMode::Direct;
                 self.begin_command(target, args, outbox);
+            }
+            Message::StatusWait { since } if !self.control_mode => {
+                self.prelude.clear();
+                self.prelude_bytes = 0;
+                self.mode = ProtocolMode::Direct;
+                self.begin_status_wait(target, *since, outbox);
             }
             Message::Command(_) | Message::StatusWait { .. } => {
                 if self.push_prelude(frame).is_err() {
@@ -440,6 +504,73 @@ impl ProtocolClient {
         );
     }
 
+    fn begin_status_wait(&mut self, target: &ActorRef<Self>, since: u64, outbox: &mut Outbox) {
+        let subscription = match self.hub.subscribe() {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+                return;
+            }
+        };
+        self.status_generation = self.status_generation.wrapping_add(1);
+        let generation = self.status_generation;
+        self.status_subscription = Some(subscription);
+        self.operation = DirectOperation::WaitingStatus { since, generation };
+        outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, false);
+        outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Status, true);
+        outbox.set_protocol_timer(
+            target.clone(),
+            Instant::now() + STATUS_HEARTBEAT,
+            generation,
+        );
+    }
+
+    fn handle_status_ready(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
+        let since = match &self.operation {
+            DirectOperation::WaitingStatus { since, .. } => *since,
+            _ => return,
+        };
+        let Some(subscription) = self.status_subscription.as_ref() else {
+            return;
+        };
+        subscription.drain();
+        let snapshot = self.hub.snapshot();
+        if snapshot.revision > since {
+            self.complete_status_wait(target, snapshot, outbox);
+        }
+    }
+
+    fn handle_status_heartbeat(
+        &mut self,
+        target: &ActorRef<Self>,
+        generation: u64,
+        outbox: &mut Outbox,
+    ) {
+        if !matches!(
+            self.operation,
+            DirectOperation::WaitingStatus {
+                generation: active,
+                ..
+            } if active == generation
+        ) {
+            return;
+        }
+        self.status_timer = None;
+        let snapshot = self.hub.snapshot();
+        self.complete_status_wait(target, snapshot, outbox);
+    }
+
+    fn complete_status_wait(
+        &mut self,
+        target: &ActorRef<Self>,
+        snapshot: StatusSnapshot,
+        outbox: &mut Outbox,
+    ) {
+        outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Status, false);
+        outbox.cancel_protocol_timer(target.clone());
+        self.start_command_work(target, CommandWork::EncodeStatus(snapshot), outbox);
+    }
+
     fn begin_command(&mut self, target: &ActorRef<Self>, args: Vec<String>, outbox: &mut Outbox) {
         self.start_command_work(
             target,
@@ -506,6 +637,25 @@ impl ProtocolClient {
     ) {
         match step {
             CommandStep::Complete(result) => self.begin_response(target, result, outbox),
+            CommandStep::Status { revision, body } => {
+                self.operation = DirectOperation::Idle;
+                self.queue_frame(
+                    target,
+                    Frame::new(Message::Status { revision, body }),
+                    outbox,
+                );
+                if self.retry.is_none() {
+                    outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, true);
+                    if self
+                        .reader
+                        .as_ref()
+                        .is_some_and(ImsgReader::has_buffered_frame)
+                    {
+                        self.schedule_read_continuation(target, outbox);
+                    }
+                }
+                self.drive_output(target, outbox);
+            }
             CommandStep::Read {
                 transaction,
                 args,
@@ -558,6 +708,9 @@ impl ProtocolClient {
 
     fn handle_direct_frame(&mut self, target: &ActorRef<Self>, frame: Frame, outbox: &mut Outbox) {
         match frame.msg {
+            Message::StatusWait { since } if matches!(self.operation, DirectOperation::Idle) => {
+                self.begin_status_wait(target, since, outbox);
+            }
             Message::Read {
                 stream: FILE_STREAM,
                 data,
@@ -827,9 +980,11 @@ impl ProtocolClient {
             ProtocolIoSide::Read,
             ProtocolIoSide::Write,
             ProtocolIoSide::Command,
+            ProtocolIoSide::Status,
         ] {
             outbox.set_protocol_interest(target.clone(), side, false);
         }
+        outbox.cancel_protocol_timer(target.clone());
         outbox.stop_protocol(target.clone());
     }
 }
@@ -881,10 +1036,15 @@ enum CommandWork {
         args: Vec<String>,
         context: ClientContext,
     },
+    EncodeStatus(StatusSnapshot),
 }
 
 pub(crate) enum CommandStep {
     Complete(CommandResult),
+    Status {
+        revision: u64,
+        body: Vec<u8>,
+    },
     Read {
         transaction: CommandTransaction,
         args: Vec<String>,
@@ -901,6 +1061,18 @@ fn run_command_work(
     state: &Arc<Mutex<ServerState>>,
     hub: &StatusHub,
 ) -> CommandStep {
+    if let CommandWork::EncodeStatus(snapshot) = work {
+        let body = match state.lock() {
+            Ok(state) => command::encode_status_body(&state, &snapshot.panes),
+            Err(_) => {
+                return CommandStep::Complete(CommandResult::err("server state poisoned\n"));
+            }
+        };
+        return CommandStep::Status {
+            revision: snapshot.revision,
+            body,
+        };
+    }
     let agents = hub.snapshot().panes;
     match work {
         CommandWork::Initial { args, context } => {
@@ -939,6 +1111,7 @@ fn run_command_work(
             }
             advance_command_transaction(transaction, state, &agents)
         }
+        CommandWork::EncodeStatus(_) => unreachable!("status work returned above"),
     }
 }
 

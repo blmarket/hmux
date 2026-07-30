@@ -322,6 +322,9 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::*;
+    use crate::integration::status::AgentStatus;
+    use crate::integration::AgentState;
+    use crate::observability::v1::PaneId;
     use crate::tmux::codec::split_stream;
     use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 
@@ -436,7 +439,7 @@ mod tests {
     }
 
     #[test]
-    fn event_loop_protocol_hands_status_wait_to_native_compatibility() {
+    fn event_loop_protocol_handles_status_wait_and_heartbeat_directly() {
         let server = NativeServer::new().unwrap();
         let (peer, endpoint) = UnixStream::pair().unwrap();
         let (mut reader, mut writer) = split_stream(peer).unwrap();
@@ -468,7 +471,71 @@ mod tests {
         };
 
         assert!(revision > 0);
-        assert!(client.is_fallback());
+        assert!(client.is_direct());
+        writer
+            .send(Frame::new(Message::StatusWait { since: revision }))
+            .unwrap();
+
+        event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+        event_loop.dispatch_with_budget(256).unwrap();
+        event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+        event_loop.dispatch_with_budget(256).unwrap();
+        server.status_hub().publish(
+            PaneId(u32::MAX),
+            AgentStatus {
+                agent: "codex",
+                pid: None,
+                session_id: None,
+                state: AgentState::Working,
+            },
+        );
+
+        let changed_revision = loop {
+            event_loop.dispatch_with_budget(256).unwrap();
+            match reader.try_recv() {
+                Ok(frame) => match frame.msg {
+                    Message::Status { revision, .. } => break revision,
+                    message => panic!("unexpected changed-status response: {message:?}"),
+                },
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                Err(error) => panic!("failed to receive changed-status response: {error}"),
+            }
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for changed-status response"
+            );
+            if event_loop.pending_events() == 0 {
+                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            }
+        };
+        assert!(changed_revision > revision);
+        assert!(client.is_direct());
+
+        writer
+            .send(Frame::new(Message::StatusWait {
+                since: changed_revision,
+            }))
+            .unwrap();
+        let heartbeat_revision = loop {
+            event_loop.dispatch_with_budget(256).unwrap();
+            match reader.try_recv() {
+                Ok(frame) => match frame.msg {
+                    Message::Status { revision, .. } => break revision,
+                    message => panic!("unexpected heartbeat response: {message:?}"),
+                },
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                Err(error) => panic!("failed to receive heartbeat response: {error}"),
+            }
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for status heartbeat"
+            );
+            if event_loop.pending_events() == 0 {
+                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            }
+        };
+        assert_eq!(heartbeat_revision, changed_revision);
+        assert!(client.is_direct());
         drop((reader, writer));
         while client.is_alive() && Instant::now() < deadline {
             event_loop.dispatch_with_budget(256).unwrap();

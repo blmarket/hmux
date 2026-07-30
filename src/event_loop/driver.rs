@@ -2,7 +2,7 @@
 
 use std::collections::VecDeque;
 use std::io;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 use crate::tmux::message::Frame;
@@ -16,6 +16,7 @@ use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
 };
 use super::reactor::{Interest, MioReactor, PollResult, Reactor, Ready};
+use super::timer::{ExpiredTimer, TimerQueue};
 
 /// One queued event with a direct reference to its destination.
 pub(crate) enum Envelope {
@@ -91,6 +92,14 @@ enum Effect {
         target: ActorRef<ProtocolClient>,
         side: ProtocolIoSide,
         enabled: bool,
+    },
+    SetProtocolTimer {
+        target: ActorRef<ProtocolClient>,
+        deadline: Instant,
+        generation: u64,
+    },
+    CancelProtocolTimer {
+        target: ActorRef<ProtocolClient>,
     },
     HandoffProtocol {
         target: ActorRef<ProtocolClient>,
@@ -178,6 +187,23 @@ impl Outbox {
             side,
             enabled,
         });
+    }
+
+    pub(crate) fn set_protocol_timer(
+        &mut self,
+        target: ActorRef<ProtocolClient>,
+        deadline: Instant,
+        generation: u64,
+    ) {
+        self.effects.push(Effect::SetProtocolTimer {
+            target,
+            deadline,
+            generation,
+        });
+    }
+
+    pub(crate) fn cancel_protocol_timer(&mut self, target: ActorRef<ProtocolClient>) {
+        self.effects.push(Effect::CancelProtocolTimer { target });
     }
 
     pub(crate) fn handoff_protocol(
@@ -358,6 +384,8 @@ where
     reactor: R,
     events: VecDeque<Envelope>,
     ready: Vec<Ready<IoRecipient>>,
+    timers: TimerQueue<Envelope>,
+    expired_timers: Vec<ExpiredTimer<Envelope>>,
 }
 
 impl EventLoop<MioReactor<IoRecipient>> {
@@ -375,6 +403,8 @@ where
             reactor,
             events: VecDeque::new(),
             ready: Vec::new(),
+            timers: TimerQueue::new(),
+            expired_timers: Vec::new(),
         }
     }
 
@@ -518,12 +548,22 @@ where
     }
 
     pub(crate) fn poll(&mut self, timeout: Option<Duration>) -> io::Result<PollResult> {
+        let timer_timeout = self.timers.time_until_next(Instant::now());
+        let timeout = match (timeout, timer_timeout) {
+            (Some(requested), Some(timer)) => Some(requested.min(timer)),
+            (requested, None) => requested,
+            (None, timer) => timer,
+        };
         let result = self.reactor.poll(timeout, &mut self.ready)?;
         let mut ready = std::mem::take(&mut self.ready);
         for notification in ready.drain(..) {
             self.enqueue_readiness(notification);
         }
         self.ready = ready;
+        self.timers
+            .drain_expired(Instant::now(), &mut self.expired_timers);
+        self.events
+            .extend(self.expired_timers.drain(..).map(ExpiredTimer::into_value));
         Ok(result)
     }
 
@@ -626,6 +666,7 @@ where
                     ProtocolIoSide::Read => ProtocolEvent::Readable,
                     ProtocolIoSide::Write => ProtocolEvent::Writable,
                     ProtocolIoSide::Command => ProtocolEvent::CommandCompleted,
+                    ProtocolIoSide::Status => ProtocolEvent::StatusReady,
                 };
                 self.events.push_back(Envelope::Protocol { target, event });
             }
@@ -658,6 +699,24 @@ where
                 enabled,
             } => {
                 self.set_protocol_interest(&target, side, enabled)?;
+            }
+            Effect::SetProtocolTimer {
+                target,
+                deadline,
+                generation,
+            } => {
+                self.cancel_protocol_timer(&target);
+                let timer = self.timers.set(
+                    deadline,
+                    Envelope::Protocol {
+                        target: target.clone(),
+                        event: ProtocolEvent::StatusHeartbeat(generation),
+                    },
+                );
+                target.with_mut(|client| client.set_status_timer(Some(timer)));
+            }
+            Effect::CancelProtocolTimer { target } => {
+                self.cancel_protocol_timer(&target);
             }
             Effect::HandoffProtocol {
                 target,
@@ -842,6 +901,7 @@ where
                         source,
                         match side {
                             ProtocolIoSide::Read | ProtocolIoSide::Command => Interest::READABLE,
+                            ProtocolIoSide::Status => Interest::READABLE,
                             ProtocolIoSide::Write => Interest::WRITABLE,
                         },
                         recipient,
@@ -859,6 +919,14 @@ where
             _ => {}
         }
         Ok(())
+    }
+
+    fn cancel_protocol_timer(&mut self, target: &ActorRef<ProtocolClient>) {
+        let timer = target.with(ProtocolClient::status_timer).flatten();
+        if let Some(timer) = timer {
+            self.timers.cancel(timer);
+            target.with_mut(|client| client.set_status_timer(None));
+        }
     }
 }
 
