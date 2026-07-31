@@ -543,7 +543,7 @@ fn decode_command(p: &[u8]) -> Option<Message> {
     }
     // Exactly one trailing empty piece (after the final NUL) must remain.
     match (pieces.next(), pieces.next()) {
-        (Some(tail), None) if tail.is_empty() => Some(Message::Command(args)),
+        (Some([]), None) => Some(Message::Command(args)),
         _ => None,
     }
 }

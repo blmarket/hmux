@@ -10,7 +10,9 @@ use std::{fmt, io};
 use tracing::info;
 
 use super::message::{Frame, Message};
-use super::traits::{FrameReader, FrameWriter};
+use super::traits::{
+    FrameReader, FrameWriter, NonblockingFrameReader, NonblockingFrameWriter, WriteQueueFull,
+};
 
 /// Direction label for logged frames.
 #[derive(Clone, Copy)]
@@ -36,7 +38,7 @@ pub struct LoggingReader<R> {
     dir: Direction,
 }
 
-impl<R: FrameReader> LoggingReader<R> {
+impl<R> LoggingReader<R> {
     pub fn new(inner: R, dir: Direction) -> Self {
         LoggingReader { inner, dir }
     }
@@ -50,13 +52,21 @@ impl<R: FrameReader> FrameReader for LoggingReader<R> {
     }
 }
 
+impl<R: NonblockingFrameReader> NonblockingFrameReader for LoggingReader<R> {
+    fn try_recv(&mut self) -> io::Result<Frame> {
+        let frame = self.inner.try_recv()?;
+        log_frame(self.dir, &frame);
+        Ok(frame)
+    }
+}
+
 /// Logs each frame before sending it through unchanged.
 pub struct LoggingWriter<W> {
     inner: W,
     dir: Direction,
 }
 
-impl<W: FrameWriter> LoggingWriter<W> {
+impl<W> LoggingWriter<W> {
     pub fn new(inner: W, dir: Direction) -> Self {
         LoggingWriter { inner, dir }
     }
@@ -69,7 +79,27 @@ impl<W: FrameWriter> FrameWriter for LoggingWriter<W> {
     }
 }
 
-fn log_frame(dir: Direction, frame: &Frame) {
+impl<W> NonblockingFrameWriter for LoggingWriter<W>
+where
+    W: NonblockingFrameWriter<Frame = Frame>,
+{
+    type Frame = Frame;
+
+    fn try_queue(&mut self, frame: Self::Frame) -> Result<(), WriteQueueFull<Self::Frame>> {
+        log_frame(self.dir, &frame);
+        self.inner.try_queue(frame)
+    }
+
+    fn try_flush(&mut self) -> io::Result<()> {
+        self.inner.try_flush()
+    }
+
+    fn has_pending(&self) -> bool {
+        self.inner.has_pending()
+    }
+}
+
+pub(crate) fn log_frame(dir: Direction, frame: &Frame) {
     info!(
         dir = dir.arrow(),
         msg = frame.msg.name(),
