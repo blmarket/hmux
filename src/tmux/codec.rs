@@ -281,12 +281,20 @@ impl NonblockingImsgWriter {
         }
     }
 
+    /// Whether one more frame may cross the queue's high-water mark.
+    ///
+    /// Callers stop producing after that frame, so pending output is bounded by
+    /// the configured mark plus one protocol frame.
+    pub(crate) fn is_below_high_water(&self) -> bool {
+        self.pending_bytes < self.max_pending_bytes
+    }
+
     fn try_queue_frame(&mut self, frame: Frame) -> Result<(), WriteQueueFull<Frame>> {
-        let bytes = encode_bytes(&frame);
-        let frame_bytes = bytes.len();
-        if frame_bytes > self.max_pending_bytes.saturating_sub(self.pending_bytes) {
+        if !self.is_below_high_water() {
             return Err(WriteQueueFull::new(frame));
         }
+        let bytes = encode_bytes(&frame);
+        let frame_bytes = bytes.len();
 
         let buffer = ImsgWriteBuffer {
             bytes,
@@ -864,6 +872,31 @@ mod tests {
         writer.try_queue(rejected_frame).unwrap();
         writer.try_flush().unwrap();
         assert_eq!(reader.try_recv().unwrap().msg, rejected_message);
+    }
+
+    #[test]
+    fn try_queue_accepts_one_frame_crossing_the_high_water_mark() {
+        let (sender, receiver) = UnixStream::pair().unwrap();
+        let first = Message::Command(vec!["one".into()]);
+        let second = Message::Command(vec!["two".into()]);
+        let third = Message::Command(vec!["three".into()]);
+        let queue_limit = encode_bytes(&Frame::new(first.clone())).len() + 1;
+        let mut writer = NonblockingImsgWriter::with_queue_limit(sender.into(), queue_limit);
+        let mut reader = ImsgReader::new(receiver.into());
+
+        writer.try_queue(Frame::new(first.clone())).unwrap();
+        assert!(writer.is_below_high_water());
+        writer.try_queue(Frame::new(second.clone())).unwrap();
+        assert!(!writer.is_below_high_water());
+        let rejected = writer
+            .try_queue(Frame::new(third.clone()))
+            .expect_err("the high-water mark has been reached")
+            .into_frame();
+        assert_eq!(rejected.msg, third);
+
+        writer.try_flush().unwrap();
+        assert_eq!(reader.try_recv().unwrap().msg, first);
+        assert_eq!(reader.try_recv().unwrap().msg, second);
     }
 
     #[test]

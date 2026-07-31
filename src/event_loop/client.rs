@@ -22,7 +22,6 @@ pub(crate) enum CloseReason {
     Error(io::ErrorKind),
     Shutdown,
     FrameExceedsQueueLimit,
-    BackpressureViolation,
 }
 
 /// Events delivered to the connection actor.
@@ -74,7 +73,6 @@ pub(crate) struct ClientIo {
     reader: ImsgReader,
     writer: NonblockingImsgWriter,
     inbox: ActorRef<ClientInbox>,
-    retry: Option<Frame>,
     read_token: Option<Token>,
     write_token: Option<Token>,
     read_work_queued: bool,
@@ -94,7 +92,6 @@ impl ClientIo {
             reader,
             writer,
             inbox,
-            retry: None,
             read_token: None,
             write_token: None,
             read_work_queued: false,
@@ -146,7 +143,7 @@ impl ClientIo {
     }
 
     pub(crate) fn mark_send_work_queued(&mut self) -> bool {
-        if self.closed || self.retry.is_some() || self.send_work_queued {
+        if self.closed || !self.writer.is_below_high_water() || self.send_work_queued {
             return false;
         }
         self.send_work_queued = true;
@@ -155,10 +152,6 @@ impl ClientIo {
 
     pub(crate) fn reads_paused(&self) -> bool {
         self.reads_paused
-    }
-
-    pub(crate) fn has_retry(&self) -> bool {
-        self.retry.is_some()
     }
 
     pub(crate) fn handle(
@@ -220,18 +213,13 @@ impl ClientIo {
     }
 
     fn handle_send(&mut self, target: &ActorRef<Self>, frame: Frame, outbox: &mut Outbox) {
-        if self.retry.is_some() {
-            self.close(target, CloseReason::BackpressureViolation, outbox);
-            return;
-        }
-
         match self.writer.try_queue(frame) {
-            Ok(()) => outbox.set_write_interest(target.clone(), true),
-            Err(error) if self.writer.has_pending() => {
-                self.retry = Some(error.into_frame());
-                self.reads_paused = true;
-                outbox.set_read_interest(target.clone(), false);
+            Ok(()) => {
                 outbox.set_write_interest(target.clone(), true);
+                if !self.writer.is_below_high_water() {
+                    self.reads_paused = true;
+                    outbox.set_read_interest(target.clone(), false);
+                }
             }
             Err(_) => self.close(target, CloseReason::FrameExceedsQueueLimit, outbox),
         }
@@ -247,38 +235,11 @@ impl ClientIo {
             }
         }
 
-        let mut accepted_retry = false;
-        if let Some(frame) = self.retry.take() {
-            match self.writer.try_queue(frame) {
-                Ok(()) => {
-                    accepted_retry = true;
-                    self.reads_paused = false;
-                    outbox.set_read_interest(target.clone(), true);
-                    if self.reader.has_buffered_frame() {
-                        self.schedule_read_continuation(target, outbox);
-                    }
-                }
-                Err(error) if self.writer.has_pending() => {
-                    self.retry = Some(error.into_frame());
-                }
-                Err(_) => {
-                    self.close(target, CloseReason::FrameExceedsQueueLimit, outbox);
-                    return;
-                }
-            }
-        }
-
-        // Mio readiness is edge-triggered. If the socket stayed writable while
-        // the retry moved into the private queue, no second writable edge is
-        // guaranteed, so advance it during the current event.
-        if accepted_retry {
-            match self.writer.try_flush() {
-                Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
-                Err(error) => {
-                    self.close(target, CloseReason::Error(error.kind()), outbox);
-                    return;
-                }
+        if self.reads_paused && self.writer.is_below_high_water() {
+            self.reads_paused = false;
+            outbox.set_read_interest(target.clone(), true);
+            if self.reader.has_buffered_frame() {
+                self.schedule_read_continuation(target, outbox);
             }
         }
 
@@ -296,7 +257,6 @@ impl ClientIo {
 
     fn close(&mut self, target: &ActorRef<Self>, reason: CloseReason, outbox: &mut Outbox) {
         self.closed = true;
-        self.retry = None;
         outbox.set_read_interest(target.clone(), false);
         outbox.set_write_interest(target.clone(), false);
         outbox.enqueue(Envelope::ClientInbox {

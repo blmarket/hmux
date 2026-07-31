@@ -153,7 +153,6 @@ pub(crate) struct ProtocolClient {
     prelude: VecDeque<Frame>,
     prelude_bytes: usize,
     operation: DirectOperation,
-    retry: Option<Frame>,
     completion: Option<PendingCommand>,
     resumable_command: Option<ActiveResumableCommand>,
     status_subscription: Option<StatusSubscription>,
@@ -211,7 +210,6 @@ impl ProtocolClient {
                 prelude: VecDeque::new(),
                 prelude_bytes: 0,
                 operation: DirectOperation::Idle,
-                retry: None,
                 completion: None,
                 resumable_command: None,
                 status_subscription: None,
@@ -528,7 +526,7 @@ impl ProtocolClient {
                 ProtocolMode::HandingOff | ProtocolMode::Fallback(_) => return,
             }
             if self.reader.is_none()
-                || self.retry.is_some()
+                || self.reads_paused
                 || self.attach_input_paused
                 || self.close_after_flush
                 || matches!(self.operation, DirectOperation::WaitingStatus { .. })
@@ -761,7 +759,7 @@ impl ProtocolClient {
             }
         }
 
-        loop {
+        while self.writer_is_below_high_water() {
             let frame = match &mut self.mode {
                 ProtocolMode::Control(control) => control.pop_frame(),
                 _ => None,
@@ -840,7 +838,7 @@ impl ProtocolClient {
     }
 
     fn sync_attach(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
-        loop {
+        while self.writer_is_below_high_water() {
             let frame = match &mut self.mode {
                 ProtocolMode::Attach(attach) => attach.pop_frame(),
                 _ => None,
@@ -1174,7 +1172,7 @@ impl ProtocolClient {
                     Frame::new(Message::Status { revision, body }),
                     outbox,
                 );
-                if self.retry.is_none() {
+                if !self.reads_paused {
                     outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, true);
                     if self
                         .reader
@@ -1370,46 +1368,21 @@ impl ProtocolClient {
     }
 
     fn drive_output(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
-        if let Some(frame) = self.retry.take() {
-            match self
-                .writer
-                .as_mut()
-                .expect("protocol writer disappeared")
-                .try_queue(frame)
-            {
-                Ok(()) => {
-                    self.reads_paused = false;
-                    if !self.attach_input_paused {
-                        outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, true);
-                    }
-                    if !self.attach_input_paused
-                        && self
-                            .reader
-                            .as_ref()
-                            .is_some_and(ImsgReader::has_buffered_frame)
-                    {
-                        self.schedule_read_continuation(target, outbox);
-                    }
-                }
-                Err(error)
-                    if self
-                        .writer
-                        .as_ref()
-                        .expect("protocol writer disappeared")
-                        .has_pending() =>
+        if self.reads_paused && self.writer_is_below_high_water() {
+            self.reads_paused = false;
+            if !self.attach_input_paused {
+                outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, true);
+                if self
+                    .reader
+                    .as_ref()
+                    .is_some_and(ImsgReader::has_buffered_frame)
                 {
-                    self.retry = Some(error.into_frame());
-                    outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Write, true);
-                    return;
-                }
-                Err(_) => {
-                    self.close(target, ProtocolCloseReason::FrameExceedsQueueLimit, outbox);
-                    return;
+                    self.schedule_read_continuation(target, outbox);
                 }
             }
         }
 
-        loop {
+        while self.writer_is_below_high_water() {
             match self.next_generated_frame() {
                 GeneratedFrame::Frame(frame) => {
                     if !self.queue_frame(target, frame, outbox) {
@@ -1423,9 +1396,6 @@ impl ProtocolClient {
                     }
                     self.operation = DirectOperation::Idle;
                     self.start_command_work(target, CommandWork::Advance(transaction), outbox);
-                    if self.retry.is_some() {
-                        return;
-                    }
                 }
                 GeneratedFrame::ResponseComplete => {
                     self.close_after_flush = true;
@@ -1435,14 +1405,24 @@ impl ProtocolClient {
             }
         }
 
+        if !self.writer_is_below_high_water() {
+            self.reads_paused = true;
+            outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, false);
+        }
         let pending = self
             .writer
             .as_ref()
             .is_some_and(NonblockingImsgWriter::has_pending);
         outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Write, pending);
-        if self.close_after_flush && !pending && self.retry.is_none() {
+        if self.close_after_flush && !pending {
             self.close(target, ProtocolCloseReason::Completed, outbox);
         }
+    }
+
+    fn writer_is_below_high_water(&self) -> bool {
+        self.writer
+            .as_ref()
+            .is_some_and(NonblockingImsgWriter::is_below_high_water)
     }
 
     fn queue_frame(&mut self, target: &ActorRef<Self>, frame: Frame, outbox: &mut Outbox) -> bool {
@@ -1455,20 +1435,11 @@ impl ProtocolClient {
         {
             Ok(()) => {
                 outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Write, true);
+                if !self.writer_is_below_high_water() {
+                    self.reads_paused = true;
+                    outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, false);
+                }
                 true
-            }
-            Err(error)
-                if self
-                    .writer
-                    .as_ref()
-                    .expect("protocol writer disappeared")
-                    .has_pending() =>
-            {
-                self.retry = Some(error.into_frame());
-                self.reads_paused = true;
-                outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, false);
-                outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Write, true);
-                false
             }
             Err(_) => {
                 self.close(target, ProtocolCloseReason::FrameExceedsQueueLimit, outbox);
@@ -1492,8 +1463,12 @@ impl ProtocolClient {
             }
         }
         self.drive_output(target, outbox);
-        if matches!(self.mode, ProtocolMode::Attach(_)) && self.status.close_reason().is_none() {
-            self.sync_attach(target, outbox);
+        if self.status.close_reason().is_none() {
+            match self.mode {
+                ProtocolMode::Control(_) => self.sync_control(target, outbox),
+                ProtocolMode::Attach(_) => self.sync_attach(target, outbox),
+                _ => {}
+            }
         }
     }
 

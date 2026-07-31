@@ -1519,12 +1519,12 @@ mod tests {
     }
 
     #[test]
-    fn queue_full_pauses_reads_and_retries_frame_in_order() {
+    fn high_water_pauses_reads_and_preserves_frame_order() {
         let (peer, server) = UnixStream::pair().unwrap();
         let (mut peer_reader, _peer_writer) = split_stream(peer).unwrap();
         let first = Message::Command(vec!["one".into()]);
         let second = Message::Command(vec!["two".into()]);
-        let queue_limit = encode_bytes(&Frame::new(first.clone())).len();
+        let queue_limit = encode_bytes(&Frame::new(first.clone())).len() + 1;
         let (server_reader, server_writer) =
             nonblocking_pair_with_limit(server, queue_limit).unwrap();
         let mut loop_ = EventLoop::new().unwrap();
@@ -1541,14 +1541,12 @@ mod tests {
         dispatch_all(&mut loop_);
 
         assert_eq!(client.io().with(ClientIo::reads_paused), Some(true));
-        assert_eq!(client.io().with(ClientIo::has_retry), Some(true));
         assert_eq!(client.io().with(ClientIo::read_token).flatten(), None);
         assert!(client.io().with(ClientIo::write_token).flatten().is_some());
 
         loop_.poll(Some(POLL_TIMEOUT)).unwrap();
         dispatch_all(&mut loop_);
         assert_eq!(client.io().with(ClientIo::reads_paused), Some(false));
-        assert_eq!(client.io().with(ClientIo::has_retry), Some(false));
         assert!(client.io().with(ClientIo::read_token).flatten().is_some());
 
         assert_eq!(client.io().with(ClientIo::write_token).flatten(), None);
@@ -1711,7 +1709,7 @@ mod tests {
     }
 
     #[test]
-    fn pairing_queue_full_pauses_only_the_upstream_reader() {
+    fn pairing_high_water_pauses_only_the_upstream_reader() {
         let (client_peer, client_endpoint) = UnixStream::pair().unwrap();
         let (server_peer, server_endpoint) = UnixStream::pair().unwrap();
         let (_client_peer_reader, mut client_peer_writer) = split_stream(client_peer).unwrap();
@@ -1747,12 +1745,23 @@ mod tests {
         loop_.poll(Some(POLL_TIMEOUT)).unwrap();
         dispatch_all(&mut loop_);
 
+        assert_eq!(
+            pairing
+                .pairing
+                .with(|pairing| pairing.token(PairEndpoint::Client, PairIoSide::Read))
+                .flatten(),
+            None
+        );
+        assert_eq!(server_peer_reader.recv().unwrap().msg, first);
+
+        loop_.poll(Some(POLL_TIMEOUT)).unwrap();
+        dispatch_all(&mut loop_);
+
         assert!(pairing
             .pairing
             .with(|pairing| pairing.token(PairEndpoint::Client, PairIoSide::Read))
             .flatten()
             .is_some());
-        assert_eq!(server_peer_reader.recv().unwrap().msg, first);
         assert_eq!(server_peer_reader.recv().unwrap().msg, second);
     }
 

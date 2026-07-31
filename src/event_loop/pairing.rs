@@ -7,7 +7,6 @@ use std::rc::Rc;
 
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 use crate::tmux::introspect::{log_frame, Direction};
-use crate::tmux::message::Frame;
 use crate::tmux::traits::NonblockingFrameWriter;
 
 use super::actor::ActorRef;
@@ -94,7 +93,6 @@ impl PairingStatus {
 pub(crate) struct Pairing {
     readers: [ImsgReader; 2],
     writers: [NonblockingImsgWriter; 2],
-    retries: [Option<Frame>; 2],
     read_tokens: [Option<Token>; 2],
     write_tokens: [Option<Token>; 2],
     read_work_queued: [bool; 2],
@@ -117,7 +115,6 @@ impl Pairing {
             Self {
                 readers: [client_reader, server_reader],
                 writers: [client_writer, server_writer],
-                retries: [None, None],
                 read_tokens: [None, None],
                 write_tokens: [None, None],
                 read_work_queued: [false, false],
@@ -166,7 +163,8 @@ impl Pairing {
         if self.closed
             || *queued
             || (side == PairIoSide::Read && self.read_eof[index])
-            || (side == PairIoSide::Read && self.retries[index].is_some())
+            || (side == PairIoSide::Read
+                && !self.writers[endpoint.other().index()].is_below_high_water())
         {
             return false;
         }
@@ -218,11 +216,12 @@ impl Pairing {
         source: PairEndpoint,
         outbox: &mut Outbox,
     ) {
-        if self.read_eof[source.index()] || self.retries[source.index()].is_some() {
+        let destination = source.other();
+        if self.read_eof[source.index()] || !self.writers[destination.index()].is_below_high_water()
+        {
             return;
         }
 
-        let destination = source.other();
         for _ in 0..READ_FRAME_BUDGET {
             let frame = match self.readers[source.index()].try_recv() {
                 Ok(frame) => frame,
@@ -246,17 +245,15 @@ impl Pairing {
                         PairIoSide::Write,
                         true,
                     );
-                }
-                Err(error) if self.writers[destination.index()].has_pending() => {
-                    self.retries[source.index()] = Some(error.into_frame());
-                    outbox.set_pairing_interest(target.clone(), source, PairIoSide::Read, false);
-                    outbox.set_pairing_interest(
-                        target.clone(),
-                        destination,
-                        PairIoSide::Write,
-                        true,
-                    );
-                    return;
+                    if !self.writers[destination.index()].is_below_high_water() {
+                        outbox.set_pairing_interest(
+                            target.clone(),
+                            source,
+                            PairIoSide::Read,
+                            false,
+                        );
+                        return;
+                    }
                 }
                 Err(_) => {
                     self.close(target, PairingCloseReason::FrameExceedsQueueLimit, outbox);
@@ -284,37 +281,10 @@ impl Pairing {
         }
 
         let source = destination.other();
-        let mut accepted_retry = false;
-        if let Some(frame) = self.retries[source.index()].take() {
-            match self.writers[destination.index()].try_queue(frame) {
-                Ok(()) => {
-                    accepted_retry = true;
-                    if !self.read_eof[source.index()] {
-                        outbox.set_pairing_interest(target.clone(), source, PairIoSide::Read, true);
-                        self.schedule_read_continuation(target, source, outbox);
-                    }
-                }
-                Err(error) if self.writers[destination.index()].has_pending() => {
-                    self.retries[source.index()] = Some(error.into_frame());
-                }
-                Err(_) => {
-                    self.close(target, PairingCloseReason::FrameExceedsQueueLimit, outbox);
-                    return;
-                }
-            }
-        }
-
-        // Writable readiness is edge-triggered. A retry accepted after the
-        // existing queue drains must be advanced before returning.
-        if accepted_retry {
-            match self.writers[destination.index()].try_flush() {
-                Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
-                Err(error) => {
-                    self.close(target, PairingCloseReason::Error(error.kind()), outbox);
-                    return;
-                }
-            }
+        if self.writers[destination.index()].is_below_high_water() && !self.read_eof[source.index()]
+        {
+            outbox.set_pairing_interest(target.clone(), source, PairIoSide::Read, true);
+            self.schedule_read_continuation(target, source, outbox);
         }
 
         outbox.set_pairing_interest(
@@ -350,7 +320,6 @@ impl Pairing {
         for source in PairEndpoint::ALL {
             let destination = source.other();
             if self.read_eof[source.index()]
-                && self.retries[source.index()].is_none()
                 && !self.writers[destination.index()].has_pending()
                 && !self.write_shutdown[destination.index()]
             {
@@ -372,8 +341,7 @@ impl Pairing {
         if self.read_eof.iter().all(|eof| *eof)
             && PairEndpoint::ALL.iter().all(|source| {
                 let destination = source.other();
-                self.retries[source.index()].is_none()
-                    && !self.writers[destination.index()].has_pending()
+                !self.writers[destination.index()].has_pending()
             })
         {
             self.close(target, PairingCloseReason::PeerClosed, outbox);
@@ -382,7 +350,6 @@ impl Pairing {
 
     fn close(&mut self, target: &ActorRef<Self>, reason: PairingCloseReason, outbox: &mut Outbox) {
         self.closed = true;
-        self.retries = [None, None];
         self.status.close_reason.set(Some(reason));
         for endpoint in PairEndpoint::ALL {
             for side in [PairIoSide::Read, PairIoSide::Write] {

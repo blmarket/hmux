@@ -478,12 +478,14 @@ mod tests {
     }
 
     #[test]
-    fn event_loop_protocol_executes_a_command_without_native_pairing() {
+    fn event_loop_protocol_streams_command_response_across_high_water() {
         let server = NativeServer::new().unwrap();
         let (peer, endpoint) = UnixStream::pair().unwrap();
         let (mut reader, mut writer) = split_stream(peer).unwrap();
+        let (protocol_reader, protocol_writer) =
+            split_nonblocking_stream_with_queue_limit(endpoint, 1).unwrap();
         let mut event_loop = EventLoop::new().unwrap();
-        let client = add_protocol_client(endpoint, &server, &mut event_loop).unwrap();
+        let client = event_loop.add_protocol(protocol_reader, protocol_writer, server.clone());
 
         writer
             .send(Frame::new(Message::Command(vec![

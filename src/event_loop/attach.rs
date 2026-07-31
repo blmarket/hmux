@@ -77,8 +77,13 @@ impl From<io::Error> for AttachStartError {
 }
 
 struct AttachInput {
-    frames: VecDeque<Frame>,
+    frames: VecDeque<QueuedAttachFrame>,
     bytes: usize,
+}
+
+struct QueuedAttachFrame {
+    frame: Frame,
+    wire_len: usize,
 }
 
 impl AttachInput {
@@ -89,24 +94,20 @@ impl AttachInput {
         }
     }
 
-    fn can_push(&self, frame: &Frame) -> bool {
-        encode_bytes(frame).len() <= ATTACH_QUEUE_LIMIT.saturating_sub(self.bytes)
-    }
-
-    fn push(&mut self, frame: Frame) -> Result<(), Frame> {
-        let bytes = encode_bytes(&frame).len();
-        if bytes > ATTACH_QUEUE_LIMIT.saturating_sub(self.bytes) {
-            return Err(frame);
-        }
-        self.bytes += bytes;
-        self.frames.push_back(frame);
-        Ok(())
+    fn push(&mut self, frame: Frame) {
+        let wire_len = encode_bytes(&frame).len();
+        self.bytes += wire_len;
+        self.frames.push_back(QueuedAttachFrame { frame, wire_len });
     }
 
     fn pop(&mut self) -> Option<Frame> {
-        let frame = self.frames.pop_front()?;
-        self.bytes = self.bytes.saturating_sub(encode_bytes(&frame).len());
-        Some(frame)
+        let queued = self.frames.pop_front()?;
+        self.bytes = self.bytes.saturating_sub(queued.wire_len);
+        Some(queued.frame)
+    }
+
+    fn is_below_high_water(&self) -> bool {
+        self.bytes < ATTACH_QUEUE_LIMIT
     }
 
     fn is_empty(&self) -> bool {
@@ -182,7 +183,6 @@ pub(crate) struct EventAttachClient {
     state: Arc<Mutex<ServerState>>,
     hub: StatusHub,
     input: AttachInput,
-    input_retry: Option<Frame>,
     output: AttachOutput,
     runtime_sources: BTreeMap<EventAttachSource, OwnedFd>,
     runtime_desired: BTreeSet<EventAttachSource>,
@@ -233,7 +233,6 @@ impl EventAttachClient {
             state,
             hub,
             input: AttachInput::new(),
-            input_retry: None,
             output,
             runtime_sources: BTreeMap::new(),
             runtime_desired: BTreeSet::new(),
@@ -291,8 +290,7 @@ impl EventAttachClient {
         self.active_command
             .as_ref()
             .is_none_or(|command| command.allows_attach_io)
-            && self.input_retry.is_none()
-            && self.input.bytes < ATTACH_QUEUE_LIMIT
+            && self.input.is_below_high_water()
     }
 
     pub(crate) fn is_finished(&self) -> bool {
@@ -307,15 +305,7 @@ impl EventAttachClient {
         if self.finished {
             return Ok(());
         }
-        if self.input_retry.is_some() {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "attach protocol input is paused",
-            ));
-        }
-        if let Err(frame) = self.input.push(frame) {
-            self.input_retry = Some(frame);
-        }
+        self.input.push(frame);
         self.refresh_wait()
     }
 
@@ -370,7 +360,6 @@ impl EventAttachClient {
         self.finished = true;
         self.input.frames.clear();
         self.input.bytes = 0;
-        self.input_retry = None;
         self.output.frames.clear();
         self.output.bytes = 0;
         self.runtime_desired.clear();
@@ -388,9 +377,7 @@ impl EventAttachClient {
             &mut self.input,
             &mut self.output,
         )? {
-            AttachDrive::Continue => {
-                self.promote_input_retry();
-            }
+            AttachDrive::Continue => {}
             AttachDrive::Finished => self.finish(),
         }
         Ok(())
@@ -612,17 +599,6 @@ impl EventAttachClient {
         Ok(())
     }
 
-    fn promote_input_retry(&mut self) {
-        let Some(frame) = self.input_retry.take() else {
-            return;
-        };
-        if self.input.can_push(&frame) {
-            let _ = self.input.push(frame);
-        } else {
-            self.input_retry = Some(frame);
-        }
-    }
-
     fn mark_ready(ready: &mut AttachWaitReady, source: AttachRuntimeSource) {
         match source {
             AttachRuntimeSource::Control => ready.control = true,
@@ -708,11 +684,24 @@ mod tests {
     use crate::tmux::message::Message;
 
     #[test]
-    fn bounded_input_retains_one_rejected_frame() {
+    fn input_high_water_allows_one_frame_of_bounded_overshoot() {
         let mut input = AttachInput::new();
-        input.bytes = ATTACH_QUEUE_LIMIT;
         let frame = Frame::new(Message::Resize);
-        assert!(input.push(frame).is_err());
+        let wire_len = encode_bytes(&frame).len();
+
+        while input.is_below_high_water() {
+            input.push(Frame::new(Message::Resize));
+        }
+
+        assert!(input.bytes >= ATTACH_QUEUE_LIMIT);
+        assert!(input.bytes < ATTACH_QUEUE_LIMIT + wire_len);
+        assert!(input.bytes < ATTACH_QUEUE_LIMIT + MAX_IMSGSIZE);
+        assert!(!input.is_below_high_water());
+
+        let before = input.bytes;
+        assert_eq!(input.pop().unwrap().msg, Message::Resize);
+        assert_eq!(input.bytes, before - wire_len);
+        assert!(input.is_below_high_water());
     }
 
     #[test]
