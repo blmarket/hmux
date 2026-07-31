@@ -5,15 +5,15 @@ use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::rc::Rc;
 
+use crate::common::actor::ActorRef;
+use crate::common::reactor::Token;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 use crate::tmux::introspect::{log_frame, Direction};
 use crate::tmux::message::Frame;
 use crate::tmux::traits::NonblockingFrameWriter;
 
-use super::actor::ActorRef;
 use super::client::READ_FRAME_BUDGET;
 use super::driver::Outbox;
-use super::reactor::Token;
 
 /// One physical endpoint of a proxied connection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

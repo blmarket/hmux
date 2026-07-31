@@ -1,4 +1,4 @@
-//! Readiness polling boundary for the server event loop.
+//! Engine-agnostic readiness polling boundary.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -167,7 +167,7 @@ impl WakeHandle {
     }
 }
 
-/// Backend-independent operations needed by the server event loop.
+/// Backend-independent readiness operations needed by an event loop.
 ///
 /// The backend duplicates every registered descriptor so deferred
 /// deregistration remains valid if an actor replaces its source while effects

@@ -1,4 +1,4 @@
-//! Deterministic timer scheduling for the server event loop.
+//! Deterministic, engine-agnostic timer scheduling.
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};

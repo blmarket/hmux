@@ -25,7 +25,7 @@ use crate::tmux::introspect::{Direction, LoggingReader, LoggingWriter};
 use crate::tmux::traits::{FrameReader, FrameWriter, TmuxServer};
 
 type NativeEventLoop =
-    EventLoop<crate::event_loop::reactor::MioReactor<crate::event_loop::driver::IoRecipient>>;
+    EventLoop<crate::common::reactor::MioReactor<crate::event_loop::driver::IoRecipient>>;
 const PROTOCOL_WRITE_QUEUE_LIMIT: usize = MAX_IMSGSIZE;
 
 /// Bind `listen_path` and serve clients from `server`, forever.

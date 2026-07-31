@@ -12,6 +12,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::common::actor::ActorRef;
+use crate::common::reactor::Token;
+use crate::common::timer::TimerId;
 use crate::integration::status::{StatusHub, StatusSnapshot, StatusSubscription};
 use crate::native::attach::ClientTty;
 use crate::native::command::{self, ClientContext, CommandResult};
@@ -23,14 +26,11 @@ use crate::tmux::introspect::{log_frame, Direction};
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 use crate::tmux::traits::NonblockingFrameWriter;
 
-use super::actor::ActorRef;
 use super::attach::{EventAttachClient, EventAttachSource};
 use super::client::READ_FRAME_BUDGET;
 use super::driver::{Outbox, PairingHandle};
 use super::job::BackgroundCommands;
 use super::pairing::PairingCloseReason;
-use super::reactor::Token;
-use super::timer::TimerId;
 
 const CLIENT_CONTROL: i64 = 0x2000;
 const FALLBACK_QUEUE_LIMIT: usize = MAX_IMSGSIZE * 64;

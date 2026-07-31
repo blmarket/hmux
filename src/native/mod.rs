@@ -43,7 +43,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 
-use crate::event_loop::reactor::WakeHandle;
+use crate::common::reactor::WakeHandle;
 use crate::integration::status::StatusHub;
 use crate::observability::v1::{PaneId as PublicPaneId, PaneObservability, ServerObservability};
 use crate::tmux::codec::{
@@ -635,7 +635,7 @@ mod tests {
     use std::sync::Mutex as StdMutex;
     use std::time::Duration;
 
-    use crate::event_loop::reactor::{MioReactor, Reactor};
+    use crate::common::reactor::{MioReactor, Reactor};
     use crate::observability::v1::{PaneId, ServerObservability};
 
     use super::{NativeServer, NoopObservationHook, ObservationHook, PaneEvent, ServerState};
