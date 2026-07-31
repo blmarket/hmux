@@ -22,12 +22,11 @@
 //!   the server's semantic key tables. The full copy-mode selection/search
 //!   command set remains out of scope.
 //!
-//! Threading: the pane's pty reader thread (in `pane.rs`) continuously drains
-//! the child's output into the `Terminal`. The attach loop polls for four
-//! sources: tty input, imsg control messages, pane-output notifications, and
-//! client-local status refresh deadlines. Grid changes are detected by diffing
-//! the last rendered VT. No extra threads are spawned per attach; the loop is
-//! single-threaded and both fds are non-blocking.
+//! The native compatibility path uses pane reader threads and polls attach
+//! sources directly. The event-loop adapter drives pane PTYs and delivers attach
+//! sources as readiness turns from its central reactor. Grid changes are
+//! detected by diffing the last rendered VT. The compositor itself remains
+//! single-threaded and both tty fds are non-blocking.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
@@ -48,7 +47,7 @@ use super::latmon::LatMon;
 use super::mouse::{self, MouseEvent, MouseInputState, MousePosition, MouseProtocol};
 #[cfg(test)]
 use super::mouse::{MouseButton, MouseEventKind};
-use super::pane::{OutputSubscription, Pane, PaneInputStats};
+use super::pane::{OutputSubscription, Pane, PaneInputStats, PaneIo, PaneIoMode};
 use super::state::{
     copy_search_segments, copy_selection_segments, ClientAction, ClientKey, CopyState, MenuItem,
     MenuRequest, ModeBindingUpdate, ModeEdit, ModeKind, ModePrompt, ModeView, ModeViewKeyResult,
@@ -59,16 +58,22 @@ use super::term::{self, ResolvedTerm, TerminalCapabilities, TerminalIdentity};
 
 #[cfg(test)]
 const PREFIX: u8 = 0x02;
+const TTY_OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 
 /// Internal capability needed by the event-driven attach loop. This stays
 /// separate from the public `FrameReader` compatibility contract.
 pub(crate) trait AttachFrameReader: FrameReader + AsRawFd {
     fn has_buffered_frame(&self) -> bool;
+    fn try_recv(&mut self) -> io::Result<Frame>;
 }
 
 impl AttachFrameReader for ImsgReader {
     fn has_buffered_frame(&self) -> bool {
         ImsgReader::has_buffered_frame(self)
+    }
+
+    fn try_recv(&mut self) -> io::Result<Frame> {
+        ImsgReader::try_recv(self)
     }
 }
 
@@ -122,7 +127,7 @@ impl StatusTimer {
     /// recomposed. Scheduling from `now` matches libevent's callback cadence
     /// and avoids a burst of catch-up redraws after a delayed compositor.
     fn take_expired(&mut self, now: Instant) -> bool {
-        if !self.deadline.is_some_and(|deadline| now >= deadline) {
+        if self.deadline.is_none_or(|deadline| now < deadline) {
             return false;
         }
         self.deadline = self.interval.map(|duration| status_deadline(now, duration));
@@ -207,6 +212,17 @@ enum PrefixOutcome {
         duration: Duration,
     },
     ViewOutput(Vec<u8>),
+    DeferredCommand {
+        args: Vec<String>,
+        context: command::ClientContext,
+    },
+    DeferredMessage {
+        args: Vec<String>,
+        context: command::ClientContext,
+        target: String,
+        escape_hashes: bool,
+        explicit_duration: Option<u64>,
+    },
     /// The binding ran (or was a no-op / unknown key). `changed` is true when it
     /// altered the window/pane layout, so the compositor must redraw the
     /// now-active pane.
@@ -215,7 +231,7 @@ enum PrefixOutcome {
     },
 }
 
-enum ActiveOverlay {
+pub(crate) enum ActiveOverlay {
     Menu {
         request: MenuRequest,
         selected: usize,
@@ -223,7 +239,9 @@ enum ActiveOverlay {
     },
     Popup {
         request: Box<PopupRequest>,
-        pane: Pane,
+        pane: Box<Pane>,
+        io: Option<Box<PaneIo>>,
+        read_continuation: bool,
         exit_status: Option<i32>,
         reply: Option<std::sync::mpsc::Sender<super::state::PromptCompletion>>,
     },
@@ -241,6 +259,7 @@ impl ActiveOverlay {
         reply: Option<std::sync::mpsc::Sender<super::state::PromptCompletion>>,
         cols: u16,
         rows: u16,
+        pane_io_mode: PaneIoMode,
     ) -> io::Result<Option<Self>> {
         Ok(match request {
             OverlayRequest::Clear => None,
@@ -283,15 +302,19 @@ impl ActiveOverlay {
                     request.argv.clone()
                 };
                 let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
-                let pane = Pane::spawn_in(
+                let mut pane = Pane::spawn_in_mode(
                     &refs,
                     request.cwd.as_deref(),
                     inner_width.max(1),
                     inner_height.max(1),
+                    pane_io_mode,
                 )?;
+                let io = pane.take_event_io().map(Box::new);
                 Some(Self::Popup {
                     request: Box::new(request),
-                    pane,
+                    pane: Box::new(pane),
+                    io,
+                    read_continuation: false,
                     exit_status: None,
                     reply,
                 })
@@ -338,6 +361,42 @@ impl ActiveOverlay {
             );
         }
     }
+
+    fn popup_sources(&self) -> (RawFd, RawFd) {
+        let Self::Popup { io: Some(io), .. } = self else {
+            return (-1, -1);
+        };
+        let fd = io.as_fd().as_raw_fd();
+        (fd, if io.wants_write() { fd } else { -1 })
+    }
+
+    fn popup_read_continuation(&self) -> bool {
+        matches!(
+            self,
+            Self::Popup {
+                read_continuation: true,
+                ..
+            }
+        )
+    }
+
+    fn drive_popup_io(&mut self, readable: bool, writable: bool) -> io::Result<()> {
+        let Self::Popup {
+            io: Some(io),
+            read_continuation,
+            ..
+        } = self
+        else {
+            return Ok(());
+        };
+        if writable {
+            io.drive_writable();
+        }
+        if readable {
+            *read_continuation = io.drive_readable()?.continuation;
+        }
+        Ok(())
+    }
 }
 
 fn overlay_dimension(value: Option<&str>, available: u16, default_percent: u16) -> u16 {
@@ -353,7 +412,7 @@ fn overlay_dimension(value: Option<&str>, available: u16, default_percent: u16) 
     }
 }
 
-struct CommandPrompt {
+pub(crate) struct CommandPrompt {
     args: Vec<String>,
     tail: Vec<String>,
     spec: command::CommandPromptSpec,
@@ -372,6 +431,7 @@ struct CommandPrompt {
     action: CommandPromptAction,
     frozen_frame: Option<Vec<u8>>,
     external: Option<super::state::ActiveCommandPrompt>,
+    deferred_incremental: VecDeque<command::DeferredCommand>,
 }
 
 enum CommandPromptAction {
@@ -410,7 +470,2706 @@ enum CommandPromptInput {
     Cancel,
 }
 
+/// Client-local compositor data that must survive from one readiness turn to
+/// the next. Keeping it explicit lets the event-loop adapter eventually own
+/// this state without an executor task or a second attach implementation.
+struct AttachCompositorState {
+    session_id: u32,
+    stable_target: String,
+    context: command::ClientContext,
+    last_render: Vec<u8>,
+    seen_large_scroll: BTreeMap<u32, u64>,
+    output_cursor_visible: Option<bool>,
+    last_title: Option<String>,
+    force_clear: bool,
+    prefix_pending: bool,
+    mouse_input: MouseInputState,
+    confirm: Option<ActiveConfirm>,
+    command_prompt: Option<CommandPrompt>,
+    active_overlay: Option<ActiveOverlay>,
+    status_message: Option<(String, Instant)>,
+    should_exit: bool,
+    detach_requested: bool,
+    session_ended: bool,
+    locked: bool,
+    suspended: bool,
+    key_prompt_buf: Vec<u8>,
+    key_prompt_deadline: Option<Instant>,
+    terminal_reply_buf: Vec<u8>,
+    terminal_reply_deadline: Option<Instant>,
+    switch_to: Option<u32>,
+    injected_input: VecDeque<ClientKey>,
+    latmon: LatMon,
+    tty_output: TtyOutput,
+}
+
+/// All native attach state that must remain alive while readiness is owned by
+/// either the compatibility poller or the server event loop.
+pub(crate) struct AttachSession {
+    // Restore the tty before the owned descriptors below are closed if a turn
+    // exits early. The normal finish path disarms this guard explicitly.
+    termios_guard: TermiosGuard,
+    input_fd: OwnedFd,
+    render_fd: OwnedFd,
+    saved_termios: Option<libc::termios>,
+    prompt_attachment: super::state::ClientPromptAttachment,
+    render_attachment: super::state::ClientRenderAttachment,
+    agent_status_subscription: crate::integration::status::StatusSubscription,
+    output_subscription: OutputSubscription,
+    subscribed_window: ActiveWindowOutputKey,
+    output_generation: u64,
+    compositor: AttachCompositorState,
+    cols: u16,
+    rows: u16,
+    pane_rows: u16,
+    status_h: u16,
+    status_timer: StatusTimer,
+    status_cache: status::RenderCache,
+    terminal: ResolvedTerm,
+    pane_io_mode: PaneIoMode,
+    command_request: Option<AttachCommandRequest>,
+    deferred_prompt_requests: VecDeque<AttachCommandRequest>,
+    finish: AttachFinishState,
+}
+
+pub(crate) struct AttachCommandRequest {
+    pub(crate) source: command::DeferredCommand,
+    pub(crate) context: command::ClientContext,
+    pub(crate) continuation: AttachCommandContinuation,
+}
+
+pub(crate) enum AttachCommandContinuation {
+    PrefixBinding {
+        target: String,
+        cols: u16,
+        pane_rows: u16,
+    },
+    Overlay {
+        overlay: Box<ActiveOverlay>,
+        inserted: bool,
+    },
+    Confirm {
+        reply: Option<std::sync::mpsc::Sender<super::state::PromptCompletion>>,
+        inserted: bool,
+    },
+    Prompt {
+        prompt: Box<CommandPrompt>,
+    },
+    Message {
+        target: String,
+        escape_hashes: bool,
+        explicit_duration: Option<u64>,
+    },
+    Ignore,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AttachFinishState {
+    Running,
+    DrainingTty,
+    WaitingForAck { deadline: Instant },
+    Done,
+}
+
+pub(crate) enum AttachPrepared {
+    Ready(AttachWaitReady),
+    Wait {
+        sources: AttachWaitSources,
+        timeout: i32,
+    },
+    Finished,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AttachDrive {
+    Continue,
+    Finished,
+}
+
+pub(crate) enum AttachStartFailure {
+    Client(String),
+    Io(io::Error),
+}
+
+impl AttachStartFailure {
+    pub(crate) fn into_message(self) -> String {
+        match self {
+            Self::Client(message) => message,
+            Self::Io(error) => format!("{error}\n"),
+        }
+    }
+}
+
+impl From<io::Error> for AttachStartFailure {
+    fn from(error: io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+
+impl AttachSession {
+    pub(crate) fn start<W>(
+        target: &str,
+        client_tty: ClientTty,
+        state: &Arc<Mutex<ServerState>>,
+        hub: &StatusHub,
+        context: &command::ClientContext,
+        writer: &mut W,
+    ) -> Result<Self, AttachStartFailure>
+    where
+        W: FrameWriter + ?Sized,
+    {
+        Self::start_in_mode(
+            target,
+            client_tty,
+            state,
+            hub,
+            context,
+            writer,
+            PaneIoMode::Threaded,
+        )
+    }
+
+    pub(crate) fn start_in_mode<W>(
+        target: &str,
+        client_tty: ClientTty,
+        state: &Arc<Mutex<ServerState>>,
+        hub: &StatusHub,
+        context: &command::ClientContext,
+        writer: &mut W,
+        pane_io_mode: PaneIoMode,
+    ) -> Result<Self, AttachStartFailure>
+    where
+        W: FrameWriter + ?Sized,
+    {
+        let render_fd_borrowed = client_tty.render_fd();
+        let input_fd_borrowed = client_tty.input_fd();
+        let (render_raw, input_raw) = match (render_fd_borrowed, input_fd_borrowed) {
+            (Some(render), Some(input)) => (render.as_raw_fd(), input.as_raw_fd()),
+            (Some(render), None) => (render.as_raw_fd(), render.as_raw_fd()),
+            (None, Some(input)) => (input.as_raw_fd(), input.as_raw_fd()),
+            (None, None) => {
+                return Err(AttachStartFailure::Client(
+                    "open terminal failed: not a terminal\n".to_string(),
+                ));
+            }
+        };
+
+        let render_fd = unsafe {
+            let duplicated = libc::dup(render_raw);
+            if duplicated < 0 {
+                return Err(AttachStartFailure::Client(
+                    "open terminal failed: not a terminal\n".to_string(),
+                ));
+            }
+            OwnedFd::from_raw_fd(duplicated)
+        };
+        let input_fd = unsafe {
+            let duplicated = libc::dup(input_raw);
+            if duplicated < 0 {
+                return Err(AttachStartFailure::Client(
+                    "open terminal failed: not a terminal\n".to_string(),
+                ));
+            }
+            OwnedFd::from_raw_fd(duplicated)
+        };
+        if !is_tty(render_fd.as_raw_fd()) || !is_tty(input_fd.as_raw_fd()) {
+            return Err(AttachStartFailure::Client(
+                "open terminal failed: not a terminal\n".to_string(),
+            ));
+        }
+
+        let (cols, rows) = get_winsize(render_fd.as_raw_fd()).unwrap_or((80, 24));
+        let (prompt_registry, render_registry, session_id) = {
+            let st = state
+                .lock()
+                .map_err(|_| io::Error::other("state poisoned"))?;
+            let session_id = st.session_id(target).ok_or_else(|| {
+                AttachStartFailure::Client(format!("can't find session: {target}\n"))
+            })?;
+            (
+                st.client_prompt_registry(),
+                st.client_render_registry(),
+                session_id,
+            )
+        };
+        let prompt_attachment = prompt_registry.attach(
+            client_tty.tty_name.clone().unwrap_or_default(),
+            client_tty.client_pid,
+            session_id,
+        )?;
+        let render_name = client_tty
+            .tty_name
+            .clone()
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| format!("client-{}", client_tty.client_pid.unwrap_or_default()));
+        let render_attachment = render_registry.attach_with_details(
+            session_id,
+            render_name,
+            client_tty.term.clone().unwrap_or_default(),
+            client_tty.client_pid,
+            cols,
+            rows,
+            String::new(),
+            false,
+            false,
+        )?;
+
+        let stable_target = format!("${session_id}");
+        let mut attached_context = context.clone();
+        attached_context.current_session_id = Some(session_id);
+        attached_context.wait_for_interactions = false;
+        let mut compositor =
+            AttachCompositorState::new(session_id, attached_context, stable_target);
+        let target = compositor.stable_target.as_str();
+        let terminal_identity = TerminalIdentity::new(
+            client_tty.term.clone().unwrap_or_default(),
+            client_tty.terminfo.clone(),
+            client_tty.features,
+            context.env("COLORTERM").map(str::to_string),
+        )
+        .with_utf8(client_tty.flags & 0x10000 != 0);
+        let (status_h, status_interval, terminal) = {
+            let st = state
+                .lock()
+                .map_err(|_| io::Error::other("state poisoned"))?;
+            (
+                status::height(&st, target),
+                status::interval(&st, target),
+                ResolvedTerm::resolve(terminal_identity, st.server_options().iter_effective()),
+            )
+        };
+        if let Some(cause) = terminal.validation_error() {
+            return Err(AttachStartFailure::Client(format!("{cause}\n")));
+        }
+        render_attachment.update_terminal(&terminal);
+        writer.send(Frame::new(Message::Ready))?;
+
+        let status_timer = StatusTimer::new(status_interval, Instant::now());
+        let mut status_cache = status::RenderCache::for_client(status::ClientContext {
+            term: (!terminal.name().is_empty()).then(|| terminal.name().to_string()),
+            tty: client_tty.tty_name.clone(),
+            pid: client_tty.client_pid,
+            cwd: context.cwd.clone(),
+            environment: context.environment.clone(),
+            ..status::ClientContext::default()
+        });
+        let agent_status_subscription = hub.subscribe()?;
+        status_cache.update_agents(hub.snapshot());
+        let pane_rows = rows.saturating_sub(status_h).max(1);
+        {
+            let mut st = state
+                .lock()
+                .map_err(|_| io::Error::other("state poisoned"))?;
+            let _ = st.resize_session(target, cols, pane_rows);
+        }
+
+        let saved_termios = make_raw(input_fd.as_raw_fd()).ok();
+        let termios_guard = TermiosGuard {
+            fd: input_fd.as_raw_fd(),
+            saved: saved_termios,
+        };
+        set_nonblock(input_fd.as_raw_fd())?;
+        set_nonblock(render_fd.as_raw_fd())?;
+
+        let tty_start = tty_start_sequence(&terminal);
+        let _ = compositor
+            .tty_output
+            .queue(render_fd.as_raw_fd(), &tty_start);
+        if state
+            .lock()
+            .ok()
+            .is_some_and(|st| st.option_for_target(target, "mouse") == Some("on"))
+        {
+            let _ = compositor
+                .tty_output
+                .queue(render_fd.as_raw_fd(), b"\x1b[?1000h\x1b[?1002h\x1b[?1006h");
+        }
+        let (subscribed_window, output_subscription) = {
+            let st = state
+                .lock()
+                .map_err(|_| io::Error::other("state poisoned"))?;
+            active_window_output_subscription(&st, target)?
+        };
+
+        Ok(Self {
+            termios_guard,
+            input_fd,
+            render_fd,
+            saved_termios,
+            prompt_attachment,
+            render_attachment,
+            agent_status_subscription,
+            output_subscription,
+            subscribed_window,
+            output_generation: 0,
+            compositor,
+            cols,
+            rows,
+            pane_rows,
+            status_h,
+            status_timer,
+            status_cache,
+            terminal,
+            pane_io_mode,
+            command_request: None,
+            deferred_prompt_requests: VecDeque::new(),
+            finish: AttachFinishState::Running,
+        })
+    }
+
+    pub(crate) fn take_command_request(&mut self) -> Option<AttachCommandRequest> {
+        self.command_request
+            .take()
+            .or_else(|| self.deferred_prompt_requests.pop_front())
+            .or_else(|| {
+                let source = self
+                    .compositor
+                    .command_prompt
+                    .as_mut()?
+                    .take_deferred_incremental()?;
+                Some(AttachCommandRequest {
+                    source,
+                    context: self.compositor.context.clone(),
+                    continuation: AttachCommandContinuation::Ignore,
+                })
+            })
+    }
+
+    pub(crate) fn complete_command(
+        &mut self,
+        continuation: AttachCommandContinuation,
+        result: command::CommandResult,
+        state: &Arc<Mutex<ServerState>>,
+    ) {
+        match continuation {
+            AttachCommandContinuation::PrefixBinding {
+                target,
+                cols,
+                pane_rows,
+            } => {
+                if result.exit == 0 && !result.stdout_data().is_empty() {
+                    append_view_output(state, &target, result.stdout_data());
+                }
+                if result.exit == 0 {
+                    if let Ok(mut state) = state.lock() {
+                        let _ = state.resize_session(&target, cols, pane_rows);
+                    }
+                }
+                self.compositor.force_clear = true;
+            }
+            AttachCommandContinuation::Overlay {
+                mut overlay,
+                inserted,
+            } => {
+                overlay.complete(result, inserted);
+                self.compositor.force_clear = true;
+            }
+            AttachCommandContinuation::Confirm { reply, inserted } => {
+                if let Some(reply) = reply {
+                    let _ = reply.send(super::state::PromptCompletion {
+                        stdout: result.stdout,
+                        stderr: result.stderr,
+                        exit: result.exit,
+                        inserted,
+                    });
+                }
+                self.compositor.force_clear = true;
+            }
+            AttachCommandContinuation::Prompt { mut prompt } => {
+                prompt.apply_deferred_side_effect(&result, state);
+                prompt.complete(&result, state, &self.compositor.context);
+                self.compositor.force_clear = true;
+            }
+            AttachCommandContinuation::Message {
+                target,
+                escape_hashes,
+                explicit_duration,
+            } => {
+                if result.exit == 0 {
+                    let mut text = result
+                        .stdout
+                        .strip_suffix('\n')
+                        .unwrap_or(&result.stdout)
+                        .to_string();
+                    if escape_hashes {
+                        text = text.replace('#', "##");
+                    }
+                    let milliseconds = explicit_duration
+                        .or_else(|| {
+                            state.lock().ok().and_then(|state| {
+                                state
+                                    .option_for_target(&target, "display-time")
+                                    .and_then(|value| value.parse().ok())
+                            })
+                        })
+                        .unwrap_or(750);
+                    self.compositor.status_message = Some((
+                        text,
+                        Instant::now()
+                            .checked_add(Duration::from_millis(milliseconds))
+                            .unwrap_or_else(Instant::now),
+                    ));
+                }
+                self.compositor.force_clear = true;
+            }
+            AttachCommandContinuation::Ignore => {
+                self.compositor.force_clear = true;
+            }
+        }
+        self.compositor.last_render.clear();
+    }
+
+    fn begin_finish(&mut self) -> AttachDrive {
+        if self.finish == AttachFinishState::Running {
+            let tty_stop = tty_stop_sequence(&self.terminal, self.rows);
+            let _ = self
+                .compositor
+                .tty_output
+                .queue(self.render_fd.as_raw_fd(), &tty_stop);
+            self.finish = AttachFinishState::DrainingTty;
+        }
+        AttachDrive::Continue
+    }
+
+    fn prepare_finish(&self, control_fd: RawFd, control_buffered: bool) -> AttachPrepared {
+        match self.finish {
+            AttachFinishState::Running => unreachable!("finish preparation while running"),
+            AttachFinishState::DrainingTty => {
+                if self.compositor.tty_output.has_pending() {
+                    AttachPrepared::Wait {
+                        sources: AttachWaitSources {
+                            control: -1,
+                            input: -1,
+                            tty_output: self.render_fd.as_raw_fd(),
+                            output: -1,
+                            output_generation: self.output_generation,
+                            prompt: -1,
+                            render: -1,
+                            status: -1,
+                            popup_read: -1,
+                            popup_write: -1,
+                        },
+                        timeout: -1,
+                    }
+                } else {
+                    AttachPrepared::Ready(AttachWaitReady::default())
+                }
+            }
+            AttachFinishState::WaitingForAck { deadline } => {
+                if control_buffered {
+                    AttachPrepared::Ready(AttachWaitReady {
+                        control: true,
+                        ..AttachWaitReady::default()
+                    })
+                } else {
+                    AttachPrepared::Wait {
+                        sources: AttachWaitSources {
+                            control: control_fd,
+                            input: -1,
+                            tty_output: -1,
+                            output: -1,
+                            output_generation: self.output_generation,
+                            prompt: -1,
+                            render: -1,
+                            status: -1,
+                            popup_read: -1,
+                            popup_write: -1,
+                        },
+                        timeout: deadline_poll_timeout(Some(deadline), Instant::now()),
+                    }
+                }
+            }
+            AttachFinishState::Done => AttachPrepared::Finished,
+        }
+    }
+
+    fn drive_finish<R, W>(
+        &mut self,
+        state: &Arc<Mutex<ServerState>>,
+        ready: AttachWaitReady,
+        reader: &mut R,
+        writer: &mut W,
+    ) -> io::Result<AttachDrive>
+    where
+        R: AttachFrameReader,
+        W: FrameWriter,
+    {
+        match self.finish {
+            AttachFinishState::Running => unreachable!("finish drive while running"),
+            AttachFinishState::DrainingTty => {
+                if ready.tty_output {
+                    self.compositor
+                        .tty_output
+                        .flush(self.render_fd.as_raw_fd())?;
+                }
+                if self.compositor.tty_output.has_pending() {
+                    return Ok(AttachDrive::Continue);
+                }
+
+                let _ = set_blocking(self.input_fd.as_raw_fd());
+                let _ = set_blocking(self.render_fd.as_raw_fd());
+                if let Some(saved) = self.saved_termios.as_ref() {
+                    restore_termios(self.input_fd.as_raw_fd(), saved);
+                }
+                self.termios_guard.disarm();
+
+                if self.compositor.detach_requested {
+                    let session_name = state
+                        .lock()
+                        .ok()
+                        .and_then(|st| {
+                            st.sessions()
+                                .iter()
+                                .find(|candidate| candidate.id == self.compositor.session_id)
+                                .map(|candidate| candidate.name.clone())
+                        })
+                        .unwrap_or_else(|| self.compositor.stable_target.clone());
+                    writer.send(Frame::new(Message::Detach(Some(session_name))))?;
+                    self.finish = AttachFinishState::WaitingForAck {
+                        deadline: Instant::now() + Duration::from_secs(2),
+                    };
+                    return Ok(AttachDrive::Continue);
+                }
+                if self.compositor.session_ended {
+                    writer.send(Frame::new(Message::Exit(Some(0))))?;
+                    self.finish = AttachFinishState::WaitingForAck {
+                        deadline: Instant::now() + Duration::from_secs(2),
+                    };
+                    return Ok(AttachDrive::Continue);
+                }
+                self.finish = AttachFinishState::Done;
+                Ok(AttachDrive::Finished)
+            }
+            AttachFinishState::WaitingForAck { deadline } => {
+                let acknowledged = if ready.control {
+                    match reader.try_recv() {
+                        Ok(frame) => matches!(frame.msg, Message::Exiting | Message::Exit(_)),
+                        Err(error) if error.kind() == io::ErrorKind::WouldBlock => false,
+                        Err(_) => true,
+                    }
+                } else {
+                    false
+                };
+                if !acknowledged && Instant::now() < deadline {
+                    return Ok(AttachDrive::Continue);
+                }
+                writer.send(Frame::new(Message::Exited))?;
+                self.finish = AttachFinishState::Done;
+                Ok(AttachDrive::Finished)
+            }
+            AttachFinishState::Done => Ok(AttachDrive::Finished),
+        }
+    }
+
+    pub(crate) fn prepare_wait(
+        &mut self,
+        state: &Arc<Mutex<ServerState>>,
+        control_fd: RawFd,
+        control_buffered: bool,
+    ) -> io::Result<AttachPrepared> {
+        if self.finish != AttachFinishState::Running {
+            return Ok(self.prepare_finish(control_fd, control_buffered));
+        }
+        if let Some(new_session_id) = self.compositor.switch_to.take() {
+            self.compositor.session_id = new_session_id;
+            self.compositor.stable_target = format!("${}", self.compositor.session_id);
+            self.compositor.context.current_session_id = Some(self.compositor.session_id);
+            let target = self.compositor.stable_target.as_str();
+            if let Ok(mut st) = state.lock() {
+                self.status_h = status::height(&st, target);
+                self.pane_rows = self.rows.saturating_sub(self.status_h).max(1);
+                let _ = st.resize_session(target, self.cols, self.pane_rows);
+                self.status_timer
+                    .configure(status::interval(&st, target), Instant::now());
+            }
+            self.status_cache.invalidate();
+            self.compositor.last_render.clear();
+            self.compositor.force_clear = true;
+        }
+        let target = self.compositor.stable_target.as_str();
+        if self.compositor.should_exit {
+            self.begin_finish();
+            return Ok(self.prepare_finish(control_fd, control_buffered));
+        }
+
+        let target_exists = match state.lock() {
+            Ok(mut st) => {
+                if st.reap_exited_panes() {
+                    let _ = st.resize_session(target, self.cols, self.pane_rows);
+                    self.compositor.last_render.clear();
+                    self.compositor.force_clear = true;
+                    self.status_cache.invalidate();
+                }
+                st.find(target).is_some()
+            }
+            Err(_) => false,
+        };
+        if !target_exists {
+            self.compositor.session_ended = true;
+            self.begin_finish();
+            return Ok(self.prepare_finish(control_fd, control_buffered));
+        }
+
+        match refresh_active_window_output_subscription(
+            state,
+            target,
+            &mut self.subscribed_window,
+            &mut self.output_subscription,
+        ) {
+            Ok(true) => {
+                self.output_generation = self.output_generation.wrapping_add(1);
+                self.compositor.last_render.clear();
+                self.compositor.force_clear = true;
+                self.status_cache.invalidate();
+            }
+            Ok(false) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                self.compositor.session_ended = true;
+                self.begin_finish();
+                return Ok(self.prepare_finish(control_fd, control_buffered));
+            }
+            Err(error) => return Err(error),
+        }
+
+        let (popup_read, popup_write) = self
+            .compositor
+            .active_overlay
+            .as_ref()
+            .map(ActiveOverlay::popup_sources)
+            .unwrap_or((-1, -1));
+        if self
+            .compositor
+            .active_overlay
+            .as_ref()
+            .is_some_and(ActiveOverlay::popup_read_continuation)
+        {
+            return Ok(AttachPrepared::Ready(AttachWaitReady {
+                popup_read: true,
+                ..AttachWaitReady::default()
+            }));
+        }
+
+        let now = Instant::now();
+        let timeout = minimum_poll_timeout(
+            self.status_timer.poll_timeout(now),
+            deadline_poll_timeout(
+                self.compositor
+                    .status_message
+                    .as_ref()
+                    .map(|(_, deadline)| *deadline),
+                now,
+            ),
+        );
+        let timeout = minimum_poll_timeout(
+            timeout,
+            self.compositor
+                .active_overlay
+                .as_ref()
+                .map(|overlay| overlay.poll_timeout(now))
+                .unwrap_or_else(|| {
+                    if state.lock().ok().is_some_and(|st| {
+                        st.active_mode_view(target)
+                            .is_some_and(|view| view.kind == ModeKind::Clock)
+                    }) {
+                        1000
+                    } else {
+                        -1
+                    }
+                }),
+        );
+        let timeout = minimum_poll_timeout(
+            timeout,
+            deadline_poll_timeout(self.compositor.key_prompt_deadline, now),
+        );
+        let timeout = minimum_poll_timeout(
+            timeout,
+            deadline_poll_timeout(self.compositor.terminal_reply_deadline, now),
+        );
+        let tty_backpressured = self.compositor.tty_output.has_pending();
+        if !tty_backpressured && control_buffered {
+            return Ok(AttachPrepared::Ready(AttachWaitReady {
+                control: true,
+                ..AttachWaitReady::default()
+            }));
+        }
+
+        Ok(AttachPrepared::Wait {
+            sources: AttachWaitSources {
+                control: if tty_backpressured { -1 } else { control_fd },
+                input: if tty_backpressured || self.compositor.locked || self.compositor.suspended {
+                    -1
+                } else {
+                    self.input_fd.as_raw_fd()
+                },
+                tty_output: if tty_backpressured {
+                    self.render_fd.as_raw_fd()
+                } else {
+                    -1
+                },
+                output: if tty_backpressured || self.compositor.locked || self.compositor.suspended
+                {
+                    -1
+                } else {
+                    self.output_subscription.as_raw_fd()
+                },
+                output_generation: self.output_generation,
+                prompt: if tty_backpressured || self.compositor.locked || self.compositor.suspended
+                {
+                    -1
+                } else {
+                    self.prompt_attachment.as_raw_fd()
+                },
+                render: if tty_backpressured {
+                    -1
+                } else {
+                    self.render_attachment.as_raw_fd()
+                },
+                status: if tty_backpressured {
+                    -1
+                } else {
+                    self.agent_status_subscription.as_raw_fd()
+                },
+                popup_read,
+                popup_write,
+            },
+            timeout: if tty_backpressured { -1 } else { timeout },
+        })
+    }
+
+    pub(crate) fn drive_ready<R, W>(
+        &mut self,
+        state: &Arc<Mutex<ServerState>>,
+        hub: &StatusHub,
+        ready: AttachWaitReady,
+        reader: &mut R,
+        writer: &mut W,
+    ) -> io::Result<AttachDrive>
+    where
+        R: AttachFrameReader,
+        W: FrameWriter,
+    {
+        if self.finish != AttachFinishState::Running {
+            return self.drive_finish(state, ready, reader, writer);
+        }
+        let target = self.compositor.stable_target.as_str();
+        if ready.popup_read || ready.popup_write {
+            if let Some(overlay) = self.compositor.active_overlay.as_mut() {
+                overlay.drive_popup_io(ready.popup_read, ready.popup_write)?;
+            }
+        }
+        if ready.tty_output {
+            self.compositor
+                .tty_output
+                .flush(self.render_fd.as_raw_fd())?;
+        }
+        if self.compositor.tty_output.has_pending() {
+            return Ok(AttachDrive::Continue);
+        }
+        let control_ready = ready.control;
+        let mut output_ready = ready.output;
+        let prompt_ready = ready.prompt;
+        let render_ready = ready.render;
+        let agent_status_ready = ready.status;
+        let now = Instant::now();
+        let agent_status_changed = if agent_status_ready {
+            self.agent_status_subscription.drain();
+            self.status_cache.update_agents(hub.snapshot())
+        } else {
+            false
+        };
+        let status_timer_ready = self.status_timer.take_expired(now);
+        let overlay_tick = self.compositor.active_overlay.is_some();
+        let mut overlay_exit = 0;
+        let overlay_expired = match self.compositor.active_overlay.as_mut() {
+            Some(ActiveOverlay::DisplayPanes { deadline, .. }) => *deadline <= now,
+            Some(ActiveOverlay::Popup {
+                request,
+                pane,
+                exit_status,
+                ..
+            }) if pane.has_exited() => {
+                if exit_status.is_none() {
+                    *exit_status = pane.try_wait();
+                }
+                if let Some(exit) = *exit_status {
+                    overlay_exit = exit;
+                    request.close_on_exit || (request.close_on_success && exit == 0)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
+        if overlay_expired {
+            if let Some(mut overlay) = self.compositor.active_overlay.take() {
+                let mut result = command::CommandResult::ok("");
+                result.exit = overlay_exit;
+                overlay.complete(result, false);
+            }
+            self.compositor.last_render.clear();
+            self.compositor.force_clear = true;
+        }
+        let message_expired = self
+            .compositor
+            .status_message
+            .as_ref()
+            .is_some_and(|(_, deadline)| *deadline <= now);
+        if message_expired {
+            self.compositor.status_message = None;
+            self.compositor.last_render.clear();
+        }
+        if status_timer_ready {
+            self.status_cache.invalidate();
+        }
+        let render_invalidation = if render_ready {
+            self.render_attachment.take()
+        } else {
+            super::state::RenderInvalidation::default()
+        };
+        if render_ready {
+            for message in self.render_attachment.take_messages() {
+                self.compositor.status_message = Some((
+                    message.text,
+                    Instant::now() + Duration::from_millis(message.duration_ms),
+                ));
+                self.compositor.confirm = None;
+                self.compositor.last_render.clear();
+                self.compositor.force_clear = true;
+            }
+            if let Some(action) = self.render_attachment.take_action() {
+                match action {
+                    ClientAction::Lock(command) if !self.compositor.locked => {
+                        let stop = tty_stop_sequence(&self.terminal, self.rows);
+                        let _ = self
+                            .compositor
+                            .tty_output
+                            .queue(self.render_fd.as_raw_fd(), &stop);
+                        self.compositor.output_cursor_visible = None;
+                        if let Some(ref saved) = self.saved_termios {
+                            restore_termios(self.input_fd.as_raw_fd(), saved);
+                        }
+                        writer.send(Frame::new(Message::Lock(command)))?;
+                        self.compositor.locked = true;
+                        self.compositor.last_render.clear();
+                        self.compositor.force_clear = true;
+                    }
+                    ClientAction::Suspend if !self.compositor.suspended => {
+                        let stop = tty_stop_sequence(&self.terminal, self.rows);
+                        let _ = self
+                            .compositor
+                            .tty_output
+                            .queue(self.render_fd.as_raw_fd(), &stop);
+                        self.compositor.output_cursor_visible = None;
+                        if let Some(ref saved) = self.saved_termios {
+                            restore_termios(self.input_fd.as_raw_fd(), saved);
+                        }
+                        writer.send(Frame::new(Message::Suspend))?;
+                        self.compositor.suspended = true;
+                        self.compositor.last_render.clear();
+                        self.compositor.force_clear = true;
+                    }
+                    ClientAction::Detach => {
+                        self.compositor.detach_requested = true;
+                        return Ok(self.begin_finish());
+                    }
+                    ClientAction::Switch(new_session_id) => {
+                        self.compositor.switch_to = Some(new_session_id);
+                        return Ok(AttachDrive::Continue);
+                    }
+                    ClientAction::Keys(keys)
+                        if !self.compositor.locked && !self.compositor.suspended =>
+                    {
+                        self.compositor.injected_input.extend(keys);
+                    }
+                    ClientAction::SetSelection(data) => {
+                        let encoded = base64_encode(&data);
+                        if let Some(sequence) = term::expand_capability(
+                            &self.terminal,
+                            "Ms",
+                            &[
+                                term::CapabilityParameter::String(""),
+                                term::CapabilityParameter::String(&encoded),
+                            ],
+                        ) {
+                            let _ = self
+                                .compositor
+                                .tty_output
+                                .queue(self.render_fd.as_raw_fd(), &sequence);
+                        }
+                    }
+                    ClientAction::Overlay { request, reply } => {
+                        if matches!(request, OverlayRequest::Clear) {
+                            if let Some(mut overlay) = self.compositor.active_overlay.take() {
+                                overlay.complete(command::CommandResult::ok(""), false);
+                            }
+                            if let Some(reply) = reply {
+                                let _ = reply.send(super::state::PromptCompletion {
+                                    stdout: String::new(),
+                                    stderr: String::new(),
+                                    exit: 0,
+                                    inserted: false,
+                                });
+                            }
+                        } else if self.compositor.active_overlay.is_some() {
+                            if let Some(reply) = reply {
+                                let _ = reply.send(super::state::PromptCompletion {
+                                    stdout: String::new(),
+                                    stderr: String::new(),
+                                    exit: 0,
+                                    inserted: false,
+                                });
+                            }
+                        } else {
+                            self.compositor.active_overlay = ActiveOverlay::from_request(
+                                request,
+                                reply,
+                                self.cols,
+                                self.rows,
+                                self.pane_io_mode,
+                            )
+                            .ok()
+                            .flatten();
+                        }
+                        self.compositor.last_render.clear();
+                        self.compositor.force_clear = true;
+                    }
+                    ClientAction::Confirm {
+                        prompt,
+                        command,
+                        confirm_key,
+                        default_yes,
+                        reply,
+                    } => {
+                        self.compositor.confirm = Some(ActiveConfirm {
+                            prompt,
+                            action: ConfirmAction::Command(command),
+                            confirm_key,
+                            default_yes,
+                            reply,
+                        });
+                        self.compositor.last_render.clear();
+                        self.compositor.force_clear = true;
+                    }
+                    ClientAction::Lock(_) => {}
+                    ClientAction::Suspend => {}
+                    ClientAction::Keys(_) => {}
+                }
+            }
+        }
+        if render_invalidation.contains(super::state::RenderInvalidation::SESSION_GONE) {
+            self.compositor.session_ended = true;
+            return Ok(self.begin_finish());
+        }
+        if !render_invalidation.is_empty() {
+            self.status_cache.invalidate();
+        }
+        if render_invalidation.contains(super::state::RenderInvalidation::RESET_MODE)
+            || render_invalidation.contains(super::state::RenderInvalidation::MODE)
+        {
+            self.compositor.last_render.clear();
+        }
+        if render_invalidation.contains(super::state::RenderInvalidation::STATUS) {
+            let mut st = state
+                .lock()
+                .map_err(|_| io::Error::other("state poisoned"))?;
+            if render_invalidation.contains(super::state::RenderInvalidation::TERMINAL) {
+                self.terminal.refresh(st.server_options().iter_effective());
+                self.render_attachment.update_terminal(&self.terminal);
+            }
+            self.status_timer
+                .configure(status::interval(&st, target), Instant::now());
+            let new_status_h = status::height(&st, target);
+            if new_status_h != self.status_h {
+                self.status_h = new_status_h;
+                self.pane_rows = self.rows.saturating_sub(self.status_h).max(1);
+                let _ = st.resize_session(target, self.cols, self.pane_rows);
+                self.compositor.last_render.clear();
+                self.compositor.force_clear = true;
+            }
+        }
+        if prompt_ready && self.compositor.command_prompt.is_none() {
+            if let Some(external) = self.prompt_attachment.take_command_prompt() {
+                let args = external.args().to_vec();
+                if let Ok(mut prompt) =
+                    CommandPrompt::new(args, Some(external), state, hub, &self.compositor.context)
+                {
+                    if !prompt.spec.no_freeze {
+                        prompt.frozen_frame = Some(self.compositor.last_render.clone());
+                    }
+                    prompt.initial_incremental(state, hub, &self.compositor.context);
+                    self.compositor.command_prompt = Some(prompt);
+                }
+                self.compositor.last_render.clear();
+            }
+        }
+        // An external command connection may switch windows while this thread
+        // is blocked in poll. Tty input or an old-pane notification wakes us;
+        // replace the stale subscription before attributing output or sending
+        // that input to the newly active pane.
+        match refresh_active_window_output_subscription(
+            state,
+            target,
+            &mut self.subscribed_window,
+            &mut self.output_subscription,
+        ) {
+            Ok(true) => {
+                self.output_generation = self.output_generation.wrapping_add(1);
+                output_ready = false;
+                self.compositor.last_render.clear();
+                self.compositor.force_clear = true;
+                self.status_cache.invalidate();
+            }
+            Ok(false) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                self.compositor.session_ended = true;
+                return Ok(self.begin_finish());
+            }
+            Err(error) => return Err(error),
+        }
+        if output_ready {
+            self.output_subscription.drain();
+            self.status_cache.invalidate();
+            // If this wake came from the active pane, mark its latest output so
+            // the upcoming compose is timed against the keystroke that caused
+            // it. Background-pane wakes have no newer active timestamp.
+            self.compositor
+                .latmon
+                .on_output(self.output_subscription.last_output_at());
+        }
+
+        // 1. Handle imsg control messages (resize, detach) when poll says that
+        // reading cannot block.
+        if control_ready {
+            match reader.try_recv() {
+                Ok(frame) => {
+                    if frame.version != PROTOCOL_VERSION {
+                        let _ = writer.send(Frame::new(Message::Version));
+                        return Ok(self.begin_finish());
+                    }
+                    match frame.msg {
+                        Message::Resize => {
+                            if let Ok((new_cols, new_rows)) =
+                                get_winsize(self.render_fd.as_raw_fd())
+                            {
+                                if new_cols != self.cols || new_rows != self.rows {
+                                    self.cols = new_cols;
+                                    self.rows = new_rows;
+                                    if let Some(overlay) = self.compositor.active_overlay.as_mut() {
+                                        overlay.resize(self.cols, self.rows);
+                                    }
+                                    self.render_attachment.update_size(self.cols, self.rows);
+                                    if let Ok(mut st) = state.lock() {
+                                        self.status_h = status::height(&st, target);
+                                        self.pane_rows =
+                                            self.rows.saturating_sub(self.status_h).max(1);
+                                        let _ =
+                                            st.resize_session(target, self.cols, self.pane_rows);
+                                    }
+                                    // Force a full re-render on resize: dimensions
+                                    // changed, so clear once to drop any stale cells.
+                                    self.compositor.last_render.clear();
+                                    self.compositor.force_clear = true;
+                                    self.status_cache.invalidate();
+                                }
+                            }
+                        }
+                        Message::Unlock if self.compositor.locked => {
+                            let _ = make_raw(self.input_fd.as_raw_fd());
+                            let start = tty_start_sequence(&self.terminal);
+                            let _ = self
+                                .compositor
+                                .tty_output
+                                .queue(self.render_fd.as_raw_fd(), &start);
+                            self.compositor.output_cursor_visible = None;
+                            if state.lock().ok().is_some_and(|st| {
+                                st.option_for_target(target, "mouse") == Some("on")
+                            }) {
+                                let _ = self.compositor.tty_output.queue(
+                                    self.render_fd.as_raw_fd(),
+                                    b"\x1b[?1000h\x1b[?1002h\x1b[?1006h",
+                                );
+                            }
+                            self.compositor.locked = false;
+                            self.compositor.last_render.clear();
+                            self.compositor.force_clear = true;
+                            self.status_cache.invalidate();
+                        }
+                        Message::Wakeup if self.compositor.suspended => {
+                            let _ = make_raw(self.input_fd.as_raw_fd());
+                            let start = tty_start_sequence(&self.terminal);
+                            let _ = self
+                                .compositor
+                                .tty_output
+                                .queue(self.render_fd.as_raw_fd(), &start);
+                            self.compositor.output_cursor_visible = None;
+                            if state.lock().ok().is_some_and(|st| {
+                                st.option_for_target(target, "mouse") == Some("on")
+                            }) {
+                                let _ = self.compositor.tty_output.queue(
+                                    self.render_fd.as_raw_fd(),
+                                    b"\x1b[?1000h\x1b[?1002h\x1b[?1006h",
+                                );
+                            }
+                            self.compositor.suspended = false;
+                            self.compositor.last_render.clear();
+                            self.compositor.force_clear = true;
+                            self.status_cache.invalidate();
+                        }
+                        Message::Detach(_) | Message::DetachKill(_) => {
+                            // A server-driven detach (rare on the inbound path): run
+                            // the graceful handshake below, like a `C-b d` detach.
+                            self.compositor.detach_requested = true;
+                            return Ok(self.begin_finish());
+                        }
+                        Message::Exit(_) | Message::Shutdown => {
+                            return Ok(self.begin_finish());
+                        }
+                        _ => {
+                            // Ignore other control frames while attached.
+                        }
+                    }
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
+                    return Ok(self.begin_finish());
+                }
+                Err(_) => {
+                    // Treat as detach on error.
+                    return Ok(self.begin_finish());
+                }
+            }
+        }
+
+        if self.compositor.locked || self.compositor.suspended {
+            return Ok(AttachDrive::Continue);
+        }
+
+        // 2. Relay terminal queries which Ghostty consumed from pane output.
+        //    The outer terminal's reply is read immediately below and forwarded
+        //    through the ordinary pane-input path. In particular, Neovim sends
+        //    an OSC 11 default-background request followed by a CSI 5n status
+        //    request; it needs both the RGB and CSI 0n replies.
+        let terminal_queries = state
+            .lock()
+            .ok()
+            .and_then(|st| st.take_active_pane_terminal_queries(target).ok())
+            .unwrap_or_default();
+        for query in terminal_queries {
+            let _ = self
+                .compositor
+                .tty_output
+                .queue(self.render_fd.as_raw_fd(), &query);
+        }
+
+        // 3. Read input from the client tty, interpreting tmux's prefix key table
+        //    and forwarding everything else to the active pane.
+        let mut input_buf = [0u8; 1024];
+        let mut force_render = false;
+        // Bytes forwarded to the pane's pty this iteration (real keystrokes, not
+        // prefix-table navigation), used to stamp keystroke latency below.
+        let mut forwarded = PaneInputStats::default();
+        let mut first_forward_at = None;
+        // Keep plain bytes across immediately adjacent tty reads. Besides
+        // reducing PTY writes, this preserves compound terminal replies such as
+        // OSC 11 followed by CSI 0n when they straddle read boundaries.
+        let waiting_for_terminal_reply = !self.compositor.terminal_reply_buf.is_empty();
+        let mut forward_buf = std::mem::take(&mut self.compositor.terminal_reply_buf);
+        forward_buf.reserve(input_buf.len());
+        // A key prompt may consume only the front logical key from a tty read.
+        // Replay its suffix through this same loop so prefix/copy/passthrough
+        // handling remains identical to input received by a later read.
+        let mut replay_input = Vec::new();
+        let mut replay_forward_unbound = true;
+        let mut prefer_tty_reply = waiting_for_terminal_reply;
+        loop {
+            let (replayed, forward_unbound) = if replay_input.is_empty() {
+                if prefer_tty_reply {
+                    prefer_tty_reply = false;
+                    (Vec::new(), true)
+                } else if let Some(key) = self.compositor.injected_input.pop_front() {
+                    (key.bytes, key.forward_unbound)
+                } else {
+                    (Vec::new(), true)
+                }
+            } else {
+                (std::mem::take(&mut replay_input), replay_forward_unbound)
+            };
+            let n = if replayed.is_empty() {
+                unsafe {
+                    libc::read(
+                        self.input_fd.as_raw_fd(),
+                        input_buf.as_mut_ptr() as *mut libc::c_void,
+                        input_buf.len(),
+                    )
+                }
+            } else {
+                replayed.len() as isize
+            };
+            if n < 0 {
+                let err = io::Error::last_os_error();
+                if err.kind() == io::ErrorKind::WouldBlock {
+                    if self
+                        .compositor
+                        .command_prompt
+                        .as_ref()
+                        .is_some_and(|prompt| prompt.spec.key)
+                        && !self.compositor.key_prompt_buf.is_empty()
+                    {
+                        let decoded = decode_prompt_key(&self.compositor.key_prompt_buf);
+                        let could_be_terminal_key = decoded.is_none()
+                            && self.compositor.key_prompt_buf.starts_with(b"\x1b")
+                            && matches!(self.compositor.key_prompt_buf.get(1), Some(b'[' | b'O'));
+                        if could_be_terminal_key {
+                            let deadline = *self
+                                .compositor
+                                .key_prompt_deadline
+                                .get_or_insert_with(|| Instant::now() + prompt_escape_delay(state));
+                            if Instant::now() < deadline {
+                                break;
+                            }
+                        }
+                        let decoded = decoded.or_else(|| {
+                            (self.compositor.key_prompt_buf.len() >= 2
+                                && self.compositor.key_prompt_buf[0] == 0x1b)
+                                .then(|| (meta_prompt_key(self.compositor.key_prompt_buf[1]), 2))
+                        });
+                        if let Some((key, consumed)) = decoded {
+                            let tail = self.compositor.key_prompt_buf[consumed..].to_vec();
+                            let request = handle_command_prompt_key(
+                                &mut self.compositor.command_prompt,
+                                &key,
+                                state,
+                                hub,
+                                &self.compositor.context,
+                            );
+                            self.compositor.key_prompt_buf.clear();
+                            self.compositor.key_prompt_deadline = None;
+                            force_render = true;
+                            if let Some(request) = request {
+                                if !tail.is_empty() {
+                                    self.compositor.injected_input.push_front(ClientKey {
+                                        bytes: tail,
+                                        forward_unbound,
+                                    });
+                                }
+                                self.command_request = Some(request);
+                                break;
+                            }
+                            replay_input = tail;
+                            replay_forward_unbound = forward_unbound;
+                            if !replay_input.is_empty() {
+                                continue;
+                            }
+                        }
+                    }
+                    let is_partial_terminal_reply = forward_buf.starts_with(b"\x1b]")
+                        && !forward_buf.windows(4).any(|bytes| bytes == b"\x1b[0n");
+                    if is_partial_terminal_reply {
+                        let deadline = *self
+                            .compositor
+                            .terminal_reply_deadline
+                            .get_or_insert_with(|| Instant::now() + Duration::from_millis(2));
+                        if Instant::now() < deadline {
+                            self.compositor.terminal_reply_buf = std::mem::take(&mut forward_buf);
+                        }
+                    }
+                    break;
+                } else {
+                    self.compositor.should_exit = true;
+                    break;
+                }
+            } else if n == 0 {
+                // EOF on tty: client closed.
+                self.compositor.should_exit = true;
+                break;
+            }
+
+            // Feed the chunk through the prefix state machine byte by byte. Plain
+            // bytes are buffered and flushed to the active pane in order; a prefix
+            // (`Ctrl-b`) consumes the next byte as a key-table command. The
+            // The prefix-pending flag lives outside the read loop, so a prefix at
+            // the end of one chunk pairs with the command key in the next one —
+            // exactly how a user types `C-b` then `c`.
+            let read_data = if replayed.is_empty() {
+                &input_buf[..n as usize]
+            } else {
+                replayed.as_slice()
+            };
+            self.prompt_attachment.note_activity();
+            let mut prompt_tail = None;
+            if self
+                .compositor
+                .command_prompt
+                .as_ref()
+                .is_some_and(|prompt| prompt.spec.key)
+            {
+                self.compositor.key_prompt_buf.extend_from_slice(read_data);
+                if let Some((key, consumed)) = decode_prompt_key(&self.compositor.key_prompt_buf) {
+                    let tail = self.compositor.key_prompt_buf[consumed..].to_vec();
+                    if let Some(request) = handle_command_prompt_key(
+                        &mut self.compositor.command_prompt,
+                        &key,
+                        state,
+                        hub,
+                        &self.compositor.context,
+                    ) {
+                        self.compositor.key_prompt_buf.clear();
+                        self.compositor.key_prompt_deadline = None;
+                        if !tail.is_empty() {
+                            self.compositor.injected_input.push_front(ClientKey {
+                                bytes: tail,
+                                forward_unbound,
+                            });
+                        }
+                        self.command_request = Some(request);
+                        force_render = true;
+                        break;
+                    }
+                    prompt_tail = Some(tail);
+                    self.compositor.key_prompt_buf.clear();
+                    self.compositor.key_prompt_deadline = None;
+                    force_render = true;
+                } else if self.compositor.key_prompt_buf.starts_with(b"\x1b")
+                    && matches!(self.compositor.key_prompt_buf.get(1), Some(b'[' | b'O'))
+                    && self.compositor.key_prompt_deadline.is_none()
+                {
+                    self.compositor.key_prompt_deadline =
+                        Some(Instant::now() + prompt_escape_delay(state));
+                }
+                if prompt_tail.as_ref().is_none_or(Vec::is_empty) {
+                    continue;
+                }
+            }
+            let data = prompt_tail.as_deref().unwrap_or(read_data);
+            self.compositor.key_prompt_buf.clear();
+            self.compositor.key_prompt_deadline = None;
+            let mut i = 0;
+            while i < data.len() {
+                if self.compositor.active_overlay.is_some() {
+                    let start = i;
+                    let (decoded, consumed) = decode_tty_key(&data[i..]).unwrap_or_else(|| {
+                        (
+                            DecodedTtyKey {
+                                name: plain_prompt_key(data[i]),
+                                code: Some(key_from_byte(data[i])),
+                                mouse: None,
+                            },
+                            1,
+                        )
+                    });
+                    i += consumed;
+                    let mut close = false;
+                    let mut close_exit = 0;
+                    let mut selected_command = None;
+                    match self
+                        .compositor
+                        .active_overlay
+                        .as_mut()
+                        .expect("overlay checked")
+                    {
+                        ActiveOverlay::Menu {
+                            request, selected, ..
+                        } => match decoded.name.as_str() {
+                            "q" | "Escape" | "C-c" => close = true,
+                            "Up" | "k" => *selected = selected.saturating_sub(1),
+                            "Down" | "j" => {
+                                *selected =
+                                    (*selected + 1).min(request.items.len().saturating_sub(1))
+                            }
+                            "Enter" => {
+                                selected_command = request
+                                    .items
+                                    .get(*selected)
+                                    .map(|item| item.command.clone());
+                                close = true;
+                            }
+                            key => {
+                                if let Some(item) =
+                                    request.items.iter().find(|item| item.key == key)
+                                {
+                                    selected_command = Some(item.command.clone());
+                                    close = true;
+                                }
+                            }
+                        },
+                        ActiveOverlay::Popup {
+                            request,
+                            pane,
+                            exit_status,
+                            ..
+                        } => {
+                            if exit_status.is_some()
+                                || request.close_on_key
+                                || ((decoded.name == "Escape" || decoded.name == "C-c")
+                                    && !request.close_on_exit
+                                    && !request.close_on_success)
+                            {
+                                close = true;
+                                close_exit = (*exit_status).unwrap_or(129);
+                            } else {
+                                let _ = pane.input(&data[start..i]);
+                            }
+                        }
+                        ActiveOverlay::DisplayPanes {
+                            command,
+                            accept_input,
+                            ..
+                        } => {
+                            if !*accept_input
+                                || matches!(decoded.name.as_str(), "Escape" | "q" | "C-c")
+                            {
+                                close = true;
+                            } else if let Some(index) = decoded
+                                .name
+                                .chars()
+                                .next()
+                                .filter(|_| decoded.name.chars().count() == 1)
+                                .and_then(|value| value.to_digit(10))
+                            {
+                                let pane_id = state.lock().ok().and_then(|st| {
+                                    st.active_window_panes(target)
+                                        .ok()
+                                        .and_then(|(window, _)| window.panes.get(index as usize))
+                                        .map(|pane| pane.id)
+                                });
+                                if let Some(pane_id) = pane_id {
+                                    let source = if command.is_empty() {
+                                        vec![
+                                            "select-pane".to_string(),
+                                            "-t".to_string(),
+                                            format!("%{pane_id}"),
+                                        ]
+                                    } else {
+                                        command
+                                            .iter()
+                                            .map(|word| word.replace("%%", &format!("%{pane_id}")))
+                                            .collect()
+                                    };
+                                    selected_command = Some(source);
+                                    close = true;
+                                }
+                            }
+                        }
+                    }
+                    let inserted = selected_command
+                        .as_ref()
+                        .is_some_and(|command| !command.is_empty());
+                    if let Some(command) = selected_command
+                        .as_ref()
+                        .filter(|command| !command.is_empty())
+                        .filter(|_| self.compositor.context.defer_attach_commands)
+                    {
+                        let overlay = self
+                            .compositor
+                            .active_overlay
+                            .take()
+                            .expect("overlay checked");
+                        self.command_request = Some(AttachCommandRequest {
+                            source: command::DeferredCommand::Args(command.clone()),
+                            context: self.compositor.context.clone(),
+                            continuation: AttachCommandContinuation::Overlay {
+                                overlay: Box::new(overlay),
+                                inserted,
+                            },
+                        });
+                        force_render = true;
+                        break;
+                    }
+                    let result = if let Some(command) =
+                        selected_command.filter(|command| !command.is_empty())
+                    {
+                        let agents = hub.snapshot().panes;
+                        Some(command::run_with_context(
+                            &command,
+                            state,
+                            &agents,
+                            &self.compositor.context,
+                        ))
+                    } else if close {
+                        Some(if close_exit == 0 {
+                            command::CommandResult::ok("")
+                        } else {
+                            let mut result = command::CommandResult::err("");
+                            result.exit = close_exit;
+                            result
+                        })
+                    } else {
+                        None
+                    };
+                    if close {
+                        if let Some(mut overlay) = self.compositor.active_overlay.take() {
+                            overlay.complete(
+                                result.unwrap_or_else(|| command::CommandResult::ok("")),
+                                inserted,
+                            );
+                        }
+                    }
+                    force_render = true;
+                    continue;
+                }
+                if let Some(prompt) = self.compositor.command_prompt.as_mut() {
+                    let (decoded, consumed) = decode_tty_key(&data[i..])
+                        .map(|(key, consumed)| (key.name, consumed))
+                        .unwrap_or_else(|| (plain_prompt_key(data[i]), 1));
+                    i += consumed;
+                    let mut incremental = None;
+                    match prompt.handle_key(&decoded, state, hub, &self.compositor.context) {
+                        CommandPromptInput::Continue => {
+                            incremental = prompt.take_deferred_incremental();
+                        }
+                        CommandPromptInput::Finish(mut result) => {
+                            let mut prompt = self
+                                .compositor
+                                .command_prompt
+                                .take()
+                                .expect("command prompt checked");
+                            if let Some(source) = take_deferred_attach_command(&mut result) {
+                                self.command_request = Some(AttachCommandRequest {
+                                    source,
+                                    context: self.compositor.context.clone(),
+                                    continuation: AttachCommandContinuation::Prompt {
+                                        prompt: Box::new(prompt),
+                                    },
+                                });
+                                break;
+                            }
+                            prompt.complete(&result, state, &self.compositor.context);
+                        }
+                        CommandPromptInput::Cancel => {
+                            let mut prompt = self
+                                .compositor
+                                .command_prompt
+                                .take()
+                                .expect("command prompt checked");
+                            prompt.cancel_external();
+                        }
+                    }
+                    if let Some(source) = incremental {
+                        self.deferred_prompt_requests
+                            .push_back(AttachCommandRequest {
+                                source,
+                                context: self.compositor.context.clone(),
+                                continuation: AttachCommandContinuation::Ignore,
+                            });
+                    }
+                    force_render = true;
+                    continue;
+                }
+                if let Some(active) = self.compositor.confirm.take() {
+                    // A confirm-before prompt is up: this key answers it and is
+                    // consumed whole (so a multi-byte escape can't leak to the
+                    // pane). `y`/`Y` runs the guarded command; every other key
+                    // cancels, exactly like tmux's client-confirm callback.
+                    let (key, consumed) = read_key(&data[i..]);
+                    i += consumed;
+                    force_render = true;
+                    let accepted = matches!(key, Key::Byte(value) if value == active.confirm_key)
+                        || (key == Key::Enter && active.default_yes);
+                    let result = if accepted {
+                        match active.action {
+                            ConfirmAction::Command(command) => {
+                                if self.compositor.context.defer_attach_commands {
+                                    self.command_request = Some(AttachCommandRequest {
+                                        source: command::DeferredCommand::Args(command),
+                                        context: self.compositor.context.clone(),
+                                        continuation: AttachCommandContinuation::Confirm {
+                                            reply: active.reply,
+                                            inserted: true,
+                                        },
+                                    });
+                                    break;
+                                }
+                                let agents = hub.snapshot().panes;
+                                command::run_with_context(
+                                    &command,
+                                    state,
+                                    &agents,
+                                    &self.compositor.context,
+                                )
+                            }
+                            action @ (ConfirmAction::KillPane | ConfirmAction::KillWindow) => {
+                                let killed = if let Ok(mut st) = state.lock() {
+                                    let killed = match action {
+                                        ConfirmAction::KillPane => st.kill_pane(target).is_ok(),
+                                        ConfirmAction::KillWindow => st.kill_window(target).is_ok(),
+                                        ConfirmAction::Command(_) => unreachable!(),
+                                    };
+                                    // A survivor window/pane inherits the client viewport,
+                                    // just like a layout-changing prefix key.
+                                    if killed && st.find(target).is_some() {
+                                        let _ =
+                                            st.resize_session(target, self.cols, self.pane_rows);
+                                    }
+                                    killed
+                                } else {
+                                    false
+                                };
+                                if killed {
+                                    command::CommandResult::ok("")
+                                } else {
+                                    command::CommandResult::err("")
+                                }
+                            }
+                        }
+                    } else {
+                        command::CommandResult::err("")
+                    };
+                    if let Some(reply) = active.reply {
+                        let _ = reply.send(super::state::PromptCompletion {
+                            stdout: result.stdout,
+                            stderr: result.stderr,
+                            exit: result.exit,
+                            inserted: accepted,
+                        });
+                    }
+                    continue;
+                }
+                if state
+                    .lock()
+                    .ok()
+                    .is_some_and(|st| st.mode_view_active(target))
+                {
+                    let (decoded, consumed) = decode_tty_key(&data[i..]).unwrap_or_else(|| {
+                        (
+                            DecodedTtyKey {
+                                name: plain_prompt_key(data[i]),
+                                code: Some(key_from_byte(data[i])),
+                                mouse: None,
+                            },
+                            1,
+                        )
+                    });
+                    i += consumed;
+                    let outcome = state
+                        .lock()
+                        .ok()
+                        .and_then(|mut st| {
+                            st.mode_view_key(target, &decoded.name, self.pane_rows as usize)
+                                .ok()
+                        })
+                        .unwrap_or(ModeViewKeyResult::None);
+                    match outcome {
+                        ModeViewKeyResult::Command(command) if !command.is_empty() => {
+                            if self.compositor.context.defer_attach_commands {
+                                self.command_request = Some(AttachCommandRequest {
+                                    source: command::DeferredCommand::Args(command),
+                                    context: self.compositor.context.clone(),
+                                    continuation: AttachCommandContinuation::Ignore,
+                                });
+                                break;
+                            }
+                            let agents = hub.snapshot().panes;
+                            let _ = command::run_with_context(
+                                &command,
+                                state,
+                                &agents,
+                                &self.compositor.context,
+                            );
+                        }
+                        ModeViewKeyResult::Prompt(request) => {
+                            if let Ok(mut prompt) = CommandPrompt::for_mode(
+                                request,
+                                target,
+                                state,
+                                hub,
+                                &self.compositor.context,
+                            ) {
+                                if !prompt.spec.no_freeze {
+                                    prompt.frozen_frame = Some(self.compositor.last_render.clone());
+                                }
+                                prompt.initial_incremental(state, hub, &self.compositor.context);
+                                self.compositor.command_prompt = Some(prompt);
+                            }
+                        }
+                        ModeViewKeyResult::None | ModeViewKeyResult::Command(_) => {}
+                    }
+                    force_render = true;
+                    continue;
+                }
+                if self.compositor.prefix_pending {
+                    self.compositor.prefix_pending = false;
+                    // Flush any keystrokes typed before this command so the pane
+                    // sees them in order relative to a possible send-prefix byte.
+                    if !forward_buf.is_empty() {
+                        first_forward_at.get_or_insert_with(Instant::now);
+                        if let Ok(stats) = forward_input(state, target, &forward_buf) {
+                            add_input_stats(&mut forwarded, stats);
+                        }
+                        forward_buf.clear();
+                    }
+                    // The command key can be a multi-byte escape (e.g. PgUp), so
+                    // parse a logical key rather than taking one raw byte.
+                    let (key, mouse, consumed) = match decode_tty_key(&data[i..]) {
+                        Some((mut decoded, consumed)) => {
+                            resolve_mouse_key(
+                                &mut decoded,
+                                &mut self.compositor.mouse_input,
+                                state,
+                                target,
+                                self.cols,
+                                self.rows,
+                                &mut self.status_cache,
+                            );
+                            (decoded.code, decoded.mouse, consumed)
+                        }
+                        None => (Some(key_from_byte(data[i])), None, 1),
+                    };
+                    i += consumed;
+                    let Some(key) = key else {
+                        continue;
+                    };
+                    match dispatch_key_binding(
+                        "prefix",
+                        key,
+                        state,
+                        target,
+                        self.cols,
+                        self.pane_rows,
+                        hub,
+                        &self.compositor.context,
+                        mouse,
+                    ) {
+                        PrefixOutcome::Detach => {
+                            self.compositor.detach_requested = true;
+                            self.compositor.should_exit = true;
+                            break;
+                        }
+                        PrefixOutcome::SendPrefix(bytes) => forward_buf.extend(bytes),
+                        PrefixOutcome::CopyMode {
+                            page_up,
+                            page_down,
+                            slider,
+                            mouse,
+                            begin_selection,
+                        } => {
+                            set_copy_mode_state(state, target, true, page_up);
+                            if let Some(mouse) = mouse {
+                                if let Ok(mut st) = state.lock() {
+                                    let vi = copy_mode_uses_vi_keys(&st, target);
+                                    let position = mouse.pane_position();
+                                    let _ = st.position_copy_cursor_from_mouse(
+                                        target, position.x, position.y, vi,
+                                    );
+                                    if slider {
+                                        let _ = st.set_copy_scroll_from_mouse(
+                                            target,
+                                            position.y,
+                                            self.pane_rows,
+                                            vi,
+                                        );
+                                    }
+                                    if begin_selection {
+                                        let separators = st
+                                            .option_for_target(target, "word-separators")
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let _ = st.copy_mode_command(
+                                            target,
+                                            "begin-selection",
+                                            vi,
+                                            &separators,
+                                        );
+                                    }
+                                }
+                            }
+                            if page_down {
+                                if let Ok(mut st) = state.lock() {
+                                    let vi = copy_mode_uses_vi_keys(&st, target);
+                                    let separators = st
+                                        .option_for_target(target, "word-separators")
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let _ =
+                                        st.copy_mode_command(target, "page-down", vi, &separators);
+                                }
+                            }
+                            force_render = true;
+                        }
+                        PrefixOutcome::Confirm { prompt, action } => {
+                            self.compositor.confirm = Some(ActiveConfirm {
+                                prompt,
+                                action,
+                                confirm_key: b'y',
+                                default_yes: false,
+                                reply: None,
+                            });
+                            force_render = true;
+                        }
+                        PrefixOutcome::Prompt { args } => {
+                            if let Ok(mut prompt) =
+                                CommandPrompt::new(args, None, state, hub, &self.compositor.context)
+                            {
+                                if !prompt.spec.no_freeze {
+                                    prompt.frozen_frame = Some(self.compositor.last_render.clone());
+                                }
+                                prompt.initial_incremental(state, hub, &self.compositor.context);
+                                self.compositor.command_prompt = Some(prompt);
+                            }
+                            force_render = true;
+                        }
+                        PrefixOutcome::Message { text, duration } => {
+                            self.compositor.confirm = None;
+                            self.compositor.status_message = Some((
+                                text,
+                                Instant::now()
+                                    .checked_add(duration)
+                                    .unwrap_or_else(Instant::now),
+                            ));
+                            force_render = true;
+                        }
+                        PrefixOutcome::ViewOutput(bytes) => {
+                            append_view_output(state, target, &bytes);
+                            force_render = true;
+                        }
+                        PrefixOutcome::DeferredCommand { args, context } => {
+                            self.command_request = Some(AttachCommandRequest {
+                                source: command::DeferredCommand::Args(args),
+                                context,
+                                continuation: AttachCommandContinuation::PrefixBinding {
+                                    target: target.to_string(),
+                                    cols: self.cols,
+                                    pane_rows: self.pane_rows,
+                                },
+                            });
+                            break;
+                        }
+                        PrefixOutcome::DeferredMessage {
+                            args,
+                            context,
+                            target,
+                            escape_hashes,
+                            explicit_duration,
+                        } => {
+                            self.command_request = Some(AttachCommandRequest {
+                                source: command::DeferredCommand::Args(args),
+                                context,
+                                continuation: AttachCommandContinuation::Message {
+                                    target,
+                                    escape_hashes,
+                                    explicit_duration,
+                                },
+                            });
+                            break;
+                        }
+                        PrefixOutcome::Handled { changed } => {
+                            if changed {
+                                force_render = true;
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if copy_mode_active(state, target) {
+                    let (key, mouse, consumed) = match decode_tty_key(&data[i..]) {
+                        Some((mut decoded, consumed)) => {
+                            resolve_mouse_key(
+                                &mut decoded,
+                                &mut self.compositor.mouse_input,
+                                state,
+                                target,
+                                self.cols,
+                                self.rows,
+                                &mut self.status_cache,
+                            );
+                            (decoded.code, decoded.mouse, consumed)
+                        }
+                        None => (Some(key_from_byte(data[i])), None, 1),
+                    };
+                    i += consumed;
+                    let Some(key) = key else {
+                        continue;
+                    };
+                    if is_configured_prefix(state, target, key) {
+                        self.compositor.prefix_pending = true;
+                        continue;
+                    }
+                    let copy_table = copy_table_name(state, target);
+                    let table = state
+                        .lock()
+                        .ok()
+                        .filter(|st| st.key_binding(copy_table, key).is_none())
+                        .and_then(|st| st.key_binding("root", key).map(|_| "root"))
+                        .unwrap_or(copy_table);
+                    match dispatch_key_binding(
+                        table,
+                        key,
+                        state,
+                        target,
+                        self.cols,
+                        self.pane_rows,
+                        hub,
+                        &self.compositor.context,
+                        mouse,
+                    ) {
+                        PrefixOutcome::Detach => {
+                            self.compositor.detach_requested = true;
+                            self.compositor.should_exit = true;
+                            break;
+                        }
+                        PrefixOutcome::SendPrefix(bytes) => forward_buf.extend(bytes),
+                        PrefixOutcome::CopyMode {
+                            page_up,
+                            page_down: _,
+                            slider: _,
+                            mouse: _,
+                            begin_selection: _,
+                        } => {
+                            set_copy_mode_state(state, target, true, page_up);
+                            force_render = true;
+                        }
+                        PrefixOutcome::Confirm { prompt, action } => {
+                            self.compositor.confirm = Some(ActiveConfirm {
+                                prompt,
+                                action,
+                                confirm_key: b'y',
+                                default_yes: false,
+                                reply: None,
+                            });
+                            force_render = true;
+                        }
+                        PrefixOutcome::Prompt { args } => {
+                            if let Ok(mut prompt) =
+                                CommandPrompt::new(args, None, state, hub, &self.compositor.context)
+                            {
+                                if !prompt.spec.no_freeze {
+                                    prompt.frozen_frame = Some(self.compositor.last_render.clone());
+                                }
+                                prompt.initial_incremental(state, hub, &self.compositor.context);
+                                self.compositor.command_prompt = Some(prompt);
+                            }
+                            force_render = true;
+                        }
+                        PrefixOutcome::Message { text, duration } => {
+                            self.compositor.confirm = None;
+                            self.compositor.status_message = Some((
+                                text,
+                                Instant::now()
+                                    .checked_add(duration)
+                                    .unwrap_or_else(Instant::now),
+                            ));
+                            force_render = true;
+                        }
+                        PrefixOutcome::ViewOutput(bytes) => {
+                            append_view_output(state, target, &bytes);
+                            force_render = true;
+                        }
+                        PrefixOutcome::DeferredCommand { args, context } => {
+                            self.command_request = Some(AttachCommandRequest {
+                                source: command::DeferredCommand::Args(args),
+                                context,
+                                continuation: AttachCommandContinuation::PrefixBinding {
+                                    target: target.to_string(),
+                                    cols: self.cols,
+                                    pane_rows: self.pane_rows,
+                                },
+                            });
+                            break;
+                        }
+                        PrefixOutcome::DeferredMessage {
+                            args,
+                            context,
+                            target,
+                            escape_hashes,
+                            explicit_duration,
+                        } => {
+                            self.command_request = Some(AttachCommandRequest {
+                                source: command::DeferredCommand::Args(args),
+                                context,
+                                continuation: AttachCommandContinuation::Message {
+                                    target,
+                                    escape_hashes,
+                                    explicit_duration,
+                                },
+                            });
+                            break;
+                        }
+                        PrefixOutcome::Handled { changed } => {
+                            if changed {
+                                force_render = true;
+                            }
+                        }
+                    }
+                    continue;
+                }
+                // Normal passthrough: forward bytes verbatim (arrow keys, UTF-8,
+                // pastes, …), intercepting only the prefix key.
+                let start = i;
+                let (key, mouse, consumed) = match decode_tty_key(&data[i..]) {
+                    Some((mut decoded, consumed)) => {
+                        resolve_mouse_key(
+                            &mut decoded,
+                            &mut self.compositor.mouse_input,
+                            state,
+                            target,
+                            self.cols,
+                            self.rows,
+                            &mut self.status_cache,
+                        );
+                        (decoded.code, decoded.mouse, consumed)
+                    }
+                    None => (Some(key_from_byte(data[i])), None, 1),
+                };
+                i += consumed;
+                if key.is_some_and(|key| is_configured_prefix(state, target, key)) {
+                    // Flush what preceded the prefix, then await the command key.
+                    if !forward_buf.is_empty() {
+                        first_forward_at.get_or_insert_with(Instant::now);
+                        if let Ok(stats) = forward_input(state, target, &forward_buf) {
+                            add_input_stats(&mut forwarded, stats);
+                        }
+                        forward_buf.clear();
+                    }
+                    self.compositor.prefix_pending = true;
+                } else if key.is_some_and(|key| {
+                    let table = client_key_table(state, target);
+                    state
+                        .lock()
+                        .ok()
+                        .is_some_and(|st| st.key_binding(&table, key).is_some())
+                }) {
+                    if !forward_buf.is_empty() {
+                        first_forward_at.get_or_insert_with(Instant::now);
+                        if let Ok(stats) = forward_input(state, target, &forward_buf) {
+                            add_input_stats(&mut forwarded, stats);
+                        }
+                        forward_buf.clear();
+                    }
+                    let table = client_key_table(state, target);
+                    match dispatch_key_binding(
+                        &table,
+                        key.expect("checked root binding"),
+                        state,
+                        target,
+                        self.cols,
+                        self.pane_rows,
+                        hub,
+                        &self.compositor.context,
+                        mouse,
+                    ) {
+                        PrefixOutcome::Detach => {
+                            self.compositor.detach_requested = true;
+                            self.compositor.should_exit = true;
+                            break;
+                        }
+                        PrefixOutcome::SendPrefix(bytes) => forward_buf.extend(bytes),
+                        PrefixOutcome::CopyMode {
+                            page_up,
+                            page_down,
+                            slider,
+                            mouse,
+                            begin_selection,
+                        } => {
+                            set_copy_mode_state(state, target, true, page_up);
+                            if let Some(mouse) = mouse {
+                                if let Ok(mut st) = state.lock() {
+                                    let vi = copy_mode_uses_vi_keys(&st, target);
+                                    let position = mouse.pane_position();
+                                    let _ = st.position_copy_cursor_from_mouse(
+                                        target, position.x, position.y, vi,
+                                    );
+                                    if slider {
+                                        let _ = st.set_copy_scroll_from_mouse(
+                                            target,
+                                            position.y,
+                                            self.pane_rows,
+                                            vi,
+                                        );
+                                    }
+                                    if begin_selection {
+                                        let separators = st
+                                            .option_for_target(target, "word-separators")
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let _ = st.copy_mode_command(
+                                            target,
+                                            "begin-selection",
+                                            vi,
+                                            &separators,
+                                        );
+                                    }
+                                }
+                            }
+                            if page_down {
+                                if let Ok(mut st) = state.lock() {
+                                    let vi = copy_mode_uses_vi_keys(&st, target);
+                                    let separators = st
+                                        .option_for_target(target, "word-separators")
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let _ =
+                                        st.copy_mode_command(target, "page-down", vi, &separators);
+                                }
+                            }
+                            force_render = true;
+                        }
+                        PrefixOutcome::Confirm { prompt, action } => {
+                            self.compositor.confirm = Some(ActiveConfirm {
+                                prompt,
+                                action,
+                                confirm_key: b'y',
+                                default_yes: false,
+                                reply: None,
+                            });
+                            force_render = true;
+                        }
+                        PrefixOutcome::Prompt { args } => {
+                            if let Ok(mut prompt) =
+                                CommandPrompt::new(args, None, state, hub, &self.compositor.context)
+                            {
+                                if !prompt.spec.no_freeze {
+                                    prompt.frozen_frame = Some(self.compositor.last_render.clone());
+                                }
+                                prompt.initial_incremental(state, hub, &self.compositor.context);
+                                self.compositor.command_prompt = Some(prompt);
+                            }
+                            force_render = true;
+                        }
+                        PrefixOutcome::Message { text, duration } => {
+                            self.compositor.confirm = None;
+                            self.compositor.status_message = Some((
+                                text,
+                                Instant::now()
+                                    .checked_add(duration)
+                                    .unwrap_or_else(Instant::now),
+                            ));
+                            force_render = true;
+                        }
+                        PrefixOutcome::ViewOutput(bytes) => {
+                            append_view_output(state, target, &bytes);
+                            force_render = true;
+                        }
+                        PrefixOutcome::DeferredCommand { args, context } => {
+                            self.command_request = Some(AttachCommandRequest {
+                                source: command::DeferredCommand::Args(args),
+                                context,
+                                continuation: AttachCommandContinuation::PrefixBinding {
+                                    target: target.to_string(),
+                                    cols: self.cols,
+                                    pane_rows: self.pane_rows,
+                                },
+                            });
+                            break;
+                        }
+                        PrefixOutcome::DeferredMessage {
+                            args,
+                            context,
+                            target,
+                            escape_hashes,
+                            explicit_duration,
+                        } => {
+                            self.command_request = Some(AttachCommandRequest {
+                                source: command::DeferredCommand::Args(args),
+                                context,
+                                continuation: AttachCommandContinuation::Message {
+                                    target,
+                                    escape_hashes,
+                                    explicit_duration,
+                                },
+                            });
+                            break;
+                        }
+                        PrefixOutcome::Handled { changed } => {
+                            if changed {
+                                force_render = true;
+                            }
+                        }
+                    }
+                } else if forward_unbound {
+                    forward_buf.extend_from_slice(&data[start..i]);
+                }
+            }
+            if self.compositor.should_exit {
+                break;
+            }
+        }
+        if self.compositor.terminal_reply_buf.is_empty() {
+            self.compositor.terminal_reply_deadline = None;
+        }
+        if !forward_buf.is_empty() {
+            first_forward_at.get_or_insert_with(Instant::now);
+            if let Ok(stats) = forward_input(state, target, &forward_buf) {
+                add_input_stats(&mut forwarded, stats);
+            }
+        }
+        // Start (or extend) the latency clock after offering this keystroke burst
+        // to the pane. The counters retain whether bytes reached the PTY now,
+        // remained queued, or were dropped; the output/render hooks close it out.
+        if forwarded.accepted() > 0 || forwarded.dropped > 0 {
+            self.compositor.latmon.on_input(
+                first_forward_at.unwrap_or_else(Instant::now),
+                forwarded.accepted(),
+                forwarded.queued,
+                forwarded.dropped,
+            );
+        }
+        if self.compositor.should_exit {
+            return Ok(self.begin_finish());
+        }
+
+        // A prefix command changed the window/pane layout: drop the cached frame
+        // and force a full clear so the (possibly smaller) new active pane can't
+        // leave the previous pane's cells behind.
+        if force_render {
+            self.compositor.last_render.clear();
+            self.compositor.force_clear = true;
+            self.status_cache.invalidate();
+            let st = state
+                .lock()
+                .map_err(|_| io::Error::other("state poisoned"))?;
+            match active_window_output_subscription(&st, target) {
+                Ok(subscription) => {
+                    (self.subscribed_window, self.output_subscription) = subscription;
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    self.compositor.session_ended = true;
+                    return Ok(self.begin_finish());
+                }
+                Err(error) => return Err(error),
+            }
+            self.output_generation = self.output_generation.wrapping_add(1);
+        }
+
+        // 4. Render only when pane output or a layout/input action requests it.
+        let should_render = output_ready
+            || status_timer_ready
+            || agent_status_changed
+            || overlay_tick
+            || message_expired
+            || !render_invalidation.is_empty()
+            || self.compositor.last_render.is_empty();
+
+        if should_render {
+            let mut wrote_frame = false;
+            let mut large_scroll_repaint = false;
+            if let Ok(st) = state.lock() {
+                let title = terminal_title_update(
+                    &st,
+                    target,
+                    self.cols,
+                    self.rows,
+                    &mut self.status_cache,
+                    &self.terminal,
+                    &mut self.compositor.last_title,
+                );
+                if !title.is_empty() {
+                    let _ = self
+                        .compositor
+                        .tty_output
+                        .queue(self.render_fd.as_raw_fd(), &title);
+                }
+                large_scroll_repaint = take_large_scroll_repaint(
+                    &st,
+                    target,
+                    self.cols,
+                    &self.terminal,
+                    &mut self.compositor.seen_large_scroll,
+                );
+            }
+            let frame = self
+                .compositor
+                .command_prompt
+                .as_ref()
+                .and_then(|prompt| prompt.frozen_frame.clone())
+                .map(Ok)
+                .unwrap_or_else(|| {
+                    let st = state.lock();
+                    match st {
+                        Ok(g) => compose_frame_cached(
+                            &g,
+                            target,
+                            self.cols,
+                            self.rows,
+                            self.status_h,
+                            0,
+                            &mut self.status_cache,
+                            &self.terminal,
+                        ),
+                        Err(_) => Err(io::Error::other("state poisoned")),
+                    }
+                });
+            if let Ok(mut frame) = frame {
+                if let Some(overlay) = self.compositor.active_overlay.as_ref() {
+                    if let Ok(st) = state.lock() {
+                        frame.extend_from_slice(&render_active_overlay(
+                            overlay,
+                            &st,
+                            target,
+                            self.cols,
+                            self.rows,
+                            &self.terminal,
+                        ));
+                    }
+                }
+                // Overlay a client prompt on the message line (tmux's last
+                // row). It is appended to the frame so the diff below repaints
+                // it, and its absence after completion redraws the status bar
+                // underneath.
+                if let Some(prompt) = self.compositor.command_prompt.as_ref() {
+                    if prompt.completion.is_some() {
+                        if let Ok(state) = state.lock() {
+                            frame.extend_from_slice(&render_prompt_completion(
+                                prompt,
+                                &state,
+                                target,
+                                self.cols,
+                                self.rows,
+                                self.status_h,
+                                &self.terminal,
+                            ));
+                        }
+                    }
+                    let (display, cursor, row, style, fill) = state
+                        .lock()
+                        .ok()
+                        .map(|st| {
+                            let (display, cursor) =
+                                prompt.formatted_display(&st, target, usize::from(self.cols));
+                            let line = st
+                                .option_for_target(target, "message-line")
+                                .and_then(|value| value.parse::<u16>().ok())
+                                .unwrap_or(0)
+                                .min(self.status_h.saturating_sub(1));
+                            let row =
+                                if st.option_for_target(target, "status-position") == Some("top") {
+                                    line + 1
+                                } else {
+                                    self.rows.saturating_sub(self.status_h).saturating_add(line) + 1
+                                };
+                            let (style_option, style_fallback) = if prompt.vi_command {
+                                ("message-command-style", "bg=black,fg=yellow,fill=black")
+                            } else {
+                                ("message-style", "bg=yellow,fg=black,fill=yellow")
+                            };
+                            let style_value = st
+                                .option_for_target(target, style_option)
+                                .unwrap_or(style_fallback);
+                            (
+                                display,
+                                cursor,
+                                row,
+                                style_value.to_string(),
+                                style_value
+                                    .split(',')
+                                    .any(|part| part.trim().starts_with("fill=")),
+                            )
+                        })
+                        .unwrap_or_else(|| {
+                            (
+                                prompt.display(),
+                                prompt.display_cursor(),
+                                self.rows,
+                                "bg=yellow,fg=black,fill=yellow".to_string(),
+                                true,
+                            )
+                        });
+                    let writable_cols =
+                        term::writable_width(&self.terminal, row, self.cols, self.rows) as u16;
+                    frame.extend_from_slice(&render_status_prompt_styled_at_row(
+                        &display,
+                        cursor,
+                        self.cols,
+                        writable_cols,
+                        row,
+                        &style,
+                        fill,
+                        &self.terminal,
+                    ));
+                } else if let Some(active) = &self.compositor.confirm {
+                    let prompt = &active.prompt;
+                    let (row, style, fill) = state
+                        .lock()
+                        .ok()
+                        .map(|st| {
+                            let visible_lines = self.status_h.max(1);
+                            let line = st
+                                .option_for_target(target, "message-line")
+                                .and_then(|value| value.parse::<u16>().ok())
+                                .unwrap_or(0)
+                                .min(visible_lines.saturating_sub(1));
+                            let row = if self.status_h == 0 {
+                                self.rows
+                            } else if status::at_top(&st, target) {
+                                line + 1
+                            } else {
+                                self.rows.saturating_sub(self.status_h).saturating_add(line) + 1
+                            };
+                            let value = st
+                                .option_for_target(target, "message-style")
+                                .unwrap_or("bg=yellow,fg=black,fill=yellow");
+                            (
+                                row,
+                                value.to_string(),
+                                value
+                                    .split(',')
+                                    .any(|part| part.trim().starts_with("fill=")),
+                            )
+                        })
+                        .unwrap_or_else(|| {
+                            (
+                                self.rows,
+                                "bg=yellow,fg=black,fill=yellow".to_string(),
+                                true,
+                            )
+                        });
+                    let writable_cols =
+                        term::writable_width(&self.terminal, row, self.cols, self.rows) as u16;
+                    frame.extend_from_slice(&render_status_prompt_styled_at_row(
+                        prompt,
+                        prompt.chars().count(),
+                        self.cols,
+                        writable_cols,
+                        row,
+                        &style,
+                        fill,
+                        &self.terminal,
+                    ));
+                } else if let Some((message, _)) = self.compositor.status_message.as_ref() {
+                    let (row, rendered) = state
+                        .lock()
+                        .ok()
+                        .map(|st| {
+                            let visible_lines = self.status_h.max(1);
+                            let line = st
+                                .option_for_target(target, "message-line")
+                                .and_then(|value| value.parse::<u16>().ok())
+                                .unwrap_or(0)
+                                .min(visible_lines.saturating_sub(1));
+                            let row = if self.status_h == 0 {
+                                self.rows
+                            } else if status::at_top(&st, target) {
+                                line + 1
+                            } else {
+                                self.rows.saturating_sub(self.status_h).saturating_add(line) + 1
+                            };
+                            let writable =
+                                term::writable_width(&self.terminal, row, self.cols, self.rows);
+                            (
+                                row,
+                                self.status_cache.message_row(
+                                    &st,
+                                    target,
+                                    message,
+                                    self.cols,
+                                    self.rows,
+                                    writable,
+                                    &self.terminal,
+                                ),
+                            )
+                        })
+                        .unwrap_or_else(|| (self.rows, Vec::new()));
+                    frame.extend_from_slice(&render_status_message_row_at(
+                        row,
+                        &rendered,
+                        &self.terminal,
+                    ));
+                }
+                if frame != self.compositor.last_render || large_scroll_repaint {
+                    let (mut repaint, direct_cursor_safe) =
+                        if self.compositor.last_render.is_empty() || large_scroll_repaint {
+                            (frame.clone(), false)
+                        } else {
+                            let delta = diff_rendered_frame(&self.compositor.last_render, &frame);
+                            let direct_cursor_safe = delta.direct_cursor_safe();
+                            (delta.into_frame(), direct_cursor_safe)
+                        };
+                    // A first paint, resize, or layout change still needs one
+                    // full clear. Keep that sequence out of the cached canonical frame
+                    // so subsequent frames compare canonical compositor output.
+                    if self.compositor.force_clear {
+                        let mut cleared = Vec::with_capacity(repaint.len() + 8);
+                        cleared.extend_from_slice(b"\x1b[H\x1b[2J");
+                        cleared.extend_from_slice(&repaint);
+                        repaint = cleared;
+                    }
+
+                    // Commit multi-row repaint deltas atomically when possible.
+                    // Cursor-only changes and a bounded update ending on the
+                    // cursor row can be sent directly: they never march the
+                    // hardware cursor across unrelated rows. Larger
+                    // unsynchronized deltas get an
+                    // immediate hide/restore pair around only the dirty rows.
+                    let sync_start = term::expand_capability(
+                        &self.terminal,
+                        "Sync",
+                        &[term::CapabilityParameter::Number(1)],
+                    );
+                    let sync_end = term::expand_capability(
+                        &self.terminal,
+                        "Sync",
+                        &[term::CapabilityParameter::Number(2)],
+                    );
+                    if let (Some(sync_start), Some(sync_end)) = (sync_start, sync_end) {
+                        let output = suppress_redundant_cursor_visibility(
+                            &repaint,
+                            &mut self.compositor.output_cursor_visible,
+                        );
+                        let mut atomic_output =
+                            Vec::with_capacity(sync_start.len() + output.len() + sync_end.len());
+                        atomic_output.extend_from_slice(&sync_start);
+                        atomic_output.extend_from_slice(&output);
+                        atomic_output.extend_from_slice(&sync_end);
+                        let _ = self
+                            .compositor
+                            .tty_output
+                            .queue(self.render_fd.as_raw_fd(), &atomic_output);
+                    } else if direct_cursor_safe && !self.compositor.force_clear {
+                        let output = suppress_redundant_cursor_visibility(
+                            &repaint,
+                            &mut self.compositor.output_cursor_visible,
+                        );
+                        let _ = self
+                            .compositor
+                            .tty_output
+                            .queue(self.render_fd.as_raw_fd(), &output);
+                    } else {
+                        let output = guard_cursor_during_repaint(
+                            &repaint,
+                            &mut self.compositor.output_cursor_visible,
+                        );
+                        let _ = self
+                            .compositor
+                            .tty_output
+                            .queue(self.render_fd.as_raw_fd(), &output);
+                    }
+                    self.compositor.last_render = frame;
+                    self.compositor.force_clear = false;
+                    wrote_frame = true;
+                }
+            }
+            // Close the latency sample: a written frame is the keystroke's echo
+            // reaching the screen; an unchanged frame means this input drew
+            // nothing, so drop it rather than blame a later frame.
+            if wrote_frame {
+                self.compositor.latmon.on_render();
+            } else {
+                self.compositor.latmon.discard();
+            }
+        }
+        Ok(AttachDrive::Continue)
+    }
+}
+
+struct TtyOutput {
+    bytes: Vec<u8>,
+    written: usize,
+}
+
+impl TtyOutput {
+    fn new() -> TtyOutput {
+        TtyOutput {
+            bytes: Vec::new(),
+            written: 0,
+        }
+    }
+
+    fn has_pending(&self) -> bool {
+        self.written < self.bytes.len()
+    }
+
+    fn queue(&mut self, fd: RawFd, bytes: &[u8]) -> io::Result<()> {
+        if bytes.len() > TTY_OUTPUT_LIMIT.saturating_sub(self.bytes.len() - self.written) {
+            return Err(io::Error::other("attach tty output limit exceeded"));
+        }
+        if self.written != 0 {
+            self.bytes.drain(..self.written);
+            self.written = 0;
+        }
+        self.bytes.extend_from_slice(bytes);
+        self.flush(fd)
+    }
+
+    fn flush(&mut self, fd: RawFd) -> io::Result<()> {
+        while self.has_pending() {
+            let remaining = &self.bytes[self.written..];
+            let written = unsafe {
+                libc::write(
+                    fd,
+                    remaining.as_ptr() as *const libc::c_void,
+                    remaining.len(),
+                )
+            };
+            if written > 0 {
+                self.written += written as usize;
+                continue;
+            }
+            if written == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::WriteZero,
+                    "attach tty write returned zero",
+                ));
+            }
+            let error = io::Error::last_os_error();
+            if error.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            if error.kind() == io::ErrorKind::WouldBlock {
+                return Ok(());
+            }
+            return Err(error);
+        }
+        self.bytes.clear();
+        self.written = 0;
+        Ok(())
+    }
+}
+
+impl AttachCompositorState {
+    fn new(
+        session_id: u32,
+        context: command::ClientContext,
+        target: String,
+    ) -> AttachCompositorState {
+        AttachCompositorState {
+            session_id,
+            stable_target: target.clone(),
+            context,
+            last_render: Vec::new(),
+            seen_large_scroll: BTreeMap::new(),
+            output_cursor_visible: None,
+            last_title: None,
+            force_clear: true,
+            prefix_pending: false,
+            mouse_input: MouseInputState::default(),
+            confirm: None,
+            command_prompt: None,
+            active_overlay: None,
+            status_message: None,
+            should_exit: false,
+            detach_requested: false,
+            session_ended: false,
+            locked: false,
+            suspended: false,
+            key_prompt_buf: Vec::new(),
+            key_prompt_deadline: None,
+            terminal_reply_buf: Vec::new(),
+            terminal_reply_deadline: None,
+            switch_to: None,
+            injected_input: VecDeque::new(),
+            latmon: LatMon::new(format!("sess={target}")),
+            tty_output: TtyOutput::new(),
+        }
+    }
+}
+
 impl CommandPrompt {
+    fn apply_deferred_side_effect(
+        &self,
+        result: &command::CommandResult,
+        state: &Arc<Mutex<ServerState>>,
+    ) {
+        if result.exit != 0 {
+            return;
+        }
+        let (CommandPromptAction::ModeEdit { target, edit }, Some(value)) =
+            (&self.action, self.values.last())
+        else {
+            return;
+        };
+        if let Ok(mut state) = state.lock() {
+            let _ = state.mode_view_update_edit(target, edit, value);
+        }
+    }
+
     fn new(
         args: Vec<String>,
         external: Option<super::state::ActiveCommandPrompt>,
@@ -464,6 +3223,7 @@ impl CommandPrompt {
             action: CommandPromptAction::Command,
             frozen_frame: None,
             external,
+            deferred_incremental: VecDeque::new(),
         })
     }
 
@@ -613,6 +3373,25 @@ impl CommandPrompt {
                 CommandPromptAction::Command => {}
             }
         }
+        if context.defer_attach_commands {
+            let template = command::command_prompt_template(
+                &self.args,
+                values,
+                state,
+                &hub.snapshot().panes,
+                context,
+            );
+            let mut result = command::CommandResult::ok("");
+            if !template.trim().is_empty() || !self.tail.is_empty() {
+                result
+                    .deferred_commands
+                    .push(command::DeferredCommand::Line {
+                        line: template,
+                        tail: self.tail.clone(),
+                    });
+            }
+            return result;
+        }
         let mut result = command::run_command_prompt_template(
             &self.args,
             values,
@@ -656,7 +3435,7 @@ impl CommandPrompt {
     }
 
     fn initial_incremental(
-        &self,
+        &mut self,
         state: &Arc<Mutex<ServerState>>,
         hub: &StatusHub,
         context: &command::ClientContext,
@@ -664,7 +3443,10 @@ impl CommandPrompt {
         if self.spec.incremental {
             let mut values = self.values.clone();
             values.push("=".to_string());
-            let _ = self.run(&values, state, hub, context);
+            let mut result = self.run(&values, state, hub, context);
+            if let Some(source) = take_deferred_attach_command(&mut result) {
+                self.deferred_incremental.push_back(source);
+            }
         }
     }
 
@@ -678,8 +3460,15 @@ impl CommandPrompt {
         if self.spec.incremental {
             let mut values = self.values.clone();
             values.push(format!("{prefix}{}", self.input()));
-            let _ = self.run(&values, state, hub, context);
+            let mut result = self.run(&values, state, hub, context);
+            if let Some(source) = take_deferred_attach_command(&mut result) {
+                self.deferred_incremental.push_back(source);
+            }
         }
+    }
+
+    fn take_deferred_incremental(&mut self) -> Option<command::DeferredCommand> {
+        self.deferred_incremental.pop_front()
     }
 
     fn finish_page(
@@ -1362,15 +4151,35 @@ fn run_mode_command(
     if value.is_empty() {
         return command::CommandResult::ok("");
     }
-    let aliases = match state.lock() {
-        Ok(state) => state.command_aliases(),
-        Err(_) => return command::CommandResult::err("server state poisoned\n"),
-    };
-    let command = command::replace_prompt_template(value, item_target, 1);
-    let groups = match command::command_string_groups_with_aliases(&command, &aliases) {
-        Ok(groups) => groups,
+    let line = command::replace_prompt_template(value, item_target, 1);
+    if context.defer_attach_commands {
+        let mut result = command::CommandResult::ok("");
+        if !line.trim().is_empty() {
+            result
+                .deferred_commands
+                .push(command::DeferredCommand::Line {
+                    line,
+                    tail: Vec::new(),
+                });
+        }
+        return result;
+    }
+    let argv = match command_line_argv(&line, state) {
+        Ok(argv) => argv,
         Err(error) => return error,
     };
+    command::run_with_context(&argv, state, &hub.snapshot().panes, context)
+}
+
+fn command_line_argv(
+    line: &str,
+    state: &Arc<Mutex<ServerState>>,
+) -> Result<Vec<String>, command::CommandResult> {
+    let aliases = match state.lock() {
+        Ok(state) => state.command_aliases(),
+        Err(_) => return Err(command::CommandResult::err("server state poisoned\n")),
+    };
+    let groups = command::command_string_groups_with_aliases(line, &aliases)?;
     let mut argv = Vec::new();
     for group in groups {
         if !argv.is_empty() {
@@ -1378,7 +4187,7 @@ fn run_mode_command(
         }
         argv.extend(group);
     }
-    command::run_with_context(&argv, state, &hub.snapshot().panes, context)
+    Ok(argv)
 }
 
 fn run_mode_edit(
@@ -1399,6 +4208,13 @@ fn run_mode_edit(
                 name.clone(),
                 value.to_string(),
             ];
+            if context.defer_attach_commands {
+                let mut result = command::CommandResult::ok("");
+                result
+                    .deferred_commands
+                    .push(command::DeferredCommand::Args(args));
+                return result;
+            }
             let result = command::run_with_context(&args, state, &hub.snapshot().panes, context);
             if result.exit == 0 {
                 if let Ok(mut state) = state.lock() {
@@ -1789,20 +4605,35 @@ fn command_prompt_completion(
     }
 }
 
+fn take_deferred_attach_command(
+    result: &mut command::CommandResult,
+) -> Option<command::DeferredCommand> {
+    result.deferred_commands.pop()
+}
+
 fn handle_command_prompt_key(
     prompt: &mut Option<CommandPrompt>,
     key: &str,
     state: &Arc<Mutex<ServerState>>,
     hub: &StatusHub,
     context: &command::ClientContext,
-) {
+) -> Option<AttachCommandRequest> {
     let Some(active) = prompt.as_mut() else {
-        return;
+        return None;
     };
     match active.handle_key(key, state, hub, context) {
         CommandPromptInput::Continue => {}
-        CommandPromptInput::Finish(result) => {
+        CommandPromptInput::Finish(mut result) => {
             let mut active = prompt.take().expect("command prompt checked");
+            if let Some(source) = take_deferred_attach_command(&mut result) {
+                return Some(AttachCommandRequest {
+                    source,
+                    context: context.clone(),
+                    continuation: AttachCommandContinuation::Prompt {
+                        prompt: Box::new(active),
+                    },
+                });
+            }
             active.complete(&result, state, context);
         }
         CommandPromptInput::Cancel => {
@@ -1810,6 +4641,7 @@ fn handle_command_prompt_key(
             active.cancel_external();
         }
     }
+    None
 }
 
 /// Resolve and execute one key from an attached client's active table.
@@ -1892,6 +4724,23 @@ fn dispatch_key_binding(
         {
             let mut command = binding.command.clone();
             command.insert(1, "-p".to_string());
+            let explicit_duration = binding
+                .command
+                .windows(2)
+                .find(|words| words[0] == "-d")
+                .and_then(|words| words[1].parse::<u64>().ok());
+            if context.defer_attach_commands {
+                let mut binding_context = context.clone();
+                binding_context.key_event = Some(key);
+                binding_context.mouse = mouse;
+                return PrefixOutcome::DeferredMessage {
+                    args: command,
+                    context: binding_context,
+                    target: target.to_string(),
+                    escape_hashes: binding.command.iter().any(|word| word == "-N"),
+                    explicit_duration,
+                };
+            }
             let agents = hub.snapshot().panes;
             let result = command::run_with_context(&command, state, &agents, context);
             if result.exit != 0 {
@@ -1905,12 +4754,7 @@ fn dispatch_key_binding(
             if binding.command.iter().any(|word| word == "-N") {
                 text = text.replace('#', "##");
             }
-            let explicit = binding
-                .command
-                .windows(2)
-                .find(|words| words[0] == "-d")
-                .and_then(|words| words[1].parse::<u64>().ok());
-            let milliseconds = explicit
+            let milliseconds = explicit_duration
                 .or_else(|| {
                     state.lock().ok().and_then(|state| {
                         state
@@ -1963,6 +4807,12 @@ fn dispatch_key_binding(
     let mut binding_context = context.clone();
     binding_context.key_event = Some(key);
     binding_context.mouse = mouse;
+    if context.defer_attach_commands {
+        return PrefixOutcome::DeferredCommand {
+            args: binding.command,
+            context: binding_context,
+        };
+    }
     let result = command::run_with_context(&binding.command, state, &agents, &binding_context);
     if result.exit == 0 && !result.stdout_data().is_empty() {
         return PrefixOutcome::ViewOutput(result.stdout_data().to_vec());
@@ -1983,6 +4833,7 @@ pub(super) fn dispatch_control_client_keys(
     target: &str,
     hub: &StatusHub,
     context: &command::ClientContext,
+    deferred: &mut Vec<command::BackgroundCommandRequest>,
 ) -> bool {
     for injected in keys {
         let bytes = &injected.bytes;
@@ -2047,6 +4898,10 @@ pub(super) fn dispatch_control_client_keys(
                             let _ = state.copy_mode_command(target, "page-down", vi, &separators);
                         }
                     }
+                }
+                PrefixOutcome::DeferredCommand { args, context }
+                | PrefixOutcome::DeferredMessage { args, context, .. } => {
+                    deferred.push(command::BackgroundCommandRequest::ReadyArgs { args, context });
                 }
                 PrefixOutcome::Confirm { .. }
                 | PrefixOutcome::Prompt { .. }
@@ -2545,40 +5400,6 @@ fn prompt_escape_delay(state: &Arc<Mutex<ServerState>>) -> Duration {
     Duration::from_millis(milliseconds)
 }
 
-/// Wait for more tty input until an already-established key deadline.
-///
-/// The deadline is created when the first incomplete bytes arrive and is not
-/// extended by later partial reads. This matches tmux's per-client key timer
-/// and prevents a fragmented CSI sequence from receiving a fresh full
-/// `escape-time` for every byte.
-fn poll_input_until(fd: RawFd, deadline: Instant) -> bool {
-    loop {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            return false;
-        }
-        let timeout = remaining
-            .as_millis()
-            .saturating_add(u128::from(remaining.subsec_nanos() % 1_000_000 != 0))
-            .min(i32::MAX as u128) as libc::c_int;
-        let mut pfd = libc::pollfd {
-            fd,
-            events: libc::POLLIN,
-            revents: 0,
-        };
-        let result = unsafe { libc::poll(&mut pfd, 1, timeout) };
-        if result > 0 {
-            return true;
-        }
-        if result == 0 {
-            return false;
-        }
-        if io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
-            return false;
-        }
-    }
-}
-
 fn copy_mode_active(state: &Arc<Mutex<ServerState>>, target: &str) -> bool {
     state
         .lock()
@@ -2628,64 +5449,119 @@ fn copy_table_name(state: &Arc<Mutex<ServerState>>, target: &str) -> &'static st
 /// Wait until either side of an attached client, its active pane, or its agent
 /// status subscription has work.
 /// Tty readiness needs no flag because the non-blocking input drain runs next.
-fn wait_for_attach_events(
-    imsg_fd: RawFd,
-    input_fd: RawFd,
-    output_fd: RawFd,
-    prompt_fd: RawFd,
-    render_fd: RawFd,
-    status_fd: RawFd,
-    timeout: i32,
-) -> io::Result<(bool, bool, bool, bool, bool)> {
+fn wait_for_attach_events(sources: AttachWaitSources, timeout: i32) -> io::Result<AttachWaitReady> {
     let mut fds = [
         libc::pollfd {
-            fd: imsg_fd,
+            fd: sources.control,
             events: libc::POLLIN,
             revents: 0,
         },
         libc::pollfd {
-            fd: input_fd,
+            fd: sources.input,
             events: libc::POLLIN,
             revents: 0,
         },
         libc::pollfd {
-            fd: output_fd,
+            fd: sources.tty_output,
+            events: libc::POLLOUT,
+            revents: 0,
+        },
+        libc::pollfd {
+            fd: sources.output,
             events: libc::POLLIN,
             revents: 0,
         },
         libc::pollfd {
-            fd: prompt_fd,
+            fd: sources.prompt,
             events: libc::POLLIN,
             revents: 0,
         },
         libc::pollfd {
-            fd: render_fd,
+            fd: sources.render,
             events: libc::POLLIN,
             revents: 0,
         },
         libc::pollfd {
-            fd: status_fd,
+            fd: sources.status,
             events: libc::POLLIN,
+            revents: 0,
+        },
+        libc::pollfd {
+            fd: sources.popup_read,
+            events: libc::POLLIN,
+            revents: 0,
+        },
+        libc::pollfd {
+            fd: sources.popup_write,
+            events: libc::POLLOUT,
             revents: 0,
         },
     ];
     let result = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, timeout) };
     if result >= 0 {
-        return Ok((
-            fds[0].revents != 0,
-            fds[2].revents != 0,
-            fds[3].revents != 0,
-            fds[4].revents != 0,
-            fds[5].revents != 0,
-        ));
+        return Ok(AttachWaitReady {
+            control: fds[0].revents != 0,
+            tty_output: fds[2].revents != 0,
+            output: fds[3].revents != 0,
+            prompt: fds[4].revents != 0,
+            render: fds[5].revents != 0,
+            status: fds[6].revents != 0,
+            popup_read: fds[7].revents != 0,
+            popup_write: fds[8].revents != 0,
+        });
     }
     let error = io::Error::last_os_error();
     if error.kind() == io::ErrorKind::Interrupted {
         // Re-evaluate the absolute status deadline rather than restarting
         // the full relative poll timeout after every signal.
-        return Ok((false, false, false, false, false));
+        return Ok(AttachWaitReady::default());
     }
     Err(error)
+}
+
+/// Descriptors observed between turns of the authoritative attach compositor.
+///
+/// This is a crate-private migration boundary: the compatibility path polls
+/// these descriptors directly, while the server event loop registers them with
+/// its reactor and drives the session for one turn at a time.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AttachWaitSources {
+    pub(crate) control: RawFd,
+    pub(crate) input: RawFd,
+    pub(crate) tty_output: RawFd,
+    pub(crate) output: RawFd,
+    pub(crate) output_generation: u64,
+    pub(crate) prompt: RawFd,
+    pub(crate) render: RawFd,
+    pub(crate) status: RawFd,
+    pub(crate) popup_read: RawFd,
+    pub(crate) popup_write: RawFd,
+}
+
+/// Readiness delivered for one attach compositor turn.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct AttachWaitReady {
+    pub(crate) control: bool,
+    pub(crate) tty_output: bool,
+    pub(crate) output: bool,
+    pub(crate) prompt: bool,
+    pub(crate) render: bool,
+    pub(crate) status: bool,
+    pub(crate) popup_read: bool,
+    pub(crate) popup_write: bool,
+}
+
+/// Internal wait operation used by the turn-based attach compositor.
+pub(crate) trait AttachEventWaiter {
+    fn wait(&mut self, sources: AttachWaitSources, timeout: i32) -> io::Result<AttachWaitReady>;
+}
+
+struct PollAttachEventWaiter;
+
+impl AttachEventWaiter for PollAttachEventWaiter {
+    fn wait(&mut self, sources: AttachWaitSources, timeout: i32) -> io::Result<AttachWaitReady> {
+        wait_for_attach_events(sources, timeout)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2811,23 +5687,17 @@ impl ClientTty {
     /// The fd we should use for rendering / reading input. Prefers stdout,
     /// falls back to stdin, matching tmux's `c->fd` which is typically stdout.
     pub fn render_fd(&self) -> Option<BorrowedFd<'_>> {
-        if let Some(ref fd) = self.stdout {
-            Some(fd.as_fd())
-        } else if let Some(ref fd) = self.stdin {
-            Some(fd.as_fd())
-        } else {
-            None
-        }
+        self.stdout
+            .as_ref()
+            .or(self.stdin.as_ref())
+            .map(AsFd::as_fd)
     }
 
     pub fn input_fd(&self) -> Option<BorrowedFd<'_>> {
-        if let Some(ref fd) = self.stdin {
-            Some(fd.as_fd())
-        } else if let Some(ref fd) = self.stdout {
-            Some(fd.as_fd())
-        } else {
-            None
-        }
+        self.stdin
+            .as_ref()
+            .or(self.stdout.as_ref())
+            .map(AsFd::as_fd)
     }
 }
 
@@ -3085,6 +5955,32 @@ where
     R: AttachFrameReader,
     W: FrameWriter,
 {
+    handle_attach_with_waiter(
+        args,
+        client_tty,
+        state,
+        hub,
+        context,
+        reader,
+        writer,
+        &mut PollAttachEventWaiter,
+    )
+}
+
+pub(crate) fn handle_attach_with_waiter<R, W>(
+    args: &[String],
+    client_tty: ClientTty,
+    state: &Arc<Mutex<ServerState>>,
+    hub: &StatusHub,
+    context: &command::ClientContext,
+    reader: &mut R,
+    writer: &mut W,
+    waiter: &mut dyn AttachEventWaiter,
+) -> io::Result<()>
+where
+    R: AttachFrameReader,
+    W: FrameWriter,
+{
     let supplied_target = explicit_target_session(args);
     let target = {
         let mut st = state
@@ -3107,11 +6003,14 @@ where
             .map_err(|_| io::Error::other("state poisoned"))?;
         if st.find(&target).is_none() {
             let msg = format!("can't find session: {target}\n");
+            drop(st);
             return send_error_and_exit(reader, writer, &msg, 1);
         }
     }
 
-    run_attach(&target, client_tty, state, hub, context, reader, writer)
+    run_attach(
+        &target, client_tty, state, hub, context, reader, writer, waiter,
+    )
 }
 
 pub(crate) fn attach_target(
@@ -3129,6 +6028,58 @@ pub(crate) fn attach_target(
         return command::new_session_for_attach(&[], state, context);
     }
     Err("no sessions\n".to_string())
+}
+
+pub(crate) fn start_attach_session<W>(
+    args: &[String],
+    client_tty: ClientTty,
+    state: &Arc<Mutex<ServerState>>,
+    hub: &StatusHub,
+    context: &command::ClientContext,
+    writer: &mut W,
+    pane_io_mode: PaneIoMode,
+) -> Result<AttachSession, AttachStartFailure>
+where
+    W: FrameWriter + ?Sized,
+{
+    let target = match command::classify(args) {
+        command::Intent::Attach => {
+            let supplied_target = explicit_target_session(args);
+            let mut st = state
+                .lock()
+                .map_err(|_| io::Error::other("state poisoned"))?;
+            let target = attach_target(supplied_target, &mut st, context)
+                .map_err(AttachStartFailure::Client)?;
+            if st.find(&target).is_none() {
+                return Err(AttachStartFailure::Client(format!(
+                    "can't find session: {target}\n"
+                )));
+            }
+            target
+        }
+        command::Intent::NewAttach => {
+            let mut st = state
+                .lock()
+                .map_err(|_| io::Error::other("state poisoned"))?;
+            command::new_session_for_attach(args, &mut st, context)
+                .map_err(AttachStartFailure::Client)?
+        }
+        command::Intent::Command => {
+            return Err(AttachStartFailure::Io(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "not an attach command",
+            )));
+        }
+    };
+    AttachSession::start_in_mode(
+        &target,
+        client_tty,
+        state,
+        hub,
+        context,
+        writer,
+        pane_io_mode,
+    )
 }
 
 /// The interactive `new-session` (and bare-`tmux`) path: create — or, with `-A`,
@@ -3154,6 +6105,32 @@ where
     R: AttachFrameReader,
     W: FrameWriter,
 {
+    handle_new_session_with_waiter(
+        args,
+        client_tty,
+        state,
+        hub,
+        context,
+        reader,
+        writer,
+        &mut PollAttachEventWaiter,
+    )
+}
+
+pub(crate) fn handle_new_session_with_waiter<R, W>(
+    args: &[String],
+    client_tty: ClientTty,
+    state: &Arc<Mutex<ServerState>>,
+    hub: &StatusHub,
+    context: &command::ClientContext,
+    reader: &mut R,
+    writer: &mut W,
+    waiter: &mut dyn AttachEventWaiter,
+) -> io::Result<()>
+where
+    R: AttachFrameReader,
+    W: FrameWriter,
+{
     let target = {
         let mut st = state
             .lock()
@@ -3166,7 +6143,9 @@ where
             }
         }
     };
-    run_attach(&target, client_tty, state, hub, context, reader, writer)
+    run_attach(
+        &target, client_tty, state, hub, context, reader, writer, waiter,
+    )
 }
 
 /// Drive an interactive attach to an already-resolved, existing `target`
@@ -3181,1865 +6160,32 @@ fn run_attach<R, W>(
     context: &command::ClientContext,
     reader: &mut R,
     writer: &mut W,
+    waiter: &mut dyn AttachEventWaiter,
 ) -> io::Result<()>
 where
     R: AttachFrameReader,
     W: FrameWriter,
 {
-    // If we have no tty fds at all, or they are not ttys, report the same error
-    // tmux does: "open terminal failed: not a terminal". This is what makes the
-    // conformance matrix show OK for native even when the harness uses /dev/null.
-    let render_fd_borrowed = client_tty.render_fd();
-    let input_fd_borrowed = client_tty.input_fd();
-
-    let (render_raw, input_raw) = match (render_fd_borrowed, input_fd_borrowed) {
-        (Some(r), Some(i)) => (r.as_raw_fd(), i.as_raw_fd()),
-        (Some(r), None) => (r.as_raw_fd(), r.as_raw_fd()),
-        (None, Some(i)) => (i.as_raw_fd(), i.as_raw_fd()),
-        (None, None) => {
-            let msg = "open terminal failed: not a terminal\n";
-            return send_error_and_exit(reader, writer, msg, 1);
+    let mut session = match AttachSession::start(target, client_tty, state, hub, context, writer) {
+        Ok(session) => session,
+        Err(AttachStartFailure::Client(message)) => {
+            return send_error_and_exit(reader, writer, &message, 1);
         }
+        Err(AttachStartFailure::Io(error)) => return Err(error),
     };
-
-    // Dup the fds so we own them for the duration of attach, independent of
-    // ClientTty's OwnedFds which will be dropped after this function if we move.
-    // We need owned copies because we will set non-blocking and use them in the
-    // loop.
-    let render_fd_owned = unsafe {
-        let dup = libc::dup(render_raw);
-        if dup < 0 {
-            let msg = "open terminal failed: not a terminal\n";
-            return send_error_and_exit(reader, writer, msg, 1);
-        }
-        OwnedFd::from_raw_fd(dup)
-    };
-    let input_fd_owned = if input_raw == render_raw {
-        // Same underlying fd, dup again for input side to keep lifetimes simple.
-        unsafe {
-            let dup = libc::dup(input_raw);
-            if dup < 0 {
-                return send_error_and_exit(
-                    reader,
-                    writer,
-                    "open terminal failed: not a terminal\n",
-                    1,
-                );
-            }
-            OwnedFd::from_raw_fd(dup)
-        }
-    } else {
-        unsafe {
-            let dup = libc::dup(input_raw);
-            if dup < 0 {
-                return send_error_and_exit(
-                    reader,
-                    writer,
-                    "open terminal failed: not a terminal\n",
-                    1,
-                );
-            }
-            OwnedFd::from_raw_fd(dup)
-        }
-    };
-
-    if !is_tty(render_fd_owned.as_raw_fd()) || !is_tty(input_fd_owned.as_raw_fd()) {
-        let msg = "open terminal failed: not a terminal\n";
-        return send_error_and_exit(reader, writer, msg, 1);
-    }
-
-    // From here on we have a real tty. Enter interactive attach.
-    let (mut cols, mut rows) = get_winsize(render_fd_owned.as_raw_fd()).unwrap_or((80, 24));
-    let (prompt_registry, render_registry, mut session_id) = {
-        let st = state
-            .lock()
-            .map_err(|_| io::Error::other("state poisoned"))?;
-        let session_id = st.session_id(target).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("can't find session: {target}"),
-            )
-        })?;
-        (
-            st.client_prompt_registry(),
-            st.client_render_registry(),
-            session_id,
-        )
-    };
-    let prompt_attachment = prompt_registry.attach(
-        client_tty.tty_name.clone().unwrap_or_default(),
-        client_tty.client_pid,
-        session_id,
-    )?;
-    let render_name = client_tty
-        .tty_name
-        .clone()
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| format!("client-{}", client_tty.client_pid.unwrap_or_default()));
-    let render_attachment = render_registry.attach_with_details(
-        session_id,
-        render_name,
-        client_tty.term.clone().unwrap_or_default(),
-        client_tty.client_pid,
-        cols,
-        rows,
-        String::new(),
-        false,
-        false,
-    )?;
-    // Keep the attach anchored to the session's stable identity. Session names
-    // are mutable (`rename-session`), but tmux clients remain attached across a
-    // rename and subsequent prefix commands must still target the same session.
-    let mut stable_target = format!("${session_id}");
-    let target = stable_target.as_str();
-    let mut attached_context = context.clone();
-    attached_context.current_session_id = Some(session_id);
-    attached_context.wait_for_interactions = false;
-
-    // Get initial window size from the tty, then reserve rows for the status
-    // line and resize the session/pane into what's left — exactly as tmux sizes
-    // a window to `client rows - status lines`.
-    let terminal_identity = TerminalIdentity::new(
-        client_tty.term.clone().unwrap_or_default(),
-        client_tty.terminfo.clone(),
-        client_tty.features,
-        context.env("COLORTERM").map(str::to_string),
-    )
-    .with_utf8(client_tty.flags & 0x10000 != 0);
-    let (mut status_h, status_interval, mut terminal) = {
-        let st = state
-            .lock()
-            .map_err(|_| io::Error::other("state poisoned"))?;
-        (
-            status::height(&st, target),
-            status::interval(&st, target),
-            ResolvedTerm::resolve(terminal_identity, st.server_options().iter_effective()),
-        )
-    };
-    if let Some(cause) = terminal.validation_error() {
-        return send_error_and_exit(reader, writer, &format!("{cause}\n"), 1);
-    }
-    render_attachment.update_terminal(&terminal);
-    // tmux sends MSG_READY only after the outer terminal has been validated.
-    writer.send(Frame::new(Message::Ready))?;
-    let mut status_timer = StatusTimer::new(status_interval, Instant::now());
-    let mut status_cache = status::RenderCache::for_client(status::ClientContext {
-        term: (!terminal.name().is_empty()).then(|| terminal.name().to_string()),
-        tty: client_tty.tty_name.clone(),
-        pid: client_tty.client_pid,
-        cwd: context.cwd.clone(),
-        environment: context.environment.clone(),
-        ..status::ClientContext::default()
-    });
-    let agent_status_subscription = hub.subscribe()?;
-    status_cache.update_agents(hub.snapshot());
-    let mut pane_rows = rows.saturating_sub(status_h).max(1);
-    {
-        let mut st = state
-            .lock()
-            .map_err(|_| io::Error::other("state poisoned"))?;
-        let _ = st.resize_session(target, cols, pane_rows);
-    }
-
-    // Put the client's tty into raw mode (as tmux's server does before driving a
-    // client's terminal). Both dup'd fds share one open terminal device, so a
-    // single tcsetattr covers input and render. Restored on detach below.
-    let saved_termios = make_raw(input_fd_owned.as_raw_fd()).ok();
-    // Guarantee the tty is put back even if we leave this function early (a `?`
-    // below, a panic, or an abrupt client disconnect that breaks the loop): a
-    // scope exit that skips the restore leaves the terminal raw (no `OPOST`) and
-    // the user's shell staircases. The clean paths disarm this after restoring
-    // explicitly. See [`TermiosGuard`].
-    let mut termios_guard = TermiosGuard {
-        fd: input_fd_owned.as_raw_fd(),
-        saved: saved_termios,
-    };
-
-    // Set tty fds non-blocking for our poll loop.
-    set_nonblock(input_fd_owned.as_raw_fd())?;
-    set_nonblock(render_fd_owned.as_raw_fd())?;
-
     let imsg_fd = reader.as_raw_fd();
-
-    // Initialize the outer tty from its resolved terminfo profile.
-    let tty_start = tty_start_sequence(&terminal);
-    let _ = write_all(render_fd_owned.as_raw_fd(), &tty_start);
-    if state
-        .lock()
-        .ok()
-        .is_some_and(|st| st.option_for_target(target, "mouse") == Some("on"))
-    {
-        let _ = write_all(
-            render_fd_owned.as_raw_fd(),
-            b"\x1b[?1000h\x1b[?1002h\x1b[?1006h",
-        );
-    }
-    let mut last_render: Vec<u8> = Vec::new();
-    let mut seen_large_scroll = BTreeMap::new();
-    let (mut subscribed_window, mut output_subscription) = {
-        let st = state
-            .lock()
-            .map_err(|_| io::Error::other("state poisoned"))?;
-        active_window_output_subscription(&st, target)?
-    };
-    // Track what DECTCEM state we have actually sent to the outer terminal.
-    // Synchronized terminals can omit a frame's defensive hide/show pair
-    // because intermediate cursor movement is never presented. Without
-    // synchronized output, the pair must remain around a repaint or the
-    // hardware cursor visibly walks through each row as it is redrawn.
-    let mut output_cursor_visible: Option<bool> = None;
-    // tmux remembers the last expanded title per client and only writes the
-    // outer terminal's title capabilities when that value changes.
-    let mut last_title: Option<String> = None;
-    // Frames are drawn in place (no per-frame `\x1b[2J`) to avoid flicker; a
-    // one-shot full clear is prepended only when the whole screen must be reset:
-    // the first paint, a resize, or a layout change that swaps the active pane.
-    // Otherwise stale cells from a shrunk/replaced screen could linger.
-    let mut force_clear = true;
-    let mut prefix_pending = false;
-    let mut mouse_input = MouseInputState::default();
-    // A pending `confirm-before` prompt (`C-b x` / `C-b &`), client-local. While
-    // set, the status line shows `prompt` and every key answers it (`y`/`Y` runs
-    // `action`, anything else cancels) instead of reaching the pane — mirroring
-    // tmux's `status_prompt` confirm flow.
-    let mut confirm: Option<ActiveConfirm> = None;
-    let mut command_prompt: Option<CommandPrompt> = None;
-    let mut active_overlay: Option<ActiveOverlay> = None;
-    let mut status_message: Option<(String, Instant)> = None;
-    let mut should_exit = false;
-    // Set when the loop exits because the *user* asked to detach (`C-b d`) rather
-    // than because the client/connection went away. Only a user detach runs the
-    // graceful MSG_DETACH handshake at the end.
-    let mut detach_requested = false;
-    // Set when the attached session disappeared because its last pane exited.
-    // This uses tmux's normal client-exit handshake and lets `exit-empty`
-    // terminate the outer server.
-    let mut session_ended = false;
-    let mut locked = false;
-    let mut suspended = false;
-    let mut key_prompt_buf = Vec::new();
-    let mut key_prompt_deadline = None;
-    let mut switch_to = None;
-    let mut injected_input = VecDeque::new();
-
-    // Optional keystroke→screen latency probe (off unless HMUX_LATENCY is set).
-    // It times the wholly in-daemon path so the user can tell hmux-side latency
-    // apart from network lag; see `latmon`.
-    let mut latmon = LatMon::new(format!("sess={target}"));
 
     // Main attach loop.
     loop {
-        if let Some(new_session_id) = switch_to.take() {
-            session_id = new_session_id;
-            stable_target = format!("${session_id}");
-            attached_context.current_session_id = Some(session_id);
-            let target = stable_target.as_str();
-            if let Ok(mut st) = state.lock() {
-                status_h = status::height(&st, target);
-                pane_rows = rows.saturating_sub(status_h).max(1);
-                let _ = st.resize_session(target, cols, pane_rows);
-                status_timer.configure(status::interval(&st, target), Instant::now());
-            }
-            status_cache.invalidate();
-            last_render.clear();
-            force_clear = true;
-        }
-        let target = stable_target.as_str();
-        if should_exit {
-            break;
-        }
-
-        // Reap pty children before waiting for more client traffic. With
-        // remain-on-exit off (the default), an exited last pane removes its
-        // window and session; an empty server also requests listener shutdown.
-        let target_exists = match state.lock() {
-            Ok(mut st) => {
-                if st.reap_exited_panes() {
-                    let _ = st.resize_session(target, cols, pane_rows);
-                    last_render.clear();
-                    force_clear = true;
-                    status_cache.invalidate();
-                }
-                st.find(target).is_some()
-            }
-            Err(_) => false,
+        let ready = match session.prepare_wait(state, imsg_fd, reader.has_buffered_frame())? {
+            AttachPrepared::Ready(ready) => ready,
+            AttachPrepared::Wait { sources, timeout } => waiter.wait(sources, timeout)?,
+            AttachPrepared::Finished => break,
         };
-        if !target_exists {
-            session_ended = true;
-            break;
+        match session.drive_ready(state, hub, ready, reader, writer)? {
+            AttachDrive::Continue => continue,
+            AttachDrive::Finished => break,
         }
-
-        // Reaping an exited pane can select a survivor without going through
-        // the prefix-key path. Refresh before blocking so the next output wake
-        // always belongs to the pane we are about to compose.
-        if refresh_active_window_output_subscription(
-            state,
-            target,
-            &mut subscribed_window,
-            &mut output_subscription,
-        )? {
-            last_render.clear();
-            force_clear = true;
-            status_cache.invalidate();
-        }
-
-        let now = Instant::now();
-        let poll_timeout = minimum_poll_timeout(
-            status_timer.poll_timeout(now),
-            deadline_poll_timeout(status_message.as_ref().map(|(_, deadline)| *deadline), now),
-        );
-        let poll_timeout = minimum_poll_timeout(
-            poll_timeout,
-            active_overlay
-                .as_ref()
-                .map(|overlay| overlay.poll_timeout(now))
-                .unwrap_or_else(|| {
-                    if state.lock().ok().is_some_and(|st| {
-                        st.active_mode_view(target)
-                            .is_some_and(|view| view.kind == ModeKind::Clock)
-                    }) {
-                        1000
-                    } else {
-                        -1
-                    }
-                }),
-        );
-        let (control_ready, mut output_ready, prompt_ready, render_ready, agent_status_ready) =
-            if reader.has_buffered_frame() {
-                (true, false, false, false, false)
-            } else {
-                wait_for_attach_events(
-                    imsg_fd,
-                    if locked || suspended {
-                        -1
-                    } else {
-                        input_fd_owned.as_raw_fd()
-                    },
-                    if locked || suspended {
-                        -1
-                    } else {
-                        output_subscription.as_raw_fd()
-                    },
-                    if locked || suspended {
-                        -1
-                    } else {
-                        prompt_attachment.as_raw_fd()
-                    },
-                    render_attachment.as_raw_fd(),
-                    agent_status_subscription.as_raw_fd(),
-                    poll_timeout,
-                )?
-            };
-        let now = Instant::now();
-        let agent_status_changed = if agent_status_ready {
-            agent_status_subscription.drain();
-            status_cache.update_agents(hub.snapshot())
-        } else {
-            false
-        };
-        let status_timer_ready = status_timer.take_expired(now);
-        let overlay_tick = active_overlay.is_some();
-        let mut overlay_exit = 0;
-        let overlay_expired = match active_overlay.as_mut() {
-            Some(ActiveOverlay::DisplayPanes { deadline, .. }) => *deadline <= now,
-            Some(ActiveOverlay::Popup {
-                request,
-                pane,
-                exit_status,
-                ..
-            }) => {
-                if pane.has_exited() {
-                    if exit_status.is_none() {
-                        *exit_status = pane.try_wait();
-                    }
-                    if let Some(exit) = *exit_status {
-                        overlay_exit = exit;
-                        request.close_on_exit || (request.close_on_success && exit == 0)
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        };
-        if overlay_expired {
-            if let Some(mut overlay) = active_overlay.take() {
-                let mut result = command::CommandResult::ok("");
-                result.exit = overlay_exit;
-                overlay.complete(result, false);
-            }
-            last_render.clear();
-            force_clear = true;
-        }
-        let message_expired = status_message
-            .as_ref()
-            .is_some_and(|(_, deadline)| *deadline <= now);
-        if message_expired {
-            status_message = None;
-            last_render.clear();
-        }
-        if status_timer_ready {
-            status_cache.invalidate();
-        }
-        let render_invalidation = if render_ready {
-            render_attachment.take()
-        } else {
-            super::state::RenderInvalidation::default()
-        };
-        if render_ready {
-            for message in render_attachment.take_messages() {
-                status_message = Some((
-                    message.text,
-                    Instant::now() + Duration::from_millis(message.duration_ms),
-                ));
-                confirm = None;
-                last_render.clear();
-                force_clear = true;
-            }
-            if let Some(action) = render_attachment.take_action() {
-                match action {
-                    ClientAction::Lock(command) if !locked => {
-                        let stop = tty_stop_sequence(&terminal, rows);
-                        let _ = write_all(render_fd_owned.as_raw_fd(), &stop);
-                        output_cursor_visible = None;
-                        if let Some(ref saved) = saved_termios {
-                            restore_termios(input_fd_owned.as_raw_fd(), saved);
-                        }
-                        writer.send(Frame::new(Message::Lock(command)))?;
-                        locked = true;
-                        last_render.clear();
-                        force_clear = true;
-                    }
-                    ClientAction::Suspend if !suspended => {
-                        let stop = tty_stop_sequence(&terminal, rows);
-                        let _ = write_all(render_fd_owned.as_raw_fd(), &stop);
-                        output_cursor_visible = None;
-                        if let Some(ref saved) = saved_termios {
-                            restore_termios(input_fd_owned.as_raw_fd(), saved);
-                        }
-                        writer.send(Frame::new(Message::Suspend))?;
-                        suspended = true;
-                        last_render.clear();
-                        force_clear = true;
-                    }
-                    ClientAction::Detach => {
-                        detach_requested = true;
-                        break;
-                    }
-                    ClientAction::Switch(new_session_id) => {
-                        switch_to = Some(new_session_id);
-                        continue;
-                    }
-                    ClientAction::Keys(keys) if !locked && !suspended => {
-                        injected_input.extend(keys);
-                    }
-                    ClientAction::SetSelection(data) => {
-                        let encoded = base64_encode(&data);
-                        if let Some(sequence) = term::expand_capability(
-                            &terminal,
-                            "Ms",
-                            &[
-                                term::CapabilityParameter::String(""),
-                                term::CapabilityParameter::String(&encoded),
-                            ],
-                        ) {
-                            let _ = write_all(render_fd_owned.as_raw_fd(), &sequence);
-                        }
-                    }
-                    ClientAction::Overlay { request, reply } => {
-                        if matches!(request, OverlayRequest::Clear) {
-                            if let Some(mut overlay) = active_overlay.take() {
-                                overlay.complete(command::CommandResult::ok(""), false);
-                            }
-                            if let Some(reply) = reply {
-                                let _ = reply.send(super::state::PromptCompletion {
-                                    stdout: String::new(),
-                                    stderr: String::new(),
-                                    exit: 0,
-                                    inserted: false,
-                                });
-                            }
-                        } else if active_overlay.is_some() {
-                            if let Some(reply) = reply {
-                                let _ = reply.send(super::state::PromptCompletion {
-                                    stdout: String::new(),
-                                    stderr: String::new(),
-                                    exit: 0,
-                                    inserted: false,
-                                });
-                            }
-                        } else {
-                            active_overlay =
-                                ActiveOverlay::from_request(request, reply, cols, rows)
-                                    .ok()
-                                    .flatten();
-                        }
-                        last_render.clear();
-                        force_clear = true;
-                    }
-                    ClientAction::Confirm {
-                        prompt,
-                        command,
-                        confirm_key,
-                        default_yes,
-                        reply,
-                    } => {
-                        confirm = Some(ActiveConfirm {
-                            prompt,
-                            action: ConfirmAction::Command(command),
-                            confirm_key,
-                            default_yes,
-                            reply,
-                        });
-                        last_render.clear();
-                        force_clear = true;
-                    }
-                    ClientAction::Lock(_) => {}
-                    ClientAction::Suspend => {}
-                    ClientAction::Keys(_) => {}
-                }
-            }
-        }
-        if render_invalidation.contains(super::state::RenderInvalidation::SESSION_GONE) {
-            session_ended = true;
-            break;
-        }
-        if !render_invalidation.is_empty() {
-            status_cache.invalidate();
-        }
-        if render_invalidation.contains(super::state::RenderInvalidation::RESET_MODE)
-            || render_invalidation.contains(super::state::RenderInvalidation::MODE)
-        {
-            last_render.clear();
-        }
-        if render_invalidation.contains(super::state::RenderInvalidation::STATUS) {
-            let mut st = state
-                .lock()
-                .map_err(|_| io::Error::other("state poisoned"))?;
-            if render_invalidation.contains(super::state::RenderInvalidation::TERMINAL) {
-                terminal.refresh(st.server_options().iter_effective());
-                render_attachment.update_terminal(&terminal);
-            }
-            status_timer.configure(status::interval(&st, target), Instant::now());
-            let new_status_h = status::height(&st, target);
-            if new_status_h != status_h {
-                status_h = new_status_h;
-                pane_rows = rows.saturating_sub(status_h).max(1);
-                let _ = st.resize_session(target, cols, pane_rows);
-                last_render.clear();
-                force_clear = true;
-            }
-        }
-        if prompt_ready && command_prompt.is_none() {
-            if let Some(external) = prompt_attachment.take_command_prompt() {
-                let args = external.args().to_vec();
-                match CommandPrompt::new(args, Some(external), state, hub, &attached_context) {
-                    Ok(mut prompt) => {
-                        if !prompt.spec.no_freeze {
-                            prompt.frozen_frame = Some(last_render.clone());
-                        }
-                        prompt.initial_incremental(state, hub, &attached_context);
-                        command_prompt = Some(prompt);
-                    }
-                    Err(_) => {}
-                }
-                last_render.clear();
-            }
-        }
-        // An external command connection may switch windows while this thread
-        // is blocked in poll. Tty input or an old-pane notification wakes us;
-        // replace the stale subscription before attributing output or sending
-        // that input to the newly active pane.
-        if refresh_active_window_output_subscription(
-            state,
-            target,
-            &mut subscribed_window,
-            &mut output_subscription,
-        )? {
-            output_ready = false;
-            last_render.clear();
-            force_clear = true;
-            status_cache.invalidate();
-        }
-        if output_ready {
-            output_subscription.drain();
-            status_cache.invalidate();
-            // If this wake came from the active pane, mark its latest output so
-            // the upcoming compose is timed against the keystroke that caused
-            // it. Background-pane wakes have no newer active timestamp.
-            latmon.on_output(output_subscription.last_output_at());
-        }
-
-        // 1. Handle imsg control messages (resize, detach) when poll says that
-        // reading cannot block.
-        if control_ready {
-            match reader.recv() {
-                Ok(frame) => {
-                    if frame.version != PROTOCOL_VERSION {
-                        let _ = writer.send(Frame::new(Message::Version));
-                        break;
-                    }
-                    match frame.msg {
-                        Message::Resize => {
-                            if let Ok((new_cols, new_rows)) =
-                                get_winsize(render_fd_owned.as_raw_fd())
-                            {
-                                if new_cols != cols || new_rows != rows {
-                                    cols = new_cols;
-                                    rows = new_rows;
-                                    if let Some(overlay) = active_overlay.as_mut() {
-                                        overlay.resize(cols, rows);
-                                    }
-                                    render_attachment.update_size(cols, rows);
-                                    if let Ok(mut st) = state.lock() {
-                                        status_h = status::height(&st, target);
-                                        pane_rows = rows.saturating_sub(status_h).max(1);
-                                        let _ = st.resize_session(target, cols, pane_rows);
-                                    }
-                                    // Force a full re-render on resize: dimensions
-                                    // changed, so clear once to drop any stale cells.
-                                    last_render.clear();
-                                    force_clear = true;
-                                    status_cache.invalidate();
-                                }
-                            }
-                        }
-                        Message::Unlock if locked => {
-                            let _ = make_raw(input_fd_owned.as_raw_fd());
-                            let start = tty_start_sequence(&terminal);
-                            let _ = write_all(render_fd_owned.as_raw_fd(), &start);
-                            output_cursor_visible = None;
-                            if state.lock().ok().is_some_and(|st| {
-                                st.option_for_target(target, "mouse") == Some("on")
-                            }) {
-                                let _ = write_all(
-                                    render_fd_owned.as_raw_fd(),
-                                    b"\x1b[?1000h\x1b[?1002h\x1b[?1006h",
-                                );
-                            }
-                            locked = false;
-                            last_render.clear();
-                            force_clear = true;
-                            status_cache.invalidate();
-                        }
-                        Message::Wakeup if suspended => {
-                            let _ = make_raw(input_fd_owned.as_raw_fd());
-                            let start = tty_start_sequence(&terminal);
-                            let _ = write_all(render_fd_owned.as_raw_fd(), &start);
-                            output_cursor_visible = None;
-                            if state.lock().ok().is_some_and(|st| {
-                                st.option_for_target(target, "mouse") == Some("on")
-                            }) {
-                                let _ = write_all(
-                                    render_fd_owned.as_raw_fd(),
-                                    b"\x1b[?1000h\x1b[?1002h\x1b[?1006h",
-                                );
-                            }
-                            suspended = false;
-                            last_render.clear();
-                            force_clear = true;
-                            status_cache.invalidate();
-                        }
-                        Message::Detach(_) | Message::DetachKill(_) => {
-                            // A server-driven detach (rare on the inbound path): run
-                            // the graceful handshake below, like a `C-b d` detach.
-                            detach_requested = true;
-                            break;
-                        }
-                        Message::Exit(_) | Message::Shutdown => {
-                            break;
-                        }
-                        _ => {
-                            // Ignore other control frames while attached.
-                        }
-                    }
-                }
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
-                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                    break;
-                }
-                Err(_) => {
-                    // Treat as detach on error.
-                    break;
-                }
-            }
-        }
-
-        if locked || suspended {
-            continue;
-        }
-
-        // 2. Relay terminal queries which Ghostty consumed from pane output.
-        //    The outer terminal's reply is read immediately below and forwarded
-        //    through the ordinary pane-input path. In particular, Neovim sends
-        //    an OSC 11 default-background request followed by a CSI 5n status
-        //    request; it needs both the RGB and CSI 0n replies.
-        let terminal_queries = state
-            .lock()
-            .ok()
-            .and_then(|st| st.take_active_pane_terminal_queries(target).ok())
-            .unwrap_or_default();
-        for query in terminal_queries {
-            let _ = write_all(render_fd_owned.as_raw_fd(), &query);
-        }
-
-        // 3. Read input from client tty, interpreting tmux's prefix key table
-        //    and forwarding everything else to the active pane.
-        let mut input_buf = [0u8; 1024];
-        let mut force_render = false;
-        // Bytes forwarded to the pane's pty this iteration (real keystrokes, not
-        // prefix-table navigation), used to stamp keystroke latency below.
-        let mut forwarded = PaneInputStats::default();
-        let mut first_forward_at = None;
-        // Keep plain bytes across immediately adjacent tty reads. Besides
-        // reducing PTY writes, this preserves compound terminal replies such as
-        // OSC 11 followed by CSI 0n when they straddle read boundaries.
-        let mut forward_buf: Vec<u8> = Vec::with_capacity(input_buf.len());
-        // A key prompt may consume only the front logical key from a tty read.
-        // Replay its suffix through this same loop so prefix/copy/passthrough
-        // handling remains identical to input received by a later read.
-        let mut replay_input = Vec::new();
-        let mut replay_forward_unbound = true;
-        let mut waited_for_terminal_reply_tail = false;
-        loop {
-            let (replayed, forward_unbound) = if replay_input.is_empty() {
-                if let Some(key) = injected_input.pop_front() {
-                    (key.bytes, key.forward_unbound)
-                } else {
-                    (Vec::new(), true)
-                }
-            } else {
-                (std::mem::take(&mut replay_input), replay_forward_unbound)
-            };
-            let n = if replayed.is_empty() {
-                unsafe {
-                    libc::read(
-                        input_fd_owned.as_raw_fd(),
-                        input_buf.as_mut_ptr() as *mut libc::c_void,
-                        input_buf.len(),
-                    )
-                }
-            } else {
-                replayed.len() as isize
-            };
-            if n < 0 {
-                let err = io::Error::last_os_error();
-                if err.kind() == io::ErrorKind::WouldBlock {
-                    if command_prompt
-                        .as_ref()
-                        .is_some_and(|prompt| prompt.spec.key)
-                        && !key_prompt_buf.is_empty()
-                    {
-                        let decoded = decode_prompt_key(&key_prompt_buf);
-                        let could_be_terminal_key = decoded.is_none()
-                            && key_prompt_buf.starts_with(b"\x1b")
-                            && matches!(key_prompt_buf.get(1), Some(b'[' | b'O'));
-                        if could_be_terminal_key {
-                            let deadline = *key_prompt_deadline
-                                .get_or_insert_with(|| Instant::now() + prompt_escape_delay(state));
-                            if poll_input_until(input_fd_owned.as_raw_fd(), deadline) {
-                                continue;
-                            }
-                        }
-                        let decoded = decoded.or_else(|| {
-                            (key_prompt_buf.len() >= 2 && key_prompt_buf[0] == 0x1b)
-                                .then(|| (meta_prompt_key(key_prompt_buf[1]), 2))
-                        });
-                        if let Some((key, consumed)) = decoded {
-                            handle_command_prompt_key(
-                                &mut command_prompt,
-                                &key,
-                                state,
-                                hub,
-                                &attached_context,
-                            );
-                            replay_input.extend_from_slice(&key_prompt_buf[consumed..]);
-                            replay_forward_unbound = forward_unbound;
-                            key_prompt_buf.clear();
-                            key_prompt_deadline = None;
-                            force_render = true;
-                            if !replay_input.is_empty() {
-                                continue;
-                            }
-                        }
-                    }
-                    let is_partial_terminal_reply = forward_buf.starts_with(b"\x1b]")
-                        && !forward_buf.windows(4).any(|bytes| bytes == b"\x1b[0n");
-                    if is_partial_terminal_reply && !waited_for_terminal_reply_tail {
-                        waited_for_terminal_reply_tail = true;
-                        let mut pfd = libc::pollfd {
-                            fd: input_fd_owned.as_raw_fd(),
-                            events: libc::POLLIN,
-                            revents: 0,
-                        };
-                        if unsafe { libc::poll(&mut pfd, 1, 2) } > 0 {
-                            continue;
-                        }
-                    }
-                    break;
-                } else {
-                    should_exit = true;
-                    break;
-                }
-            } else if n == 0 {
-                // EOF on tty: client closed.
-                should_exit = true;
-                break;
-            }
-
-            // Feed the chunk through the prefix state machine byte by byte. Plain
-            // bytes are buffered and flushed to the active pane in order; a prefix
-            // (`Ctrl-b`) consumes the next byte as a key-table command. The
-            // `prefix_pending` flag lives outside the read loop, so a prefix at
-            // the end of one chunk pairs with the command key in the next one —
-            // exactly how a user types `C-b` then `c`.
-            let read_data = if replayed.is_empty() {
-                &input_buf[..n as usize]
-            } else {
-                replayed.as_slice()
-            };
-            prompt_attachment.note_activity();
-            let mut prompt_tail = None;
-            if command_prompt
-                .as_ref()
-                .is_some_and(|prompt| prompt.spec.key)
-            {
-                key_prompt_buf.extend_from_slice(read_data);
-                if let Some((key, consumed)) = decode_prompt_key(&key_prompt_buf) {
-                    handle_command_prompt_key(
-                        &mut command_prompt,
-                        &key,
-                        state,
-                        hub,
-                        &attached_context,
-                    );
-                    prompt_tail = Some(key_prompt_buf[consumed..].to_vec());
-                    key_prompt_buf.clear();
-                    key_prompt_deadline = None;
-                    force_render = true;
-                } else if key_prompt_buf.starts_with(b"\x1b")
-                    && matches!(key_prompt_buf.get(1), Some(b'[' | b'O'))
-                    && key_prompt_deadline.is_none()
-                {
-                    key_prompt_deadline = Some(Instant::now() + prompt_escape_delay(state));
-                }
-                if prompt_tail.as_ref().is_none_or(Vec::is_empty) {
-                    continue;
-                }
-            }
-            let data = prompt_tail.as_deref().unwrap_or(read_data);
-            key_prompt_buf.clear();
-            key_prompt_deadline = None;
-            let mut i = 0;
-            while i < data.len() {
-                if active_overlay.is_some() {
-                    let start = i;
-                    let (decoded, consumed) = decode_tty_key(&data[i..]).unwrap_or_else(|| {
-                        (
-                            DecodedTtyKey {
-                                name: plain_prompt_key(data[i]),
-                                code: Some(key_from_byte(data[i])),
-                                mouse: None,
-                            },
-                            1,
-                        )
-                    });
-                    i += consumed;
-                    let mut close = false;
-                    let mut close_exit = 0;
-                    let mut selected_command = None;
-                    match active_overlay.as_mut().expect("overlay checked") {
-                        ActiveOverlay::Menu {
-                            request, selected, ..
-                        } => match decoded.name.as_str() {
-                            "q" | "Escape" | "C-c" => close = true,
-                            "Up" | "k" => *selected = selected.saturating_sub(1),
-                            "Down" | "j" => {
-                                *selected =
-                                    (*selected + 1).min(request.items.len().saturating_sub(1))
-                            }
-                            "Enter" => {
-                                selected_command = request
-                                    .items
-                                    .get(*selected)
-                                    .map(|item| item.command.clone());
-                                close = true;
-                            }
-                            key => {
-                                if let Some(item) =
-                                    request.items.iter().find(|item| item.key == key)
-                                {
-                                    selected_command = Some(item.command.clone());
-                                    close = true;
-                                }
-                            }
-                        },
-                        ActiveOverlay::Popup {
-                            request,
-                            pane,
-                            exit_status,
-                            ..
-                        } => {
-                            if exit_status.is_some()
-                                || request.close_on_key
-                                || ((decoded.name == "Escape" || decoded.name == "C-c")
-                                    && !request.close_on_exit
-                                    && !request.close_on_success)
-                            {
-                                close = true;
-                                close_exit = (*exit_status).unwrap_or(129);
-                            } else {
-                                let _ = pane.input(&data[start..i]);
-                            }
-                        }
-                        ActiveOverlay::DisplayPanes {
-                            command,
-                            accept_input,
-                            ..
-                        } => {
-                            if !*accept_input {
-                                close = true;
-                            } else if matches!(decoded.name.as_str(), "Escape" | "q" | "C-c") {
-                                close = true;
-                            } else if let Some(index) = decoded
-                                .name
-                                .chars()
-                                .next()
-                                .filter(|_| decoded.name.chars().count() == 1)
-                                .and_then(|value| value.to_digit(10))
-                            {
-                                let pane_id = state.lock().ok().and_then(|st| {
-                                    st.active_window_panes(target)
-                                        .ok()
-                                        .and_then(|(window, _)| window.panes.get(index as usize))
-                                        .map(|pane| pane.id)
-                                });
-                                if let Some(pane_id) = pane_id {
-                                    let source = if command.is_empty() {
-                                        vec![
-                                            "select-pane".to_string(),
-                                            "-t".to_string(),
-                                            format!("%{pane_id}"),
-                                        ]
-                                    } else {
-                                        command
-                                            .iter()
-                                            .map(|word| word.replace("%%", &format!("%{pane_id}")))
-                                            .collect()
-                                    };
-                                    selected_command = Some(source);
-                                    close = true;
-                                }
-                            }
-                        }
-                    }
-                    let inserted = selected_command
-                        .as_ref()
-                        .is_some_and(|command| !command.is_empty());
-                    let result = if let Some(command) =
-                        selected_command.filter(|command| !command.is_empty())
-                    {
-                        let agents = hub.snapshot().panes;
-                        Some(command::run_with_context(
-                            &command,
-                            state,
-                            &agents,
-                            &attached_context,
-                        ))
-                    } else if close {
-                        Some(if close_exit == 0 {
-                            command::CommandResult::ok("")
-                        } else {
-                            let mut result = command::CommandResult::err("");
-                            result.exit = close_exit;
-                            result
-                        })
-                    } else {
-                        None
-                    };
-                    if close {
-                        if let Some(mut overlay) = active_overlay.take() {
-                            overlay.complete(
-                                result.unwrap_or_else(|| command::CommandResult::ok("")),
-                                inserted,
-                            );
-                        }
-                    }
-                    force_render = true;
-                    continue;
-                }
-                if let Some(prompt) = command_prompt.as_mut() {
-                    let (decoded, consumed) = decode_tty_key(&data[i..])
-                        .map(|(key, consumed)| (key.name, consumed))
-                        .unwrap_or_else(|| (plain_prompt_key(data[i]), 1));
-                    i += consumed;
-                    match prompt.handle_key(&decoded, state, hub, &attached_context) {
-                        CommandPromptInput::Continue => {}
-                        CommandPromptInput::Finish(result) => {
-                            let mut prompt = command_prompt.take().expect("command prompt checked");
-                            prompt.complete(&result, state, &attached_context);
-                        }
-                        CommandPromptInput::Cancel => {
-                            let mut prompt = command_prompt.take().expect("command prompt checked");
-                            prompt.cancel_external();
-                        }
-                    }
-                    force_render = true;
-                    continue;
-                }
-                if let Some(active) = confirm.take() {
-                    // A `confirm-before` prompt is up: this key answers it and is
-                    // consumed whole (so a multi-byte escape can't leak to the
-                    // pane). `y`/`Y` runs the guarded command; every other key
-                    // cancels, exactly like tmux's confirm callback.
-                    let (key, consumed) = read_key(&data[i..]);
-                    i += consumed;
-                    force_render = true;
-                    let accepted = matches!(key, Key::Byte(value) if value == active.confirm_key)
-                        || (key == Key::Enter && active.default_yes);
-                    let result = if accepted {
-                        match active.action {
-                            ConfirmAction::Command(command) => {
-                                let agents = hub.snapshot().panes;
-                                command::run_with_context(
-                                    &command,
-                                    state,
-                                    &agents,
-                                    &attached_context,
-                                )
-                            }
-                            action @ (ConfirmAction::KillPane | ConfirmAction::KillWindow) => {
-                                let killed = if let Ok(mut st) = state.lock() {
-                                    let killed = match action {
-                                        ConfirmAction::KillPane => st.kill_pane(target).is_ok(),
-                                        ConfirmAction::KillWindow => st.kill_window(target).is_ok(),
-                                        ConfirmAction::Command(_) => unreachable!(),
-                                    };
-                                    // A survivor window/pane inherits the client viewport,
-                                    // just like a layout-changing prefix key.
-                                    if killed && st.find(target).is_some() {
-                                        let _ = st.resize_session(target, cols, pane_rows);
-                                    }
-                                    killed
-                                } else {
-                                    false
-                                };
-                                if killed {
-                                    command::CommandResult::ok("")
-                                } else {
-                                    command::CommandResult::err("")
-                                }
-                            }
-                        }
-                    } else {
-                        command::CommandResult::err("")
-                    };
-                    if let Some(reply) = active.reply {
-                        let _ = reply.send(super::state::PromptCompletion {
-                            stdout: result.stdout,
-                            stderr: result.stderr,
-                            exit: result.exit,
-                            inserted: accepted,
-                        });
-                    }
-                    continue;
-                }
-                if state
-                    .lock()
-                    .ok()
-                    .is_some_and(|st| st.mode_view_active(target))
-                {
-                    let (decoded, consumed) = decode_tty_key(&data[i..]).unwrap_or_else(|| {
-                        (
-                            DecodedTtyKey {
-                                name: plain_prompt_key(data[i]),
-                                code: Some(key_from_byte(data[i])),
-                                mouse: None,
-                            },
-                            1,
-                        )
-                    });
-                    i += consumed;
-                    let outcome = state
-                        .lock()
-                        .ok()
-                        .and_then(|mut st| {
-                            st.mode_view_key(target, &decoded.name, pane_rows as usize)
-                                .ok()
-                        })
-                        .unwrap_or(ModeViewKeyResult::None);
-                    match outcome {
-                        ModeViewKeyResult::Command(command) if !command.is_empty() => {
-                            let agents = hub.snapshot().panes;
-                            let _ = command::run_with_context(
-                                &command,
-                                state,
-                                &agents,
-                                &attached_context,
-                            );
-                        }
-                        ModeViewKeyResult::Prompt(request) => {
-                            if let Ok(mut prompt) = CommandPrompt::for_mode(
-                                request,
-                                target,
-                                state,
-                                hub,
-                                &attached_context,
-                            ) {
-                                if !prompt.spec.no_freeze {
-                                    prompt.frozen_frame = Some(last_render.clone());
-                                }
-                                prompt.initial_incremental(state, hub, &attached_context);
-                                command_prompt = Some(prompt);
-                            }
-                        }
-                        ModeViewKeyResult::None | ModeViewKeyResult::Command(_) => {}
-                    }
-                    force_render = true;
-                    continue;
-                }
-                if prefix_pending {
-                    prefix_pending = false;
-                    // Flush any keystrokes typed before this command so the pane
-                    // sees them in order relative to a possible send-prefix byte.
-                    if !forward_buf.is_empty() {
-                        first_forward_at.get_or_insert_with(Instant::now);
-                        if let Ok(stats) = forward_input(state, target, &forward_buf) {
-                            add_input_stats(&mut forwarded, stats);
-                        }
-                        forward_buf.clear();
-                    }
-                    // The command key can be a multi-byte escape (e.g. PgUp), so
-                    // parse a logical key rather than taking one raw byte.
-                    let (key, mouse, consumed) = match decode_tty_key(&data[i..]) {
-                        Some((mut decoded, consumed)) => {
-                            resolve_mouse_key(
-                                &mut decoded,
-                                &mut mouse_input,
-                                state,
-                                target,
-                                cols,
-                                rows,
-                                &mut status_cache,
-                            );
-                            (decoded.code, decoded.mouse, consumed)
-                        }
-                        None => (Some(key_from_byte(data[i])), None, 1),
-                    };
-                    i += consumed;
-                    let Some(key) = key else {
-                        continue;
-                    };
-                    match dispatch_key_binding(
-                        "prefix",
-                        key,
-                        state,
-                        target,
-                        cols,
-                        pane_rows,
-                        hub,
-                        &attached_context,
-                        mouse,
-                    ) {
-                        PrefixOutcome::Detach => {
-                            detach_requested = true;
-                            should_exit = true;
-                            break;
-                        }
-                        PrefixOutcome::SendPrefix(bytes) => forward_buf.extend(bytes),
-                        PrefixOutcome::CopyMode {
-                            page_up,
-                            page_down,
-                            slider,
-                            mouse,
-                            begin_selection,
-                        } => {
-                            set_copy_mode_state(state, target, true, page_up);
-                            if let Some(mouse) = mouse {
-                                if let Ok(mut st) = state.lock() {
-                                    let vi = copy_mode_uses_vi_keys(&st, target);
-                                    let position = mouse.pane_position();
-                                    let _ = st.position_copy_cursor_from_mouse(
-                                        target, position.x, position.y, vi,
-                                    );
-                                    if slider {
-                                        let _ = st.set_copy_scroll_from_mouse(
-                                            target, position.y, pane_rows, vi,
-                                        );
-                                    }
-                                    if begin_selection {
-                                        let separators = st
-                                            .option_for_target(target, "word-separators")
-                                            .unwrap_or("")
-                                            .to_string();
-                                        let _ = st.copy_mode_command(
-                                            target,
-                                            "begin-selection",
-                                            vi,
-                                            &separators,
-                                        );
-                                    }
-                                }
-                            }
-                            if page_down {
-                                if let Ok(mut st) = state.lock() {
-                                    let vi = copy_mode_uses_vi_keys(&st, target);
-                                    let separators = st
-                                        .option_for_target(target, "word-separators")
-                                        .unwrap_or("")
-                                        .to_string();
-                                    let _ =
-                                        st.copy_mode_command(target, "page-down", vi, &separators);
-                                }
-                            }
-                            force_render = true;
-                        }
-                        PrefixOutcome::Confirm { prompt, action } => {
-                            confirm = Some(ActiveConfirm {
-                                prompt,
-                                action,
-                                confirm_key: b'y',
-                                default_yes: false,
-                                reply: None,
-                            });
-                            force_render = true;
-                        }
-                        PrefixOutcome::Prompt { args } => {
-                            if let Ok(mut prompt) =
-                                CommandPrompt::new(args, None, state, hub, &attached_context)
-                            {
-                                if !prompt.spec.no_freeze {
-                                    prompt.frozen_frame = Some(last_render.clone());
-                                }
-                                prompt.initial_incremental(state, hub, &attached_context);
-                                command_prompt = Some(prompt);
-                            }
-                            force_render = true;
-                        }
-                        PrefixOutcome::Message { text, duration } => {
-                            confirm = None;
-                            status_message = Some((
-                                text,
-                                Instant::now()
-                                    .checked_add(duration)
-                                    .unwrap_or_else(Instant::now),
-                            ));
-                            force_render = true;
-                        }
-                        PrefixOutcome::ViewOutput(bytes) => {
-                            append_view_output(state, target, &bytes);
-                            force_render = true;
-                        }
-                        PrefixOutcome::Handled { changed } => {
-                            if changed {
-                                force_render = true;
-                            }
-                        }
-                    }
-                    continue;
-                }
-                if copy_mode_active(state, target) {
-                    let (key, mouse, consumed) = match decode_tty_key(&data[i..]) {
-                        Some((mut decoded, consumed)) => {
-                            resolve_mouse_key(
-                                &mut decoded,
-                                &mut mouse_input,
-                                state,
-                                target,
-                                cols,
-                                rows,
-                                &mut status_cache,
-                            );
-                            (decoded.code, decoded.mouse, consumed)
-                        }
-                        None => (Some(key_from_byte(data[i])), None, 1),
-                    };
-                    i += consumed;
-                    let Some(key) = key else {
-                        continue;
-                    };
-                    if is_configured_prefix(state, target, key) {
-                        prefix_pending = true;
-                        continue;
-                    }
-                    let copy_table = copy_table_name(state, target);
-                    let table = state
-                        .lock()
-                        .ok()
-                        .filter(|st| st.key_binding(copy_table, key).is_none())
-                        .and_then(|st| st.key_binding("root", key).map(|_| "root"))
-                        .unwrap_or(copy_table);
-                    match dispatch_key_binding(
-                        table,
-                        key,
-                        state,
-                        target,
-                        cols,
-                        pane_rows,
-                        hub,
-                        &attached_context,
-                        mouse,
-                    ) {
-                        PrefixOutcome::Detach => {
-                            detach_requested = true;
-                            should_exit = true;
-                            break;
-                        }
-                        PrefixOutcome::SendPrefix(bytes) => forward_buf.extend(bytes),
-                        PrefixOutcome::CopyMode {
-                            page_up,
-                            page_down: _,
-                            slider: _,
-                            mouse: _,
-                            begin_selection: _,
-                        } => {
-                            set_copy_mode_state(state, target, true, page_up);
-                            force_render = true;
-                        }
-                        PrefixOutcome::Confirm { prompt, action } => {
-                            confirm = Some(ActiveConfirm {
-                                prompt,
-                                action,
-                                confirm_key: b'y',
-                                default_yes: false,
-                                reply: None,
-                            });
-                            force_render = true;
-                        }
-                        PrefixOutcome::Prompt { args } => {
-                            if let Ok(mut prompt) =
-                                CommandPrompt::new(args, None, state, hub, &attached_context)
-                            {
-                                if !prompt.spec.no_freeze {
-                                    prompt.frozen_frame = Some(last_render.clone());
-                                }
-                                prompt.initial_incremental(state, hub, &attached_context);
-                                command_prompt = Some(prompt);
-                            }
-                            force_render = true;
-                        }
-                        PrefixOutcome::Message { text, duration } => {
-                            confirm = None;
-                            status_message = Some((
-                                text,
-                                Instant::now()
-                                    .checked_add(duration)
-                                    .unwrap_or_else(Instant::now),
-                            ));
-                            force_render = true;
-                        }
-                        PrefixOutcome::ViewOutput(bytes) => {
-                            append_view_output(state, target, &bytes);
-                            force_render = true;
-                        }
-                        PrefixOutcome::Handled { changed } => {
-                            if changed {
-                                force_render = true;
-                            }
-                        }
-                    }
-                    continue;
-                }
-                // Normal passthrough: forward bytes verbatim (arrow keys, UTF-8,
-                // pastes, …), intercepting only the prefix key.
-                let start = i;
-                let (key, mouse, consumed) = match decode_tty_key(&data[i..]) {
-                    Some((mut decoded, consumed)) => {
-                        resolve_mouse_key(
-                            &mut decoded,
-                            &mut mouse_input,
-                            state,
-                            target,
-                            cols,
-                            rows,
-                            &mut status_cache,
-                        );
-                        (decoded.code, decoded.mouse, consumed)
-                    }
-                    None => (Some(key_from_byte(data[i])), None, 1),
-                };
-                i += consumed;
-                if key.is_some_and(|key| is_configured_prefix(state, target, key)) {
-                    // Flush what preceded the prefix, then await the command key.
-                    if !forward_buf.is_empty() {
-                        first_forward_at.get_or_insert_with(Instant::now);
-                        if let Ok(stats) = forward_input(state, target, &forward_buf) {
-                            add_input_stats(&mut forwarded, stats);
-                        }
-                        forward_buf.clear();
-                    }
-                    prefix_pending = true;
-                } else if key.is_some_and(|key| {
-                    let table = client_key_table(state, target);
-                    state
-                        .lock()
-                        .ok()
-                        .is_some_and(|st| st.key_binding(&table, key).is_some())
-                }) {
-                    if !forward_buf.is_empty() {
-                        first_forward_at.get_or_insert_with(Instant::now);
-                        if let Ok(stats) = forward_input(state, target, &forward_buf) {
-                            add_input_stats(&mut forwarded, stats);
-                        }
-                        forward_buf.clear();
-                    }
-                    let table = client_key_table(state, target);
-                    match dispatch_key_binding(
-                        &table,
-                        key.expect("checked root binding"),
-                        state,
-                        target,
-                        cols,
-                        pane_rows,
-                        hub,
-                        &attached_context,
-                        mouse,
-                    ) {
-                        PrefixOutcome::Detach => {
-                            detach_requested = true;
-                            should_exit = true;
-                            break;
-                        }
-                        PrefixOutcome::SendPrefix(bytes) => forward_buf.extend(bytes),
-                        PrefixOutcome::CopyMode {
-                            page_up,
-                            page_down,
-                            slider,
-                            mouse,
-                            begin_selection,
-                        } => {
-                            set_copy_mode_state(state, target, true, page_up);
-                            if let Some(mouse) = mouse {
-                                if let Ok(mut st) = state.lock() {
-                                    let vi = copy_mode_uses_vi_keys(&st, target);
-                                    let position = mouse.pane_position();
-                                    let _ = st.position_copy_cursor_from_mouse(
-                                        target, position.x, position.y, vi,
-                                    );
-                                    if slider {
-                                        let _ = st.set_copy_scroll_from_mouse(
-                                            target, position.y, pane_rows, vi,
-                                        );
-                                    }
-                                    if begin_selection {
-                                        let separators = st
-                                            .option_for_target(target, "word-separators")
-                                            .unwrap_or("")
-                                            .to_string();
-                                        let _ = st.copy_mode_command(
-                                            target,
-                                            "begin-selection",
-                                            vi,
-                                            &separators,
-                                        );
-                                    }
-                                }
-                            }
-                            if page_down {
-                                if let Ok(mut st) = state.lock() {
-                                    let vi = copy_mode_uses_vi_keys(&st, target);
-                                    let separators = st
-                                        .option_for_target(target, "word-separators")
-                                        .unwrap_or("")
-                                        .to_string();
-                                    let _ =
-                                        st.copy_mode_command(target, "page-down", vi, &separators);
-                                }
-                            }
-                            force_render = true;
-                        }
-                        PrefixOutcome::Confirm { prompt, action } => {
-                            confirm = Some(ActiveConfirm {
-                                prompt,
-                                action,
-                                confirm_key: b'y',
-                                default_yes: false,
-                                reply: None,
-                            });
-                            force_render = true;
-                        }
-                        PrefixOutcome::Prompt { args } => {
-                            if let Ok(mut prompt) =
-                                CommandPrompt::new(args, None, state, hub, &attached_context)
-                            {
-                                if !prompt.spec.no_freeze {
-                                    prompt.frozen_frame = Some(last_render.clone());
-                                }
-                                prompt.initial_incremental(state, hub, &attached_context);
-                                command_prompt = Some(prompt);
-                            }
-                            force_render = true;
-                        }
-                        PrefixOutcome::Message { text, duration } => {
-                            confirm = None;
-                            status_message = Some((
-                                text,
-                                Instant::now()
-                                    .checked_add(duration)
-                                    .unwrap_or_else(Instant::now),
-                            ));
-                            force_render = true;
-                        }
-                        PrefixOutcome::ViewOutput(bytes) => {
-                            append_view_output(state, target, &bytes);
-                            force_render = true;
-                        }
-                        PrefixOutcome::Handled { changed } => {
-                            if changed {
-                                force_render = true;
-                            }
-                        }
-                    }
-                } else if forward_unbound {
-                    forward_buf.extend_from_slice(&data[start..i]);
-                }
-            }
-            if should_exit {
-                break;
-            }
-        }
-        if !forward_buf.is_empty() {
-            first_forward_at.get_or_insert_with(Instant::now);
-            if let Ok(stats) = forward_input(state, target, &forward_buf) {
-                add_input_stats(&mut forwarded, stats);
-            }
-        }
-        // Start (or extend) the latency clock after offering this keystroke burst
-        // to the pane. The counters retain whether bytes reached the PTY now,
-        // remained queued, or were dropped; the output/render hooks close it out.
-        if forwarded.accepted() > 0 || forwarded.dropped > 0 {
-            latmon.on_input(
-                first_forward_at.unwrap_or_else(Instant::now),
-                forwarded.accepted(),
-                forwarded.queued,
-                forwarded.dropped,
-            );
-        }
-        if should_exit {
-            break;
-        }
-
-        // A prefix command changed the window/pane layout: drop the cached frame
-        // and force a full clear so the (possibly smaller) new active pane can't
-        // leave the previous pane's cells behind.
-        if force_render {
-            last_render.clear();
-            force_clear = true;
-            status_cache.invalidate();
-            let st = state
-                .lock()
-                .map_err(|_| io::Error::other("state poisoned"))?;
-            (subscribed_window, output_subscription) =
-                active_window_output_subscription(&st, target)?;
-        }
-
-        // 4. Render only when pane output or a layout/input action requests it.
-        let should_render = output_ready
-            || status_timer_ready
-            || agent_status_changed
-            || overlay_tick
-            || message_expired
-            || !render_invalidation.is_empty()
-            || last_render.is_empty();
-
-        if should_render {
-            let mut wrote_frame = false;
-            let mut large_scroll_repaint = false;
-            if let Ok(st) = state.lock() {
-                let title = terminal_title_update(
-                    &st,
-                    target,
-                    cols,
-                    rows,
-                    &mut status_cache,
-                    &terminal,
-                    &mut last_title,
-                );
-                if !title.is_empty() {
-                    let _ = write_all(render_fd_owned.as_raw_fd(), &title);
-                }
-                large_scroll_repaint =
-                    take_large_scroll_repaint(&st, target, cols, &terminal, &mut seen_large_scroll);
-            }
-            let frame = command_prompt
-                .as_ref()
-                .and_then(|prompt| prompt.frozen_frame.clone())
-                .map(Ok)
-                .unwrap_or_else(|| {
-                    let st = state.lock();
-                    match st {
-                        Ok(g) => compose_frame_cached(
-                            &g,
-                            target,
-                            cols,
-                            rows,
-                            status_h,
-                            0,
-                            &mut status_cache,
-                            &terminal,
-                        ),
-                        Err(_) => Err(io::Error::other("state poisoned")),
-                    }
-                });
-            if let Ok(mut frame) = frame {
-                if let Some(overlay) = active_overlay.as_ref() {
-                    if let Ok(st) = state.lock() {
-                        frame.extend_from_slice(&render_active_overlay(
-                            overlay, &st, target, cols, rows, &terminal,
-                        ));
-                    }
-                }
-                // Overlay a client prompt on the message line (tmux's last
-                // row). It is appended to the frame so the diff below repaints
-                // it, and its absence after completion redraws the status bar
-                // underneath.
-                if let Some(prompt) = command_prompt.as_ref() {
-                    if prompt.completion.is_some() {
-                        if let Ok(state) = state.lock() {
-                            frame.extend_from_slice(&render_prompt_completion(
-                                prompt, &state, target, cols, rows, status_h, &terminal,
-                            ));
-                        }
-                    }
-                    let (display, cursor, row, style, fill) = state
-                        .lock()
-                        .ok()
-                        .map(|st| {
-                            let (display, cursor) =
-                                prompt.formatted_display(&st, target, usize::from(cols));
-                            let line = st
-                                .option_for_target(target, "message-line")
-                                .and_then(|value| value.parse::<u16>().ok())
-                                .unwrap_or(0)
-                                .min(status_h.saturating_sub(1));
-                            let row =
-                                if st.option_for_target(target, "status-position") == Some("top") {
-                                    line + 1
-                                } else {
-                                    rows.saturating_sub(status_h).saturating_add(line) + 1
-                                };
-                            let (style_option, style_fallback) = if prompt.vi_command {
-                                ("message-command-style", "bg=black,fg=yellow,fill=black")
-                            } else {
-                                ("message-style", "bg=yellow,fg=black,fill=yellow")
-                            };
-                            let style_value = st
-                                .option_for_target(target, style_option)
-                                .unwrap_or(style_fallback);
-                            (
-                                display,
-                                cursor,
-                                row,
-                                style_value.to_string(),
-                                style_value
-                                    .split(',')
-                                    .any(|part| part.trim().starts_with("fill=")),
-                            )
-                        })
-                        .unwrap_or_else(|| {
-                            (
-                                prompt.display(),
-                                prompt.display_cursor(),
-                                rows,
-                                "bg=yellow,fg=black,fill=yellow".to_string(),
-                                true,
-                            )
-                        });
-                    let writable_cols = term::writable_width(&terminal, row, cols, rows) as u16;
-                    frame.extend_from_slice(&render_status_prompt_styled_at_row(
-                        &display,
-                        cursor,
-                        cols,
-                        writable_cols,
-                        row,
-                        &style,
-                        fill,
-                        &terminal,
-                    ));
-                } else if let Some(active) = &confirm {
-                    let prompt = &active.prompt;
-                    let (row, style, fill) = state
-                        .lock()
-                        .ok()
-                        .map(|st| {
-                            let visible_lines = status_h.max(1);
-                            let line = st
-                                .option_for_target(target, "message-line")
-                                .and_then(|value| value.parse::<u16>().ok())
-                                .unwrap_or(0)
-                                .min(visible_lines.saturating_sub(1));
-                            let row = if status_h == 0 {
-                                rows
-                            } else if status::at_top(&st, target) {
-                                line + 1
-                            } else {
-                                rows.saturating_sub(status_h).saturating_add(line) + 1
-                            };
-                            let value = st
-                                .option_for_target(target, "message-style")
-                                .unwrap_or("bg=yellow,fg=black,fill=yellow");
-                            (
-                                row,
-                                value.to_string(),
-                                value
-                                    .split(',')
-                                    .any(|part| part.trim().starts_with("fill=")),
-                            )
-                        })
-                        .unwrap_or_else(|| {
-                            (rows, "bg=yellow,fg=black,fill=yellow".to_string(), true)
-                        });
-                    let writable_cols = term::writable_width(&terminal, row, cols, rows) as u16;
-                    frame.extend_from_slice(&render_status_prompt_styled_at_row(
-                        prompt,
-                        prompt.chars().count(),
-                        cols,
-                        writable_cols,
-                        row,
-                        &style,
-                        fill,
-                        &terminal,
-                    ));
-                } else if let Some((message, _)) = status_message.as_ref() {
-                    let (row, rendered) = state
-                        .lock()
-                        .ok()
-                        .map(|st| {
-                            let visible_lines = status_h.max(1);
-                            let line = st
-                                .option_for_target(target, "message-line")
-                                .and_then(|value| value.parse::<u16>().ok())
-                                .unwrap_or(0)
-                                .min(visible_lines.saturating_sub(1));
-                            let row = if status_h == 0 {
-                                rows
-                            } else if status::at_top(&st, target) {
-                                line + 1
-                            } else {
-                                rows.saturating_sub(status_h).saturating_add(line) + 1
-                            };
-                            let writable = term::writable_width(&terminal, row, cols, rows);
-                            (
-                                row,
-                                status_cache.message_row(
-                                    &st, target, message, cols, rows, writable, &terminal,
-                                ),
-                            )
-                        })
-                        .unwrap_or_else(|| (rows, Vec::new()));
-                    frame.extend_from_slice(&render_status_message_row_at(
-                        row, &rendered, &terminal,
-                    ));
-                }
-                if frame != last_render || large_scroll_repaint {
-                    let (mut repaint, direct_cursor_safe) =
-                        if last_render.is_empty() || large_scroll_repaint {
-                            (frame.clone(), false)
-                        } else {
-                            let delta = diff_rendered_frame(&last_render, &frame);
-                            let direct_cursor_safe = delta.direct_cursor_safe();
-                            (delta.into_frame(), direct_cursor_safe)
-                        };
-                    // A first paint, resize, or layout change still needs one
-                    // full clear. Keep that control sequence out of `last_render`
-                    // so subsequent frames compare canonical compositor output.
-                    if force_clear {
-                        let mut cleared = Vec::with_capacity(repaint.len() + 8);
-                        cleared.extend_from_slice(b"\x1b[H\x1b[2J");
-                        cleared.extend_from_slice(&repaint);
-                        repaint = cleared;
-                    }
-
-                    // Commit multi-row repaint deltas atomically when possible.
-                    // Cursor-only changes and a bounded update ending on the
-                    // cursor row can be sent directly: they never march the
-                    // hardware cursor across unrelated rows. Larger
-                    // unsynchronized deltas get an
-                    // immediate hide/restore pair around only the dirty rows.
-                    let sync_start = term::expand_capability(
-                        &terminal,
-                        "Sync",
-                        &[term::CapabilityParameter::Number(1)],
-                    );
-                    let sync_end = term::expand_capability(
-                        &terminal,
-                        "Sync",
-                        &[term::CapabilityParameter::Number(2)],
-                    );
-                    if let (Some(sync_start), Some(sync_end)) = (sync_start, sync_end) {
-                        let output = suppress_redundant_cursor_visibility(
-                            &repaint,
-                            &mut output_cursor_visible,
-                        );
-                        let mut atomic_output =
-                            Vec::with_capacity(sync_start.len() + output.len() + sync_end.len());
-                        atomic_output.extend_from_slice(&sync_start);
-                        atomic_output.extend_from_slice(&output);
-                        atomic_output.extend_from_slice(&sync_end);
-                        let _ = write_all(render_fd_owned.as_raw_fd(), &atomic_output);
-                    } else if direct_cursor_safe && !force_clear {
-                        let output = suppress_redundant_cursor_visibility(
-                            &repaint,
-                            &mut output_cursor_visible,
-                        );
-                        let _ = write_all(render_fd_owned.as_raw_fd(), &output);
-                    } else {
-                        let output =
-                            guard_cursor_during_repaint(&repaint, &mut output_cursor_visible);
-                        let _ = write_all(render_fd_owned.as_raw_fd(), &output);
-                    }
-                    last_render = frame;
-                    force_clear = false;
-                    wrote_frame = true;
-                }
-            }
-            // Close the latency sample: a written frame is the keystroke's echo
-            // reaching the screen; an unchanged frame means this input drew
-            // nothing, so drop it rather than blame a later frame.
-            if wrote_frame {
-                latmon.on_render();
-            } else {
-                latmon.discard();
-            }
-        }
-    }
-
-    // Restore blocking mode and leave the outer tty using its capabilities.
-    let _ = set_blocking(input_fd_owned.as_raw_fd());
-    let _ = set_blocking(render_fd_owned.as_raw_fd());
-    let tty_stop = tty_stop_sequence(&terminal, rows);
-    let _ = write_all(render_fd_owned.as_raw_fd(), &tty_stop);
-    // Restore the client's original terminal mode (undo `make_raw`) *before* any
-    // detach/exit handshake, so those bytes reach a cooked tty. Then disarm the
-    // guard: the terminal is already restored, so its `drop` must not run again.
-    if let Some(ref t) = saved_termios {
-        restore_termios(input_fd_owned.as_raw_fd(), t);
-    }
-    termios_guard.disarm();
-
-    // If the user asked to detach (`C-b d`), run tmux's detach handshake so the
-    // client exits cleanly (status 0) and prints "[detached (from session
-    // <name>)]". We do this *after* the tty restore above so those sequences hit
-    // the terminal before the client's detach message. For any other exit (client
-    // EOF, read error, server shutdown) the connection is already tearing down,
-    // so there is nothing to hand shake — returning drops the socket and the
-    // client sees EOF, matching a lost/closed client.
-    if detach_requested {
-        let session_name = state
-            .lock()
-            .ok()
-            .and_then(|st| {
-                st.sessions()
-                    .iter()
-                    .find(|session| session.id == session_id)
-                    .map(|session| session.name.clone())
-            })
-            .unwrap_or_else(|| stable_target.clone());
-        let _ = detach_handshake(reader, writer, &session_name);
-    } else if session_ended {
-        let _ = exit_handshake(reader, writer);
     }
 
     Ok(())
@@ -5083,81 +6229,6 @@ fn terminal_title_update(
     output.extend_from_slice(title.as_bytes());
     output.extend_from_slice(finish);
     output
-}
-
-/// Complete a normal attached-client exit after its last pane is gone.
-///
-/// Real tmux sends MSG_EXIT(0), waits for MSG_EXITING, then sends MSG_EXITED.
-/// A plain EOF is not equivalent: the client reports "lost server" or remains
-/// blocked behind hmux's bidirectional pairing.
-fn exit_handshake<R, W>(reader: &mut R, writer: &mut W) -> io::Result<()>
-where
-    R: FrameReader,
-    W: FrameWriter,
-{
-    writer.send(Frame::new(Message::Exit(Some(0))))?;
-
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while Instant::now() < deadline {
-        match reader.recv() {
-            Ok(frame) => match frame.msg {
-                Message::Exiting | Message::Exit(_) => break,
-                _ => continue,
-            },
-            Err(e)
-                if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut =>
-            {
-                continue;
-            }
-            Err(_) => break,
-        }
-    }
-
-    writer.send(Frame::new(Message::Exited))?;
-    Ok(())
-}
-
-/// tmux's detach handshake (`server_client_check_exit`, `CLIENT_EXIT_DETACH`).
-///
-/// Sends `MSG_DETACH` carrying the session name, waits (bounded) for the client's
-/// `MSG_EXITING` acknowledgement, then sends `MSG_EXITED`. On receiving these the
-/// client leaves its event loop, prints `[detached (from session <name>)]`, and
-/// exits with status 0.
-///
-/// This is what makes native detach match stock tmux. Without it, the native
-/// server just returned, dropping only its half of the socketpair; hmux's
-/// pairing (`serve::pump`) keeps the *client* socket open on the other direction,
-/// so the client neither sees EOF nor a detach — it hangs attached. Even a clean
-/// EOF would only get the client to "lost server" (exit 1), never the detach
-/// message. The explicit handshake is required.
-fn detach_handshake<R, W>(reader: &mut R, writer: &mut W, session: &str) -> io::Result<()>
-where
-    R: FrameReader,
-    W: FrameWriter,
-{
-    writer.send(Frame::new(Message::Detach(Some(session.to_string()))))?;
-
-    // Wait for the client's MSG_EXITING before MSG_EXITED, as real tmux does. The
-    // imsg reader carries a short SO_RCVTIMEO (set for the attach loop), so poll
-    // until a deadline, tolerating timeouts; give up on EOF/error (client gone).
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while Instant::now() < deadline {
-        match reader.recv() {
-            Ok(frame) => match frame.msg {
-                Message::Exiting | Message::Exit(_) => break,
-                _ => continue, // late resize/other frames: ignore, keep waiting
-            },
-            Err(e)
-                if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut =>
-            {
-                continue;
-            }
-            Err(_) => break,
-        }
-    }
-
-    writer.send(Frame::new(Message::Exited))?;
-    Ok(())
 }
 
 /// Composite one full frame for the attached client: the active pane's grid in
@@ -6792,31 +7863,50 @@ fn forward_input(
     st.input_to_active_pane_with_stats(session, bytes)
 }
 
-fn write_all(fd: RawFd, mut data: &[u8]) -> io::Result<()> {
-    while !data.is_empty() {
-        let n = unsafe { libc::write(fd, data.as_ptr() as *const libc::c_void, data.len()) };
-        if n < 0 {
-            let e = io::Error::last_os_error();
-            if e.kind() == io::ErrorKind::Interrupted {
-                continue;
-            }
-            if e.kind() == io::ErrorKind::WouldBlock {
-                // For non-blocking tty, WouldBlock means buffer full; wait briefly.
-                std::thread::sleep(Duration::from_millis(1));
-                continue;
-            }
-            return Err(e);
-        }
-        data = &data[n as usize..];
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::pane::Pane;
     use super::super::state::PaneSpec;
     use super::*;
+    use std::io::Read as _;
+    use std::os::unix::net::UnixStream;
+
+    #[test]
+    fn tty_output_retains_a_bounded_suffix_until_writable() {
+        let (writer, mut reader) = UnixStream::pair().expect("socket pair");
+        writer.set_nonblocking(true).expect("nonblocking writer");
+        reader.set_nonblocking(true).expect("nonblocking reader");
+        let fd = writer.as_raw_fd();
+        let filler = [b'x'; 16 * 1024];
+        loop {
+            let written =
+                unsafe { libc::write(fd, filler.as_ptr() as *const libc::c_void, filler.len()) };
+            if written > 0 {
+                continue;
+            }
+            let error = io::Error::last_os_error();
+            assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+            break;
+        }
+
+        let mut output = TtyOutput::new();
+        output.queue(fd, b"tail").expect("queue tail");
+        assert!(output.has_pending());
+
+        let mut scratch = [0u8; 64 * 1024];
+        loop {
+            match reader.read(&mut scratch) {
+                Ok(0) => panic!("socket closed while draining filler"),
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                Err(error) => panic!("failed to drain filler: {error}"),
+            }
+        }
+        output.flush(fd).expect("flush tail");
+        assert!(!output.has_pending());
+        assert_eq!(reader.read(&mut scratch).expect("read tail"), 4);
+        assert_eq!(&scratch[..4], b"tail");
+    }
 
     #[test]
     fn prompt_clipping_ignores_style_directive_width() {
@@ -6893,9 +7983,21 @@ mod tests {
         let hub = StatusHub::new();
         let subscription = hub.subscribe().expect("subscribe");
         subscription.drain();
+        let sources = AttachWaitSources {
+            control: -1,
+            input: -1,
+            tty_output: -1,
+            output: -1,
+            output_generation: 0,
+            prompt: -1,
+            render: -1,
+            status: subscription.as_raw_fd(),
+            popup_read: -1,
+            popup_write: -1,
+        };
         assert_eq!(
-            wait_for_attach_events(-1, -1, -1, -1, -1, subscription.as_raw_fd(), 0).expect("poll"),
-            (false, false, false, false, false)
+            wait_for_attach_events(sources, 0).expect("poll"),
+            AttachWaitReady::default()
         );
 
         hub.publish(
@@ -6908,9 +8010,11 @@ mod tests {
             },
         );
         assert_eq!(
-            wait_for_attach_events(-1, -1, -1, -1, -1, subscription.as_raw_fd(), 100)
-                .expect("poll"),
-            (false, false, false, false, true)
+            wait_for_attach_events(sources, 100).expect("poll"),
+            AttachWaitReady {
+                status: true,
+                ..AttachWaitReady::default()
+            }
         );
     }
 
