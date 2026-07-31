@@ -4,12 +4,12 @@ use std::collections::VecDeque;
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd};
 
-use crate::common::actor::ActorRef;
 use crate::common::reactor::Token;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 use crate::tmux::message::Frame;
 use crate::tmux::traits::{NonblockingFrameReader, NonblockingFrameWriter};
 
+use super::actor::ActorRef;
 use super::driver::{Envelope, Outbox};
 
 /// Maximum decoded frames handled by one read event.

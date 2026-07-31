@@ -8,10 +8,10 @@ use signal_hook::consts::signal::SIGCHLD;
 use signal_hook::low_level::{pipe, unregister};
 use signal_hook::SigId;
 
-use crate::common::actor::ActorRef;
 use crate::common::reactor::Token;
 use crate::native::NativeServer;
 
+use super::actor::ActorRef;
 use super::driver::Outbox;
 
 pub(crate) enum ChildSignalEvent {

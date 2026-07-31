@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::rc::{Rc, Weak};
 
-/// Strong reference to actor state owned by a single-threaded event loop.
+/// Strong reference to actor state owned by the event-loop thread.
 pub(crate) struct ActorRef<A> {
     inner: Rc<ActorCell<A>>,
 }

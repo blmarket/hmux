@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crate::common::actor::ActorRef;
 use crate::common::reactor::WakeHandle;
 use crate::integration::status::StatusHub;
 use crate::native::command::{
@@ -13,6 +12,7 @@ use crate::native::command::{
 };
 use crate::native::state::ServerState;
 
+use super::actor::ActorRef;
 use super::driver::Outbox;
 
 const COMMAND_QUEUE_BUDGET: usize = 64;

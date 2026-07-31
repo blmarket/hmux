@@ -2,10 +2,10 @@
 
 use std::os::fd::BorrowedFd;
 
-use crate::common::actor::ActorRef;
 use crate::common::reactor::{Readiness, Token};
 use crate::native::pane::PaneIo;
 
+use super::actor::ActorRef;
 use super::driver::Outbox;
 
 pub(crate) enum PaneEvent {

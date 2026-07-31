@@ -7,7 +7,7 @@
 //! section (interactive terminal I/O bypasses this layer via a passed tty fd).
 //!
 //! Modules:
-//! - `common` — engine-agnostic event-loop building blocks.
+//! - `common` — engine-agnostic readiness infrastructure shared by runtimes.
 //! - [`event_loop`] — readiness-driven event-loop engine.
 //! - [`native`] — native libghostty-vt engine.
 //! - [`tmux`] — message layer, codec, server traits, and compatibility re-exports.
