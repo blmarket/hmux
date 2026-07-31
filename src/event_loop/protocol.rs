@@ -26,14 +26,13 @@ use crate::tmux::traits::NonblockingFrameWriter;
 use super::actor::ActorRef;
 use super::attach::{EventAttachClient, EventAttachSource};
 use super::client::READ_FRAME_BUDGET;
-use super::driver::{Outbox, PairingHandle};
+use super::driver::Outbox;
 use super::job::BackgroundCommands;
-use super::pairing::PairingCloseReason;
 use super::reactor::Token;
 use super::timer::TimerId;
 
 const CLIENT_CONTROL: i64 = 0x2000;
-const FALLBACK_QUEUE_LIMIT: usize = MAX_IMSGSIZE * 64;
+const IDENTIFY_LIMIT: usize = MAX_IMSGSIZE * 64;
 const FILE_STREAM: i32 = 3;
 const OUTPUT_CHUNK: usize = 8 * 1024;
 const COMMAND_QUEUE_BUDGET: usize = 64;
@@ -60,9 +59,8 @@ pub(crate) enum ProtocolCloseReason {
     PeerClosed,
     Error(io::ErrorKind),
     Shutdown,
-    PreludeExceedsQueueLimit,
+    IdentifyExceedsLimit,
     FrameExceedsQueueLimit,
-    Fallback(PairingCloseReason),
 }
 
 /// Events delivered to a protocol actor.
@@ -108,8 +106,6 @@ enum ProtocolMode {
     Direct,
     Control(Box<EventControlClient>),
     Attach(Box<EventAttachClient>),
-    HandingOff,
-    Fallback(PairingHandle),
 }
 
 enum DirectOperation {
@@ -139,19 +135,18 @@ enum DirectOperation {
     Responding(CommandResponse),
 }
 
-/// Direct command/control state plus an optional attach compatibility handoff.
+/// Event-loop-owned command, control-mode, and interactive-attach protocol state.
 pub(crate) struct ProtocolClient {
-    reader: Option<ImsgReader>,
-    writer: Option<NonblockingImsgWriter>,
-    server: NativeServer,
+    reader: ImsgReader,
+    writer: NonblockingImsgWriter,
     state: Arc<Mutex<ServerState>>,
     hub: StatusHub,
     background_commands: ActorRef<BackgroundCommands>,
     mode: ProtocolMode,
     context: ClientContext,
+    client_tty: ClientTty,
+    identify_bytes: usize,
     control_mode: bool,
-    prelude: VecDeque<Frame>,
-    prelude_bytes: usize,
     operation: DirectOperation,
     completion: Option<PendingCommand>,
     resumable_command: Option<ActiveResumableCommand>,
@@ -188,9 +183,8 @@ impl ProtocolClient {
         let hub = server.status_hub();
         (
             Self {
-                reader: Some(reader),
-                writer: Some(writer),
-                server,
+                reader,
+                writer,
                 state,
                 hub,
                 background_commands,
@@ -201,9 +195,9 @@ impl ProtocolClient {
                     defer_attach_commands: true,
                     ..ClientContext::default()
                 },
+                client_tty: ClientTty::new(),
+                identify_bytes: 0,
                 control_mode: false,
-                prelude: VecDeque::new(),
-                prelude_bytes: 0,
                 operation: DirectOperation::Idle,
                 completion: None,
                 resumable_command: None,
@@ -233,8 +227,8 @@ impl ProtocolClient {
 
     pub(crate) fn fd(&self, side: ProtocolIoSide) -> Option<BorrowedFd<'_>> {
         match side {
-            ProtocolIoSide::Read => self.reader.as_ref().map(AsFd::as_fd),
-            ProtocolIoSide::Write => self.writer.as_ref().map(AsFd::as_fd),
+            ProtocolIoSide::Read => Some(self.reader.as_fd()),
+            ProtocolIoSide::Write => Some(self.writer.as_fd()),
             ProtocolIoSide::Command => self.completion.as_ref().map(PendingCommand::fd),
             ProtocolIoSide::Status => self
                 .status_subscription
@@ -314,12 +308,6 @@ impl ProtocolClient {
     }
 
     pub(crate) fn mark_work_queued(&mut self, side: ProtocolIoSide) -> bool {
-        if matches!(
-            self.mode,
-            ProtocolMode::HandingOff | ProtocolMode::Fallback(_)
-        ) {
-            return false;
-        }
         if side == ProtocolIoSide::Read
             && (self.reads_paused
                 || self.attach_input_paused
@@ -328,21 +316,6 @@ impl ProtocolClient {
             return false;
         }
         self.work_queued.insert(side)
-    }
-
-    pub(crate) fn install_fallback(&mut self, pairing: PairingHandle) {
-        self.mode = ProtocolMode::Fallback(pairing);
-    }
-
-    pub(crate) fn is_active(&self) -> bool {
-        match &self.mode {
-            ProtocolMode::Fallback(pairing) => pairing.is_alive(),
-            ProtocolMode::Identifying
-            | ProtocolMode::Direct
-            | ProtocolMode::Control(_)
-            | ProtocolMode::Attach(_)
-            | ProtocolMode::HandingOff => true,
-        }
     }
 
     #[cfg(test)]
@@ -363,19 +336,8 @@ impl ProtocolClient {
         matches!(self.mode, ProtocolMode::Attach(_))
     }
 
-    #[cfg(test)]
-    pub(crate) fn is_fallback(&self) -> bool {
-        matches!(self.mode, ProtocolMode::Fallback(_))
-    }
-
     pub(crate) fn close_reason(&self) -> Option<ProtocolCloseReason> {
-        match &self.mode {
-            ProtocolMode::Fallback(pairing) => pairing
-                .status()
-                .close_reason()
-                .map(ProtocolCloseReason::Fallback),
-            _ => self.status.close_reason(),
-        }
+        self.status.close_reason()
     }
 
     pub(crate) fn handle(
@@ -459,17 +421,12 @@ impl ProtocolClient {
     }
 
     fn handle_readable(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
-        if self.reads_paused || self.reader.is_none() {
+        if self.reads_paused {
             return;
         }
 
         for _ in 0..READ_FRAME_BUDGET {
-            let frame = match self
-                .reader
-                .as_mut()
-                .expect("protocol reader disappeared")
-                .try_recv()
-            {
+            let frame = match self.reader.try_recv() {
                 Ok(frame) => frame,
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => return,
                 Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => {
@@ -484,7 +441,7 @@ impl ProtocolClient {
             log_frame(Direction::ClientToServer, &frame);
 
             if frame.version != PROTOCOL_VERSION {
-                self.prelude.clear();
+                self.client_tty = ClientTty::new();
                 self.operation = DirectOperation::Idle;
                 self.close_after_flush = true;
                 self.queue_frame(target, Frame::new(Message::Version), outbox);
@@ -499,10 +456,8 @@ impl ProtocolClient {
                     self.handle_control_protocol_frame(target, frame, outbox)
                 }
                 ProtocolMode::Attach(_) => self.handle_attach_protocol_frame(target, frame, outbox),
-                ProtocolMode::HandingOff | ProtocolMode::Fallback(_) => return,
             }
-            if self.reader.is_none()
-                || self.reads_paused
+            if self.reads_paused
                 || self.attach_input_paused
                 || self.close_after_flush
                 || matches!(self.operation, DirectOperation::WaitingStatus { .. })
@@ -514,8 +469,21 @@ impl ProtocolClient {
         self.schedule_read_continuation(target, outbox);
     }
 
-    fn handle_identifying(&mut self, target: &ActorRef<Self>, frame: Frame, outbox: &mut Outbox) {
-        self.observe_identify(&frame);
+    fn handle_identifying(
+        &mut self,
+        target: &ActorRef<Self>,
+        mut frame: Frame,
+        outbox: &mut Outbox,
+    ) {
+        if Self::is_identify_message(&frame.msg) {
+            let frame_bytes = encode_bytes(&frame).len();
+            if frame_bytes > IDENTIFY_LIMIT.saturating_sub(self.identify_bytes) {
+                self.close(target, ProtocolCloseReason::IdentifyExceedsLimit, outbox);
+                return;
+            }
+            self.identify_bytes += frame_bytes;
+        }
+        self.observe_identify(&mut frame);
         match &frame.msg {
             Message::Command(args) if self.control_mode => {
                 let args = args.clone();
@@ -525,60 +493,73 @@ impl ProtocolClient {
                 if !self.control_mode && command::classify(args) == command::Intent::Command =>
             {
                 let args = args.clone();
-                self.prelude.clear();
-                self.prelude_bytes = 0;
+                self.client_tty = ClientTty::new();
+                self.identify_bytes = 0;
                 self.mode = ProtocolMode::Direct;
                 self.begin_command(target, args, outbox);
             }
-            Message::Command(args) if !self.control_mode => {
+            Message::Command(args) => {
                 let args = args.clone();
                 self.begin_attach(target, args, outbox);
             }
-            Message::StatusWait { since } if !self.control_mode => {
-                self.prelude.clear();
-                self.prelude_bytes = 0;
+            Message::StatusWait { since } => {
+                self.client_tty = ClientTty::new();
+                self.identify_bytes = 0;
                 self.mode = ProtocolMode::Direct;
                 self.begin_status_wait(target, *since, outbox);
-            }
-            Message::Command(_) | Message::StatusWait { .. } => {
-                if self.push_prelude(frame).is_err() {
-                    self.close(
-                        target,
-                        ProtocolCloseReason::PreludeExceedsQueueLimit,
-                        outbox,
-                    );
-                    return;
-                }
-                self.begin_fallback(target, outbox);
             }
             Message::Detach(_) | Message::DetachKill(_) | Message::Exit(_) | Message::Shutdown => {
                 self.close(target, ProtocolCloseReason::Completed, outbox);
             }
-            _ => {
-                if self.push_prelude(frame).is_err() {
-                    self.close(
-                        target,
-                        ProtocolCloseReason::PreludeExceedsQueueLimit,
-                        outbox,
-                    );
-                }
-            }
+            _ => {}
         }
     }
 
-    fn observe_identify(&mut self, frame: &Frame) {
+    fn is_identify_message(message: &Message) -> bool {
+        matches!(
+            message,
+            Message::IdentifyFlags(_)
+                | Message::IdentifyLongFlags(_)
+                | Message::Flags(_)
+                | Message::IdentifyTerminfo(_)
+                | Message::IdentifyFeatures(_)
+                | Message::IdentifyTerm(_)
+                | Message::IdentifyTtyName(_)
+                | Message::IdentifyClientPid(_)
+                | Message::IdentifyCwd(_)
+                | Message::IdentifyEnviron(_)
+                | Message::IdentifyStdin
+                | Message::IdentifyStdout
+                | Message::IdentifyDone
+        )
+    }
+
+    fn observe_identify(&mut self, frame: &mut Frame) {
         match &frame.msg {
             Message::IdentifyFlags(flags) => {
                 self.control_mode |= i64::from(*flags) & CLIENT_CONTROL != 0;
+                self.client_tty.flags |= i64::from(*flags);
             }
             Message::IdentifyLongFlags(flags) | Message::Flags(flags) => {
                 self.control_mode |= *flags & CLIENT_CONTROL != 0;
+                self.client_tty.flags |= *flags;
+            }
+            Message::IdentifyTerminfo(capability) => {
+                self.client_tty.terminfo.push(capability.clone());
+            }
+            Message::IdentifyFeatures(features) => {
+                self.client_tty.features |= *features as u32;
+            }
+            Message::IdentifyTerm(term) => {
+                self.client_tty.term = Some(term.clone());
             }
             Message::IdentifyTtyName(tty_name) => {
                 self.context.tty_name = Some(tty_name.clone());
+                self.client_tty.tty_name = Some(tty_name.clone());
             }
             Message::IdentifyClientPid(pid) => {
                 self.context.client_pid = Some(*pid);
+                self.client_tty.client_pid = Some(*pid);
             }
             Message::IdentifyCwd(cwd) => {
                 self.context.cwd = Some(cwd.into());
@@ -586,18 +567,14 @@ impl ProtocolClient {
             Message::IdentifyEnviron(entry) => {
                 self.context.environment.push(entry.clone());
             }
+            Message::IdentifyStdin => {
+                self.client_tty.stdin = frame.fd.take();
+            }
+            Message::IdentifyStdout => {
+                self.client_tty.stdout = frame.fd.take();
+            }
             _ => {}
         }
-    }
-
-    fn push_prelude(&mut self, frame: Frame) -> Result<(), Frame> {
-        let frame_bytes = encode_bytes(&frame).len();
-        if frame_bytes > FALLBACK_QUEUE_LIMIT.saturating_sub(self.prelude_bytes) {
-            return Err(frame);
-        }
-        self.prelude_bytes += frame_bytes;
-        self.prelude.push_back(frame);
-        Ok(())
     }
 
     fn begin_control(&mut self, target: &ActorRef<Self>, args: Vec<String>, outbox: &mut Outbox) {
@@ -653,23 +630,8 @@ impl ProtocolClient {
     }
 
     fn take_client_tty(&mut self) -> ClientTty {
-        let mut tty = ClientTty::new();
-        while let Some(frame) = self.prelude.pop_front() {
-            match frame.msg {
-                Message::IdentifyFlags(flags) => tty.flags |= i64::from(flags),
-                Message::IdentifyLongFlags(flags) | Message::Flags(flags) => tty.flags |= flags,
-                Message::IdentifyTerminfo(capability) => tty.terminfo.push(capability),
-                Message::IdentifyFeatures(features) => tty.features |= features as u32,
-                Message::IdentifyTerm(term) => tty.term = Some(term),
-                Message::IdentifyTtyName(name) => tty.tty_name = Some(name),
-                Message::IdentifyClientPid(pid) => tty.client_pid = Some(pid),
-                Message::IdentifyStdin => tty.stdin = frame.fd,
-                Message::IdentifyStdout => tty.stdout = frame.fd,
-                _ => {}
-            }
-        }
-        self.prelude_bytes = 0;
-        tty
+        self.identify_bytes = 0;
+        std::mem::replace(&mut self.client_tty, ClientTty::new())
     }
 
     fn handle_control_protocol_frame(
@@ -850,13 +812,7 @@ impl ProtocolClient {
         self.attach_input_paused = !accepts_input;
         let read_enabled = !self.reads_paused && !self.attach_input_paused && !finished;
         outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, read_enabled);
-        if was_input_paused
-            && read_enabled
-            && self
-                .reader
-                .as_ref()
-                .is_some_and(ImsgReader::has_buffered_frame)
-        {
+        if was_input_paused && read_enabled && self.reader.has_buffered_frame() {
             self.schedule_read_continuation(target, outbox);
         }
 
@@ -886,40 +842,6 @@ impl ProtocolClient {
             self.close_after_flush = true;
         }
         self.drive_output(target, outbox);
-    }
-
-    fn begin_fallback(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
-        let (server_reader, mut server_writer) =
-            match self.server.connect_nonblocking(FALLBACK_QUEUE_LIMIT) {
-                Ok(connection) => connection,
-                Err(error) => {
-                    self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
-                    return;
-                }
-            };
-        while let Some(frame) = self.prelude.pop_front() {
-            if server_writer.try_queue(frame).is_err() {
-                self.close(
-                    target,
-                    ProtocolCloseReason::PreludeExceedsQueueLimit,
-                    outbox,
-                );
-                return;
-            }
-        }
-
-        let client_reader = self.reader.take().expect("protocol reader disappeared");
-        let client_writer = self.writer.take().expect("protocol writer disappeared");
-        self.mode = ProtocolMode::HandingOff;
-        outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, false);
-        outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Write, false);
-        outbox.handoff_protocol(
-            target.clone(),
-            client_reader,
-            client_writer,
-            server_reader,
-            server_writer,
-        );
     }
 
     fn begin_status_wait(&mut self, target: &ActorRef<Self>, since: u64, outbox: &mut Outbox) {
@@ -1152,11 +1074,7 @@ impl ProtocolClient {
                 );
                 if !self.reads_paused {
                     outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, true);
-                    if self
-                        .reader
-                        .as_ref()
-                        .is_some_and(ImsgReader::has_buffered_frame)
-                    {
+                    if self.reader.has_buffered_frame() {
                         self.schedule_read_continuation(target, outbox);
                     }
                 }
@@ -1350,11 +1268,7 @@ impl ProtocolClient {
             self.reads_paused = false;
             if !self.attach_input_paused {
                 outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, true);
-                if self
-                    .reader
-                    .as_ref()
-                    .is_some_and(ImsgReader::has_buffered_frame)
-                {
+                if self.reader.has_buffered_frame() {
                     self.schedule_read_continuation(target, outbox);
                 }
             }
@@ -1387,10 +1301,7 @@ impl ProtocolClient {
             self.reads_paused = true;
             outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, false);
         }
-        let pending = self
-            .writer
-            .as_ref()
-            .is_some_and(NonblockingImsgWriter::has_pending);
+        let pending = self.writer.has_pending();
         outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Write, pending);
         if self.close_after_flush && !pending {
             self.close(target, ProtocolCloseReason::Completed, outbox);
@@ -1398,19 +1309,12 @@ impl ProtocolClient {
     }
 
     fn writer_is_below_high_water(&self) -> bool {
-        self.writer
-            .as_ref()
-            .is_some_and(NonblockingImsgWriter::is_below_high_water)
+        self.writer.is_below_high_water()
     }
 
     fn queue_frame(&mut self, target: &ActorRef<Self>, frame: Frame, outbox: &mut Outbox) -> bool {
         log_frame(Direction::ServerToClient, &frame);
-        match self
-            .writer
-            .as_mut()
-            .expect("protocol writer disappeared")
-            .try_queue(frame)
-        {
+        match self.writer.try_queue(frame) {
             Ok(()) => {
                 outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Write, true);
                 if !self.writer_is_below_high_water() {
@@ -1427,12 +1331,7 @@ impl ProtocolClient {
     }
 
     fn handle_writable(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
-        match self
-            .writer
-            .as_mut()
-            .expect("protocol writer disappeared")
-            .try_flush()
-        {
+        match self.writer.try_flush() {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
             Err(error) => {
@@ -1457,12 +1356,6 @@ impl ProtocolClient {
     }
 
     fn close(&mut self, target: &ActorRef<Self>, reason: ProtocolCloseReason, outbox: &mut Outbox) {
-        if matches!(
-            self.mode,
-            ProtocolMode::HandingOff | ProtocolMode::Fallback(_)
-        ) {
-            return;
-        }
         self.status.close_reason.set(Some(reason));
         for side in [
             ProtocolIoSide::Read,

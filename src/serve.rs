@@ -1,10 +1,9 @@
 //! The hmux listener and per-connection protocol loops.
 //!
 //! The generic [`TmuxServer`] path retains its blocking compatibility pumps.
-//! The concrete event-loop path owns ordinary command and control-mode clients,
-//! interactive attach protocol routing, and pane PTY I/O. The generic path
-//! retains the compatibility pumps. Both paths tap frames for introspection and
-//! preserve attached `SCM_RIGHTS` descriptors.
+//! The concrete event-loop path owns ordinary commands, control-mode clients,
+//! interactive attach protocol routing, and pane PTY I/O. Both paths tap frames
+//! for introspection and preserve attached `SCM_RIGHTS` descriptors.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
@@ -54,7 +53,7 @@ where
 }
 
 /// Bind `listen_path` and serve a concrete [`NativeServer`] through the
-/// nonblocking event-loop forwarding adapter.
+/// nonblocking event-loop protocol engine.
 ///
 /// This remains a sibling of the established native listener path rather than
 /// an optional capability on [`TmuxServer`].
@@ -194,7 +193,7 @@ where
                 let server = Arc::clone(&server);
                 workers.push(thread::spawn(move || {
                     if let Err(e) = handle(stream, server.as_ref()) {
-                        warn!(error = %e, "client pairing ended");
+                        warn!(error = %e, "client connection ended");
                     }
                 }));
             }
@@ -280,21 +279,11 @@ fn reap_protocol_clients(clients: &mut Vec<ProtocolHandle>) {
                 | ProtocolCloseReason::PeerClosed
                 | ProtocolCloseReason::Shutdown,
             ) => {}
-            Some(ProtocolCloseReason::Fallback(reason)) => match reason {
-                crate::event_loop::pairing::PairingCloseReason::PeerClosed
-                | crate::event_loop::pairing::PairingCloseReason::Shutdown => {}
-                crate::event_loop::pairing::PairingCloseReason::Error(kind) => {
-                    warn!(?kind, "fallback client pairing ended with an I/O error");
-                }
-                crate::event_loop::pairing::PairingCloseReason::FrameExceedsQueueLimit => {
-                    warn!("fallback client frame exceeds forwarding queue limit");
-                }
-            },
             Some(ProtocolCloseReason::Error(kind)) => {
                 warn!(?kind, "event-loop protocol client ended with an I/O error");
             }
-            Some(ProtocolCloseReason::PreludeExceedsQueueLimit) => {
-                warn!("client identify prelude exceeds fallback queue limit");
+            Some(ProtocolCloseReason::IdentifyExceedsLimit) => {
+                warn!("client identification exceeds protocol limit");
             }
             Some(ProtocolCloseReason::FrameExceedsQueueLimit) => {
                 warn!("protocol output frame exceeds queue limit");
@@ -305,7 +294,7 @@ fn reap_protocol_clients(clients: &mut Vec<ProtocolHandle>) {
     });
 }
 
-/// Pair one accepted client with a fresh server connection and pump frames.
+/// Connect one accepted compatibility client and pump frames in both directions.
 fn handle_client<T: TmuxServer>(client: UnixStream, server: &T) -> io::Result<()>
 where
     T::Reader: AsRawFd + 'static,
@@ -552,7 +541,7 @@ mod tests {
     }
 
     #[test]
-    fn event_loop_protocol_owns_control_mode_without_native_pairing() {
+    fn event_loop_protocol_owns_control_mode_directly() {
         const CLIENT_CONTROL: i64 = 0x2000;
 
         let server = NativeServer::new().unwrap();
@@ -597,7 +586,6 @@ mod tests {
                 event_loop.poll(Some(Duration::from_millis(10))).unwrap();
             }
         }
-        assert!(!client.is_fallback());
 
         control_input
             .write_all(b"display-message -p direct-control\n")
@@ -647,7 +635,7 @@ mod tests {
     }
 
     #[test]
-    fn event_loop_protocol_owns_interactive_attach_without_native_pairing() {
+    fn event_loop_protocol_owns_interactive_attach_directly() {
         let server = NativeServer::new().unwrap();
         let (peer, endpoint) = UnixStream::pair().unwrap();
         let (mut reader, mut writer) = split_stream(peer).unwrap();
@@ -709,7 +697,6 @@ mod tests {
         };
         assert!(ready);
         assert!(client.is_attach());
-        assert!(!client.is_fallback());
 
         let resized = libc::winsize {
             ws_row: 30,
@@ -806,13 +793,18 @@ mod tests {
     }
 
     #[test]
-    fn event_loop_protocol_handles_status_wait_and_heartbeat_directly() {
+    fn event_loop_protocol_handles_control_flagged_status_wait_directly() {
+        const CLIENT_CONTROL: i64 = 0x2000;
+
         let server = NativeServer::new().unwrap();
         let (peer, endpoint) = UnixStream::pair().unwrap();
         let (mut reader, mut writer) = split_stream(peer).unwrap();
         let mut event_loop = EventLoop::new().unwrap();
         let client = add_protocol_client(endpoint, &server, &mut event_loop).unwrap();
 
+        writer
+            .send(Frame::new(Message::IdentifyLongFlags(CLIENT_CONTROL)))
+            .unwrap();
         writer
             .send(Frame::new(Message::StatusWait { since: 0 }))
             .unwrap();

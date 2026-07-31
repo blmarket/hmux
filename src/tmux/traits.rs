@@ -2,7 +2,7 @@
 //! prompt.md). Message types and codecs live beside this in sibling modules.
 //!
 //! The connection is split into independent read and write halves so the
-//! two-thread-per-pairing model (client→server and server→client) can hold one
+//! two-thread-per-connection model (client→server and server→client) can hold one
 //! handle each. A single `&mut self` connection, or one behind a mutex, would
 //! deadlock: a blocking `recv` on the read side would hold the lock the write
 //! side needs.

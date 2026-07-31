@@ -45,10 +45,7 @@ use std::thread::{self, JoinHandle};
 
 use crate::integration::status::StatusHub;
 use crate::observability::v1::{PaneId as PublicPaneId, PaneObservability, ServerObservability};
-use crate::tmux::codec::{
-    split_nonblocking_stream_with_queue_limit, split_stream, ImsgReader, ImsgWriter,
-    NonblockingImsgWriter,
-};
+use crate::tmux::codec::{split_stream, ImsgReader, ImsgWriter};
 use crate::tmux::traits::TmuxServer;
 
 use pane::{PaneIo, PaneIoMode};
@@ -222,22 +219,6 @@ impl NativeServer {
             Err(std::sync::TryLockError::WouldBlock) => false,
             Err(std::sync::TryLockError::Poisoned(_)) => true,
         }
-    }
-
-    /// Open the concrete nonblocking client half used by the event-loop
-    /// compatibility handoff.
-    ///
-    /// This is an implementation seam rather than an optional
-    /// [`TmuxServer`] capability. The protocol handler on the other half is the
-    /// same one used by [`TmuxServer::connect`].
-    pub(crate) fn connect_nonblocking(
-        &self,
-        max_pending_bytes: usize,
-    ) -> io::Result<(ImsgReader, NonblockingImsgWriter)> {
-        split_nonblocking_stream_with_queue_limit(
-            self.spawn_protocol_connection()?,
-            max_pending_bytes,
-        )
     }
 
     fn spawn_protocol_connection(&self) -> io::Result<UnixStream> {

@@ -13,7 +13,6 @@ use super::actor::{ActorRef, WeakActorRef};
 use super::client::{dispatch_inbox, ClientInbox, ClientInboxEvent, ClientIo, ClientIoEvent};
 use super::job::{BackgroundCommands, JobEvent};
 use super::listener::{AcceptedClients, Listener, ListenerEvent};
-use super::pairing::{PairEndpoint, PairIoSide, Pairing, PairingEvent, PairingStatus};
 use super::pane::{EventPane, PaneEvent};
 use super::process::{ChildSignal, ChildSignalEvent};
 use super::protocol::{
@@ -31,10 +30,6 @@ pub(crate) enum Envelope {
     ClientInbox {
         target: ActorRef<ClientInbox>,
         event: ClientInboxEvent,
-    },
-    Pairing {
-        target: ActorRef<Pairing>,
-        event: PairingEvent,
     },
     Listener {
         target: ActorRef<Listener>,
@@ -67,10 +62,6 @@ impl Envelope {
             }
             Envelope::ClientInbox { target, event } => {
                 dispatch_inbox(&target, event);
-            }
-            Envelope::Pairing { target, event } => {
-                let dispatch_target = target.clone();
-                target.with_mut(|pairing| pairing.handle(&dispatch_target, event, outbox));
             }
             Envelope::Listener { target, event } => {
                 let dispatch_target = target.clone();
@@ -106,12 +97,6 @@ enum Effect {
         target: ActorRef<ClientIo>,
         enabled: bool,
     },
-    SetPairingInterest {
-        target: ActorRef<Pairing>,
-        endpoint: PairEndpoint,
-        side: PairIoSide,
-        enabled: bool,
-    },
     SetListenerInterest {
         target: ActorRef<Listener>,
         enabled: bool,
@@ -138,15 +123,7 @@ enum Effect {
     CancelProtocolTimer {
         target: ActorRef<ProtocolClient>,
     },
-    HandoffProtocol {
-        target: ActorRef<ProtocolClient>,
-        client_reader: ImsgReader,
-        client_writer: NonblockingImsgWriter,
-        server_reader: ImsgReader,
-        server_writer: NonblockingImsgWriter,
-    },
     StopClient(ActorRef<ClientIo>),
-    StopPairing(ActorRef<Pairing>),
     StopListener(ActorRef<Listener>),
     StopPane(ActorRef<EventPane>),
     StopChildSignal(ActorRef<ChildSignal>),
@@ -167,10 +144,6 @@ impl Outbox {
 
     pub(crate) fn enqueue(&mut self, envelope: Envelope) {
         self.effects.push(Effect::Enqueue(envelope));
-    }
-
-    pub(crate) fn enqueue_pairing(&mut self, target: ActorRef<Pairing>, event: PairingEvent) {
-        self.enqueue(Envelope::Pairing { target, event });
     }
 
     pub(crate) fn enqueue_listener(&mut self, target: ActorRef<Listener>, event: ListenerEvent) {
@@ -213,21 +186,6 @@ impl Outbox {
     pub(crate) fn set_write_interest(&mut self, target: ActorRef<ClientIo>, enabled: bool) {
         self.effects
             .push(Effect::SetWriteInterest { target, enabled });
-    }
-
-    pub(crate) fn set_pairing_interest(
-        &mut self,
-        target: ActorRef<Pairing>,
-        endpoint: PairEndpoint,
-        side: PairIoSide,
-        enabled: bool,
-    ) {
-        self.effects.push(Effect::SetPairingInterest {
-            target,
-            endpoint,
-            side,
-            enabled,
-        });
     }
 
     pub(crate) fn set_listener_interest(&mut self, target: ActorRef<Listener>, enabled: bool) {
@@ -296,29 +254,8 @@ impl Outbox {
         self.effects.push(Effect::CancelProtocolTimer { target });
     }
 
-    pub(crate) fn handoff_protocol(
-        &mut self,
-        target: ActorRef<ProtocolClient>,
-        client_reader: ImsgReader,
-        client_writer: NonblockingImsgWriter,
-        server_reader: ImsgReader,
-        server_writer: NonblockingImsgWriter,
-    ) {
-        self.effects.push(Effect::HandoffProtocol {
-            target,
-            client_reader,
-            client_writer,
-            server_reader,
-            server_writer,
-        });
-    }
-
     pub(crate) fn stop_client(&mut self, target: ActorRef<ClientIo>) {
         self.effects.push(Effect::StopClient(target));
-    }
-
-    pub(crate) fn stop_pairing(&mut self, target: ActorRef<Pairing>) {
-        self.effects.push(Effect::StopPairing(target));
     }
 
     pub(crate) fn stop_listener(&mut self, target: ActorRef<Listener>) {
@@ -355,11 +292,6 @@ enum IoTarget {
         target: WeakActorRef<ClientIo>,
         side: IoSide,
     },
-    Pairing {
-        target: WeakActorRef<Pairing>,
-        endpoint: PairEndpoint,
-        side: PairIoSide,
-    },
     Listener {
         target: WeakActorRef<Listener>,
     },
@@ -379,12 +311,6 @@ enum IoTarget {
 pub(crate) struct ClientHandle {
     io: ActorRef<ClientIo>,
     inbox: ActorRef<ClientInbox>,
-}
-
-/// References returned when a bidirectional pairing is added to the loop.
-pub(crate) struct PairingHandle {
-    pairing: ActorRef<Pairing>,
-    status: PairingStatus,
 }
 
 /// References returned when a Unix listener is added to the loop.
@@ -410,9 +336,7 @@ pub(crate) struct ProtocolHandle {
 
 impl ProtocolHandle {
     pub(crate) fn is_alive(&self) -> bool {
-        self.protocol
-            .with(ProtocolClient::is_active)
-            .unwrap_or(false)
+        self.protocol.is_alive()
     }
 
     pub(crate) fn close_reason(&self) -> Option<ProtocolCloseReason> {
@@ -426,13 +350,6 @@ impl ProtocolHandle {
     pub(crate) fn is_direct(&self) -> bool {
         self.protocol
             .with(ProtocolClient::is_direct)
-            .unwrap_or(false)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn is_fallback(&self) -> bool {
-        self.protocol
-            .with(ProtocolClient::is_fallback)
             .unwrap_or(false)
     }
 
@@ -479,16 +396,6 @@ impl PaneHandle {
 impl ChildSignalHandle {
     pub(crate) fn is_alive(&self) -> bool {
         self.signal.is_alive()
-    }
-}
-
-impl PairingHandle {
-    pub(crate) fn is_alive(&self) -> bool {
-        self.pairing.is_alive()
-    }
-
-    pub(crate) fn status(&self) -> &PairingStatus {
-        &self.status
     }
 }
 
@@ -565,23 +472,6 @@ where
             event: ClientIoEvent::Start,
         });
         ClientHandle { io, inbox }
-    }
-
-    pub(crate) fn add_pairing(
-        &mut self,
-        client_reader: ImsgReader,
-        client_writer: NonblockingImsgWriter,
-        server_reader: ImsgReader,
-        server_writer: NonblockingImsgWriter,
-    ) -> PairingHandle {
-        let (pairing, status) =
-            Pairing::new(client_reader, client_writer, server_reader, server_writer);
-        let pairing = ActorRef::new(pairing);
-        self.events.push_back(Envelope::Pairing {
-            target: pairing.clone(),
-            event: PairingEvent::Start,
-        });
-        PairingHandle { pairing, status }
     }
 
     pub(crate) fn add_protocol(
@@ -679,13 +569,6 @@ where
         self.events.push_back(Envelope::ClientIo {
             target: target.clone(),
             event: ClientIoEvent::Shutdown,
-        });
-    }
-
-    pub(crate) fn shutdown_pairing(&mut self, target: &PairingHandle) {
-        self.events.push_back(Envelope::Pairing {
-            target: target.pairing.clone(),
-            event: PairingEvent::Shutdown,
         });
     }
 
@@ -843,27 +726,6 @@ where
                 };
                 self.events.push_back(Envelope::ClientIo { target, event });
             }
-            IoTarget::Pairing {
-                target: recipient,
-                endpoint,
-                side,
-            } => {
-                let Some(target) = recipient.upgrade() else {
-                    return;
-                };
-                let should_enqueue = target
-                    .with_mut(|pairing| pairing.mark_work_queued(*endpoint, *side))
-                    .unwrap_or(false);
-                if !should_enqueue {
-                    return;
-                }
-
-                let event = match side {
-                    PairIoSide::Read => PairingEvent::Readable(*endpoint),
-                    PairIoSide::Write => PairingEvent::Writable(*endpoint),
-                };
-                self.events.push_back(Envelope::Pairing { target, event });
-            }
             IoTarget::Listener { target: recipient } => {
                 let Some(target) = recipient.upgrade() else {
                     return;
@@ -941,14 +803,6 @@ where
             Effect::SetWriteInterest { target, enabled } => {
                 self.set_write_interest(&target, enabled)?;
             }
-            Effect::SetPairingInterest {
-                target,
-                endpoint,
-                side,
-                enabled,
-            } => {
-                self.set_pairing_interest(&target, endpoint, side, enabled)?;
-            }
             Effect::SetListenerInterest { target, enabled } => {
                 self.set_listener_interest(&target, enabled)?;
             }
@@ -987,21 +841,7 @@ where
             Effect::CancelProtocolTimer { target } => {
                 self.cancel_protocol_timer(&target);
             }
-            Effect::HandoffProtocol {
-                target,
-                client_reader,
-                client_writer,
-                server_reader,
-                server_writer,
-            } => {
-                let pairing =
-                    self.add_pairing(client_reader, client_writer, server_reader, server_writer);
-                target.with_mut(|client| client.install_fallback(pairing));
-            }
             Effect::StopClient(target) => {
-                target.stop();
-            }
-            Effect::StopPairing(target) => {
                 target.stop();
             }
             Effect::StopListener(target) => {
@@ -1072,49 +912,6 @@ where
             (false, Some(token)) => {
                 self.reactor.deregister(token)?;
                 target.with_mut(|client| client.set_write_token(None));
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
-    fn set_pairing_interest(
-        &mut self,
-        target: &ActorRef<Pairing>,
-        endpoint: PairEndpoint,
-        side: PairIoSide,
-        enabled: bool,
-    ) -> io::Result<()> {
-        let token = target
-            .with(|pairing| pairing.token(endpoint, side))
-            .flatten();
-        match (enabled, token) {
-            (true, None) => {
-                let recipient = IoRecipient {
-                    target: IoTarget::Pairing {
-                        target: target.downgrade(),
-                        endpoint,
-                        side,
-                    },
-                };
-                if let Some(result) = target.with_mut(|pairing| {
-                    let token = self.reactor.register(
-                        pairing.fd(endpoint, side),
-                        match side {
-                            PairIoSide::Read => Interest::READABLE,
-                            PairIoSide::Write => Interest::WRITABLE,
-                        },
-                        recipient,
-                    )?;
-                    pairing.set_token(endpoint, side, Some(token));
-                    Ok::<(), io::Error>(())
-                }) {
-                    result?;
-                }
-            }
-            (false, Some(token)) => {
-                self.reactor.deregister(token)?;
-                target.with_mut(|pairing| pairing.set_token(endpoint, side, None));
             }
             _ => {}
         }
@@ -1304,7 +1101,6 @@ mod tests {
 
     use super::*;
     use crate::event_loop::client::{CloseReason, READ_FRAME_BUDGET};
-    use crate::event_loop::pairing::PairingCloseReason;
     use crate::tmux::codec::{dup_fd, encode_bytes, split_nonblocking_stream, split_stream};
     use crate::tmux::message::Message;
 
@@ -1587,201 +1383,5 @@ mod tests {
         assert_eq!(result.dispatched(), 1);
         assert_eq!(result.poll_result(), None);
         assert_eq!(loop_.pending_events(), 1);
-    }
-
-    #[test]
-    fn pairing_forwards_frames_in_both_directions() {
-        use std::fs::OpenOptions;
-
-        let (client_peer, client_endpoint) = UnixStream::pair().unwrap();
-        let (server_peer, server_endpoint) = UnixStream::pair().unwrap();
-        let (mut client_peer_reader, mut client_peer_writer) = split_stream(client_peer).unwrap();
-        let (mut server_peer_reader, mut server_peer_writer) = split_stream(server_peer).unwrap();
-        let (client_reader, client_writer) = split_nonblocking_stream(client_endpoint).unwrap();
-        let (server_reader, server_writer) = split_nonblocking_stream(server_endpoint).unwrap();
-        let mut loop_ = EventLoop::new().unwrap();
-        let pairing = loop_.add_pairing(client_reader, client_writer, server_reader, server_writer);
-        dispatch_all(&mut loop_);
-
-        let passed_fd = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open("/dev/null")
-            .unwrap()
-            .into();
-        client_peer_writer
-            .send(Frame::with_fd(
-                Message::Command(vec!["client".into()]),
-                passed_fd,
-            ))
-            .unwrap();
-        server_peer_writer
-            .send(Frame::new(Message::Command(vec!["server".into()])))
-            .unwrap();
-
-        loop_.poll(Some(POLL_TIMEOUT)).unwrap();
-        dispatch_all(&mut loop_);
-        loop_.poll(Some(POLL_TIMEOUT)).unwrap();
-        dispatch_all(&mut loop_);
-
-        let client_frame = server_peer_reader.recv().unwrap();
-        assert_eq!(client_frame.msg, Message::Command(vec!["client".into()]));
-        assert!(client_frame.fd.is_some());
-        assert_eq!(
-            client_peer_reader.recv().unwrap().msg,
-            Message::Command(vec!["server".into()])
-        );
-        assert!(pairing.is_alive());
-        assert_eq!(pairing.status().close_reason(), None);
-    }
-
-    #[test]
-    fn pairing_preserves_large_stream_under_backpressure() {
-        const FRAME_COUNT: usize = 1024;
-        const CHUNK_SIZE: usize = 8 * 1024;
-
-        let (client_peer, client_endpoint) = UnixStream::pair().unwrap();
-        let (server_peer, server_endpoint) = UnixStream::pair().unwrap();
-        let (mut client_peer_reader, _client_peer_writer) = split_stream(client_peer).unwrap();
-        let (server_peer_reader, mut server_peer_writer) = split_stream(server_peer).unwrap();
-        drop(server_peer_reader);
-        let (client_reader, client_writer) = split_nonblocking_stream(client_endpoint).unwrap();
-        let (server_reader, server_writer) = split_nonblocking_stream(server_endpoint).unwrap();
-        let mut loop_ = EventLoop::new().unwrap();
-        let pairing = loop_.add_pairing(client_reader, client_writer, server_reader, server_writer);
-        dispatch_all(&mut loop_);
-
-        let sender = std::thread::spawn(move || {
-            for index in 0..FRAME_COUNT {
-                let mut data = vec![b'x'; CHUNK_SIZE];
-                data[..std::mem::size_of::<usize>()].copy_from_slice(&index.to_ne_bytes());
-                server_peer_writer
-                    .send(Frame::new(Message::Write { stream: 3, data }))
-                    .unwrap();
-            }
-            server_peer_writer
-                .send(Frame::new(Message::WriteClose { stream: 3 }))
-                .unwrap();
-        });
-
-        let initial_backpressure_deadline = std::time::Instant::now() + Duration::from_millis(100);
-        while std::time::Instant::now() < initial_backpressure_deadline {
-            loop_.run_turn(Some(Duration::from_millis(1)), 256).unwrap();
-        }
-
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        let mut next_index = 0;
-        let mut saw_close = false;
-        while std::time::Instant::now() < deadline && !saw_close {
-            loop_.run_turn(Some(Duration::from_millis(1)), 256).unwrap();
-            loop {
-                match client_peer_reader.try_recv() {
-                    Ok(Frame {
-                        msg: Message::Write { stream: 3, data },
-                        ..
-                    }) => {
-                        assert_eq!(data.len(), CHUNK_SIZE);
-                        let index = usize::from_ne_bytes(
-                            data[..std::mem::size_of::<usize>()].try_into().unwrap(),
-                        );
-                        assert_eq!(index, next_index);
-                        next_index += 1;
-                    }
-                    Ok(Frame {
-                        msg: Message::WriteClose { stream: 3 },
-                        ..
-                    }) => saw_close = true,
-                    Ok(frame) => panic!("unexpected frame: {:?}", frame.msg),
-                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
-                    Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => break,
-                    Err(error) => panic!("failed to receive forwarded frame: {error}"),
-                }
-            }
-        }
-
-        sender.join().unwrap();
-        assert_eq!(next_index, FRAME_COUNT);
-        assert!(saw_close);
-        assert!(
-            pairing.is_alive()
-                || pairing.status().close_reason() == Some(PairingCloseReason::PeerClosed)
-        );
-    }
-
-    #[test]
-    fn pairing_high_water_pauses_only_the_upstream_reader() {
-        let (client_peer, client_endpoint) = UnixStream::pair().unwrap();
-        let (server_peer, server_endpoint) = UnixStream::pair().unwrap();
-        let (_client_peer_reader, mut client_peer_writer) = split_stream(client_peer).unwrap();
-        let (mut server_peer_reader, _server_peer_writer) = split_stream(server_peer).unwrap();
-        let first = Message::Command(vec!["one".into()]);
-        let second = Message::Command(vec!["two".into()]);
-        let queue_limit = encode_bytes(&Frame::new(first.clone())).len();
-        let (client_reader, client_writer) = split_nonblocking_stream(client_endpoint).unwrap();
-        let (server_reader, server_writer) =
-            nonblocking_pair_with_limit(server_endpoint, queue_limit).unwrap();
-        let mut loop_ = EventLoop::new().unwrap();
-        let pairing = loop_.add_pairing(client_reader, client_writer, server_reader, server_writer);
-        dispatch_all(&mut loop_);
-
-        client_peer_writer.send(Frame::new(first.clone())).unwrap();
-        client_peer_writer.send(Frame::new(second.clone())).unwrap();
-        loop_.poll(Some(POLL_TIMEOUT)).unwrap();
-        dispatch_all(&mut loop_);
-
-        assert_eq!(
-            pairing
-                .pairing
-                .with(|pairing| pairing.token(PairEndpoint::Client, PairIoSide::Read))
-                .flatten(),
-            None
-        );
-        assert!(pairing
-            .pairing
-            .with(|pairing| pairing.token(PairEndpoint::Server, PairIoSide::Read))
-            .flatten()
-            .is_some());
-
-        loop_.poll(Some(POLL_TIMEOUT)).unwrap();
-        dispatch_all(&mut loop_);
-
-        assert_eq!(
-            pairing
-                .pairing
-                .with(|pairing| pairing.token(PairEndpoint::Client, PairIoSide::Read))
-                .flatten(),
-            None
-        );
-        assert_eq!(server_peer_reader.recv().unwrap().msg, first);
-
-        loop_.poll(Some(POLL_TIMEOUT)).unwrap();
-        dispatch_all(&mut loop_);
-
-        assert!(pairing
-            .pairing
-            .with(|pairing| pairing.token(PairEndpoint::Client, PairIoSide::Read))
-            .flatten()
-            .is_some());
-        assert_eq!(server_peer_reader.recv().unwrap().msg, second);
-    }
-
-    #[test]
-    fn pairing_shutdown_deregisters_all_sources_before_stopping() {
-        let (_client_peer, client_endpoint) = UnixStream::pair().unwrap();
-        let (_server_peer, server_endpoint) = UnixStream::pair().unwrap();
-        let (client_reader, client_writer) = split_nonblocking_stream(client_endpoint).unwrap();
-        let (server_reader, server_writer) = split_nonblocking_stream(server_endpoint).unwrap();
-        let mut loop_ = EventLoop::new().unwrap();
-        let pairing = loop_.add_pairing(client_reader, client_writer, server_reader, server_writer);
-        dispatch_all(&mut loop_);
-
-        loop_.shutdown_pairing(&pairing);
-        dispatch_all(&mut loop_);
-
-        assert!(!pairing.is_alive());
-        assert_eq!(
-            pairing.status().close_reason(),
-            Some(PairingCloseReason::Shutdown)
-        );
     }
 }

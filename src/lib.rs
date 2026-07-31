@@ -12,7 +12,7 @@
 //! - [`tmux`] — message layer, codec, server traits, and compatibility re-exports.
 //! - [`observability`] — versioned, native-runtime pane observation contracts.
 //! - [`integration`] — prototype consumers of optional runtime capabilities.
-//! - [`serve`] — the listener and per-connection pairing loop.
+//! - [`serve`] — listeners and connection lifecycle management.
 
 pub mod error;
 #[allow(dead_code)]
