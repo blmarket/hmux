@@ -293,13 +293,12 @@ fn send_copy_mode_command(
         ) {
             let _ = state.position_copy_cursor_from_mouse(target, position.x, position.y, vi);
         }
-        if command == "scroll-to-mouse" {
-            if state
+        if command == "scroll-to-mouse"
+            && state
                 .scroll_copy_to_mouse(target, position.y, vi, copy_args.contains(&"-e"))
                 .unwrap_or(false)
-            {
-                return CommandResult::ok("");
-            }
+        {
+            return CommandResult::ok("");
         }
     }
 
@@ -608,6 +607,12 @@ fn run_mode_bindings(
             && !command.iter().any(|word| word == "-t")
         {
             command.splice(1..1, ["-t".to_string(), target.to_string()]);
+        }
+        if context.defer_queue_commands {
+            output
+                .deferred_commands
+                .push(super::command::DeferredCommand::Args(command));
+            continue;
         }
         let result = super::command::run_locked(&command, state, agents, context);
         output.append_stdout(&result);

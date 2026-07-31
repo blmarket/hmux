@@ -29,10 +29,11 @@ pub(in crate::tmux::native) use identity::Command;
 
 use std::collections::BTreeMap;
 use std::io;
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, BorrowedFd};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use crate::integration::status::PaneAgents;
 use crate::observability::v1::PaneId;
@@ -62,6 +63,11 @@ const DISPLAY_MESSAGE_TEMPLATE: &str = "[#{session_name}] #{window_index}:#{wind
 const NEW_SESSION_VALUE_FLAGS: &[&str] = &["-c", "-e", "-F", "-f", "-n", "-s", "-t", "-x", "-y"];
 const NEW_SESSION_MAX_SIZE: u16 = 10_000;
 
+pub(crate) enum DeferredCommand {
+    Args(Vec<String>),
+    Line { line: String, tail: Vec<String> },
+}
+
 /// The result of running a command: what to write to the client's stdout/stderr
 /// and the process exit code.
 pub struct CommandResult {
@@ -70,6 +76,8 @@ pub struct CommandResult {
     pub stderr: String,
     pub exit: i32,
     pub(crate) pane_output_wait: Option<(Arc<super::pane::NativePaneObservation>, u64)>,
+    pub(crate) deferred_commands: Vec<DeferredCommand>,
+    pub(crate) background_commands: Vec<BackgroundCommandRequest>,
     /// Continue the containing command list despite a nonzero client status.
     /// Interactive queue items use this when cancellation sets the command
     /// client's exit status without removing later items from the queue.
@@ -98,6 +106,9 @@ pub struct ClientContext {
     pub(crate) wait_for_interactions: bool,
     pub(crate) preserve_queue_insertions: bool,
     pub(crate) suppress_hooks: bool,
+    pub(crate) defer_queue_commands: bool,
+    pub(crate) defer_background_commands: bool,
+    pub(crate) defer_attach_commands: bool,
 }
 
 impl ClientContext {
@@ -131,6 +142,8 @@ impl CommandResult {
             stderr: String::new(),
             exit: 0,
             pane_output_wait: None,
+            deferred_commands: Vec::new(),
+            background_commands: Vec::new(),
             continue_queue: false,
             inserted_results: Vec::new(),
             control_flags: 1,
@@ -144,6 +157,8 @@ impl CommandResult {
             stderr: stderr.into(),
             exit: 1,
             pane_output_wait: None,
+            deferred_commands: Vec::new(),
+            background_commands: Vec::new(),
             continue_queue: false,
             inserted_results: Vec::new(),
             control_flags: 1,
@@ -159,6 +174,8 @@ impl CommandResult {
                 stderr: String::new(),
                 exit: 0,
                 pane_output_wait: None,
+                deferred_commands: Vec::new(),
+                background_commands: Vec::new(),
                 continue_queue: false,
                 inserted_results: Vec::new(),
                 control_flags: 1,
@@ -185,19 +202,6 @@ impl CommandResult {
             self.stdout_bytes = std::mem::take(&mut self.stdout).into_bytes();
         }
         self.stdout_bytes.extend_from_slice(other.stdout_data());
-    }
-
-    fn wait_for_pane_output(&mut self) {
-        let Some((observation, before)) = self.pane_output_wait.take() else {
-            return;
-        };
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(10);
-        while std::time::Instant::now() < deadline {
-            if observation.contract_revision() != before {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
     }
 }
 
@@ -350,18 +354,8 @@ pub(crate) fn run_command_prompt_template(
 ) -> CommandResult {
     let mut execution_context = context.clone();
     execution_context.command_state = Some(Arc::clone(state));
-    let normalized = normalize_argv("command-prompt", args);
-    let mut template = trailing_command(&normalized, &["-I", "-p", "-t", "-T"])
-        .into_iter()
-        .next()
-        .unwrap_or("%1")
-        .to_string();
-    if has_flag(&normalized, "-F") {
-        template = expand_command_prompt_format(&template, state, agents, context);
-    }
-    for (index, value) in values.iter().enumerate() {
-        template = replace_prompt_template(&template, value, (index + 1) as u8);
-    }
+    execution_context.defer_queue_commands = true;
+    let template = command_prompt_template(args, values, state, agents, context);
     let tokens = tokenize_line(&template);
     if tokens.is_empty() {
         return CommandResult::ok("");
@@ -374,6 +368,28 @@ pub(crate) fn run_command_prompt_template(
     let result = run_tokenized_line(&tokens, &mut st, agents, &execution_context);
     st.replace_command_session_id(previous_session);
     result
+}
+
+pub(crate) fn command_prompt_template(
+    args: &[String],
+    values: &[String],
+    state: &Arc<Mutex<ServerState>>,
+    agents: &PaneAgents,
+    context: &ClientContext,
+) -> String {
+    let normalized = normalize_argv("command-prompt", args);
+    let mut template = trailing_command(&normalized, &["-I", "-p", "-t", "-T"])
+        .into_iter()
+        .next()
+        .unwrap_or("%1")
+        .to_string();
+    if has_flag(&normalized, "-F") {
+        template = expand_command_prompt_format(&template, state, agents, context);
+    }
+    for (index, value) in values.iter().enumerate() {
+        template = replace_prompt_template(&template, value, (index + 1) as u8);
+    }
+    template
 }
 
 /// Run a command line against the shared state.
@@ -451,19 +467,89 @@ pub fn run_with_context(
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
+    let queue = match start_resumable_command(args, state, agents, context) {
+        Ok(queue) => queue,
+        Err(error) => return error,
+    };
+    run_resumable_command(queue, state)
+}
+
+pub(crate) fn start_resumable_command(
+    args: &[String],
+    state: &Arc<Mutex<ServerState>>,
+    agents: &PaneAgents,
+    context: &ClientContext,
+) -> Result<ResumableCommandQueue, CommandResult> {
     let mut execution_context = context.clone();
     execution_context.command_state = Some(Arc::clone(state));
     let expanded_args = expand_attached_separators(args);
     let groups = split_commands(&expanded_args);
     let aliases = match state.lock() {
         Ok(state) => state.command_aliases(),
-        Err(_) => return CommandResult::err("server state poisoned\n"),
+        Err(_) => return Err(CommandResult::err("server state poisoned\n")),
     };
-    let parsed = match parse_command_groups_with_aliases(groups, &aliases) {
-        Ok(parsed) => parsed,
-        Err(error) => return error,
+    let parsed = parse_command_groups_with_aliases(groups, &aliases)?;
+    Ok(ResumableCommandQueue::new(
+        parsed,
+        agents,
+        &execution_context,
+    ))
+}
+
+pub(crate) fn start_resumable_command_string(
+    line: &str,
+    state: &Arc<Mutex<ServerState>>,
+    agents: &PaneAgents,
+    context: &ClientContext,
+) -> Result<ResumableCommandQueue, CommandResult> {
+    let tokens = tokenize_line(line);
+    let owned_groups = tokenized_command_groups(&tokens);
+    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
+    let aliases = match state.lock() {
+        Ok(state) => state.command_aliases(),
+        Err(_) => return Err(CommandResult::err("server state poisoned\n")),
     };
-    run_shared_command_groups(parsed, state, agents, &execution_context)
+    let parsed = parse_command_groups_with_aliases(groups, &aliases)?;
+    let mut execution_context = context.clone();
+    execution_context.command_state = Some(Arc::clone(state));
+    execution_context.defer_queue_commands = true;
+    Ok(ResumableCommandQueue::new(
+        parsed,
+        agents,
+        &execution_context,
+    ))
+}
+
+pub(crate) fn start_resumable_command_string_with_tail(
+    line: &str,
+    tail: &[String],
+    state: &Arc<Mutex<ServerState>>,
+    agents: &PaneAgents,
+    context: &ClientContext,
+) -> Result<ResumableCommandQueue, CommandResult> {
+    let tokens = tokenize_line(line);
+    let owned_groups = tokenized_command_groups(&tokens);
+    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
+    let aliases = match state.lock() {
+        Ok(state) => state.command_aliases(),
+        Err(_) => return Err(CommandResult::err("server state poisoned\n")),
+    };
+    let mut parsed = parse_command_groups_with_aliases(groups, &aliases)?;
+    if !tail.is_empty() {
+        let expanded_tail = expand_attached_separators(tail);
+        parsed.extend(parse_command_groups_with_aliases(
+            split_commands(&expanded_tail),
+            &aliases,
+        )?);
+    }
+    let mut execution_context = context.clone();
+    execution_context.command_state = Some(Arc::clone(state));
+    execution_context.defer_queue_commands = true;
+    Ok(ResumableCommandQueue::new(
+        parsed,
+        agents,
+        &execution_context,
+    ))
 }
 
 struct PreviousCommandTargetContext {
@@ -501,6 +587,18 @@ enum SharedQueueItem {
     FinalizeSource {
         args: Vec<String>,
     },
+    FinalizeHooks {
+        command: &'static str,
+        args: Vec<String>,
+    },
+    NestedCommand {
+        queue: Box<ResumableCommandQueue>,
+        capture: NestedCapture,
+    },
+    CapturedResult(CommandResult),
+    EndHook {
+        name: String,
+    },
 }
 
 struct SharedCommandExecution {
@@ -519,115 +617,1020 @@ impl SharedCommandExecution {
     }
 }
 
-/// Execute a command list containing a blocking command without holding the
-/// server state mutex while it waits. Other commands still run one at a time
-/// with the same client/session context and hook behavior.
-fn run_shared_command_groups(
-    parsed: Vec<ParsedCommand>,
-    state: &Arc<Mutex<ServerState>>,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    let mut queue = queue::CommandQueue::new();
-    queue.push_back_group(parsed.into_iter().map(|command| SharedQueueItem::Command {
-        command,
-        source: None,
-        source_depth: 0,
-        contributes_status: true,
-    }));
-    let mut out = CommandResult::ok("");
-    while let Some(started) = queue.start_next() {
-        let ticket = started.ticket;
-        let (command, source, source_depth, contributes_status) = match started.value {
-            SharedQueueItem::Command {
+pub(crate) struct ResumableCommandQueue {
+    queue: queue::CommandQueue<SharedQueueItem>,
+    out: CommandResult,
+    agents: PaneAgents,
+    context: ClientContext,
+    suspended: Option<SuspendedCommand>,
+    nested: Option<ActiveNestedCommand>,
+}
+
+pub(crate) enum ResumableCommandTurn {
+    Pending,
+    Suspended(CommandSuspension),
+    Complete(CommandResult),
+}
+
+pub(crate) enum BackgroundCommandRequest {
+    Ready {
+        command: Option<String>,
+        context: ClientContext,
+    },
+    ReadyArgs {
+        args: Vec<String>,
+        context: ClientContext,
+    },
+    IfShell {
+        condition: String,
+        then_command: Option<String>,
+        else_command: Option<String>,
+        context: ClientContext,
+    },
+}
+
+impl BackgroundCommandRequest {
+    pub(crate) fn resolve(self) -> (BackgroundCommand, ClientContext) {
+        match self {
+            Self::Ready { command, context } => (BackgroundCommand::Line(command), context),
+            Self::ReadyArgs { args, context } => (BackgroundCommand::Args(args), context),
+            Self::IfShell {
+                condition,
+                then_command,
+                else_command,
+                context,
+            } => {
+                let matched = if condition
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .ends_with(&["run", "\"true\""])
+                {
+                    true
+                } else {
+                    let mut shell = shell_command(&condition, &context);
+                    shell
+                        .status()
+                        .map(|status| status.success())
+                        .unwrap_or(false)
+                };
+                let command = if matched { then_command } else { else_command };
+                (BackgroundCommand::Line(command), context)
+            }
+        }
+    }
+
+    pub(crate) fn is_ready(&self) -> bool {
+        matches!(self, Self::Ready { .. } | Self::ReadyArgs { .. })
+    }
+}
+
+pub(crate) enum BackgroundCommand {
+    Line(Option<String>),
+    Args(Vec<String>),
+}
+
+struct SuspendedCommand {
+    ticket: queue::QueueTicket,
+    command: ParsedCommand,
+    source: Option<SourceLocation>,
+    source_depth: u8,
+    contributes_status: bool,
+}
+
+struct ActiveNestedCommand {
+    ticket: queue::QueueTicket,
+    queue: Box<ResumableCommandQueue>,
+    capture: NestedCapture,
+}
+
+#[derive(Clone, Copy)]
+enum NestedCapture {
+    Hook,
+    Inserted,
+    Discard,
+}
+
+pub(crate) enum CommandSuspension {
+    RunShell {
+        args: Vec<String>,
+        context: ClientContext,
+        jobs: Arc<BackgroundJobRegistry>,
+    },
+    IfShell {
+        condition: String,
+        context: ClientContext,
+    },
+    SourceFile {
+        paths: Vec<String>,
+    },
+    LoadBuffer {
+        path: PathBuf,
+    },
+    SaveBuffer {
+        request: ClientFileWrite,
+    },
+    WaitFor {
+        args: Vec<String>,
+        registry: Arc<WaitRegistry>,
+    },
+    CommandPrompt {
+        args: Vec<String>,
+        registry: Arc<super::state::ClientPromptRegistry>,
+        target: Option<String>,
+        tty_name: Option<String>,
+        wait: bool,
+    },
+    ClientInteraction {
+        completed: mpsc::Receiver<PromptCompletion>,
+    },
+    PaneOutput(PaneOutputSuspension),
+}
+
+pub(crate) enum CommandSuspensionResult {
+    RunShell(RunShellCompletion),
+    IfShell(bool),
+    SourceFile(Vec<SourceFileRead>),
+    LoadBuffer(Result<Vec<u8>, i32>),
+    SaveBuffer(CommandResult),
+    Completed(CommandResult),
+}
+
+pub(crate) struct SourceFileRead {
+    path: String,
+    contents: io::Result<String>,
+    existed: bool,
+}
+
+pub(crate) struct PaneOutputSuspension {
+    observation: Arc<super::pane::NativePaneObservation>,
+    before: u64,
+    subscription: super::pane::OutputSubscription,
+    deadline: Instant,
+    result: Option<CommandResult>,
+}
+
+impl PaneOutputSuspension {
+    fn new(
+        observation: Arc<super::pane::NativePaneObservation>,
+        before: u64,
+        result: CommandResult,
+    ) -> Result<Self, CommandResult> {
+        let subscription = match observation.subscribe_output() {
+            Ok(subscription) => subscription,
+            Err(_) => return Err(result),
+        };
+        subscription.drain();
+        Ok(Self {
+            observation,
+            before,
+            subscription,
+            deadline: Instant::now() + Duration::from_millis(10),
+            result: Some(result),
+        })
+    }
+
+    pub(crate) fn as_fd(&self) -> BorrowedFd<'_> {
+        self.subscription.as_fd()
+    }
+
+    pub(crate) fn deadline(&self) -> Instant {
+        self.deadline
+    }
+
+    pub(crate) fn is_complete(&self) -> bool {
+        self.observation.contract_revision() != self.before || Instant::now() >= self.deadline
+    }
+
+    pub(crate) fn complete(&mut self) -> CommandSuspensionResult {
+        self.subscription.drain();
+        CommandSuspensionResult::Completed(
+            self.result
+                .take()
+                .expect("pane-output suspension completed twice"),
+        )
+    }
+
+    fn resolve(mut self) -> CommandSuspensionResult {
+        if !self.is_complete() {
+            let timeout = self.deadline.saturating_duration_since(Instant::now());
+            let timeout_ms = i32::try_from(timeout.as_millis())
+                .unwrap_or(i32::MAX)
+                .max(1);
+            let mut fd = libc::pollfd {
+                fd: self.as_fd().as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            unsafe {
+                libc::poll(&mut fd, 1, timeout_ms);
+            }
+        }
+        self.complete()
+    }
+}
+
+impl CommandSuspension {
+    pub(crate) fn allows_attach_io(&self) -> bool {
+        matches!(
+            self,
+            Self::CommandPrompt { .. } | Self::ClientInteraction { .. }
+        )
+    }
+
+    pub(crate) fn resolve(self) -> CommandSuspensionResult {
+        match self {
+            Self::RunShell {
+                args,
+                context,
+                jobs,
+            } => CommandSuspensionResult::RunShell(run_shell_process(&args, &context, jobs)),
+            Self::IfShell { condition, context } => {
+                let matched = if condition
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .ends_with(&["run", "\"true\""])
+                {
+                    true
+                } else {
+                    let mut shell = shell_command(&condition, &context);
+                    shell
+                        .status()
+                        .map(|status| status.success())
+                        .unwrap_or(false)
+                };
+                CommandSuspensionResult::IfShell(matched)
+            }
+            Self::SourceFile { paths } => CommandSuspensionResult::SourceFile(
+                paths
+                    .into_iter()
+                    .map(|path| {
+                        let contents = std::fs::read_to_string(&path);
+                        let existed = Path::new(&path).exists();
+                        SourceFileRead {
+                            path,
+                            contents,
+                            existed,
+                        }
+                    })
+                    .collect(),
+            ),
+            Self::LoadBuffer { path } => CommandSuspensionResult::LoadBuffer(
+                std::fs::read(path).map_err(|error| error.raw_os_error().unwrap_or(libc::EIO)),
+            ),
+            Self::SaveBuffer { request } => {
+                CommandSuspensionResult::SaveBuffer(write_client_file_request(request))
+            }
+            Self::WaitFor { args, registry } => {
+                CommandSuspensionResult::Completed(execution::wait_for(&args, &registry))
+            }
+            Self::CommandPrompt {
+                args,
+                registry,
+                target,
+                tty_name,
+                wait,
+            } => {
+                let result = match registry.request_command(
+                    target.as_deref(),
+                    tty_name.as_deref(),
+                    args,
+                    wait,
+                ) {
+                    CommandPromptRequestResult::Completed(completion) => {
+                        interaction_completion_result(completion)
+                    }
+                    CommandPromptRequestResult::Queued | CommandPromptRequestResult::Busy => {
+                        CommandResult::ok("")
+                    }
+                    CommandPromptRequestResult::NoCurrentClient => {
+                        CommandResult::err("no current client\n")
+                    }
+                    CommandPromptRequestResult::TargetNotFound => CommandResult::err(format!(
+                        "can't find client: {}\n",
+                        target.unwrap_or_default()
+                    )),
+                };
+                CommandSuspensionResult::Completed(result)
+            }
+            Self::ClientInteraction { completed } => {
+                let result = match completed.recv() {
+                    Ok(completion) => interaction_completion_result(completion),
+                    Err(_) => {
+                        let mut result = CommandResult::ok("");
+                        result.continue_queue = true;
+                        result
+                    }
+                };
+                CommandSuspensionResult::Completed(result)
+            }
+            Self::PaneOutput(wait) => wait.resolve(),
+        }
+    }
+}
+
+impl ResumableCommandQueue {
+    fn new(parsed: Vec<ParsedCommand>, agents: &PaneAgents, context: &ClientContext) -> Self {
+        let mut queue = queue::CommandQueue::new();
+        queue.push_back_group(parsed.into_iter().map(|command| SharedQueueItem::Command {
+            command,
+            source: None,
+            source_depth: 0,
+            contributes_status: true,
+        }));
+        Self {
+            queue,
+            out: CommandResult::ok(""),
+            agents: agents.clone(),
+            context: context.clone(),
+            suspended: None,
+            nested: None,
+        }
+    }
+
+    pub(crate) fn drive(
+        &mut self,
+        state: &Arc<Mutex<ServerState>>,
+        budget: usize,
+    ) -> ResumableCommandTurn {
+        for _ in 0..budget {
+            if let Some(nested) = self.nested.as_mut() {
+                match nested.queue.drive(state, 1) {
+                    ResumableCommandTurn::Pending => continue,
+                    ResumableCommandTurn::Suspended(suspension) => {
+                        return ResumableCommandTurn::Suspended(suspension);
+                    }
+                    ResumableCommandTurn::Complete(result) => {
+                        let active = self
+                            .nested
+                            .take()
+                            .expect("completed nested command disappeared");
+                        let stops_group = result.exit != 0 && !result.continue_queue;
+                        self.capture_nested_result(result, active.capture);
+                        self.queue
+                            .complete(
+                                active.ticket,
+                                queue::QueueCompletion {
+                                    discard_group_tail: stops_group,
+                                    insert_next: Vec::new(),
+                                },
+                            )
+                            .expect("nested command owns current queue ticket");
+                        continue;
+                    }
+                }
+            }
+            let Some(started) = self.queue.start_next() else {
+                return ResumableCommandTurn::Complete(std::mem::replace(
+                    &mut self.out,
+                    CommandResult::ok(""),
+                ));
+            };
+            let ticket = started.ticket;
+            let (command, source, source_depth, contributes_status) = match started.value {
+                SharedQueueItem::Command {
+                    command,
+                    source,
+                    source_depth,
+                    contributes_status,
+                } => (command, source, source_depth, contributes_status),
+                SharedQueueItem::FinalizeSource { args } => {
+                    let insert_next = self.plan_command_hooks("source-file", &args, state);
+                    self.queue
+                        .complete(
+                            ticket,
+                            queue::QueueCompletion {
+                                discard_group_tail: false,
+                                insert_next,
+                            },
+                        )
+                        .expect("source finalizer owns current queue ticket");
+                    continue;
+                }
+                SharedQueueItem::FinalizeHooks { command, args } => {
+                    let insert_next = self.plan_command_hooks(command, &args, state);
+                    self.queue
+                        .complete(
+                            ticket,
+                            queue::QueueCompletion {
+                                discard_group_tail: false,
+                                insert_next,
+                            },
+                        )
+                        .expect("hook finalizer owns current queue ticket");
+                    continue;
+                }
+                SharedQueueItem::NestedCommand { queue, capture } => {
+                    self.nested = Some(ActiveNestedCommand {
+                        ticket,
+                        queue,
+                        capture,
+                    });
+                    continue;
+                }
+                SharedQueueItem::CapturedResult(result) => {
+                    let stops_group = result.exit != 0 && !result.continue_queue;
+                    self.capture_nested_result(result, NestedCapture::Hook);
+                    self.queue
+                        .complete(
+                            ticket,
+                            queue::QueueCompletion {
+                                discard_group_tail: stops_group,
+                                insert_next: Vec::new(),
+                            },
+                        )
+                        .expect("captured result owns current queue ticket");
+                    continue;
+                }
+                SharedQueueItem::EndHook { name } => {
+                    if let Ok(mut state) = state.lock() {
+                        state.end_hook(&name);
+                        state.record_control_checkpoint();
+                    }
+                    self.queue
+                        .complete(ticket, queue::QueueCompletion::done())
+                        .expect("hook finalizer owns current queue ticket");
+                    continue;
+                }
+            };
+
+            {
+                let mut state = match state.lock() {
+                    Ok(state) => state,
+                    Err(_) => {
+                        return ResumableCommandTurn::Complete(CommandResult::err(
+                            "server state poisoned\n",
+                        ));
+                    }
+                };
+                state.add_message(format!(
+                    "{} command: {}",
+                    self.context
+                        .client_pid
+                        .map(|pid| format!("client-{pid}"))
+                        .unwrap_or_else(|| "client-unknown".to_string()),
+                    display_command(&command.args)
+                ));
+            }
+
+            let inflight = SuspendedCommand {
+                ticket,
                 command,
                 source,
                 source_depth,
                 contributes_status,
-            } => (command, source, source_depth, contributes_status),
-            SharedQueueItem::FinalizeSource { args } => {
-                if !context.suppress_hooks {
-                    let mut inserted =
-                        run_notification_hook_shared("source-file", &args, state, agents, context);
-                    inserted.extend(run_after_hook_shared(
-                        "source-file",
-                        &args,
+            };
+            if inflight.command.spec.name == "run-shell"
+                && !has_flag(&inflight.command.args, "-b")
+                && !has_flag(&inflight.command.args, "-C")
+            {
+                let jobs = match state.lock() {
+                    Ok(state) => state.background_job_registry(),
+                    Err(_) => {
+                        return ResumableCommandTurn::Complete(CommandResult::err(
+                            "server state poisoned\n",
+                        ));
+                    }
+                };
+                let suspension = CommandSuspension::RunShell {
+                    args: inflight.command.args.clone(),
+                    context: self.context.clone(),
+                    jobs,
+                };
+                self.suspended = Some(inflight);
+                return ResumableCommandTurn::Suspended(suspension);
+            }
+            if inflight.command.spec.name == "if-shell"
+                && has_flag(&inflight.command.args, "-b")
+                && self.context.defer_background_commands
+            {
+                let positionals = positionals(&inflight.command.args, &["-t"]);
+                let Some(condition) = positionals.first().copied() else {
+                    self.finish_execution(
+                        inflight,
+                        SharedCommandExecution::completed(CommandResult::err(
+                            "if-shell: too few arguments\n",
+                        )),
                         state,
-                        agents,
-                        context,
-                    ));
-                    if context.preserve_queue_insertions {
-                        out.inserted_results.extend(inserted);
-                    } else {
-                        for inserted in inserted {
-                            out.append_stdout(&inserted);
-                            out.stderr.push_str(&inserted.stderr);
-                            if inserted.exit != 0 {
-                                out.exit = inserted.exit;
+                    );
+                    continue;
+                };
+                let then_command = positionals.get(1).map(|command| (*command).to_string());
+                let else_command = positionals.get(2).map(|command| (*command).to_string());
+                let request = if has_flag(&inflight.command.args, "-F") {
+                    let matched = match state.lock() {
+                        Ok(mut state) => {
+                            let previous =
+                                install_command_target_context(&mut state, &self.context);
+                            let expanded = expand_if_cond(
+                                condition,
+                                &inflight.command.args,
+                                &state,
+                                &self.agents,
+                            );
+                            restore_command_target_context(&mut state, previous);
+                            !expanded.is_empty() && expanded != "0"
+                        }
+                        Err(_) => false,
+                    };
+                    BackgroundCommandRequest::Ready {
+                        command: if matched { then_command } else { else_command },
+                        context: self.context.clone(),
+                    }
+                } else {
+                    BackgroundCommandRequest::IfShell {
+                        condition: condition.to_string(),
+                        then_command,
+                        else_command,
+                        context: self.context.clone(),
+                    }
+                };
+                let mut result = CommandResult::ok("");
+                result.background_commands.push(request);
+                self.finish_execution(inflight, SharedCommandExecution::completed(result), state);
+                continue;
+            }
+            if inflight.command.spec.name == "run-shell"
+                && !has_flag(&inflight.command.args, "-b")
+                && has_flag(&inflight.command.args, "-C")
+            {
+                let command = positionals(&inflight.command.args, &["-t", "-c", "-d"])
+                    .first()
+                    .copied();
+                let execution = match command {
+                    Some(command) => {
+                        match self.plan_nested_command_line(command, state, NestedCapture::Inserted)
+                        {
+                            Ok(commands) => {
+                                let mut insert_next = Vec::new();
+                                if !commands.is_empty() {
+                                    insert_next.push(commands);
+                                }
+                                insert_next.push(vec![SharedQueueItem::FinalizeHooks {
+                                    command: "run-shell",
+                                    args: inflight.command.args.clone(),
+                                }]);
+                                SharedCommandExecution {
+                                    result: CommandResult::ok(""),
+                                    insert_next,
+                                    defer_success_hooks: true,
+                                }
                             }
+                            Err(result) => SharedCommandExecution::completed(result),
+                        }
+                    }
+                    None => SharedCommandExecution::completed(CommandResult::ok("")),
+                };
+                self.finish_execution(inflight, execution, state);
+                continue;
+            }
+            if inflight.command.spec.name == "if-shell" && !has_flag(&inflight.command.args, "-b") {
+                let positionals = positionals(&inflight.command.args, &["-t"]);
+                let Some(condition) = positionals.first().copied() else {
+                    self.finish_execution(
+                        inflight,
+                        SharedCommandExecution::completed(CommandResult::err(
+                            "if-shell: too few arguments\n",
+                        )),
+                        state,
+                    );
+                    continue;
+                };
+                if has_flag(&inflight.command.args, "-F") {
+                    let matched = match state.lock() {
+                        Ok(mut state) => {
+                            let previous =
+                                install_command_target_context(&mut state, &self.context);
+                            let expanded = expand_if_cond(
+                                condition,
+                                &inflight.command.args,
+                                &state,
+                                &self.agents,
+                            );
+                            restore_command_target_context(&mut state, previous);
+                            !expanded.is_empty() && expanded != "0"
+                        }
+                        Err(_) => false,
+                    };
+                    let execution =
+                        self.plan_if_shell_branch(&inflight.command.args, matched, state);
+                    self.finish_execution(inflight, execution, state);
+                    continue;
+                }
+                let suspension = CommandSuspension::IfShell {
+                    condition: condition.to_string(),
+                    context: self.context.clone(),
+                };
+                self.suspended = Some(inflight);
+                return ResumableCommandTurn::Suspended(suspension);
+            }
+            if inflight.command.spec.name == "source-file" {
+                if source_depth >= 50 {
+                    self.finish_execution(
+                        inflight,
+                        SharedCommandExecution::completed(CommandResult::err(
+                            "too many nested files\n",
+                        )),
+                        state,
+                    );
+                    continue;
+                }
+                let paths = match prepare_source_file_paths(
+                    &inflight.command.args,
+                    state,
+                    &self.agents,
+                    &self.context,
+                ) {
+                    Ok(paths) => paths,
+                    Err(result) => {
+                        self.finish_execution(
+                            inflight,
+                            SharedCommandExecution::completed(result),
+                            state,
+                        );
+                        continue;
+                    }
+                };
+                self.suspended = Some(inflight);
+                return ResumableCommandTurn::Suspended(CommandSuspension::SourceFile { paths });
+            }
+            if inflight.command.spec.name == "load-buffer" && self.context.input_file.is_none() {
+                if let Some(path) = load_buffer_client_path(&inflight.command.args, &self.context)
+                    .filter(|path| path.as_os_str() != "-")
+                {
+                    self.suspended = Some(inflight);
+                    return ResumableCommandTurn::Suspended(CommandSuspension::LoadBuffer { path });
+                }
+            }
+            if inflight.command.spec.name == "save-buffer" {
+                let request = match state.lock() {
+                    Ok(state) => {
+                        save_buffer_client_request(&inflight.command.args, &state, &self.context)
+                    }
+                    Err(_) => Some(Err(CommandResult::err("server state poisoned\n"))),
+                };
+                if let Some(request) = request {
+                    match request {
+                        Ok(request) => {
+                            self.suspended = Some(inflight);
+                            return ResumableCommandTurn::Suspended(
+                                CommandSuspension::SaveBuffer { request },
+                            );
+                        }
+                        Err(result) => {
+                            self.finish_execution(
+                                inflight,
+                                SharedCommandExecution::completed(result),
+                                state,
+                            );
+                            continue;
                         }
                     }
                 }
-                queue
-                    .complete(ticket, queue::QueueCompletion::done())
-                    .expect("source finalizer owns current queue ticket");
+            }
+            if inflight.command.spec.name == "wait-for" {
+                let registry = match state.lock() {
+                    Ok(state) => state.wait_registry(),
+                    Err(_) => {
+                        self.finish_execution(
+                            inflight,
+                            SharedCommandExecution::completed(CommandResult::err(
+                                "server state poisoned\n",
+                            )),
+                            state,
+                        );
+                        continue;
+                    }
+                };
+                let args = inflight.command.args.clone();
+                self.suspended = Some(inflight);
+                return ResumableCommandTurn::Suspended(CommandSuspension::WaitFor {
+                    args,
+                    registry,
+                });
+            }
+            if inflight.command.spec.name == "command-prompt" && self.context.wait_for_interactions
+            {
+                if let Err(error) = command_prompt_spec(&inflight.command.args) {
+                    self.finish_execution(
+                        inflight,
+                        SharedCommandExecution::completed(CommandResult::err(error)),
+                        state,
+                    );
+                    continue;
+                }
+                let registry = match state.lock() {
+                    Ok(state) => state.client_prompt_registry(),
+                    Err(_) => {
+                        self.finish_execution(
+                            inflight,
+                            SharedCommandExecution::completed(CommandResult::err(
+                                "server state poisoned\n",
+                            )),
+                            state,
+                        );
+                        continue;
+                    }
+                };
+                let suspension = CommandSuspension::CommandPrompt {
+                    target: command_prompt_target(&inflight.command.args),
+                    tty_name: self.context.tty_name.clone(),
+                    wait: command_prompt_waits(&inflight.command.args),
+                    args: inflight.command.args.clone(),
+                    registry,
+                };
+                self.suspended = Some(inflight);
+                return ResumableCommandTurn::Suspended(suspension);
+            }
+            if self.context.wait_for_interactions
+                && client_interaction_waits(inflight.command.spec.name, &inflight.command.args)
+            {
+                let (reply, completed) = mpsc::channel();
+                let mut interaction_context = self.context.clone();
+                interaction_context.interaction_reply = Some(reply);
+                let initial =
+                    run_single_shared(&inflight.command, state, &self.agents, &interaction_context);
+                if initial.exit != 0 {
+                    self.finish_execution(
+                        inflight,
+                        SharedCommandExecution::completed(initial),
+                        state,
+                    );
+                    continue;
+                }
+                self.suspended = Some(inflight);
+                return ResumableCommandTurn::Suspended(CommandSuspension::ClientInteraction {
+                    completed,
+                });
+            }
+            if inflight.command.spec.name == "set-hook" && has_flag(&inflight.command.args, "-R") {
+                let hook = positionals(&inflight.command.args, &["-t"])
+                    .first()
+                    .copied();
+                let execution = match hook {
+                    None => SharedCommandExecution::completed(CommandResult::err(
+                        "set-hook: missing hook\n",
+                    )),
+                    Some(hook) if !options::is_hook(hook) => SharedCommandExecution::completed(
+                        CommandResult::err(format!("invalid option: {hook}\n")),
+                    ),
+                    Some(hook) => {
+                        let mut insert_next = self.plan_hook_with_capture(
+                            hook,
+                            flag_value(&inflight.command.args, "-t"),
+                            state,
+                            NestedCapture::Discard,
+                        );
+                        insert_next.push(vec![SharedQueueItem::FinalizeHooks {
+                            command: "set-hook",
+                            args: inflight.command.args.clone(),
+                        }]);
+                        SharedCommandExecution {
+                            result: CommandResult::ok(""),
+                            insert_next,
+                            defer_success_hooks: true,
+                        }
+                    }
+                };
+                self.finish_execution(inflight, execution, state);
                 continue;
             }
-        };
+            let command = &inflight.command;
 
-        {
-            let mut state = match state.lock() {
-                Ok(state) => state,
-                Err(_) => return CommandResult::err("server state poisoned\n"),
+            let mut execution = match command.spec.name {
+                "run-shell" if !has_flag(&command.args, "-b") => SharedCommandExecution::completed(
+                    run_shell_shared(&command.args, state, &self.agents, &self.context),
+                ),
+                "load-buffer" => SharedCommandExecution::completed(run_load_buffer_shared(
+                    &command,
+                    state,
+                    &self.agents,
+                    &self.context,
+                )),
+                "save-buffer" => SharedCommandExecution::completed(run_save_buffer_shared(
+                    &command,
+                    state,
+                    &self.agents,
+                    &self.context,
+                )),
+                _ => SharedCommandExecution::completed(run_single_shared(
+                    &command,
+                    state,
+                    &self.agents,
+                    &self.context,
+                )),
             };
-            state.add_message(format!(
-                "{} command: {}",
-                context
-                    .client_pid
-                    .map(|pid| format!("client-{pid}"))
-                    .unwrap_or_else(|| "client-unknown".to_string()),
-                display_command(&command.args)
-            ));
+            if !execution.result.deferred_commands.is_empty() {
+                let commands = std::mem::take(&mut execution.result.deferred_commands);
+                match self.plan_deferred_commands(commands, state) {
+                    Ok(commands) => {
+                        if !commands.is_empty() {
+                            execution.insert_next.push(commands);
+                        }
+                        execution
+                            .insert_next
+                            .push(vec![SharedQueueItem::FinalizeHooks {
+                                command: inflight.command.spec.name,
+                                args: inflight.command.args.clone(),
+                            }]);
+                        execution.defer_success_hooks = true;
+                    }
+                    Err(result) => execution.result = result,
+                }
+            }
+            if let Some((observation, before)) = execution.result.pane_output_wait.take() {
+                match PaneOutputSuspension::new(observation, before, execution.result) {
+                    Ok(wait) => {
+                        self.suspended = Some(inflight);
+                        return ResumableCommandTurn::Suspended(CommandSuspension::PaneOutput(
+                            wait,
+                        ));
+                    }
+                    Err(result) => {
+                        execution.result = result;
+                    }
+                }
+            }
+
+            self.finish_execution(inflight, execution, state);
         }
+        ResumableCommandTurn::Pending
+    }
 
-        let mut execution = match command.spec.name {
-            "command-prompt" if context.wait_for_interactions => SharedCommandExecution::completed(
-                run_command_prompt_shared(&command.args, state, context),
-            ),
-            name if context.wait_for_interactions
-                && client_interaction_waits(name, &command.args) =>
-            {
-                SharedCommandExecution::completed(run_client_interaction_shared(
-                    &command, state, agents, context,
-                ))
-            }
-            "wait-for" => {
-                SharedCommandExecution::completed(run_wait_for_shared(&command.args, state))
-            }
-            "run-shell" if !has_flag(&command.args, "-b") => SharedCommandExecution::completed(
-                run_shell_shared(&command.args, state, agents, context),
-            ),
-            "if-shell" if !has_flag(&command.args, "-b") => SharedCommandExecution::completed(
-                run_if_shell_shared(&command.args, state, agents, context),
-            ),
-            "source-file" => {
-                plan_source_file_shared(&command.args, source_depth, state, agents, context)
-            }
-            "load-buffer" => SharedCommandExecution::completed(run_load_buffer_shared(
-                &command, state, agents, context,
-            )),
-            "save-buffer" => SharedCommandExecution::completed(run_save_buffer_shared(
-                &command, state, agents, context,
-            )),
-            _ => SharedCommandExecution::completed(run_single_shared(
-                &command, state, agents, context,
-            )),
+    fn plan_if_shell_branch(
+        &self,
+        args: &[String],
+        matched: bool,
+        state: &Arc<Mutex<ServerState>>,
+    ) -> SharedCommandExecution {
+        let positionals = positionals(args, &["-t"]);
+        let branch = if matched {
+            positionals.get(1)
+        } else {
+            positionals.get(2)
         };
-        execution.result.wait_for_pane_output();
+        let Some(branch) = branch else {
+            return SharedCommandExecution::completed(CommandResult::ok(""));
+        };
+        let commands = match self.plan_nested_command_line(branch, state, NestedCapture::Inserted) {
+            Ok(commands) => commands,
+            Err(error) => return SharedCommandExecution::completed(error),
+        };
+        let mut insert_next = Vec::new();
+        if !commands.is_empty() {
+            insert_next.push(commands);
+        }
+        insert_next.push(vec![SharedQueueItem::FinalizeHooks {
+            command: "if-shell",
+            args: args.to_vec(),
+        }]);
+        SharedCommandExecution {
+            result: CommandResult::ok(""),
+            insert_next,
+            defer_success_hooks: true,
+        }
+    }
 
+    fn plan_nested_command_line(
+        &self,
+        line: &str,
+        state: &Arc<Mutex<ServerState>>,
+        capture: NestedCapture,
+    ) -> Result<Vec<SharedQueueItem>, CommandResult> {
+        let tokens = tokenize_line(line);
+        let owned_groups = tokenized_command_groups(&tokens);
+        let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
+        let aliases = match state.lock() {
+            Ok(state) => state.command_aliases(),
+            Err(_) => return Err(CommandResult::err("server state poisoned\n")),
+        };
+        let parsed =
+            parse_command_groups_with_aliases(groups, &aliases).map_err(|mut result| {
+                result.continue_queue = true;
+                result
+            })?;
+        let mut nested_context = self.context.clone();
+        if matches!(capture, NestedCapture::Inserted | NestedCapture::Hook) {
+            nested_context.preserve_queue_insertions = true;
+        }
+        if matches!(capture, NestedCapture::Hook) {
+            nested_context.suppress_hooks = true;
+        }
+        Ok(parsed
+            .into_iter()
+            .map(|command| SharedQueueItem::NestedCommand {
+                queue: Box::new(ResumableCommandQueue::new(
+                    vec![command],
+                    &self.agents,
+                    &nested_context,
+                )),
+                capture,
+            })
+            .collect())
+    }
+
+    fn plan_deferred_commands(
+        &self,
+        commands: Vec<DeferredCommand>,
+        state: &Arc<Mutex<ServerState>>,
+    ) -> Result<Vec<SharedQueueItem>, CommandResult> {
+        let aliases = match state.lock() {
+            Ok(state) => state.command_aliases(),
+            Err(_) => return Err(CommandResult::err("server state poisoned\n")),
+        };
+        let mut planned = Vec::new();
+        for command in commands {
+            let parsed = match command {
+                DeferredCommand::Args(args) => {
+                    parse_command_groups_with_aliases(vec![args.as_slice()], &aliases)?
+                }
+                DeferredCommand::Line { line, tail } => {
+                    let tokens = tokenize_line(&line);
+                    let owned_groups = tokenized_command_groups(&tokens);
+                    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
+                    let mut parsed = parse_command_groups_with_aliases(groups, &aliases)?;
+                    if !tail.is_empty() {
+                        let expanded_tail = expand_attached_separators(&tail);
+                        parsed.extend(parse_command_groups_with_aliases(
+                            split_commands(&expanded_tail),
+                            &aliases,
+                        )?);
+                    }
+                    parsed
+                }
+            };
+            planned.extend(parsed.into_iter().map(|command| SharedQueueItem::Command {
+                command,
+                source: None,
+                source_depth: 0,
+                contributes_status: true,
+            }));
+        }
+        Ok(planned)
+    }
+
+    pub(crate) fn resume(
+        &mut self,
+        result: CommandSuspensionResult,
+        state: &Arc<Mutex<ServerState>>,
+    ) {
+        if let Some(nested) = self.nested.as_mut() {
+            nested.queue.resume(result, state);
+            return;
+        }
+        let inflight = self
+            .suspended
+            .take()
+            .expect("command suspension completed without an active queue item");
+        let execution = match result {
+            CommandSuspensionResult::RunShell(completion) => {
+                let result = match state.lock() {
+                    Ok(mut state) => {
+                        let previous = install_command_target_context(&mut state, &self.context);
+                        let result = finish_run_shell(completion, &mut state);
+                        state.record_control_checkpoint();
+                        restore_command_target_context(&mut state, previous);
+                        result
+                    }
+                    Err(_) => CommandResult::err("server state poisoned\n"),
+                };
+                SharedCommandExecution::completed(result)
+            }
+            CommandSuspensionResult::IfShell(matched) => {
+                self.plan_if_shell_branch(&inflight.command.args, matched, state)
+            }
+            CommandSuspensionResult::SourceFile(reads) => plan_source_file_completion(
+                &inflight.command.args,
+                inflight.source_depth,
+                reads,
+                state,
+            ),
+            CommandSuspensionResult::LoadBuffer(input_file) => {
+                let deferred_error = input_file.is_err();
+                let mut context = self.context.clone();
+                context.input_file = Some(input_file);
+                let mut result =
+                    run_single_shared(&inflight.command, state, &self.agents, &context);
+                result.continue_queue |= deferred_error && result.exit != 0;
+                SharedCommandExecution::completed(result)
+            }
+            CommandSuspensionResult::SaveBuffer(result) => {
+                SharedCommandExecution::completed(result)
+            }
+            CommandSuspensionResult::Completed(result) => SharedCommandExecution::completed(result),
+        };
+        self.finish_execution(inflight, execution, state);
+    }
+
+    fn finish_execution(
+        &mut self,
+        inflight: SuspendedCommand,
+        mut execution: SharedCommandExecution,
+        state: &Arc<Mutex<ServerState>>,
+    ) {
+        let command = &inflight.command;
         let exit = execution.result.exit;
         if exit != 0 {
-            if let Some(source) = &source {
+            if let Some(source) = &inflight.source {
                 let diagnostic = execution.result.stderr.trim_end();
                 let location = format!("{}:{}", source.path, source.line);
                 let diagnostic = if matches!(command.spec.name, "if" | "if-shell") {
@@ -641,57 +1644,49 @@ fn run_shared_command_groups(
             }
         }
 
-        let mut inserted = std::mem::take(&mut execution.result.inserted_results);
+        let inserted = std::mem::take(&mut execution.result.inserted_results);
+        self.out
+            .background_commands
+            .append(&mut execution.result.background_commands);
         let stops_group = exit != 0 && !execution.result.continue_queue;
-        if !context.suppress_hooks {
+        if !self.context.suppress_hooks {
             if stops_group {
-                inserted.extend(run_hook_shared(
+                execution.insert_next.extend(self.plan_hook(
                     "command-error",
                     flag_value(&command.args, "-t"),
                     state,
-                    agents,
-                    context,
                 ));
             } else if !execution.defer_success_hooks {
-                inserted.extend(run_notification_hook_shared(
+                execution.insert_next.extend(self.plan_command_hooks(
                     command.spec.name,
                     &command.args,
                     state,
-                    agents,
-                    context,
-                ));
-                inserted.extend(run_after_hook_shared(
-                    command.spec.name,
-                    &command.args,
-                    state,
-                    agents,
-                    context,
                 ));
             }
         }
-        if contributes_status {
-            out.continue_queue |= execution.result.continue_queue;
+        if inflight.contributes_status {
+            self.out.continue_queue |= execution.result.continue_queue;
         }
-        out.append_stdout(&execution.result);
-        out.stderr.push_str(&execution.result.stderr);
-        if contributes_status && (out.exit == 0 || exit != 0) {
-            out.exit = exit;
+        self.out.append_stdout(&execution.result);
+        self.out.stderr.push_str(&execution.result.stderr);
+        if inflight.contributes_status && (self.out.exit == 0 || exit != 0) {
+            self.out.exit = exit;
         }
-        if context.preserve_queue_insertions {
-            out.inserted_results.extend(inserted);
+        if self.context.preserve_queue_insertions {
+            self.out.inserted_results.extend(inserted);
         } else {
             for inserted in inserted {
-                out.append_stdout(&inserted);
-                out.stderr.push_str(&inserted.stderr);
+                self.out.append_stdout(&inserted);
+                self.out.stderr.push_str(&inserted.stderr);
                 if inserted.exit != 0 {
-                    out.exit = inserted.exit;
+                    self.out.exit = inserted.exit;
                 }
             }
         }
 
-        queue
+        self.queue
             .complete(
-                ticket,
+                inflight.ticket,
                 queue::QueueCompletion {
                     discard_group_tail: stops_group,
                     insert_next: execution.insert_next,
@@ -699,41 +1694,167 @@ fn run_shared_command_groups(
             )
             .expect("command owns current queue ticket");
     }
-    out
+
+    fn plan_command_hooks(
+        &self,
+        command: &str,
+        args: &[String],
+        state: &Arc<Mutex<ServerState>>,
+    ) -> Vec<Vec<SharedQueueItem>> {
+        if self.context.suppress_hooks {
+            return Vec::new();
+        }
+        let mut groups = Vec::new();
+        let notification = match command {
+            "new-session" => Some("session-created"),
+            "rename-window" => Some("window-renamed"),
+            _ => None,
+        };
+        if let Some(notification) = notification {
+            groups.extend(self.plan_hook(notification, flag_value(args, "-t"), state));
+        }
+        groups.extend(self.plan_hook(&format!("after-{command}"), flag_value(args, "-t"), state));
+        groups
+    }
+
+    fn plan_hook(
+        &self,
+        hook: &str,
+        requested_target: Option<&str>,
+        state: &Arc<Mutex<ServerState>>,
+    ) -> Vec<Vec<SharedQueueItem>> {
+        self.plan_hook_with_capture(hook, requested_target, state, NestedCapture::Hook)
+    }
+
+    fn plan_hook_with_capture(
+        &self,
+        hook: &str,
+        requested_target: Option<&str>,
+        state: &Arc<Mutex<ServerState>>,
+        capture: NestedCapture,
+    ) -> Vec<Vec<SharedQueueItem>> {
+        let (commands, aliases) = {
+            let mut state = match state.lock() {
+                Ok(state) => state,
+                Err(_) => return Vec::new(),
+            };
+            let previous = install_command_target_context(&mut state, &self.context);
+            let commands = begin_hook_commands(hook, requested_target, &mut state);
+            restore_command_target_context(&mut state, previous);
+            let Some(commands) = commands else {
+                return Vec::new();
+            };
+            (commands, state.command_aliases())
+        };
+
+        let mut hook_context = self.context.clone();
+        if matches!(capture, NestedCapture::Hook) {
+            hook_context.suppress_hooks = true;
+            hook_context.preserve_queue_insertions = true;
+        }
+        let mut groups = Vec::new();
+        for line in commands {
+            let tokens = tokenize_line(&line);
+            let owned_groups = tokenized_command_groups(&tokens);
+            let command_groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
+            match parse_command_groups_with_aliases(command_groups, &aliases) {
+                Ok(parsed) if !parsed.is_empty() => {
+                    groups.push(
+                        parsed
+                            .into_iter()
+                            .map(|command| SharedQueueItem::NestedCommand {
+                                queue: Box::new(ResumableCommandQueue::new(
+                                    vec![command],
+                                    &self.agents,
+                                    &hook_context,
+                                )),
+                                capture,
+                            })
+                            .collect(),
+                    );
+                }
+                Ok(_) => {}
+                Err(mut result) => {
+                    result.continue_queue = true;
+                    groups.push(vec![SharedQueueItem::CapturedResult(result)]);
+                }
+            }
+        }
+        groups.push(vec![SharedQueueItem::EndHook {
+            name: hook.to_string(),
+        }]);
+        groups
+    }
+
+    fn capture_nested_result(&mut self, mut result: CommandResult, capture: NestedCapture) {
+        self.out
+            .background_commands
+            .append(&mut result.background_commands);
+        match capture {
+            NestedCapture::Hook => {
+                if result.inserted_results.is_empty()
+                    && (result.exit != 0
+                        || !result.stdout_data().is_empty()
+                        || !result.stderr.is_empty())
+                {
+                    result.control_flags = 0;
+                    self.merge_inserted_result(result);
+                    return;
+                }
+                for mut inserted in std::mem::take(&mut result.inserted_results) {
+                    inserted.control_flags = 0;
+                    self.merge_inserted_result(inserted);
+                }
+            }
+            NestedCapture::Inserted => {
+                let nested = std::mem::take(&mut result.inserted_results);
+                self.merge_inserted_result(result);
+                for inserted in nested {
+                    self.merge_inserted_result(inserted);
+                }
+            }
+            NestedCapture::Discard => {}
+        }
+    }
+
+    fn merge_inserted_result(&mut self, result: CommandResult) {
+        if self.context.preserve_queue_insertions {
+            self.out.inserted_results.push(result);
+        } else {
+            self.out.append_stdout(&result);
+            self.out.stderr.push_str(&result.stderr);
+            if result.exit != 0 {
+                self.out.exit = result.exit;
+            }
+        }
+    }
 }
 
-fn run_command_prompt_shared(
-    args: &[String],
+/// Execute a command list containing a blocking command without holding the
+/// server state mutex while it waits. Other commands still run one at a time
+/// with the same client/session context and hook behavior.
+fn run_shared_command_groups(
+    parsed: Vec<ParsedCommand>,
     state: &Arc<Mutex<ServerState>>,
+    agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
-    let spec = match command_prompt_spec(args) {
-        Ok(spec) => spec,
-        Err(error) => return CommandResult::err(error),
-    };
-    drop(spec);
-    let registry = match state.lock() {
-        Ok(state) => state.client_prompt_registry(),
-        Err(_) => return CommandResult::err("server state poisoned\n"),
-    };
-    let target = command_prompt_target(args);
-    match registry.request_command(
-        target.as_deref(),
-        context.tty_name.as_deref(),
-        args.to_vec(),
-        command_prompt_waits(args),
-    ) {
-        CommandPromptRequestResult::Completed(completion) => {
-            interaction_completion_result(completion)
+    run_resumable_command(ResumableCommandQueue::new(parsed, agents, context), state)
+}
+
+fn run_resumable_command(
+    mut queue: ResumableCommandQueue,
+    state: &Arc<Mutex<ServerState>>,
+) -> CommandResult {
+    loop {
+        match queue.drive(state, usize::MAX) {
+            ResumableCommandTurn::Pending => continue,
+            ResumableCommandTurn::Suspended(suspension) => {
+                let result = suspension.resolve();
+                queue.resume(result, state);
+            }
+            ResumableCommandTurn::Complete(result) => return result,
         }
-        CommandPromptRequestResult::Queued | CommandPromptRequestResult::Busy => {
-            CommandResult::ok("")
-        }
-        CommandPromptRequestResult::NoCurrentClient => CommandResult::err("no current client\n"),
-        CommandPromptRequestResult::TargetNotFound => CommandResult::err(format!(
-            "can't find client: {}\n",
-            target.unwrap_or_default()
-        )),
     }
 }
 
@@ -746,30 +1867,6 @@ fn client_interaction_waits(name: &str, args: &[String]) -> bool {
     }
 }
 
-fn run_client_interaction_shared(
-    command: &ParsedCommand,
-    state: &Arc<Mutex<ServerState>>,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    let (reply, completed) = mpsc::channel();
-    let mut interaction_context = context.clone();
-    interaction_context.interaction_reply = Some(reply);
-    let initial = run_single_shared(command, state, agents, &interaction_context);
-    drop(interaction_context);
-    if initial.exit != 0 {
-        return initial;
-    }
-    match completed.recv() {
-        Ok(completion) => interaction_completion_result(completion),
-        Err(_) => {
-            let mut result = CommandResult::ok("");
-            result.continue_queue = true;
-            result
-        }
-    }
-}
-
 fn interaction_completion_result(completion: PromptCompletion) -> CommandResult {
     let mut completed = CommandResult {
         stdout: completion.stdout,
@@ -777,6 +1874,8 @@ fn interaction_completion_result(completion: PromptCompletion) -> CommandResult 
         stderr: completion.stderr,
         exit: completion.exit,
         pane_output_wait: None,
+        deferred_commands: Vec::new(),
+        background_commands: Vec::new(),
         continue_queue: true,
         inserted_results: Vec::new(),
         control_flags: 1,
@@ -814,14 +1913,6 @@ fn run_single_shared(
     result
 }
 
-fn run_wait_for_shared(args: &[String], state: &Arc<Mutex<ServerState>>) -> CommandResult {
-    let registry = match state.lock() {
-        Ok(state) => state.wait_registry(),
-        Err(_) => return CommandResult::err("server state poisoned\n"),
-    };
-    execution::wait_for(args, &registry)
-}
-
 fn run_shell_shared(
     args: &[String],
     state: &Arc<Mutex<ServerState>>,
@@ -848,46 +1939,6 @@ fn run_shell_shared(
     state.record_control_checkpoint();
     restore_command_target_context(&mut state, previous);
     result
-}
-
-fn run_if_shell_shared(
-    args: &[String],
-    state: &Arc<Mutex<ServerState>>,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    let pos = positionals(args, &["-t"]);
-    let Some(cond) = pos.first().copied() else {
-        return CommandResult::err("if-shell: too few arguments\n");
-    };
-    let then_cmd = pos.get(1).copied();
-    let else_cmd = pos.get(2).copied();
-    let matched = if has_flag(args, "-F") {
-        let mut state = match state.lock() {
-            Ok(state) => state,
-            Err(_) => return CommandResult::err("server state poisoned\n"),
-        };
-        let previous = install_command_target_context(&mut state, context);
-        let expanded = expand_if_cond(cond, args, &state, agents);
-        restore_command_target_context(&mut state, previous);
-        !expanded.is_empty() && expanded != "0"
-    } else if cond
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .ends_with(&["run", "\"true\""])
-    {
-        true
-    } else {
-        let mut shell = shell_command(cond, context);
-        shell
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false)
-    };
-    match if matched { then_cmd } else { else_cmd } {
-        Some(line) => run_inserted_command_string(line, state, agents, context),
-        None => CommandResult::ok(""),
-    }
 }
 
 /// Execute a command list inserted by a deferred queue item. Inserted commands
@@ -950,42 +2001,47 @@ fn run_shared_tokenized_line(
     }
 }
 
-fn plan_source_file_shared(
+fn prepare_source_file_paths(
     args: &[String],
-    source_depth: u8,
     state: &Arc<Mutex<ServerState>>,
     agents: &PaneAgents,
     context: &ClientContext,
+) -> Result<Vec<String>, CommandResult> {
+    positionals(args, &["-t"])
+        .into_iter()
+        .map(|raw_path| {
+            if !has_bool_flag(args, 'F') {
+                return Ok(raw_path.to_string());
+            }
+            let mut state = state
+                .lock()
+                .map_err(|_| CommandResult::err("server state poisoned\n"))?;
+            let previous = install_command_target_context(&mut state, context);
+            let path = expand_if_cond(raw_path, args, &state, agents);
+            restore_command_target_context(&mut state, previous);
+            Ok(path)
+        })
+        .collect()
+}
+
+fn plan_source_file_completion(
+    args: &[String],
+    source_depth: u8,
+    reads: Vec<SourceFileRead>,
+    state: &Arc<Mutex<ServerState>>,
 ) -> SharedCommandExecution {
-    const SOURCE_DEPTH_LIMIT: u8 = 50;
-
-    if source_depth >= SOURCE_DEPTH_LIMIT {
-        return SharedCommandExecution::completed(CommandResult::err("too many nested files\n"));
-    }
-
     let quiet = has_flag(args, "-q");
     let parse_only = has_flag(args, "-n");
     let verbose = has_flag(args, "-v");
     let mut out = CommandResult::ok("");
     let mut insert_next = Vec::new();
-    for raw_path in positionals(args, &["-t"]) {
-        let path = if has_bool_flag(args, 'F') {
-            let mut state = match state.lock() {
-                Ok(state) => state,
-                Err(_) => {
-                    return SharedCommandExecution::completed(CommandResult::err(
-                        "server state poisoned\n",
-                    ))
-                }
-            };
-            let previous = install_command_target_context(&mut state, context);
-            let path = expand_if_cond(raw_path, args, &state, agents);
-            restore_command_target_context(&mut state, previous);
-            path
-        } else {
-            raw_path.to_string()
-        };
-        match std::fs::read_to_string(&path) {
+    for SourceFileRead {
+        path,
+        contents,
+        existed,
+    } in reads
+    {
+        match contents {
             Ok(contents) => {
                 let mut file_insertions = Vec::new();
                 let mut file_parse_error = false;
@@ -1072,7 +2128,7 @@ fn plan_source_file_shared(
                 // tmux has already returned WAIT once glob expansion found the
                 // path. A later read failure updates the client status, then
                 // resumes the original queue group.
-                out.continue_queue |= Path::new(&path).exists();
+                out.continue_queue |= existed;
             }
         }
     }
@@ -1095,23 +2151,9 @@ fn run_load_buffer_shared(
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
-    if context.input_file.is_some() {
-        let deferred_error = context.input_file.as_ref().is_some_and(Result::is_err);
-        let mut result = run_single_shared(command, state, agents, context);
-        result.continue_queue |= deferred_error && result.exit != 0;
-        return result;
-    }
-    let Some(path) =
-        load_buffer_client_path(&command.args, context).filter(|path| path.as_os_str() != "-")
-    else {
-        return run_single_shared(command, state, agents, context);
-    };
-    let mut file_context = context.clone();
-    file_context.input_file =
-        Some(std::fs::read(path).map_err(|error| error.raw_os_error().unwrap_or(libc::EIO)));
-    let mut result = run_single_shared(command, state, agents, &file_context);
-    result.continue_queue |=
-        file_context.input_file.as_ref().is_some_and(Result::is_err) && result.exit != 0;
+    let deferred_error = context.input_file.as_ref().is_some_and(Result::is_err);
+    let mut result = run_single_shared(command, state, agents, context);
+    result.continue_queue |= deferred_error && result.exit != 0;
     result
 }
 
@@ -1121,20 +2163,10 @@ fn run_save_buffer_shared(
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
-    let request = {
-        let state = match state.lock() {
-            Ok(state) => state,
-            Err(_) => return CommandResult::err("server state poisoned\n"),
-        };
-        save_buffer_client_request(&command.args, &state, context)
-    };
-    let Some(request) = request else {
-        return run_single_shared(command, state, agents, context);
-    };
-    let request = match request {
-        Ok(request) => request,
-        Err(error) => return error,
-    };
+    run_single_shared(command, state, agents, context)
+}
+
+fn write_client_file_request(request: ClientFileWrite) -> CommandResult {
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true);
     if request.flags & libc::O_APPEND != 0 {
@@ -1157,77 +2189,6 @@ fn run_save_buffer_shared(
             result
         }
     }
-}
-
-fn run_after_hook_shared(
-    command: &str,
-    args: &[String],
-    state: &Arc<Mutex<ServerState>>,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> Vec<CommandResult> {
-    let hook = format!("after-{command}");
-    run_hook_shared(&hook, flag_value(args, "-t"), state, agents, context)
-}
-
-fn run_notification_hook_shared(
-    command: &str,
-    args: &[String],
-    state: &Arc<Mutex<ServerState>>,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> Vec<CommandResult> {
-    let hook = match command {
-        "new-session" => "session-created",
-        "rename-window" => "window-renamed",
-        _ => return Vec::new(),
-    };
-    run_hook_shared(hook, flag_value(args, "-t"), state, agents, context)
-}
-
-fn run_hook_shared(
-    hook: &str,
-    requested_target: Option<&str>,
-    state: &Arc<Mutex<ServerState>>,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> Vec<CommandResult> {
-    let commands = {
-        let mut state = match state.lock() {
-            Ok(state) => state,
-            Err(_) => return Vec::new(),
-        };
-        let previous = install_command_target_context(&mut state, context);
-        let commands = begin_hook_commands(hook, requested_target, &mut state);
-        restore_command_target_context(&mut state, previous);
-        commands
-    };
-    let Some(commands) = commands else {
-        return Vec::new();
-    };
-    let mut results = Vec::new();
-    let mut hook_context = context.clone();
-    hook_context.suppress_hooks = true;
-    hook_context.preserve_queue_insertions = true;
-    for command in commands {
-        let mut result = run_inserted_command_string(&command, state, agents, &hook_context);
-        if result.inserted_results.is_empty()
-            && (result.exit != 0 || !result.stdout_data().is_empty() || !result.stderr.is_empty())
-        {
-            result.control_flags = 0;
-            results.push(result);
-        } else {
-            for inserted in &mut result.inserted_results {
-                inserted.control_flags = 0;
-            }
-            results.append(&mut result.inserted_results);
-        }
-    }
-    if let Ok(mut state) = state.lock() {
-        state.end_hook(hook);
-        state.record_control_checkpoint();
-    }
-    results
 }
 
 /// Parse and execute a command line against already-locked state. Split out from
@@ -1442,11 +2403,11 @@ fn begin_hook_commands(
         })
         .into_iter()
         .flat_map(|view| view.iter_effective())
-        .filter_map(|(name, value)| {
+        .filter(|(name, _)| {
             options::parse_option_name(name)
                 .is_some_and(|(base, index)| base == hook && index.is_some())
-                .then(|| value.to_string())
         })
+        .map(|(_, value)| value.to_string())
         .collect::<Vec<_>>();
     Some(commands)
 }
@@ -2473,7 +3434,7 @@ fn display_message(
     let target = flag_value(args, "-t")
         .map(str::to_string)
         .or_else(|| current_session(st));
-    if target.is_none() && !(has_flag(args, "-p") && !has_flag(args, "-I")) {
+    if target.is_none() && (!has_flag(args, "-p") || has_flag(args, "-I")) {
         return CommandResult::err("can't establish current session\n");
     }
     // display-message uses tmux's can-fail target lookup. A missing explicit
@@ -2683,15 +3644,15 @@ pub(super) fn vars_full(
     group.sort_by_key(|candidate| candidate.id);
     let grouped = st.is_grouped(sess);
     let group_name = st.session_group_name(sess).unwrap_or("").to_string();
-    let group_list = grouped
-        .then(|| {
-            group
-                .iter()
-                .map(|candidate| candidate.name.as_str())
-                .collect::<Vec<_>>()
-                .join(",")
-        })
-        .unwrap_or_default();
+    let group_list = if grouped {
+        group
+            .iter()
+            .map(|candidate| candidate.name.as_str())
+            .collect::<Vec<_>>()
+            .join(",")
+    } else {
+        String::new()
+    };
     let attached_clients = st.session_attached_client_names(sess);
     let group_attached_clients = st.session_group_attached_client_names(sess);
     // Server-global variables (same for every target). Values are volatile
@@ -4061,7 +5022,7 @@ enum OptionTarget {
 }
 
 impl OptionTarget {
-    fn local<'a>(self, st: &'a ServerState) -> &'a OptionSet {
+    fn local(self, st: &ServerState) -> &OptionSet {
         match self {
             Self::Server => st.global_options().server(),
             Self::GlobalSession => st.global_options().session(),
@@ -6225,7 +7186,7 @@ fn run_shell(
     finish_run_shell(completion, st)
 }
 
-struct RunShellCompletion {
+pub(crate) struct RunShellCompletion {
     result: CommandResult,
     view: Option<(String, Vec<u8>)>,
 }
@@ -7234,6 +8195,144 @@ mod tests {
         };
         assert!(unsafe { libc::poll(&mut pollfd, 1, 100) } >= 0);
         pollfd.revents & libc::POLLIN != 0
+    }
+
+    #[test]
+    fn foreground_shell_is_an_owned_queue_suspension() {
+        let st = state();
+        let args = vec![
+            "run-shell".to_string(),
+            "printf queue-suspension".to_string(),
+        ];
+        let Ok(parsed) = parse_command_groups(vec![args.as_slice()]) else {
+            panic!("run-shell fixture did not parse");
+        };
+        let mut queue =
+            ResumableCommandQueue::new(parsed, &PaneAgents::new(), &ClientContext::default());
+
+        let ResumableCommandTurn::Suspended(suspension) = queue.drive(&st, 1) else {
+            panic!("foreground shell did not suspend its command queue");
+        };
+        queue.resume(suspension.resolve(), &st);
+        let ResumableCommandTurn::Complete(result) = queue.drive(&st, 1) else {
+            panic!("resumed shell did not complete its command queue");
+        };
+        assert_eq!(result.exit, 0);
+        assert_eq!(result.stdout, "queue-suspension\n");
+    }
+
+    #[test]
+    fn resumed_shell_preserves_the_original_queue_tail() {
+        let st = state();
+        let first = vec!["run-shell".to_string(), "printf first".to_string()];
+        let second = vec![
+            "display-message".to_string(),
+            "-p".to_string(),
+            "second".to_string(),
+        ];
+        let Ok(parsed) = parse_command_groups(vec![first.as_slice(), second.as_slice()]) else {
+            panic!("run-shell queue fixture did not parse");
+        };
+        let mut queue =
+            ResumableCommandQueue::new(parsed, &PaneAgents::new(), &ClientContext::default());
+
+        let ResumableCommandTurn::Suspended(suspension) = queue.drive(&st, 8) else {
+            panic!("foreground shell did not suspend its command queue");
+        };
+        queue.resume(suspension.resolve(), &st);
+        let ResumableCommandTurn::Complete(result) = queue.drive(&st, 8) else {
+            panic!("resumed queue tail did not complete");
+        };
+        assert_eq!(result.stdout, "first\nsecond\n");
+    }
+
+    #[test]
+    fn run_shell_command_mode_uses_the_owned_nested_queue() {
+        let st = state();
+        let args = vec![
+            "run-shell".to_string(),
+            "-C".to_string(),
+            "run-shell 'printf nested'".to_string(),
+        ];
+        let Ok(parsed) = parse_command_groups(vec![args.as_slice()]) else {
+            panic!("run-shell -C fixture did not parse");
+        };
+        let mut queue =
+            ResumableCommandQueue::new(parsed, &PaneAgents::new(), &ClientContext::default());
+
+        let ResumableCommandTurn::Suspended(suspension) = queue.drive(&st, 16) else {
+            panic!("nested foreground shell did not suspend the owned queue");
+        };
+        queue.resume(suspension.resolve(), &st);
+        let ResumableCommandTurn::Complete(result) = queue.drive(&st, 16) else {
+            panic!("nested foreground shell did not complete");
+        };
+        assert_eq!(result.stdout, "nested\n");
+    }
+
+    #[test]
+    fn configured_hook_uses_the_owned_nested_queue() {
+        let st = state();
+        assert_eq!(
+            run_str(
+                &st,
+                &[
+                    "set-hook",
+                    "-g",
+                    "after-display-message",
+                    "run-shell 'printf hook'",
+                ],
+            )
+            .exit,
+            0
+        );
+        let args = vec![
+            "display-message".to_string(),
+            "-p".to_string(),
+            "main".to_string(),
+        ];
+        let Ok(parsed) = parse_command_groups(vec![args.as_slice()]) else {
+            panic!("display-message fixture did not parse");
+        };
+        let mut queue =
+            ResumableCommandQueue::new(parsed, &PaneAgents::new(), &ClientContext::default());
+
+        let ResumableCommandTurn::Suspended(suspension) = queue.drive(&st, 16) else {
+            panic!("foreground shell in configured hook did not suspend the owned queue");
+        };
+        queue.resume(suspension.resolve(), &st);
+        let ResumableCommandTurn::Complete(result) = queue.drive(&st, 16) else {
+            panic!("configured hook did not complete");
+        };
+        assert_eq!(result.stdout, "main\nhook\n");
+    }
+
+    #[test]
+    fn if_shell_preserves_inserted_results_for_control_framing() {
+        let st = state();
+        let args = vec![
+            "if-shell".to_string(),
+            "true".to_string(),
+            "display-message -p branch".to_string(),
+        ];
+        let Ok(parsed) = parse_command_groups(vec![args.as_slice()]) else {
+            panic!("if-shell fixture did not parse");
+        };
+        let context = ClientContext {
+            preserve_queue_insertions: true,
+            ..ClientContext::default()
+        };
+        let mut queue = ResumableCommandQueue::new(parsed, &PaneAgents::new(), &context);
+        let ResumableCommandTurn::Suspended(suspension) = queue.drive(&st, 16) else {
+            panic!("if-shell condition did not suspend");
+        };
+        queue.resume(suspension.resolve(), &st);
+        let ResumableCommandTurn::Complete(result) = queue.drive(&st, 16) else {
+            panic!("if-shell queue did not complete");
+        };
+        assert_eq!(result.stdout, "");
+        assert_eq!(result.inserted_results.len(), 1);
+        assert_eq!(result.inserted_results[0].stdout, "branch\n");
     }
 
     #[test]

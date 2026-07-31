@@ -8,7 +8,7 @@ pub(in crate::tmux::native) enum Command {
     Refresh,
     Suspend,
     Lock,
-    CommandPrompt,
+    Prompt,
     ConfirmBefore,
     DisplayMessage,
     DisplayMenu,
@@ -35,7 +35,7 @@ impl Command {
             Self::Refresh => refresh_client(args, context.state, context.client),
             Self::Switch => switch_client(args, context.state, context.client),
             Self::Suspend => suspend_client(args, context.state, context.client),
-            Self::CommandPrompt => CommandResult::err("no current client\n"),
+            Self::Prompt => CommandResult::err("no current client\n"),
             Self::ConfirmBefore => confirm_before(args, context.state, context.client),
             Self::DisplayMenu => display_menu(args, context.state, context.client),
             Self::DisplayPopup => display_popup(args, context.state, context.client),
@@ -79,9 +79,7 @@ fn confirm_before(args: &[String], state: &ServerState, client: &ClientContext) 
     };
     let confirm_key = match flag_value(args, "-c") {
         Some(value)
-            if value.as_bytes().len() == 1
-                && value.as_bytes()[0] > 31
-                && value.as_bytes()[0] < 127 =>
+            if value.len() == 1 && value.as_bytes()[0] > 31 && value.as_bytes()[0] < 127 =>
         {
             value.as_bytes()[0]
         }
@@ -464,7 +462,7 @@ pub(super) const ALL: &[Command] = &[
     Command::Refresh,
     Command::Suspend,
     Command::Lock,
-    Command::CommandPrompt,
+    Command::Prompt,
     Command::ConfirmBefore,
     Command::DisplayMessage,
     Command::DisplayMenu,

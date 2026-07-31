@@ -74,11 +74,7 @@ pub(in crate::tmux::native) static COMMAND_SPECS: &[CommandSpec] = &[
         Command::Client(Client::ClearPromptHistory),
     ),
     CommandSpec::new("clock-mode", None, Command::Client(Client::ClockMode)),
-    CommandSpec::new(
-        "command-prompt",
-        None,
-        Command::Client(Client::CommandPrompt),
-    ),
+    CommandSpec::new("command-prompt", None, Command::Client(Client::Prompt)),
     CommandSpec::new(
         "confirm-before",
         Some("confirm"),
