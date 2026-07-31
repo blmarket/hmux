@@ -43,7 +43,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 
-use crate::common::reactor::WakeHandle;
 use crate::integration::status::StatusHub;
 use crate::observability::v1::{PaneId as PublicPaneId, PaneObservability, ServerObservability};
 use crate::tmux::codec::{
@@ -225,16 +224,6 @@ impl NativeServer {
         }
     }
 
-    /// Let pane lifecycle changes interrupt the concrete server event loop.
-    ///
-    /// Command and control workers already expose completion descriptors to the
-    /// reactor. Pane exit is observed by the native observation worker, so it
-    /// uses this handle to make the outer loop re-evaluate `exit-empty` without
-    /// a periodic timeout.
-    pub(crate) fn install_event_loop_wake_handle(&self, handle: WakeHandle) {
-        self.observation.install_lifecycle_wake_handle(handle);
-    }
-
     /// Open the concrete nonblocking client half used by the event-loop
     /// compatibility handoff.
     ///
@@ -378,7 +367,6 @@ pub(crate) struct TerminalTail {
 struct ObservationRuntime {
     stop: Arc<AtomicBool>,
     worker: Mutex<Option<JoinHandle<()>>>,
-    lifecycle_wake: Arc<Mutex<Option<WakeHandle>>>,
     signal: Arc<ObservationSignal>,
     hook: Arc<dyn ObservationHook>,
     previous: Arc<Mutex<HashMap<PaneId, ObservedPane>>>,
@@ -388,7 +376,6 @@ struct ObservationRuntime {
 pub(crate) struct ObservationSignal {
     revision: Mutex<u64>,
     changed: Condvar,
-    event_loop_wake: Mutex<Option<WakeHandle>>,
 }
 
 impl ObservationSignal {
@@ -400,20 +387,6 @@ impl ObservationSignal {
         *revision = revision.wrapping_add(1);
         drop(revision);
         self.changed.notify_all();
-        if let Some(wake) = self
-            .event_loop_wake
-            .lock()
-            .ok()
-            .and_then(|wake| wake.clone())
-        {
-            let _ = wake.wake();
-        }
-    }
-
-    fn install_event_loop_wake(&self, wake: WakeHandle) {
-        if let Ok(mut current) = self.event_loop_wake.lock() {
-            *current = Some(wake);
-        }
     }
 
     fn revision(&self) -> u64 {
@@ -446,8 +419,6 @@ impl ObservationRuntime {
     ) -> io::Result<ObservationRuntime> {
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop);
-        let lifecycle_wake = Arc::new(Mutex::new(None));
-        let worker_lifecycle_wake = Arc::clone(&lifecycle_wake);
         let worker_signal = Arc::clone(&signal);
         let previous = Arc::new(Mutex::new(HashMap::new()));
         let worker_previous = Arc::clone(&previous);
@@ -459,7 +430,6 @@ impl ObservationRuntime {
                     state,
                     worker_hook,
                     worker_stop,
-                    worker_lifecycle_wake,
                     worker_signal,
                     worker_previous,
                 )
@@ -467,18 +437,10 @@ impl ObservationRuntime {
         Ok(ObservationRuntime {
             stop,
             worker: Mutex::new(Some(worker)),
-            lifecycle_wake,
             signal,
             hook,
             previous,
         })
-    }
-
-    fn install_lifecycle_wake_handle(&self, handle: WakeHandle) {
-        self.signal.install_event_loop_wake(handle.clone());
-        if let Ok(mut current) = self.lifecycle_wake.lock() {
-            *current = Some(handle);
-        }
     }
 
     fn stop_worker(&self) {
@@ -497,15 +459,7 @@ impl ObservationRuntime {
             .previous
             .lock()
             .map_err(|_| io::Error::other("pane observation state mutex poisoned"))?;
-        reconcile(
-            &mut previous,
-            current,
-            self.hook.as_ref(),
-            self.lifecycle_wake
-                .lock()
-                .ok()
-                .and_then(|wake| wake.clone()),
-        );
+        reconcile(&mut previous, current, self.hook.as_ref());
         Ok(())
     }
 }
@@ -526,7 +480,6 @@ fn observe(
     state: Arc<Mutex<ServerState>>,
     hook: Arc<dyn ObservationHook>,
     stop: Arc<AtomicBool>,
-    lifecycle_wake: Arc<Mutex<Option<WakeHandle>>>,
     signal: Arc<ObservationSignal>,
     previous: Arc<Mutex<HashMap<PaneId, ObservedPane>>>,
 ) {
@@ -535,12 +488,7 @@ fn observe(
         match pane_snapshot(&state) {
             Ok(current) => {
                 if let Ok(mut previous) = previous.lock() {
-                    reconcile(
-                        &mut previous,
-                        current,
-                        hook.as_ref(),
-                        lifecycle_wake.lock().ok().and_then(|wake| wake.clone()),
-                    );
+                    reconcile(&mut previous, current, hook.as_ref());
                 }
             }
             Err(error) => tracing::warn!(target: "hmux::native", %error, "pane observation failed"),
@@ -575,7 +523,6 @@ fn reconcile(
     previous: &mut HashMap<PaneId, ObservedPane>,
     current: HashMap<PaneId, ObservedPane>,
     hook: &dyn ObservationHook,
-    lifecycle_wake: Option<WakeHandle>,
 ) {
     let mut ids: Vec<PaneId> = current.keys().copied().collect();
     ids.sort_unstable();
@@ -588,7 +535,6 @@ fn reconcile(
                     deliver(hook, PaneEvent::Output(id));
                 }
                 if now.exited {
-                    wake_lifecycle(lifecycle_wake.as_ref());
                     deliver(hook, PaneEvent::Exited(id));
                 }
             }
@@ -597,7 +543,6 @@ fn reconcile(
                     deliver(hook, PaneEvent::Output(id));
                 }
                 if now.exited && !was.exited {
-                    wake_lifecycle(lifecycle_wake.as_ref());
                     deliver(hook, PaneEvent::Exited(id));
                 }
             }
@@ -611,16 +556,9 @@ fn reconcile(
         .collect();
     removed.sort_unstable();
     for id in removed {
-        wake_lifecycle(lifecycle_wake.as_ref());
         deliver(hook, PaneEvent::Removed(id));
     }
     *previous = current;
-}
-
-fn wake_lifecycle(handle: Option<&WakeHandle>) {
-    if let Some(handle) = handle {
-        let _ = handle.wake();
-    }
 }
 
 fn deliver(hook: &dyn ObservationHook, event: PaneEvent) {
@@ -635,7 +573,6 @@ mod tests {
     use std::sync::Mutex as StdMutex;
     use std::time::Duration;
 
-    use crate::common::reactor::{MioReactor, Reactor};
     use crate::observability::v1::{PaneId, ServerObservability};
 
     use super::{NativeServer, NoopObservationHook, ObservationHook, PaneEvent, ServerState};
@@ -743,33 +680,6 @@ mod tests {
             handle.terminal_tail(1).expect("retained tail").text,
             "second"
         );
-    }
-
-    #[test]
-    fn pane_removal_wakes_the_server_reactor_for_lifecycle_recheck() {
-        let hook = std::sync::Arc::new(RecordingHook::default());
-        let server = NativeServer::with_observation_hook(
-            ServerState::with_test_session().expect("default state"),
-            hook.clone(),
-        )
-        .expect("native server");
-        wait_until(|| {
-            hook.0
-                .lock()
-                .unwrap()
-                .iter()
-                .any(|event| matches!(event, PaneEvent::Added(_)))
-        });
-
-        let mut reactor = MioReactor::<u8>::new().expect("reactor");
-        server.install_event_loop_wake_handle(reactor.wake_handle());
-        assert!(server.state().lock().unwrap().kill_session("0"));
-
-        let result = reactor
-            .poll(Some(Duration::from_secs(1)), &mut Vec::new())
-            .expect("lifecycle wake");
-        assert!(result.was_woken());
-        assert!(server.event_loop_shutdown_requested());
     }
 
     #[test]

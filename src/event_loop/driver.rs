@@ -4,7 +4,6 @@ use std::collections::VecDeque;
 use std::io;
 use std::time::{Duration, Instant};
 
-use crate::common::reactor::{Interest, MioReactor, PollResult, Reactor, Ready, WakeHandle};
 use crate::native::pane::PaneIo;
 use crate::native::NativeServer;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
@@ -20,6 +19,7 @@ use super::process::{ChildSignal, ChildSignalEvent};
 use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
 };
+use super::reactor::{Interest, MioReactor, PollResult, Reactor, Ready};
 use super::timer::{ExpiredTimer, TimerQueue};
 
 /// One queued event with a direct reference to its destination.
@@ -737,12 +737,6 @@ where
 
     pub(crate) fn pending_events(&self) -> usize {
         self.events.len()
-    }
-
-    /// Return a cross-thread handle for native compatibility workers that need
-    /// to interrupt an otherwise unbounded reactor wait.
-    pub(crate) fn wake_handle(&self) -> WakeHandle {
-        self.reactor.wake_handle()
     }
 
     pub(crate) fn dispatch_one(&mut self) -> io::Result<bool> {

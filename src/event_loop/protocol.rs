@@ -12,7 +12,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::common::reactor::Token;
 use crate::integration::status::{StatusHub, StatusSnapshot, StatusSubscription};
 use crate::native::attach::ClientTty;
 use crate::native::command::{self, ClientContext, CommandResult};
@@ -30,6 +29,7 @@ use super::client::READ_FRAME_BUDGET;
 use super::driver::{Outbox, PairingHandle};
 use super::job::BackgroundCommands;
 use super::pairing::PairingCloseReason;
+use super::reactor::Token;
 use super::timer::TimerId;
 
 const CLIENT_CONTROL: i64 = 0x2000;

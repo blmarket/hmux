@@ -10,4 +10,5 @@ pub(crate) mod pairing;
 pub(crate) mod pane;
 pub(crate) mod process;
 pub(crate) mod protocol;
+pub(crate) mod reactor;
 pub(crate) mod timer;

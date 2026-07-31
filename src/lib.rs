@@ -7,7 +7,6 @@
 //! section (interactive terminal I/O bypasses this layer via a passed tty fd).
 //!
 //! Modules:
-//! - `common` — engine-agnostic readiness infrastructure shared by runtimes.
 //! - [`event_loop`] — readiness-driven event-loop engine.
 //! - [`native`] — native libghostty-vt engine.
 //! - [`tmux`] — message layer, codec, server traits, and compatibility re-exports.
@@ -15,8 +14,6 @@
 //! - [`integration`] — prototype consumers of optional runtime capabilities.
 //! - [`serve`] — the listener and per-connection pairing loop.
 
-#[allow(dead_code)]
-pub(crate) mod common;
 pub mod error;
 #[allow(dead_code)]
 pub(crate) mod event_loop;

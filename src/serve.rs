@@ -25,7 +25,7 @@ use crate::tmux::introspect::{Direction, LoggingReader, LoggingWriter};
 use crate::tmux::traits::{FrameReader, FrameWriter, TmuxServer};
 
 type NativeEventLoop =
-    EventLoop<crate::common::reactor::MioReactor<crate::event_loop::driver::IoRecipient>>;
+    EventLoop<crate::event_loop::reactor::MioReactor<crate::event_loop::driver::IoRecipient>>;
 const PROTOCOL_WRITE_QUEUE_LIMIT: usize = MAX_IMSGSIZE;
 
 /// Bind `listen_path` and serve clients from `server`, forever.
@@ -64,7 +64,6 @@ pub fn run_event_loop(listen_path: &Path, server: NativeServer) -> io::Result<()
 
     let mut event_loop = EventLoop::new()?;
     server.enable_event_loop_pane_io()?;
-    server.install_event_loop_wake_handle(event_loop.wake_handle());
     let child_signal = event_loop.add_child_signal(server.clone())?;
     let listener = event_loop.add_listener(bind_listener(listen_path)?, ACCEPT_BUDGET)?;
     let mut clients = Vec::new();

@@ -9,10 +9,9 @@ use std::rc::Rc;
 
 use tracing::warn;
 
-use crate::common::reactor::Token;
-
 use super::actor::ActorRef;
 use super::driver::Outbox;
+use super::reactor::Token;
 
 /// Accepted sockets waiting for the server adapter to create client actors.
 #[derive(Clone, Default)]
