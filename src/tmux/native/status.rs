@@ -830,8 +830,8 @@ struct DrawState {
 impl DrawState {
     fn new(base: CellStyle) -> Self {
         Self {
-            style: base.clone(),
-            base: base.clone(),
+            style: base,
+            base,
             current_default: base,
             acs: false,
             base_acs: false,
@@ -982,7 +982,7 @@ fn blank_row(cols: usize, base: &CellStyle) -> StatusRow {
             .map(|_| StatusCell {
                 text: " ".into(),
                 width: 1,
-                style: base.clone(),
+                style: *base,
                 acs: false,
             })
             .collect(),
@@ -1029,7 +1029,7 @@ impl<'a> StatusContext<'a> {
         self.state
             .option_for_target(&self.session.name, name)
             .or_else(|| super::options::option_default(name))
-            .unwrap_or_else(|| match name {
+            .unwrap_or(match name {
                 "status-left" => DEFAULT_STATUS_LEFT,
                 "status-right" => DEFAULT_STATUS_RIGHT,
                 "status-left-length" => "10",
@@ -1396,7 +1396,7 @@ impl format::FormatContext for StatusContext<'_> {
 
 fn draw_row(expanded: &str, cols: usize, base: &CellStyle) -> StatusRow {
     let mut sections = Sections::default();
-    let mut state = DrawState::new(base.clone());
+    let mut state = DrawState::new(*base);
     let mut bytes = expanded.as_bytes();
     while !bytes.is_empty() {
         if !state.ignore && bytes.starts_with(b"#[") {
@@ -1456,7 +1456,7 @@ fn draw_row(expanded: &str, cols: usize, base: &CellStyle) -> StatusRow {
         }
     }
 
-    let mut fill_style = base.clone();
+    let mut fill_style = *base;
     if let Some(fill) = state.fill {
         fill_style.bg = fill;
     }
@@ -1474,7 +1474,7 @@ fn push_cell(text: &str, width: u8, state: &DrawState, sections: &mut Sections) 
     sections.cells_mut(section).push(StatusCell {
         text: text.to_string(),
         width,
-        style: state.style.clone(),
+        style: state.style,
         acs: state.acs,
     });
     if let Some(kind) = state.range.clone() {
@@ -1503,7 +1503,7 @@ fn find_style_close(bytes: &[u8]) -> Option<usize> {
 fn apply_status_style(directive: &str, state: &mut DrawState, sections: &mut Sections) {
     let original_state = state.clone();
     let original_sections = sections.clone();
-    let saved = state.style.clone();
+    let saved = state.style;
     let saved_acs = state.acs;
     let mut default_action = None;
     let mut invalid = false;
@@ -1531,8 +1531,8 @@ fn apply_status_style(directive: &str, state: &mut DrawState, sections: &mut Sec
             "push-default" => default_action = Some(true),
             "pop-default" => default_action = Some(false),
             "set-default" => {
-                state.base = saved.clone();
-                state.current_default = saved.clone();
+                state.base = saved;
+                state.current_default = saved;
                 state.base_acs = saved_acs;
                 state.current_default_acs = saved_acs;
             }
@@ -1620,7 +1620,7 @@ fn apply_status_style(directive: &str, state: &mut DrawState, sections: &mut Sec
             state.current_default_acs = saved_acs;
         }
         Some(false) => {
-            state.current_default = state.base.clone();
+            state.current_default = state.base;
             state.current_default_acs = state.base_acs;
         }
         None => {}
@@ -1958,10 +1958,7 @@ fn replace_cell_at(cells: &mut Vec<StatusCell>, column: usize, replacement: Stat
     }
     cells.splice(start..index, [replacement]);
     if removed > width {
-        let style = cells
-            .get(start)
-            .map(|cell| cell.style.clone())
-            .unwrap_or_default();
+        let style = cells.get(start).map(|cell| cell.style).unwrap_or_default();
         let acs = cells.get(start).is_some_and(|cell| cell.acs);
         cells.insert(
             start + 1,
@@ -1984,8 +1981,8 @@ fn parse_status_cell_style(
     base: &CellStyle,
     current_default: &CellStyle,
 ) -> CellStyle {
-    let mut state = DrawState::new(base.clone());
-    state.current_default = current_default.clone();
+    let mut state = DrawState::new(*base);
+    state.current_default = *current_default;
     apply_status_style(value, &mut state, &mut Sections::default());
     state.style
 }

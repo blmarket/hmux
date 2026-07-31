@@ -437,7 +437,7 @@ impl Expander<'_> {
             {
                 let mut value = self.lookup(vars, name).unwrap_or_default();
                 value = self.expand(&value, vars, depth);
-                if modifiers.iter().any(|modifier| *modifier == "T") {
+                if modifiers.contains(&"T") {
                     value = expand_time_string(&value);
                 }
                 for modifier in modifiers {
@@ -844,7 +844,7 @@ fn dirname(s: &str) -> String {
         return String::new();
     }
     match trimmed.rsplit_once('/') {
-        Some((dir, _)) if dir.is_empty() => "/".to_string(),
+        Some(("", _)) => "/".to_string(),
         Some((dir, _)) => dir.to_string(),
         None => ".".to_string(),
     }
@@ -920,7 +920,7 @@ fn serialize_truncated(tokens: &[(&str, usize)]) -> String {
     while index < tokens.len() {
         let is_hash = tokens[index].1 == 1 && (tokens[index].0 == "#" || tokens[index].0 == "##");
         if !is_hash {
-            out.push_str(&tokens[index].0);
+            out.push_str(tokens[index].0);
             index += 1;
             continue;
         }
@@ -932,7 +932,7 @@ fn serialize_truncated(tokens: &[(&str, usize)]) -> String {
             index += 1;
         }
         if index - start == 1 {
-            out.push_str(&tokens[start].0);
+            out.push_str(tokens[start].0);
         } else {
             out.push_str(&"##".repeat(index - start));
         }

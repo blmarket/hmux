@@ -565,14 +565,11 @@ fn scrollbar_location(
     let total = history.saturating_add(viewport).max(1);
     let slider_height = (height.saturating_mul(viewport) / total).clamp(1, height);
     let available = height.saturating_sub(slider_height);
-    let slider_top = if history == 0 {
-        0
-    } else {
-        history
-            .saturating_sub(scroll.min(history))
-            .saturating_mul(available)
-            / history
-    };
+    let slider_top = history
+        .saturating_sub(scroll.min(history))
+        .saturating_mul(available)
+        .checked_div(history)
+        .unwrap_or(0);
     let row = usize::from(local.y).min(height - 1);
     if row < slider_top {
         Some(MouseLocation::ScrollbarUp)
