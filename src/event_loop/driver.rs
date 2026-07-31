@@ -4,10 +4,10 @@ use std::collections::VecDeque;
 use std::io;
 use std::time::{Duration, Instant};
 
+use crate::native::pane::PaneIo;
+use crate::native::NativeServer;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 use crate::tmux::message::Frame;
-use crate::tmux::native::pane::PaneIo;
-use crate::tmux::native::NativeServer;
 
 use super::actor::{ActorRef, WeakActorRef};
 use super::client::{dispatch_inbox, ClientInbox, ClientInboxEvent, ClientIo, ClientIoEvent};

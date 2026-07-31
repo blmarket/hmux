@@ -8,7 +8,7 @@ use super::{
 /// The outer variant records the feature owner. Each feature module owns the
 /// smaller enum that identifies its commands.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(in crate::tmux::native) enum Command {
+pub(in crate::native) enum Command {
     Session(sessions::Command),
     Window(windows::Command),
     Pane(panes::Command),
@@ -41,7 +41,7 @@ impl Command {
 }
 
 #[cfg(test)]
-pub(in crate::tmux::native) fn all() -> Vec<Command> {
+pub(in crate::native) fn all() -> Vec<Command> {
     sessions::ALL
         .iter()
         .copied()

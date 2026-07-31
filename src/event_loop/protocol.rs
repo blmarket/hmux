@@ -13,14 +13,14 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::integration::status::{StatusHub, StatusSnapshot, StatusSubscription};
+use crate::native::attach::ClientTty;
+use crate::native::command::{self, ClientContext, CommandResult};
+use crate::native::protocol::{EventControlClient, EventControlSource};
+use crate::native::state::ServerState;
+use crate::native::NativeServer;
 use crate::tmux::codec::{encode_bytes, ImsgReader, NonblockingImsgWriter, MAX_IMSGSIZE};
 use crate::tmux::introspect::{log_frame, Direction};
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
-use crate::tmux::native::attach::ClientTty;
-use crate::tmux::native::command::{self, ClientContext, CommandResult};
-use crate::tmux::native::protocol::{EventControlClient, EventControlSource};
-use crate::tmux::native::state::ServerState;
-use crate::tmux::native::NativeServer;
 use crate::tmux::traits::NonblockingFrameWriter;
 
 use super::actor::ActorRef;

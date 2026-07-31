@@ -867,7 +867,7 @@ fn trailing_command(args: &[String]) -> Vec<&str> {
 mod tests {
     use super::{encode_hex_key, encode_hex_literal, inject_client_string, repeat_count};
     use crate::integration::status::PaneAgents;
-    use crate::tmux::native::state::ServerState;
+    use crate::native::state::ServerState;
 
     fn args(value: &str) -> Vec<String> {
         ["send-keys", "-N", value, "x"]

@@ -5,11 +5,11 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::integration::status::StatusHub;
-use crate::tmux::native::command::{
+use crate::native::command::{
     self, BackgroundCommand, BackgroundCommandRequest, ClientContext, CommandSuspensionResult,
     ResumableCommandQueue, ResumableCommandTurn,
 };
-use crate::tmux::native::state::ServerState;
+use crate::native::state::ServerState;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;

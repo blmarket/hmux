@@ -2,7 +2,7 @@
 
 use std::os::fd::BorrowedFd;
 
-use crate::tmux::native::pane::PaneIo;
+use crate::native::pane::PaneIo;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;

@@ -2112,7 +2112,7 @@ fn serialize_row_width_for_terminal(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tmux::native::term::{ResolvedTerm, TerminalIdentity};
+    use crate::native::term::{ResolvedTerm, TerminalIdentity};
 
     #[test]
     fn status_conditionals_resolve_bare_variables_and_escaped_commas() {

@@ -13,15 +13,15 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::integration::status::StatusHub;
-use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
-use crate::tmux::message::Frame;
-use crate::tmux::native::attach::{
+use crate::native::attach::{
     self, AttachCommandContinuation, AttachDrive, AttachFrameReader, AttachPrepared, AttachSession,
     AttachStartFailure, AttachWaitReady, AttachWaitSources, ClientTty,
 };
-use crate::tmux::native::command::{self, ClientContext};
-use crate::tmux::native::pane::PaneIoMode;
-use crate::tmux::native::state::ServerState;
+use crate::native::command::{self, ClientContext};
+use crate::native::pane::PaneIoMode;
+use crate::native::state::ServerState;
+use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
+use crate::tmux::message::Frame;
 use crate::tmux::traits::{FrameReader, FrameWriter};
 
 const ATTACH_QUEUE_LIMIT: usize = MAX_IMSGSIZE * 64;

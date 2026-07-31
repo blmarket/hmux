@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(in crate::tmux::native) enum Command {
+pub(in crate::native) enum Command {
     Set,
     Load,
     Show,

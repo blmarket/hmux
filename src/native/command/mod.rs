@@ -11,21 +11,21 @@
 //! asserts the observable results (exit code, stdout, stderr) match. When a gap
 //! is found there, it's closed here.
 
-pub(in crate::tmux::native) mod buffers;
-pub(in crate::tmux::native) mod clients;
-pub(in crate::tmux::native) mod configuration;
-pub(in crate::tmux::native) mod execution;
+pub(in crate::native) mod buffers;
+pub(in crate::native) mod clients;
+pub(in crate::native) mod configuration;
+pub(in crate::native) mod execution;
 mod identity;
-pub(in crate::tmux::native) mod keys;
-pub(in crate::tmux::native) mod panes;
-pub(in crate::tmux::native) mod queue;
-pub(in crate::tmux::native) mod server;
-pub(in crate::tmux::native) mod sessions;
-pub(in crate::tmux::native) mod windows;
+pub(in crate::native) mod keys;
+pub(in crate::native) mod panes;
+pub(in crate::native) mod queue;
+pub(in crate::native) mod server;
+pub(in crate::native) mod sessions;
+pub(in crate::native) mod windows;
 
 #[cfg(test)]
-pub(in crate::tmux::native) use identity::all as all_commands;
-pub(in crate::tmux::native) use identity::Command;
+pub(in crate::native) use identity::all as all_commands;
+pub(in crate::native) use identity::Command;
 
 use std::collections::BTreeMap;
 use std::io;

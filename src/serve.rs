@@ -19,9 +19,9 @@ use tracing::{info, warn};
 
 use crate::event_loop::driver::{EventLoop, ListenerHandle, PaneHandle, ProtocolHandle};
 use crate::event_loop::protocol::ProtocolCloseReason;
+use crate::native::NativeServer;
 use crate::tmux::codec::{split_nonblocking_stream_with_queue_limit, split_stream, MAX_IMSGSIZE};
 use crate::tmux::introspect::{Direction, LoggingReader, LoggingWriter};
-use crate::tmux::native::NativeServer;
 use crate::tmux::traits::{FrameReader, FrameWriter, TmuxServer};
 
 type NativeEventLoop =

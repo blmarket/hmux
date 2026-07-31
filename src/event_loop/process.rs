@@ -8,7 +8,7 @@ use signal_hook::consts::signal::SIGCHLD;
 use signal_hook::low_level::{pipe, unregister};
 use signal_hook::SigId;
 
-use crate::tmux::native::NativeServer;
+use crate::native::NativeServer;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;
