@@ -169,12 +169,7 @@ pub(crate) struct ProtocolClient {
     control_timer_generation: u64,
     attach_timer_deadline: Option<Instant>,
     attach_timer_generation: u64,
-    read_work_queued: bool,
-    write_work_queued: bool,
-    command_work_queued: bool,
-    status_work_queued: bool,
-    control_work_queued: BTreeSet<EventControlSource>,
-    attach_work_queued: BTreeSet<EventAttachSource>,
+    work_queued: BTreeSet<ProtocolIoSide>,
     reads_paused: bool,
     attach_input_paused: bool,
     close_after_flush: bool,
@@ -226,12 +221,7 @@ impl ProtocolClient {
                 control_timer_generation: 0,
                 attach_timer_deadline: None,
                 attach_timer_generation: 0,
-                read_work_queued: false,
-                write_work_queued: false,
-                command_work_queued: false,
-                status_work_queued: false,
-                control_work_queued: BTreeSet::new(),
-                attach_work_queued: BTreeSet::new(),
+                work_queued: BTreeSet::new(),
                 reads_paused: false,
                 attach_input_paused: false,
                 close_after_flush: false,
@@ -330,28 +320,14 @@ impl ProtocolClient {
         ) {
             return false;
         }
-        let queued = match side {
-            ProtocolIoSide::Read => &mut self.read_work_queued,
-            ProtocolIoSide::Write => &mut self.write_work_queued,
-            ProtocolIoSide::Command => &mut self.command_work_queued,
-            ProtocolIoSide::Status => &mut self.status_work_queued,
-            ProtocolIoSide::Control(source) => {
-                return self.control_work_queued.insert(source);
-            }
-            ProtocolIoSide::Attach(source) => {
-                return self.attach_work_queued.insert(source);
-            }
-        };
-        if *queued
-            || (side == ProtocolIoSide::Read
-                && (self.reads_paused
-                    || self.attach_input_paused
-                    || matches!(self.operation, DirectOperation::WaitingStatus { .. })))
+        if side == ProtocolIoSide::Read
+            && (self.reads_paused
+                || self.attach_input_paused
+                || matches!(self.operation, DirectOperation::WaitingStatus { .. }))
         {
             return false;
         }
-        *queued = true;
-        true
+        self.work_queued.insert(side)
     }
 
     pub(crate) fn install_fallback(&mut self, pairing: PairingHandle) {
@@ -413,15 +389,15 @@ impl ProtocolClient {
                 outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, true);
             }
             ProtocolEvent::Readable | ProtocolEvent::ReadContinuation => {
-                self.read_work_queued = false;
+                self.work_queued.remove(&ProtocolIoSide::Read);
                 self.handle_readable(target, outbox);
             }
             ProtocolEvent::Writable => {
-                self.write_work_queued = false;
+                self.work_queued.remove(&ProtocolIoSide::Write);
                 self.handle_writable(target, outbox);
             }
             ProtocolEvent::CommandCompleted => {
-                self.command_work_queued = false;
+                self.work_queued.remove(&ProtocolIoSide::Command);
                 self.handle_command_completed(target, outbox);
             }
             ProtocolEvent::CommandTimeout(generation) => {
@@ -437,14 +413,14 @@ impl ProtocolClient {
                 self.drive_resumable_command(target, outbox);
             }
             ProtocolEvent::StatusReady => {
-                self.status_work_queued = false;
+                self.work_queued.remove(&ProtocolIoSide::Status);
                 self.handle_status_ready(target, outbox);
             }
             ProtocolEvent::StatusHeartbeat(generation) => {
                 self.handle_status_heartbeat(target, generation, outbox);
             }
             ProtocolEvent::ControlReady(source) => {
-                self.control_work_queued.remove(&source);
+                self.work_queued.remove(&ProtocolIoSide::Control(source));
                 self.handle_control_event(target, Some(source), outbox);
             }
             ProtocolEvent::ControlContinue => {
@@ -458,7 +434,7 @@ impl ProtocolClient {
                 }
             }
             ProtocolEvent::AttachReady(source) => {
-                self.attach_work_queued.remove(&source);
+                self.work_queued.remove(&ProtocolIoSide::Attach(source));
                 self.handle_attach_event(target, Some(source), outbox);
             }
             ProtocolEvent::AttachTimer(generation) => {
@@ -775,7 +751,9 @@ impl ProtocolClient {
             ProtocolMode::Control(control) => control.take_input_continuation(),
             _ => false,
         };
-        if continue_input && self.control_work_queued.insert(EventControlSource::Input) {
+        if continue_input
+            && self.mark_work_queued(ProtocolIoSide::Control(EventControlSource::Input))
+        {
             outbox.enqueue_protocol(
                 target.clone(),
                 ProtocolEvent::ControlReady(EventControlSource::Input),
