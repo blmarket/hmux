@@ -4,7 +4,8 @@
 //! This is where the "clone" earns its name — instead of proxying to a backing
 //! tmux, hmux owns the pty/child and maintains the screen itself. tmux keeps this
 //! state in `window_pane` + `screen`/`input.c`; here the grid lives in libghostty
-//! and the master fd is drained on a reader thread into it.
+//! and the master fd is drained by either the compatibility reader thread or
+//! the central event loop.
 //!
 //! Only a text-emulation slice is implemented: spawn, feed output → grid, send
 //! input, resize, dump. Compositing multiple panes onto an attached client's tty
@@ -13,7 +14,7 @@
 use std::collections::VecDeque;
 use std::ffi::CString;
 use std::io::{self, Read, Write};
-use std::os::fd::{AsFd, AsRawFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
 use std::os::raw::{c_int, c_void};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -21,7 +22,7 @@ use std::process::{Command, Stdio};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Sender};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
@@ -30,6 +31,8 @@ use libc::pid_t;
 use crate::ghostty::Terminal;
 use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, ScreenTail};
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
+
+use super::ObservationSignal;
 
 /// A single pane. Holds the emulated screen and, if live, the child on its pty.
 pub struct Pane {
@@ -47,10 +50,10 @@ pub struct Pane {
     /// query replies) that have not yet been accepted by the child. The pty
     /// master is non-blocking, so a child that stops reading its stdin (a stalled
     /// full-screen app) can never block a server thread writing to it — pending
-    /// bytes wait here and are flushed by the reader thread on writability. The
+    /// bytes wait here and are flushed by the active I/O driver on writability. The
     /// buffer is bounded; once full, further input is dropped rather than allowed
     /// to stall the shared server, matching how tmux tolerates an unresponsive
-    /// pane. Shared with the reader thread. See `report.md`.
+    /// pane. Shared with the active I/O driver.
     pending_input: Arc<Mutex<VecDeque<u8>>>,
     /// Original process specification retained for command-less respawns.
     spawn_spec: Option<PaneSpawnSpec>,
@@ -58,9 +61,17 @@ pub struct Pane {
     pipe_output: Arc<Mutex<Option<Sender<Vec<u8>>>>>,
     pipe_output_active: Arc<AtomicBool>,
     pipe: Option<PanePipe>,
+    event_io: Option<PaneIo>,
     runtime_id: u64,
     cols: u16,
     rows: u16,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum PaneIoMode {
+    #[default]
+    Threaded,
+    EventLoop,
 }
 
 #[derive(Clone, Debug)]
@@ -95,6 +106,7 @@ struct Child {
     reader: Option<JoinHandle<()>>,
     alive: Arc<AtomicBool>,
     reaped: bool,
+    termination_requested: bool,
     exit_code: Option<i32>,
 }
 
@@ -124,6 +136,7 @@ pub(crate) struct NativePaneObservation {
     output_timing: Option<Arc<OutputTiming>>,
     last_output_at: Mutex<Option<Instant>>,
     bell_count: AtomicU64,
+    observation_signal: OnceLock<Arc<ObservationSignal>>,
 }
 
 struct OutputEvent {
@@ -512,6 +525,10 @@ impl OutputSubscription {
         self.event.wakeup.as_fd().as_raw_fd()
     }
 
+    pub(crate) fn as_fd(&self) -> BorrowedFd<'_> {
+        self.event.wakeup.as_fd()
+    }
+
     pub(crate) fn drain(&self) {
         let _ = self.event.wakeup.clear();
     }
@@ -550,6 +567,17 @@ impl NativePaneObservation {
             }),
             last_output_at: Mutex::new(None),
             bell_count: AtomicU64::new(0),
+            observation_signal: OnceLock::new(),
+        }
+    }
+
+    fn install_observation_signal(&self, signal: Arc<ObservationSignal>) {
+        let _ = self.observation_signal.set(signal);
+    }
+
+    fn notify_observation(&self) {
+        if let Some(signal) = self.observation_signal.get() {
+            signal.notify();
         }
     }
 
@@ -589,6 +617,7 @@ impl NativePaneObservation {
                 .store(revision, Ordering::Release);
         }
         self.notify_output();
+        self.notify_observation();
     }
 
     fn write_terminal(&self, terminal: &mut Terminal, bytes: &[u8]) -> bool {
@@ -802,6 +831,7 @@ impl Pane {
             pipe_output: Arc::new(Mutex::new(None)),
             pipe_output_active: Arc::new(AtomicBool::new(false)),
             pipe: None,
+            event_io: None,
             runtime_id: NEXT_PANE_RUNTIME_ID.fetch_add(1, Ordering::Relaxed),
             cols,
             rows,
@@ -819,6 +849,16 @@ impl Pane {
         cwd: Option<&Path>,
         cols: u16,
         rows: u16,
+    ) -> io::Result<Pane> {
+        Self::spawn_in_mode(argv, cwd, cols, rows, PaneIoMode::Threaded)
+    }
+
+    pub(crate) fn spawn_in_mode(
+        argv: &[&str],
+        cwd: Option<&Path>,
+        cols: u16,
+        rows: u16,
+        io_mode: PaneIoMode,
     ) -> io::Result<Pane> {
         assert!(!argv.is_empty(), "argv must have at least the program");
 
@@ -894,15 +934,32 @@ impl Pane {
             }),
             rows,
         ));
-        let reader = spawn_reader(
-            &master,
-            Arc::clone(&observation),
-            Arc::clone(&terminal_queries),
-            Arc::clone(&pending_input),
-            Arc::clone(&pipe_output),
-            Arc::clone(&pipe_output_active),
-            Arc::clone(&alive),
-        )?;
+        let (reader, event_io) = match io_mode {
+            PaneIoMode::Threaded => (
+                Some(spawn_reader(
+                    &master,
+                    Arc::clone(&observation),
+                    Arc::clone(&terminal_queries),
+                    Arc::clone(&pending_input),
+                    Arc::clone(&pipe_output),
+                    Arc::clone(&pipe_output_active),
+                    Arc::clone(&alive),
+                )?),
+                None,
+            ),
+            PaneIoMode::EventLoop => (
+                None,
+                Some(PaneIo::new(
+                    &master,
+                    Arc::clone(&observation),
+                    Arc::clone(&terminal_queries),
+                    Arc::clone(&pending_input),
+                    Arc::clone(&pipe_output),
+                    Arc::clone(&pipe_output_active),
+                    Arc::clone(&alive),
+                )?),
+            ),
+        };
 
         Ok(Pane {
             observation,
@@ -910,9 +967,10 @@ impl Pane {
             child: Some(Child {
                 pid,
                 master,
-                reader: Some(reader),
+                reader,
                 alive,
                 reaped: false,
+                termination_requested: false,
                 exit_code: None,
             }),
             pending_input,
@@ -923,6 +981,7 @@ impl Pane {
             pipe_output,
             pipe_output_active,
             pipe: None,
+            event_io,
             runtime_id: NEXT_PANE_RUNTIME_ID.fetch_add(1, Ordering::Relaxed),
             cols,
             rows,
@@ -933,13 +992,22 @@ impl Pane {
         self.spawn_spec.clone()
     }
 
-    pub(crate) fn spawn_from_spec(spec: &PaneSpawnSpec, cols: u16, rows: u16) -> io::Result<Pane> {
+    pub(crate) fn spawn_from_spec_mode(
+        spec: &PaneSpawnSpec,
+        cols: u16,
+        rows: u16,
+        io_mode: PaneIoMode,
+    ) -> io::Result<Pane> {
         let argv = spec.argv.iter().map(String::as_str).collect::<Vec<_>>();
-        Self::spawn_in(&argv, spec.cwd.as_deref(), cols, rows)
+        Self::spawn_in_mode(&argv, spec.cwd.as_deref(), cols, rows, io_mode)
     }
 
     pub(crate) fn runtime_id(&self) -> u64 {
         self.runtime_id
+    }
+
+    pub(crate) fn take_event_io(&mut self) -> Option<PaneIo> {
+        self.event_io.take()
     }
 
     pub(crate) fn pipe_active(&self) -> bool {
@@ -1014,13 +1082,21 @@ impl Pane {
                 .ok_or_else(|| io::Error::other("pipe child has no stdout"))?;
             let master = child.master.as_fd().try_clone_to_owned()?;
             let pending_input = Arc::clone(&self.pending_input);
+            let observation = Arc::clone(&self.observation);
             thread::spawn(move || {
                 let mut bytes = [0u8; 4096];
                 loop {
                     match stdout.read(&mut bytes) {
                         Ok(0) | Err(_) => break,
                         Ok(count) => {
-                            enqueue_pane_input(master.as_raw_fd(), &pending_input, &bytes[..count]);
+                            let stats = enqueue_pane_input(
+                                master.as_raw_fd(),
+                                &pending_input,
+                                &bytes[..count],
+                            );
+                            if stats.queued != 0 {
+                                observation.notify_observation();
+                            }
                         }
                     }
                 }
@@ -1065,6 +1141,10 @@ impl Pane {
     /// handle. Public consumers continue to use `PaneObservability`.
     pub(crate) fn observation_state(&self) -> Arc<NativePaneObservation> {
         Arc::clone(&self.observation)
+    }
+
+    pub(crate) fn install_observation_signal(&self, signal: Arc<ObservationSignal>) {
+        self.observation.install_observation_signal(signal);
     }
 
     #[cfg(test)]
@@ -1121,11 +1201,11 @@ impl Pane {
         let Some(child) = &self.child else {
             return Ok(PaneInputStats::default());
         };
-        Ok(enqueue_pane_input(
-            child.master.as_raw_fd(),
-            &self.pending_input,
-            bytes,
-        ))
+        let stats = enqueue_pane_input(child.master.as_raw_fd(), &self.pending_input, bytes);
+        if stats.queued != 0 {
+            self.observation.notify_observation();
+        }
+        Ok(stats)
     }
 
     /// The pane's live working directory (`#{pane_current_path}`), or `None` for
@@ -1430,6 +1510,29 @@ impl Pane {
         Some(code)
     }
 
+    pub(crate) fn collect_exited_child(&mut self, terminate_if_running: bool) -> bool {
+        if !self.has_exited() {
+            return false;
+        }
+        if self.try_wait().is_some() {
+            return true;
+        }
+        let Some(child) = self.child.as_mut() else {
+            return true;
+        };
+        if terminate_if_running && !child.termination_requested {
+            unsafe {
+                libc::kill(child.pid, libc::SIGKILL);
+            }
+            child.termination_requested = true;
+        }
+        child.reaped
+    }
+
+    pub(crate) fn child_reaped(&self) -> bool {
+        self.child.as_ref().is_none_or(|child| child.reaped)
+    }
+
     /// Block until the child exits and all its output has been drained into the
     /// screen (the reader thread reaches EOF and finishes). Test helper.
     pub fn wait_drained(&mut self) {
@@ -1474,6 +1577,9 @@ fn latest_screen_title(bytes: impl Iterator<Item = u8>) -> Option<String> {
 
 impl Drop for Child {
     fn drop(&mut self) {
+        if self.reaped && self.reader.is_none() {
+            return;
+        }
         // Kill the child so its pty slave closes, unblocking the reader's read().
         // SAFETY: sending a signal to our own child pid.
         if !self.reaped {
@@ -1529,9 +1635,255 @@ impl Drop for Child {
 /// event loop, without adding a timer or delaying interactive echo.
 const OUTPUT_COALESCE_MAX_BYTES: usize = 256 * 1024;
 
-/// Spawn a thread that drains the pty master into `term` until EOF/error. The
-/// thread reads from its *own* dup of the master so it never races the parent's
-/// fd lifecycle.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct PaneIoReadResult {
+    pub(crate) continuation: bool,
+    pub(crate) closed: bool,
+}
+
+/// Owned nonblocking PTY state. A compatibility thread or the central reactor
+/// may drive the same parser one readiness turn at a time.
+pub(crate) struct PaneIo {
+    fd: OwnedFd,
+    observation: Arc<NativePaneObservation>,
+    terminal_queries: Arc<Mutex<VecDeque<Vec<u8>>>>,
+    pending_input: Arc<Mutex<VecDeque<u8>>>,
+    pipe_output: Arc<Mutex<Option<Sender<Vec<u8>>>>>,
+    pipe_output_active: Arc<AtomicBool>,
+    alive: Arc<AtomicBool>,
+    query_detector: BackgroundColorQueryDetector,
+    dsr_detector: DeviceStatusReportQueryDetector,
+    cursor_report_detector: CursorPositionReportQueryDetector,
+    cursor_shape_detector: CursorShapeDetector,
+    mode_query_detector: ModeQueryDetector,
+    background_detector: BackgroundColorDetector,
+    utf8_sanitizer: Utf8Sanitizer,
+    title_stripper: ScreenTitleStripper,
+    bell_detector: BellDetector,
+    closed: bool,
+}
+
+impl PaneIo {
+    fn new(
+        master: &OwnedFd,
+        observation: Arc<NativePaneObservation>,
+        terminal_queries: Arc<Mutex<VecDeque<Vec<u8>>>>,
+        pending_input: Arc<Mutex<VecDeque<u8>>>,
+        pipe_output: Arc<Mutex<Option<Sender<Vec<u8>>>>>,
+        pipe_output_active: Arc<AtomicBool>,
+        alive: Arc<AtomicBool>,
+    ) -> io::Result<Self> {
+        Ok(Self {
+            fd: master.as_fd().try_clone_to_owned()?,
+            observation,
+            terminal_queries,
+            pending_input,
+            pipe_output,
+            pipe_output_active,
+            alive,
+            query_detector: BackgroundColorQueryDetector::default(),
+            dsr_detector: DeviceStatusReportQueryDetector::default(),
+            cursor_report_detector: CursorPositionReportQueryDetector::default(),
+            cursor_shape_detector: CursorShapeDetector::default(),
+            mode_query_detector: ModeQueryDetector::default(),
+            background_detector: BackgroundColorDetector::default(),
+            utf8_sanitizer: Utf8Sanitizer::default(),
+            title_stripper: ScreenTitleStripper::default(),
+            bell_detector: BellDetector::default(),
+            closed: false,
+        })
+    }
+
+    pub(crate) fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+        self.fd.as_fd()
+    }
+
+    pub(crate) fn wants_write(&self) -> bool {
+        self.pending_input
+            .lock()
+            .map(|queued| !queued.is_empty())
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn drive_writable(&mut self) {
+        if self.closed {
+            return;
+        }
+        if let Ok(mut queued) = self.pending_input.lock() {
+            flush_pane_input(self.fd.as_raw_fd(), &mut queued);
+        }
+    }
+
+    pub(crate) fn drive_readable(&mut self) -> io::Result<PaneIoReadResult> {
+        if self.closed {
+            return Ok(PaneIoReadResult {
+                closed: true,
+                ..PaneIoReadResult::default()
+            });
+        }
+
+        let mut buffer = [0u8; 4096];
+        let mut pending = Vec::new();
+        let mut reached_eof = false;
+        while pending.len() < OUTPUT_COALESCE_MAX_BYTES {
+            let read = unsafe {
+                libc::read(
+                    self.fd.as_raw_fd(),
+                    buffer.as_mut_ptr() as *mut c_void,
+                    buffer.len(),
+                )
+            };
+            if read > 0 {
+                pending.extend_from_slice(&buffer[..read as usize]);
+                continue;
+            }
+            if read == 0 {
+                reached_eof = true;
+                break;
+            }
+            let error = io::Error::last_os_error();
+            match error.kind() {
+                io::ErrorKind::Interrupted => continue,
+                io::ErrorKind::WouldBlock => break,
+                _ => {
+                    reached_eof = true;
+                    break;
+                }
+            }
+        }
+
+        let continuation = pending_capacity_reached(&pending);
+        if !pending.is_empty() {
+            self.process_output(pending);
+        }
+        if reached_eof {
+            self.close();
+        }
+        Ok(PaneIoReadResult {
+            continuation: !self.closed && continuation,
+            closed: self.closed,
+        })
+    }
+
+    fn process_output(&mut self, pending: Vec<u8>) {
+        if self.pipe_output_active.load(Ordering::Acquire) {
+            let pipe_sender = self
+                .pipe_output
+                .lock()
+                .ok()
+                .and_then(|sender| sender.clone());
+            if let Some(sender) = pipe_sender {
+                if sender.send(pending.clone()).is_err() {
+                    self.pipe_output_active.store(false, Ordering::Release);
+                    if let Ok(mut current) = self.pipe_output.lock() {
+                        *current = None;
+                    }
+                }
+            }
+        }
+
+        self.observation.append_control_output(&pending);
+        let sanitized = self.utf8_sanitizer.filter(&pending);
+        let filtered = self.title_stripper.filter(&sanitized);
+        let bytes = &filtered[..];
+        self.observation.note_bells(
+            bytes
+                .iter()
+                .filter(|byte| self.bell_detector.feed(**byte))
+                .count() as u64,
+        );
+        let mut queries = Vec::new();
+        let mut cursor_report_queries = Vec::new();
+        let mut mode_replies = Vec::new();
+        for (index, &byte) in bytes.iter().enumerate() {
+            if self.query_detector.feed_byte(byte) {
+                queries.push(BACKGROUND_COLOR_QUERY);
+            }
+            if self.dsr_detector.feed_byte(byte) {
+                queries.push(DEVICE_STATUS_REPORT_QUERY);
+            }
+            if let Some(kind) = self.cursor_report_detector.feed_byte(byte) {
+                cursor_report_queries.push((index, kind));
+            }
+            if let Some(shape) = self.cursor_shape_detector.feed_byte(byte) {
+                self.observation
+                    .cursor_shape
+                    .store(shape, Ordering::Release);
+            }
+            if let Some(reply) = self.mode_query_detector.feed_byte(byte) {
+                mode_replies.push(reply);
+            }
+            if let Some(color) = self.background_detector.feed_byte(byte) {
+                if let Ok(mut background) = self.observation.background.lock() {
+                    *background = color;
+                }
+            }
+        }
+        self.observation
+            .bracketed_paste
+            .store(self.mode_query_detector.bracketed_paste, Ordering::Release);
+        if !queries.is_empty() {
+            if let Ok(mut queued) = self.terminal_queries.lock() {
+                for query in queries {
+                    if queued.len() == 16 {
+                        break;
+                    }
+                    queued.push_back(query.to_vec());
+                }
+            }
+        }
+
+        let mut cursor_replies = Vec::new();
+        if let Ok(mut terminal) = self.observation.term.lock() {
+            let mut segment_start = 0usize;
+            let mut large_scroll = false;
+            for (query_end, kind) in cursor_report_queries {
+                large_scroll |= self
+                    .observation
+                    .write_terminal(&mut terminal, &bytes[segment_start..=query_end]);
+                if let Some(response) = cursor_position_report(&terminal, kind) {
+                    cursor_replies.push(response);
+                }
+                segment_start = query_end + 1;
+            }
+            if segment_start < bytes.len() {
+                large_scroll |= self
+                    .observation
+                    .write_terminal(&mut terminal, &bytes[segment_start..]);
+            }
+            self.observation.record_change(large_scroll);
+        }
+        for reply in cursor_replies {
+            enqueue_pane_input(self.fd.as_raw_fd(), &self.pending_input, &reply);
+        }
+        for reply in mode_replies {
+            enqueue_pane_input(self.fd.as_raw_fd(), &self.pending_input, &reply);
+        }
+    }
+
+    fn close(&mut self) {
+        if self.closed {
+            return;
+        }
+        self.closed = true;
+        self.alive.store(false, Ordering::Release);
+        self.observation.notify_output();
+        self.observation.notify_observation();
+    }
+}
+
+impl Drop for PaneIo {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
+fn pending_capacity_reached(pending: &[u8]) -> bool {
+    pending.len() >= OUTPUT_COALESCE_MAX_BYTES
+}
+
+/// Spawn the compatibility thread that waits around the same nonblocking pane
+/// state used by the central event loop.
 fn spawn_reader(
     master: &OwnedFd,
     observation: Arc<NativePaneObservation>,
@@ -1541,196 +1893,46 @@ fn spawn_reader(
     pipe_output_active: Arc<AtomicBool>,
     alive: Arc<AtomicBool>,
 ) -> io::Result<JoinHandle<()>> {
-    let reader_fd = master.as_fd().try_clone_to_owned()?;
-    Ok(thread::spawn(move || {
-        let fd = reader_fd.as_raw_fd();
-        let mut buf = [0u8; 4096];
-        let mut query_detector = BackgroundColorQueryDetector::default();
-        let mut dsr_detector = DeviceStatusReportQueryDetector::default();
-        let mut cursor_report_detector = CursorPositionReportQueryDetector::default();
-        let mut cursor_shape_detector = CursorShapeDetector::default();
-        let mut mode_query_detector = ModeQueryDetector::default();
-        let mut background_detector = BackgroundColorDetector::default();
-        let mut utf8_sanitizer = Utf8Sanitizer::default();
-        let mut title_stripper = ScreenTitleStripper::default();
-        let mut bell_detector = BellDetector::default();
-        loop {
-            // The master is non-blocking, so wait for readiness first rather than
-            // issuing a blocking read. Also wait for writability whenever input is
-            // queued for a child that was not accepting it, so backed-up
-            // keystrokes / query replies drain without a dedicated writer thread.
-            let want_write = pending_input.lock().map(|q| !q.is_empty()).unwrap_or(false);
-            let mut wait = libc::pollfd {
-                fd,
-                events: libc::POLLIN | if want_write { libc::POLLOUT } else { 0 },
-                revents: 0,
-            };
-            // SAFETY: single-fd poll, block until the child reads or writes.
-            let r = unsafe { libc::poll(&mut wait, 1, -1) };
-            if r < 0 {
-                let err = io::Error::last_os_error();
-                if err.kind() == io::ErrorKind::Interrupted {
-                    continue;
-                }
-                break;
-            }
-            if wait.revents & libc::POLLOUT != 0 {
-                if let Ok(mut queued) = pending_input.lock() {
-                    flush_pane_input(fd, &mut queued);
-                }
-            }
-            if wait.revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) == 0 {
+    let mut pane_io = PaneIo::new(
+        master,
+        observation,
+        terminal_queries,
+        pending_input,
+        pipe_output,
+        pipe_output_active,
+        alive,
+    )?;
+    Ok(thread::spawn(move || loop {
+        let mut wait = libc::pollfd {
+            fd: pane_io.as_fd().as_raw_fd(),
+            events: libc::POLLIN
+                | if pane_io.wants_write() {
+                    libc::POLLOUT
+                } else {
+                    0
+                },
+            revents: 0,
+        };
+        let r = unsafe { libc::poll(&mut wait, 1, -1) };
+        if r < 0 {
+            let err = io::Error::last_os_error();
+            if err.kind() == io::ErrorKind::Interrupted {
                 continue;
             }
-            // SAFETY: reading into a valid buffer from an owned fd.
-            let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut c_void, buf.len()) };
-            if n < 0 {
-                let err = io::Error::last_os_error();
-                if matches!(
-                    err.kind(),
-                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
-                ) {
-                    continue; // spurious wakeup / signal: wait again
-                }
-                break; // real error
-            }
-            if n == 0 {
-                break; // EOF (child gone)
-            }
-            let mut pending: Vec<u8> = buf[..n as usize].to_vec();
-
-            // Drain everything already queued for this readiness event. Never
-            // wait for a future write: the next write will produce another event.
-            while pending.len() < OUTPUT_COALESCE_MAX_BYTES {
-                let mut pfd = libc::pollfd {
-                    fd,
-                    events: libc::POLLIN,
-                    revents: 0,
-                };
-                // SAFETY: single-fd poll with a bounded timeout.
-                let r = unsafe { libc::poll(&mut pfd, 1, 0) };
-                if r <= 0 {
-                    break; // timeout or poll error → the burst has settled
-                }
-                // SAFETY: reading into a valid buffer from an owned fd.
-                let n2 = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut c_void, buf.len()) };
-                if n2 <= 0 {
-                    break; // EOF/error: apply what we have; the outer read reaps it
-                }
-                pending.extend_from_slice(&buf[..n2 as usize]);
-            }
-
-            if pipe_output_active.load(Ordering::Acquire) {
-                let pipe_sender = pipe_output.lock().ok().and_then(|sender| sender.clone());
-                if let Some(sender) = pipe_sender {
-                    if sender.send(pending.clone()).is_err() {
-                        pipe_output_active.store(false, Ordering::Release);
-                        if let Ok(mut current) = pipe_output.lock() {
-                            *current = None;
-                        }
-                    }
-                }
-            }
-
-            // Control mode exposes the PTY byte stream, not a serialization of
-            // the parsed grid. Capture it before UTF-8 normalization and title
-            // control stripping; the terminal engine still receives the
-            // filtered form below.
-            observation.append_control_output(&pending);
-
-            // Strip screen/tmux-style window-title sequences (`ESC k <title> ST`)
-            // before anything else sees the stream. libghostty-vt does not
-            // implement this legacy title control, so left in place its payload
-            // (e.g. the running command name a shell puts in the title under a
-            // screen/tmux `$TERM`) would be rendered as literal text in front of
-            // the command's real output — the `ls` -> `lsAGENTS.md` bug. Real
-            // tmux consumes it; we do too. The stripper is a streaming state
-            // machine held across reads so a sequence split across PTY bursts is
-            // still removed. It runs first because the remaining detectors index
-            // into `bytes`, and it cannot swallow their queries: those begin
-            // `ESC ]`/`ESC [`, never `ESC k`.
-            let sanitized = utf8_sanitizer.filter(&pending);
-            let filtered = title_stripper.filter(&sanitized);
-            let bytes = &filtered[..];
-            observation.note_bells(
-                bytes
-                    .iter()
-                    .filter(|byte| bell_detector.feed(**byte))
-                    .count() as u64,
-            );
-            let mut queries = Vec::new();
-            let mut cursor_report_queries = Vec::new();
-            let mut mode_replies = Vec::new();
-            for (index, &byte) in bytes.iter().enumerate() {
-                if query_detector.feed_byte(byte) {
-                    queries.push(BACKGROUND_COLOR_QUERY);
-                }
-                if dsr_detector.feed_byte(byte) {
-                    queries.push(DEVICE_STATUS_REPORT_QUERY);
-                }
-                if let Some(kind) = cursor_report_detector.feed_byte(byte) {
-                    cursor_report_queries.push((index, kind));
-                }
-                if let Some(shape) = cursor_shape_detector.feed_byte(byte) {
-                    observation.cursor_shape.store(shape, Ordering::Release);
-                }
-                if let Some(reply) = mode_query_detector.feed_byte(byte) {
-                    mode_replies.push(reply);
-                }
-                if let Some(color) = background_detector.feed_byte(byte) {
-                    if let Ok(mut background) = observation.background.lock() {
-                        *background = color;
-                    }
-                }
-            }
-            observation
-                .bracketed_paste
-                .store(mode_query_detector.bracketed_paste, Ordering::Release);
-            if !queries.is_empty() {
-                if let Ok(mut pending) = terminal_queries.lock() {
-                    // Bound the side channel if a detached or hostile
-                    // application repeatedly queries without waiting.
-                    for query in queries {
-                        if pending.len() == 16 {
-                            break;
-                        }
-                        pending.push_back(query.to_vec());
-                    }
-                }
-            }
-            // Cursor-position replies are computed under the terminal lock (they
-            // read the cursor), but written to the child *after* the lock is
-            // released: writing them while holding the lock would let a child that
-            // has stopped reading its stdin block the reader thread with the lock
-            // held, hanging `capture-pane` (which needs the same lock) and every
-            // command behind the state mutex. See `report.md`.
-            let mut cursor_replies: Vec<Vec<u8>> = Vec::new();
-            if let Ok(mut t) = observation.term.lock() {
-                let mut segment_start = 0usize;
-                let mut large_scroll = false;
-                for (query_end, kind) in cursor_report_queries {
-                    large_scroll |=
-                        observation.write_terminal(&mut t, &bytes[segment_start..=query_end]);
-                    if let Some(response) = cursor_position_report(&t, kind) {
-                        cursor_replies.push(response);
-                    }
-                    segment_start = query_end + 1;
-                }
-                if segment_start < bytes.len() {
-                    large_scroll |= observation.write_terminal(&mut t, &bytes[segment_start..]);
-                }
-                observation.record_change(large_scroll);
-            }
-            for reply in cursor_replies {
-                enqueue_pane_input(fd, &pending_input, &reply);
-            }
-            for reply in mode_replies {
-                enqueue_pane_input(fd, &pending_input, &reply);
-            }
+            break;
         }
-        alive.store(false, Ordering::Release);
-        observation.notify_output();
-        // reader_fd drops here, closing our dup.
+        if wait.revents & libc::POLLOUT != 0 {
+            pane_io.drive_writable();
+        }
+        if wait.revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) == 0 {
+            continue;
+        }
+        match pane_io.drive_readable() {
+            Ok(result) if result.closed => break,
+            Ok(result) if result.continuation => continue,
+            Ok(_) => {}
+            Err(_) => break,
+        }
     }))
 }
 
@@ -2815,7 +3017,7 @@ mod tests {
         // scheduler timing this may be one or two readiness events, but neither
         // path delays the bytes while waiting for hypothetical future output.
         let script = "printf 'FIRST'; printf 'SECOND'";
-        let mut pane = Pane::spawn(&["/bin/sh", "-c", &script], 40, 5).expect("spawn");
+        let mut pane = Pane::spawn(&["/bin/sh", "-c", script], 40, 5).expect("spawn");
         pane.wait_drained();
         assert!(pane.dump().unwrap().contains("FIRSTSECOND"));
     }

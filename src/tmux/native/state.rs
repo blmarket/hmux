@@ -16,8 +16,9 @@ use std::sync::{mpsc, Arc, Condvar, Mutex};
 
 use super::key::{parse_key_name, KeyCode};
 use super::options::{GlobalOptions, OptionSet, OptionsView};
-use super::pane::{NativePaneObservation, Pane, PaneSpawnSpec};
+use super::pane::{NativePaneObservation, Pane, PaneIo, PaneIoMode, PaneSpawnSpec};
 use super::term::ResolvedTerm;
+use super::ObservationSignal;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
 
 /// How to back a new pane's screen.
@@ -758,9 +759,10 @@ impl LayoutCell {
                 available.saturating_sub(1)
             };
             other = 1;
-        } else if requested_other == 0 {
-            other = available - main;
-        } else if requested_other > available || available - requested_other < main {
+        } else if requested_other == 0
+            || requested_other > available
+            || available - requested_other < main
+        {
             other = available - main;
         } else {
             other = requested_other;
@@ -2006,7 +2008,8 @@ impl ClientRenderRegistry {
         let peers = inner
             .clients
             .iter()
-            .filter_map(|(client_id, entry)| (*client_id != id).then(|| Arc::clone(&entry.slot)))
+            .filter(|(client_id, _)| **client_id != id)
+            .map(|(_, entry)| Arc::clone(&entry.slot))
             .collect::<Vec<_>>();
         drop(inner);
         for peer in peers {
@@ -2849,6 +2852,7 @@ pub struct ServerState {
     /// first session. An untargeted attach may consume this state by creating
     /// session 0; becoming empty later must not repeat that bootstrap behavior.
     initial_attach_pending: bool,
+    pane_io_mode: PaneIoMode,
     sessions: Vec<Session>,
     /// Windows are owned once by the server and referenced through [`Winlink`].
     windows: BTreeMap<u32, Window>,
@@ -2918,6 +2922,7 @@ pub struct ServerState {
     client_prompts: Arc<ClientPromptRegistry>,
     client_renders: Arc<ClientRenderRegistry>,
     wait_registry: Arc<WaitRegistry>,
+    observation_signal: Arc<ObservationSignal>,
     /// No-client format jobs, corresponding to tmux's process-global job tree.
     /// Current native consumers use client-owned status caches; this remains a
     /// distinct owner for no-client format contexts as those are implemented.
@@ -2932,6 +2937,7 @@ impl ServerState {
         let client_renders = Arc::new(ClientRenderRegistry::new());
         let mut state = ServerState {
             initial_attach_pending: true,
+            pane_io_mode: PaneIoMode::Threaded,
             sessions: Vec::new(),
             windows: BTreeMap::new(),
             session_groups: BTreeMap::new(),
@@ -2971,6 +2977,7 @@ impl ServerState {
             ))),
             client_renders,
             wait_registry: Arc::new(WaitRegistry::default()),
+            observation_signal: Arc::new(ObservationSignal::default()),
         };
         state.install_default_key_bindings();
         state
@@ -2985,6 +2992,42 @@ impl ServerState {
 
     pub(crate) fn initial_attach_pending(&self) -> bool {
         self.initial_attach_pending
+    }
+
+    pub(crate) fn set_pane_io_mode(&mut self, mode: PaneIoMode) {
+        self.pane_io_mode = mode;
+    }
+
+    pub(crate) fn take_event_pane_ios(&mut self) -> Vec<(u64, PaneIo)> {
+        self.windows
+            .values_mut()
+            .flat_map(|window| window.panes.iter_mut())
+            .filter_map(|node| {
+                node.pane
+                    .take_event_io()
+                    .map(|pane_io| (node.pane.runtime_id(), pane_io))
+            })
+            .collect()
+    }
+
+    pub(crate) fn pane_runtime_ids(&self) -> BTreeSet<u64> {
+        self.windows
+            .values()
+            .flat_map(|window| window.panes.iter())
+            .map(|node| node.pane.runtime_id())
+            .collect()
+    }
+
+    pub(crate) fn observation_signal(&self) -> Arc<ObservationSignal> {
+        Arc::clone(&self.observation_signal)
+    }
+
+    fn observe_pane(&self, pane: &Pane) {
+        pane.install_observation_signal(Arc::clone(&self.observation_signal));
+    }
+
+    fn notify_observation(&self) {
+        self.observation_signal.notify();
     }
 
     fn install_default_key_bindings(&mut self) {
@@ -3920,8 +3963,7 @@ impl ServerState {
                         .windows
                         .iter()
                         .enumerate()
-                        .filter(|(_, link)| link.index < index)
-                        .next_back()
+                        .rfind(|(_, link)| link.index < index)
                         .map(|(position, _)| position)
                 })
             })
@@ -4019,6 +4061,7 @@ impl ServerState {
             .iter()
             .flat_map(|session| session.windows.iter().map(|link| link.id))
             .collect::<BTreeSet<_>>();
+        let window_count = self.windows.len();
         self.windows.retain(|id, _| linked.contains(id));
         let live_link_sets = self
             .sessions
@@ -4027,6 +4070,9 @@ impl ServerState {
             .collect::<BTreeSet<_>>();
         self.session_groups
             .retain(|link_set_id, _| live_link_sets.contains(link_set_id));
+        if self.windows.len() != window_count {
+            self.notify_observation();
+        }
     }
 
     pub(crate) fn client_prompt_registry(&self) -> Arc<ClientPromptRegistry> {
@@ -4314,6 +4360,14 @@ impl ServerState {
     pub fn reap_exited_panes(&mut self) -> bool {
         let had_sessions = !self.sessions.is_empty();
         let mut removed = false;
+        let event_loop_io = self.pane_io_mode == PaneIoMode::EventLoop;
+        for window in self.windows.values_mut() {
+            for pane in &mut window.panes {
+                if pane.pane.has_exited() {
+                    pane.pane.collect_exited_child(event_loop_io);
+                }
+            }
+        }
         let retained = self
             .windows
             .values()
@@ -4336,13 +4390,19 @@ impl ServerState {
             let exited_ids = window
                 .panes
                 .iter()
-                .filter(|pane| pane.pane.has_exited() && !retained.contains(&pane.id))
+                .filter(|pane| {
+                    pane.pane.has_exited()
+                        && (!event_loop_io || pane.pane.child_reaped())
+                        && !retained.contains(&pane.id)
+                })
                 .map(|pane| pane.id)
                 .collect::<Vec<_>>();
             let before = window.panes.len();
-            window
-                .panes
-                .retain(|pane| !pane.pane.has_exited() || retained.contains(&pane.id));
+            window.panes.retain(|pane| {
+                !pane.pane.has_exited()
+                    || (event_loop_io && !pane.pane.child_reaped())
+                    || retained.contains(&pane.id)
+            });
             let panes_removed = window.panes.len() != before;
             removed |= panes_removed;
             if panes_removed && !window.panes.is_empty() {
@@ -4394,6 +4454,9 @@ impl ServerState {
         {
             self.shutdown_requested = true;
         }
+        if removed {
+            self.notify_observation();
+        }
         removed
     }
 
@@ -4441,13 +4504,14 @@ impl ServerState {
             PaneSpec::Inert => Pane::inert(cols, rows)?,
             PaneSpec::Command(argv) => {
                 let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-                Pane::spawn(&refs, cols, rows)?
+                Pane::spawn_in_mode(&refs, None, cols, rows, self.pane_io_mode)?
             }
             PaneSpec::CommandIn(argv, cwd) => {
                 let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-                Pane::spawn_in(&refs, Some(&cwd), cols, rows)?
+                Pane::spawn_in_mode(&refs, Some(&cwd), cols, rows, self.pane_io_mode)?
             }
         };
+        self.observe_pane(&pane);
 
         let session_id = self.next_session_id;
         self.next_session_id += 1;
@@ -4513,6 +4577,7 @@ impl ServerState {
             options: OptionSet::default(),
         });
         self.initial_attach_pending = false;
+        self.notify_observation();
         Ok(session_id)
     }
 
@@ -4806,7 +4871,8 @@ impl ServerState {
         // Spawn the pane before mutating counters so a spawn failure leaves state
         // untouched.
         let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-        let pane = Pane::spawn_in(&refs, cwd, cols, rows)?;
+        let pane = Pane::spawn_in_mode(&refs, cwd, cols, rows, self.pane_io_mode)?;
+        self.observe_pane(&pane);
 
         let window_id = self.next_window_id;
         self.next_window_id += 1;
@@ -4882,6 +4948,7 @@ impl ServerState {
             RenderInvalidation::STATUS
         };
         self.invalidate_session(session_id, reason);
+        self.notify_observation();
         Ok(pos)
     }
 
@@ -4944,7 +5011,8 @@ impl ServerState {
         // Spawn before mutating counters so a failure leaves state untouched.
         let (cols, rows) = (s.cols, s.rows);
         let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-        let pane = Pane::spawn_in(&refs, cwd, cols, rows)?;
+        let pane = Pane::spawn_in_mode(&refs, cwd, cols, rows, self.pane_io_mode)?;
+        self.observe_pane(&pane);
 
         let window_id = self.next_window_id;
         self.next_window_id += 1;
@@ -5019,6 +5087,7 @@ impl ServerState {
                 RenderInvalidation::STATUS
             },
         );
+        self.notify_observation();
         Ok(pos)
     }
 
@@ -5325,6 +5394,7 @@ impl ServerState {
         self.sessions.retain(|session| !session.windows.is_empty());
         self.windows.remove(&window_id);
         self.remove_unlinked_windows();
+        self.notify_observation();
         self.renumber_affected_sessions(&affected);
         self.request_shutdown_if_became_empty(had_sessions);
         for session_id in affected {
@@ -5750,13 +5820,14 @@ impl ServerState {
             PaneSpec::Inert => Pane::inert(cols, rows)?,
             PaneSpec::Command(argv) => {
                 let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
-                Pane::spawn(&refs, cols, rows)?
+                Pane::spawn_in_mode(&refs, None, cols, rows, self.pane_io_mode)?
             }
             PaneSpec::CommandIn(argv, cwd) => {
                 let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
-                Pane::spawn_in(&refs, Some(&cwd), cols, rows)?
+                Pane::spawn_in_mode(&refs, Some(&cwd), cols, rows, self.pane_io_mode)?
             }
         };
+        self.observe_pane(&pane);
         let pane_id = self.next_pane_id;
         self.next_pane_id += 1;
         let win = self.window_mut(t.session, t.window);
@@ -5812,6 +5883,7 @@ impl ServerState {
             session_id,
             RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
         );
+        self.notify_observation();
         Ok(insert_at)
     }
 
@@ -5839,7 +5911,8 @@ impl ServerState {
             .unwrap_or(rows / 4)
             .clamp(1, rows.saturating_sub(1).max(1));
         let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
-        let pane = Pane::spawn_in(&refs, cwd, width, height)?;
+        let pane = Pane::spawn_in_mode(&refs, cwd, width, height, self.pane_io_mode)?;
+        self.observe_pane(&pane);
         let pane_id = self.next_pane_id;
         self.next_pane_id += 1;
         let window = self.window_mut(target.session, target.window);
@@ -5899,6 +5972,7 @@ impl ServerState {
             session_id,
             RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
         );
+        self.notify_observation();
         Ok(insert_at)
     }
 
@@ -6102,6 +6176,7 @@ impl ServerState {
         } else {
             self.invalidate_session(session_id, RenderInvalidation::SESSION_GONE);
         }
+        self.notify_observation();
         Ok(())
     }
 
@@ -6126,6 +6201,7 @@ impl ServerState {
             session_id,
             RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
         );
+        self.notify_observation();
         Ok(())
     }
 
@@ -7814,6 +7890,7 @@ impl ServerState {
         self.session_groups.clear();
         self.request_shutdown_if_became_empty(had_sessions);
         self.invalidate_all_clients(RenderInvalidation::SESSION_GONE);
+        self.notify_observation();
     }
 
     /// Remove a session by name. Returns whether it existed (its panes' children
@@ -9468,7 +9545,8 @@ impl ServerState {
                 None => return Ok(()),
             },
         };
-        let pane = Pane::spawn_from_spec(&spec, cols, rows)?;
+        let pane = Pane::spawn_from_spec_mode(&spec, cols, rows, self.pane_io_mode)?;
+        self.observe_pane(&pane);
         let node = &mut self.window_mut(resolved.session, resolved.window).panes[resolved.pane];
         node.pane = pane;
         node.mode = None;
@@ -9478,6 +9556,7 @@ impl ServerState {
             session_id,
             RenderInvalidation::LAYOUT | RenderInvalidation::STATUS | RenderInvalidation::MODE,
         );
+        self.notify_observation();
         Ok(())
     }
 
@@ -9501,6 +9580,7 @@ impl ServerState {
             .map(|session| session.id)
             .collect::<Vec<_>>();
         if argv.as_ref().is_none_or(Vec::is_empty) {
+            let io_mode = self.pane_io_mode;
             let replacements = self
                 .window(resolved.session, resolved.window)
                 .panes
@@ -9510,9 +9590,12 @@ impl ServerState {
                         return Ok(None);
                     };
                     let (cols, rows) = node.pane.size();
-                    Pane::spawn_from_spec(&spec, cols, rows).map(Some)
+                    Pane::spawn_from_spec_mode(&spec, cols, rows, io_mode).map(Some)
                 })
                 .collect::<io::Result<Vec<_>>>()?;
+            for pane in replacements.iter().flatten() {
+                self.observe_pane(pane);
+            }
             let window = self.window_mut(resolved.session, resolved.window);
             for (node, pane) in window.panes.iter_mut().zip(replacements) {
                 if let Some(pane) = pane {
@@ -9530,6 +9613,7 @@ impl ServerState {
                         | RenderInvalidation::MODE,
                 );
             }
+            self.notify_observation();
             return Ok(());
         }
         let argv = argv.expect("nonempty argv checked above");
@@ -9539,8 +9623,9 @@ impl ServerState {
             let cols = window.manual_size.map_or(session.cols, |size| size.0);
             let rows = window.manual_size.map_or(session.rows, |size| size.1);
             let spec = PaneSpawnSpec { argv, cwd };
-            Pane::spawn_from_spec(&spec, cols, rows)?
+            Pane::spawn_from_spec_mode(&spec, cols, rows, self.pane_io_mode)?
         };
+        self.observe_pane(&pane);
         let window = self.window_mut(resolved.session, resolved.window);
         let id = window.panes[resolved.pane].id;
         window.panes.clear();
@@ -9567,6 +9652,7 @@ impl ServerState {
                 RenderInvalidation::LAYOUT | RenderInvalidation::STATUS | RenderInvalidation::MODE,
             );
         }
+        self.notify_observation();
         Ok(())
     }
 
@@ -10757,10 +10843,9 @@ fn incremental_copy_search(
         .as_ref()
         .is_some_and(|search| search.pattern != pattern)
     {
-        let origin = state
-            .incremental_search_origin
-            .as_ref()
-            .expect("incremental search origin checked above");
+        let Some(origin) = state.incremental_search_origin.as_ref() else {
+            return;
+        };
         state.cursor = origin.cursor.clone();
         state.desired_col = origin.desired_col;
         state.scroll = origin.scroll;
@@ -11364,7 +11449,10 @@ mod tests {
             .map(|range| &vt[range])
             .collect::<Vec<_>>();
         assert_eq!(rows, [b"first".as_slice(), b"second"]);
-        assert_eq!(copy_vt_row_ranges(b""), [0..0]);
+        assert_eq!(
+            copy_vt_row_ranges(b""),
+            std::iter::once(0..0).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -11424,7 +11512,7 @@ mod tests {
             },
             grid,
             vt: Vec::new(),
-            vt_rows: vec![0..0],
+            vt_rows: std::iter::once(0..0).collect(),
             scroll: 0,
         };
         assert_eq!(copy_selection(&state, false), "        ");
