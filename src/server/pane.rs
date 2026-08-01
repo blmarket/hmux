@@ -32,7 +32,7 @@ use crate::ghostty::Terminal;
 use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, ScreenTail};
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 
-use crate::native::ObservationSignal;
+use super::ObservationSignal;
 
 /// A single pane. Holds the emulated screen and, if live, the child on its pty.
 pub struct Pane {

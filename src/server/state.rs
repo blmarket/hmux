@@ -17,8 +17,18 @@ use std::sync::{mpsc, Arc, Condvar, Mutex};
 use super::key::{parse_key_name, KeyCode};
 use super::options::{GlobalOptions, OptionSet, OptionsView};
 use super::term::ResolvedTerm;
-use crate::native::ObservationSignal;
+use super::ObservationSignal;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
+
+#[cfg(not(test))]
+fn default_pane_io_mode() -> PaneIoMode {
+    PaneIoMode::EventLoop
+}
+
+#[cfg(test)]
+fn default_pane_io_mode() -> PaneIoMode {
+    PaneIoMode::Threaded(crate::native::pane::spawn_reader)
+}
 use crate::server::pane::{NativePaneObservation, Pane, PaneIo, PaneIoMode, PaneSpawnSpec};
 
 /// How to back a new pane's screen.
@@ -2937,7 +2947,7 @@ impl ServerState {
         let client_renders = Arc::new(ClientRenderRegistry::new());
         let mut state = ServerState {
             initial_attach_pending: true,
-            pane_io_mode: PaneIoMode::Threaded(crate::native::pane::spawn_reader),
+            pane_io_mode: default_pane_io_mode(),
             sessions: Vec::new(),
             windows: BTreeMap::new(),
             session_groups: BTreeMap::new(),

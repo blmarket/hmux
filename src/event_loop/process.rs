@@ -8,7 +8,7 @@ use signal_hook::consts::signal::SIGCHLD;
 use signal_hook::low_level::{pipe, unregister};
 use signal_hook::SigId;
 
-use crate::native::NativeServer;
+use crate::server::Server;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;
@@ -24,14 +24,14 @@ pub(crate) enum ChildSignalEvent {
 pub(crate) struct ChildSignal {
     reader: UnixStream,
     registration: SigId,
-    server: NativeServer,
+    server: Server,
     token: Option<Token>,
     work_queued: bool,
     stopping: bool,
 }
 
 impl ChildSignal {
-    pub(crate) fn new(server: NativeServer) -> io::Result<Self> {
+    pub(crate) fn new(server: Server) -> io::Result<Self> {
         let (reader, writer) = UnixStream::pair()?;
         reader.set_nonblocking(true)?;
         let registration = pipe::register(SIGCHLD, writer)?;

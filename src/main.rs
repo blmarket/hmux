@@ -12,7 +12,7 @@ use tracing::{error, info};
 
 use hmux::integration::AgentObserver;
 use hmux::serve;
-use hmux::tmux::NativeServer;
+use hmux::tmux::{NativeServer, Server};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 enum Engine {
@@ -142,14 +142,16 @@ fn run_server(args: Args) -> hmux::Result<()> {
     // Start as a server only. The first untargeted `tmux attach` lazily creates
     // session 0, so launching hmux does not speculatively spawn a shell or
     // commit the first session to the 80x24 fallback geometry.
-    let server = NativeServer::new()?;
+    let server = Server::new()?;
     // The observer publishes into the server's status hub; connection handlers
     // read the same hub for `#{pane_agent*}` and control subscriptions.
     let _agent_observer = AgentObserver::start(server.clone(), server.status_hub())?;
     let result = match args.engine {
-        Engine::Native => {
-            serve::run_until(listen_socket, server, |server| server.shutdown_requested())
-        }
+        Engine::Native => serve::run_until(
+            listen_socket,
+            NativeServer::from_server(server)?,
+            |server| server.shutdown_requested(),
+        ),
         Engine::EventLoop => serve::run_event_loop(listen_socket, server),
     };
     // Unix socket pathnames outlive a closed listener. Remove ours on a normal

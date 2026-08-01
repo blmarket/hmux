@@ -4,8 +4,8 @@ use std::collections::VecDeque;
 use std::io;
 use std::time::{Duration, Instant};
 
-use crate::native::NativeServer;
 use crate::server::pane::PaneIo;
+use crate::server::Server;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 use crate::tmux::message::Frame;
 
@@ -469,7 +469,7 @@ where
         &mut self,
         reader: ImsgReader,
         writer: NonblockingImsgWriter,
-        server: NativeServer,
+        server: Server,
     ) -> ProtocolHandle {
         let background_commands = self
             .background_commands
@@ -514,10 +514,7 @@ where
         PaneHandle { pane, runtime_id }
     }
 
-    pub(crate) fn add_child_signal(
-        &mut self,
-        server: NativeServer,
-    ) -> io::Result<ChildSignalHandle> {
+    pub(crate) fn add_child_signal(&mut self, server: Server) -> io::Result<ChildSignalHandle> {
         let signal = ActorRef::new(ChildSignal::new(server)?);
         self.events.push_back(Envelope::ChildSignal {
             target: signal.clone(),

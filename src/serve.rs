@@ -18,7 +18,7 @@ use tracing::{info, warn};
 
 use crate::event_loop::driver::{EventLoop, ListenerHandle, PaneHandle, ProtocolHandle};
 use crate::event_loop::protocol::ProtocolCloseReason;
-use crate::native::NativeServer;
+use crate::server::Server;
 use crate::tmux::codec::{split_nonblocking_stream_with_queue_limit, split_stream, MAX_IMSGSIZE};
 use crate::tmux::introspect::{Direction, LoggingReader, LoggingWriter};
 use crate::tmux::traits::{FrameReader, FrameWriter, TmuxServer};
@@ -52,12 +52,12 @@ where
     run_with_handler(listen_path, server, loop_done, handle_client::<T>)
 }
 
-/// Bind `listen_path` and serve a concrete [`NativeServer`] through the
+/// Bind `listen_path` and serve a concrete [`Server`] through the
 /// nonblocking event-loop protocol engine.
 ///
 /// This remains a sibling of the established native listener path rather than
 /// an optional capability on [`TmuxServer`].
-pub fn run_event_loop(listen_path: &Path, server: NativeServer) -> io::Result<()> {
+pub fn run_event_loop(listen_path: &Path, server: Server) -> io::Result<()> {
     const ACCEPT_BUDGET: usize = 64;
     const DISPATCH_BUDGET: usize = 256;
 
@@ -129,7 +129,7 @@ pub fn run_event_loop(listen_path: &Path, server: NativeServer) -> io::Result<()
 }
 
 fn sync_native_panes(
-    server: &NativeServer,
+    server: &Server,
     event_loop: &mut NativeEventLoop,
     panes: &mut BTreeMap<u64, PaneHandle>,
 ) -> io::Result<()> {
@@ -239,7 +239,7 @@ fn bind_listener(listen_path: &Path) -> io::Result<UnixListener> {
 
 fn add_protocol_client(
     client: UnixStream,
-    server: &NativeServer,
+    server: &Server,
     event_loop: &mut NativeEventLoop,
 ) -> io::Result<ProtocolHandle> {
     let (reader, writer) =
@@ -248,7 +248,7 @@ fn add_protocol_client(
 }
 
 fn dispatch_native_events(
-    server: &NativeServer,
+    server: &Server,
     event_loop: &mut NativeEventLoop,
     listener: &ListenerHandle,
     clients: &mut Vec<ProtocolHandle>,
@@ -427,7 +427,7 @@ mod tests {
 
     #[test]
     fn event_loop_protocol_rejects_a_bad_version_directly() {
-        let server = NativeServer::new().unwrap();
+        let server = Server::new().unwrap();
         let (peer, endpoint) = UnixStream::pair().unwrap();
         let (mut reader, mut writer) = split_stream(peer).unwrap();
         let mut event_loop = EventLoop::new().unwrap();
@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn event_loop_protocol_streams_command_response_across_high_water() {
-        let server = NativeServer::new().unwrap();
+        let server = Server::new().unwrap();
         let (peer, endpoint) = UnixStream::pair().unwrap();
         let (mut reader, mut writer) = split_stream(peer).unwrap();
         let (protocol_reader, protocol_writer) =
@@ -541,7 +541,7 @@ mod tests {
     fn event_loop_protocol_owns_control_mode_directly() {
         const CLIENT_CONTROL: i64 = 0x2000;
 
-        let server = NativeServer::new().unwrap();
+        let server = Server::new().unwrap();
         let (peer, endpoint) = UnixStream::pair().unwrap();
         let (mut reader, mut writer) = split_stream(peer).unwrap();
         let (mut control_input, passed_stdin) = UnixStream::pair().unwrap();
@@ -633,7 +633,7 @@ mod tests {
 
     #[test]
     fn event_loop_protocol_owns_interactive_attach_directly() {
-        let server = NativeServer::new().unwrap();
+        let server = Server::new().unwrap();
         let (peer, endpoint) = UnixStream::pair().unwrap();
         let (mut reader, mut writer) = split_stream(peer).unwrap();
         let (master, slave) = open_test_pty();

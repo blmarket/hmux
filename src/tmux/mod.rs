@@ -7,6 +7,7 @@ pub mod message;
 pub mod traits;
 
 pub use crate::native::NativeServer;
+pub use crate::server::Server;
 pub use backing::Backing;
 pub use message::{msgtype, Frame, Message, PROTOCOL_VERSION};
 pub use traits::{
