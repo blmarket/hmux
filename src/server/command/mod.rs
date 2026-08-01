@@ -4137,41 +4137,6 @@ fn pane_cursor_character(pane: &crate::native::pane::Pane) -> String {
         .unwrap_or_else(|| " ".to_string())
 }
 
-/// Serialize per-pane agent status for the push protocol's `MSG_HMUX_STATUS`
-/// body. One newline-terminated record per pane across the whole server (the
-/// `list-panes -a` order: sessions by name, then window then pane order):
-///
-/// ```text
-/// pane_id \t session \t window_index \t pane_index \t agent \t state \n
-/// ```
-///
-/// The fields carry the same values as the matching `#{...}` format variables:
-/// `pane_id` is `%N`, `agent` is `""` / `"codex"` / `"claude"` / `"pi"`, and
-/// `state` is one of `idle|working|blocked|exited|none`. This is the exact
-/// grammar pinned by PROTOCOL.md; the parser in the client helper is its inverse.
-pub fn encode_status_body(st: &ServerState, agents: &PaneAgents) -> Vec<u8> {
-    let mut sessions: Vec<&Session> = st.sessions().iter().collect();
-    sessions.sort_by(|a, b| a.name.cmp(&b.name));
-
-    let mut out = String::new();
-    for sess in sessions {
-        for link in sess.windows.iter() {
-            let win = st.window_for_link(link);
-            for (pane_idx, pane) in win.panes.iter().enumerate() {
-                let (agent, state) = match agents.get(&PaneId(pane.id)) {
-                    Some(status) => (status.agent, status.state.wire_str()),
-                    None => ("", "none"),
-                };
-                out.push_str(&format!(
-                    "%{}\t{}\t{}\t{}\t{}\t{}\n",
-                    pane.id, sess.name, link.index, pane_idx, agent, state
-                ));
-            }
-        }
-    }
-    out.into_bytes()
-}
-
 /// The server process's working directory. This backs `#{session_path}` and is
 /// the fallback for `#{pane_current_path}` when a pane has no live child cwd to
 /// read (an inert pane). It is the directory hmux was started in — the same cwd
@@ -8556,31 +8521,6 @@ mod tests {
         );
         assert_eq!(r.exit, 0);
         assert_eq!(r.stdout, "|none||\n", "got {:?}", r.stdout);
-    }
-
-    #[test]
-    fn encode_status_body_matches_grammar() {
-        use crate::integration::status::AgentStatus;
-        use crate::integration::AgentState;
-
-        let st = state();
-        let mut agents = PaneAgents::new();
-        agents.insert(
-            PaneId(0),
-            AgentStatus {
-                agent: "codex",
-                pid: Some(5252),
-                session_id: None,
-                state: AgentState::Blocked,
-            },
-        );
-        let guard = st.lock().unwrap();
-        let body = encode_status_body(&guard, &agents);
-        // pane_id \t session \t window_index \t pane_index \t agent \t state \n
-        assert_eq!(
-            String::from_utf8(body).unwrap(),
-            "%0\t0\t0\t0\tcodex\tblocked\n"
-        );
     }
 
     #[test]

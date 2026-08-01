@@ -56,15 +56,6 @@ pub mod msgtype {
     pub const MSG_WRITE_READY: u32 = 305;
     pub const MSG_WRITE_CLOSE: u32 = 306;
     pub const MSG_READ_CANCEL: u32 = 307;
-
-    // ---- hmux-private extensions (see PROTOCOL.md) -----------------------
-    // The `900–999` block is reserved for hmux and is disjoint from every tmux
-    // assignment above. A real tmux client never sends these; a real tmux server
-    // would `fatalx` on them — so they are native-hmux-only by construction.
-    /// Long-poll request for pane agent status: client -> server.
-    pub const MSG_HMUX_STATUS_WAIT: u32 = 900;
-    /// Pane agent status snapshot/heartbeat: server -> client.
-    pub const MSG_HMUX_STATUS: u32 = 901;
 }
 
 /// The wire protocol version tmux speaks (`PROTOCOL_VERSION`, tmux-protocol.h).
@@ -210,20 +201,6 @@ pub enum Message {
         stream: i32,
     },
 
-    // ---- hmux-private extensions (see PROTOCOL.md) ----------------------
-    /// `MSG_HMUX_STATUS_WAIT`: long-poll request — "reply once the status hub's
-    /// revision exceeds `since`". Payload is `since` as a native-endian `u64`.
-    StatusWait {
-        since: u64,
-    },
-    /// `MSG_HMUX_STATUS`: the status response — the hub `revision` (native-endian
-    /// `u64`) followed by `body`, the tab/newline-delimited per-pane records
-    /// specified in PROTOCOL.md. `body` may be empty (no panes).
-    Status {
-        revision: u64,
-        body: Vec<u8>,
-    },
-
     // ---- fallback -------------------------------------------------------
     /// Anything not modeled above. Forwarded byte-for-byte, never dropped.
     Unknown {
@@ -323,11 +300,6 @@ impl Message {
                 .map(|stream| Message::WriteClose { stream })
                 .unwrap_or_else(unknown),
 
-            MSG_HMUX_STATUS_WAIT => u64_body(payload)
-                .map(|since| Message::StatusWait { since })
-                .unwrap_or_else(unknown),
-            MSG_HMUX_STATUS => decode_status(payload).unwrap_or_else(unknown),
-
             _ => unknown(),
         }
     }
@@ -392,9 +364,6 @@ impl Message {
             }
             Message::WriteClose { stream } => (MSG_WRITE_CLOSE, stream.to_ne_bytes().to_vec()),
 
-            Message::StatusWait { since } => (MSG_HMUX_STATUS_WAIT, since.to_ne_bytes().to_vec()),
-            Message::Status { revision, body } => (MSG_HMUX_STATUS, encode_status(*revision, body)),
-
             Message::Unknown { type_, payload } => (*type_, payload.clone()),
         }
     }
@@ -437,8 +406,6 @@ impl Message {
             Message::Write { .. } => "Write",
             Message::WriteReady { .. } => "WriteReady",
             Message::WriteClose { .. } => "WriteClose",
-            Message::StatusWait { .. } => "StatusWait",
-            Message::Status { .. } => "Status",
             Message::Unknown { .. } => "Unknown",
         }
     }
@@ -452,30 +419,6 @@ fn i32_body(p: &[u8]) -> Option<i32> {
 
 fn i64_body(p: &[u8]) -> Option<i64> {
     (p.len() == 8).then(|| i64::from_ne_bytes(p.try_into().unwrap()))
-}
-
-fn u64_body(p: &[u8]) -> Option<u64> {
-    (p.len() == 8).then(|| u64::from_ne_bytes(p.try_into().unwrap()))
-}
-
-/// `MSG_HMUX_STATUS` payload: a native-endian `u64` revision then the raw record
-/// body (PROTOCOL.md §status). The body may be empty, so the minimum length is 8.
-fn decode_status(p: &[u8]) -> Option<Message> {
-    if p.len() < 8 {
-        return None;
-    }
-    let revision = u64::from_ne_bytes(p[0..8].try_into().unwrap());
-    Some(Message::Status {
-        revision,
-        body: p[8..].to_vec(),
-    })
-}
-
-fn encode_status(revision: u64, body: &[u8]) -> Vec<u8> {
-    let mut v = Vec::with_capacity(8 + body.len());
-    v.extend_from_slice(&revision.to_ne_bytes());
-    v.extend_from_slice(body);
-    v
 }
 
 /// A C string payload: bytes followed by exactly one trailing NUL. Returns the

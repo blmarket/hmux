@@ -619,19 +619,6 @@ mod tests {
                 error: 5,
             },
             Message::WriteClose { stream: 3 },
-            // hmux-private extensions (PROTOCOL.md).
-            Message::StatusWait { since: 0 },
-            Message::StatusWait {
-                since: 0x0102_0304_0506_0708,
-            },
-            Message::Status {
-                revision: 0,
-                body: Vec::new(),
-            },
-            Message::Status {
-                revision: 42,
-                body: b"%1\t0\t0\t0\tclaude\tworking\n".to_vec(),
-            },
             Message::Unknown {
                 type_: 999,
                 payload: vec![9, 8, 7],
@@ -655,30 +642,6 @@ mod tests {
             assert!(payload.is_empty());
             assert_eq!(bytes.len(), HEADER_SIZE);
         }
-    }
-
-    /// Pin the exact wire layout of the hmux-private message pair against
-    /// PROTOCOL.md: `MSG_HMUX_STATUS_WAIT` is type 900 with an 8-byte LE-native
-    /// `since`; `MSG_HMUX_STATUS` is type 901 with an 8-byte revision then the
-    /// record body verbatim.
-    #[test]
-    fn hmux_status_wire_layout_matches_protocol_doc() {
-        let (type_, payload) = Message::StatusWait { since: 7 }.encode();
-        assert_eq!(type_, msgtype::MSG_HMUX_STATUS_WAIT);
-        assert_eq!(type_, 900);
-        assert_eq!(payload, 7u64.to_ne_bytes().to_vec());
-
-        let body = b"%0\tmain\t0\t0\t\tnone\n".to_vec();
-        let (type_, payload) = Message::Status {
-            revision: 5,
-            body: body.clone(),
-        }
-        .encode();
-        assert_eq!(type_, msgtype::MSG_HMUX_STATUS);
-        assert_eq!(type_, 901);
-        let mut expected = 5u64.to_ne_bytes().to_vec();
-        expected.extend_from_slice(&body);
-        assert_eq!(payload, expected);
     }
 
     #[test]

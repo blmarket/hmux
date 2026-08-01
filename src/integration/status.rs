@@ -2,9 +2,8 @@
 //!
 //! The [`AgentObserver`](super::AgentObserver) writes each pane's classified
 //! [`AgentStatus`] here; readers — the format-variable layer (`#{pane_agent*}`)
-//! and the long-poll push handler — read it back. A monotonic `revision` mirrors
-//! the pane `output_revision` pattern and lets a long-poll client block for
-//! "something newer than N" without busy-polling.
+//! and attached client renderers — read it back. A monotonic `revision` mirrors
+//! the pane `output_revision` pattern and makes snapshot changes cheap to detect.
 //!
 //! This hub is a **sibling** of the native server's `ServerState`, not a part of
 //! it, so neither `ServerState`'s shape nor the `observability::v1` traits change.
@@ -14,8 +13,7 @@ use std::collections::HashMap;
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
 use std::sync::Weak;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::observability::v1::PaneId;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
@@ -47,8 +45,7 @@ pub type PaneAgents = HashMap<PaneId, AgentStatus>;
 /// pane's status at that revision.
 #[derive(Clone, Debug)]
 pub struct StatusSnapshot {
-    /// Monotonic counter, bumped on every observable change. Starts at 1 so a
-    /// fresh client's `wait_after(0, …)` returns the current snapshot at once.
+    /// Monotonic counter, bumped on every observable change.
     pub revision: u64,
     /// Per-pane agent status at `revision`.
     pub panes: PaneAgents,
@@ -61,10 +58,8 @@ pub struct StatusHub(Arc<Inner>);
 
 struct Inner {
     snapshot: Mutex<StatusSnapshot>,
-    /// Signalled whenever `revision` advances, to wake parked long-poll waiters.
-    changed: Condvar,
     /// Per-consumer pollable wakeups for attached status renderers.
-    waiters: Mutex<Vec<Weak<StatusEvent>>>,
+    subscribers: Mutex<Vec<Weak<StatusEvent>>>,
 }
 
 struct StatusEvent {
@@ -100,8 +95,7 @@ impl StatusHub {
                 revision: 1,
                 panes: PaneAgents::new(),
             }),
-            changed: Condvar::new(),
-            waiters: Mutex::new(Vec::new()),
+            subscribers: Mutex::new(Vec::new()),
         }))
     }
 
@@ -144,26 +138,11 @@ impl StatusHub {
             wakeup: CurrentPlatform::new_output_wakeup()?,
         });
         self.0
-            .waiters
+            .subscribers
             .lock()
-            .map_err(|_| io::Error::other("agent status waiters mutex poisoned"))?
+            .map_err(|_| io::Error::other("agent status subscribers mutex poisoned"))?
             .push(Arc::downgrade(&event));
         Ok(StatusSubscription { event })
-    }
-
-    /// Park until the revision advances past `since`, or `timeout` elapses, then
-    /// return the current snapshot. Returns immediately when `revision > since`
-    /// already; on timeout the returned snapshot's `revision` may still equal
-    /// `since` (a liveness heartbeat). The hub mutex is released while parked, so
-    /// a blocked long-poll never stalls other holders of a hub clone.
-    pub fn wait_after(&self, since: u64, timeout: Duration) -> StatusSnapshot {
-        let guard = self.lock();
-        let (guard, _timed_out) = self
-            .0
-            .changed
-            .wait_timeout_while(guard, timeout, |snap| snap.revision <= since)
-            .unwrap_or_else(|poison| poison.into_inner());
-        guard.clone()
     }
 
     /// Lock the snapshot, recovering from a poisoned mutex rather than panicking
@@ -173,12 +152,11 @@ impl StatusHub {
     }
 
     fn notify_changed(&self) {
-        self.0.changed.notify_all();
-        let Ok(mut waiters) = self.0.waiters.lock() else {
+        let Ok(mut subscribers) = self.0.subscribers.lock() else {
             return;
         };
-        waiters.retain(|waiter| {
-            let Some(event) = waiter.upgrade() else {
+        subscribers.retain(|subscriber| {
+            let Some(event) = subscriber.upgrade() else {
                 return false;
             };
             let _ = event.wakeup.wake();
@@ -197,8 +175,6 @@ impl Default for StatusHub {
 mod tests {
     use super::*;
     use std::os::fd::RawFd;
-    use std::thread;
-    use std::time::Instant;
 
     fn status(agent: &'static str, state: AgentState) -> AgentStatus {
         AgentStatus {
@@ -238,37 +214,6 @@ mod tests {
         // Removing an absent pane is a no-op.
         hub.remove(PaneId(0));
         assert_eq!(hub.snapshot().revision, 4);
-    }
-
-    #[test]
-    fn wait_after_returns_immediately_when_ahead() {
-        let hub = StatusHub::new();
-        // revision starts at 1, so a fresh since=0 wait returns at once.
-        let snap = hub.wait_after(0, Duration::from_secs(30));
-        assert_eq!(snap.revision, 1);
-    }
-
-    #[test]
-    fn wait_after_times_out_as_heartbeat() {
-        let hub = StatusHub::new();
-        let start = Instant::now();
-        let snap = hub.wait_after(1, Duration::from_millis(50));
-        assert!(start.elapsed() >= Duration::from_millis(40));
-        // Unchanged: the revision still equals `since` — a liveness heartbeat.
-        assert_eq!(snap.revision, 1);
-    }
-
-    #[test]
-    fn wait_after_wakes_on_change() {
-        let hub = StatusHub::new();
-        let writer = hub.clone();
-        let waiter = thread::spawn(move || hub.wait_after(1, Duration::from_secs(5)));
-        // Let the waiter park, then publish.
-        thread::sleep(Duration::from_millis(50));
-        writer.publish(PaneId(7), status("codex", AgentState::Blocked));
-        let snap = waiter.join().expect("waiter joined");
-        assert_eq!(snap.revision, 2);
-        assert_eq!(snap.panes[&PaneId(7)], status("codex", AgentState::Blocked));
     }
 
     fn is_readable(fd: RawFd) -> bool {

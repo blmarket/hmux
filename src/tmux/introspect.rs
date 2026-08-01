@@ -138,11 +138,6 @@ impl fmt::Display for LogMessage<'_> {
                 fmt_bytes_field(f, "data", data)?;
                 write!(f, " }}")
             }
-            Message::Status { revision, body } => {
-                write!(f, "Status {{ revision: {revision}, ")?;
-                fmt_bytes_field(f, "body", body)?;
-                write!(f, " }}")
-            }
             Message::Unknown { type_, payload } => {
                 write!(f, "Unknown {{ type_: {type_}, ")?;
                 fmt_bytes_field(f, "payload", payload)?;
@@ -178,22 +173,6 @@ mod tests {
         assert_eq!(
             rendered,
             "Write { stream: 1, data_len: 20, data: \"%0\\t/home/hun/srv/d1\\n\" }"
-        );
-        assert!(!rendered.contains("[37,"));
-    }
-
-    #[test]
-    fn status_body_logs_as_lossy_utf8_with_length() {
-        let msg = Message::Status {
-            revision: 24,
-            body: b"%1\t0\t1\t0\tclaude\tworking\n".to_vec(),
-        };
-
-        let rendered = LogMessage(&msg).to_string();
-
-        assert_eq!(
-            rendered,
-            "Status { revision: 24, body_len: 24, body: \"%1\\t0\\t1\\t0\\tclaude\\tworking\\n\" }"
         );
         assert!(!rendered.contains("[37,"));
     }

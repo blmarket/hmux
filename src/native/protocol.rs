@@ -39,11 +39,6 @@ use crate::server::status;
 const FD_STDOUT: i32 = 1;
 const FD_STDERR: i32 = 2;
 
-/// How long a `StatusWait` long-poll parks before returning an unchanged
-/// heartbeat. Doubles as dead-client detection: the next write fails if the peer
-/// is gone. See PROTOCOL.md §semantics.
-const STATUS_HEARTBEAT: Duration = Duration::from_secs(30);
-
 const CONTROL_BUFFER_HIGH: usize = 8192;
 const CLIENT_READONLY: i64 = 0x800;
 const CLIENT_CONTROL: i64 = 0x2000;
@@ -193,24 +188,6 @@ where
                         return Ok(());
                     }
                 }
-            }
-
-            // hmux-private long-poll: park until the status hub advances past
-            // `since` (or the heartbeat fires), then reply with a snapshot and
-            // loop back to `recv` for the client's next `StatusWait`. Unlike the
-            // one-shot command path, this connection stays open (PROTOCOL.md).
-            Message::StatusWait { since } => {
-                let snap = hub.wait_after(since, STATUS_HEARTBEAT);
-                let body = {
-                    let st = state
-                        .lock()
-                        .map_err(|_| io::Error::other("native server state poisoned"))?;
-                    command::encode_status_body(&st, &snap.panes)
-                };
-                writer.send(Frame::new(Message::Status {
-                    revision: snap.revision,
-                    body,
-                }))?;
             }
 
             Message::Detach(_) | Message::DetachKill(_) | Message::Exit(_) => return Ok(()),

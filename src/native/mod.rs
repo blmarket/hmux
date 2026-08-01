@@ -51,9 +51,8 @@ type EventPaneSnapshot = (Vec<(u64, PaneIo)>, Vec<u64>);
 pub struct NativeServer {
     state: Arc<Mutex<ServerState>>,
     /// Shared per-pane agent status, written by the [`AgentObserver`] and read by
-    /// the format layer (`#{pane_agent*}`) and the push handler. A sibling of
-    /// `state`, not part of it, so `ServerState` and the observability traits are
-    /// untouched.
+    /// the format layer (`#{pane_agent*}`). A sibling of `state`, not part of it,
+    /// so `ServerState` and the observability traits are untouched.
     ///
     /// [`AgentObserver`]: crate::integration::AgentObserver
     status: StatusHub,
@@ -692,60 +691,5 @@ mod tests {
             .resolve_pane(PaneId(99))
             .expect("resolve pane")
             .is_none());
-    }
-
-    /// The push path end to end (design §10 "Handler integration"): a first
-    /// `StatusWait{0}` returns the full snapshot immediately; a second parks
-    /// until a `hub.publish` wakes it; a concurrent connection is unaffected by
-    /// another's park.
-    #[test]
-    fn status_push_snapshot_then_parks_until_change() {
-        use std::thread;
-        use std::time::Duration;
-
-        use crate::integration::status::AgentStatus;
-        use crate::integration::AgentState;
-        use crate::tmux::status_client::StatusClient;
-        use crate::tmux::traits::TmuxServer;
-
-        // Default session → one pane, id 0.
-        let server = server_with_test_session();
-        let hub = server.status_hub();
-
-        let (reader, writer) = server.connect().expect("connect");
-        let mut client = StatusClient::from_pair(reader, writer);
-
-        // Initial full snapshot: pane %0, no agent yet, at the starting revision.
-        let snap = client.wait(0).expect("initial snapshot");
-        assert_eq!(snap.revision, 1);
-        assert_eq!(snap.panes.len(), 1);
-        assert_eq!(snap.panes[0].pane_id, "%0");
-        assert_eq!(snap.panes[0].agent, "");
-        assert_eq!(snap.panes[0].state, "none");
-
-        // A second wait on the current revision parks server-side.
-        let waiter = thread::spawn(move || client.wait(snap.revision));
-
-        // A second, independent connection is not blocked by the first's park.
-        let (r2, w2) = server.connect().expect("connect 2");
-        let mut client2 = StatusClient::from_pair(r2, w2);
-        assert_eq!(client2.wait(0).expect("second client snapshot").revision, 1);
-
-        // Publishing wakes the parked waiter with the new status.
-        thread::sleep(Duration::from_millis(50));
-        hub.publish(
-            PaneId(0),
-            AgentStatus {
-                agent: "claude",
-                pid: Some(12345),
-                session_id: None,
-                state: AgentState::Working,
-            },
-        );
-        let updated = waiter.join().expect("waiter joined").expect("status");
-        assert!(updated.revision > 1);
-        assert_eq!(updated.panes[0].pane_id, "%0");
-        assert_eq!(updated.panes[0].agent, "claude");
-        assert_eq!(updated.panes[0].state, "working");
     }
 }

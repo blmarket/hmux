@@ -52,9 +52,9 @@ pub enum AgentState {
 }
 
 impl AgentState {
-    /// The wire/format spelling of this state, shared by the `#{pane_agent_state}`
-    /// format variable and the push protocol's status records. [`Unknown`] maps
-    /// to `"none"` — a pane with no definite agent lifecycle signal.
+    /// The format spelling of this state, shared by `#{pane_agent_state}` and
+    /// control-mode format subscriptions. [`Unknown`] maps to `"none"` — a pane
+    /// with no definite agent lifecycle signal.
     ///
     /// [`Unknown`]: AgentState::Unknown
     pub fn wire_str(self) -> &'static str {
@@ -222,8 +222,7 @@ pub struct AgentObserver {
 impl AgentObserver {
     /// Start polling an observable server with the built-in detector registry,
     /// attributing panes to agents via the real OS process table and
-    /// publishing every classified state to `hub` for readers (format variables
-    /// and the push handler).
+    /// publishing every classified state to `hub` for format renderers.
     pub fn start<O>(observability: O, hub: StatusHub) -> io::Result<Self>
     where
         O: ServerObservability + 'static,
@@ -674,9 +673,8 @@ fn publish(
         ?state,
         "agent integration state changed"
     );
-    // Mirror the transition into the shared hub for readers (format variables +
-    // push handler). Only real transitions reach here (the dedup above), so this
-    // bumps the hub revision exactly once per observable change.
+    // Mirror the transition into the shared hub for format renderers. Only real
+    // transitions reach here, so this bumps the hub revision once per change.
     if let Some(hub) = hub {
         hub.publish(
             id,

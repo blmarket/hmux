@@ -228,15 +228,6 @@ impl Outbox {
         });
     }
 
-    pub(crate) fn set_protocol_timer(
-        &mut self,
-        target: ActorRef<ProtocolClient>,
-        deadline: Instant,
-        generation: u64,
-    ) {
-        self.set_protocol_timer_event(target, deadline, ProtocolEvent::StatusHeartbeat(generation));
-    }
-
     pub(crate) fn set_protocol_timer_event(
         &mut self,
         target: ActorRef<ProtocolClient>,
@@ -785,7 +776,6 @@ where
                     ProtocolIoSide::Read => ProtocolEvent::Readable,
                     ProtocolIoSide::Write => ProtocolEvent::Writable,
                     ProtocolIoSide::Command => ProtocolEvent::CommandCompleted,
-                    ProtocolIoSide::Status => ProtocolEvent::StatusReady,
                     ProtocolIoSide::Control(source) => ProtocolEvent::ControlReady(*source),
                     ProtocolIoSide::Attach(source) => ProtocolEvent::AttachReady(*source),
                 };
@@ -1049,7 +1039,6 @@ where
                         source,
                         match side {
                             ProtocolIoSide::Read | ProtocolIoSide::Command => Interest::READABLE,
-                            ProtocolIoSide::Status => Interest::READABLE,
                             ProtocolIoSide::Write => Interest::WRITABLE,
                             ProtocolIoSide::Control(source) => {
                                 if ProtocolClient::control_source_is_writable(source) {

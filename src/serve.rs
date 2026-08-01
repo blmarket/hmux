@@ -370,9 +370,6 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::*;
-    use crate::integration::status::AgentStatus;
-    use crate::integration::AgentState;
-    use crate::observability::v1::PaneId;
     use crate::tmux::codec::{dup_fd, split_stream};
     use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 
@@ -790,118 +787,5 @@ mod tests {
         assert_eq!(restored_termios.c_cflag, original_termios.c_cflag);
         assert_eq!(restored_termios.c_lflag, original_termios.c_lflag);
         drop(slave);
-    }
-
-    #[test]
-    fn event_loop_protocol_handles_control_flagged_status_wait_directly() {
-        const CLIENT_CONTROL: i64 = 0x2000;
-
-        let server = NativeServer::new().unwrap();
-        let (peer, endpoint) = UnixStream::pair().unwrap();
-        let (mut reader, mut writer) = split_stream(peer).unwrap();
-        let mut event_loop = EventLoop::new().unwrap();
-        let client = add_protocol_client(endpoint, &server, &mut event_loop).unwrap();
-
-        writer
-            .send(Frame::new(Message::IdentifyLongFlags(CLIENT_CONTROL)))
-            .unwrap();
-        writer
-            .send(Frame::new(Message::StatusWait { since: 0 }))
-            .unwrap();
-
-        let deadline = Instant::now() + Duration::from_secs(2);
-        let revision = loop {
-            event_loop.dispatch_with_budget(256).unwrap();
-            match reader.try_recv() {
-                Ok(frame) => match frame.msg {
-                    Message::Status { revision, .. } => break revision,
-                    message => panic!("unexpected status response: {message:?}"),
-                },
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
-                Err(error) => panic!("failed to receive status response: {error}"),
-            }
-            assert!(
-                Instant::now() < deadline,
-                "timed out waiting for status response"
-            );
-            if event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
-            }
-        };
-
-        assert!(revision > 0);
-        assert!(client.is_direct());
-        writer
-            .send(Frame::new(Message::StatusWait { since: revision }))
-            .unwrap();
-
-        event_loop.poll(Some(Duration::from_millis(10))).unwrap();
-        event_loop.dispatch_with_budget(256).unwrap();
-        event_loop.poll(Some(Duration::from_millis(10))).unwrap();
-        event_loop.dispatch_with_budget(256).unwrap();
-        server.status_hub().publish(
-            PaneId(u32::MAX),
-            AgentStatus {
-                agent: "codex",
-                pid: None,
-                session_id: None,
-                state: AgentState::Working,
-            },
-        );
-
-        let changed_revision = loop {
-            event_loop.dispatch_with_budget(256).unwrap();
-            match reader.try_recv() {
-                Ok(frame) => match frame.msg {
-                    Message::Status { revision, .. } => break revision,
-                    message => panic!("unexpected changed-status response: {message:?}"),
-                },
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
-                Err(error) => panic!("failed to receive changed-status response: {error}"),
-            }
-            assert!(
-                Instant::now() < deadline,
-                "timed out waiting for changed-status response"
-            );
-            if event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
-            }
-        };
-        assert!(changed_revision > revision);
-        assert!(client.is_direct());
-
-        writer
-            .send(Frame::new(Message::StatusWait {
-                since: changed_revision,
-            }))
-            .unwrap();
-        let heartbeat_revision = loop {
-            event_loop.dispatch_with_budget(256).unwrap();
-            match reader.try_recv() {
-                Ok(frame) => match frame.msg {
-                    Message::Status { revision, .. } => break revision,
-                    message => panic!("unexpected heartbeat response: {message:?}"),
-                },
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
-                Err(error) => panic!("failed to receive heartbeat response: {error}"),
-            }
-            assert!(
-                Instant::now() < deadline,
-                "timed out waiting for status heartbeat"
-            );
-            if event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
-            }
-        };
-        assert_eq!(heartbeat_revision, changed_revision);
-        assert!(client.is_direct());
-        drop((reader, writer));
-        while client.is_alive() && Instant::now() < deadline {
-            event_loop.dispatch_with_budget(256).unwrap();
-            if client.is_alive() && event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
-            }
-        }
-        assert!(!client.is_alive());
     }
 }

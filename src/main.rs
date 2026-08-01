@@ -144,7 +144,7 @@ fn run_server(args: Args) -> hmux::Result<()> {
     // commit the first session to the 80x24 fallback geometry.
     let server = NativeServer::new()?;
     // The observer publishes into the server's status hub; connection handlers
-    // read the same hub for `#{pane_agent*}` and the push protocol.
+    // read the same hub for `#{pane_agent*}` and control subscriptions.
     let _agent_observer = AgentObserver::start(server.clone(), server.status_hub())?;
     let result = match args.engine {
         Engine::Native => {
