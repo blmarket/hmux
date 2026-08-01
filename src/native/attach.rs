@@ -436,24 +436,100 @@ fn overlay_dimension(value: Option<&str>, available: u16, default_percent: u16) 
 }
 
 pub(crate) struct CommandPrompt {
+    request: PromptRequest,
+    pages: PromptPages,
+    editor: PromptEditor,
+    presentation: PromptPresentation,
+    execution: PromptExecution,
+}
+
+struct PromptRequest {
     args: Vec<String>,
     tail: Vec<String>,
     spec: command::CommandPromptSpec,
-    page: usize,
+    action: CommandPromptAction,
+}
+
+struct PromptPages {
+    entries: Vec<PromptPage>,
+    current: usize,
     values: Vec<String>,
-    labels: Vec<String>,
-    initials: Vec<String>,
-    input: Vec<char>,
-    cursor: usize,
+}
+
+struct PromptPage {
+    label: String,
+    initial: String,
+}
+
+struct PromptEditor {
+    buffer: PromptBuffer,
     last: String,
     yank: Option<String>,
     history_index: usize,
     mode: PromptInputMode,
     completion: Option<PromptCompletionMenu>,
-    action: CommandPromptAction,
+}
+
+struct PromptBuffer {
+    chars: Vec<char>,
+    cursor: usize,
+}
+
+struct PromptPresentation {
     frozen_frame: Option<Vec<u8>>,
+}
+
+struct PromptExecution {
     owner: PromptOwner,
     deferred_incremental: VecDeque<command::DeferredCommand>,
+}
+
+impl PromptPages {
+    fn current(&self) -> Option<&PromptPage> {
+        self.entries.get(self.current)
+    }
+
+    fn advance(&mut self, value: String) -> Option<String> {
+        self.values.push(value);
+        self.current += 1;
+        self.current().map(|page| page.initial.clone())
+    }
+}
+
+impl PromptEditor {
+    fn new(initial: String, last: String) -> Self {
+        let cursor = initial.chars().count();
+        Self {
+            buffer: PromptBuffer {
+                chars: initial.chars().collect(),
+                cursor,
+            },
+            last,
+            yank: None,
+            history_index: 0,
+            mode: PromptInputMode::Insert,
+            completion: None,
+        }
+    }
+
+    fn reset(&mut self, initial: String) {
+        self.last = initial.clone();
+        self.buffer.replace(&initial);
+        self.history_index = 0;
+        self.mode = PromptInputMode::Insert;
+        self.completion = None;
+    }
+}
+
+impl PromptBuffer {
+    fn text(&self) -> String {
+        self.chars.iter().collect()
+    }
+
+    fn replace(&mut self, value: &str) {
+        self.chars = value.chars().collect();
+        self.cursor = self.chars.len();
+    }
 }
 
 /// Who receives the prompt's result. `Resolved` marks a prompt whose result
@@ -1568,8 +1644,9 @@ impl AttachSession {
                 if let Ok(mut prompt) =
                     CommandPrompt::new(args, Some(external), state, hub, &self.compositor.context)
                 {
-                    if !prompt.spec.no_freeze {
-                        prompt.frozen_frame = Some(self.compositor.last_render.clone());
+                    if !prompt.request.spec.no_freeze {
+                        prompt.presentation.frozen_frame =
+                            Some(self.compositor.last_render.clone());
                     }
                     prompt.initial_incremental(state, hub, &self.compositor.context);
                     self.compositor.command_prompt = Some(prompt);
@@ -1797,7 +1874,7 @@ impl AttachSession {
                         .compositor
                         .command_prompt
                         .as_ref()
-                        .is_some_and(|prompt| prompt.spec.key)
+                        .is_some_and(|prompt| prompt.request.spec.key)
                         && !self.compositor.key_prompt_buf.is_empty()
                     {
                         let decoded = decode_prompt_key(&self.compositor.key_prompt_buf);
@@ -1886,7 +1963,7 @@ impl AttachSession {
                 .compositor
                 .command_prompt
                 .as_ref()
-                .is_some_and(|prompt| prompt.spec.key)
+                .is_some_and(|prompt| prompt.request.spec.key)
             {
                 self.compositor.key_prompt_buf.extend_from_slice(read_data);
                 if let Some((key, consumed)) = decode_prompt_key(&self.compositor.key_prompt_buf) {
@@ -2268,8 +2345,9 @@ impl AttachSession {
                                 hub,
                                 &self.compositor.context,
                             ) {
-                                if !prompt.spec.no_freeze {
-                                    prompt.frozen_frame = Some(self.compositor.last_render.clone());
+                                if !prompt.request.spec.no_freeze {
+                                    prompt.presentation.frozen_frame =
+                                        Some(self.compositor.last_render.clone());
                                 }
                                 prompt.initial_incremental(state, hub, &self.compositor.context);
                                 self.compositor.command_prompt = Some(prompt);
@@ -2393,8 +2471,9 @@ impl AttachSession {
                             if let Ok(mut prompt) =
                                 CommandPrompt::new(args, None, state, hub, &self.compositor.context)
                             {
-                                if !prompt.spec.no_freeze {
-                                    prompt.frozen_frame = Some(self.compositor.last_render.clone());
+                                if !prompt.request.spec.no_freeze {
+                                    prompt.presentation.frozen_frame =
+                                        Some(self.compositor.last_render.clone());
                                 }
                                 prompt.initial_incremental(state, hub, &self.compositor.context);
                                 self.compositor.command_prompt = Some(prompt);
@@ -2525,8 +2604,9 @@ impl AttachSession {
                             if let Ok(mut prompt) =
                                 CommandPrompt::new(args, None, state, hub, &self.compositor.context)
                             {
-                                if !prompt.spec.no_freeze {
-                                    prompt.frozen_frame = Some(self.compositor.last_render.clone());
+                                if !prompt.request.spec.no_freeze {
+                                    prompt.presentation.frozen_frame =
+                                        Some(self.compositor.last_render.clone());
                                 }
                                 prompt.initial_incremental(state, hub, &self.compositor.context);
                                 self.compositor.command_prompt = Some(prompt);
@@ -2710,8 +2790,9 @@ impl AttachSession {
                             if let Ok(mut prompt) =
                                 CommandPrompt::new(args, None, state, hub, &self.compositor.context)
                             {
-                                if !prompt.spec.no_freeze {
-                                    prompt.frozen_frame = Some(self.compositor.last_render.clone());
+                                if !prompt.request.spec.no_freeze {
+                                    prompt.presentation.frozen_frame =
+                                        Some(self.compositor.last_render.clone());
                                 }
                                 prompt.initial_incremental(state, hub, &self.compositor.context);
                                 self.compositor.command_prompt = Some(prompt);
@@ -2866,7 +2947,7 @@ impl AttachSession {
                 .compositor
                 .command_prompt
                 .as_ref()
-                .and_then(|prompt| prompt.frozen_frame.clone())
+                .and_then(|prompt| prompt.presentation.frozen_frame.clone())
                 .map(Ok)
                 .unwrap_or_else(|| {
                     let st = state.lock();
@@ -2902,7 +2983,7 @@ impl AttachSession {
                 // it, and its absence after completion redraws the status bar
                 // underneath.
                 if let Some(prompt) = self.compositor.command_prompt.as_ref() {
-                    if prompt.completion.is_some() {
+                    if prompt.editor.completion.is_some() {
                         if let Ok(state) = state.lock() {
                             frame.extend_from_slice(&render_prompt_completion(
                                 prompt,
@@ -2940,7 +3021,7 @@ impl AttachSession {
                                         + 1
                                 };
                             let (style_option, style_fallback) =
-                                if prompt.mode == PromptInputMode::ViCommand {
+                                if prompt.editor.mode == PromptInputMode::ViCommand {
                                     ("message-command-style", "bg=black,fg=yellow,fill=black")
                                 } else {
                                     ("message-style", "bg=yellow,fg=black,fill=yellow")
@@ -3284,7 +3365,7 @@ impl CommandPrompt {
             return;
         }
         let (CommandPromptAction::ModeEdit { target, edit }, Some(value)) =
-            (&self.action, self.values.last())
+            (&self.request.action, self.pages.values.last())
         else {
             return;
         };
@@ -3308,44 +3389,46 @@ impl CommandPrompt {
             .to_vec();
         let spec = command::command_prompt_spec(&prompt_args)?;
         let agents = hub.snapshot().panes;
-        let labels = spec
+        let pages = spec
             .pages
             .iter()
-            .map(|page| command::expand_command_prompt_format(&page.label, state, &agents, context))
-            .collect::<Vec<_>>();
-        let initials = spec
-            .pages
-            .iter()
-            .map(|page| {
-                command::expand_command_prompt_format(&page.initial, state, &agents, context)
+            .map(|page| PromptPage {
+                label: command::expand_command_prompt_format(&page.label, state, &agents, context),
+                initial: command::expand_command_prompt_format(
+                    &page.initial,
+                    state,
+                    &agents,
+                    context,
+                ),
             })
             .collect::<Vec<_>>();
-        let last = initials.first().cloned().unwrap_or_default();
+        let last = pages
+            .first()
+            .map(|page| page.initial.clone())
+            .unwrap_or_default();
         let initial = if spec.incremental {
             String::new()
         } else {
             last.clone()
         };
-        let cursor = initial.chars().count();
         Ok(Self {
-            args: prompt_args,
-            tail,
-            spec,
-            page: 0,
-            values: Vec::new(),
-            labels,
-            initials,
-            input: initial.chars().collect(),
-            cursor,
-            last,
-            yank: None,
-            history_index: 0,
-            mode: PromptInputMode::Insert,
-            completion: None,
-            action: CommandPromptAction::Command,
-            frozen_frame: None,
-            owner: external.map_or(PromptOwner::Attached, PromptOwner::External),
-            deferred_incremental: VecDeque::new(),
+            request: PromptRequest {
+                args: prompt_args,
+                tail,
+                spec,
+                action: CommandPromptAction::Command,
+            },
+            pages: PromptPages {
+                entries: pages,
+                current: 0,
+                values: Vec::new(),
+            },
+            editor: PromptEditor::new(initial, last),
+            presentation: PromptPresentation { frozen_frame: None },
+            execution: PromptExecution {
+                owner: external.map_or(PromptOwner::Attached, PromptOwner::External),
+                deferred_incremental: VecDeque::new(),
+            },
         })
     }
 
@@ -3406,31 +3489,27 @@ impl CommandPrompt {
             ),
         };
         let mut prompt = Self::new(args, None, state, hub, context)?;
-        prompt.action = action;
+        prompt.request.action = action;
         Ok(prompt)
     }
 
     fn label(&self) -> &str {
-        self.labels
-            .get(self.page)
-            .map(String::as_str)
+        self.pages
+            .current()
+            .map(|page| page.label.as_str())
             .unwrap_or(":")
     }
 
-    fn input(&self) -> String {
-        self.input.iter().collect()
-    }
-
     fn display(&self) -> String {
-        format!("{}{}", self.label(), self.input())
+        format!("{}{}", self.label(), self.editor.buffer.text())
     }
 
     fn display_cursor(&self) -> usize {
-        self.label().chars().count() + self.cursor
+        self.label().chars().count() + self.editor.buffer.cursor
     }
 
     fn formatted_display(&self, state: &ServerState, target: &str, cols: usize) -> (String, usize) {
-        let input = self.input();
+        let input = self.editor.buffer.text();
         let prefix = if let Some(message_format) = state.option_for_target(target, "message-format")
         {
             let mut vars = format::Vars::new();
@@ -3438,7 +3517,7 @@ impl CommandPrompt {
                 .set("prompt-input", input.clone())
                 .set(
                     "command_prompt",
-                    if self.mode == PromptInputMode::ViCommand {
+                    if self.editor.mode == PromptInputMode::ViCommand {
                         "1"
                     } else {
                         "0"
@@ -3451,9 +3530,13 @@ impl CommandPrompt {
         let prefix = clip_prompt_display(&prefix, 0, cols);
         let prefix_width = format::display_width(&prefix);
         let available = cols.saturating_sub(prefix_width);
-        let mut rendered_input = render_prompt_input(&self.input[..self.cursor]);
-        rendered_input.push_str(&render_prompt_input(&self.input[self.cursor..]));
-        let cursor_width = prompt_input_width(&self.input[..self.cursor]);
+        let mut rendered_input =
+            render_prompt_input(&self.editor.buffer.chars[..self.editor.buffer.cursor]);
+        rendered_input.push_str(&render_prompt_input(
+            &self.editor.buffer.chars[self.editor.buffer.cursor..],
+        ));
+        let cursor_width =
+            prompt_input_width(&self.editor.buffer.chars[..self.editor.buffer.cursor]);
         let offset = if cursor_width >= available && available != 0 {
             cursor_width - available + 1
         } else {
@@ -3472,7 +3555,7 @@ impl CommandPrompt {
         context: &command::ClientContext,
     ) -> command::CommandResult {
         if let Some(value) = values.last() {
-            match &self.action {
+            match &self.request.action {
                 CommandPromptAction::ModeSearch { target } => {
                     return match state
                         .lock()
@@ -3504,32 +3587,37 @@ impl CommandPrompt {
         }
         if context.defer_attach_commands {
             let template = command::command_prompt_template(
-                &self.args,
+                &self.request.args,
                 values,
                 state,
                 &hub.snapshot().panes,
                 context,
             );
             let mut result = command::CommandResult::ok("");
-            if !template.trim().is_empty() || !self.tail.is_empty() {
+            if !template.trim().is_empty() || !self.request.tail.is_empty() {
                 result
                     .deferred_commands
                     .push(command::DeferredCommand::Line {
                         line: template,
-                        tail: self.tail.clone(),
+                        tail: self.request.tail.clone(),
                     });
             }
             return result;
         }
         let mut result = command::run_command_prompt_template(
-            &self.args,
+            &self.request.args,
             values,
             state,
             &hub.snapshot().panes,
             context,
         );
-        if result.exit == 0 && !self.tail.is_empty() {
-            let tail = command::run_with_context(&self.tail, state, &hub.snapshot().panes, context);
+        if result.exit == 0 && !self.request.tail.is_empty() {
+            let tail = command::run_with_context(
+                &self.request.tail,
+                state,
+                &hub.snapshot().panes,
+                context,
+            );
             result.append_stdout(&tail);
             result.stderr.push_str(&tail.stderr);
             result.exit = tail.exit;
@@ -3543,7 +3631,7 @@ impl CommandPrompt {
         state: &Arc<Mutex<ServerState>>,
         context: &command::ClientContext,
     ) {
-        match std::mem::replace(&mut self.owner, PromptOwner::Resolved) {
+        match std::mem::replace(&mut self.execution.owner, PromptOwner::Resolved) {
             PromptOwner::External(external) => {
                 external.complete(crate::server::state::PromptCompletion {
                     stdout: result.stdout.clone(),
@@ -3565,7 +3653,7 @@ impl CommandPrompt {
 
     fn cancel_external(&mut self) {
         if let PromptOwner::External(external) =
-            std::mem::replace(&mut self.owner, PromptOwner::Resolved)
+            std::mem::replace(&mut self.execution.owner, PromptOwner::Resolved)
         {
             external.cancel();
         }
@@ -3577,12 +3665,12 @@ impl CommandPrompt {
         hub: &StatusHub,
         context: &command::ClientContext,
     ) {
-        if self.spec.incremental {
-            let mut values = self.values.clone();
+        if self.request.spec.incremental {
+            let mut values = self.pages.values.clone();
             values.push("=".to_string());
             let mut result = self.run(&values, state, hub, context);
             if let Some(source) = take_deferred_attach_command(&mut result) {
-                self.deferred_incremental.push_back(source);
+                self.execution.deferred_incremental.push_back(source);
             }
         }
     }
@@ -3594,18 +3682,18 @@ impl CommandPrompt {
         hub: &StatusHub,
         context: &command::ClientContext,
     ) {
-        if self.spec.incremental {
-            let mut values = self.values.clone();
-            values.push(format!("{prefix}{}", self.input()));
+        if self.request.spec.incremental {
+            let mut values = self.pages.values.clone();
+            values.push(format!("{prefix}{}", self.editor.buffer.text()));
             let mut result = self.run(&values, state, hub, context);
             if let Some(source) = take_deferred_attach_command(&mut result) {
-                self.deferred_incremental.push_back(source);
+                self.execution.deferred_incremental.push_back(source);
             }
         }
     }
 
     fn take_deferred_incremental(&mut self) -> Option<command::DeferredCommand> {
-        self.deferred_incremental.pop_front()
+        self.execution.deferred_incremental.pop_front()
     }
 
     fn finish_page(
@@ -3614,33 +3702,25 @@ impl CommandPrompt {
         hub: &StatusHub,
         context: &command::ClientContext,
     ) -> CommandPromptInput {
-        let input = self.input();
+        let input = self.editor.buffer.text();
         if !input.is_empty() {
             if let Ok(mut st) = state.lock() {
-                st.add_prompt_history(&self.spec.prompt_type, &input);
+                st.add_prompt_history(&self.request.spec.prompt_type, &input);
             }
         }
-        if self.spec.incremental {
+        if self.request.spec.incremental {
             return CommandPromptInput::Cancel;
         }
-        self.values.push(input);
-        self.page += 1;
-        if self.page < self.spec.pages.len() {
-            let initial = self.initials.get(self.page).cloned().unwrap_or_default();
-            self.last = initial.clone();
-            self.input = initial.chars().collect();
-            self.cursor = self.input.len();
-            self.history_index = 0;
-            self.mode = PromptInputMode::Insert;
-            self.completion = None;
+        if let Some(initial) = self.pages.advance(input) {
+            self.editor.reset(initial);
             return CommandPromptInput::Continue;
         }
-        CommandPromptInput::Finish(self.run(&self.values, state, hub, context))
+        CommandPromptInput::Finish(self.run(&self.pages.values, state, hub, context))
     }
 
     fn delete_previous_word(&mut self, separators: &str) {
-        if self.cursor == 0 {
-            self.yank = Some(String::new());
+        if self.editor.buffer.cursor == 0 {
+            self.editor.yank = Some(String::new());
             return;
         }
         let class = |character: char| {
@@ -3652,107 +3732,119 @@ impl CommandPrompt {
                 2
             }
         };
-        let mut start = self.cursor;
-        while start > 0 && self.input[start - 1] == ' ' {
+        let mut start = self.editor.buffer.cursor;
+        while start > 0 && self.editor.buffer.chars[start - 1] == ' ' {
             start -= 1;
         }
         if start > 0 {
-            let wanted = class(self.input[start - 1]);
-            while start > 0 && class(self.input[start - 1]) == wanted {
+            let wanted = class(self.editor.buffer.chars[start - 1]);
+            while start > 0 && class(self.editor.buffer.chars[start - 1]) == wanted {
                 start -= 1;
             }
         }
-        self.yank = Some(self.input[start..self.cursor].iter().collect());
-        self.input.drain(start..self.cursor);
-        self.cursor = start;
+        self.editor.yank = Some(
+            self.editor.buffer.chars[start..self.editor.buffer.cursor]
+                .iter()
+                .collect(),
+        );
+        self.editor
+            .buffer
+            .chars
+            .drain(start..self.editor.buffer.cursor);
+        self.editor.buffer.cursor = start;
     }
 
     fn move_word_forward(&mut self, vi: bool, separators: &str) {
-        let size = self.input.len();
-        let mut index = self.cursor;
+        let size = self.editor.buffer.chars.len();
+        let mut index = self.editor.buffer.cursor;
         if !vi {
-            while index != size && self.input[index] == ' ' {
+            while index != size && self.editor.buffer.chars[index] == ' ' {
                 index += 1;
             }
         }
         if index == size {
-            self.cursor = index;
+            self.editor.buffer.cursor = index;
             return;
         }
-        let separator = separators.contains(self.input[index]) && self.input[index] != ' ';
+        let separator = separators.contains(self.editor.buffer.chars[index])
+            && self.editor.buffer.chars[index] != ' ';
         loop {
             index += 1;
             if index == size {
                 break;
             }
-            if self.input[index] == ' ' {
+            if self.editor.buffer.chars[index] == ' ' {
                 if vi {
-                    while index != size && self.input[index] == ' ' {
+                    while index != size && self.editor.buffer.chars[index] == ' ' {
                         index += 1;
                     }
                 }
                 break;
             }
-            if separator != separators.contains(self.input[index]) {
+            if separator != separators.contains(self.editor.buffer.chars[index]) {
                 break;
             }
         }
-        self.cursor = index;
+        self.editor.buffer.cursor = index;
     }
 
     fn move_word_end(&mut self, separators: &str) {
-        let size = self.input.len();
-        let mut index = self.cursor;
+        let size = self.editor.buffer.chars.len();
+        let mut index = self.editor.buffer.cursor;
         if index == size {
             return;
         }
         loop {
             index += 1;
             if index == size {
-                self.cursor = index;
+                self.editor.buffer.cursor = index;
                 return;
             }
-            if self.input[index] != ' ' {
+            if self.editor.buffer.chars[index] != ' ' {
                 break;
             }
         }
-        let separator = separators.contains(self.input[index]);
+        let separator = separators.contains(self.editor.buffer.chars[index]);
         loop {
             index += 1;
             if index == size
-                || self.input[index] == ' '
-                || separator != separators.contains(self.input[index])
+                || self.editor.buffer.chars[index] == ' '
+                || separator != separators.contains(self.editor.buffer.chars[index])
             {
                 break;
             }
         }
-        self.cursor = index.saturating_sub(1);
+        self.editor.buffer.cursor = index.saturating_sub(1);
     }
 
     fn move_word_backward(&mut self, separators: &str) {
-        let mut index = self.cursor;
+        let mut index = self.editor.buffer.cursor;
         while index != 0 {
             index -= 1;
-            if self.input[index] != ' ' {
+            if self.editor.buffer.chars[index] != ' ' {
                 break;
             }
         }
         let separator = self
-            .input
+            .editor
+            .buffer
+            .chars
             .get(index)
             .is_some_and(|character| separators.contains(*character));
         while index != 0 {
             index -= 1;
-            if self.input[index] == ' ' || separator != separators.contains(self.input[index]) {
+            if self.editor.buffer.chars[index] == ' '
+                || separator != separators.contains(self.editor.buffer.chars[index])
+            {
                 index += 1;
                 break;
             }
         }
-        self.cursor = index;
+        self.editor.buffer.cursor = index;
     }
 
     fn paste(&mut self, state: &Arc<Mutex<ServerState>>) {
-        let source = self.yank.clone().unwrap_or_else(|| {
+        let source = self.editor.yank.clone().unwrap_or_else(|| {
             state
                 .lock()
                 .ok()
@@ -3760,14 +3852,19 @@ impl CommandPrompt {
                 .unwrap_or_default()
         });
         let inserted = source.chars().collect::<Vec<_>>();
-        self.input
-            .splice(self.cursor..self.cursor, inserted.iter().copied());
-        self.cursor += inserted.len();
+        self.editor.buffer.chars.splice(
+            self.editor.buffer.cursor..self.editor.buffer.cursor,
+            inserted.iter().copied(),
+        );
+        self.editor.buffer.cursor += inserted.len();
     }
 
     fn replace_completion(&mut self, start: usize, end: usize, replacement: &str) {
-        self.input.splice(start..end, replacement.chars());
-        self.cursor = start + replacement.chars().count();
+        self.editor
+            .buffer
+            .chars
+            .splice(start..end, replacement.chars());
+        self.editor.buffer.cursor = start + replacement.chars().count();
     }
 
     fn complete_word(
@@ -3775,10 +3872,14 @@ impl CommandPrompt {
         state: &Arc<Mutex<ServerState>>,
         context: &command::ClientContext,
     ) -> bool {
-        let Some((start, end)) = prompt_word_range(&self.input, self.cursor) else {
+        let Some((start, end)) =
+            prompt_word_range(&self.editor.buffer.chars, self.editor.buffer.cursor)
+        else {
             return false;
         };
-        let word = self.input[start..end].iter().collect::<String>();
+        let word = self.editor.buffer.chars[start..end]
+            .iter()
+            .collect::<String>();
         if word.len() >= 64 {
             return false;
         }
@@ -3789,7 +3890,7 @@ impl CommandPrompt {
                 command_prompt_completion(
                     &state,
                     context,
-                    &self.spec.prompt_type,
+                    &self.request.spec.prompt_type,
                     &word,
                     start == 0,
                 )
@@ -3805,7 +3906,7 @@ impl CommandPrompt {
                 items,
                 replace_entire,
             } => {
-                self.completion = Some(PromptCompletionMenu {
+                self.editor.completion = Some(PromptCompletionMenu {
                     items,
                     selected: 0,
                     start,
@@ -3818,7 +3919,7 @@ impl CommandPrompt {
     }
 
     fn handle_completion_key(&mut self, key: &str) -> bool {
-        let Some(menu) = self.completion.as_mut() else {
+        let Some(menu) = self.editor.completion.as_mut() else {
             return false;
         };
         let last = menu.items.len().saturating_sub(1);
@@ -3870,11 +3971,14 @@ impl CommandPrompt {
             }
         }
         if close {
-            let menu = self.completion.take().expect("completion menu checked");
+            let menu = self
+                .editor
+                .completion
+                .take()
+                .expect("completion menu checked");
             if let Some(item) = choose.and_then(|index| menu.items.get(index)) {
                 if menu.replace_entire {
-                    self.input = item.replacement.chars().collect();
-                    self.cursor = self.input.len();
+                    self.editor.buffer.replace(&item.replacement);
                 } else {
                     self.replace_completion(menu.start, menu.end, &item.replacement);
                 }
@@ -3893,27 +3997,28 @@ impl CommandPrompt {
         if self.handle_completion_key(key) {
             return CommandPromptInput::Continue;
         }
-        if self.spec.key {
-            self.input = key.chars().collect();
-            self.cursor = self.input.len();
+        if self.request.spec.key {
+            self.editor.buffer.replace(key);
             return self.finish_page(state, hub, context);
         }
-        if self.spec.numeric {
+        if self.request.spec.numeric {
             if key.chars().count() == 1
                 && key
                     .chars()
                     .next()
                     .is_some_and(|character| character.is_ascii_digit())
             {
-                self.input
+                self.editor
+                    .buffer
+                    .chars
                     .push(key.chars().next().expect("numeric key checked"));
-                self.cursor = self.input.len();
+                self.editor.buffer.cursor = self.editor.buffer.chars.len();
                 return CommandPromptInput::Continue;
             }
             return self.finish_page(state, hub, context);
         }
-        if self.spec.single || self.mode == PromptInputMode::QuoteNext {
-            self.mode = PromptInputMode::Insert;
+        if self.request.spec.single || self.editor.mode == PromptInputMode::QuoteNext {
+            self.editor.mode = PromptInputMode::Insert;
             let character = match key {
                 "C-Space" => Some('\0'),
                 "BSpace" => Some('\u{7f}'),
@@ -3926,11 +4031,14 @@ impl CommandPrompt {
                 _ => None,
             };
             if let Some(character) = character {
-                self.input.insert(self.cursor, character);
-                self.cursor += 1;
+                self.editor
+                    .buffer
+                    .chars
+                    .insert(self.editor.buffer.cursor, character);
+                self.editor.buffer.cursor += 1;
                 self.changed('=', state, hub, context);
-                if self.spec.single {
-                    return if self.input.len() == 1 {
+                if self.request.spec.single {
+                    return if self.editor.buffer.chars.len() == 1 {
                         self.finish_page(state, hub, context)
                     } else {
                         CommandPromptInput::Cancel
@@ -3956,76 +4064,82 @@ impl CommandPrompt {
             .lock()
             .ok()
             .is_some_and(|st| st.option_for_target(&target, "status-keys") == Some("vi"));
-        if self.mode == PromptInputMode::ViCommand {
+        if self.editor.mode == PromptInputMode::ViCommand {
             match key {
                 "i" => {
-                    self.mode = PromptInputMode::Insert;
+                    self.editor.mode = PromptInputMode::Insert;
                     return CommandPromptInput::Continue;
                 }
                 "a" => {
-                    self.cursor = (self.cursor + 1).min(self.input.len());
-                    self.mode = PromptInputMode::Insert;
+                    self.editor.buffer.cursor =
+                        (self.editor.buffer.cursor + 1).min(self.editor.buffer.chars.len());
+                    self.editor.mode = PromptInputMode::Insert;
                     return CommandPromptInput::Continue;
                 }
                 "A" => {
-                    self.cursor = self.input.len();
-                    self.mode = PromptInputMode::Insert;
+                    self.editor.buffer.cursor = self.editor.buffer.chars.len();
+                    self.editor.mode = PromptInputMode::Insert;
                     return CommandPromptInput::Continue;
                 }
                 "I" => {
-                    self.cursor = 0;
-                    self.mode = PromptInputMode::Insert;
+                    self.editor.buffer.cursor = 0;
+                    self.editor.mode = PromptInputMode::Insert;
                     return CommandPromptInput::Continue;
                 }
                 "C" => {
-                    self.mode = PromptInputMode::Insert;
-                    if self.cursor < self.input.len() {
-                        self.input.truncate(self.cursor);
+                    self.editor.mode = PromptInputMode::Insert;
+                    if self.editor.buffer.cursor < self.editor.buffer.chars.len() {
+                        self.editor.buffer.chars.truncate(self.editor.buffer.cursor);
                         self.changed('=', state, hub, context);
                     }
                     return CommandPromptInput::Continue;
                 }
                 "s" => {
-                    self.mode = PromptInputMode::Insert;
-                    if self.cursor < self.input.len() {
-                        self.input.remove(self.cursor);
+                    self.editor.mode = PromptInputMode::Insert;
+                    if self.editor.buffer.cursor < self.editor.buffer.chars.len() {
+                        self.editor.buffer.chars.remove(self.editor.buffer.cursor);
                         self.changed('=', state, hub, context);
                     }
                     return CommandPromptInput::Continue;
                 }
                 "S" => {
-                    self.mode = PromptInputMode::Insert;
-                    self.input.clear();
-                    self.cursor = 0;
+                    self.editor.mode = PromptInputMode::Insert;
+                    self.editor.buffer.chars.clear();
+                    self.editor.buffer.cursor = 0;
                     self.changed('=', state, hub, context);
                     return CommandPromptInput::Continue;
                 }
                 "Escape" | "C-[" => return CommandPromptInput::Continue,
-                "$" => self.cursor = self.input.len(),
-                "0" | "^" => self.cursor = 0,
-                "h" | "BSpace" => self.cursor = self.cursor.saturating_sub(1),
-                "l" | "Right" => self.cursor = (self.cursor + 1).min(self.input.len()),
-                "x" | "DC" if self.cursor < self.input.len() => {
-                    self.input.remove(self.cursor);
+                "$" => self.editor.buffer.cursor = self.editor.buffer.chars.len(),
+                "0" | "^" => self.editor.buffer.cursor = 0,
+                "h" | "BSpace" => {
+                    self.editor.buffer.cursor = self.editor.buffer.cursor.saturating_sub(1)
+                }
+                "l" | "Right" => {
+                    self.editor.buffer.cursor =
+                        (self.editor.buffer.cursor + 1).min(self.editor.buffer.chars.len())
+                }
+                "x" | "DC" if self.editor.buffer.cursor < self.editor.buffer.chars.len() => {
+                    self.editor.buffer.chars.remove(self.editor.buffer.cursor);
                     self.changed('=', state, hub, context);
                 }
                 "X" | "C-h" => {
-                    if self.input.is_empty() && self.spec.backspace_exit {
+                    if self.editor.buffer.chars.is_empty() && self.request.spec.backspace_exit {
                         return CommandPromptInput::Cancel;
                     }
-                    if self.cursor > 0 {
-                        self.cursor -= 1;
-                        self.input.remove(self.cursor);
+                    if self.editor.buffer.cursor > 0 {
+                        self.editor.buffer.cursor -= 1;
+                        self.editor.buffer.chars.remove(self.editor.buffer.cursor);
                         self.changed('=', state, hub, context);
                     }
                 }
-                "D" if self.cursor < self.input.len() => {
-                    self.input.truncate(self.cursor);
+                "D" if self.editor.buffer.cursor < self.editor.buffer.chars.len() => {
+                    self.editor.buffer.chars.truncate(self.editor.buffer.cursor);
                     self.changed('=', state, hub, context);
                 }
                 "d" => {
-                    self.input.clear();
-                    self.cursor = 0;
+                    self.editor.buffer.chars.clear();
+                    self.editor.buffer.cursor = 0;
                     self.changed('=', state, hub, context);
                 }
                 "b" => {
@@ -4058,29 +4172,26 @@ impl CommandPrompt {
                 }
                 "Up" | "k" => {
                     if let Ok(st) = state.lock() {
-                        let history = st.prompt_history(&self.spec.prompt_type);
-                        if self.history_index < history.len() {
-                            self.history_index += 1;
-                            self.input = history[history.len() - self.history_index]
-                                .chars()
-                                .collect();
-                            self.cursor = self.input.len();
+                        let history = st.prompt_history(&self.request.spec.prompt_type);
+                        if self.editor.history_index < history.len() {
+                            self.editor.history_index += 1;
+                            self.editor
+                                .buffer
+                                .replace(&history[history.len() - self.editor.history_index]);
                         }
                     }
                     self.changed('=', state, hub, context);
                 }
-                "Down" | "j" if self.history_index > 0 => {
-                    self.history_index -= 1;
+                "Down" | "j" if self.editor.history_index > 0 => {
+                    self.editor.history_index -= 1;
                     if let Ok(st) = state.lock() {
-                        let history = st.prompt_history(&self.spec.prompt_type);
-                        self.input = if self.history_index == 0 {
-                            Vec::new()
+                        let history = st.prompt_history(&self.request.spec.prompt_type);
+                        let recalled = if self.editor.history_index == 0 {
+                            ""
                         } else {
-                            history[history.len() - self.history_index]
-                                .chars()
-                                .collect()
+                            &history[history.len() - self.editor.history_index]
                         };
-                        self.cursor = self.input.len();
+                        self.editor.buffer.replace(recalled);
                     }
                     self.changed('=', state, hub, context);
                 }
@@ -4131,40 +4242,45 @@ impl CommandPrompt {
             "Enter" | "C-m" => return self.finish_page(state, hub, context),
             "Escape" | "C-[" => {
                 if vi_keys {
-                    self.mode = PromptInputMode::ViCommand;
-                    self.cursor = self.cursor.saturating_sub(1);
+                    self.editor.mode = PromptInputMode::ViCommand;
+                    self.editor.buffer.cursor = self.editor.buffer.cursor.saturating_sub(1);
                     return CommandPromptInput::Continue;
                 }
                 return CommandPromptInput::Cancel;
             }
             "C-c" | "C-g" => return CommandPromptInput::Cancel,
-            "Left" | "C-b" => self.cursor = self.cursor.saturating_sub(1),
-            "Right" | "C-f" => self.cursor = (self.cursor + 1).min(self.input.len()),
-            "Home" | "C-a" => self.cursor = 0,
-            "End" | "C-e" => self.cursor = self.input.len(),
+            "Left" | "C-b" => {
+                self.editor.buffer.cursor = self.editor.buffer.cursor.saturating_sub(1)
+            }
+            "Right" | "C-f" => {
+                self.editor.buffer.cursor =
+                    (self.editor.buffer.cursor + 1).min(self.editor.buffer.chars.len())
+            }
+            "Home" | "C-a" => self.editor.buffer.cursor = 0,
+            "End" | "C-e" => self.editor.buffer.cursor = self.editor.buffer.chars.len(),
             "BSpace" | "C-h" => {
-                if self.cursor == 0 && self.spec.backspace_exit {
+                if self.editor.buffer.cursor == 0 && self.request.spec.backspace_exit {
                     return CommandPromptInput::Cancel;
                 }
-                if self.cursor > 0 {
-                    self.cursor -= 1;
-                    self.input.remove(self.cursor);
+                if self.editor.buffer.cursor > 0 {
+                    self.editor.buffer.cursor -= 1;
+                    self.editor.buffer.chars.remove(self.editor.buffer.cursor);
                     self.changed('=', state, hub, context);
                 }
             }
             "DC" | "C-d" => {
-                if self.cursor < self.input.len() {
-                    self.input.remove(self.cursor);
+                if self.editor.buffer.cursor < self.editor.buffer.chars.len() {
+                    self.editor.buffer.chars.remove(self.editor.buffer.cursor);
                     self.changed('=', state, hub, context);
                 }
             }
             "C-u" => {
-                self.input.clear();
-                self.cursor = 0;
+                self.editor.buffer.chars.clear();
+                self.editor.buffer.cursor = 0;
                 self.changed('=', state, hub, context);
             }
             "C-k" => {
-                self.input.truncate(self.cursor);
+                self.editor.buffer.chars.truncate(self.editor.buffer.cursor);
                 self.changed('=', state, hub, context);
             }
             "C-w" => {
@@ -4176,18 +4292,18 @@ impl CommandPrompt {
                 self.changed('=', state, hub, context);
             }
             "C-t" => {
-                let end = if self.cursor < self.input.len() {
-                    self.cursor + 1
+                let end = if self.editor.buffer.cursor < self.editor.buffer.chars.len() {
+                    self.editor.buffer.cursor + 1
                 } else {
-                    self.cursor
+                    self.editor.buffer.cursor
                 };
                 if end >= 2 {
-                    self.input.swap(end - 2, end - 1);
-                    self.cursor = end;
+                    self.editor.buffer.chars.swap(end - 2, end - 1);
+                    self.editor.buffer.cursor = end;
                     self.changed('=', state, hub, context);
                 }
             }
-            "C-v" => self.mode = PromptInputMode::QuoteNext,
+            "C-v" => self.editor.mode = PromptInputMode::QuoteNext,
             "Tab" => {
                 if self.complete_word(state, context) {
                     self.changed('=', state, hub, context);
@@ -4203,48 +4319,45 @@ impl CommandPrompt {
             }
             "Up" | "C-p" => {
                 if let Ok(st) = state.lock() {
-                    let history = st.prompt_history(&self.spec.prompt_type);
-                    if self.history_index < history.len() {
-                        self.history_index += 1;
-                        self.input = history[history.len() - self.history_index]
-                            .chars()
-                            .collect();
-                        self.cursor = self.input.len();
+                    let history = st.prompt_history(&self.request.spec.prompt_type);
+                    if self.editor.history_index < history.len() {
+                        self.editor.history_index += 1;
+                        self.editor
+                            .buffer
+                            .replace(&history[history.len() - self.editor.history_index]);
                     }
                 }
                 self.changed('=', state, hub, context);
             }
             "Down" | "C-n" => {
-                if self.history_index > 0 {
-                    self.history_index -= 1;
+                if self.editor.history_index > 0 {
+                    self.editor.history_index -= 1;
                     if let Ok(st) = state.lock() {
-                        let history = st.prompt_history(&self.spec.prompt_type);
-                        self.input = if self.history_index == 0 {
-                            Vec::new()
+                        let history = st.prompt_history(&self.request.spec.prompt_type);
+                        let recalled = if self.editor.history_index == 0 {
+                            ""
                         } else {
-                            history[history.len() - self.history_index]
-                                .chars()
-                                .collect()
+                            &history[history.len() - self.editor.history_index]
                         };
-                        self.cursor = self.input.len();
+                        self.editor.buffer.replace(recalled);
                     }
                     self.changed('=', state, hub, context);
                 }
             }
-            "C-r" if self.spec.incremental => {
-                let prefix = if self.input.is_empty() {
-                    self.input = self.last.chars().collect();
-                    self.cursor = self.input.len();
+            "C-r" if self.request.spec.incremental => {
+                let prefix = if self.editor.buffer.chars.is_empty() {
+                    let last = self.editor.last.clone();
+                    self.editor.buffer.replace(&last);
                     '='
                 } else {
                     '-'
                 };
                 self.changed(prefix, state, hub, context);
             }
-            "C-s" if self.spec.incremental => {
-                let prefix = if self.input.is_empty() {
-                    self.input = self.last.chars().collect();
-                    self.cursor = self.input.len();
+            "C-s" if self.request.spec.incremental => {
+                let prefix = if self.editor.buffer.chars.is_empty() {
+                    let last = self.editor.last.clone();
+                    self.editor.buffer.replace(&last);
                     '='
                 } else {
                     '+'
@@ -4263,11 +4376,13 @@ impl CommandPrompt {
                 };
                 if let Some(text) = text {
                     let inserted = text.chars().collect::<Vec<_>>();
-                    self.input
-                        .splice(self.cursor..self.cursor, inserted.iter().copied());
-                    self.cursor += inserted.len();
+                    self.editor.buffer.chars.splice(
+                        self.editor.buffer.cursor..self.editor.buffer.cursor,
+                        inserted.iter().copied(),
+                    );
+                    self.editor.buffer.cursor += inserted.len();
                     self.changed('=', state, hub, context);
-                    if self.spec.single {
+                    if self.request.spec.single {
                         return self.finish_page(state, hub, context);
                     }
                 }
@@ -6648,7 +6763,7 @@ fn render_prompt_completion(
     status_height: u16,
     terminal: &dyn TerminalCapabilities,
 ) -> Vec<u8> {
-    let Some(completion) = prompt.completion.as_ref() else {
+    let Some(completion) = prompt.editor.completion.as_ref() else {
         return Vec::new();
     };
     let label_width = completion
@@ -6672,7 +6787,7 @@ fn render_prompt_completion(
         })
         .collect::<Vec<_>>();
     let height = (items.len() + 2).min(rows as usize).max(3) as u16;
-    let left = prompt_input_width(&prompt.input[..completion.start])
+    let left = prompt_input_width(&prompt.editor.buffer.chars[..completion.start])
         .saturating_add(format::display_width(prompt.label()))
         .saturating_sub(2)
         .min(usize::from(cols.saturating_sub(1)));
