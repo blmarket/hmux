@@ -5802,19 +5802,6 @@ pub(crate) struct AttachWaitReady {
     pub(crate) popup_write: bool,
 }
 
-/// Internal wait operation used by the turn-based attach compositor.
-pub(crate) trait AttachEventWaiter {
-    fn wait(&mut self, sources: AttachWaitSources, timeout: i32) -> io::Result<AttachWaitReady>;
-}
-
-struct PollAttachEventWaiter;
-
-impl AttachEventWaiter for PollAttachEventWaiter {
-    fn wait(&mut self, sources: AttachWaitSources, timeout: i32) -> io::Result<AttachWaitReady> {
-        wait_for_attach_events(sources, timeout)
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ActiveWindowOutputKey {
     panes: Vec<(u32, u64)>,
@@ -6213,32 +6200,6 @@ where
     R: AttachFrameReader,
     W: FrameWriter,
 {
-    handle_attach_with_waiter(
-        args,
-        client_tty,
-        state,
-        hub,
-        context,
-        reader,
-        writer,
-        &mut PollAttachEventWaiter,
-    )
-}
-
-pub(crate) fn handle_attach_with_waiter<R, W>(
-    args: &[String],
-    client_tty: ClientTty,
-    state: &Arc<Mutex<ServerState>>,
-    hub: &StatusHub,
-    context: &command::ClientContext,
-    reader: &mut R,
-    writer: &mut W,
-    waiter: &mut dyn AttachEventWaiter,
-) -> io::Result<()>
-where
-    R: AttachFrameReader,
-    W: FrameWriter,
-{
     let supplied_target = explicit_target_session(args);
     let target = {
         let mut st = state
@@ -6266,9 +6227,7 @@ where
         }
     }
 
-    run_attach(
-        &target, client_tty, state, hub, context, reader, writer, waiter,
-    )
+    run_attach(&target, client_tty, state, hub, context, reader, writer)
 }
 
 pub(crate) fn attach_target(
@@ -6363,32 +6322,6 @@ where
     R: AttachFrameReader,
     W: FrameWriter,
 {
-    handle_new_session_with_waiter(
-        args,
-        client_tty,
-        state,
-        hub,
-        context,
-        reader,
-        writer,
-        &mut PollAttachEventWaiter,
-    )
-}
-
-pub(crate) fn handle_new_session_with_waiter<R, W>(
-    args: &[String],
-    client_tty: ClientTty,
-    state: &Arc<Mutex<ServerState>>,
-    hub: &StatusHub,
-    context: &command::ClientContext,
-    reader: &mut R,
-    writer: &mut W,
-    waiter: &mut dyn AttachEventWaiter,
-) -> io::Result<()>
-where
-    R: AttachFrameReader,
-    W: FrameWriter,
-{
     let target = {
         let mut st = state
             .lock()
@@ -6401,9 +6334,7 @@ where
             }
         }
     };
-    run_attach(
-        &target, client_tty, state, hub, context, reader, writer, waiter,
-    )
+    run_attach(&target, client_tty, state, hub, context, reader, writer)
 }
 
 /// Drive an interactive attach to an already-resolved, existing `target`
@@ -6418,7 +6349,6 @@ fn run_attach<R, W>(
     context: &command::ClientContext,
     reader: &mut R,
     writer: &mut W,
-    waiter: &mut dyn AttachEventWaiter,
 ) -> io::Result<()>
 where
     R: AttachFrameReader,
@@ -6437,7 +6367,7 @@ where
     loop {
         let ready = match session.prepare_wait(state, imsg_fd, reader.has_buffered_frame())? {
             AttachPrepared::Ready(ready) => ready,
-            AttachPrepared::Wait { sources, timeout } => waiter.wait(sources, timeout)?,
+            AttachPrepared::Wait { sources, timeout } => wait_for_attach_events(sources, timeout)?,
             AttachPrepared::Finished => break,
         };
         match session.drive_ready(state, hub, ready, reader, writer)? {
