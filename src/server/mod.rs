@@ -20,6 +20,7 @@ pub mod attach;
 #[path = "cmd-send-keys.rs"]
 pub(crate) mod cmd_send_keys;
 pub mod command;
+pub(crate) mod control;
 pub mod format;
 pub(crate) mod key;
 pub mod latmon;

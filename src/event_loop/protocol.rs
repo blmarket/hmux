@@ -13,9 +13,9 @@ use std::thread;
 use std::time::Instant;
 
 use crate::integration::status::StatusHub;
-use crate::native::protocol::{EventControlClient, EventControlSource};
 use crate::server::attach::ClientTty;
 use crate::server::command::{self, ClientContext, CommandResult};
+use crate::server::control::{EventControlClient, EventControlSource};
 use crate::server::state::ServerState;
 use crate::server::Server;
 use crate::tmux::codec::{encode_bytes, ImsgReader, NonblockingImsgWriter, MAX_IMSGSIZE};
