@@ -25,7 +25,7 @@ use crate::integration::status::{PaneAgents, StatusHub};
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 use crate::tmux::traits::{FrameReader, FrameWriter};
 
-use super::attach::{self, ClientTty};
+use crate::server::attach::{self, ClientTty};
 use crate::server::command;
 use crate::server::command::queue::{CommandQueue, QueueCompletion, QueueState, QueueTicket};
 use crate::server::pane::{NativePaneObservation, OutputSubscription};
@@ -155,7 +155,7 @@ where
                 // command line (see [`command::classify`]).
                 match command::classify(&args) {
                     command::Intent::Attach => {
-                        return attach::handle_attach(
+                        return super::attach::handle_attach(
                             &args,
                             client_tty,
                             &state,
@@ -166,7 +166,7 @@ where
                         );
                     }
                     command::Intent::NewAttach => {
-                        return attach::handle_new_session(
+                        return super::attach::handle_new_session(
                             &args,
                             client_tty,
                             &state,

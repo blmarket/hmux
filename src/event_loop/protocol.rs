@@ -13,8 +13,8 @@ use std::thread;
 use std::time::Instant;
 
 use crate::integration::status::StatusHub;
-use crate::native::attach::ClientTty;
 use crate::native::protocol::{EventControlClient, EventControlSource};
+use crate::server::attach::ClientTty;
 use crate::server::command::{self, ClientContext, CommandResult};
 use crate::server::state::ServerState;
 use crate::server::Server;

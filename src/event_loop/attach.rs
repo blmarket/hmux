@@ -13,7 +13,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::integration::status::StatusHub;
-use crate::native::attach::{
+use crate::server::attach::{
     self, AttachCommandContinuation, AttachDrive, AttachFrameReader, AttachPrepared, AttachSession,
     AttachStartFailure, AttachWaitReady, AttachWaitSources, ClientTty,
 };

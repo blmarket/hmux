@@ -16,6 +16,7 @@
 //! locks; pane handles retain shared terminal state and remain readable after
 //! removal.
 
+pub mod attach;
 #[path = "cmd-send-keys.rs"]
 pub(crate) mod cmd_send_keys;
 pub mod command;
