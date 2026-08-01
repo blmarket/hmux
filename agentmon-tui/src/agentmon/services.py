@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import os
 import re
+import selectors
 import shlex
 import stat
 import subprocess
+import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +47,44 @@ def _is_shell_command(command: str) -> bool:
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
+
+RUN_FORMAT = "\t".join(
+    (
+        "#{pane_id}",
+        "#{session_name}:#{window_index}.#{pane_index}",
+        "#{window_name}",
+        "#{pane_agent}",
+        "#{pane_agent_state}",
+        "#{pane_current_path}",
+        "#{pane_agent_session_id}",
+        "#{pane_active}",
+        "#{pane_current_command}",
+    )
+)
+
+_SUBSCRIPTION_NAME = "agentmon"
+_RUN_CHANGE_NOTIFICATIONS = (
+    f"%subscription-changed {_SUBSCRIPTION_NAME} ",
+    "%layout-change ",
+    "%session-changed ",
+    "%session-closed ",
+    "%session-renamed ",
+    "%sessions-changed",
+    "%unlinked-window-",
+    "%window-add ",
+    "%window-close ",
+    "%window-pane-changed ",
+    "%window-renamed ",
+)
+
+
+def _run_change_notification(line: str) -> bool:
+    return line.startswith(_RUN_CHANGE_NOTIFICATIONS)
+
+
+def _subscription_command() -> str:
+    value = f"{_SUBSCRIPTION_NAME}:%*:{RUN_FORMAT}"
+    return f"refresh-client -B {shlex.quote(value)}\n"
 
 
 def _run(
@@ -300,22 +341,138 @@ class AgentmonService:
         )
         return "merged" if merged.returncode == 0 else "unmerged"
 
-    def runs(self) -> list[AgentRun]:
-        fields = "\t".join(
-            (
-                "#{pane_id}",
-                "#{session_name}:#{window_index}.#{pane_index}",
-                "#{window_name}",
-                "#{pane_agent}",
-                "#{pane_agent_state}",
-                "#{pane_current_path}",
-                "#{pane_agent_session_id}",
-                "#{pane_active}",
-                "#{pane_current_command}",
-            )
-        )
+    def _session_names(self) -> set[str]:
         result = _run(
-            [self.tmux, "-S", self.socket, "list-panes", "-a", "-F", fields]
+            [
+                self.tmux,
+                "-S",
+                self.socket,
+                "list-sessions",
+                "-F",
+                "#{session_name}",
+            ]
+        )
+        return {line for line in result.stdout.splitlines() if line}
+
+    def watch_runs(
+        self, on_change: Callable[[], None], stop: threading.Event
+    ) -> None:
+        """Notify when tmux reports a dashboard-relevant format change."""
+        selector = selectors.DefaultSelector()
+        clients: dict[str, subprocess.Popen[bytes]] = {}
+        buffers: dict[str, bytearray] = {}
+        command = _subscription_command().encode()
+
+        def remove(session: str) -> None:
+            process = clients.pop(session, None)
+            buffers.pop(session, None)
+            if process is None:
+                return
+            if process.stdout is not None:
+                try:
+                    selector.unregister(process.stdout)
+                except KeyError:
+                    pass
+            process.terminate()
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            if process.stdin is not None:
+                process.stdin.close()
+            if process.stdout is not None:
+                process.stdout.close()
+
+        def add(session: str) -> None:
+            try:
+                process = subprocess.Popen(
+                    [
+                        self.tmux,
+                        "-S",
+                        self.socket,
+                        "-C",
+                        "attach-session",
+                        "-f",
+                        "no-output,ignore-size",
+                        "-t",
+                        session,
+                    ],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    bufsize=0,
+                )
+            except OSError as exc:
+                raise CommandError(str(exc)) from exc
+            if process.stdin is None or process.stdout is None:
+                process.terminate()
+                raise CommandError("tmux control client did not expose pipes")
+            try:
+                process.stdin.write(command)
+                process.stdin.flush()
+            except OSError as exc:
+                process.terminate()
+                process.wait()
+                raise CommandError(str(exc)) from exc
+            os.set_blocking(process.stdout.fileno(), False)
+            clients[session] = process
+            buffers[session] = bytearray()
+            selector.register(process.stdout, selectors.EVENT_READ, session)
+
+        def reconcile() -> None:
+            sessions = self._session_names()
+            for session in set(clients) - sessions:
+                remove(session)
+            for session in sessions - set(clients):
+                add(session)
+
+        try:
+            reconcile()
+            next_reconcile = time.monotonic() + 10
+            while not stop.is_set():
+                changed = False
+                needs_reconcile = False
+                for key, _mask in selector.select(timeout=0.5):
+                    session = key.data
+                    process = clients.get(session)
+                    if process is None or process.stdout is None:
+                        continue
+                    try:
+                        chunk = os.read(process.stdout.fileno(), 65536)
+                    except BlockingIOError:
+                        continue
+                    if not chunk:
+                        remove(session)
+                        needs_reconcile = True
+                        changed = True
+                        continue
+                    buffer = buffers[session]
+                    buffer.extend(chunk)
+                    while (newline := buffer.find(b"\n")) >= 0:
+                        line = bytes(buffer[: newline + 1]).decode(
+                            "utf-8", errors="replace"
+                        )
+                        del buffer[: newline + 1]
+                        if _run_change_notification(line):
+                            changed = True
+                        if line.startswith(("%sessions-changed", "%session-closed ")):
+                            needs_reconcile = True
+
+                now = time.monotonic()
+                if needs_reconcile or now >= next_reconcile:
+                    reconcile()
+                    next_reconcile = now + 10
+                if changed:
+                    on_change()
+        finally:
+            for session in list(clients):
+                remove(session)
+            selector.close()
+
+    def runs(self) -> list[AgentRun]:
+        result = _run(
+            [self.tmux, "-S", self.socket, "list-panes", "-a", "-F", RUN_FORMAT]
         )
         windows: dict[str, list[tuple[tuple[bool, bool], list[str]]]] = {}
         for line in result.stdout.splitlines():

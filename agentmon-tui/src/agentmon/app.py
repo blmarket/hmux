@@ -5,6 +5,7 @@ import os
 import shlex
 import subprocess
 import tempfile
+import threading
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -151,6 +152,8 @@ class DashboardScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
+        self._subscription_stop = threading.Event()
+        self._subscription_started = False
         self._transcript_session_id: str | None = None
         self._transcript_signature: tuple[object, ...] | None = None
         self._loaded_transcript: Transcript | None = None
@@ -160,12 +163,15 @@ class DashboardScreen(Screen):
         table.add_column("WORKTREE", width=36)
         table.add_column("GIT", width=12)
         table.add_column("HMUX", width=9)
-        self.set_interval(2.0, self.refresh_runs)
+        self.set_interval(30.0, self.refresh_runs)
         self.refresh_runs()
+
+    def on_unmount(self) -> None:
+        self._subscription_stop.set()
 
     def refresh_runs(self) -> None:
         # The hmux/git scans run in a worker thread instead of blocking the event
-        # loop, which keeps keypresses responsive between the 2s auto-refreshes.
+        # loop, which keeps keypresses responsive during snapshot reconciliation.
         self._load_runs()
 
     @work(thread=True, exclusive=True, group="runs")
@@ -179,6 +185,21 @@ class DashboardScreen(Screen):
             self.app.call_from_thread(self._show_disconnected, str(exc))
         else:
             self.app.call_from_thread(self._apply_runs, runs)
+
+    @work(thread=True, exclusive=True, group="subscription")
+    def _watch_run_changes(self) -> None:
+        """Refresh snapshots when tmux format subscriptions report changes."""
+
+        def changed() -> None:
+            if not self._subscription_stop.is_set():
+                self.app.call_from_thread(self.refresh_runs)
+
+        try:
+            self.app.service.watch_runs(changed, self._subscription_stop)
+        except CommandError:
+            # The periodic snapshot remains authoritative if the advisory
+            # control-mode channel cannot be established.
+            return
 
     def _apply_runs(self, runs: list[AgentRun]) -> None:
         selected = self._selected_run()
@@ -284,6 +305,9 @@ class DashboardScreen(Screen):
                 row=selected_row if selected_row is not None else first_worktree_row
             )
         self._refresh_transcript()
+        if not self._subscription_started:
+            self._subscription_started = True
+            self._watch_run_changes()
 
     def _set_notice(self, message: str) -> None:
         notice = self.query_one("#notice", Static)
@@ -1194,6 +1218,9 @@ class LaunchScreen(Screen):
 
 
 class DemoService(AgentmonService):
+    def watch_runs(self, on_change, stop) -> None:
+        return None
+
     def runs(self) -> list[AgentRun]:
         parent = self.repo.root.parent
         return [

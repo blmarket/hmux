@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import io
+import os
 import subprocess
+import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -162,6 +166,121 @@ def test_socket_discovery_fails_with_actionable_error(monkeypatch: pytest.Monkey
 
     with pytest.raises(CommandError, match="use --socket PATH"):
         discover_socket(requested="/missing/hmux.sock")
+
+
+def test_subscription_command_tracks_every_dashboard_field() -> None:
+    from agentmon import services
+
+    command = services._subscription_command()
+
+    assert command.startswith("refresh-client -B 'agentmon:%*:")
+    for field in (
+        "pane_id",
+        "session_name",
+        "window_name",
+        "pane_agent",
+        "pane_agent_state",
+        "pane_current_path",
+        "pane_agent_session_id",
+        "pane_active",
+        "pane_current_command",
+    ):
+        assert f"#{{{field}}}" in command
+
+
+@pytest.mark.parametrize(
+    "line",
+    (
+        "%subscription-changed agentmon $0 @0 0 %0 : working\n",
+        "%layout-change @0 tiled deadbeef deadbeef\n",
+        "%sessions-changed\n",
+        "%window-close @0\n",
+    ),
+)
+def test_control_notifications_invalidate_runs(line: str) -> None:
+    from agentmon import services
+
+    assert services._run_change_notification(line)
+    assert not services._run_change_notification("%output %0 ignored\n")
+
+
+def test_watcher_subscribes_once_per_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agentmon import services
+
+    stop = threading.Event()
+    selector_events: list[tuple[object, int, str]] = []
+
+    class FakeSelector:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def register(self, fileobj: object, events: int, data: str) -> None:
+            selector_events.append((fileobj, events, data))
+
+        def unregister(self, fileobj: object) -> None:
+            selector_events[:] = [item for item in selector_events if item[0] is not fileobj]
+
+        def select(self, timeout: float) -> list[tuple[object, int]]:
+            assert timeout == 0.5
+            self.calls += 1
+            if self.calls == 1:
+                key = SimpleNamespace(data="one")
+                return [(key, services.selectors.EVENT_READ)]
+            stop.set()
+            return []
+
+        def close(self) -> None:
+            return None
+
+    class FakeProcess:
+        def __init__(self, session: str, args: list[str]) -> None:
+            self.session = session
+            self.args = args
+            self.stdin = io.BytesIO()
+            line = (
+                b"%subscription-changed agentmon $0 @0 0 %0 : working\n"
+                if session == "one"
+                else b""
+            )
+            read_fd, write_fd = os.pipe()
+            os.write(write_fd, line)
+            os.close(write_fd)
+            self.stdout = os.fdopen(read_fd, "rb", buffering=0)
+            self.command = b""
+
+        def terminate(self) -> None:
+            self.command = self.stdin.getvalue()
+            return None
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+        def kill(self) -> None:
+            return None
+
+    processes: list[FakeProcess] = []
+
+    def popen(args: list[str], **kwargs: object) -> FakeProcess:
+        assert kwargs["bufsize"] == 0
+        process = FakeProcess(args[-1], args)
+        processes.append(process)
+        return process
+
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+    monkeypatch.setattr(service, "_session_names", lambda: {"one", "two"})
+    monkeypatch.setattr(services.selectors, "DefaultSelector", FakeSelector)
+    monkeypatch.setattr(services.subprocess, "Popen", popen)
+    changes: list[None] = []
+
+    service.watch_runs(lambda: changes.append(None), stop)
+
+    assert {process.session for process in processes} == {"one", "two"}
+    assert all("no-output,ignore-size" in process.args for process in processes)
+    assert all(
+        process.command == services._subscription_command().encode()
+        for process in processes
+    )
+    assert len(changes) == 1
 
 
 def test_validates_and_derives_sibling_worktree(repository: Repository) -> None:
