@@ -513,7 +513,6 @@ pub(crate) struct AttachSession {
     termios_guard: TermiosGuard,
     input_fd: OwnedFd,
     render_fd: OwnedFd,
-    saved_termios: Option<libc::termios>,
     prompt_attachment: crate::server::state::ClientPromptAttachment,
     render_attachment: crate::server::state::ClientRenderAttachment,
     agent_status_subscription: crate::integration::status::StatusSubscription,
@@ -765,10 +764,9 @@ impl AttachSession {
             let _ = st.resize_session(target, cols, pane_rows);
         }
 
-        let saved_termios = make_raw(input_fd.as_raw_fd()).ok();
         let termios_guard = TermiosGuard {
             fd: input_fd.as_raw_fd(),
-            saved: saved_termios,
+            saved: make_raw(input_fd.as_raw_fd()).ok(),
         };
         set_nonblock(input_fd.as_raw_fd())?;
         set_nonblock(render_fd.as_raw_fd())?;
@@ -797,7 +795,6 @@ impl AttachSession {
             termios_guard,
             input_fd,
             render_fd,
-            saved_termios,
             prompt_attachment,
             render_attachment,
             agent_status_subscription,
@@ -1010,10 +1007,7 @@ impl AttachSession {
 
                 let _ = set_blocking(self.input_fd.as_raw_fd());
                 let _ = set_blocking(self.render_fd.as_raw_fd());
-                if let Some(saved) = self.saved_termios.as_ref() {
-                    restore_termios(self.input_fd.as_raw_fd(), saved);
-                }
-                self.termios_guard.disarm();
+                self.termios_guard.restore_and_disarm();
 
                 if self.compositor.detach_requested {
                     let session_name = state
@@ -1347,9 +1341,7 @@ impl AttachSession {
                             .tty_output
                             .queue(self.render_fd.as_raw_fd(), &stop);
                         self.compositor.output_cursor_visible = None;
-                        if let Some(ref saved) = self.saved_termios {
-                            restore_termios(self.input_fd.as_raw_fd(), saved);
-                        }
+                        self.termios_guard.restore();
                         writer.send(Frame::new(Message::Lock(command)))?;
                         self.compositor.locked = true;
                         self.compositor.last_render.clear();
@@ -1362,9 +1354,7 @@ impl AttachSession {
                             .tty_output
                             .queue(self.render_fd.as_raw_fd(), &stop);
                         self.compositor.output_cursor_visible = None;
-                        if let Some(ref saved) = self.saved_termios {
-                            restore_termios(self.input_fd.as_raw_fd(), saved);
-                        }
+                        self.termios_guard.restore();
                         writer.send(Frame::new(Message::Suspend))?;
                         self.compositor.suspended = true;
                         self.compositor.last_render.clear();
@@ -5845,9 +5835,16 @@ struct TermiosGuard {
 }
 
 impl TermiosGuard {
-    /// Mark the terminal as already restored by the normal path, so `drop` is a
+    fn restore(&self) {
+        if let Some(saved) = self.saved.as_ref() {
+            restore_termios(self.fd, saved);
+        }
+    }
+
+    /// Restore the terminal and mark it as already restored, so `drop` is a
     /// no-op.
-    fn disarm(&mut self) {
+    fn restore_and_disarm(&mut self) {
+        self.restore();
         self.saved = None;
     }
 }
