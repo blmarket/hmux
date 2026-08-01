@@ -501,36 +501,60 @@ struct AttachCompositorState {
     terminal_reply_deadline: Option<Instant>,
     switch_to: Option<u32>,
     injected_input: VecDeque<ClientKey>,
-    latmon: LatMon,
-    tty_output: TtyOutput,
 }
 
 /// All native attach state that must remain alive while readiness is owned by
 /// either the compatibility poller or the server event loop.
 pub(crate) struct AttachSession {
+    tty: AttachTty,
+    attachments: AttachAttachments,
+    viewport: AttachViewport,
+    status: AttachStatus,
+    pane_io: AttachPaneIo,
+    commands: AttachCommands,
+    compositor: AttachCompositorState,
+    finish: AttachFinishState,
+}
+
+struct AttachTty {
     // Restore the tty before the owned descriptors below are closed if a turn
     // exits early. The normal finish path disarms this guard explicitly.
     termios_guard: TermiosGuard,
     input_fd: OwnedFd,
     render_fd: OwnedFd,
+    terminal: ResolvedTerm,
+    output: TtyOutput,
+}
+
+struct AttachAttachments {
     prompt_attachment: crate::server::state::ClientPromptAttachment,
     render_attachment: crate::server::state::ClientRenderAttachment,
     agent_status_subscription: crate::integration::status::StatusSubscription,
     output_subscription: OutputSubscription,
     subscribed_window: ActiveWindowOutputKey,
     output_generation: u64,
-    compositor: AttachCompositorState,
+}
+
+struct AttachViewport {
     cols: u16,
     rows: u16,
     pane_rows: u16,
-    status_h: u16,
+    status_height: u16,
+}
+
+struct AttachStatus {
     status_timer: StatusTimer,
     status_cache: status::RenderCache,
-    terminal: ResolvedTerm,
-    pane_io_mode: PaneIoMode,
-    command_request: Option<AttachCommandRequest>,
-    deferred_prompt_requests: VecDeque<AttachCommandRequest>,
-    finish: AttachFinishState,
+}
+
+struct AttachPaneIo {
+    mode: PaneIoMode,
+    latmon: LatMon,
+}
+
+struct AttachCommands {
+    pending: Option<AttachCommandRequest>,
+    deferred_prompts: VecDeque<AttachCommandRequest>,
 }
 
 pub(crate) struct AttachCommandRequest {
@@ -719,7 +743,7 @@ impl AttachSession {
         let mut attached_context = context.clone();
         attached_context.current_session_id = Some(session_id);
         attached_context.wait_for_interactions = false;
-        let mut compositor =
+        let compositor =
             AttachCompositorState::new(session_id, attached_context, stable_target);
         let target = compositor.stable_target.as_str();
         let terminal_identity = TerminalIdentity::new(
@@ -771,18 +795,15 @@ impl AttachSession {
         set_nonblock(input_fd.as_raw_fd())?;
         set_nonblock(render_fd.as_raw_fd())?;
 
+        let mut tty_output = TtyOutput::new();
         let tty_start = tty_start_sequence(&terminal);
-        let _ = compositor
-            .tty_output
-            .queue(render_fd.as_raw_fd(), &tty_start);
+        let _ = tty_output.queue(render_fd.as_raw_fd(), &tty_start);
         if state
             .lock()
             .ok()
             .is_some_and(|st| st.option_for_target(target, "mouse") == Some("on"))
         {
-            let _ = compositor
-                .tty_output
-                .queue(render_fd.as_raw_fd(), b"\x1b[?1000h\x1b[?1002h\x1b[?1006h");
+            let _ = tty_output.queue(render_fd.as_raw_fd(), b"\x1b[?1000h\x1b[?1002h\x1b[?1006h");
         }
         let (subscribed_window, output_subscription) = {
             let st = state
@@ -792,34 +813,49 @@ impl AttachSession {
         };
 
         Ok(Self {
-            termios_guard,
-            input_fd,
-            render_fd,
-            prompt_attachment,
-            render_attachment,
-            agent_status_subscription,
-            output_subscription,
-            subscribed_window,
-            output_generation: 0,
+            tty: AttachTty {
+                termios_guard,
+                input_fd,
+                render_fd,
+                terminal,
+                output: tty_output,
+            },
+            attachments: AttachAttachments {
+                prompt_attachment,
+                render_attachment,
+                agent_status_subscription,
+                output_subscription,
+                subscribed_window,
+                output_generation: 0,
+            },
+            viewport: AttachViewport {
+                cols,
+                rows,
+                pane_rows,
+                status_height: status_h,
+            },
+            status: AttachStatus {
+                status_timer,
+                status_cache,
+            },
+            pane_io: AttachPaneIo {
+                mode: pane_io_mode,
+                latmon: LatMon::new(format!("sess={target}")),
+            },
+            commands: AttachCommands {
+                pending: None,
+                deferred_prompts: VecDeque::new(),
+            },
             compositor,
-            cols,
-            rows,
-            pane_rows,
-            status_h,
-            status_timer,
-            status_cache,
-            terminal,
-            pane_io_mode,
-            command_request: None,
-            deferred_prompt_requests: VecDeque::new(),
             finish: AttachFinishState::Running,
         })
     }
 
     pub(crate) fn take_command_request(&mut self) -> Option<AttachCommandRequest> {
-        self.command_request
+        self.commands
+            .pending
             .take()
-            .or_else(|| self.deferred_prompt_requests.pop_front())
+            .or_else(|| self.commands.deferred_prompts.pop_front())
             .or_else(|| {
                 let source = self
                     .compositor
@@ -920,11 +956,11 @@ impl AttachSession {
 
     fn begin_finish(&mut self) -> AttachDrive {
         if self.finish == AttachFinishState::Running {
-            let tty_stop = tty_stop_sequence(&self.terminal, self.rows);
+            let tty_stop = tty_stop_sequence(&self.tty.terminal, self.viewport.rows);
             let _ = self
-                .compositor
-                .tty_output
-                .queue(self.render_fd.as_raw_fd(), &tty_stop);
+                .tty
+                .output
+                .queue(self.tty.render_fd.as_raw_fd(), &tty_stop);
             self.finish = AttachFinishState::DrainingTty;
         }
         AttachDrive::Continue
@@ -934,14 +970,14 @@ impl AttachSession {
         match self.finish {
             AttachFinishState::Running => unreachable!("finish preparation while running"),
             AttachFinishState::DrainingTty => {
-                if self.compositor.tty_output.has_pending() {
+                if self.tty.output.has_pending() {
                     AttachPrepared::Wait {
                         sources: AttachWaitSources {
                             control: -1,
                             input: -1,
-                            tty_output: self.render_fd.as_raw_fd(),
+                            tty_output: self.tty.render_fd.as_raw_fd(),
                             output: -1,
-                            output_generation: self.output_generation,
+                            output_generation: self.attachments.output_generation,
                             prompt: -1,
                             render: -1,
                             status: -1,
@@ -967,7 +1003,7 @@ impl AttachSession {
                             input: -1,
                             tty_output: -1,
                             output: -1,
-                            output_generation: self.output_generation,
+                            output_generation: self.attachments.output_generation,
                             prompt: -1,
                             render: -1,
                             status: -1,
@@ -997,17 +1033,15 @@ impl AttachSession {
             AttachFinishState::Running => unreachable!("finish drive while running"),
             AttachFinishState::DrainingTty => {
                 if ready.tty_output {
-                    self.compositor
-                        .tty_output
-                        .flush(self.render_fd.as_raw_fd())?;
+                    self.tty.output.flush(self.tty.render_fd.as_raw_fd())?;
                 }
-                if self.compositor.tty_output.has_pending() {
+                if self.tty.output.has_pending() {
                     return Ok(AttachDrive::Continue);
                 }
 
-                let _ = set_blocking(self.input_fd.as_raw_fd());
-                let _ = set_blocking(self.render_fd.as_raw_fd());
-                self.termios_guard.restore_and_disarm();
+                let _ = set_blocking(self.tty.input_fd.as_raw_fd());
+                let _ = set_blocking(self.tty.render_fd.as_raw_fd());
+                self.tty.termios_guard.restore_and_disarm();
 
                 if self.compositor.detach_requested {
                     let session_name = state
@@ -1072,13 +1106,18 @@ impl AttachSession {
             self.compositor.context.current_session_id = Some(self.compositor.session_id);
             let target = self.compositor.stable_target.as_str();
             if let Ok(mut st) = state.lock() {
-                self.status_h = status::height(&st, target);
-                self.pane_rows = self.rows.saturating_sub(self.status_h).max(1);
-                let _ = st.resize_session(target, self.cols, self.pane_rows);
-                self.status_timer
+                self.viewport.status_height = status::height(&st, target);
+                self.viewport.pane_rows = self
+                    .viewport
+                    .rows
+                    .saturating_sub(self.viewport.status_height)
+                    .max(1);
+                let _ = st.resize_session(target, self.viewport.cols, self.viewport.pane_rows);
+                self.status
+                    .status_timer
                     .configure(status::interval(&st, target), Instant::now());
             }
-            self.status_cache.invalidate();
+            self.status.status_cache.invalidate();
             self.compositor.last_render.clear();
             self.compositor.force_clear = true;
         }
@@ -1091,10 +1130,10 @@ impl AttachSession {
         let target_exists = match state.lock() {
             Ok(mut st) => {
                 if st.reap_exited_panes() {
-                    let _ = st.resize_session(target, self.cols, self.pane_rows);
+                    let _ = st.resize_session(target, self.viewport.cols, self.viewport.pane_rows);
                     self.compositor.last_render.clear();
                     self.compositor.force_clear = true;
-                    self.status_cache.invalidate();
+                    self.status.status_cache.invalidate();
                 }
                 st.find(target).is_some()
             }
@@ -1109,14 +1148,15 @@ impl AttachSession {
         match refresh_active_window_output_subscription(
             state,
             target,
-            &mut self.subscribed_window,
-            &mut self.output_subscription,
+            &mut self.attachments.subscribed_window,
+            &mut self.attachments.output_subscription,
         ) {
             Ok(true) => {
-                self.output_generation = self.output_generation.wrapping_add(1);
+                self.attachments.output_generation =
+                    self.attachments.output_generation.wrapping_add(1);
                 self.compositor.last_render.clear();
                 self.compositor.force_clear = true;
-                self.status_cache.invalidate();
+                self.status.status_cache.invalidate();
             }
             Ok(false) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -1147,7 +1187,7 @@ impl AttachSession {
 
         let now = Instant::now();
         let timeout = minimum_poll_timeout(
-            self.status_timer.poll_timeout(now),
+            self.status.status_timer.poll_timeout(now),
             deadline_poll_timeout(
                 self.compositor
                     .status_message
@@ -1181,7 +1221,7 @@ impl AttachSession {
             timeout,
             deadline_poll_timeout(self.compositor.terminal_reply_deadline, now),
         );
-        let tty_backpressured = self.compositor.tty_output.has_pending();
+        let tty_backpressured = self.tty.output.has_pending();
         if !tty_backpressured && control_buffered {
             return Ok(AttachPrepared::Ready(AttachWaitReady {
                 control: true,
@@ -1195,10 +1235,10 @@ impl AttachSession {
                 input: if tty_backpressured || self.compositor.locked || self.compositor.suspended {
                     -1
                 } else {
-                    self.input_fd.as_raw_fd()
+                    self.tty.input_fd.as_raw_fd()
                 },
                 tty_output: if tty_backpressured {
-                    self.render_fd.as_raw_fd()
+                    self.tty.render_fd.as_raw_fd()
                 } else {
                     -1
                 },
@@ -1206,24 +1246,24 @@ impl AttachSession {
                 {
                     -1
                 } else {
-                    self.output_subscription.as_raw_fd()
+                    self.attachments.output_subscription.as_raw_fd()
                 },
-                output_generation: self.output_generation,
+                output_generation: self.attachments.output_generation,
                 prompt: if tty_backpressured || self.compositor.locked || self.compositor.suspended
                 {
                     -1
                 } else {
-                    self.prompt_attachment.as_raw_fd()
+                    self.attachments.prompt_attachment.as_raw_fd()
                 },
                 render: if tty_backpressured {
                     -1
                 } else {
-                    self.render_attachment.as_raw_fd()
+                    self.attachments.render_attachment.as_raw_fd()
                 },
                 status: if tty_backpressured {
                     -1
                 } else {
-                    self.agent_status_subscription.as_raw_fd()
+                    self.attachments.agent_status_subscription.as_raw_fd()
                 },
                 popup_read,
                 popup_write,
@@ -1254,11 +1294,9 @@ impl AttachSession {
             }
         }
         if ready.tty_output {
-            self.compositor
-                .tty_output
-                .flush(self.render_fd.as_raw_fd())?;
+            self.tty.output.flush(self.tty.render_fd.as_raw_fd())?;
         }
-        if self.compositor.tty_output.has_pending() {
+        if self.tty.output.has_pending() {
             return Ok(AttachDrive::Continue);
         }
         let control_ready = ready.control;
@@ -1268,12 +1306,12 @@ impl AttachSession {
         let agent_status_ready = ready.status;
         let now = Instant::now();
         let agent_status_changed = if agent_status_ready {
-            self.agent_status_subscription.drain();
-            self.status_cache.update_agents(hub.snapshot())
+            self.attachments.agent_status_subscription.drain();
+            self.status.status_cache.update_agents(hub.snapshot())
         } else {
             false
         };
-        let status_timer_ready = self.status_timer.take_expired(now);
+        let status_timer_ready = self.status.status_timer.take_expired(now);
         let overlay_tick = self.compositor.active_overlay.is_some();
         let mut overlay_exit = 0;
         let overlay_expired = match self.compositor.active_overlay.as_mut() {
@@ -1315,15 +1353,15 @@ impl AttachSession {
             self.compositor.last_render.clear();
         }
         if status_timer_ready {
-            self.status_cache.invalidate();
+            self.status.status_cache.invalidate();
         }
         let render_invalidation = if render_ready {
-            self.render_attachment.take()
+            self.attachments.render_attachment.take()
         } else {
             crate::server::state::RenderInvalidation::default()
         };
         if render_ready {
-            for message in self.render_attachment.take_messages() {
+            for message in self.attachments.render_attachment.take_messages() {
                 self.compositor.status_message = Some((
                     message.text,
                     Instant::now() + Duration::from_millis(message.duration_ms),
@@ -1332,29 +1370,23 @@ impl AttachSession {
                 self.compositor.last_render.clear();
                 self.compositor.force_clear = true;
             }
-            if let Some(action) = self.render_attachment.take_action() {
+            if let Some(action) = self.attachments.render_attachment.take_action() {
                 match action {
                     ClientAction::Lock(command) if !self.compositor.locked => {
-                        let stop = tty_stop_sequence(&self.terminal, self.rows);
-                        let _ = self
-                            .compositor
-                            .tty_output
-                            .queue(self.render_fd.as_raw_fd(), &stop);
+                        let stop = tty_stop_sequence(&self.tty.terminal, self.viewport.rows);
+                        let _ = self.tty.output.queue(self.tty.render_fd.as_raw_fd(), &stop);
                         self.compositor.output_cursor_visible = None;
-                        self.termios_guard.restore();
+                        self.tty.termios_guard.restore();
                         writer.send(Frame::new(Message::Lock(command)))?;
                         self.compositor.locked = true;
                         self.compositor.last_render.clear();
                         self.compositor.force_clear = true;
                     }
                     ClientAction::Suspend if !self.compositor.suspended => {
-                        let stop = tty_stop_sequence(&self.terminal, self.rows);
-                        let _ = self
-                            .compositor
-                            .tty_output
-                            .queue(self.render_fd.as_raw_fd(), &stop);
+                        let stop = tty_stop_sequence(&self.tty.terminal, self.viewport.rows);
+                        let _ = self.tty.output.queue(self.tty.render_fd.as_raw_fd(), &stop);
                         self.compositor.output_cursor_visible = None;
-                        self.termios_guard.restore();
+                        self.tty.termios_guard.restore();
                         writer.send(Frame::new(Message::Suspend))?;
                         self.compositor.suspended = true;
                         self.compositor.last_render.clear();
@@ -1376,7 +1408,7 @@ impl AttachSession {
                     ClientAction::SetSelection(data) => {
                         let encoded = base64_encode(&data);
                         if let Some(sequence) = term::expand_capability(
-                            &self.terminal,
+                            &self.tty.terminal,
                             "Ms",
                             &[
                                 term::CapabilityParameter::String(""),
@@ -1384,9 +1416,9 @@ impl AttachSession {
                             ],
                         ) {
                             let _ = self
-                                .compositor
-                                .tty_output
-                                .queue(self.render_fd.as_raw_fd(), &sequence);
+                                .tty
+                                .output
+                                .queue(self.tty.render_fd.as_raw_fd(), &sequence);
                         }
                     }
                     ClientAction::Overlay { request, reply } => {
@@ -1415,9 +1447,9 @@ impl AttachSession {
                             self.compositor.active_overlay = ActiveOverlay::from_request(
                                 request,
                                 reply,
-                                self.cols,
-                                self.rows,
-                                self.pane_io_mode,
+                                self.viewport.cols,
+                                self.viewport.rows,
+                                self.pane_io.mode,
                             )
                             .ok()
                             .flatten();
@@ -1453,7 +1485,7 @@ impl AttachSession {
             return Ok(self.begin_finish());
         }
         if !render_invalidation.is_empty() {
-            self.status_cache.invalidate();
+            self.status.status_cache.invalidate();
         }
         if render_invalidation.contains(crate::server::state::RenderInvalidation::RESET_MODE)
             || render_invalidation.contains(crate::server::state::RenderInvalidation::MODE)
@@ -1465,22 +1497,31 @@ impl AttachSession {
                 .lock()
                 .map_err(|_| io::Error::other("state poisoned"))?;
             if render_invalidation.contains(crate::server::state::RenderInvalidation::TERMINAL) {
-                self.terminal.refresh(st.server_options().iter_effective());
-                self.render_attachment.update_terminal(&self.terminal);
+                self.tty
+                    .terminal
+                    .refresh(st.server_options().iter_effective());
+                self.attachments
+                    .render_attachment
+                    .update_terminal(&self.tty.terminal);
             }
-            self.status_timer
+            self.status
+                .status_timer
                 .configure(status::interval(&st, target), Instant::now());
             let new_status_h = status::height(&st, target);
-            if new_status_h != self.status_h {
-                self.status_h = new_status_h;
-                self.pane_rows = self.rows.saturating_sub(self.status_h).max(1);
-                let _ = st.resize_session(target, self.cols, self.pane_rows);
+            if new_status_h != self.viewport.status_height {
+                self.viewport.status_height = new_status_h;
+                self.viewport.pane_rows = self
+                    .viewport
+                    .rows
+                    .saturating_sub(self.viewport.status_height)
+                    .max(1);
+                let _ = st.resize_session(target, self.viewport.cols, self.viewport.pane_rows);
                 self.compositor.last_render.clear();
                 self.compositor.force_clear = true;
             }
         }
         if prompt_ready && self.compositor.command_prompt.is_none() {
-            if let Some(external) = self.prompt_attachment.take_command_prompt() {
+            if let Some(external) = self.attachments.prompt_attachment.take_command_prompt() {
                 let args = external.args().to_vec();
                 if let Ok(mut prompt) =
                     CommandPrompt::new(args, Some(external), state, hub, &self.compositor.context)
@@ -1501,15 +1542,16 @@ impl AttachSession {
         match refresh_active_window_output_subscription(
             state,
             target,
-            &mut self.subscribed_window,
-            &mut self.output_subscription,
+            &mut self.attachments.subscribed_window,
+            &mut self.attachments.output_subscription,
         ) {
             Ok(true) => {
-                self.output_generation = self.output_generation.wrapping_add(1);
+                self.attachments.output_generation =
+                    self.attachments.output_generation.wrapping_add(1);
                 output_ready = false;
                 self.compositor.last_render.clear();
                 self.compositor.force_clear = true;
-                self.status_cache.invalidate();
+                self.status.status_cache.invalidate();
             }
             Ok(false) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -1519,14 +1561,14 @@ impl AttachSession {
             Err(error) => return Err(error),
         }
         if output_ready {
-            self.output_subscription.drain();
-            self.status_cache.invalidate();
+            self.attachments.output_subscription.drain();
+            self.status.status_cache.invalidate();
             // If this wake came from the active pane, mark its latest output so
             // the upcoming compose is timed against the keystroke that caused
             // it. Background-pane wakes have no newer active timestamp.
-            self.compositor
+            self.pane_io
                 .latmon
-                .on_output(self.output_subscription.last_output_at());
+                .on_output(self.attachments.output_subscription.last_output_at());
         }
 
         // 1. Handle imsg control messages (resize, detach) when poll says that
@@ -1541,71 +1583,80 @@ impl AttachSession {
                     match frame.msg {
                         Message::Resize => {
                             if let Ok((new_cols, new_rows)) =
-                                get_winsize(self.render_fd.as_raw_fd())
+                                get_winsize(self.tty.render_fd.as_raw_fd())
                             {
-                                if new_cols != self.cols || new_rows != self.rows {
-                                    self.cols = new_cols;
-                                    self.rows = new_rows;
+                                if new_cols != self.viewport.cols || new_rows != self.viewport.rows
+                                {
+                                    self.viewport.cols = new_cols;
+                                    self.viewport.rows = new_rows;
                                     if let Some(overlay) = self.compositor.active_overlay.as_mut() {
-                                        overlay.resize(self.cols, self.rows);
+                                        overlay.resize(self.viewport.cols, self.viewport.rows);
                                     }
-                                    self.render_attachment.update_size(self.cols, self.rows);
+                                    self.attachments
+                                        .render_attachment
+                                        .update_size(self.viewport.cols, self.viewport.rows);
                                     if let Ok(mut st) = state.lock() {
-                                        self.status_h = status::height(&st, target);
-                                        self.pane_rows =
-                                            self.rows.saturating_sub(self.status_h).max(1);
-                                        let _ =
-                                            st.resize_session(target, self.cols, self.pane_rows);
+                                        self.viewport.status_height = status::height(&st, target);
+                                        self.viewport.pane_rows = self
+                                            .viewport
+                                            .rows
+                                            .saturating_sub(self.viewport.status_height)
+                                            .max(1);
+                                        let _ = st.resize_session(
+                                            target,
+                                            self.viewport.cols,
+                                            self.viewport.pane_rows,
+                                        );
                                     }
                                     // Force a full re-render on resize: dimensions
                                     // changed, so clear once to drop any stale cells.
                                     self.compositor.last_render.clear();
                                     self.compositor.force_clear = true;
-                                    self.status_cache.invalidate();
+                                    self.status.status_cache.invalidate();
                                 }
                             }
                         }
                         Message::Unlock if self.compositor.locked => {
-                            let _ = make_raw(self.input_fd.as_raw_fd());
-                            let start = tty_start_sequence(&self.terminal);
+                            let _ = make_raw(self.tty.input_fd.as_raw_fd());
+                            let start = tty_start_sequence(&self.tty.terminal);
                             let _ = self
-                                .compositor
-                                .tty_output
-                                .queue(self.render_fd.as_raw_fd(), &start);
+                                .tty
+                                .output
+                                .queue(self.tty.render_fd.as_raw_fd(), &start);
                             self.compositor.output_cursor_visible = None;
                             if state.lock().ok().is_some_and(|st| {
                                 st.option_for_target(target, "mouse") == Some("on")
                             }) {
-                                let _ = self.compositor.tty_output.queue(
-                                    self.render_fd.as_raw_fd(),
+                                let _ = self.tty.output.queue(
+                                    self.tty.render_fd.as_raw_fd(),
                                     b"\x1b[?1000h\x1b[?1002h\x1b[?1006h",
                                 );
                             }
                             self.compositor.locked = false;
                             self.compositor.last_render.clear();
                             self.compositor.force_clear = true;
-                            self.status_cache.invalidate();
+                            self.status.status_cache.invalidate();
                         }
                         Message::Wakeup if self.compositor.suspended => {
-                            let _ = make_raw(self.input_fd.as_raw_fd());
-                            let start = tty_start_sequence(&self.terminal);
+                            let _ = make_raw(self.tty.input_fd.as_raw_fd());
+                            let start = tty_start_sequence(&self.tty.terminal);
                             let _ = self
-                                .compositor
-                                .tty_output
-                                .queue(self.render_fd.as_raw_fd(), &start);
+                                .tty
+                                .output
+                                .queue(self.tty.render_fd.as_raw_fd(), &start);
                             self.compositor.output_cursor_visible = None;
                             if state.lock().ok().is_some_and(|st| {
                                 st.option_for_target(target, "mouse") == Some("on")
                             }) {
-                                let _ = self.compositor.tty_output.queue(
-                                    self.render_fd.as_raw_fd(),
+                                let _ = self.tty.output.queue(
+                                    self.tty.render_fd.as_raw_fd(),
                                     b"\x1b[?1000h\x1b[?1002h\x1b[?1006h",
                                 );
                             }
                             self.compositor.suspended = false;
                             self.compositor.last_render.clear();
                             self.compositor.force_clear = true;
-                            self.status_cache.invalidate();
+                            self.status.status_cache.invalidate();
                         }
                         Message::Detach(_) | Message::DetachKill(_) => {
                             // A server-driven detach (rare on the inbound path): run
@@ -1648,9 +1699,9 @@ impl AttachSession {
             .unwrap_or_default();
         for query in terminal_queries {
             let _ = self
-                .compositor
-                .tty_output
-                .queue(self.render_fd.as_raw_fd(), &query);
+                .tty
+                .output
+                .queue(self.tty.render_fd.as_raw_fd(), &query);
         }
 
         // 3. Read input from the client tty, interpreting tmux's prefix key table
@@ -1689,7 +1740,7 @@ impl AttachSession {
             let n = if replayed.is_empty() {
                 unsafe {
                     libc::read(
-                        self.input_fd.as_raw_fd(),
+                        self.tty.input_fd.as_raw_fd(),
                         input_buf.as_mut_ptr() as *mut libc::c_void,
                         input_buf.len(),
                     )
@@ -1744,7 +1795,7 @@ impl AttachSession {
                                         forward_unbound,
                                     });
                                 }
-                                self.command_request = Some(request);
+                                self.commands.pending = Some(request);
                                 break;
                             }
                             replay_input = tail;
@@ -1787,7 +1838,7 @@ impl AttachSession {
             } else {
                 replayed.as_slice()
             };
-            self.prompt_attachment.note_activity();
+            self.attachments.prompt_attachment.note_activity();
             let mut prompt_tail = None;
             if self
                 .compositor
@@ -1813,7 +1864,7 @@ impl AttachSession {
                                 forward_unbound,
                             });
                         }
-                        self.command_request = Some(request);
+                        self.commands.pending = Some(request);
                         force_render = true;
                         break;
                     }
@@ -1956,7 +2007,7 @@ impl AttachSession {
                             .active_overlay
                             .take()
                             .expect("overlay checked");
-                        self.command_request = Some(AttachCommandRequest {
+                        self.commands.pending = Some(AttachCommandRequest {
                             source: command::DeferredCommand::Args(command.clone()),
                             context: self.compositor.context.clone(),
                             continuation: AttachCommandContinuation::Overlay {
@@ -2016,7 +2067,7 @@ impl AttachSession {
                                 .take()
                                 .expect("command prompt checked");
                             if let Some(source) = take_deferred_attach_command(&mut result) {
-                                self.command_request = Some(AttachCommandRequest {
+                                self.commands.pending = Some(AttachCommandRequest {
                                     source,
                                     context: self.compositor.context.clone(),
                                     continuation: AttachCommandContinuation::Prompt {
@@ -2037,7 +2088,8 @@ impl AttachSession {
                         }
                     }
                     if let Some(source) = incremental {
-                        self.deferred_prompt_requests
+                        self.commands
+                            .deferred_prompts
                             .push_back(AttachCommandRequest {
                                 source,
                                 context: self.compositor.context.clone(),
@@ -2061,7 +2113,7 @@ impl AttachSession {
                         match active.action {
                             ConfirmAction::Command(command) => {
                                 if self.compositor.context.defer_attach_commands {
-                                    self.command_request = Some(AttachCommandRequest {
+                                    self.commands.pending = Some(AttachCommandRequest {
                                         source: command::DeferredCommand::Args(command),
                                         context: self.compositor.context.clone(),
                                         continuation: AttachCommandContinuation::Confirm {
@@ -2089,8 +2141,11 @@ impl AttachSession {
                                     // A survivor window/pane inherits the client viewport,
                                     // just like a layout-changing prefix key.
                                     if killed && st.find(target).is_some() {
-                                        let _ =
-                                            st.resize_session(target, self.cols, self.pane_rows);
+                                        let _ = st.resize_session(
+                                            target,
+                                            self.viewport.cols,
+                                            self.viewport.pane_rows,
+                                        );
                                     }
                                     killed
                                 } else {
@@ -2136,14 +2191,18 @@ impl AttachSession {
                         .lock()
                         .ok()
                         .and_then(|mut st| {
-                            st.mode_view_key(target, &decoded.name, self.pane_rows as usize)
-                                .ok()
+                            st.mode_view_key(
+                                target,
+                                &decoded.name,
+                                self.viewport.pane_rows as usize,
+                            )
+                            .ok()
                         })
                         .unwrap_or(ModeViewKeyResult::None);
                     match outcome {
                         ModeViewKeyResult::Command(command) if !command.is_empty() => {
                             if self.compositor.context.defer_attach_commands {
-                                self.command_request = Some(AttachCommandRequest {
+                                self.commands.pending = Some(AttachCommandRequest {
                                     source: command::DeferredCommand::Args(command),
                                     context: self.compositor.context.clone(),
                                     continuation: AttachCommandContinuation::Ignore,
@@ -2198,9 +2257,9 @@ impl AttachSession {
                                 &mut self.compositor.mouse_input,
                                 state,
                                 target,
-                                self.cols,
-                                self.rows,
-                                &mut self.status_cache,
+                                self.viewport.cols,
+                                self.viewport.rows,
+                                &mut self.status.status_cache,
                             );
                             (decoded.code, decoded.mouse, consumed)
                         }
@@ -2215,8 +2274,8 @@ impl AttachSession {
                         key,
                         state,
                         target,
-                        self.cols,
-                        self.pane_rows,
+                        self.viewport.cols,
+                        self.viewport.pane_rows,
                         hub,
                         &self.compositor.context,
                         mouse,
@@ -2246,7 +2305,7 @@ impl AttachSession {
                                         let _ = st.set_copy_scroll_from_mouse(
                                             target,
                                             position.y,
-                                            self.pane_rows,
+                                            self.viewport.pane_rows,
                                             vi,
                                         );
                                     }
@@ -2314,13 +2373,13 @@ impl AttachSession {
                             force_render = true;
                         }
                         PrefixOutcome::DeferredCommand { args, context } => {
-                            self.command_request = Some(AttachCommandRequest {
+                            self.commands.pending = Some(AttachCommandRequest {
                                 source: command::DeferredCommand::Args(args),
                                 context,
                                 continuation: AttachCommandContinuation::PrefixBinding {
                                     target: target.to_string(),
-                                    cols: self.cols,
-                                    pane_rows: self.pane_rows,
+                                    cols: self.viewport.cols,
+                                    pane_rows: self.viewport.pane_rows,
                                 },
                             });
                             break;
@@ -2332,7 +2391,7 @@ impl AttachSession {
                             escape_hashes,
                             explicit_duration,
                         } => {
-                            self.command_request = Some(AttachCommandRequest {
+                            self.commands.pending = Some(AttachCommandRequest {
                                 source: command::DeferredCommand::Args(args),
                                 context,
                                 continuation: AttachCommandContinuation::Message {
@@ -2359,9 +2418,9 @@ impl AttachSession {
                                 &mut self.compositor.mouse_input,
                                 state,
                                 target,
-                                self.cols,
-                                self.rows,
-                                &mut self.status_cache,
+                                self.viewport.cols,
+                                self.viewport.rows,
+                                &mut self.status.status_cache,
                             );
                             (decoded.code, decoded.mouse, consumed)
                         }
@@ -2387,8 +2446,8 @@ impl AttachSession {
                         key,
                         state,
                         target,
-                        self.cols,
-                        self.pane_rows,
+                        self.viewport.cols,
+                        self.viewport.pane_rows,
                         hub,
                         &self.compositor.context,
                         mouse,
@@ -2446,13 +2505,13 @@ impl AttachSession {
                             force_render = true;
                         }
                         PrefixOutcome::DeferredCommand { args, context } => {
-                            self.command_request = Some(AttachCommandRequest {
+                            self.commands.pending = Some(AttachCommandRequest {
                                 source: command::DeferredCommand::Args(args),
                                 context,
                                 continuation: AttachCommandContinuation::PrefixBinding {
                                     target: target.to_string(),
-                                    cols: self.cols,
-                                    pane_rows: self.pane_rows,
+                                    cols: self.viewport.cols,
+                                    pane_rows: self.viewport.pane_rows,
                                 },
                             });
                             break;
@@ -2464,7 +2523,7 @@ impl AttachSession {
                             escape_hashes,
                             explicit_duration,
                         } => {
-                            self.command_request = Some(AttachCommandRequest {
+                            self.commands.pending = Some(AttachCommandRequest {
                                 source: command::DeferredCommand::Args(args),
                                 context,
                                 continuation: AttachCommandContinuation::Message {
@@ -2493,9 +2552,9 @@ impl AttachSession {
                             &mut self.compositor.mouse_input,
                             state,
                             target,
-                            self.cols,
-                            self.rows,
-                            &mut self.status_cache,
+                            self.viewport.cols,
+                            self.viewport.rows,
+                            &mut self.status.status_cache,
                         );
                         (decoded.code, decoded.mouse, consumed)
                     }
@@ -2532,8 +2591,8 @@ impl AttachSession {
                         key.expect("checked root binding"),
                         state,
                         target,
-                        self.cols,
-                        self.pane_rows,
+                        self.viewport.cols,
+                        self.viewport.pane_rows,
                         hub,
                         &self.compositor.context,
                         mouse,
@@ -2563,7 +2622,7 @@ impl AttachSession {
                                         let _ = st.set_copy_scroll_from_mouse(
                                             target,
                                             position.y,
-                                            self.pane_rows,
+                                            self.viewport.pane_rows,
                                             vi,
                                         );
                                     }
@@ -2631,13 +2690,13 @@ impl AttachSession {
                             force_render = true;
                         }
                         PrefixOutcome::DeferredCommand { args, context } => {
-                            self.command_request = Some(AttachCommandRequest {
+                            self.commands.pending = Some(AttachCommandRequest {
                                 source: command::DeferredCommand::Args(args),
                                 context,
                                 continuation: AttachCommandContinuation::PrefixBinding {
                                     target: target.to_string(),
-                                    cols: self.cols,
-                                    pane_rows: self.pane_rows,
+                                    cols: self.viewport.cols,
+                                    pane_rows: self.viewport.pane_rows,
                                 },
                             });
                             break;
@@ -2649,7 +2708,7 @@ impl AttachSession {
                             escape_hashes,
                             explicit_duration,
                         } => {
-                            self.command_request = Some(AttachCommandRequest {
+                            self.commands.pending = Some(AttachCommandRequest {
                                 source: command::DeferredCommand::Args(args),
                                 context,
                                 continuation: AttachCommandContinuation::Message {
@@ -2687,7 +2746,7 @@ impl AttachSession {
         // to the pane. The counters retain whether bytes reached the PTY now,
         // remained queued, or were dropped; the output/render hooks close it out.
         if forwarded.accepted() > 0 || forwarded.dropped > 0 {
-            self.compositor.latmon.on_input(
+            self.pane_io.latmon.on_input(
                 first_forward_at.unwrap_or_else(Instant::now),
                 forwarded.accepted(),
                 forwarded.queued,
@@ -2704,13 +2763,16 @@ impl AttachSession {
         if force_render {
             self.compositor.last_render.clear();
             self.compositor.force_clear = true;
-            self.status_cache.invalidate();
+            self.status.status_cache.invalidate();
             let st = state
                 .lock()
                 .map_err(|_| io::Error::other("state poisoned"))?;
             match active_window_output_subscription(&st, target) {
                 Ok(subscription) => {
-                    (self.subscribed_window, self.output_subscription) = subscription;
+                    (
+                        self.attachments.subscribed_window,
+                        self.attachments.output_subscription,
+                    ) = subscription;
                 }
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
                     self.compositor.session_ended = true;
@@ -2718,7 +2780,7 @@ impl AttachSession {
                 }
                 Err(error) => return Err(error),
             }
-            self.output_generation = self.output_generation.wrapping_add(1);
+            self.attachments.output_generation = self.attachments.output_generation.wrapping_add(1);
         }
 
         // 4. Render only when pane output or a layout/input action requests it.
@@ -2737,23 +2799,23 @@ impl AttachSession {
                 let title = terminal_title_update(
                     &st,
                     target,
-                    self.cols,
-                    self.rows,
-                    &mut self.status_cache,
-                    &self.terminal,
+                    self.viewport.cols,
+                    self.viewport.rows,
+                    &mut self.status.status_cache,
+                    &self.tty.terminal,
                     &mut self.compositor.last_title,
                 );
                 if !title.is_empty() {
                     let _ = self
-                        .compositor
-                        .tty_output
-                        .queue(self.render_fd.as_raw_fd(), &title);
+                        .tty
+                        .output
+                        .queue(self.tty.render_fd.as_raw_fd(), &title);
                 }
                 large_scroll_repaint = take_large_scroll_repaint(
                     &st,
                     target,
-                    self.cols,
-                    &self.terminal,
+                    self.viewport.cols,
+                    &self.tty.terminal,
                     &mut self.compositor.seen_large_scroll,
                 );
             }
@@ -2769,12 +2831,12 @@ impl AttachSession {
                         Ok(g) => compose_frame_cached(
                             &g,
                             target,
-                            self.cols,
-                            self.rows,
-                            self.status_h,
+                            self.viewport.cols,
+                            self.viewport.rows,
+                            self.viewport.status_height,
                             0,
-                            &mut self.status_cache,
-                            &self.terminal,
+                            &mut self.status.status_cache,
+                            &self.tty.terminal,
                         ),
                         Err(_) => Err(io::Error::other("state poisoned")),
                     }
@@ -2786,9 +2848,9 @@ impl AttachSession {
                             overlay,
                             &st,
                             target,
-                            self.cols,
-                            self.rows,
-                            &self.terminal,
+                            self.viewport.cols,
+                            self.viewport.rows,
+                            &self.tty.terminal,
                         ));
                     }
                 }
@@ -2803,10 +2865,10 @@ impl AttachSession {
                                 prompt,
                                 &state,
                                 target,
-                                self.cols,
-                                self.rows,
-                                self.status_h,
-                                &self.terminal,
+                                self.viewport.cols,
+                                self.viewport.rows,
+                                self.viewport.status_height,
+                                &self.tty.terminal,
                             ));
                         }
                     }
@@ -2814,18 +2876,25 @@ impl AttachSession {
                         .lock()
                         .ok()
                         .map(|st| {
-                            let (display, cursor) =
-                                prompt.formatted_display(&st, target, usize::from(self.cols));
+                            let (display, cursor) = prompt.formatted_display(
+                                &st,
+                                target,
+                                usize::from(self.viewport.cols),
+                            );
                             let line = st
                                 .option_for_target(target, "message-line")
                                 .and_then(|value| value.parse::<u16>().ok())
                                 .unwrap_or(0)
-                                .min(self.status_h.saturating_sub(1));
+                                .min(self.viewport.status_height.saturating_sub(1));
                             let row =
                                 if st.option_for_target(target, "status-position") == Some("top") {
                                     line + 1
                                 } else {
-                                    self.rows.saturating_sub(self.status_h).saturating_add(line) + 1
+                                    self.viewport
+                                        .rows
+                                        .saturating_sub(self.viewport.status_height)
+                                        .saturating_add(line)
+                                        + 1
                                 };
                             let (style_option, style_fallback) = if prompt.vi_command {
                                 ("message-command-style", "bg=black,fg=yellow,fill=black")
@@ -2849,22 +2918,26 @@ impl AttachSession {
                             (
                                 prompt.display(),
                                 prompt.display_cursor(),
-                                self.rows,
+                                self.viewport.rows,
                                 "bg=yellow,fg=black,fill=yellow".to_string(),
                                 true,
                             )
                         });
-                    let writable_cols =
-                        term::writable_width(&self.terminal, row, self.cols, self.rows) as u16;
+                    let writable_cols = term::writable_width(
+                        &self.tty.terminal,
+                        row,
+                        self.viewport.cols,
+                        self.viewport.rows,
+                    ) as u16;
                     frame.extend_from_slice(&render_status_prompt_styled_at_row(
                         &display,
                         cursor,
-                        self.cols,
+                        self.viewport.cols,
                         writable_cols,
                         row,
                         &style,
                         fill,
-                        &self.terminal,
+                        &self.tty.terminal,
                     ));
                 } else if let Some(active) = &self.compositor.confirm {
                     let prompt = &active.prompt;
@@ -2872,18 +2945,22 @@ impl AttachSession {
                         .lock()
                         .ok()
                         .map(|st| {
-                            let visible_lines = self.status_h.max(1);
+                            let visible_lines = self.viewport.status_height.max(1);
                             let line = st
                                 .option_for_target(target, "message-line")
                                 .and_then(|value| value.parse::<u16>().ok())
                                 .unwrap_or(0)
                                 .min(visible_lines.saturating_sub(1));
-                            let row = if self.status_h == 0 {
-                                self.rows
+                            let row = if self.viewport.status_height == 0 {
+                                self.viewport.rows
                             } else if status::at_top(&st, target) {
                                 line + 1
                             } else {
-                                self.rows.saturating_sub(self.status_h).saturating_add(line) + 1
+                                self.viewport
+                                    .rows
+                                    .saturating_sub(self.viewport.status_height)
+                                    .saturating_add(line)
+                                    + 1
                             };
                             let value = st
                                 .option_for_target(target, "message-style")
@@ -2898,61 +2975,73 @@ impl AttachSession {
                         })
                         .unwrap_or_else(|| {
                             (
-                                self.rows,
+                                self.viewport.rows,
                                 "bg=yellow,fg=black,fill=yellow".to_string(),
                                 true,
                             )
                         });
-                    let writable_cols =
-                        term::writable_width(&self.terminal, row, self.cols, self.rows) as u16;
+                    let writable_cols = term::writable_width(
+                        &self.tty.terminal,
+                        row,
+                        self.viewport.cols,
+                        self.viewport.rows,
+                    ) as u16;
                     frame.extend_from_slice(&render_status_prompt_styled_at_row(
                         prompt,
                         prompt.chars().count(),
-                        self.cols,
+                        self.viewport.cols,
                         writable_cols,
                         row,
                         &style,
                         fill,
-                        &self.terminal,
+                        &self.tty.terminal,
                     ));
                 } else if let Some((message, _)) = self.compositor.status_message.as_ref() {
                     let (row, rendered) = state
                         .lock()
                         .ok()
                         .map(|st| {
-                            let visible_lines = self.status_h.max(1);
+                            let visible_lines = self.viewport.status_height.max(1);
                             let line = st
                                 .option_for_target(target, "message-line")
                                 .and_then(|value| value.parse::<u16>().ok())
                                 .unwrap_or(0)
                                 .min(visible_lines.saturating_sub(1));
-                            let row = if self.status_h == 0 {
-                                self.rows
+                            let row = if self.viewport.status_height == 0 {
+                                self.viewport.rows
                             } else if status::at_top(&st, target) {
                                 line + 1
                             } else {
-                                self.rows.saturating_sub(self.status_h).saturating_add(line) + 1
+                                self.viewport
+                                    .rows
+                                    .saturating_sub(self.viewport.status_height)
+                                    .saturating_add(line)
+                                    + 1
                             };
-                            let writable =
-                                term::writable_width(&self.terminal, row, self.cols, self.rows);
+                            let writable = term::writable_width(
+                                &self.tty.terminal,
+                                row,
+                                self.viewport.cols,
+                                self.viewport.rows,
+                            );
                             (
                                 row,
-                                self.status_cache.message_row(
+                                self.status.status_cache.message_row(
                                     &st,
                                     target,
                                     message,
-                                    self.cols,
-                                    self.rows,
+                                    self.viewport.cols,
+                                    self.viewport.rows,
                                     writable,
-                                    &self.terminal,
+                                    &self.tty.terminal,
                                 ),
                             )
                         })
-                        .unwrap_or_else(|| (self.rows, Vec::new()));
+                        .unwrap_or_else(|| (self.viewport.rows, Vec::new()));
                     frame.extend_from_slice(&render_status_message_row_at(
                         row,
                         &rendered,
-                        &self.terminal,
+                        &self.tty.terminal,
                     ));
                 }
                 if frame != self.compositor.last_render || large_scroll_repaint {
@@ -2981,12 +3070,12 @@ impl AttachSession {
                     // unsynchronized deltas get an
                     // immediate hide/restore pair around only the dirty rows.
                     let sync_start = term::expand_capability(
-                        &self.terminal,
+                        &self.tty.terminal,
                         "Sync",
                         &[term::CapabilityParameter::Number(1)],
                     );
                     let sync_end = term::expand_capability(
-                        &self.terminal,
+                        &self.tty.terminal,
                         "Sync",
                         &[term::CapabilityParameter::Number(2)],
                     );
@@ -3001,27 +3090,27 @@ impl AttachSession {
                         atomic_output.extend_from_slice(&output);
                         atomic_output.extend_from_slice(&sync_end);
                         let _ = self
-                            .compositor
-                            .tty_output
-                            .queue(self.render_fd.as_raw_fd(), &atomic_output);
+                            .tty
+                            .output
+                            .queue(self.tty.render_fd.as_raw_fd(), &atomic_output);
                     } else if direct_cursor_safe && !self.compositor.force_clear {
                         let output = suppress_redundant_cursor_visibility(
                             &repaint,
                             &mut self.compositor.output_cursor_visible,
                         );
                         let _ = self
-                            .compositor
-                            .tty_output
-                            .queue(self.render_fd.as_raw_fd(), &output);
+                            .tty
+                            .output
+                            .queue(self.tty.render_fd.as_raw_fd(), &output);
                     } else {
                         let output = guard_cursor_during_repaint(
                             &repaint,
                             &mut self.compositor.output_cursor_visible,
                         );
                         let _ = self
-                            .compositor
-                            .tty_output
-                            .queue(self.render_fd.as_raw_fd(), &output);
+                            .tty
+                            .output
+                            .queue(self.tty.render_fd.as_raw_fd(), &output);
                     }
                     self.compositor.last_render = frame;
                     self.compositor.force_clear = false;
@@ -3032,9 +3121,9 @@ impl AttachSession {
             // reaching the screen; an unchanged frame means this input drew
             // nothing, so drop it rather than blame a later frame.
             if wrote_frame {
-                self.compositor.latmon.on_render();
+                self.pane_io.latmon.on_render();
             } else {
-                self.compositor.latmon.discard();
+                self.pane_io.latmon.discard();
             }
         }
         Ok(AttachDrive::Continue)
@@ -3137,8 +3226,6 @@ impl AttachCompositorState {
             terminal_reply_deadline: None,
             switch_to: None,
             injected_input: VecDeque::new(),
-            latmon: LatMon::new(format!("sess={target}")),
-            tty_output: TtyOutput::new(),
         }
     }
 }
