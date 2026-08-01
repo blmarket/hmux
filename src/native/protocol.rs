@@ -26,9 +26,9 @@ use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 use crate::tmux::traits::{FrameReader, FrameWriter};
 
 use super::attach::{self, ClientTty};
-use super::pane::{NativePaneObservation, OutputSubscription};
 use crate::server::command;
 use crate::server::command::queue::{CommandQueue, QueueCompletion, QueueState, QueueTicket};
+use crate::server::pane::{NativePaneObservation, OutputSubscription};
 use crate::server::registry::{self, Resolution};
 use crate::server::state::{
     ClientAction, ClientRenderAttachment, ControlStateSnapshot, ServerState,

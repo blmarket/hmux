@@ -35,8 +35,8 @@ use crate::observability::v1::{PaneId as PublicPaneId, PaneObservability, Server
 use crate::tmux::codec::{split_stream, ImsgReader, ImsgWriter};
 use crate::tmux::traits::TmuxServer;
 
+use crate::server::pane::{PaneIo, PaneIoMode};
 use crate::server::state::ServerState;
-use pane::{PaneIo, PaneIoMode};
 
 type EventPaneSnapshot = (Vec<(u64, PaneIo)>, Vec<u64>);
 
@@ -277,12 +277,12 @@ impl ObservationHook for NoopObservationHook {
 #[derive(Clone)]
 pub(crate) struct PaneHandle {
     id: PaneId,
-    observation: Arc<pane::NativePaneObservation>,
+    observation: Arc<crate::server::pane::NativePaneObservation>,
 }
 
 #[allow(dead_code)]
 impl PaneHandle {
-    fn from_pane(id: PaneId, pane: &pane::Pane) -> PaneHandle {
+    fn from_pane(id: PaneId, pane: &crate::server::pane::Pane) -> PaneHandle {
         PaneHandle {
             id,
             observation: pane.observation_state(),

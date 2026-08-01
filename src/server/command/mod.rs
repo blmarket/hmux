@@ -75,7 +75,7 @@ pub struct CommandResult {
     pub stdout_bytes: Vec<u8>,
     pub stderr: String,
     pub exit: i32,
-    pub(crate) pane_output_wait: Option<(Arc<crate::native::pane::NativePaneObservation>, u64)>,
+    pub(crate) pane_output_wait: Option<(Arc<crate::server::pane::NativePaneObservation>, u64)>,
     pub(crate) deferred_commands: Vec<DeferredCommand>,
     pub(crate) background_commands: Vec<BackgroundCommandRequest>,
     /// Continue the containing command list despite a nonzero client status.
@@ -762,16 +762,16 @@ pub(crate) struct SourceFileRead {
 }
 
 pub(crate) struct PaneOutputSuspension {
-    observation: Arc<crate::native::pane::NativePaneObservation>,
+    observation: Arc<crate::server::pane::NativePaneObservation>,
     before: u64,
-    subscription: crate::native::pane::OutputSubscription,
+    subscription: crate::server::pane::OutputSubscription,
     deadline: Instant,
     result: Option<CommandResult>,
 }
 
 impl PaneOutputSuspension {
     fn new(
-        observation: Arc<crate::native::pane::NativePaneObservation>,
+        observation: Arc<crate::server::pane::NativePaneObservation>,
         before: u64,
         result: CommandResult,
     ) -> Result<Self, CommandResult> {
@@ -4121,7 +4121,7 @@ pub(super) fn vars_full(
     v
 }
 
-fn pane_cursor_character(pane: &crate::native::pane::Pane) -> String {
+fn pane_cursor_character(pane: &crate::server::pane::Pane) -> String {
     let Ok((x, y)) = pane.cursor_position() else {
         return String::new();
     };

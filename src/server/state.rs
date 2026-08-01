@@ -17,9 +17,9 @@ use std::sync::{mpsc, Arc, Condvar, Mutex};
 use super::key::{parse_key_name, KeyCode};
 use super::options::{GlobalOptions, OptionSet, OptionsView};
 use super::term::ResolvedTerm;
-use crate::native::pane::{NativePaneObservation, Pane, PaneIo, PaneIoMode, PaneSpawnSpec};
 use crate::native::ObservationSignal;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
+use crate::server::pane::{NativePaneObservation, Pane, PaneIo, PaneIoMode, PaneSpawnSpec};
 
 /// How to back a new pane's screen.
 pub enum PaneSpec {
@@ -8215,7 +8215,7 @@ impl ServerState {
     pub(crate) fn subscribe_active_pane_output(
         &self,
         session_name: &str,
-    ) -> io::Result<crate::native::pane::OutputSubscription> {
+    ) -> io::Result<crate::server::pane::OutputSubscription> {
         self.active_pane(session_name)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no active pane"))?
             .subscribe_output()
@@ -8224,13 +8224,13 @@ impl ServerState {
     pub(crate) fn subscribe_active_window_output(
         &self,
         session_name: &str,
-    ) -> io::Result<crate::native::pane::OutputSubscription> {
+    ) -> io::Result<crate::server::pane::OutputSubscription> {
         let (window, active) = self.active_window_panes(session_name)?;
         let active_pane = window
             .panes
             .get(active)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no active pane"))?;
-        crate::native::pane::OutputSubscription::for_panes(
+        crate::server::pane::OutputSubscription::for_panes(
             window.panes.iter().map(|pane| &pane.pane),
             &active_pane.pane,
         )
@@ -8349,7 +8349,7 @@ impl ServerState {
     pub(crate) fn pane_observation_state(
         &self,
         target: &str,
-    ) -> io::Result<Arc<crate::native::pane::NativePaneObservation>> {
+    ) -> io::Result<Arc<crate::server::pane::NativePaneObservation>> {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         Ok(
             self.window(resolved.session, resolved.window).panes[resolved.pane]
@@ -9664,7 +9664,7 @@ impl ServerState {
         &self,
         session_name: &str,
         bytes: &[u8],
-    ) -> io::Result<crate::native::pane::PaneInputStats> {
+    ) -> io::Result<crate::server::pane::PaneInputStats> {
         if let Some(pane) = self.active_pane(session_name) {
             pane.input_with_stats(bytes)
         } else {

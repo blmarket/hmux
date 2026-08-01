@@ -39,7 +39,6 @@ use crate::tmux::codec::ImsgReader;
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 use crate::tmux::traits::{FrameReader, FrameWriter};
 
-use super::pane::{OutputSubscription, Pane, PaneInputStats, PaneIo, PaneIoMode};
 use crate::server::cmd_send_keys::base64_encode;
 use crate::server::command;
 use crate::server::format;
@@ -50,6 +49,7 @@ use crate::server::latmon::LatMon;
 use crate::server::mouse::{self, MouseEvent, MouseInputState, MousePosition, MouseProtocol};
 #[cfg(test)]
 use crate::server::mouse::{MouseButton, MouseEventKind};
+use crate::server::pane::{OutputSubscription, Pane, PaneInputStats, PaneIo, PaneIoMode};
 use crate::server::state::{
     copy_search_segments, copy_selection_segments, ClientAction, ClientKey, CopyState, MenuItem,
     MenuRequest, ModeBindingUpdate, ModeEdit, ModeKind, ModePrompt, ModeView, ModeViewKeyResult,
@@ -7868,7 +7868,7 @@ fn forward_input(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native::pane::Pane;
+    use crate::server::pane::Pane;
     use crate::server::state::PaneSpec;
     use std::io::Read as _;
     use std::os::unix::net::UnixStream;

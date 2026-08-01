@@ -17,8 +17,8 @@ use crate::native::attach::{
     self, AttachCommandContinuation, AttachDrive, AttachFrameReader, AttachPrepared, AttachSession,
     AttachStartFailure, AttachWaitReady, AttachWaitSources, ClientTty,
 };
-use crate::native::pane::PaneIoMode;
 use crate::server::command::{self, ClientContext};
+use crate::server::pane::PaneIoMode;
 use crate::server::state::ServerState;
 use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::Frame;

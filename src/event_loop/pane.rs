@@ -2,7 +2,7 @@
 
 use std::os::fd::BorrowedFd;
 
-use crate::native::pane::PaneIo;
+use crate::server::pane::PaneIo;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;

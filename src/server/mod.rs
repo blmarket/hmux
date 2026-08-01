@@ -14,6 +14,7 @@ pub(crate) mod key;
 pub mod latmon;
 pub(crate) mod mouse;
 pub mod options;
+pub mod pane;
 pub mod registry;
 pub mod state;
 pub mod status;

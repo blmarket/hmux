@@ -4,8 +4,8 @@ use std::collections::VecDeque;
 use std::io;
 use std::time::{Duration, Instant};
 
-use crate::native::pane::PaneIo;
 use crate::native::NativeServer;
+use crate::server::pane::PaneIo;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 use crate::tmux::message::Frame;
 
