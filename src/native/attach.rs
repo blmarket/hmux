@@ -627,7 +627,7 @@ impl AttachSession {
             hub,
             context,
             writer,
-            PaneIoMode::Threaded,
+            PaneIoMode::Threaded(crate::native::pane::spawn_reader),
         )
     }
 

@@ -2937,7 +2937,7 @@ impl ServerState {
         let client_renders = Arc::new(ClientRenderRegistry::new());
         let mut state = ServerState {
             initial_attach_pending: true,
-            pane_io_mode: PaneIoMode::Threaded,
+            pane_io_mode: PaneIoMode::Threaded(crate::native::pane::spawn_reader),
             sessions: Vec::new(),
             windows: BTreeMap::new(),
             session_groups: BTreeMap::new(),
@@ -4360,7 +4360,7 @@ impl ServerState {
     pub fn reap_exited_panes(&mut self) -> bool {
         let had_sessions = !self.sessions.is_empty();
         let mut removed = false;
-        let event_loop_io = self.pane_io_mode == PaneIoMode::EventLoop;
+        let event_loop_io = matches!(self.pane_io_mode, PaneIoMode::EventLoop);
         for window in self.windows.values_mut() {
             for pane in &mut window.panes {
                 if pane.pane.has_exited() {

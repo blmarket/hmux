@@ -67,10 +67,14 @@ pub struct Pane {
     rows: u16,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+/// Starts the compatibility reader for a pane driven outside the event loop.
+/// Supplied by the runtime that owns threads, so pane construction itself stays
+/// free of any thread policy.
+pub(crate) type PaneReaderSpawner = fn(PaneIo) -> JoinHandle<()>;
+
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum PaneIoMode {
-    #[default]
-    Threaded,
+    Threaded(PaneReaderSpawner),
     EventLoop,
 }
 
@@ -850,7 +854,7 @@ impl Pane {
         cols: u16,
         rows: u16,
     ) -> io::Result<Pane> {
-        Self::spawn_in_mode(argv, cwd, cols, rows, PaneIoMode::Threaded)
+        Self::spawn_in_mode(argv, cwd, cols, rows, PaneIoMode::Threaded(spawn_reader))
     }
 
     pub(crate) fn spawn_in_mode(
@@ -934,31 +938,18 @@ impl Pane {
             }),
             rows,
         ));
+        let pane_io = PaneIo::new(
+            &master,
+            Arc::clone(&observation),
+            Arc::clone(&terminal_queries),
+            Arc::clone(&pending_input),
+            Arc::clone(&pipe_output),
+            Arc::clone(&pipe_output_active),
+            Arc::clone(&alive),
+        )?;
         let (reader, event_io) = match io_mode {
-            PaneIoMode::Threaded => (
-                Some(spawn_reader(
-                    &master,
-                    Arc::clone(&observation),
-                    Arc::clone(&terminal_queries),
-                    Arc::clone(&pending_input),
-                    Arc::clone(&pipe_output),
-                    Arc::clone(&pipe_output_active),
-                    Arc::clone(&alive),
-                )?),
-                None,
-            ),
-            PaneIoMode::EventLoop => (
-                None,
-                Some(PaneIo::new(
-                    &master,
-                    Arc::clone(&observation),
-                    Arc::clone(&terminal_queries),
-                    Arc::clone(&pending_input),
-                    Arc::clone(&pipe_output),
-                    Arc::clone(&pipe_output_active),
-                    Arc::clone(&alive),
-                )?),
-            ),
+            PaneIoMode::Threaded(spawn) => (Some(spawn(pane_io)), None),
+            PaneIoMode::EventLoop => (None, Some(pane_io)),
         };
 
         Ok(Pane {
@@ -1884,25 +1875,8 @@ fn pending_capacity_reached(pending: &[u8]) -> bool {
 
 /// Spawn the compatibility thread that waits around the same nonblocking pane
 /// state used by the central event loop.
-fn spawn_reader(
-    master: &OwnedFd,
-    observation: Arc<NativePaneObservation>,
-    terminal_queries: Arc<Mutex<VecDeque<Vec<u8>>>>,
-    pending_input: Arc<Mutex<VecDeque<u8>>>,
-    pipe_output: Arc<Mutex<Option<Sender<Vec<u8>>>>>,
-    pipe_output_active: Arc<AtomicBool>,
-    alive: Arc<AtomicBool>,
-) -> io::Result<JoinHandle<()>> {
-    let mut pane_io = PaneIo::new(
-        master,
-        observation,
-        terminal_queries,
-        pending_input,
-        pipe_output,
-        pipe_output_active,
-        alive,
-    )?;
-    Ok(thread::spawn(move || loop {
+pub(crate) fn spawn_reader(mut pane_io: PaneIo) -> JoinHandle<()> {
+    thread::spawn(move || loop {
         let mut wait = libc::pollfd {
             fd: pane_io.as_fd().as_raw_fd(),
             events: libc::POLLIN
@@ -1933,7 +1907,7 @@ fn spawn_reader(
             Ok(_) => {}
             Err(_) => break,
         }
-    }))
+    })
 }
 
 fn trailing_lines(text: &str, lines: usize) -> String {
