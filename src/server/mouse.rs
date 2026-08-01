@@ -583,8 +583,8 @@ fn scrollbar_location(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native::state::{PaneSpec, SplitDirection};
-    use crate::native::status::RenderCache;
+    use crate::server::state::{PaneSpec, SplitDirection};
+    use crate::server::status::RenderCache;
 
     fn event(x: u16, y: u16) -> MouseEvent {
         MouseEvent::from_terminal_report(MouseProtocol::Sgr, 0, false, MousePosition { x, y })

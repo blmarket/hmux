@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(in crate::native) enum Command {
+pub(in crate::server) enum Command {
     Find,
     New,
     Kill,

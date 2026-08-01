@@ -39,22 +39,24 @@ use crate::tmux::codec::ImsgReader;
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 use crate::tmux::traits::{FrameReader, FrameWriter};
 
-use super::cmd_send_keys::base64_encode;
-use super::command;
-use super::format;
-use super::key::{basic_key_bytes, key_from_byte, parse_key_name, KeyBase, KeyCode, SpecialKey};
-use super::latmon::LatMon;
-use super::mouse::{self, MouseEvent, MouseInputState, MousePosition, MouseProtocol};
-#[cfg(test)]
-use super::mouse::{MouseButton, MouseEventKind};
 use super::pane::{OutputSubscription, Pane, PaneInputStats, PaneIo, PaneIoMode};
-use super::state::{
+use crate::server::cmd_send_keys::base64_encode;
+use crate::server::command;
+use crate::server::format;
+use crate::server::key::{
+    basic_key_bytes, key_from_byte, parse_key_name, KeyBase, KeyCode, SpecialKey,
+};
+use crate::server::latmon::LatMon;
+use crate::server::mouse::{self, MouseEvent, MouseInputState, MousePosition, MouseProtocol};
+#[cfg(test)]
+use crate::server::mouse::{MouseButton, MouseEventKind};
+use crate::server::state::{
     copy_search_segments, copy_selection_segments, ClientAction, ClientKey, CopyState, MenuItem,
     MenuRequest, ModeBindingUpdate, ModeEdit, ModeKind, ModePrompt, ModeView, ModeViewKeyResult,
     OverlayRequest, PopupRequest, ServerState,
 };
-use super::status;
-use super::term::{self, ResolvedTerm, TerminalCapabilities, TerminalIdentity};
+use crate::server::status;
+use crate::server::term::{self, ResolvedTerm, TerminalCapabilities, TerminalIdentity};
 
 #[cfg(test)]
 const PREFIX: u8 = 0x02;
@@ -180,7 +182,7 @@ struct ActiveConfirm {
     action: ConfirmAction,
     confirm_key: u8,
     default_yes: bool,
-    reply: Option<std::sync::mpsc::Sender<super::state::PromptCompletion>>,
+    reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
 }
 
 /// What a resolved prefix binding tells the attach loop to do.
@@ -235,7 +237,7 @@ pub(crate) enum ActiveOverlay {
     Menu {
         request: MenuRequest,
         selected: usize,
-        reply: Option<std::sync::mpsc::Sender<super::state::PromptCompletion>>,
+        reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
     },
     Popup {
         request: Box<PopupRequest>,
@@ -243,20 +245,20 @@ pub(crate) enum ActiveOverlay {
         io: Option<Box<PaneIo>>,
         read_continuation: bool,
         exit_status: Option<i32>,
-        reply: Option<std::sync::mpsc::Sender<super::state::PromptCompletion>>,
+        reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
     },
     DisplayPanes {
         deadline: Instant,
         command: Vec<String>,
         accept_input: bool,
-        reply: Option<std::sync::mpsc::Sender<super::state::PromptCompletion>>,
+        reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
     },
 }
 
 impl ActiveOverlay {
     fn from_request(
         request: OverlayRequest,
-        reply: Option<std::sync::mpsc::Sender<super::state::PromptCompletion>>,
+        reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
         cols: u16,
         rows: u16,
         pane_io_mode: PaneIoMode,
@@ -329,7 +331,7 @@ impl ActiveOverlay {
             | Self::DisplayPanes { reply, .. } => reply.take(),
         };
         if let Some(reply) = reply {
-            let _ = reply.send(super::state::PromptCompletion {
+            let _ = reply.send(crate::server::state::PromptCompletion {
                 stdout: result.stdout,
                 stderr: result.stderr,
                 exit: result.exit,
@@ -430,7 +432,7 @@ pub(crate) struct CommandPrompt {
     completion: Option<PromptCompletionMenu>,
     action: CommandPromptAction,
     frozen_frame: Option<Vec<u8>>,
-    external: Option<super::state::ActiveCommandPrompt>,
+    external: Option<crate::server::state::ActiveCommandPrompt>,
     deferred_incremental: VecDeque<command::DeferredCommand>,
 }
 
@@ -512,8 +514,8 @@ pub(crate) struct AttachSession {
     input_fd: OwnedFd,
     render_fd: OwnedFd,
     saved_termios: Option<libc::termios>,
-    prompt_attachment: super::state::ClientPromptAttachment,
-    render_attachment: super::state::ClientRenderAttachment,
+    prompt_attachment: crate::server::state::ClientPromptAttachment,
+    render_attachment: crate::server::state::ClientRenderAttachment,
     agent_status_subscription: crate::integration::status::StatusSubscription,
     output_subscription: OutputSubscription,
     subscribed_window: ActiveWindowOutputKey,
@@ -549,7 +551,7 @@ pub(crate) enum AttachCommandContinuation {
         inserted: bool,
     },
     Confirm {
-        reply: Option<std::sync::mpsc::Sender<super::state::PromptCompletion>>,
+        reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
         inserted: bool,
     },
     Prompt {
@@ -866,7 +868,7 @@ impl AttachSession {
             }
             AttachCommandContinuation::Confirm { reply, inserted } => {
                 if let Some(reply) = reply {
-                    let _ = reply.send(super::state::PromptCompletion {
+                    let _ = reply.send(crate::server::state::PromptCompletion {
                         stdout: result.stdout,
                         stderr: result.stderr,
                         exit: result.exit,
@@ -1324,7 +1326,7 @@ impl AttachSession {
         let render_invalidation = if render_ready {
             self.render_attachment.take()
         } else {
-            super::state::RenderInvalidation::default()
+            crate::server::state::RenderInvalidation::default()
         };
         if render_ready {
             for message in self.render_attachment.take_messages() {
@@ -1403,7 +1405,7 @@ impl AttachSession {
                                 overlay.complete(command::CommandResult::ok(""), false);
                             }
                             if let Some(reply) = reply {
-                                let _ = reply.send(super::state::PromptCompletion {
+                                let _ = reply.send(crate::server::state::PromptCompletion {
                                     stdout: String::new(),
                                     stderr: String::new(),
                                     exit: 0,
@@ -1412,7 +1414,7 @@ impl AttachSession {
                             }
                         } else if self.compositor.active_overlay.is_some() {
                             if let Some(reply) = reply {
-                                let _ = reply.send(super::state::PromptCompletion {
+                                let _ = reply.send(crate::server::state::PromptCompletion {
                                     stdout: String::new(),
                                     stderr: String::new(),
                                     exit: 0,
@@ -1456,23 +1458,23 @@ impl AttachSession {
                 }
             }
         }
-        if render_invalidation.contains(super::state::RenderInvalidation::SESSION_GONE) {
+        if render_invalidation.contains(crate::server::state::RenderInvalidation::SESSION_GONE) {
             self.compositor.session_ended = true;
             return Ok(self.begin_finish());
         }
         if !render_invalidation.is_empty() {
             self.status_cache.invalidate();
         }
-        if render_invalidation.contains(super::state::RenderInvalidation::RESET_MODE)
-            || render_invalidation.contains(super::state::RenderInvalidation::MODE)
+        if render_invalidation.contains(crate::server::state::RenderInvalidation::RESET_MODE)
+            || render_invalidation.contains(crate::server::state::RenderInvalidation::MODE)
         {
             self.compositor.last_render.clear();
         }
-        if render_invalidation.contains(super::state::RenderInvalidation::STATUS) {
+        if render_invalidation.contains(crate::server::state::RenderInvalidation::STATUS) {
             let mut st = state
                 .lock()
                 .map_err(|_| io::Error::other("state poisoned"))?;
-            if render_invalidation.contains(super::state::RenderInvalidation::TERMINAL) {
+            if render_invalidation.contains(crate::server::state::RenderInvalidation::TERMINAL) {
                 self.terminal.refresh(st.server_options().iter_effective());
                 self.render_attachment.update_terminal(&self.terminal);
             }
@@ -2115,7 +2117,7 @@ impl AttachSession {
                         command::CommandResult::err("")
                     };
                     if let Some(reply) = active.reply {
-                        let _ = reply.send(super::state::PromptCompletion {
+                        let _ = reply.send(crate::server::state::PromptCompletion {
                             stdout: result.stdout,
                             stderr: result.stderr,
                             exit: result.exit,
@@ -3172,7 +3174,7 @@ impl CommandPrompt {
 
     fn new(
         args: Vec<String>,
-        external: Option<super::state::ActiveCommandPrompt>,
+        external: Option<crate::server::state::ActiveCommandPrompt>,
         state: &Arc<Mutex<ServerState>>,
         hub: &StatusHub,
         context: &command::ClientContext,
@@ -3415,7 +3417,7 @@ impl CommandPrompt {
         context: &command::ClientContext,
     ) {
         if let Some(external) = self.external.take() {
-            external.complete(super::state::PromptCompletion {
+            external.complete(crate::server::state::PromptCompletion {
                 stdout: result.stdout.clone(),
                 stderr: result.stderr.clone(),
                 exit: result.exit,
@@ -4454,7 +4456,7 @@ fn command_prompt_completion(
             return PromptCompletion::None;
         }
         let mut matches = BTreeSet::new();
-        for candidate in super::registry::COMMAND_SPECS
+        for candidate in crate::server::registry::COMMAND_SPECS
             .iter()
             .flat_map(|spec| std::iter::once(spec.name).chain(spec.alias.iter().copied()))
         {
@@ -4469,7 +4471,7 @@ fn command_prompt_completion(
         }
         if !at_start {
             for candidate in
-                super::options::option_names().chain(command::LAYOUT_NAMES.iter().copied())
+                crate::server::options::option_names().chain(command::LAYOUT_NAMES.iter().copied())
             {
                 if candidate.starts_with(word) {
                     matches.insert(candidate.to_string());
@@ -4697,7 +4699,7 @@ fn dispatch_key_binding(
                 .ok()
                 .and_then(|st| {
                     st.option_for_target(target, option)
-                        .or_else(|| super::options::option_default(option))
+                        .or_else(|| crate::server::options::option_default(option))
                         .and_then(parse_key_name)
                 })
                 .and_then(basic_key_bytes)
@@ -4993,7 +4995,7 @@ fn is_configured_prefix(state: &Arc<Mutex<ServerState>>, target: &str, key: KeyC
     state.lock().ok().is_some_and(|st| {
         ["prefix", "prefix2"].into_iter().any(|option| {
             st.option_for_target(target, option)
-                .or_else(|| super::options::option_default(option))
+                .or_else(|| crate::server::options::option_default(option))
                 .and_then(parse_key_name)
                 .is_some_and(|prefix| prefix == key)
         })
@@ -5286,7 +5288,7 @@ fn decode_tty_key(bytes: &[u8]) -> Option<(DecodedTtyKey, usize)> {
             bytes[end] == b'm',
             MousePosition { x, y },
         );
-        let code = mouse.key_code_for(super::key::MouseLocation::Pane);
+        let code = mouse.key_code_for(crate::server::key::MouseLocation::Pane);
         let name = code
             .map(|code| code.to_string())
             .unwrap_or_else(|| "Mouse".into());
@@ -5310,7 +5312,7 @@ fn decode_tty_key(bytes: &[u8]) -> Option<(DecodedTtyKey, usize)> {
             button & 0xc3 == 3,
             MousePosition { x, y },
         );
-        let code = mouse.key_code_for(super::key::MouseLocation::Pane);
+        let code = mouse.key_code_for(crate::server::key::MouseLocation::Pane);
         let name = code
             .map(|code| code.to_string())
             .unwrap_or_else(|| "Mouse".into());
@@ -5419,7 +5421,7 @@ fn set_copy_mode_state(state: &Arc<Mutex<ServerState>>, target: &str, active: bo
         if active && page_up {
             let vi = match st.option_for_target(target, "mode-keys") {
                 Some(mode) => mode == "vi",
-                None => super::options::mode_keys_default() == "vi",
+                None => crate::server::options::mode_keys_default() == "vi",
             };
             let separators = st
                 .option_for_target(target, "word-separators")
@@ -5437,7 +5439,7 @@ fn copy_table_name(state: &Arc<Mutex<ServerState>>, target: &str) -> &'static st
     });
     let vi = match mode.as_deref() {
         Some(mode) => mode == "vi",
-        None => super::options::mode_keys_default() == "vi",
+        None => crate::server::options::mode_keys_default() == "vi",
     };
     if vi {
         "copy-mode-vi"
@@ -6208,7 +6210,7 @@ fn terminal_title_update(
     }
     let template = state
         .option_for_target(session, "set-titles-string")
-        .or_else(|| super::options::option_default("set-titles-string"))
+        .or_else(|| crate::server::options::option_default("set-titles-string"))
         .unwrap_or_default();
     let Some(title) = status_cache.expand_format(state, session, template, cols, rows) else {
         return Vec::new();
@@ -7536,7 +7538,7 @@ fn offset_cup_row(cursor: &[u8], offset: u16) -> Vec<u8> {
 fn copy_mode_uses_vi_keys(st: &ServerState, target: &str) -> bool {
     match st.option_for_target(target, "mode-keys") {
         Some(mode) => mode == "vi",
-        None => super::options::mode_keys_default() == "vi",
+        None => crate::server::options::mode_keys_default() == "vi",
     }
 }
 
@@ -7865,9 +7867,9 @@ fn forward_input(
 
 #[cfg(test)]
 mod tests {
-    use super::super::pane::Pane;
-    use super::super::state::PaneSpec;
     use super::*;
+    use crate::native::pane::Pane;
+    use crate::server::state::PaneSpec;
     use std::io::Read as _;
     use std::os::unix::net::UnixStream;
 
@@ -8691,7 +8693,7 @@ mod tests {
                 "0",
                 false,
                 false,
-                super::super::state::SplitDirection::TopBottom,
+                crate::server::state::SplitDirection::TopBottom,
                 PaneSpec::Inert,
             )
             .expect("split inactive pane");

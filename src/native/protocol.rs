@@ -26,12 +26,14 @@ use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 use crate::tmux::traits::{FrameReader, FrameWriter};
 
 use super::attach::{self, ClientTty};
-use super::command;
-use super::command::queue::{CommandQueue, QueueCompletion, QueueState, QueueTicket};
 use super::pane::{NativePaneObservation, OutputSubscription};
-use super::registry::{self, Resolution};
-use super::state::{ClientAction, ClientRenderAttachment, ControlStateSnapshot, ServerState};
-use super::status;
+use crate::server::command;
+use crate::server::command::queue::{CommandQueue, QueueCompletion, QueueState, QueueTicket};
+use crate::server::registry::{self, Resolution};
+use crate::server::state::{
+    ClientAction, ClientRenderAttachment, ControlStateSnapshot, ServerState,
+};
+use crate::server::status;
 
 /// stdout / stderr fds the client maps opened streams onto.
 const FD_STDOUT: i32 = 1;
@@ -786,7 +788,7 @@ impl EventControlClient {
             }
             Some(ClientAction::Overlay { reply, .. } | ClientAction::Confirm { reply, .. }) => {
                 if let Some(reply) = reply {
-                    let _ = reply.send(super::state::PromptCompletion {
+                    let _ = reply.send(crate::server::state::PromptCompletion {
                         stdout: String::new(),
                         stderr: String::new(),
                         exit: 0,

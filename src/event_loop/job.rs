@@ -5,11 +5,11 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::integration::status::StatusHub;
-use crate::native::command::{
+use crate::server::command::{
     self, BackgroundCommand, BackgroundCommandRequest, ClientContext, CommandSuspensionResult,
     ResumableCommandQueue, ResumableCommandTurn,
 };
-use crate::native::state::ServerState;
+use crate::server::state::ServerState;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;

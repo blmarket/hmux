@@ -20,21 +20,8 @@
 //! removal.
 
 pub mod attach;
-#[path = "cmd-send-keys.rs"]
-pub(crate) mod cmd_send_keys;
-pub mod command;
-pub mod format;
-pub(crate) mod key;
-pub mod latmon;
-pub(crate) mod mouse;
-pub mod options;
 pub mod pane;
 pub mod protocol;
-pub mod registry;
-pub mod state;
-pub mod status;
-pub(crate) mod style;
-pub(crate) mod term;
 
 use std::collections::HashMap;
 use std::io;
@@ -48,8 +35,8 @@ use crate::observability::v1::{PaneId as PublicPaneId, PaneObservability, Server
 use crate::tmux::codec::{split_stream, ImsgReader, ImsgWriter};
 use crate::tmux::traits::TmuxServer;
 
+use crate::server::state::ServerState;
 use pane::{PaneIo, PaneIoMode};
-use state::ServerState;
 
 type EventPaneSnapshot = (Vec<(u64, PaneIo)>, Vec<u64>);
 

@@ -3,7 +3,7 @@
 //! Only the handful of commands the prototype needs are implemented; anything
 //! else returns a nonzero exit with an error line, like tmux does for an unknown
 //! command. Output is returned as text + streams; the protocol layer
-//! ([`super::protocol`]) delivers it over the imsg file protocol.
+//! ([`crate::native::protocol`]) delivers it over the imsg file protocol.
 //!
 //! Behaviors here are pinned against real tmux by the differential conformance
 //! suite (`hmux_conformance::behaviors`), which runs the identical command
@@ -11,21 +11,21 @@
 //! asserts the observable results (exit code, stdout, stderr) match. When a gap
 //! is found there, it's closed here.
 
-pub(in crate::native) mod buffers;
-pub(in crate::native) mod clients;
-pub(in crate::native) mod configuration;
-pub(in crate::native) mod execution;
+pub(in crate::server) mod buffers;
+pub(in crate::server) mod clients;
+pub(in crate::server) mod configuration;
+pub(in crate::server) mod execution;
 mod identity;
-pub(in crate::native) mod keys;
-pub(in crate::native) mod panes;
-pub(in crate::native) mod queue;
-pub(in crate::native) mod server;
-pub(in crate::native) mod sessions;
-pub(in crate::native) mod windows;
+pub(in crate::server) mod keys;
+pub(in crate::server) mod panes;
+pub(crate) mod queue;
+pub(in crate::server) mod server;
+pub(in crate::server) mod sessions;
+pub(in crate::server) mod windows;
 
 #[cfg(test)]
-pub(in crate::native) use identity::all as all_commands;
-pub(in crate::native) use identity::Command;
+pub(in crate::server) use identity::all as all_commands;
+pub(in crate::server) use identity::Command;
 
 use std::collections::BTreeMap;
 use std::io;
@@ -75,7 +75,7 @@ pub struct CommandResult {
     pub stdout_bytes: Vec<u8>,
     pub stderr: String,
     pub exit: i32,
-    pub(crate) pane_output_wait: Option<(Arc<super::pane::NativePaneObservation>, u64)>,
+    pub(crate) pane_output_wait: Option<(Arc<crate::native::pane::NativePaneObservation>, u64)>,
     pub(crate) deferred_commands: Vec<DeferredCommand>,
     pub(crate) background_commands: Vec<BackgroundCommandRequest>,
     /// Continue the containing command list despite a nonzero client status.
@@ -762,16 +762,16 @@ pub(crate) struct SourceFileRead {
 }
 
 pub(crate) struct PaneOutputSuspension {
-    observation: Arc<super::pane::NativePaneObservation>,
+    observation: Arc<crate::native::pane::NativePaneObservation>,
     before: u64,
-    subscription: super::pane::OutputSubscription,
+    subscription: crate::native::pane::OutputSubscription,
     deadline: Instant,
     result: Option<CommandResult>,
 }
 
 impl PaneOutputSuspension {
     fn new(
-        observation: Arc<super::pane::NativePaneObservation>,
+        observation: Arc<crate::native::pane::NativePaneObservation>,
         before: u64,
         result: CommandResult,
     ) -> Result<Self, CommandResult> {
@@ -4121,7 +4121,7 @@ pub(super) fn vars_full(
     v
 }
 
-fn pane_cursor_character(pane: &super::pane::Pane) -> String {
+fn pane_cursor_character(pane: &crate::native::pane::Pane) -> String {
     let Ok((x, y)) = pane.cursor_position() else {
         return String::new();
     };

@@ -20,10 +20,10 @@ use super::command::{self, Command};
 
 /// Static identity and CLI name for one tmux command.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(in crate::native) struct CommandSpec {
-    pub(in crate::native) name: &'static str,
-    pub(in crate::native) alias: Option<&'static str>,
-    pub(in crate::native) command: Command,
+pub(crate) struct CommandSpec {
+    pub(crate) name: &'static str,
+    pub(crate) alias: Option<&'static str>,
+    pub(in crate::server) command: Command,
 }
 
 impl CommandSpec {
@@ -47,7 +47,7 @@ use command::sessions::Command as Session;
 use command::windows::Command as Window;
 
 /// The tmux command catalog, kept in alphabetical order for ambiguity messages.
-pub(in crate::native) static COMMAND_SPECS: &[CommandSpec] = &[
+pub(crate) static COMMAND_SPECS: &[CommandSpec] = &[
     CommandSpec::new(
         "attach-session",
         Some("attach"),
@@ -333,7 +333,7 @@ pub enum Resolution {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(in crate::native) enum SpecResolution {
+pub(in crate::server) enum SpecResolution {
     Spec(&'static CommandSpec),
     Ambiguous { error: String },
     Unknown { error: String },
@@ -349,7 +349,7 @@ pub fn resolve(word: &str) -> Resolution {
 }
 
 /// Resolve directly to the catalog row used by parsing and execution.
-pub(in crate::native) fn resolve_spec(word: &str) -> SpecResolution {
+pub(in crate::server) fn resolve_spec(word: &str) -> SpecResolution {
     let mut found: Option<&'static CommandSpec> = None;
     let mut ambiguous = false;
 

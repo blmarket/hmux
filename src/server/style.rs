@@ -907,7 +907,7 @@ fn colour_256_to_16(index: u8, bright: bool) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native::term::{ResolvedTerm, TerminalIdentity};
+    use crate::server::term::{ResolvedTerm, TerminalIdentity};
 
     fn terminal(capabilities: &[&str]) -> ResolvedTerm {
         ResolvedTerm::resolve(
