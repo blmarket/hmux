@@ -452,8 +452,17 @@ pub(crate) struct CommandPrompt {
     completion: Option<PromptCompletionMenu>,
     action: CommandPromptAction,
     frozen_frame: Option<Vec<u8>>,
-    external: Option<crate::server::state::ActiveCommandPrompt>,
+    owner: PromptOwner,
     deferred_incremental: VecDeque<command::DeferredCommand>,
+}
+
+/// Who receives the prompt's result. `Resolved` marks a prompt whose result
+/// has already been delivered, so a second completion is a no-op rather than
+/// output appended to the attached client's view.
+enum PromptOwner {
+    Attached,
+    External(crate::server::state::ActiveCommandPrompt),
+    Resolved,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -3335,7 +3344,7 @@ impl CommandPrompt {
             completion: None,
             action: CommandPromptAction::Command,
             frozen_frame: None,
-            external,
+            owner: external.map_or(PromptOwner::Attached, PromptOwner::External),
             deferred_incremental: VecDeque::new(),
         })
     }
@@ -3534,22 +3543,30 @@ impl CommandPrompt {
         state: &Arc<Mutex<ServerState>>,
         context: &command::ClientContext,
     ) {
-        if let Some(external) = self.external.take() {
-            external.complete(crate::server::state::PromptCompletion {
-                stdout: result.stdout.clone(),
-                stderr: result.stderr.clone(),
-                exit: result.exit,
-                inserted: true,
-            });
-        } else if !result.stdout_data().is_empty() {
-            if let Some(session_id) = context.current_session_id {
-                append_view_output(state, &format!("${session_id}"), result.stdout_data());
+        match std::mem::replace(&mut self.owner, PromptOwner::Resolved) {
+            PromptOwner::External(external) => {
+                external.complete(crate::server::state::PromptCompletion {
+                    stdout: result.stdout.clone(),
+                    stderr: result.stderr.clone(),
+                    exit: result.exit,
+                    inserted: true,
+                });
             }
+            PromptOwner::Attached => {
+                if !result.stdout_data().is_empty() {
+                    if let Some(session_id) = context.current_session_id {
+                        append_view_output(state, &format!("${session_id}"), result.stdout_data());
+                    }
+                }
+            }
+            PromptOwner::Resolved => {}
         }
     }
 
     fn cancel_external(&mut self) {
-        if let Some(external) = self.external.take() {
+        if let PromptOwner::External(external) =
+            std::mem::replace(&mut self.owner, PromptOwner::Resolved)
+        {
             external.cancel();
         }
     }
