@@ -448,13 +448,19 @@ pub(crate) struct CommandPrompt {
     last: String,
     yank: Option<String>,
     history_index: usize,
-    vi_command: bool,
-    quote_next: bool,
+    mode: PromptInputMode,
     completion: Option<PromptCompletionMenu>,
     action: CommandPromptAction,
     frozen_frame: Option<Vec<u8>>,
     external: Option<crate::server::state::ActiveCommandPrompt>,
     deferred_incremental: VecDeque<command::DeferredCommand>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PromptInputMode {
+    Insert,
+    ViCommand,
+    QuoteNext,
 }
 
 enum CommandPromptAction {
@@ -2924,11 +2930,12 @@ impl AttachSession {
                                         .saturating_add(line)
                                         + 1
                                 };
-                            let (style_option, style_fallback) = if prompt.vi_command {
-                                ("message-command-style", "bg=black,fg=yellow,fill=black")
-                            } else {
-                                ("message-style", "bg=yellow,fg=black,fill=yellow")
-                            };
+                            let (style_option, style_fallback) =
+                                if prompt.mode == PromptInputMode::ViCommand {
+                                    ("message-command-style", "bg=black,fg=yellow,fill=black")
+                                } else {
+                                    ("message-style", "bg=yellow,fg=black,fill=yellow")
+                                };
                             let style_value = st
                                 .option_for_target(target, style_option)
                                 .unwrap_or(style_fallback);
@@ -3324,8 +3331,7 @@ impl CommandPrompt {
             last,
             yank: None,
             history_index: 0,
-            vi_command: false,
-            quote_next: false,
+            mode: PromptInputMode::Insert,
             completion: None,
             action: CommandPromptAction::Command,
             frozen_frame: None,
@@ -3421,7 +3427,14 @@ impl CommandPrompt {
             let mut vars = format::Vars::new();
             vars.set("message", self.label().to_string())
                 .set("prompt-input", input.clone())
-                .set("command_prompt", if self.vi_command { "1" } else { "0" });
+                .set(
+                    "command_prompt",
+                    if self.mode == PromptInputMode::ViCommand {
+                        "1"
+                    } else {
+                        "0"
+                    },
+                );
             format::expand(message_format, &vars)
         } else {
             self.label().to_string()
@@ -3601,8 +3614,7 @@ impl CommandPrompt {
             self.input = initial.chars().collect();
             self.cursor = self.input.len();
             self.history_index = 0;
-            self.vi_command = false;
-            self.quote_next = false;
+            self.mode = PromptInputMode::Insert;
             self.completion = None;
             return CommandPromptInput::Continue;
         }
@@ -3883,8 +3895,8 @@ impl CommandPrompt {
             }
             return self.finish_page(state, hub, context);
         }
-        if self.spec.single || self.quote_next {
-            self.quote_next = false;
+        if self.spec.single || self.mode == PromptInputMode::QuoteNext {
+            self.mode = PromptInputMode::Insert;
             let character = match key {
                 "C-Space" => Some('\0'),
                 "BSpace" => Some('\u{7f}'),
@@ -3927,29 +3939,29 @@ impl CommandPrompt {
             .lock()
             .ok()
             .is_some_and(|st| st.option_for_target(&target, "status-keys") == Some("vi"));
-        if self.vi_command {
+        if self.mode == PromptInputMode::ViCommand {
             match key {
                 "i" => {
-                    self.vi_command = false;
+                    self.mode = PromptInputMode::Insert;
                     return CommandPromptInput::Continue;
                 }
                 "a" => {
                     self.cursor = (self.cursor + 1).min(self.input.len());
-                    self.vi_command = false;
+                    self.mode = PromptInputMode::Insert;
                     return CommandPromptInput::Continue;
                 }
                 "A" => {
                     self.cursor = self.input.len();
-                    self.vi_command = false;
+                    self.mode = PromptInputMode::Insert;
                     return CommandPromptInput::Continue;
                 }
                 "I" => {
                     self.cursor = 0;
-                    self.vi_command = false;
+                    self.mode = PromptInputMode::Insert;
                     return CommandPromptInput::Continue;
                 }
                 "C" => {
-                    self.vi_command = false;
+                    self.mode = PromptInputMode::Insert;
                     if self.cursor < self.input.len() {
                         self.input.truncate(self.cursor);
                         self.changed('=', state, hub, context);
@@ -3957,7 +3969,7 @@ impl CommandPrompt {
                     return CommandPromptInput::Continue;
                 }
                 "s" => {
-                    self.vi_command = false;
+                    self.mode = PromptInputMode::Insert;
                     if self.cursor < self.input.len() {
                         self.input.remove(self.cursor);
                         self.changed('=', state, hub, context);
@@ -3965,7 +3977,7 @@ impl CommandPrompt {
                     return CommandPromptInput::Continue;
                 }
                 "S" => {
-                    self.vi_command = false;
+                    self.mode = PromptInputMode::Insert;
                     self.input.clear();
                     self.cursor = 0;
                     self.changed('=', state, hub, context);
@@ -4102,7 +4114,7 @@ impl CommandPrompt {
             "Enter" | "C-m" => return self.finish_page(state, hub, context),
             "Escape" | "C-[" => {
                 if vi_keys {
-                    self.vi_command = true;
+                    self.mode = PromptInputMode::ViCommand;
                     self.cursor = self.cursor.saturating_sub(1);
                     return CommandPromptInput::Continue;
                 }
@@ -4158,7 +4170,7 @@ impl CommandPrompt {
                     self.changed('=', state, hub, context);
                 }
             }
-            "C-v" => self.quote_next = true,
+            "C-v" => self.mode = PromptInputMode::QuoteNext,
             "Tab" => {
                 if self.complete_word(state, context) {
                     self.changed('=', state, hub, context);
