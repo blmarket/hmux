@@ -233,29 +233,53 @@ enum PrefixOutcome {
     },
 }
 
-pub(crate) enum ActiveOverlay {
-    Menu {
-        request: MenuRequest,
-        selected: usize,
-        reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
-    },
-    Popup {
-        request: Box<PopupRequest>,
-        pane: Box<Pane>,
-        io: Option<Box<PaneIo>>,
-        read_continuation: bool,
-        exit_status: Option<i32>,
-        reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
-    },
-    DisplayPanes {
-        deadline: Instant,
-        command: Vec<String>,
-        accept_input: bool,
-        reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
-    },
+pub(crate) struct ActiveOverlay {
+    state: OverlayState,
+    reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
+}
+
+enum OverlayState {
+    Menu(MenuOverlay),
+    Popup(PopupOverlay),
+    DisplayPanes(DisplayPanesOverlay),
+}
+
+struct MenuOverlay {
+    request: MenuRequest,
+    selected: usize,
+}
+
+struct PopupOverlay {
+    request: Box<PopupRequest>,
+    pane: Box<Pane>,
+    io: Option<Box<PaneIo>>,
+    read_continuation: bool,
+    exit_status: Option<i32>,
+}
+
+struct DisplayPanesOverlay {
+    deadline: Instant,
+    command: Vec<String>,
+    accept_input: bool,
 }
 
 impl ActiveOverlay {
+    fn menu(request: MenuRequest, selected: usize) -> Self {
+        Self::menu_with_reply(request, selected, None)
+    }
+
+    fn menu_with_reply(
+        request: MenuRequest,
+        selected: usize,
+        reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
+    ) -> Self {
+        let selected = selected.min(request.items.len().saturating_sub(1));
+        Self {
+            state: OverlayState::Menu(MenuOverlay { request, selected }),
+            reply,
+        }
+    }
+
     fn from_request(
         request: OverlayRequest,
         reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
@@ -266,23 +290,21 @@ impl ActiveOverlay {
         Ok(match request {
             OverlayRequest::Clear => None,
             OverlayRequest::Menu(request) => {
-                let selected = request.selected.min(request.items.len().saturating_sub(1));
-                Some(Self::Menu {
-                    request,
-                    selected,
-                    reply,
-                })
+                let selected = request.selected;
+                Some(Self::menu_with_reply(request, selected, reply))
             }
             OverlayRequest::DisplayPanes {
                 duration_ms,
                 command,
                 accept_input,
-            } => Some(Self::DisplayPanes {
-                deadline: Instant::now()
-                    .checked_add(Duration::from_millis(duration_ms))
-                    .unwrap_or_else(Instant::now),
-                command,
-                accept_input,
+            } => Some(Self {
+                state: OverlayState::DisplayPanes(DisplayPanesOverlay {
+                    deadline: Instant::now()
+                        .checked_add(Duration::from_millis(duration_ms))
+                        .unwrap_or_else(Instant::now),
+                    command,
+                    accept_input,
+                }),
                 reply,
             }),
             OverlayRequest::Popup(request) => {
@@ -312,12 +334,14 @@ impl ActiveOverlay {
                     pane_io_mode,
                 )?;
                 let io = pane.take_event_io().map(Box::new);
-                Some(Self::Popup {
-                    request: Box::new(request),
-                    pane: Box::new(pane),
-                    io,
-                    read_continuation: false,
-                    exit_status: None,
+                Some(Self {
+                    state: OverlayState::Popup(PopupOverlay {
+                        request: Box::new(request),
+                        pane: Box::new(pane),
+                        io,
+                        read_continuation: false,
+                        exit_status: None,
+                    }),
                     reply,
                 })
             }
@@ -325,12 +349,7 @@ impl ActiveOverlay {
     }
 
     fn complete(&mut self, result: command::CommandResult, inserted: bool) {
-        let reply = match self {
-            Self::Menu { reply, .. }
-            | Self::Popup { reply, .. }
-            | Self::DisplayPanes { reply, .. } => reply.take(),
-        };
-        if let Some(reply) = reply {
+        if let Some(reply) = self.reply.take() {
             let _ = reply.send(crate::server::state::PromptCompletion {
                 stdout: result.stdout,
                 stderr: result.stderr,
@@ -341,53 +360,55 @@ impl ActiveOverlay {
     }
 
     fn poll_timeout(&self, now: Instant) -> i32 {
-        match self {
-            Self::DisplayPanes { deadline, .. } => deadline_poll_timeout(Some(*deadline), now),
-            Self::Popup { .. } => 50,
-            Self::Menu { .. } => -1,
+        match &self.state {
+            OverlayState::DisplayPanes(display) => {
+                deadline_poll_timeout(Some(display.deadline), now)
+            }
+            OverlayState::Popup(_) => 50,
+            OverlayState::Menu(_) => -1,
         }
     }
 
     fn resize(&mut self, cols: u16, rows: u16) {
-        if let Self::Popup { request, pane, .. } = self {
-            let width = overlay_dimension(request.width.as_deref(), cols, 50)
+        if let OverlayState::Popup(popup) = &mut self.state {
+            let width = overlay_dimension(popup.request.width.as_deref(), cols, 50)
                 .max(3)
                 .min(cols.max(3));
-            let height = overlay_dimension(request.height.as_deref(), rows, 50)
+            let height = overlay_dimension(popup.request.height.as_deref(), rows, 50)
                 .max(3)
                 .min(rows.max(3));
-            let inset = u16::from(request.border) * 2;
-            let _ = pane.resize(
+            let inset = u16::from(popup.request.border) * 2;
+            let _ = popup.pane.resize(
                 width.saturating_sub(inset).max(1),
                 height.saturating_sub(inset).max(1),
             );
         }
     }
 
-    fn popup_sources(&self) -> (RawFd, RawFd) {
-        let Self::Popup { io: Some(io), .. } = self else {
+    fn sources(&self) -> (RawFd, RawFd) {
+        let OverlayState::Popup(PopupOverlay { io: Some(io), .. }) = &self.state else {
             return (-1, -1);
         };
         let fd = io.as_fd().as_raw_fd();
         (fd, if io.wants_write() { fd } else { -1 })
     }
 
-    fn popup_read_continuation(&self) -> bool {
+    fn read_continuation(&self) -> bool {
         matches!(
-            self,
-            Self::Popup {
+            &self.state,
+            OverlayState::Popup(PopupOverlay {
                 read_continuation: true,
                 ..
-            }
+            })
         )
     }
 
-    fn drive_popup_io(&mut self, readable: bool, writable: bool) -> io::Result<()> {
-        let Self::Popup {
+    fn drive_io(&mut self, readable: bool, writable: bool) -> io::Result<()> {
+        let OverlayState::Popup(PopupOverlay {
             io: Some(io),
             read_continuation,
             ..
-        } = self
+        }) = &mut self.state
         else {
             return Ok(());
         };
@@ -743,8 +764,7 @@ impl AttachSession {
         let mut attached_context = context.clone();
         attached_context.current_session_id = Some(session_id);
         attached_context.wait_for_interactions = false;
-        let compositor =
-            AttachCompositorState::new(session_id, attached_context, stable_target);
+        let compositor = AttachCompositorState::new(session_id, attached_context, stable_target);
         let target = compositor.stable_target.as_str();
         let terminal_identity = TerminalIdentity::new(
             client_tty.term.clone().unwrap_or_default(),
@@ -1171,13 +1191,13 @@ impl AttachSession {
             .compositor
             .active_overlay
             .as_ref()
-            .map(ActiveOverlay::popup_sources)
+            .map(ActiveOverlay::sources)
             .unwrap_or((-1, -1));
         if self
             .compositor
             .active_overlay
             .as_ref()
-            .is_some_and(ActiveOverlay::popup_read_continuation)
+            .is_some_and(ActiveOverlay::read_continuation)
         {
             return Ok(AttachPrepared::Ready(AttachWaitReady {
                 popup_read: true,
@@ -1290,7 +1310,7 @@ impl AttachSession {
         let target = self.compositor.stable_target.as_str();
         if ready.popup_read || ready.popup_write {
             if let Some(overlay) = self.compositor.active_overlay.as_mut() {
-                overlay.drive_popup_io(ready.popup_read, ready.popup_write)?;
+                overlay.drive_io(ready.popup_read, ready.popup_write)?;
             }
         }
         if ready.tty_output {
@@ -1315,11 +1335,18 @@ impl AttachSession {
         let overlay_tick = self.compositor.active_overlay.is_some();
         let mut overlay_exit = 0;
         let overlay_expired = match self.compositor.active_overlay.as_mut() {
-            Some(ActiveOverlay::DisplayPanes { deadline, .. }) => *deadline <= now,
-            Some(ActiveOverlay::Popup {
-                request,
-                pane,
-                exit_status,
+            Some(ActiveOverlay {
+                state: OverlayState::DisplayPanes(display),
+                ..
+            }) => display.deadline <= now,
+            Some(ActiveOverlay {
+                state:
+                    OverlayState::Popup(PopupOverlay {
+                        request,
+                        pane,
+                        exit_status,
+                        ..
+                    }),
                 ..
             }) if pane.has_exited() => {
                 if exit_status.is_none() {
@@ -1904,15 +1931,16 @@ impl AttachSession {
                     let mut close = false;
                     let mut close_exit = 0;
                     let mut selected_command = None;
-                    match self
+                    match &mut self
                         .compositor
                         .active_overlay
                         .as_mut()
                         .expect("overlay checked")
+                        .state
                     {
-                        ActiveOverlay::Menu {
+                        OverlayState::Menu(MenuOverlay {
                             request, selected, ..
-                        } => match decoded.name.as_str() {
+                        }) => match decoded.name.as_str() {
                             "q" | "Escape" | "C-c" => close = true,
                             "Up" | "k" => *selected = selected.saturating_sub(1),
                             "Down" | "j" => {
@@ -1935,12 +1963,12 @@ impl AttachSession {
                                 }
                             }
                         },
-                        ActiveOverlay::Popup {
+                        OverlayState::Popup(PopupOverlay {
                             request,
                             pane,
                             exit_status,
                             ..
-                        } => {
+                        }) => {
                             if exit_status.is_some()
                                 || request.close_on_key
                                 || ((decoded.name == "Escape" || decoded.name == "C-c")
@@ -1953,11 +1981,11 @@ impl AttachSession {
                                 let _ = pane.input(&data[start..i]);
                             }
                         }
-                        ActiveOverlay::DisplayPanes {
+                        OverlayState::DisplayPanes(DisplayPanesOverlay {
                             command,
                             accept_input,
                             ..
-                        } => {
+                        }) => {
                             if !*accept_input
                                 || matches!(decoded.name.as_str(), "Escape" | "q" | "C-c")
                             {
@@ -6449,10 +6477,10 @@ fn render_active_overlay(
     let mut out = Vec::new();
     out.extend_from_slice(b"\x1b[?25l");
     append_terminal_style_reset(&mut out, terminal);
-    match overlay {
-        ActiveOverlay::Menu {
+    match &overlay.state {
+        OverlayState::Menu(MenuOverlay {
             request, selected, ..
-        } => {
+        }) => {
             let content_width = request
                 .items
                 .iter()
@@ -6511,7 +6539,7 @@ fn render_active_overlay(
                 }
             }
         }
-        ActiveOverlay::Popup { request, pane, .. } => {
+        OverlayState::Popup(PopupOverlay { request, pane, .. }) => {
             let width = overlay_dimension(request.width.as_deref(), cols, 50)
                 .max(3)
                 .min(cols.max(3));
@@ -6564,7 +6592,7 @@ fn render_active_overlay(
                 }
             }
         }
-        ActiveOverlay::DisplayPanes { .. } => {
+        OverlayState::DisplayPanes(_) => {
             if let Ok((window, _)) = st.active_window_panes(target) {
                 for (index, pane) in window.panes.iter().enumerate() {
                     let rect = window.pane_rect(pane.id).unwrap_or_default();
@@ -6624,17 +6652,16 @@ fn render_prompt_completion(
     } else {
         rows.saturating_sub(height.saturating_add(status_height))
     };
-    let overlay = ActiveOverlay::Menu {
-        request: MenuRequest {
+    let overlay = ActiveOverlay::menu(
+        MenuRequest {
             title: String::new(),
             items,
             selected: completion.selected,
             x: Some(left.to_string()),
             y: Some(top.to_string()),
         },
-        selected: completion.selected,
-        reply: None,
-    };
+        completion.selected,
+    );
     render_active_overlay(&overlay, state, target, cols, rows, terminal)
 }
 
