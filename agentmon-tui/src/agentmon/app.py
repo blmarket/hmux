@@ -1137,6 +1137,9 @@ class ConfirmScreen(Screen):
                 yield Button("Back", id="back")
                 yield Button("Cancel", id="cancel")
 
+    def on_mount(self) -> None:
+        self.query_one("#launch", Button).focus()
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "launch":
             self.app.push_screen(LaunchScreen(self.draft))

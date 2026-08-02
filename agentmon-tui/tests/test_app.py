@@ -915,6 +915,7 @@ def test_new_run_agent_selector_is_used_for_confirmation() -> None:
             screen = app.screen
             assert isinstance(screen, ConfirmScreen)
             assert screen.draft.agent == "claude"
+            assert screen.query_one("#launch", Button).has_focus
 
     asyncio.run(exercise())
 
