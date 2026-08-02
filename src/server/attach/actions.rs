@@ -1,0 +1,365 @@
+use super::*;
+
+/// A destructive binding that tmux guards behind a `confirm-before` `(y/n)`
+/// prompt. The attach loop shows the prompt and only runs the action once the
+/// user answers `y`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum ConfirmAction {
+    /// `C-b x` → `confirm-before … kill-pane`.
+    KillPane,
+    /// `C-b &` → `confirm-before … kill-window`.
+    KillWindow,
+    Command(Vec<String>),
+}
+
+pub(super) struct ActiveConfirm {
+    pub(super) prompt: String,
+    pub(super) action: ConfirmAction,
+    pub(super) confirm_key: u8,
+    pub(super) default_yes: bool,
+    pub(super) reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
+}
+
+/// What a resolved prefix binding tells the attach loop to do.
+pub(super) enum PrefixOutcome {
+    /// Detach the client (`C-b d`), ending the attach loop.
+    Detach,
+    /// Send a literal prefix byte to the pane (`C-b C-b`, i.e. `send-prefix`).
+    SendPrefix(Vec<u8>),
+    /// Enter the attached client's copy-mode view, optionally paging up.
+    CopyMode {
+        page_up: bool,
+        page_down: bool,
+        slider: bool,
+        mouse: Option<MouseEvent>,
+        begin_selection: bool,
+    },
+    /// Raise a `confirm-before` prompt (`C-b x` / `C-b &`). The loop shows
+    /// `prompt` in the status line and waits for the `y`/`n` answer before
+    /// running `action`.
+    Confirm {
+        prompt: String,
+        action: ConfirmAction,
+    },
+    Prompt {
+        args: Vec<String>,
+    },
+    Message {
+        text: String,
+        duration: Duration,
+    },
+    ViewOutput(Vec<u8>),
+    DeferredCommand {
+        args: Vec<String>,
+        context: command::ClientContext,
+    },
+    DeferredMessage {
+        args: Vec<String>,
+        context: command::ClientContext,
+        target: String,
+        escape_hashes: bool,
+        explicit_duration: Option<u64>,
+    },
+    /// The binding ran (or was a no-op / unknown key). `changed` is true when it
+    /// altered the window/pane layout, so the compositor must redraw the
+    /// now-active pane.
+    Handled {
+        changed: bool,
+    },
+}
+
+/// Resolve and execute one key from an attached client's active table.
+///
+/// This is the interactive counterpart to the command interpreter: where a
+/// command client sends `new-window` over the imsg control plane, an attached
+/// client presses `C-b c` and this maps it to the same [`ServerState`] mutation.
+/// Default and user bindings share the same mutable table. Ordinary commands
+/// run through the command interpreter in the attached client's context;
+/// client-local operations such as detach, confirmation, and copy-mode entry
+/// return an outcome for the attach loop to apply.
+///
+/// The destructive bindings `&` (kill-window) and `x` (kill-pane) do not mutate
+/// state here: like real tmux they first raise a `confirm-before` `(y/n)` prompt
+/// ([`PrefixOutcome::Confirm`]); the attach loop performs the kill only after the
+/// user answers `y`. Unknown keys are a no-op (real tmux rings the bell).
+///
+/// On any layout change the now-active pane is resized to the client's current
+/// geometry, mirroring tmux keeping every window in a session at the session
+/// size — otherwise a freshly spawned window's pane would keep its 80×24 default.
+pub(super) fn dispatch_key_binding(
+    table: &str,
+    key: KeyCode,
+    state: &Arc<Mutex<ServerState>>,
+    target: &str,
+    cols: u16,
+    pane_rows: u16,
+    hub: &StatusHub,
+    context: &command::ClientContext,
+    mouse: Option<MouseEvent>,
+) -> PrefixOutcome {
+    let binding = match state.lock() {
+        Ok(st) => st.key_binding(table, key).cloned(),
+        Err(_) => None,
+    };
+    let Some(binding) = binding else {
+        return PrefixOutcome::Handled { changed: false };
+    };
+    let Some(command_name) = binding.command.first().map(String::as_str) else {
+        return PrefixOutcome::Handled { changed: false };
+    };
+
+    match command_name {
+        "detach-client" | "detach" => return PrefixOutcome::Detach,
+        "send-prefix" => {
+            let option = if binding.command.iter().any(|word| word == "-2") {
+                "prefix2"
+            } else {
+                "prefix"
+            };
+            let bytes = state
+                .lock()
+                .ok()
+                .and_then(|st| {
+                    st.option_for_target(target, option)
+                        .or_else(|| crate::server::options::option_default(option))
+                        .and_then(parse_key_name)
+                })
+                .and_then(basic_key_bytes)
+                .unwrap_or_default();
+            return PrefixOutcome::SendPrefix(bytes);
+        }
+        "copy-mode" if !binding.command.iter().any(|word| word == ";") => {
+            return PrefixOutcome::CopyMode {
+                page_up: binding.command.iter().any(|word| word == "-u"),
+                page_down: binding.command.iter().any(|word| word == "-d"),
+                slider: binding.command.iter().any(|word| word == "-S"),
+                mouse,
+                begin_selection: binding.command.iter().any(|word| word == "-M"),
+            };
+        }
+        "command-prompt" => {
+            return PrefixOutcome::Prompt {
+                args: binding.command.clone(),
+            };
+        }
+        "display-message"
+            if !binding.command.iter().any(|word| word == ";")
+                && !binding.command.iter().any(|word| word == "-p") =>
+        {
+            let mut command = binding.command.clone();
+            command.insert(1, "-p".to_string());
+            let explicit_duration = binding
+                .command
+                .windows(2)
+                .find(|words| words[0] == "-d")
+                .and_then(|words| words[1].parse::<u64>().ok());
+            if context.defer_attach_commands {
+                let mut binding_context = context.clone();
+                binding_context.key_event = Some(key);
+                binding_context.mouse = mouse;
+                return PrefixOutcome::DeferredMessage {
+                    args: command,
+                    context: binding_context,
+                    target: target.to_string(),
+                    escape_hashes: binding.command.iter().any(|word| word == "-N"),
+                    explicit_duration,
+                };
+            }
+            let agents = hub.snapshot().panes;
+            let result = command::run_with_context(&command, state, &agents, context);
+            if result.exit != 0 {
+                return PrefixOutcome::Handled { changed: false };
+            }
+            let mut text = result
+                .stdout
+                .strip_suffix('\n')
+                .unwrap_or(&result.stdout)
+                .to_string();
+            if binding.command.iter().any(|word| word == "-N") {
+                text = text.replace('#', "##");
+            }
+            let milliseconds = explicit_duration
+                .or_else(|| {
+                    state.lock().ok().and_then(|state| {
+                        state
+                            .option_for_target(target, "display-time")
+                            .and_then(|value| value.parse().ok())
+                    })
+                })
+                .unwrap_or(750);
+            return PrefixOutcome::Message {
+                text,
+                duration: Duration::from_millis(milliseconds),
+            };
+        }
+        "confirm-before" | "confirm"
+            if binding
+                .command
+                .last()
+                .is_some_and(|word| word == "kill-window") =>
+        {
+            let name = state
+                .lock()
+                .ok()
+                .and_then(|st| st.active_window_name(target))
+                .unwrap_or_default();
+            return PrefixOutcome::Confirm {
+                prompt: format!("kill-window {name}? (y/n)"),
+                action: ConfirmAction::KillWindow,
+            };
+        }
+        "confirm-before" | "confirm"
+            if binding
+                .command
+                .last()
+                .is_some_and(|word| word == "kill-pane") =>
+        {
+            let idx = state
+                .lock()
+                .ok()
+                .and_then(|st| st.active_pane_index(target))
+                .unwrap_or(0);
+            return PrefixOutcome::Confirm {
+                prompt: format!("kill-pane {idx}? (y/n)"),
+                action: ConfirmAction::KillPane,
+            };
+        }
+        _ => {}
+    }
+
+    let agents = hub.snapshot().panes;
+    let mut binding_context = context.clone();
+    binding_context.key_event = Some(key);
+    binding_context.mouse = mouse;
+    if context.defer_attach_commands {
+        return PrefixOutcome::DeferredCommand {
+            args: binding.command,
+            context: binding_context,
+        };
+    }
+    let result = command::run_with_context(&binding.command, state, &agents, &binding_context);
+    if result.exit == 0 && !result.stdout_data().is_empty() {
+        return PrefixOutcome::ViewOutput(result.stdout_data().to_vec());
+    }
+    let changed = result.exit == 0;
+    if changed {
+        if let Ok(mut st) = state.lock() {
+            let _ = st.resize_session(target, cols, pane_rows);
+        }
+    }
+    PrefixOutcome::Handled { changed }
+}
+
+pub(crate) fn dispatch_control_client_keys(
+    keys: &[ClientKey],
+    prefix_pending: &mut bool,
+    state: &Arc<Mutex<ServerState>>,
+    target: &str,
+    hub: &StatusHub,
+    context: &command::ClientContext,
+    deferred: &mut Vec<command::BackgroundCommandRequest>,
+) -> bool {
+    for injected in keys {
+        let bytes = &injected.bytes;
+        let mut index = 0;
+        while index < bytes.len() {
+            let start = index;
+            let (key, consumed) = decode_tty_key(&bytes[index..])
+                .map(|(decoded, consumed)| (decoded.code, consumed))
+                .unwrap_or_else(|| (Some(key_from_byte(bytes[index])), 1));
+            index += consumed;
+            let Some(key) = key else {
+                continue;
+            };
+            if is_configured_prefix(state, target, key) {
+                *prefix_pending = true;
+                continue;
+            }
+
+            let from_prefix = std::mem::take(prefix_pending);
+            let table = if from_prefix {
+                "prefix".to_string()
+            } else if state
+                .lock()
+                .ok()
+                .is_some_and(|state| state.copy_mode_active(target))
+            {
+                copy_table_name(state, target).to_string()
+            } else {
+                client_key_table(state, target)
+            };
+            let bound = state
+                .lock()
+                .ok()
+                .is_some_and(|state| state.key_binding(&table, key).is_some());
+            if !bound {
+                if !from_prefix && injected.forward_unbound {
+                    if let Ok(state) = state.lock() {
+                        let _ = state.input_to_active_pane(target, &bytes[start..index]);
+                    }
+                }
+                continue;
+            }
+
+            match dispatch_key_binding(&table, key, state, target, 80, 24, hub, context, None) {
+                PrefixOutcome::Detach => return true,
+                PrefixOutcome::SendPrefix(bytes) => {
+                    if let Ok(state) = state.lock() {
+                        let _ = state.input_to_active_pane(target, &bytes);
+                    }
+                }
+                PrefixOutcome::CopyMode {
+                    page_up, page_down, ..
+                } => {
+                    set_copy_mode_state(state, target, true, page_up);
+                    if page_down {
+                        if let Ok(mut state) = state.lock() {
+                            let vi = copy_mode_uses_vi_keys(&state, target);
+                            let separators = state
+                                .option_for_target(target, "word-separators")
+                                .unwrap_or("")
+                                .to_string();
+                            let _ = state.copy_mode_command(target, "page-down", vi, &separators);
+                        }
+                    }
+                }
+                PrefixOutcome::DeferredCommand { args, context }
+                | PrefixOutcome::DeferredMessage { args, context, .. } => {
+                    deferred.push(command::BackgroundCommandRequest::ReadyArgs { args, context });
+                }
+                PrefixOutcome::Confirm { .. }
+                | PrefixOutcome::Prompt { .. }
+                | PrefixOutcome::Message { .. }
+                | PrefixOutcome::ViewOutput(_)
+                | PrefixOutcome::Handled { .. } => {}
+            }
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+pub(super) fn dispatch_prefix_key(
+    key: u8,
+    state: &Arc<Mutex<ServerState>>,
+    target: &str,
+    cols: u16,
+    pane_rows: u16,
+) -> PrefixOutcome {
+    let current_session_id = state.lock().ok().and_then(|st| st.session_id(target));
+    let context = command::ClientContext {
+        current_session_id,
+        ..command::ClientContext::default()
+    };
+    dispatch_key_binding(
+        "prefix",
+        key_from_byte(key),
+        state,
+        target,
+        cols,
+        pane_rows,
+        &StatusHub::new(),
+        &context,
+        None,
+    )
+}
