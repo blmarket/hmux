@@ -24,6 +24,14 @@ use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::Frame;
 use crate::tmux::traits::{FrameReader, FrameWriter};
 
+use super::super::actor::ActorRef;
+use super::super::driver::Outbox;
+use super::{
+    DirectOperation, ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide,
+    ProtocolMode,
+};
+use crate::server::command::CommandResult;
+
 const ATTACH_QUEUE_LIMIT: usize = MAX_IMSGSIZE * 64;
 const IMMEDIATE_TURN_BUDGET: usize = 64;
 
@@ -721,5 +729,143 @@ mod tests {
                 generation: 1,
             }
         ));
+    }
+}
+
+impl ProtocolClient {
+    pub(super) fn begin_attach(
+        &mut self,
+        target: &ActorRef<Self>,
+        args: Vec<String>,
+        outbox: &mut Outbox,
+    ) {
+        let tty = self.take_client_tty();
+        match EventAttachClient::new(
+            &args,
+            tty,
+            Arc::clone(&self.state),
+            self.hub.clone(),
+            &self.context,
+        ) {
+            Ok(mut attach) => {
+                if let Err(error) = attach.drive(None) {
+                    self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+                    return;
+                }
+                self.mode = ProtocolMode::Attach(Box::new(attach));
+                self.operation = DirectOperation::Idle;
+                self.sync_attach(target, outbox);
+            }
+            Err(error) => {
+                self.mode = ProtocolMode::Direct;
+                self.begin_response(target, CommandResult::err(error.into_message()), outbox);
+            }
+        }
+    }
+
+    pub(super) fn handle_attach_protocol_frame(
+        &mut self,
+        target: &ActorRef<Self>,
+        frame: Frame,
+        outbox: &mut Outbox,
+    ) {
+        let result = match &mut self.mode {
+            ProtocolMode::Attach(attach) => attach.handle_frame(frame),
+            _ => return,
+        };
+        if let Err(error) = result {
+            self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+            return;
+        }
+        self.sync_attach(target, outbox);
+    }
+
+    pub(super) fn handle_attach_event(
+        &mut self,
+        target: &ActorRef<Self>,
+        source: Option<EventAttachSource>,
+        outbox: &mut Outbox,
+    ) {
+        let result = match &mut self.mode {
+            ProtocolMode::Attach(attach) => attach.drive(source),
+            _ => return,
+        };
+        if let Err(error) = result {
+            self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+            return;
+        }
+        self.sync_attach(target, outbox);
+    }
+
+    pub(super) fn sync_attach(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
+        while self.writer_is_below_high_water() {
+            let frame = match &mut self.mode {
+                ProtocolMode::Attach(attach) => attach.pop_frame(),
+                _ => None,
+            };
+            let Some(frame) = frame else {
+                break;
+            };
+            if !self.queue_frame(target, frame, outbox) {
+                break;
+            }
+        }
+
+        let (desired, deadline, finished, accepts_input, background_commands) = match &mut self.mode
+        {
+            ProtocolMode::Attach(attach) => (
+                attach.sources(),
+                attach.deadline(),
+                attach.is_finished(),
+                attach.accepts_protocol_input(),
+                attach.take_background_commands(),
+            ),
+            _ => return,
+        };
+        for request in background_commands {
+            outbox.enqueue_background(
+                self.background_commands.clone(),
+                super::super::job::JobEvent::Start(request),
+            );
+        }
+        let was_input_paused = self.attach_input_paused;
+        self.attach_input_paused = !accepts_input;
+        let read_enabled = !self.reads_paused && !self.attach_input_paused && !finished;
+        outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, read_enabled);
+        if was_input_paused && read_enabled && self.reader.has_buffered_frame() {
+            self.schedule_read_continuation(target, outbox);
+        }
+
+        let registered = self.attach_tokens.keys().copied().collect::<BTreeSet<_>>();
+        for source in registered.union(&desired).copied() {
+            outbox.set_protocol_interest(
+                target.clone(),
+                ProtocolIoSide::Attach(source),
+                desired.contains(&source),
+            );
+        }
+
+        if deadline != self.attach_timer_deadline {
+            self.attach_timer_deadline = deadline;
+            self.attach_timer_generation = self.attach_timer_generation.wrapping_add(1);
+            match deadline {
+                Some(deadline) => outbox.set_protocol_timer_event(
+                    target.clone(),
+                    deadline,
+                    ProtocolEvent::AttachTimer(self.attach_timer_generation),
+                ),
+                None => outbox.cancel_protocol_timer(target.clone()),
+            }
+        }
+
+        if finished {
+            self.close_after_flush = true;
+        }
+        self.drive_output(target, outbox);
+    }
+
+    pub(super) fn take_client_tty(&mut self) -> ClientTty {
+        self.identify_bytes = 0;
+        std::mem::replace(&mut self.client_tty, ClientTty::new())
     }
 }

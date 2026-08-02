@@ -10,11 +10,11 @@ use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 use crate::tmux::message::Frame;
 
 use super::actor::{ActorRef, WeakActorRef};
-use super::client::{dispatch_inbox, ClientInbox, ClientInboxEvent, ClientIo, ClientIoEvent};
 use super::job::{BackgroundCommands, JobEvent};
 use super::listener::{AcceptedClients, Listener, ListenerEvent};
 use super::pane::{EventPane, PaneEvent};
 use super::process::{ChildSignal, ChildSignalEvent};
+use super::protocol::{dispatch_inbox, ClientInbox, ClientInboxEvent, ClientIo, ClientIoEvent};
 use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
 };
@@ -1086,7 +1086,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::*;
-    use crate::event_loop::client::{CloseReason, READ_FRAME_BUDGET};
+    use crate::event_loop::protocol::{CloseReason, READ_FRAME_BUDGET};
     use crate::tmux::codec::{dup_fd, encode_bytes, split_nonblocking_stream, split_stream};
     use crate::tmux::message::Message;
 
