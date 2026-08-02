@@ -39,6 +39,7 @@ from .model import (
     LAUNCH_AGENT_EFFORTS,
     LAUNCH_AGENT_LABELS,
     LAUNCH_AGENT_MODELS,
+    LAUNCH_CHOICE_LABELS,
     LaunchDraft,
     LaunchStep,
     PromptHistory,
@@ -1233,7 +1234,13 @@ class PrepareWorktreeScreen(Screen):
 
 
 class LaunchAgentScreen(Screen):
-    BINDINGS = [("escape", "back", "Back")]
+    BINDINGS = [
+        ("escape", "back", "Back"),
+        ("a", "cycle_agent", "Agent"),
+        ("m", "cycle_model", "Model"),
+        ("e", "cycle_effort", "Effort"),
+        ("i", "edit_instruction", "Instruction"),
+    ]
 
     def __init__(self, run: AgentRun) -> None:
         super().__init__()
@@ -1247,7 +1254,12 @@ class LaunchAgentScreen(Screen):
     @staticmethod
     def _choices(values: tuple[str, ...]) -> list[tuple[str, str]]:
         return [
-            ("(default)" if value == DEFAULT_LAUNCH_CHOICE else value, value)
+            (
+                "(default)"
+                if value == DEFAULT_LAUNCH_CHOICE
+                else LAUNCH_CHOICE_LABELS.get(value, value),
+                value,
+            )
             for value in values
         ]
 
@@ -1258,7 +1270,7 @@ class LaunchAgentScreen(Screen):
             yield Label(f"Worktree       {self.run.worktree}")
             with Horizontal(id="launch-fields"):
                 with Vertical(classes="draft-field"):
-                    yield Label("Agent")
+                    yield Label("Agent (a)")
                     yield Select(
                         [
                             (label, agent)
@@ -1269,7 +1281,7 @@ class LaunchAgentScreen(Screen):
                         id="agent",
                     )
                 with Vertical(classes="draft-field"):
-                    yield Label("Model")
+                    yield Label("Model (m)")
                     yield Select(
                         self._choices(LAUNCH_AGENT_MODELS[self.initial_agent]),
                         value=DEFAULT_LAUNCH_CHOICE,
@@ -1277,7 +1289,7 @@ class LaunchAgentScreen(Screen):
                         id="model",
                     )
                 with Vertical(classes="draft-field"):
-                    yield Label("Effort")
+                    yield Label("Effort (e)")
                     yield Select(
                         self._choices(efforts),
                         value=DEFAULT_LAUNCH_CHOICE,
@@ -1285,7 +1297,7 @@ class LaunchAgentScreen(Screen):
                         id="effort",
                         disabled=len(efforts) == 1,
                     )
-            yield Label("Instruction (leave empty to start the agent without one)")
+            yield Label("Instruction (i) — leave empty to start the agent without one")
             yield TextArea(id="instruction")
             yield Static("", id="error")
             with Horizontal(classes="buttons"):
@@ -1295,7 +1307,9 @@ class LaunchAgentScreen(Screen):
     def on_mount(self) -> None:
         area = self.query_one("#instruction", TextArea)
         area.text = self.service.run_instruction(self.run) or ""
-        area.focus()
+        # Start on the Agent picker so the a/m/e cycle shortcuts work without a
+        # keystroke first landing in the instruction box; Tab reaches the text.
+        self.query_one("#agent", Select).focus()
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id != "agent":
@@ -1319,6 +1333,36 @@ class LaunchAgentScreen(Screen):
     @staticmethod
     def _select_value(select: Select, fallback: str) -> str:
         return select.value if isinstance(select.value, str) else fallback
+
+    def _current_agent(self) -> str:
+        return self._select_value(
+            self.query_one("#agent", Select), DEFAULT_LAUNCH_AGENT
+        )
+
+    def _cycle_select(self, select_id: str, values: tuple[str, ...]) -> None:
+        """Advance a picker to its next option, wrapping around."""
+        if len(values) <= 1:
+            return
+        select = self.query_one(f"#{select_id}", Select)
+        current = self._select_value(select, values[0])
+        try:
+            index = values.index(current)
+        except ValueError:
+            index = -1
+        # Setting agent fires Select.Changed, which repopulates model/effort.
+        select.value = values[(index + 1) % len(values)]
+
+    def action_cycle_agent(self) -> None:
+        self._cycle_select("agent", tuple(LAUNCH_AGENT_LABELS))
+
+    def action_cycle_model(self) -> None:
+        self._cycle_select("model", LAUNCH_AGENT_MODELS[self._current_agent()])
+
+    def action_cycle_effort(self) -> None:
+        self._cycle_select("effort", LAUNCH_AGENT_EFFORTS[self._current_agent()])
+
+    def action_edit_instruction(self) -> None:
+        self.query_one("#instruction", TextArea).focus()
 
     def _launch(self) -> None:
         self._agent = self._select_value(
