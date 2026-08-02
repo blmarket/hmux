@@ -2705,7 +2705,9 @@ fn parse_command_groups_with_aliases(
         let tokens = tokenize_line(replacement);
         let mut replacements = tokenized_command_groups(&tokens);
         if replacements.is_empty() {
-            expanded.push(group.to_vec());
+            // A matched alias whose value holds no commands expands to an empty
+            // command list, so the invocation succeeds and drops its arguments.
+            // Falling back to the alias name would report it as unknown.
             continue;
         }
         replacements
@@ -9906,6 +9908,21 @@ mod tests {
         let st = state();
         // `ls` → list-sessions.
         assert!(run_str(&st, &["ls"]).stdout.starts_with("0: 1 windows"));
+    }
+
+    #[test]
+    fn command_alias_with_an_empty_value_runs_nothing() {
+        let st = state();
+        assert_eq!(
+            run_str(&st, &["set-option", "-s", "command-alias[100]", "zz="]).exit,
+            0
+        );
+        // The entry matches, so `zz` is not an unknown command; it expands to an
+        // empty command list, and its arguments go with it.
+        let r = run_str(&st, &["zz", "ignored"]);
+        assert_eq!(r.exit, 0, "stderr={:?}", r.stderr);
+        assert_eq!(r.stdout, "");
+        assert_eq!(r.stderr, "");
     }
 
     #[test]
