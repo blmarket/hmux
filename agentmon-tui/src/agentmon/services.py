@@ -28,6 +28,10 @@ class CommandError(RuntimeError):
     pass
 
 
+# The launch instruction lives in instruction.md; prompt.md is the legacy name
+# still honored when reading so older worktrees keep working.
+INSTRUCTION_FILENAMES = ("instruction.md", "prompt.md")
+
 # Foreground commands hmux reports for a bare interactive shell. Anything else
 # running in an agentless pane is treated as "some app" rather than an idle
 # shell, so it earns a distinct badge in the dashboard.
@@ -234,18 +238,28 @@ class AgentmonService:
             if line.startswith("worktree ")
         }
 
-    def validate_draft(self, branch: str, prompt: str) -> LaunchDraft:
+    def _validated_branch(self, branch: str) -> str:
         branch = branch.strip()
         if not branch:
             raise ValueError("Enter a branch name")
         check = _run(["git", "check-ref-format", "--branch", branch], check=False)
         if check.returncode:
             raise ValueError(check.stderr.strip() or "Invalid branch name")
-        exists = _run(
-            ["git", "-C", str(self.repo.root), "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+        return branch
+
+    def branch_exists(self, branch: str) -> bool:
+        result = _run(
+            [
+                "git", "-C", str(self.repo.root), "show-ref", "--verify",
+                "--quiet", f"refs/heads/{branch}",
+            ],
             check=False,
         )
-        existing_branch = exists.returncode == 0
+        return result.returncode == 0
+
+    def validate_draft(self, branch: str, prompt: str) -> LaunchDraft:
+        branch = self._validated_branch(branch)
+        existing_branch = self.branch_exists(branch)
         worktree = self.suggested_worktree(branch)
         overwrite_worktree = False
         if worktree.exists():
@@ -257,7 +271,7 @@ class AgentmonService:
                 raise ValueError(f"ERROR: Cannot overwrite dirty worktree: {worktree}")
             overwrite_worktree = True
         if not prompt.strip():
-            raise ValueError("Write a prompt before continuing")
+            raise ValueError("Write an instruction before continuing")
         return LaunchDraft(
             branch=branch,
             worktree=worktree,
@@ -266,6 +280,22 @@ class AgentmonService:
             existing_branch=existing_branch,
             repository=self.repo,
         )
+
+    def prepare_worktree(self, branch: str, *, reset: bool = False) -> Path:
+        """Create a sibling worktree only; instruction and agent come later."""
+        branch = self._validated_branch(branch)
+        worktree = self.suggested_worktree(branch)
+        if worktree.exists():
+            raise ValueError(f"Worktree path already exists: {worktree}")
+        args = ["git", "-C", str(self.repo.root), "worktree", "add"]
+        if reset:
+            args.extend(["-B", branch, str(worktree)])
+        elif self.branch_exists(branch):
+            args.extend([str(worktree), branch])
+        else:
+            args.extend(["-b", branch, str(worktree)])
+        _run(args)
+        return worktree
 
     def _git_common_dir(self, cwd: Path) -> Path | None:
         result = _run(
@@ -311,12 +341,82 @@ class AgentmonService:
         """Normalize Linux's marker for a process cwd whose directory was removed."""
         return Path(raw.removesuffix(" (deleted)")).resolve()
 
+    def read_instruction(self, worktree: Path) -> str | None:
+        """Return the worktree's instruction, or None when neither file exists."""
+        for name in INSTRUCTION_FILENAMES:
+            try:
+                return (worktree / name).read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                continue
+        return None
+
+    def save_instruction(
+        self, worktree: Path, branch: str, text: str | None = None
+    ) -> str | None:
+        """Persist instruction.md, retire prompt.md, and commit both.
+
+        With ``text`` the content is written first; with ``None`` whatever is
+        already on disk is committed. Returns the short commit hash, or None
+        when nothing changed.
+        """
+        path = worktree / "instruction.md"
+        if text is not None:
+            path.write_text(text, encoding="utf-8")
+        if path.exists():
+            _run(["git", "add", "instruction.md"], cwd=worktree)
+        legacy = worktree / "prompt.md"
+        if legacy.exists():
+            _run(
+                ["git", "rm", "-f", "--ignore-unmatch", "--", "prompt.md"],
+                cwd=worktree,
+            )
+            legacy.unlink(missing_ok=True)
+        status = _run(
+            ["git", "status", "--porcelain", "--", *INSTRUCTION_FILENAMES],
+            cwd=worktree,
+        )
+        # Committing by pathspec keeps unrelated staged changes out of the
+        # commit; unknown names would make git error, so use what changed.
+        changed = [line[3:] for line in status.stdout.splitlines() if len(line) > 3]
+        if not changed:
+            return None
+        _run(
+            [
+                "git", "commit", "-m",
+                f"agentmon: add instruction for {branch}",
+                "--", *changed,
+            ],
+            cwd=worktree,
+        )
+        return _run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=worktree
+        ).stdout.strip()
+
+    def instruction_edit_target(self, run: AgentRun) -> Path:
+        """Return the instruction.md to edit, seeded from a legacy prompt.md."""
+        worktree = self._worktree_root(run.worktree)
+        path = worktree / "instruction.md"
+        if not path.exists():
+            legacy_text = self.read_instruction(worktree)
+            if legacy_text is not None:
+                path.write_text(legacy_text, encoding="utf-8")
+        return path
+
+    def run_instruction(self, run: AgentRun) -> str | None:
+        """Return the instruction text belonging to a dashboard run."""
+        return self.read_instruction(self._worktree_root(run.worktree))
+
+    def commit_instruction(self, run: AgentRun) -> str | None:
+        """Commit the on-disk instruction.md after an external edit."""
+        worktree = self._worktree_root(run.worktree)
+        if not (worktree / "instruction.md").exists():
+            return None
+        return self.save_instruction(worktree, run.branch)
+
     def _prompt_preview(self, cwd: Path, limit: int = 120) -> str:
-        """Return a single-line glimpse of the prompt belonging to this run."""
-        prompt = self._worktree_root(cwd) / "prompt.md"
-        try:
-            text = prompt.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
+        """Return a single-line glimpse of the instruction belonging to this run."""
+        text = self.read_instruction(self._worktree_root(cwd))
+        if text is None:
             return "—"
         preview = " ".join(text.split())
         if not preview:
@@ -574,7 +674,12 @@ class AgentmonService:
         raise TranscriptError(f"Unsupported transcript agent: {run.agent}")
 
     def recent_finished(self, active: list[AgentRun], limit: int = 5) -> list[AgentRun]:
-        """Recover recent agent worktrees whose hmux agent pane is gone."""
+        """Recover registered worktrees that no hmux window is sitting in.
+
+        This covers both finished agent runs and freshly prepared worktrees
+        that have no instruction yet, so the prepare/instruct/launch commands
+        can target them.
+        """
         active_paths = {run.worktree.resolve() for run in active}
         candidates: list[tuple[int, AgentRun]] = []
         for worktree in self._registered_worktrees():
@@ -582,16 +687,20 @@ class AgentmonService:
                 worktree == path or worktree in path.parents for path in active_paths
             ):
                 continue
-            prompt = worktree / "prompt.md"
-            if not prompt.is_file() or self._git_common_dir(worktree) != self.repo.common_dir:
+            if self._git_common_dir(worktree) != self.repo.common_dir:
                 continue
             timestamp = _run(
                 [
                     "git", "-C", str(worktree), "log", "-1", "--format=%ct", "--",
-                    "prompt.md",
+                    *INSTRUCTION_FILENAMES,
                 ],
                 check=False,
             ).stdout.strip()
+            if not timestamp.isdigit():
+                timestamp = _run(
+                    ["git", "-C", str(worktree), "log", "-1", "--format=%ct"],
+                    check=False,
+                ).stdout.strip()
             if not timestamp.isdigit():
                 continue
             candidates.append(
@@ -694,10 +803,9 @@ class AgentmonService:
             raise CommandError(
                 f"Worktree cleanup refused: state is {state}, not clean and merged"
             )
-        try:
-            prompt = (worktree / "prompt.md").read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as exc:
-            raise CommandError(f"Could not read {worktree / 'prompt.md'}: {exc}") from exc
+        prompt = self.read_instruction(worktree)
+        if prompt is None:
+            raise CommandError(f"Could not read {worktree / 'instruction.md'}")
         return LaunchDraft(
             branch=run.branch,
             worktree=worktree,
@@ -708,13 +816,12 @@ class AgentmonService:
         )
 
     def populate_draft(self, run: AgentRun) -> LaunchDraft:
-        """Build a launch form draft from a selected run's prompt."""
+        """Build a launch form draft from a selected run's instruction."""
         worktree = self._worktree_root(run.worktree)
         agent = normalize_launch_agent(run.agent)
-        try:
-            prompt = (worktree / "prompt.md").read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as exc:
-            raise CommandError(f"Could not read {worktree / 'prompt.md'}: {exc}") from exc
+        prompt = self.read_instruction(worktree)
+        if prompt is None:
+            raise CommandError(f"Could not read {worktree / 'instruction.md'}")
 
         registered = self._registered_worktrees()
         if (
@@ -745,7 +852,8 @@ class AgentmonService:
         result = _run(
             [
                 "git", "-C", str(self.repo.root), "log", "--all",
-                f"--max-count={limit}", "--format=%H%x09%cs%x09%s", "--", "prompt.md",
+                f"--max-count={limit}", "--format=%H%x09%cs%x09%s", "--",
+                *INSTRUCTION_FILENAMES,
             ]
         )
         history: list[PromptHistory] = []
@@ -754,12 +862,14 @@ class AgentmonService:
             if len(parts) != 3:
                 continue
             commit, date, subject = parts
-            shown = _run(
-                ["git", "-C", str(self.repo.root), "show", f"{commit}:prompt.md"],
-                check=False,
-            )
-            if shown.returncode == 0:
-                history.append(PromptHistory(commit, date, subject, shown.stdout))
+            for name in INSTRUCTION_FILENAMES:
+                shown = _run(
+                    ["git", "-C", str(self.repo.root), "show", f"{commit}:{name}"],
+                    check=False,
+                )
+                if shown.returncode == 0:
+                    history.append(PromptHistory(commit, date, subject, shown.stdout))
+                    break
         return history
 
     def launch(self, draft: LaunchDraft, progress: Callable[[LaunchStep], None]) -> str:
@@ -792,30 +902,64 @@ class AgentmonService:
         _run(worktree_args)
         progress(LaunchStep("Branch and worktree created", str(draft.worktree)))
 
-        (draft.worktree / "prompt.md").write_text(draft.prompt, encoding="utf-8")
-        _run(["git", "add", "prompt.md"], cwd=draft.worktree)
-        _run(
-            ["git", "commit", "-m", f"agentmon: add prompt for {draft.branch}"],
-            cwd=draft.worktree,
-        )
-        commit = _run(["git", "rev-parse", "--short", "HEAD"], cwd=draft.worktree).stdout.strip()
-        progress(LaunchStep("prompt.md committed", commit))
+        commit = self.save_instruction(draft.worktree, draft.branch, draft.prompt)
+        progress(LaunchStep("instruction.md committed", commit or "unchanged"))
 
-        command = self._agent_command(draft.agent)
-        result = _run(
-            [
-                self.tmux, "-S", self.socket, "new-window", "-d", "-t", "0:",
-                "-P", "-F", "#{window_index}", "-n", draft.branch,
-                "-c", str(draft.worktree), command,
-            ]
-        )
-        window = result.stdout.strip()
+        command = self._agent_command(draft.agent, draft.model, draft.effort)
+        window = self._open_agent_window(draft.worktree, draft.branch, command)
         progress(LaunchStep("hmux window and agent started", window))
         return window
 
-    def _agent_command(self, agent: str) -> str:
+    def launch_agent(
+        self,
+        run: AgentRun,
+        *,
+        agent: str,
+        model: str = "default",
+        effort: str = "default",
+        instruction: str = "",
+    ) -> str:
+        """Start an agent in an existing worktree, without touching branches."""
+        worktree = self._worktree_root(run.worktree)
+        with_instruction = bool(instruction.strip())
+        if with_instruction:
+            self.save_instruction(worktree, run.branch, instruction)
+        command = self._agent_command(
+            agent, model, effort, with_instruction=with_instruction
+        )
+        return self._open_agent_window(worktree, run.branch, command)
+
+    def _open_agent_window(self, worktree: Path, name: str, command: str) -> str:
+        result = _run(
+            [
+                self.tmux, "-S", self.socket, "new-window", "-d", "-t", "0:",
+                "-P", "-F", "#{window_index}", "-n", name,
+                "-c", str(worktree), command,
+            ]
+        )
+        return result.stdout.strip()
+
+    def _agent_command(
+        self,
+        agent: str,
+        model: str = "default",
+        effort: str = "default",
+        *,
+        with_instruction: bool = True,
+    ) -> str:
         if agent == "codex":
-            return 'exec codex --yolo "$(cat prompt.md)"'
-        if agent == "claude":
-            return 'exec claude --dangerously-skip-permissions "$(cat prompt.md)"'
-        raise CommandError(f"Unsupported launch agent: {agent}")
+            parts = ["codex", "--yolo"]
+            if model != "default":
+                parts.extend(["-m", model])
+            if effort != "default":
+                parts.extend(["-c", f"model_reasoning_effort={effort}"])
+        elif agent == "claude":
+            parts = ["claude", "--dangerously-skip-permissions"]
+            if model != "default":
+                parts.extend(["--model", model])
+        else:
+            raise CommandError(f"Unsupported launch agent: {agent}")
+        command = "exec " + shlex.join(parts)
+        if with_instruction:
+            command += ' "$(cat instruction.md)"'
+        return command

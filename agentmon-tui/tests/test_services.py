@@ -292,7 +292,7 @@ def test_validates_and_derives_sibling_worktree(repository: Repository) -> None:
 
 @pytest.mark.parametrize(
     ("branch", "prompt", "message"),
-    [("", "hello", "branch"), ("bad branch", "hello", "branch"), ("valid", "", "prompt")],
+    [("", "hello", "branch"), ("bad branch", "hello", "branch"), ("valid", "", "instruction")],
 )
 def test_rejects_invalid_draft(
     repository: Repository, branch: str, prompt: str, message: str
@@ -833,16 +833,16 @@ def test_launch_records_steps(monkeypatch: pytest.MonkeyPatch, repository: Repos
     window = service.launch(LaunchDraft("new-worktree", worktree, "Do it.\n"), steps.append)
 
     assert window == "7"
-    assert (worktree / "prompt.md").read_text() == "Do it.\n"
+    assert (worktree / "instruction.md").read_text() == "Do it.\n"
     assert [step.label for step in steps] == [
         "Branch and worktree created",
-        "prompt.md committed",
+        "instruction.md committed",
         "hmux window and agent started",
     ]
     assert any("worktree" in call for call in calls)
     assert any("new-window" in call for call in calls)
     launch_call = next(call for call in calls if "new-window" in call)
-    assert launch_call[-1] == 'exec codex --yolo "$(cat prompt.md)"'
+    assert launch_call[-1] == 'exec codex --yolo "$(cat instruction.md)"'
 
 
 def test_launch_uses_claude_command_when_selected(
@@ -871,7 +871,7 @@ def test_launch_uses_claude_command_when_selected(
 
     launch_call = next(call for call in calls if "new-window" in call)
     assert launch_call[-1] == (
-        'exec claude --dangerously-skip-permissions "$(cat prompt.md)"'
+        'exec claude --dangerously-skip-permissions "$(cat instruction.md)"'
     )
 
 
@@ -951,6 +951,172 @@ def test_launch_refuses_dirty_overwritten_worktree(repository: Repository) -> No
         )
 
     assert target.exists()
+
+
+def test_prepare_worktree_creates_new_branch_and_worktree(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+
+    worktree = service.prepare_worktree("prep-run")
+
+    assert worktree == repository.root.parent / "prep-run"
+    assert worktree.is_dir()
+    assert git(worktree, "branch", "--show-current").stdout.strip() == "prep-run"
+    assert service.read_instruction(worktree) is None
+
+
+def test_prepare_worktree_uses_existing_branch(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    git(repository.root, "branch", "prep-existing")
+
+    worktree = service.prepare_worktree("prep-existing")
+
+    assert git(worktree, "branch", "--show-current").stdout.strip() == "prep-existing"
+
+
+def test_prepare_worktree_reset_moves_existing_branch_to_base(
+    repository: Repository,
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    git(repository.root, "branch", "prep-stale")
+    (repository.root / "later.txt").write_text("newer work\n")
+    git(repository.root, "add", "later.txt")
+    git(repository.root, "commit", "-m", "advance main past the stale branch")
+
+    worktree = service.prepare_worktree("prep-stale", reset=True)
+
+    stale = git(worktree, "rev-parse", "HEAD").stdout.strip()
+    main = git(repository.root, "rev-parse", "main").stdout.strip()
+    assert stale == main
+
+
+def test_prepare_worktree_rejects_existing_path(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    (repository.root.parent / "prep-occupied").mkdir()
+
+    with pytest.raises(ValueError, match="already exists"):
+        service.prepare_worktree("prep-occupied")
+
+
+def test_save_instruction_commits_and_retires_legacy_prompt(
+    repository: Repository,
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = repository.root.parent / "migrate-me"
+    git(repository.root, "worktree", "add", "-b", "migrate-me", str(target))
+    (target / "prompt.md").write_text("Old prompt.\n")
+    git(target, "add", "prompt.md")
+    git(target, "commit", "-m", "agentmon: add prompt for migrate-me")
+
+    commit = service.save_instruction(target, "migrate-me", "New instruction.\n")
+
+    assert commit
+    assert (target / "instruction.md").read_text() == "New instruction.\n"
+    assert not (target / "prompt.md").exists()
+    subject = git(target, "log", "-1", "--format=%s").stdout.strip()
+    assert subject == "agentmon: add instruction for migrate-me"
+    assert git(target, "status", "--porcelain").stdout == ""
+
+
+def test_save_instruction_returns_none_when_unchanged(repository: Repository) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = repository.root.parent / "unchanged"
+    git(repository.root, "worktree", "add", "-b", "unchanged", str(target))
+    assert service.save_instruction(target, "unchanged", "Same.\n")
+
+    assert service.save_instruction(target, "unchanged", "Same.\n") is None
+
+
+def test_launch_agent_commits_instruction_and_builds_command(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = repository.root.parent / "launch-me"
+    git(repository.root, "worktree", "add", "-b", "launch-me", str(target))
+    captured: dict[str, object] = {}
+
+    def open_window(worktree: Path, name: str, command: str) -> str:
+        captured.update(worktree=worktree, name=name, command=command)
+        return "9"
+
+    monkeypatch.setattr(service, "_open_agent_window", open_window)
+    run = AgentRun("finished:launch", "0:", "launch-me", "exited", "finished", target)
+
+    window = service.launch_agent(
+        run,
+        agent="codex",
+        model="gpt-5-codex",
+        effort="high",
+        instruction="Do it.\n",
+    )
+
+    assert window == "9"
+    assert (target / "instruction.md").read_text() == "Do it.\n"
+    subject = git(target, "log", "-1", "--format=%s").stdout.strip()
+    assert subject == "agentmon: add instruction for launch-me"
+    assert captured["worktree"] == target.resolve()
+    assert captured["command"] == (
+        'exec codex --yolo -m gpt-5-codex -c model_reasoning_effort=high'
+        ' "$(cat instruction.md)"'
+    )
+
+
+def test_launch_agent_without_instruction_starts_interactively(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = repository.root.parent / "launch-empty"
+    git(repository.root, "worktree", "add", "-b", "launch-empty", str(target))
+    head = git(target, "rev-parse", "HEAD").stdout.strip()
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        service,
+        "_open_agent_window",
+        lambda worktree, name, command: captured.update(command=command) or "9",
+    )
+    run = AgentRun("finished:empty", "0:", "launch-empty", "exited", "finished", target)
+
+    service.launch_agent(run, agent="claude", model="opus", instruction="  ")
+
+    assert captured["command"] == (
+        "exec claude --dangerously-skip-permissions --model opus"
+    )
+    assert not (target / "instruction.md").exists()
+    assert git(target, "rev-parse", "HEAD").stdout.strip() == head
+
+
+def test_prepared_worktree_without_instruction_is_discovered(
+    repository: Repository,
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    worktree = service.prepare_worktree("prep-visible")
+
+    finished = service.recent_finished([])
+
+    assert [run.branch for run in finished] == ["prep-visible"]
+    assert finished[0].worktree == worktree.resolve()
+    assert finished[0].prompt_preview == "—"
+
+
+def test_instruction_edit_target_seeds_from_legacy_prompt(
+    repository: Repository,
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = repository.root.parent / "edit-seed"
+    git(repository.root, "worktree", "add", "-b", "edit-seed", str(target))
+    (target / "prompt.md").write_text("Legacy prompt.\n")
+    run = AgentRun("finished:seed", "0:", "edit-seed", "exited", "finished", target)
+
+    path = service.instruction_edit_target(run)
+
+    assert path == target / "instruction.md"
+    assert path.read_text() == "Legacy prompt.\n"
+
+    path.write_text("Edited instruction.\n")
+    commit = service.commit_instruction(run)
+
+    assert commit
+    assert not (target / "prompt.md").exists()
+    assert service.read_instruction(target) == "Edited instruction.\n"
 
 
 def test_restart_launch_recreates_existing_branch_from_dashboard_branch(
