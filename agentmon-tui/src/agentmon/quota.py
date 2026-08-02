@@ -1,0 +1,325 @@
+"""Subscription quota lookup shared by the dashboard and other features.
+
+`QuotaService.report()` is the internal API for reading quota state: it
+returns the cached snapshot when it is fresh enough and only calls the
+provider usage endpoints when the cache has expired, so callers may invoke
+it freely without spamming the APIs.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import threading
+import time
+import urllib.error
+import urllib.request
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+CODEX_USAGE_URL = "https://chatgpt.com/backend-api/codex/usage"
+CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+DEFAULT_TTL_SECONDS = 300.0
+
+Fetcher = Callable[[str, dict[str, str]], dict]
+
+
+class QuotaError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class QuotaWindow:
+    provider: str
+    label: str
+    used_percent: float
+    resets_at: datetime | None = None
+
+    @property
+    def remaining_percent(self) -> float:
+        return max(0.0, 100.0 - self.used_percent)
+
+
+@dataclass(frozen=True)
+class QuotaReport:
+    fetched_at: datetime
+    quotas: tuple[QuotaWindow, ...]
+    errors: tuple[str, ...] = ()
+
+
+def default_cache_path() -> Path:
+    base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    return base / "agentmon" / "quota.json"
+
+
+def _http_get_json(url: str, headers: dict[str, str]) -> dict:
+    request = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            payload = json.load(response)
+    except urllib.error.HTTPError as exc:
+        raise QuotaError(f"{url}: HTTP {exc.code}") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise QuotaError(f"{url}: {exc}") from exc
+    except ValueError as exc:
+        raise QuotaError(f"{url}: invalid JSON response") from exc
+    if not isinstance(payload, dict):
+        raise QuotaError(f"{url}: unexpected response shape")
+    return payload
+
+
+def _window_span(seconds: object) -> str:
+    if not isinstance(seconds, (int, float)) or seconds <= 0:
+        return "window"
+    if seconds >= 7 * 86400 - 3600:
+        weeks = round(seconds / (7 * 86400))
+        return "weekly" if weeks == 1 else f"{weeks}w"
+    if seconds >= 86400:
+        return f"{round(seconds / 86400)}d"
+    return f"{round(seconds / 3600)}h"
+
+
+def _epoch_datetime(value: object) -> datetime | None:
+    if not isinstance(value, (int, float)):
+        return None
+    return datetime.fromtimestamp(value, tz=timezone.utc)
+
+
+def _iso_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def parse_codex_usage(payload: dict) -> list[QuotaWindow]:
+    """Extract the weekly and (when applied) 5h windows from Codex usage."""
+    rate_limit = payload.get("rate_limit")
+    if not isinstance(rate_limit, dict):
+        raise QuotaError("Codex usage response has no rate_limit data")
+    quotas: list[QuotaWindow] = []
+    for key in ("primary_window", "secondary_window"):
+        window = rate_limit.get(key)
+        if not isinstance(window, dict):
+            continue
+        span = _window_span(window.get("limit_window_seconds"))
+        quotas.append(
+            QuotaWindow(
+                provider="codex",
+                label=f"Codex {span}",
+                used_percent=float(window.get("used_percent") or 0.0),
+                resets_at=_epoch_datetime(window.get("reset_at")),
+            )
+        )
+    return quotas
+
+
+def _claude_limit_label(limit: dict) -> str:
+    kind = limit.get("kind")
+    if kind == "session":
+        return "Claude 5h"
+    if kind == "weekly_all":
+        return "Claude weekly"
+    if kind == "weekly_scoped":
+        scope = limit.get("scope")
+        model = scope.get("model") if isinstance(scope, dict) else None
+        name = model.get("display_name") if isinstance(model, dict) else None
+        return f"Claude {name} weekly" if name else "Claude weekly (scoped)"
+    return f"Claude {kind}" if isinstance(kind, str) else "Claude"
+
+
+def parse_claude_usage(payload: dict) -> list[QuotaWindow]:
+    """Extract session/weekly windows from the Claude OAuth usage response."""
+    limits = payload.get("limits")
+    if isinstance(limits, list) and limits:
+        quotas = []
+        for limit in limits:
+            if not isinstance(limit, dict):
+                continue
+            quotas.append(
+                QuotaWindow(
+                    provider="claude",
+                    label=_claude_limit_label(limit),
+                    used_percent=float(limit.get("percent") or 0.0),
+                    resets_at=_iso_datetime(limit.get("resets_at")),
+                )
+            )
+        if quotas:
+            return quotas
+
+    quotas = []
+    for key, label in (("five_hour", "Claude 5h"), ("seven_day", "Claude weekly")):
+        window = payload.get(key)
+        if isinstance(window, dict):
+            quotas.append(
+                QuotaWindow(
+                    provider="claude",
+                    label=label,
+                    used_percent=float(window.get("utilization") or 0.0),
+                    resets_at=_iso_datetime(window.get("resets_at")),
+                )
+            )
+    if not quotas:
+        raise QuotaError("Claude usage response has no limit data")
+    return quotas
+
+
+class QuotaService:
+    """Fetch and cache subscription quotas for Codex and Claude."""
+
+    def __init__(
+        self,
+        *,
+        codex_auth_path: Path | None = None,
+        claude_credentials_path: Path | None = None,
+        cache_path: Path | None = None,
+        ttl_seconds: float = DEFAULT_TTL_SECONDS,
+        fetch: Fetcher = _http_get_json,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        self.codex_auth_path = codex_auth_path or Path.home() / ".codex" / "auth.json"
+        self.claude_credentials_path = (
+            claude_credentials_path or Path.home() / ".claude" / ".credentials.json"
+        )
+        self.cache_path = cache_path or default_cache_path()
+        self.ttl_seconds = ttl_seconds
+        self._fetch = fetch
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._cached: QuotaReport | None = None
+
+    def report(self, *, force: bool = False) -> QuotaReport:
+        """Return quota usage, refreshing only when the cache has expired."""
+        with self._lock:
+            if not force:
+                cached = self._cached or self._load_disk_cache()
+                if cached is not None and not self._expired(cached):
+                    self._cached = cached
+                    return cached
+            fresh = self._fetch_report()
+            self._cached = fresh
+            self._store_disk_cache(fresh)
+            return fresh
+
+    def _expired(self, report: QuotaReport) -> bool:
+        age = self._clock() - report.fetched_at.timestamp()
+        return age < 0 or age >= self.ttl_seconds
+
+    def _fetch_report(self) -> QuotaReport:
+        quotas: list[QuotaWindow] = []
+        errors: list[str] = []
+        for fetch_provider in (self._fetch_codex, self._fetch_claude):
+            try:
+                quotas.extend(fetch_provider())
+            except QuotaError as exc:
+                errors.append(str(exc))
+        return QuotaReport(
+            fetched_at=datetime.fromtimestamp(self._clock(), tz=timezone.utc),
+            quotas=tuple(quotas),
+            errors=tuple(errors),
+        )
+
+    def _fetch_codex(self) -> list[QuotaWindow]:
+        try:
+            auth = json.loads(self.codex_auth_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise QuotaError(f"Codex auth unavailable: {exc}") from exc
+        tokens = auth.get("tokens") if isinstance(auth, dict) else None
+        access_token = tokens.get("access_token") if isinstance(tokens, dict) else None
+        if not access_token:
+            raise QuotaError(
+                f"Codex auth has no OAuth access token: {self.codex_auth_path}"
+            )
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "User-Agent": "agentmon",
+        }
+        account_id = tokens.get("account_id")
+        if account_id:
+            headers["chatgpt-account-id"] = account_id
+        return parse_codex_usage(self._fetch(CODEX_USAGE_URL, headers))
+
+    def _fetch_claude(self) -> list[QuotaWindow]:
+        try:
+            credentials = json.loads(
+                self.claude_credentials_path.read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError) as exc:
+            raise QuotaError(f"Claude credentials unavailable: {exc}") from exc
+        oauth = (
+            credentials.get("claudeAiOauth") if isinstance(credentials, dict) else None
+        )
+        access_token = oauth.get("accessToken") if isinstance(oauth, dict) else None
+        if not access_token:
+            raise QuotaError(
+                f"Claude credentials have no OAuth access token: "
+                f"{self.claude_credentials_path}"
+            )
+        expires_at = oauth.get("expiresAt")
+        if isinstance(expires_at, (int, float)) and expires_at / 1000 <= self._clock():
+            raise QuotaError(
+                "Claude OAuth token is expired; run claude to refresh it"
+            )
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "anthropic-beta": "oauth-2025-04-20",
+            "Accept": "application/json",
+            "User-Agent": "agentmon",
+        }
+        return parse_claude_usage(self._fetch(CLAUDE_USAGE_URL, headers))
+
+    def _load_disk_cache(self) -> QuotaReport | None:
+        try:
+            raw = json.loads(self.cache_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        try:
+            return QuotaReport(
+                fetched_at=datetime.fromtimestamp(
+                    float(raw["fetched_at"]), tz=timezone.utc
+                ),
+                quotas=tuple(
+                    QuotaWindow(
+                        provider=str(quota["provider"]),
+                        label=str(quota["label"]),
+                        used_percent=float(quota["used_percent"]),
+                        resets_at=_epoch_datetime(quota.get("resets_at")),
+                    )
+                    for quota in raw["quotas"]
+                ),
+                errors=tuple(str(error) for error in raw.get("errors", ())),
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    def _store_disk_cache(self, report: QuotaReport) -> None:
+        payload = {
+            "fetched_at": report.fetched_at.timestamp(),
+            "quotas": [
+                {
+                    "provider": quota.provider,
+                    "label": quota.label,
+                    "used_percent": quota.used_percent,
+                    "resets_at": (
+                        quota.resets_at.timestamp() if quota.resets_at else None
+                    ),
+                }
+                for quota in report.quotas
+            ],
+            "errors": list(report.errors),
+        }
+        try:
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.cache_path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(payload), encoding="utf-8")
+            temporary.replace(self.cache_path)
+        except OSError:
+            # The cache is an optimization; quota reporting still works
+            # without persisting it across restarts.
+            pass
