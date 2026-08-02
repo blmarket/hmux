@@ -2916,6 +2916,10 @@ pub struct ServerState {
     message_log: Vec<MessageLogEntry>,
     background_jobs: Arc<BackgroundJobRegistry>,
     running_hooks: BTreeSet<String>,
+    /// The `hook*` format variables published to the hook body currently
+    /// executing; empty outside hook bodies. Like `command_session_id`, a
+    /// transient interpreter hint installed around each hook command.
+    hook_format_vars: Vec<(String, String)>,
     /// Stable session selected for the command currently executing. This is a
     /// transient interpreter hint, set while a client-scoped prompt template
     /// runs and restored before releasing the server-state lock.
@@ -2974,6 +2978,7 @@ impl ServerState {
             message_log: Vec::new(),
             background_jobs: Arc::new(BackgroundJobRegistry::default()),
             running_hooks: BTreeSet::new(),
+            hook_format_vars: Vec::new(),
             command_session_id: None,
             command_active_panes: None,
             control_checkpoints: VecDeque::new(),
@@ -4188,6 +4193,19 @@ impl ServerState {
 
     pub(crate) fn end_hook(&mut self, name: &str) {
         self.running_hooks.remove(name);
+    }
+
+    /// Swap in the `hook*` format variables for a hook body, returning the
+    /// previous set so the caller can restore it.
+    pub(crate) fn replace_hook_format_vars(
+        &mut self,
+        vars: Vec<(String, String)>,
+    ) -> Vec<(String, String)> {
+        std::mem::replace(&mut self.hook_format_vars, vars)
+    }
+
+    pub(crate) fn hook_format_vars(&self) -> &[(String, String)] {
+        &self.hook_format_vars
     }
 
     fn lock_commands(&self) -> BTreeMap<u32, String> {

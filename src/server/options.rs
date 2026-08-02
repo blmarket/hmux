@@ -533,30 +533,104 @@ const OPTION_ARRAYS: &[&str] = &[
     "user-keys",
 ];
 
-/// Numeric options in tmux 3.7b's options table. Keeping the type metadata
-/// beside the catalog lets `set-option` reject malformed values instead of
-/// storing strings that runtime consumers cannot interpret.
-const OPTION_NUMBERS: &[&str] = &[
-    "buffer-limit",
-    "escape-time",
-    "input-buffer-size",
-    "message-limit",
-    "prefix-timeout",
-    "prompt-history-limit",
-    "assume-paste-time",
-    "base-index",
-    "display-panes-time",
-    "display-time",
-    "history-limit",
-    "initial-repeat-time",
-    "lock-after-time",
-    "repeat-time",
-    "status-interval",
-    "status-left-length",
-    "status-right-length",
-    "monitor-silence",
-    "pane-base-index",
-    "tiled-layout-max-columns",
+/// `(name, minimum, maximum)` for the numeric options in tmux 3.7b's options
+/// table. Keeping the type metadata beside the catalog lets `set-option`
+/// reject malformed and out-of-range values instead of storing strings that
+/// runtime consumers cannot interpret. Ranges were probed from the pinned
+/// tmux 3.7b binary.
+const OPTION_NUMBERS: &[(&str, i64, i64)] = &[
+    ("assume-paste-time", 0, i32::MAX as i64),
+    ("base-index", 0, i32::MAX as i64),
+    ("buffer-limit", 1, i32::MAX as i64),
+    ("display-panes-time", 1, i32::MAX as i64),
+    ("display-time", 0, i32::MAX as i64),
+    ("escape-time", 0, i32::MAX as i64),
+    ("history-limit", 0, i32::MAX as i64),
+    ("initial-repeat-time", 0, 2_000_000),
+    ("input-buffer-size", 1_048_576, u32::MAX as i64),
+    ("lock-after-time", 0, i32::MAX as i64),
+    ("message-limit", 0, i32::MAX as i64),
+    ("monitor-silence", 0, i32::MAX as i64),
+    ("pane-base-index", 0, u16::MAX as i64),
+    ("prefix-timeout", 0, i32::MAX as i64),
+    ("prompt-history-limit", 0, i32::MAX as i64),
+    ("repeat-time", 0, 2_000_000),
+    ("status-interval", 0, i32::MAX as i64),
+    ("status-left-length", 0, i16::MAX as i64),
+    ("status-right-length", 0, i16::MAX as i64),
+    ("tiled-layout-max-columns", 0, u16::MAX as i64),
+];
+
+const CURSOR_STYLE_CHOICES: &[&str] = &[
+    "default",
+    "blinking-block",
+    "block",
+    "blinking-underline",
+    "underline",
+    "blinking-bar",
+    "bar",
+];
+
+const BORDER_LINES_CHOICES: &[&str] = &[
+    "single", "double", "heavy", "simple", "rounded", "padded", "none",
+];
+
+const ALERT_ACTION_CHOICES: &[&str] = &["any", "none", "current", "other"];
+
+const VISUAL_ALERT_CHOICES: &[&str] = &["off", "on", "both"];
+
+/// `(name, choices)` for the choice options in tmux 3.7b's options table.
+/// `set-option` rejects any value outside the list with `unknown value`, and
+/// with no value at all toggles between the first two entries (only when the
+/// current value is one of them). Lists were probed from the pinned tmux 3.7b
+/// binary; membership and the first two entries are the observable parts of
+/// the order.
+const OPTION_CHOICES: &[(&str, &[&str])] = &[
+    ("activity-action", ALERT_ACTION_CHOICES),
+    ("allow-passthrough", &["off", "on", "all"]),
+    ("bell-action", ALERT_ACTION_CHOICES),
+    ("clock-mode-style", &["12", "24"]),
+    (
+        "copy-mode-line-numbers",
+        &["off", "default", "absolute", "relative", "hybrid"],
+    ),
+    ("cursor-style", CURSOR_STYLE_CHOICES),
+    ("destroy-unattached", &["off", "on", "keep-last", "keep-group"]),
+    (
+        "detach-on-destroy",
+        &["off", "on", "no-detached", "previous", "next"],
+    ),
+    ("extended-keys", &["off", "on", "always"]),
+    ("extended-keys-format", &["csi-u", "xterm"]),
+    ("get-clipboard", &["off", "buffer", "request", "both"]),
+    ("menu-border-lines", BORDER_LINES_CHOICES),
+    ("message-line", &["0", "1", "2", "3", "4"]),
+    ("mode-keys", &["emacs", "vi"]),
+    ("pane-border-indicators", &["off", "colour", "arrows", "both"]),
+    (
+        "pane-border-lines",
+        &["single", "double", "heavy", "simple", "number"],
+    ),
+    ("pane-border-status", &["off", "top", "bottom"]),
+    ("pane-scrollbars", &["off", "modal", "on"]),
+    ("pane-scrollbars-position", &["right", "left"]),
+    ("popup-border-lines", BORDER_LINES_CHOICES),
+    ("prompt-command-cursor-style", CURSOR_STYLE_CHOICES),
+    ("prompt-cursor-style", CURSOR_STYLE_CHOICES),
+    ("remain-on-exit", &["off", "on", "failed"]),
+    ("set-clipboard", &["off", "external", "on"]),
+    ("silence-action", ALERT_ACTION_CHOICES),
+    ("status", &["off", "on", "2", "3", "4", "5"]),
+    (
+        "status-justify",
+        &["left", "centre", "right", "absolute-centre"],
+    ),
+    ("status-keys", &["emacs", "vi"]),
+    ("status-position", &["top", "bottom"]),
+    ("visual-activity", VISUAL_ALERT_CHOICES),
+    ("visual-bell", VISUAL_ALERT_CHOICES),
+    ("visual-silence", VISUAL_ALERT_CHOICES),
+    ("window-size", &["largest", "smallest", "manual", "latest"]),
 ];
 
 /// Boolean flag options in tmux 3.7b's options table.
@@ -954,8 +1028,18 @@ pub(crate) fn option_kind(name: &str) -> Option<OptionKind> {
     }
 }
 
-pub(crate) fn option_is_number(name: &str) -> bool {
-    OPTION_NUMBERS.contains(&name)
+pub(crate) fn option_number_range(name: &str) -> Option<(i64, i64)> {
+    OPTION_NUMBERS
+        .iter()
+        .find(|(n, _, _)| *n == name)
+        .map(|&(_, min, max)| (min, max))
+}
+
+pub(crate) fn option_choices(name: &str) -> Option<&'static [&'static str]> {
+    OPTION_CHOICES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|&(_, choices)| choices)
 }
 
 pub(crate) fn option_is_flag(name: &str) -> bool {

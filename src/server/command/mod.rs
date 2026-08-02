@@ -111,6 +111,9 @@ pub struct ClientContext {
     pub(crate) suppress_hooks: bool,
     pub(crate) defer_queue_commands: bool,
     pub(crate) defer_attach_commands: bool,
+    /// The `hook*` format variables for a queued hook-body command; installed
+    /// into the server state around its execution.
+    pub(crate) hook_vars: Option<Arc<Vec<(String, String)>>>,
 }
 
 impl ClientContext {
@@ -569,6 +572,7 @@ pub(crate) fn start_resumable_command_string_with_tail(
 struct PreviousCommandTargetContext {
     session_id: Option<u32>,
     active_panes: Option<BTreeMap<u32, u32>>,
+    hook_vars: Option<Vec<(String, String)>>,
 }
 
 fn install_command_target_context(
@@ -578,12 +582,19 @@ fn install_command_target_context(
     PreviousCommandTargetContext {
         session_id: state.replace_command_session_id(context.current_session_id),
         active_panes: state.replace_command_active_panes(context.active_panes()),
+        hook_vars: context
+            .hook_vars
+            .as_ref()
+            .map(|vars| state.replace_hook_format_vars(vars.as_ref().clone())),
     }
 }
 
 fn restore_command_target_context(state: &mut ServerState, previous: PreviousCommandTargetContext) {
     state.replace_command_session_id(previous.session_id);
     state.replace_command_active_panes(previous.active_panes);
+    if let Some(vars) = previous.hook_vars {
+        state.replace_hook_format_vars(vars);
+    }
 }
 
 struct SourceLocation {
@@ -1611,6 +1622,7 @@ impl ResumableCommandQueue {
                         let mut insert_next = self.plan_hook_with_capture(
                             hook,
                             flag_value(&inflight.command.args, "-t"),
+                            vec![("hook".to_string(), hook.to_string())],
                             state,
                             NestedCapture::Discard,
                         );
@@ -1888,6 +1900,7 @@ impl ResumableCommandQueue {
                 execution.insert_next.extend(self.plan_hook(
                     "command-error",
                     flag_value(&command.args, "-t"),
+                    hook_command_vars("command-error", command.spec.name, &command.args),
                     state,
                 ));
             } else if !execution.defer_success_hooks {
@@ -1945,9 +1958,15 @@ impl ResumableCommandQueue {
             _ => None,
         };
         if let Some(notification) = notification {
-            groups.extend(self.plan_hook(notification, flag_value(args, "-t"), state));
+            let vars = match state.lock() {
+                Ok(state) => hook_event_vars(notification, flag_value(args, "-t"), &state),
+                Err(_) => Vec::new(),
+            };
+            groups.extend(self.plan_hook(notification, flag_value(args, "-t"), vars, state));
         }
-        groups.extend(self.plan_hook(&format!("after-{command}"), flag_value(args, "-t"), state));
+        let after = format!("after-{command}");
+        let vars = hook_command_vars(&after, command, args);
+        groups.extend(self.plan_hook(&after, flag_value(args, "-t"), vars, state));
         groups
     }
 
@@ -1955,15 +1974,17 @@ impl ResumableCommandQueue {
         &self,
         hook: &str,
         requested_target: Option<&str>,
+        vars: Vec<(String, String)>,
         state: &Arc<Mutex<ServerState>>,
     ) -> Vec<Vec<SharedQueueItem>> {
-        self.plan_hook_with_capture(hook, requested_target, state, NestedCapture::Hook)
+        self.plan_hook_with_capture(hook, requested_target, vars, state, NestedCapture::Hook)
     }
 
     fn plan_hook_with_capture(
         &self,
         hook: &str,
         requested_target: Option<&str>,
+        vars: Vec<(String, String)>,
         state: &Arc<Mutex<ServerState>>,
         capture: NestedCapture,
     ) -> Vec<Vec<SharedQueueItem>> {
@@ -1982,6 +2003,7 @@ impl ResumableCommandQueue {
         };
 
         let mut hook_context = self.context.clone();
+        hook_context.hook_vars = Some(Arc::new(vars));
         if matches!(capture, NestedCapture::Hook) {
             hook_context.suppress_hooks = true;
             hook_context.preserve_queue_insertions = true;
@@ -2257,11 +2279,41 @@ fn plan_source_file_completion(
             Ok(contents) => {
                 let mut file_insertions = Vec::new();
                 let mut file_parse_error = false;
-                for (line_number, line) in source_lines(&contents).into_iter().enumerate() {
+                let environment = match state.lock() {
+                    Ok(state) => state
+                        .env_iter()
+                        .map(|(name, value)| (name.clone(), value.clone()))
+                        .collect::<BTreeMap<_, _>>(),
+                    Err(_) => {
+                        return SharedCommandExecution::completed(CommandResult::err(
+                            "server state poisoned\n",
+                        ))
+                    }
+                };
+                let parsed = match source_lines(&contents, &environment) {
+                    Ok(parsed) => parsed,
+                    Err((line, message)) => {
+                        out.stderr.push_str(&format!("{path}:{line}: {message}\n"));
+                        out.exit = 1;
+                        out.continue_queue = true;
+                        continue;
+                    }
+                };
+                if !parse_only {
+                    if let Ok(mut state) = state.lock() {
+                        for (name, value, hidden) in &parsed.assignments {
+                            if *hidden {
+                                state.set_hidden_env(name, value);
+                            } else {
+                                state.set_env(name, value);
+                            }
+                        }
+                    }
+                }
+                for (line_number, line) in parsed.lines {
                     if verbose {
                         out.stdout.push_str(&format!(
-                            "{path}:{}: {}\n",
-                            line_number + 1,
+                            "{path}:{line_number}: {}\n",
                             source_verbose_line(&line)
                         ));
                     }
@@ -2282,7 +2334,7 @@ fn plan_source_file_completion(
                     };
                     match parsed {
                         Ok(parsed) if !parse_only && !parsed.is_empty() => {
-                            let source_line = line_number + 1;
+                            let source_line = line_number;
                             file_insertions.push(
                                 parsed
                                     .into_iter()
@@ -2302,7 +2354,7 @@ fn plan_source_file_completion(
                         Err(result) => {
                             file_parse_error = true;
                             let diagnostic = result.stderr.trim_end();
-                            let location = format!("{path}:{}", line_number + 1);
+                            let location = format!("{path}:{line_number}");
                             let diagnostic = if matches!(
                                 line.iter().find_map(LineToken::word),
                                 Some("if" | "if-shell")
@@ -2518,6 +2570,7 @@ fn run_command_groups(
             run_hook(
                 "command-error",
                 flag_value(&command.args, "-t"),
+                hook_command_vars("command-error", command.spec.name, &command.args),
                 st,
                 agents,
                 context,
@@ -2548,6 +2601,86 @@ pub(crate) fn display_command(args: &[String]) -> String {
         .join(" ")
 }
 
+/// The `hook*` format variables a command hook body sees: the hook's name and
+/// the triggering command's arguments and flags, as tmux publishes them.
+fn hook_command_vars(hook: &str, command: &str, args: &[String]) -> Vec<(String, String)> {
+    let mut vars = vec![("hook".to_string(), hook.to_string())];
+    let arguments = args.get(1..).unwrap_or_default().join(" ");
+    vars.push(("hook_arguments".to_string(), arguments));
+    let spec = registry::getopt(command).unwrap_or("");
+    let mut argument_index = 0;
+    let mut in_flags = true;
+    let mut i = 1;
+    while i < args.len() {
+        let argument = args[i].as_str();
+        if in_flags && argument == "--" {
+            in_flags = false;
+            i += 1;
+            continue;
+        }
+        let flag = argument
+            .strip_prefix('-')
+            .and_then(|rest| {
+                let mut rest = rest.chars();
+                match (rest.next(), rest.next()) {
+                    (Some(letter), None) if letter.is_ascii_alphanumeric() => Some(letter),
+                    _ => None,
+                }
+            })
+            .filter(|_| in_flags);
+        match flag {
+            Some(letter) => {
+                if registry::flag_kind(spec, letter) == Some(true) && i + 1 < args.len() {
+                    vars.push((format!("hook_flag_{letter}"), args[i + 1].clone()));
+                    i += 2;
+                } else {
+                    vars.push((format!("hook_flag_{letter}"), "1".to_string()));
+                    i += 1;
+                }
+            }
+            None => {
+                in_flags = false;
+                vars.push((format!("hook_argument_{argument_index}"), argument.to_string()));
+                argument_index += 1;
+                i += 1;
+            }
+        }
+    }
+    vars
+}
+
+/// The `hook*` format variables an event hook body sees: the hook's name plus
+/// the layer the event came from, and only that layer.
+fn hook_event_vars(
+    hook: &str,
+    requested_target: Option<&str>,
+    st: &ServerState,
+) -> Vec<(String, String)> {
+    let mut vars = vec![("hook".to_string(), hook.to_string())];
+    let target = requested_target
+        .map(str::to_string)
+        .or_else(|| current_session(st));
+    let resolved = target.as_deref().and_then(|target| st.resolve(target));
+    match hook {
+        "session-created" | "session-renamed" => {
+            if let Some(resolved) = resolved {
+                let session = &st.sessions()[resolved.session];
+                vars.push(("hook_session".to_string(), format!("${}", session.id)));
+                vars.push(("hook_session_name".to_string(), session.name.clone()));
+            }
+        }
+        "window-renamed" => {
+            if let Some(resolved) = resolved {
+                let session = &st.sessions()[resolved.session];
+                let window = st.session_window(session, resolved.window);
+                vars.push(("hook_window_name".to_string(), window.name.clone()));
+            }
+        }
+        _ => {}
+    }
+    vars
+}
+
 fn run_after_hook(
     command: &str,
     args: &[String],
@@ -2556,7 +2689,8 @@ fn run_after_hook(
     context: &ClientContext,
 ) {
     let hook = format!("after-{command}");
-    run_hook(&hook, flag_value(args, "-t"), st, agents, context);
+    let vars = hook_command_vars(&hook, command, args);
+    run_hook(&hook, flag_value(args, "-t"), vars, st, agents, context);
 }
 
 fn run_notification_hook(
@@ -2571,12 +2705,14 @@ fn run_notification_hook(
         "rename-window" => "window-renamed",
         _ => return,
     };
-    run_hook(hook, flag_value(args, "-t"), st, agents, context);
+    let vars = hook_event_vars(hook, flag_value(args, "-t"), st);
+    run_hook(hook, flag_value(args, "-t"), vars, st, agents, context);
 }
 
 fn run_hook(
     hook: &str,
     requested_target: Option<&str>,
+    vars: Vec<(String, String)>,
     st: &mut ServerState,
     agents: &PaneAgents,
     context: &ClientContext,
@@ -2584,12 +2720,14 @@ fn run_hook(
     let Some(commands) = begin_hook_commands(hook, requested_target, st) else {
         return;
     };
+    let previous = st.replace_hook_format_vars(vars);
     for command in commands {
         let tokens = tokenize_line(&command);
         if !tokens.is_empty() {
             let _ = run_tokenized_line(&tokens, st, agents, context);
         }
     }
+    st.replace_hook_format_vars(previous);
     st.end_hook(hook);
 }
 
@@ -4332,6 +4470,10 @@ pub(super) fn vars_full(
                 .set("pane_agent_session_id", session_id);
         }
     }
+    // `hook*` variables of the hook body currently executing, if any.
+    for (key, value) in st.hook_format_vars() {
+        v.set(key.clone(), value.clone());
+    }
     v
 }
 
@@ -5364,9 +5506,49 @@ fn resolve_option_argument(argument: &str) -> Option<(&str, Option<u32>)> {
     }
 }
 
+/// A numeric option value with tmux's strtonum syntax: an optional sign and
+/// decimal digits. Values beyond i64 saturate so range checks still report
+/// too large / too small rather than invalid.
+fn parse_option_number(value: &str) -> Result<i64, ()> {
+    let digits = value.strip_prefix('-').unwrap_or(value);
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(());
+    }
+    Ok(value.parse::<i64>().unwrap_or(if value.starts_with('-') {
+        i64::MIN
+    } else {
+        i64::MAX
+    }))
+}
+
+/// Like [`positionals`], but flag parsing ends at the first operand as in
+/// tmux's getopt, so a later dash-prefixed token — most importantly a negative
+/// number (`set-option repeat-time -1`) — is a value, not a flag.
+fn operands<'a>(args: &'a [String], value_flags: &[&str]) -> Vec<&'a str> {
+    let mut out = Vec::new();
+    let mut i = 1; // skip the command name
+    while i < args.len() {
+        let a = args[i].as_str();
+        if a == "--" {
+            out.extend(args[i + 1..].iter().map(String::as_str));
+            break;
+        }
+        if a.starts_with('-') && a != "-" {
+            if value_flags.contains(&a) {
+                i += 1; // also skip this flag's value
+            }
+            i += 1;
+            continue;
+        }
+        out.extend(args[i..].iter().map(String::as_str));
+        break;
+    }
+    out
+}
+
 /// Set an option in the local table selected by its catalog scope and target.
 fn set_option(args: &[String], st: &mut ServerState, window_command: bool) -> CommandResult {
-    let pos = positionals(args, &["-t"]);
+    let pos = operands(args, &["-t"]);
     let argument = match pos.first() {
         Some(n) => *n,
         None => return CommandResult::err("set-option: missing option\n"),
@@ -5424,34 +5606,68 @@ fn set_option(args: &[String], st: &mut ServerState, window_command: bool) -> Co
             CommandResult::err(format!("already set: {argument}\n"))
         };
     }
-    let raw_value = pos.get(1).copied().unwrap_or("");
-    let mut value = if has_bool_flag(args, 'F') {
-        match current_session(st).and_then(|name| st.find(&name)) {
-            Some(sess) => format::expand(
-                raw_value,
-                &vars_for(st, sess, sess.active, &PaneAgents::new(), st.marked_pane()),
-            ),
-            None => raw_value.to_string(),
-        }
-    } else {
-        raw_value.to_string()
-    };
-    if options::option_is_number(name) && value.parse::<u64>().is_err() {
-        return CommandResult::err(format!("value is invalid: {value}\n"));
-    }
-    if options::option_is_flag(name) {
-        value = match value.as_str() {
-            "on" | "yes" | "1" => "on".to_string(),
-            "off" | "no" | "0" => "off".to_string(),
-            "" => {
-                if target.view(st).get(name) == Some("on") {
-                    "off".to_string()
-                } else {
-                    "on".to_string()
-                }
+    let unset = has_bool_flag(args, 'u') || has_bool_flag(args, 'U');
+    let raw_value = pos.get(1).copied();
+    let mut value = match raw_value {
+        Some(raw) if has_bool_flag(args, 'F') => {
+            match current_session(st).and_then(|name| st.find(&name)) {
+                Some(sess) => format::expand(
+                    raw,
+                    &vars_for(st, sess, sess.active, &PaneAgents::new(), st.marked_pane()),
+                ),
+                None => raw.to_string(),
             }
-            _ => return CommandResult::err(format!("bad value: {value}\n")),
-        };
+        }
+        Some(raw) => raw.to_string(),
+        None => String::new(),
+    };
+    if !unset {
+        if let Some((min, max)) = options::option_number_range(name) {
+            match parse_option_number(&value) {
+                Err(()) => return CommandResult::err(format!("value is invalid: {value}\n")),
+                Ok(number) if number < min => {
+                    return CommandResult::err(format!("value is too small: {value}\n"))
+                }
+                Ok(number) if number > max => {
+                    return CommandResult::err(format!("value is too large: {value}\n"))
+                }
+                Ok(_) => {}
+            }
+        } else if let Some(choices) = options::option_choices(name) {
+            if raw_value.is_none() {
+                // No value toggles between the first two choices; from any
+                // later choice the current value is kept (tmux
+                // options_from_string_choice).
+                let current = target
+                    .view(st)
+                    .get(name)
+                    .map(str::to_string)
+                    .or_else(|| options::option_initial_default(name));
+                let index = current
+                    .as_deref()
+                    .and_then(|current| choices.iter().position(|choice| *choice == current));
+                value = match index {
+                    Some(0) => choices[1].to_string(),
+                    Some(index) if index >= 2 => choices[index].to_string(),
+                    _ => choices[0].to_string(),
+                };
+            } else if !choices.contains(&value.as_str()) {
+                return CommandResult::err(format!("unknown value: {value}\n"));
+            }
+        } else if options::option_is_flag(name) {
+            value = match value.as_str() {
+                "on" | "yes" | "1" => "on".to_string(),
+                "off" | "no" | "0" => "off".to_string(),
+                "" => {
+                    if target.view(st).get(name) == Some("on") {
+                        "off".to_string()
+                    } else {
+                        "on".to_string()
+                    }
+                }
+                _ => return CommandResult::err(format!("bad value: {value}\n")),
+            };
+        }
     }
     if has_bool_flag(args, 'U') {
         let window_target = match target {
@@ -5775,7 +5991,8 @@ fn set_hook(
         if !options::is_hook(hook) {
             return CommandResult::err(format!("invalid option: {hook}\n"));
         }
-        run_hook(hook, flag_value(args, "-t"), st, agents, context);
+        let vars = vec![("hook".to_string(), hook.to_string())];
+        run_hook(hook, flag_value(args, "-t"), vars, st, agents, context);
         return CommandResult::ok("");
     }
     set_option(args, st, false)
@@ -7594,11 +7811,31 @@ fn source_file(
         };
         match std::fs::read_to_string(&path) {
             Ok(contents) => {
-                for (line_number, line) in source_lines(&contents).into_iter().enumerate() {
+                let environment = st
+                    .env_iter()
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect::<BTreeMap<_, _>>();
+                let parsed = match source_lines(&contents, &environment) {
+                    Ok(parsed) => parsed,
+                    Err((line, message)) => {
+                        out.stderr.push_str(&format!("{path}:{line}: {message}\n"));
+                        out.exit = 1;
+                        continue;
+                    }
+                };
+                if !parse_only {
+                    for (name, value, hidden) in &parsed.assignments {
+                        if *hidden {
+                            st.set_hidden_env(name, value);
+                        } else {
+                            st.set_env(name, value);
+                        }
+                    }
+                }
+                for (line_number, line) in parsed.lines {
                     if verbose {
                         out.stdout.push_str(&format!(
-                            "{path}:{}: {}\n",
-                            line_number + 1,
+                            "{path}:{line_number}: {}\n",
                             source_verbose_line(&line)
                         ));
                     }
@@ -7613,7 +7850,7 @@ fn source_file(
                     }
                     if r.exit != 0 {
                         let diagnostic = r.stderr.trim_end();
-                        let location = format!("{path}:{}", line_number + 1);
+                        let location = format!("{path}:{line_number}");
                         let diagnostic = if matches!(
                             line.iter().find_map(LineToken::word),
                             Some("if" | "if-shell")
@@ -7648,26 +7885,57 @@ fn source_file(
     out
 }
 
+/// One parsed configuration file: the command lines with their file line
+/// numbers, plus the parser assignments made in active branches, which the
+/// caller publishes to the global environment as tmux does.
+struct SourcedConfig {
+    lines: Vec<(usize, Vec<LineToken>)>,
+    assignments: Vec<(String, String, bool)>,
+}
+
+/// One state of the `%if`/`%elif`/`%else` conditional stack.
+struct SourceCondition {
+    parent_active: bool,
+    /// Whether any branch of this chain has been taken yet.
+    taken: bool,
+    active: bool,
+    seen_else: bool,
+}
+
 /// Split a sourced config file into command argv lines. This preprocessing
 /// layer handles the configuration-only syntax which cannot be represented by
 /// ordinary command argv: conditional directives, parser assignments, and
-/// brace command blocks.
-fn source_lines(contents: &str) -> Vec<Vec<LineToken>> {
+/// brace command blocks. `environment` is the server's global environment,
+/// which seeds `$NAME` expansion; an undefined name expands to nothing.
+///
+/// Like tmux, the whole file is parsed before anything runs, so a structural
+/// error — an unbalanced conditional or an invalid escape — rejects the file:
+/// the error is `(line, diagnostic)`.
+fn source_lines(
+    contents: &str,
+    environment: &BTreeMap<String, String>,
+) -> Result<SourcedConfig, (usize, String)> {
     let mut lines = Vec::new();
     let mut logical = String::new();
-    let mut assignments = BTreeMap::<String, String>::new();
-    let mut conditions = Vec::<(bool, bool)>::new();
-    let mut brace_block: Option<(Vec<LineToken>, String, usize)> = None;
+    let mut logical_start = 1;
+    let mut assignments = environment.clone();
+    let mut published = Vec::new();
+    let mut conditions = Vec::<SourceCondition>::new();
+    let mut brace_block: Option<(usize, Vec<LineToken>, String, usize)> = None;
+    let mut line_number = 0;
     for raw in contents.lines() {
+        line_number += 1;
         let continued = raw.trim_end().ends_with('\\');
         let part = if continued {
             raw.trim_end().strip_suffix('\\').unwrap_or(raw)
         } else {
             raw
         };
-        if !logical.is_empty() {
-            logical.push(' ');
+        if logical.is_empty() {
+            logical_start = line_number;
         }
+        // A backslash-newline splices the lines together at the character
+        // level, continuing the same word, so no separator is inserted.
         logical.push_str(part);
         if continued {
             continue;
@@ -7679,76 +7947,122 @@ fn source_lines(contents: &str) -> Vec<Vec<LineToken>> {
         }
 
         if let Some(condition) = trimmed.strip_prefix("%if ") {
-            let parent_active = conditions.iter().all(|(_, active)| *active);
+            let parent_active = conditions.iter().all(|condition| condition.active);
             let expanded = format::expand(condition.trim(), &Vars::default());
-            conditions.push((parent_active, parent_active && format::is_true(&expanded)));
+            let active = parent_active && format::is_true(&expanded);
+            conditions.push(SourceCondition {
+                parent_active,
+                taken: active,
+                active,
+                seen_else: false,
+            });
+            logical.clear();
+            continue;
+        }
+        if let Some(condition) = trimmed.strip_prefix("%elif ") {
+            let Some(top) = conditions.last_mut() else {
+                return Err((logical_start, "syntax error".to_string()));
+            };
+            if top.seen_else {
+                return Err((logical_start, "syntax error".to_string()));
+            }
+            let expanded = format::expand(condition.trim(), &Vars::default());
+            top.active = top.parent_active && !top.taken && format::is_true(&expanded);
+            top.taken |= top.active;
             logical.clear();
             continue;
         }
         if trimmed == "%else" {
-            if let Some((parent_active, active)) = conditions.last_mut() {
-                *active = *parent_active && !*active;
+            let Some(top) = conditions.last_mut() else {
+                return Err((logical_start, "syntax error".to_string()));
+            };
+            if top.seen_else {
+                return Err((logical_start, "syntax error".to_string()));
             }
+            top.seen_else = true;
+            top.active = top.parent_active && !top.taken;
+            top.taken |= top.active;
             logical.clear();
             continue;
         }
         if trimmed == "%endif" {
-            conditions.pop();
+            if conditions.pop().is_none() {
+                return Err((logical_start, "syntax error".to_string()));
+            }
             logical.clear();
             continue;
         }
-        if !conditions.iter().all(|(_, active)| *active) {
+        if !conditions.iter().all(|condition| condition.active) {
             logical.clear();
             continue;
         }
 
         if brace_block.is_none() {
-            if let Some((name, value)) = parse_source_assignment(trimmed) {
+            let (assignment, hidden) = match trimmed.strip_prefix("%hidden") {
+                Some(rest) if rest.starts_with(char::is_whitespace) => (rest.trim_start(), true),
+                _ => (trimmed, false),
+            };
+            if let Some((name, value)) = parse_source_assignment(assignment) {
                 assignments.insert(name.to_string(), value.to_string());
+                published.push((name.to_string(), value.to_string(), hidden));
                 logical.clear();
                 continue;
             }
         }
         let expanded = expand_source_assignments(trimmed, &assignments);
 
-        if let Some((_prefix, body, depth)) = brace_block.as_mut() {
+        if let Some((_line, _prefix, body, depth)) = brace_block.as_mut() {
             let opens = expanded.chars().filter(|ch| *ch == '{').count();
             let closes = expanded.chars().filter(|ch| *ch == '}').count();
-            if expanded.trim() != "}" {
+            let new_depth = depth.saturating_add(opens).saturating_sub(closes);
+            // Only the block's own closing brace is syntax; an inner one
+            // belongs to the body verbatim.
+            if !(new_depth == 0 && expanded.trim() == "}") {
                 if !body.is_empty() {
                     body.push_str(" ; ");
                 }
                 body.push_str(expanded.trim());
             }
-            *depth = depth.saturating_add(opens).saturating_sub(closes);
+            *depth = new_depth;
             if *depth == 0 {
-                let (mut prefix, body, _) = brace_block.take().expect("active brace block");
+                let (line, mut prefix, body, _) =
+                    brace_block.take().expect("active brace block");
                 prefix.push(LineToken::Word(body));
-                lines.push(prefix);
+                lines.push((line, prefix));
             }
             logical.clear();
             continue;
         }
 
         if let Some(prefix) = expanded.trim_end().strip_suffix('{') {
-            brace_block = Some((tokenize_line(prefix.trim_end()), String::new(), 1));
+            let tokens = tokenize_line_checked(prefix.trim_end())
+                .map_err(|message| (logical_start, message))?;
+            brace_block = Some((logical_start, tokens, String::new(), 1));
             logical.clear();
             continue;
         }
 
-        let argv = tokenize_line(&expanded);
+        let argv =
+            tokenize_line_checked(&expanded).map_err(|message| (logical_start, message))?;
         if !argv.is_empty() {
-            lines.push(argv);
+            lines.push((logical_start, argv));
         }
         logical.clear();
     }
     if !logical.trim().is_empty() {
-        let argv = tokenize_line(logical.trim_start());
+        let argv = tokenize_line_checked(logical.trim_start())
+            .map_err(|message| (logical_start, message))?;
         if !argv.is_empty() {
-            lines.push(argv);
+            lines.push((logical_start, argv));
         }
     }
-    lines
+    if !conditions.is_empty() {
+        return Err((line_number + 1, "syntax error".to_string()));
+    }
+    Ok(SourcedConfig {
+        lines,
+        assignments: published,
+    })
 }
 
 fn parse_source_assignment(line: &str) -> Option<(&str, &str)> {
@@ -7794,16 +8108,14 @@ fn expand_source_assignments(line: &str, assignments: &BTreeMap<String, String>)
         }
         if let Some(value) = assignments.get(&name) {
             output.push_str(value);
-        } else {
+        } else if name.is_empty() {
+            // A bare `$` is not a variable reference; keep it.
             output.push('$');
             if braced {
                 output.push('{');
             }
-            output.push_str(&name);
-            if braced {
-                output.push('}');
-            }
         }
+        // An undefined `$NAME` expands to nothing, as in tmux.
     }
     output
 }
@@ -7842,30 +8154,142 @@ impl LineToken {
 /// Tokenize one command line into words, honoring `'`/`"` quoting and retaining
 /// an unquoted `;` as syntax rather than flattening it into an argv
 /// value. Quoted and escaped semicolons are ordinary [`LineToken::Word`] values.
+///
+/// Backslash escapes decode as in tmux's command lexer both bare and inside
+/// double quotes: octal (`\101`), the named control characters, and `\u`/`\U`
+/// unicode escapes; any other escaped character stands for itself. Single
+/// quotes are fully literal. An unquoted `{` starting a word collects a brace
+/// block verbatim into one word, and a word-initial `~` outside single quotes
+/// expands to the home directory.
+///
+/// An invalid escape strips the backslash and keeps the characters; the
+/// checked variant used for configuration files rejects it instead.
 fn tokenize_line(line: &str) -> Vec<LineToken> {
+    tokenize_line_impl(line, false).unwrap_or_default()
+}
+
+/// Strict [`tokenize_line`] for configuration files: an invalid escape is an
+/// error that rejects the whole file, as in tmux's parser.
+fn tokenize_line_checked(line: &str) -> Result<Vec<LineToken>, String> {
+    tokenize_line_impl(line, true)
+}
+
+/// Decode one backslash escape whose `\` has already been consumed.
+fn push_token_escape(
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    cur: &mut String,
+    strict: bool,
+) -> Result<(), String> {
+    let Some(first) = chars.next() else {
+        return Ok(());
+    };
+    match first {
+        '0'..='3' => {
+            let mut consumed = String::from(first);
+            for _ in 0..2 {
+                match chars.peek().copied() {
+                    Some(digit @ '0'..='7') => {
+                        consumed.push(digit);
+                        chars.next();
+                    }
+                    _ => {
+                        if strict {
+                            return Err("invalid octal escape".to_string());
+                        }
+                        cur.push_str(&consumed);
+                        return Ok(());
+                    }
+                }
+            }
+            let value = u8::from_str_radix(&consumed, 8).expect("three octal digits");
+            cur.push(char::from(value));
+        }
+        '4'..='9' => {
+            if strict {
+                return Err("invalid octal escape".to_string());
+            }
+            cur.push(first);
+        }
+        'u' | 'U' => {
+            let digits = if first == 'u' { 4 } else { 8 };
+            let mut consumed = String::new();
+            while consumed.len() < digits
+                && chars.peek().is_some_and(char::is_ascii_hexdigit)
+            {
+                consumed.push(chars.next().expect("peeked hex digit"));
+            }
+            let decoded = (consumed.len() == digits)
+                .then(|| u32::from_str_radix(&consumed, 16).ok())
+                .flatten()
+                .and_then(char::from_u32);
+            match decoded {
+                Some(decoded) => cur.push(decoded),
+                None if strict => return Err("invalid \\u argument".to_string()),
+                None => {
+                    cur.push(first);
+                    cur.push_str(&consumed);
+                }
+            }
+        }
+        'a' => cur.push('\x07'),
+        'b' => cur.push('\x08'),
+        'e' => cur.push('\x1b'),
+        'f' => cur.push('\x0c'),
+        'n' => cur.push('\n'),
+        'r' => cur.push('\r'),
+        's' => cur.push(' '),
+        't' => cur.push('\t'),
+        'v' => cur.push('\x0b'),
+        other => cur.push(other),
+    }
+    Ok(())
+}
+
+fn tokenize_line_impl(line: &str, strict: bool) -> Result<Vec<LineToken>, String> {
     let mut words = Vec::new();
     let mut cur = String::new();
     let mut in_word = false;
+    let mut word_tilde = false;
     let mut quote: Option<char> = None;
+    let mut quote_opened = false;
     let mut chars = line.chars().peekable();
+
+    fn finish_word(
+        words: &mut Vec<LineToken>,
+        cur: &mut String,
+        in_word: &mut bool,
+        word_tilde: &mut bool,
+    ) {
+        if *in_word {
+            let mut word = std::mem::take(cur);
+            if *word_tilde {
+                if let Ok(home) = std::env::var("HOME") {
+                    if word == "~" {
+                        word = home;
+                    } else if let Some(rest) = word.strip_prefix("~/") {
+                        word = format!("{home}/{rest}");
+                    }
+                }
+            }
+            words.push(LineToken::Word(word));
+            *in_word = false;
+        }
+        *word_tilde = false;
+    }
+
     while let Some(c) = chars.next() {
+        let at_quote_start = quote_opened;
+        quote_opened = false;
         match quote {
             Some(q) => {
                 if c == q {
                     quote = None;
                 } else if q == '"' && c == '\\' {
-                    let mut octal = String::new();
-                    while octal.len() < 3
-                        && chars.peek().is_some_and(|next| matches!(next, '0'..='7'))
-                    {
-                        octal.push(chars.next().expect("peeked octal digit"));
-                    }
-                    if let Ok(value) = u8::from_str_radix(&octal, 8) {
-                        cur.push(char::from(value));
-                    } else if let Some(next) = chars.next() {
-                        cur.push(next);
-                    }
+                    push_token_escape(&mut chars, &mut cur, strict)?;
                 } else {
+                    if c == '~' && q == '"' && at_quote_start && cur.is_empty() {
+                        word_tilde = true;
+                    }
                     cur.push(c);
                 }
             }
@@ -7873,27 +8297,43 @@ fn tokenize_line(line: &str) -> Vec<LineToken> {
                 '\'' | '"' => {
                     in_word = true;
                     quote = Some(c);
+                    quote_opened = true;
                 }
                 c if c.is_whitespace() => {
-                    if in_word {
-                        words.push(LineToken::Word(std::mem::take(&mut cur)));
-                        in_word = false;
-                    }
+                    finish_word(&mut words, &mut cur, &mut in_word, &mut word_tilde);
                 }
                 ';' => {
-                    if in_word {
-                        words.push(LineToken::Word(std::mem::take(&mut cur)));
-                        in_word = false;
-                    }
+                    finish_word(&mut words, &mut cur, &mut in_word, &mut word_tilde);
                     words.push(LineToken::Separator);
                 }
                 '#' if !in_word => break,
+                '{' if !in_word => {
+                    // A brace block is one argument holding its body verbatim.
+                    let mut depth = 1usize;
+                    let mut body = String::new();
+                    for inner in chars.by_ref() {
+                        match inner {
+                            '{' => depth += 1,
+                            '}' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                        body.push(inner);
+                    }
+                    words.push(LineToken::Word(body));
+                }
                 '\\' => {
                     in_word = true;
-                    if let Some(&next) = chars.peek() {
-                        cur.push(next);
-                        chars.next();
-                    }
+                    push_token_escape(&mut chars, &mut cur, strict)?;
+                }
+                '~' if !in_word => {
+                    in_word = true;
+                    word_tilde = true;
+                    cur.push('~');
                 }
                 _ => {
                     in_word = true;
@@ -7902,10 +8342,8 @@ fn tokenize_line(line: &str) -> Vec<LineToken> {
             },
         }
     }
-    if in_word {
-        words.push(LineToken::Word(cur));
-    }
-    words
+    finish_word(&mut words, &mut cur, &mut in_word, &mut word_tilde);
+    Ok(words)
 }
 
 /// Replace tmux command-template placeholders for one prompt argument.
