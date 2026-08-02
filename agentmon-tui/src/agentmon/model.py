@@ -17,7 +17,7 @@ LAUNCH_AGENT_LABELS = {
 DEFAULT_LAUNCH_CHOICE = "default"
 LAUNCH_AGENT_MODELS = {
     "codex": ("default", "gpt-5-codex", "gpt-5"),
-    "claude": ("default", "sonnet", "claude-opus-5", "claude-fable-5"),
+    "claude": ("default", "claude-sonnet-5", "claude-opus-5", "claude-fable-5"),
 }
 LAUNCH_AGENT_EFFORTS = {
     "codex": ("default", "low", "medium", "high", "xhigh"),
@@ -27,8 +27,9 @@ LAUNCH_AGENT_EFFORTS = {
 # Friendly display names for model/effort identifiers that are otherwise
 # cryptic in the picker. Missing entries fall back to the raw value.
 LAUNCH_CHOICE_LABELS = {
-    "claude-opus-5": "Opus",
-    "claude-fable-5": "Fable",
+    "claude-sonnet-5": "Sonnet 5",
+    "claude-opus-5": "Opus 5",
+    "claude-fable-5": "Fable 5",
 }
 
 
