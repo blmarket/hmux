@@ -7,14 +7,12 @@ use std::time::{Duration, Instant};
 use crate::server::pane::PaneIo;
 use crate::server::Server;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
-use crate::tmux::message::Frame;
 
 use super::actor::{ActorRef, WeakActorRef};
 use super::job::{BackgroundCommands, JobEvent};
 use super::listener::{AcceptedClients, Listener, ListenerEvent};
-use super::pane::{EventPane, PaneEvent};
+use super::pane::{EventPane, PaneEvent, PaneInterest};
 use super::process::{ChildSignal, ChildSignalEvent};
-use super::protocol::{dispatch_inbox, ClientInbox, ClientInboxEvent, ClientIo, ClientIoEvent};
 use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
 };
@@ -23,14 +21,6 @@ use super::timer::{ExpiredTimer, TimerQueue};
 
 /// One queued event with a direct reference to its destination.
 pub(crate) enum Envelope {
-    ClientIo {
-        target: ActorRef<ClientIo>,
-        event: ClientIoEvent,
-    },
-    ClientInbox {
-        target: ActorRef<ClientInbox>,
-        event: ClientInboxEvent,
-    },
     Listener {
         target: ActorRef<Listener>,
         event: ListenerEvent,
@@ -56,13 +46,6 @@ pub(crate) enum Envelope {
 impl Envelope {
     fn dispatch(self, outbox: &mut Outbox) {
         match self {
-            Envelope::ClientIo { target, event } => {
-                let dispatch_target = target.clone();
-                target.with_mut(|client| client.handle(&dispatch_target, event, outbox));
-            }
-            Envelope::ClientInbox { target, event } => {
-                dispatch_inbox(&target, event);
-            }
             Envelope::Listener { target, event } => {
                 let dispatch_target = target.clone();
                 target.with_mut(|listener| listener.handle(&dispatch_target, event, outbox));
@@ -89,22 +72,13 @@ impl Envelope {
 
 enum Effect {
     Enqueue(Envelope),
-    SetReadInterest {
-        target: ActorRef<ClientIo>,
-        enabled: bool,
-    },
-    SetWriteInterest {
-        target: ActorRef<ClientIo>,
-        enabled: bool,
-    },
     SetListenerInterest {
         target: ActorRef<Listener>,
         enabled: bool,
     },
     SetPaneInterest {
         target: ActorRef<EventPane>,
-        enabled: bool,
-        writable: bool,
+        interest: PaneInterest,
     },
     SetChildSignalInterest {
         target: ActorRef<ChildSignal>,
@@ -123,7 +97,6 @@ enum Effect {
     CancelProtocolTimer {
         target: ActorRef<ProtocolClient>,
     },
-    StopClient(ActorRef<ClientIo>),
     StopListener(ActorRef<Listener>),
     StopPane(ActorRef<EventPane>),
     StopChildSignal(ActorRef<ChildSignal>),
@@ -178,16 +151,6 @@ impl Outbox {
         self.enqueue(Envelope::Background { target, event });
     }
 
-    pub(crate) fn set_read_interest(&mut self, target: ActorRef<ClientIo>, enabled: bool) {
-        self.effects
-            .push(Effect::SetReadInterest { target, enabled });
-    }
-
-    pub(crate) fn set_write_interest(&mut self, target: ActorRef<ClientIo>, enabled: bool) {
-        self.effects
-            .push(Effect::SetWriteInterest { target, enabled });
-    }
-
     pub(crate) fn set_listener_interest(&mut self, target: ActorRef<Listener>, enabled: bool) {
         self.effects
             .push(Effect::SetListenerInterest { target, enabled });
@@ -196,14 +159,10 @@ impl Outbox {
     pub(crate) fn set_pane_interest(
         &mut self,
         target: ActorRef<EventPane>,
-        enabled: bool,
-        writable: bool,
+        interest: PaneInterest,
     ) {
-        self.effects.push(Effect::SetPaneInterest {
-            target,
-            enabled,
-            writable,
-        });
+        self.effects
+            .push(Effect::SetPaneInterest { target, interest });
     }
 
     pub(crate) fn set_child_signal_interest(
@@ -245,10 +204,6 @@ impl Outbox {
         self.effects.push(Effect::CancelProtocolTimer { target });
     }
 
-    pub(crate) fn stop_client(&mut self, target: ActorRef<ClientIo>) {
-        self.effects.push(Effect::StopClient(target));
-    }
-
     pub(crate) fn stop_listener(&mut self, target: ActorRef<Listener>) {
         self.effects.push(Effect::StopListener(target));
     }
@@ -266,12 +221,6 @@ impl Outbox {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum IoSide {
-    Read,
-    Write,
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct IoRecipient {
     target: IoTarget,
@@ -279,10 +228,6 @@ pub(crate) struct IoRecipient {
 
 #[derive(Clone, Debug)]
 enum IoTarget {
-    Client {
-        target: WeakActorRef<ClientIo>,
-        side: IoSide,
-    },
     Listener {
         target: WeakActorRef<Listener>,
     },
@@ -296,12 +241,6 @@ enum IoTarget {
         target: WeakActorRef<ProtocolClient>,
         side: ProtocolIoSide,
     },
-}
-
-/// References returned when a connection is added to the loop.
-pub(crate) struct ClientHandle {
-    io: ActorRef<ClientIo>,
-    inbox: ActorRef<ClientInbox>,
 }
 
 /// References returned when a Unix listener is added to the loop.
@@ -390,16 +329,6 @@ impl ChildSignalHandle {
     }
 }
 
-impl ClientHandle {
-    pub(crate) fn io(&self) -> &ActorRef<ClientIo> {
-        &self.io
-    }
-
-    pub(crate) fn inbox(&self) -> &ActorRef<ClientInbox> {
-        &self.inbox
-    }
-}
-
 /// Metadata for one event-loop turn.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TurnResult {
@@ -449,20 +378,6 @@ where
             expired_timers: Vec::new(),
             background_commands: None,
         }
-    }
-
-    pub(crate) fn add_client(
-        &mut self,
-        reader: ImsgReader,
-        writer: NonblockingImsgWriter,
-    ) -> ClientHandle {
-        let inbox = ActorRef::new(ClientInbox::default());
-        let io = ActorRef::new(ClientIo::new(reader, writer, inbox.clone()));
-        self.events.push_back(Envelope::ClientIo {
-            target: io.clone(),
-            event: ClientIoEvent::Start,
-        });
-        ClientHandle { io, inbox }
     }
 
     pub(crate) fn add_protocol(
@@ -524,40 +439,14 @@ where
     }
 
     pub(crate) fn sync_pane(&mut self, target: &PaneHandle) -> io::Result<()> {
-        if let Some(writable) = target
+        if let Some(interest) = target
             .pane
             .with_mut(EventPane::take_interest_change)
             .flatten()
         {
-            self.set_pane_interest(&target.pane, true, writable)?;
+            self.set_pane_interest(&target.pane, interest)?;
         }
         Ok(())
-    }
-
-    pub(crate) fn try_send(
-        &mut self,
-        target: &ActorRef<ClientIo>,
-        frame: Frame,
-    ) -> Result<(), Frame> {
-        let accepted = target
-            .with_mut(ClientIo::mark_send_work_queued)
-            .unwrap_or(false);
-        if !accepted {
-            return Err(frame);
-        }
-
-        self.events.push_back(Envelope::ClientIo {
-            target: target.clone(),
-            event: ClientIoEvent::Send(frame),
-        });
-        Ok(())
-    }
-
-    pub(crate) fn shutdown(&mut self, target: &ActorRef<ClientIo>) {
-        self.events.push_back(Envelope::ClientIo {
-            target: target.clone(),
-            event: ClientIoEvent::Shutdown,
-        });
     }
 
     pub(crate) fn shutdown_listener(&mut self, target: &ListenerHandle) {
@@ -689,31 +578,6 @@ where
 
     fn enqueue_readiness(&mut self, notification: Ready<IoRecipient>) {
         match &notification.recipient().target {
-            IoTarget::Client {
-                target: recipient,
-                side,
-            } => {
-                let Some(target) = recipient.upgrade() else {
-                    return;
-                };
-                let should_enqueue = match side {
-                    IoSide::Read => target
-                        .with_mut(ClientIo::mark_read_work_queued)
-                        .unwrap_or(false),
-                    IoSide::Write => target
-                        .with_mut(ClientIo::mark_write_work_queued)
-                        .unwrap_or(false),
-                };
-                if !should_enqueue {
-                    return;
-                }
-
-                let event = match side {
-                    IoSide::Read => ClientIoEvent::Readable,
-                    IoSide::Write => ClientIoEvent::Writable,
-                };
-                self.events.push_back(Envelope::ClientIo { target, event });
-            }
             IoTarget::Listener { target: recipient } => {
                 let Some(target) = recipient.upgrade() else {
                     return;
@@ -784,21 +648,11 @@ where
     fn apply(&mut self, effect: Effect) -> io::Result<()> {
         match effect {
             Effect::Enqueue(envelope) => self.events.push_back(envelope),
-            Effect::SetReadInterest { target, enabled } => {
-                self.set_read_interest(&target, enabled)?;
-            }
-            Effect::SetWriteInterest { target, enabled } => {
-                self.set_write_interest(&target, enabled)?;
-            }
             Effect::SetListenerInterest { target, enabled } => {
                 self.set_listener_interest(&target, enabled)?;
             }
-            Effect::SetPaneInterest {
-                target,
-                enabled,
-                writable,
-            } => {
-                self.set_pane_interest(&target, enabled, writable)?;
+            Effect::SetPaneInterest { target, interest } => {
+                self.set_pane_interest(&target, interest)?;
             }
             Effect::SetChildSignalInterest { target, enabled } => {
                 self.set_child_signal_interest(&target, enabled)?;
@@ -823,13 +677,10 @@ where
                         event,
                     },
                 );
-                target.with_mut(|client| client.set_status_timer(Some(timer)));
+                target.with_mut(|client| client.set_timer(Some(timer)));
             }
             Effect::CancelProtocolTimer { target } => {
                 self.cancel_protocol_timer(&target);
-            }
-            Effect::StopClient(target) => {
-                target.stop();
             }
             Effect::StopListener(target) => {
                 target.stop();
@@ -843,64 +694,6 @@ where
             Effect::StopProtocol(target) => {
                 target.stop();
             }
-        }
-        Ok(())
-    }
-
-    fn set_read_interest(&mut self, target: &ActorRef<ClientIo>, enabled: bool) -> io::Result<()> {
-        let token = target.with(ClientIo::read_token).flatten();
-        match (enabled, token) {
-            (true, None) => {
-                let recipient = IoRecipient {
-                    target: IoTarget::Client {
-                        target: target.downgrade(),
-                        side: IoSide::Read,
-                    },
-                };
-                if let Some(result) = target.with_mut(|client| {
-                    let token =
-                        self.reactor
-                            .register(client.read_fd(), Interest::READABLE, recipient)?;
-                    client.set_read_token(Some(token));
-                    Ok::<(), io::Error>(())
-                }) {
-                    result?;
-                }
-            }
-            (false, Some(token)) => {
-                self.reactor.deregister(token)?;
-                target.with_mut(|client| client.set_read_token(None));
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
-    fn set_write_interest(&mut self, target: &ActorRef<ClientIo>, enabled: bool) -> io::Result<()> {
-        let token = target.with(ClientIo::write_token).flatten();
-        match (enabled, token) {
-            (true, None) => {
-                let recipient = IoRecipient {
-                    target: IoTarget::Client {
-                        target: target.downgrade(),
-                        side: IoSide::Write,
-                    },
-                };
-                if let Some(result) = target.with_mut(|client| {
-                    let token =
-                        self.reactor
-                            .register(client.write_fd(), Interest::WRITABLE, recipient)?;
-                    client.set_write_token(Some(token));
-                    Ok::<(), io::Error>(())
-                }) {
-                    result?;
-                }
-            }
-            (false, Some(token)) => {
-                self.reactor.deregister(token)?;
-                target.with_mut(|client| client.set_write_token(None));
-            }
-            _ => {}
         }
         Ok(())
     }
@@ -940,43 +733,41 @@ where
     fn set_pane_interest(
         &mut self,
         target: &ActorRef<EventPane>,
-        enabled: bool,
-        writable: bool,
+        interest: PaneInterest,
     ) -> io::Result<()> {
         let token = target.with(EventPane::token).flatten();
-        match (enabled, token) {
-            (true, None) => {
+        let reactor_interest = match interest {
+            PaneInterest::Disabled => {
+                if let Some(token) = token {
+                    self.reactor.deregister(token)?;
+                    target.with_mut(|pane| pane.set_token(None));
+                }
+                return Ok(());
+            }
+            PaneInterest::Readable => Interest::READABLE,
+            PaneInterest::ReadableWritable => Interest::READABLE | Interest::WRITABLE,
+        };
+
+        match token {
+            None => {
                 let recipient = IoRecipient {
                     target: IoTarget::Pane {
                         target: target.downgrade(),
                     },
                 };
                 if let Some(result) = target.with_mut(|pane| {
-                    let interest = if writable {
-                        Interest::READABLE | Interest::WRITABLE
-                    } else {
-                        Interest::READABLE
-                    };
-                    let token = self.reactor.register(pane.fd(), interest, recipient)?;
+                    let token = self
+                        .reactor
+                        .register(pane.fd(), reactor_interest, recipient)?;
                     pane.set_token(Some(token));
                     Ok::<(), io::Error>(())
                 }) {
                     result?;
                 }
             }
-            (true, Some(token)) => {
-                let interest = if writable {
-                    Interest::READABLE | Interest::WRITABLE
-                } else {
-                    Interest::READABLE
-                };
-                self.reactor.reregister(token, interest)?;
+            Some(token) => {
+                self.reactor.reregister(token, reactor_interest)?;
             }
-            (false, Some(token)) => {
-                self.reactor.deregister(token)?;
-                target.with_mut(|pane| pane.set_token(None));
-            }
-            (false, None) => {}
         }
         Ok(())
     }
@@ -1070,25 +861,21 @@ where
     }
 
     fn cancel_protocol_timer(&mut self, target: &ActorRef<ProtocolClient>) {
-        let timer = target.with(ProtocolClient::status_timer).flatten();
+        let timer = target.with(ProtocolClient::timer).flatten();
         if let Some(timer) = timer {
             self.timers.cancel(timer);
-            target.with_mut(|client| client.set_status_timer(None));
+            target.with_mut(|client| client.set_timer(None));
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::os::fd::{AsFd as _, OwnedFd};
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::*;
-    use crate::event_loop::protocol::{CloseReason, READ_FRAME_BUDGET};
-    use crate::tmux::codec::{dup_fd, encode_bytes, split_nonblocking_stream, split_stream};
-    use crate::tmux::message::Message;
 
     const POLL_TIMEOUT: Duration = Duration::from_secs(1);
     static NEXT_LISTENER_PATH: AtomicU64 = AtomicU64::new(0);
@@ -1114,18 +901,6 @@ mod tests {
     fn dispatch_all(loop_: &mut EventLoop<MioReactor<IoRecipient>>) {
         let dispatched = loop_.dispatch_with_budget(4096).unwrap();
         assert!(dispatched < 4096, "event queue did not quiesce");
-    }
-
-    fn nonblocking_pair_with_limit(
-        stream: UnixStream,
-        limit: usize,
-    ) -> io::Result<(ImsgReader, NonblockingImsgWriter)> {
-        let read_fd: OwnedFd = stream.into();
-        let write_fd = dup_fd(read_fd.as_fd())?;
-        Ok((
-            ImsgReader::new(read_fd),
-            NonblockingImsgWriter::with_queue_limit(write_fd, limit),
-        ))
     }
 
     #[test]
@@ -1182,192 +957,20 @@ mod tests {
     }
 
     #[test]
-    fn read_budget_uses_deferred_fifo_continuation_for_buffered_frames() {
-        let (peer, server) = UnixStream::pair().unwrap();
-        let (_peer_reader, mut peer_writer) = split_stream(peer).unwrap();
-        let (server_reader, server_writer) = split_nonblocking_stream(server).unwrap();
-        let mut loop_ = EventLoop::new().unwrap();
-        let client = loop_.add_client(server_reader, server_writer);
-        dispatch_all(&mut loop_);
-
-        for index in 0..READ_FRAME_BUDGET + 2 {
-            peer_writer
-                .send(Frame::new(Message::Command(vec![index.to_string()])))
-                .unwrap();
-        }
-
-        loop_.poll(Some(POLL_TIMEOUT)).unwrap();
-        assert_eq!(loop_.pending_events(), 1);
-        assert_eq!(
-            loop_.dispatch_with_budget(READ_FRAME_BUDGET + 1).unwrap(),
-            READ_FRAME_BUDGET + 1
-        );
-        assert_eq!(
-            client.inbox().with(ClientInbox::len),
-            Some(READ_FRAME_BUDGET)
-        );
-        assert_eq!(loop_.pending_events(), 1);
-
-        dispatch_all(&mut loop_);
-        let frames = client
-            .inbox()
-            .with_mut(|inbox| std::iter::from_fn(|| inbox.pop_frame()).collect::<Vec<_>>())
-            .unwrap();
-        assert_eq!(frames.len(), READ_FRAME_BUDGET + 2);
-        for (index, frame) in frames.into_iter().enumerate() {
-            assert_eq!(frame.msg, Message::Command(vec![index.to_string()]));
-        }
-    }
-
-    #[test]
-    fn exact_read_budget_continues_to_probe_edge_triggered_source() {
-        let (peer, server) = UnixStream::pair().unwrap();
-        let (_peer_reader, mut peer_writer) = split_stream(peer).unwrap();
-        let (server_reader, server_writer) = split_nonblocking_stream(server).unwrap();
-        let mut loop_ = EventLoop::new().unwrap();
-        let client = loop_.add_client(server_reader, server_writer);
-        dispatch_all(&mut loop_);
-
-        for index in 0..READ_FRAME_BUDGET {
-            peer_writer
-                .send(Frame::new(Message::Command(vec![index.to_string()])))
-                .unwrap();
-        }
-
-        loop_.poll(Some(POLL_TIMEOUT)).unwrap();
-        assert_eq!(
-            loop_.dispatch_with_budget(READ_FRAME_BUDGET + 1).unwrap(),
-            READ_FRAME_BUDGET + 1
-        );
-        assert_eq!(
-            client.inbox().with(ClientInbox::len),
-            Some(READ_FRAME_BUDGET)
-        );
-        assert_eq!(
-            loop_.pending_events(),
-            1,
-            "budget exhaustion must leave one read continuation"
-        );
-
-        dispatch_all(&mut loop_);
-        assert_eq!(loop_.pending_events(), 0);
-    }
-
-    #[test]
-    fn writable_interest_exists_only_while_output_is_pending() {
-        let (peer, server) = UnixStream::pair().unwrap();
-        let (mut peer_reader, _peer_writer) = split_stream(peer).unwrap();
-        let (server_reader, server_writer) = split_nonblocking_stream(server).unwrap();
-        let mut loop_ = EventLoop::new().unwrap();
-        let client = loop_.add_client(server_reader, server_writer);
-        dispatch_all(&mut loop_);
-
-        loop_
-            .try_send(client.io(), Frame::new(Message::Ready))
-            .unwrap();
-        dispatch_all(&mut loop_);
-        loop_
-            .try_send(client.io(), Frame::new(Message::Exited))
-            .unwrap();
-        dispatch_all(&mut loop_);
-        assert!(client.io().with(ClientIo::write_token).flatten().is_some());
-
-        loop_.poll(Some(POLL_TIMEOUT)).unwrap();
-        dispatch_all(&mut loop_);
-        assert_eq!(client.io().with(ClientIo::write_token).flatten(), None);
-        assert_eq!(peer_reader.recv().unwrap().msg, Message::Ready);
-        assert_eq!(peer_reader.recv().unwrap().msg, Message::Exited);
-    }
-
-    #[test]
-    fn deferred_send_slot_returns_a_second_unconsumed_frame() {
-        let (_peer, server) = UnixStream::pair().unwrap();
-        let (server_reader, server_writer) = split_nonblocking_stream(server).unwrap();
-        let mut loop_ = EventLoop::new().unwrap();
-        let client = loop_.add_client(server_reader, server_writer);
-        let rejected_message = Message::Exited;
-
-        loop_
-            .try_send(client.io(), Frame::new(Message::Ready))
-            .unwrap();
-        let rejected = loop_
-            .try_send(client.io(), Frame::new(rejected_message.clone()))
-            .expect_err("one send event is already deferred");
-
-        assert_eq!(rejected.msg, rejected_message);
-        assert_eq!(loop_.pending_events(), 2);
-        dispatch_all(&mut loop_);
-        loop_.try_send(client.io(), rejected).unwrap();
-    }
-
-    #[test]
-    fn high_water_pauses_reads_and_preserves_frame_order() {
-        let (peer, server) = UnixStream::pair().unwrap();
-        let (mut peer_reader, _peer_writer) = split_stream(peer).unwrap();
-        let first = Message::Command(vec!["one".into()]);
-        let second = Message::Command(vec!["two".into()]);
-        let queue_limit = encode_bytes(&Frame::new(first.clone())).len() + 1;
-        let (server_reader, server_writer) =
-            nonblocking_pair_with_limit(server, queue_limit).unwrap();
-        let mut loop_ = EventLoop::new().unwrap();
-        let client = loop_.add_client(server_reader, server_writer);
-        dispatch_all(&mut loop_);
-
-        loop_
-            .try_send(client.io(), Frame::new(first.clone()))
-            .unwrap();
-        dispatch_all(&mut loop_);
-        loop_
-            .try_send(client.io(), Frame::new(second.clone()))
-            .unwrap();
-        dispatch_all(&mut loop_);
-
-        assert_eq!(client.io().with(ClientIo::reads_paused), Some(true));
-        assert_eq!(client.io().with(ClientIo::read_token).flatten(), None);
-        assert!(client.io().with(ClientIo::write_token).flatten().is_some());
-
-        loop_.poll(Some(POLL_TIMEOUT)).unwrap();
-        dispatch_all(&mut loop_);
-        assert_eq!(client.io().with(ClientIo::reads_paused), Some(false));
-        assert!(client.io().with(ClientIo::read_token).flatten().is_some());
-
-        assert_eq!(client.io().with(ClientIo::write_token).flatten(), None);
-        assert_eq!(peer_reader.recv().unwrap().msg, first);
-        assert_eq!(peer_reader.recv().unwrap().msg, second);
-    }
-
-    #[test]
-    fn shutdown_deregisters_sources_before_stopping_actor() {
-        let (_peer, server) = UnixStream::pair().unwrap();
-        let (server_reader, server_writer) = split_nonblocking_stream(server).unwrap();
-        let mut loop_ = EventLoop::new().unwrap();
-        let client = loop_.add_client(server_reader, server_writer);
-        dispatch_all(&mut loop_);
-
-        loop_.shutdown(client.io());
-        dispatch_all(&mut loop_);
-
-        assert!(!client.io().is_alive());
-        assert_eq!(
-            client.inbox().with(ClientInbox::close_reason),
-            Some(Some(CloseReason::Shutdown))
-        );
-    }
-
-    #[test]
     fn turn_skips_poll_while_dispatch_budget_leaves_queued_work() {
-        let (_peer, server) = UnixStream::pair().unwrap();
-        let (server_reader, server_writer) = split_nonblocking_stream(server).unwrap();
+        let path = ListenerPath::new();
+        let listener = UnixListener::bind(&path.0).unwrap();
         let mut loop_ = EventLoop::new().unwrap();
-        let client = loop_.add_client(server_reader, server_writer);
-        loop_
-            .try_send(client.io(), Frame::new(Message::Ready))
-            .unwrap();
+        let listener = loop_.add_listener(listener, 1).unwrap();
+        loop_.shutdown_listener(&listener);
 
         let result = loop_.run_turn(Some(POLL_TIMEOUT), 1).unwrap();
 
         assert_eq!(result.dispatched(), 1);
         assert_eq!(result.poll_result(), None);
         assert_eq!(loop_.pending_events(), 1);
+
+        dispatch_all(&mut loop_);
+        assert!(!listener.is_alive());
     }
 }

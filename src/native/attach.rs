@@ -53,6 +53,14 @@ where
     let control_fd = reader.as_raw_fd();
 
     loop {
+        if run_deferred_command(&mut session, state, hub) {
+            if session.drive_ready(state, hub, AttachWaitReady::default(), reader, writer)?
+                == AttachDrive::Finished
+            {
+                break;
+            }
+            continue;
+        }
         let ready = match session.prepare_wait(state, control_fd, reader.has_buffered_frame())? {
             AttachPrepared::Ready(ready) => ready,
             AttachPrepared::Wait { sources, timeout } => wait_for_events(sources, timeout)?,
@@ -63,6 +71,44 @@ where
         }
     }
     Ok(())
+}
+
+fn run_deferred_command(
+    session: &mut attach::AttachSession,
+    state: &Arc<Mutex<ServerState>>,
+    hub: &StatusHub,
+) -> bool {
+    let Some(request) = session.take_command_request() else {
+        return false;
+    };
+    let agents = hub.snapshot().panes;
+    let queue = match &request.source {
+        command::DeferredCommand::Args(args) => {
+            command::start_resumable_command(args, state, &agents, &request.context)
+        }
+        command::DeferredCommand::Line { line, tail } => {
+            command::start_resumable_command_string_with_tail(
+                line,
+                tail,
+                state,
+                &agents,
+                &request.context,
+            )
+        }
+    };
+    let mut result = match queue {
+        Ok(queue) => super::task::NativeCommandRuntime::run(queue, state),
+        Err(result) => result,
+    };
+    for background in result.background_commands.drain(..) {
+        let _ = super::task::NativeCommandRuntime::spawn_background(
+            background,
+            Arc::clone(state),
+            agents.clone(),
+        );
+    }
+    session.complete_command(request.continuation, result, state);
+    true
 }
 
 fn wait_for_events(sources: AttachWaitSources, timeout: i32) -> io::Result<AttachWaitReady> {

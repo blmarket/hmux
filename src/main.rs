@@ -16,9 +16,9 @@ use hmux::tmux::{NativeServer, Server};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 enum Engine {
-    /// Native libghostty-vt server (owns ptys + screen state).
+    /// Blocking protocol and threaded pane-I/O runtime.
     Native,
-    /// Native server behind the readiness-driven forwarding adapter.
+    /// Single readiness-driven protocol and pane-I/O runtime.
     EventLoop,
 }
 
@@ -34,7 +34,7 @@ struct Args {
     #[arg(short = 'S', long = "socket")]
     socket: Option<PathBuf>,
 
-    /// Connection forwarding implementation.
+    /// Server runtime implementation.
     #[arg(long, value_enum, default_value_t = Engine::Native)]
     engine: Engine,
 }
@@ -143,8 +143,8 @@ fn run_server(args: Args) -> hmux::Result<()> {
     // session 0, so launching hmux does not speculatively spawn a shell or
     // commit the first session to the 80x24 fallback geometry.
     let server = Server::new()?;
-    // The observer publishes into the server's status hub; connection handlers
-    // read the same hub for `#{pane_agent*}` and control subscriptions.
+    // The observer publishes into the server's status hub; format rendering
+    // reads the same hub for `#{pane_agent*}` and control subscriptions.
     let _agent_observer = AgentObserver::start(server.clone(), server.status_hub())?;
     let result = match args.engine {
         Engine::Native => serve::run_until(

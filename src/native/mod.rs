@@ -14,7 +14,8 @@ use crate::tmux::traits::TmuxServer;
 mod attach;
 mod observation;
 pub(crate) mod pane;
-pub mod protocol;
+mod protocol;
+pub(crate) mod task;
 
 /// The shared server engine hosted by the blocking/threaded runtime.
 #[derive(Clone)]

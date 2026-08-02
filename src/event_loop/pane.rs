@@ -15,6 +15,13 @@ pub(crate) enum PaneEvent {
     Shutdown,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PaneInterest {
+    Disabled,
+    Readable,
+    ReadableWritable,
+}
+
 pub(crate) struct EventPane {
     io: PaneIo,
     token: Option<Token>,
@@ -62,7 +69,7 @@ impl EventPane {
         true
     }
 
-    pub(crate) fn take_interest_change(&mut self) -> Option<bool> {
+    pub(crate) fn take_interest_change(&mut self) -> Option<PaneInterest> {
         if self.stopping {
             return None;
         }
@@ -71,7 +78,11 @@ impl EventPane {
             return None;
         }
         self.writable_interest = writable;
-        Some(writable)
+        Some(if writable {
+            PaneInterest::ReadableWritable
+        } else {
+            PaneInterest::Readable
+        })
     }
 
     pub(crate) fn handle(
@@ -95,7 +106,7 @@ impl EventPane {
                     match self.io.drive_readable() {
                         Ok(result) if result.closed => {
                             self.stopping = true;
-                            outbox.set_pane_interest(target.clone(), false, false);
+                            outbox.set_pane_interest(target.clone(), PaneInterest::Disabled);
                             outbox.stop_pane(target.clone());
                             return;
                         }
@@ -106,7 +117,7 @@ impl EventPane {
                         Ok(_) => {}
                         Err(_) => {
                             self.stopping = true;
-                            outbox.set_pane_interest(target.clone(), false, false);
+                            outbox.set_pane_interest(target.clone(), PaneInterest::Disabled);
                             outbox.stop_pane(target.clone());
                             return;
                         }
@@ -119,7 +130,7 @@ impl EventPane {
                 match self.io.drive_readable() {
                     Ok(result) if result.closed => {
                         self.stopping = true;
-                        outbox.set_pane_interest(target.clone(), false, false);
+                        outbox.set_pane_interest(target.clone(), PaneInterest::Disabled);
                         outbox.stop_pane(target.clone());
                         return;
                     }
@@ -130,7 +141,7 @@ impl EventPane {
                     Ok(_) => {}
                     Err(_) => {
                         self.stopping = true;
-                        outbox.set_pane_interest(target.clone(), false, false);
+                        outbox.set_pane_interest(target.clone(), PaneInterest::Disabled);
                         outbox.stop_pane(target.clone());
                         return;
                     }
@@ -139,7 +150,7 @@ impl EventPane {
             }
             PaneEvent::Shutdown => {
                 self.stopping = true;
-                outbox.set_pane_interest(target.clone(), false, false);
+                outbox.set_pane_interest(target.clone(), PaneInterest::Disabled);
                 outbox.stop_pane(target.clone());
             }
             PaneEvent::Start | PaneEvent::Ready(_) | PaneEvent::ReadContinuation => {}
@@ -147,8 +158,8 @@ impl EventPane {
     }
 
     fn sync_interest(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
-        if let Some(writable) = self.take_interest_change() {
-            outbox.set_pane_interest(target.clone(), true, writable);
+        if let Some(interest) = self.take_interest_change() {
+            outbox.set_pane_interest(target.clone(), interest);
         }
     }
 }

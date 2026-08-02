@@ -1,28 +1,20 @@
-use super::*;
-use crate::server::command;
+use std::io;
+use std::os::unix::ffi::OsStrExt;
+use std::sync::Arc;
+use std::time::Instant;
 
-pub(super) enum DirectOperation {
-    Idle,
-    WaitingClientRead {
-        transaction: CommandTransaction,
-        args: Vec<String>,
-        data: Vec<u8>,
-    },
-    WaitingClientWriteReady {
-        transaction: CommandTransaction,
-        request: command::ClientFileWrite,
-    },
-    WritingClientFile {
-        transaction: Option<CommandTransaction>,
-        request: command::ClientFileWrite,
-        offset: usize,
-        close_generated: bool,
-    },
-    WaitingCommand {
-        pending: bool,
-    },
-    Responding(CommandResponse),
-}
+use crate::server::command::{self, CommandResult};
+use crate::server::task::{ReadySet, TaskState};
+use crate::tmux::message::{Frame, Message};
+
+use super::super::actor::ActorRef;
+use super::super::driver::Outbox;
+use super::super::job::JobEvent;
+use super::client::{
+    CommandClientState, CommandOperation, ProtocolClient, ProtocolCloseReason, ProtocolEvent,
+    ProtocolIoSide, ProtocolState, COMMAND_QUEUE_BUDGET, FILE_STREAM,
+};
+use super::command::{run_command_work, ActiveResumableCommand, CommandStep, CommandWork};
 
 impl ProtocolClient {
     pub(super) fn begin_command(
@@ -31,14 +23,17 @@ impl ProtocolClient {
         args: Vec<String>,
         outbox: &mut Outbox,
     ) {
-        self.start_command_work(
-            target,
-            CommandWork::Initial {
-                args,
-                context: self.context.clone(),
-            },
-            outbox,
-        );
+        let Some(context) = self
+            .identifying()
+            .map(|identifying| identifying.context.clone())
+        else {
+            return;
+        };
+        self.protocol_state = ProtocolState::Command(CommandClientState {
+            operation: CommandOperation::AwaitingStep,
+            timer_generation: 0,
+        });
+        self.start_command_work(target, CommandWork::Initial { args, context }, outbox);
     }
 
     pub(super) fn start_command_work(
@@ -47,115 +42,116 @@ impl ProtocolClient {
         work: CommandWork,
         outbox: &mut Outbox,
     ) {
-        self.completion = None;
-        self.operation = DirectOperation::Idle;
+        let ProtocolState::Command(command) = &mut self.protocol_state else {
+            return;
+        };
+        command.operation = CommandOperation::AwaitingStep;
         let step = run_command_work(work, &self.state);
         outbox.enqueue_protocol(target.clone(), ProtocolEvent::CommandStepReady(step));
     }
 
     pub(super) fn drive_resumable_command(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
-        let Some(mut active) = self.resumable_command.take() else {
+        let (complete, has_source, deadline) = {
+            let ProtocolState::Command(command) = &mut self.protocol_state else {
+                return;
+            };
+            let CommandOperation::AwaitingQueue(active) = &mut command.operation else {
+                return;
+            };
+            let complete = active.task.poll(&ReadySet::default());
+            let wait = active.task.wait();
+            (
+                complete,
+                wait.as_ref().is_some_and(|wait| !wait.sources().is_empty()),
+                wait.and_then(|wait| wait.deadline()),
+            )
+        };
+        if complete {
+            let ProtocolState::Command(command) = &mut self.protocol_state else {
+                return;
+            };
+            let operation =
+                std::mem::replace(&mut command.operation, CommandOperation::AwaitingStep);
+            let CommandOperation::AwaitingQueue(mut active) = operation else {
+                return;
+            };
+            let mut result = match active.task.take_output() {
+                Some(Ok(result)) => result,
+                Some(Err(error)) => {
+                    self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+                    return;
+                }
+                None => return,
+            };
+            for request in result.background_commands.drain(..) {
+                outbox
+                    .enqueue_background(self.background_commands.clone(), JobEvent::Start(request));
+            }
+            let mut transaction = active.transaction;
+            if transaction.complete_group(&result) {
+                transaction.groups.clear();
+            }
+            self.start_command_work(target, CommandWork::Advance(transaction), outbox);
+            return;
+        }
+
+        if !has_source {
+            outbox.enqueue_protocol(target.clone(), ProtocolEvent::CommandQueueContinue);
+            return;
+        }
+
+        let ProtocolState::Command(command) = &mut self.protocol_state else {
             return;
         };
-        match active.queue.drive(&self.state, COMMAND_QUEUE_BUDGET) {
-            command::ResumableCommandTurn::Pending => {
-                self.resumable_command = Some(active);
-                outbox.enqueue_protocol(target.clone(), ProtocolEvent::CommandQueueContinue);
-            }
-            command::ResumableCommandTurn::Suspended(suspension) => {
-                match PendingCommand::start_suspension(suspension) {
-                    Ok(completion) => {
-                        let complete = completion.is_complete();
-                        let deadline = completion.deadline();
-                        self.resumable_command = Some(active);
-                        self.completion = Some(completion);
-                        self.operation = DirectOperation::WaitingCommand { pending: true };
-                        if complete {
-                            outbox
-                                .enqueue_protocol(target.clone(), ProtocolEvent::CommandCompleted);
-                        } else {
-                            outbox.set_protocol_interest(
-                                target.clone(),
-                                ProtocolIoSide::Command,
-                                true,
-                            );
-                            if let Some(deadline) = deadline {
-                                self.command_generation = self.command_generation.wrapping_add(1);
-                                outbox.set_protocol_timer_event(
-                                    target.clone(),
-                                    deadline,
-                                    ProtocolEvent::CommandTimeout(self.command_generation),
-                                );
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
-                    }
-                }
-            }
-            command::ResumableCommandTurn::Complete(mut result) => {
-                for request in result.background_commands.drain(..) {
-                    outbox.enqueue_background(
-                        self.background_commands.clone(),
-                        super::super::job::JobEvent::Start(request),
-                    );
-                }
-                let mut transaction = active.transaction;
-                if transaction.complete_group(&result) {
-                    transaction.groups.clear();
-                }
-                self.start_command_work(target, CommandWork::Advance(transaction), outbox);
-            }
+        let operation = std::mem::replace(&mut command.operation, CommandOperation::AwaitingStep);
+        let CommandOperation::AwaitingQueue(active) = operation else {
+            return;
+        };
+        command.operation = CommandOperation::WaitingCommand(active);
+        outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Command, true);
+        if let Some(deadline) = deadline {
+            command.timer_generation = command.timer_generation.wrapping_add(1);
+            outbox.set_protocol_timer_event(
+                target.clone(),
+                deadline,
+                ProtocolEvent::CommandTimeout(command.timer_generation),
+            );
         }
     }
 
     pub(super) fn handle_command_completed(
         &mut self,
         target: &ActorRef<Self>,
+        source_ready: bool,
         outbox: &mut Outbox,
     ) {
-        let had_deadline = self
-            .completion
-            .as_ref()
-            .is_some_and(|completion| completion.deadline().is_some());
-        let completed = match self
-            .completion
-            .as_mut()
-            .expect("command readiness without a completion")
-            .take_result()
-        {
-            Ok(result) => result,
-            Err(error) => {
-                self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+        let (mut active, had_deadline) = {
+            let ProtocolState::Command(command) = &mut self.protocol_state else {
                 return;
-            }
+            };
+            let operation =
+                std::mem::replace(&mut command.operation, CommandOperation::AwaitingStep);
+            let CommandOperation::WaitingCommand(active) = operation else {
+                return;
+            };
+            let had_deadline = active
+                .task
+                .wait()
+                .and_then(|wait| wait.deadline())
+                .is_some();
+            (active, had_deadline)
         };
-        match &mut self.operation {
-            DirectOperation::WaitingCommand { pending } if *pending => *pending = false,
-            _ => {
-                self.close(
-                    target,
-                    ProtocolCloseReason::Error(io::ErrorKind::InvalidData),
-                    outbox,
-                );
-                return;
-            }
-        }
-        self.operation = DirectOperation::Idle;
+        active
+            .task
+            .poll_after_single_source_wakeup(source_ready, Instant::now());
         outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Command, false);
         if had_deadline {
             outbox.cancel_protocol_timer(target.clone());
         }
-        let Some(active) = self.resumable_command.as_mut() else {
-            self.close(
-                target,
-                ProtocolCloseReason::Error(io::ErrorKind::InvalidData),
-                outbox,
-            );
+        let ProtocolState::Command(command) = &mut self.protocol_state else {
             return;
         };
-        active.queue.resume(completed, &self.state);
+        command.operation = CommandOperation::AwaitingQueue(active);
         outbox.enqueue_protocol(target.clone(), ProtocolEvent::CommandQueueContinue);
     }
 
@@ -165,6 +161,16 @@ impl ProtocolClient {
         step: CommandStep,
         outbox: &mut Outbox,
     ) {
+        let awaiting_step = matches!(
+            &self.protocol_state,
+            ProtocolState::Command(CommandClientState {
+                operation: CommandOperation::AwaitingStep,
+                ..
+            })
+        );
+        if !awaiting_step {
+            return;
+        }
         match step {
             CommandStep::Complete(result) => self.begin_response(target, result, outbox),
             CommandStep::Execute {
@@ -175,8 +181,19 @@ impl ProtocolClient {
                 let agents = self.hub.snapshot().panes;
                 match command::start_resumable_command(&args, &self.state, &agents, &context) {
                     Ok(queue) => {
-                        self.resumable_command =
-                            Some(ActiveResumableCommand { transaction, queue });
+                        let ProtocolState::Command(command) = &mut self.protocol_state else {
+                            return;
+                        };
+                        command.operation =
+                            CommandOperation::AwaitingQueue(ActiveResumableCommand {
+                                transaction,
+                                task: TaskState::new(command::CommandCoroutine::new(
+                                    queue,
+                                    Arc::clone(&self.state),
+                                    Arc::new(crate::event_loop::task::EventCommandRuntime),
+                                    COMMAND_QUEUE_BUDGET,
+                                )),
+                            });
                         self.drive_resumable_command(target, outbox);
                     }
                     Err(result) => {
@@ -196,7 +213,10 @@ impl ProtocolClient {
                 let fd = if path.as_os_str() == "-" { 0 } else { -1 };
                 let mut wire_path = path.as_os_str().as_bytes().to_vec();
                 wire_path.push(0);
-                self.operation = DirectOperation::WaitingClientRead {
+                let ProtocolState::Command(command) = &mut self.protocol_state else {
+                    return;
+                };
+                command.operation = CommandOperation::WaitingClientRead {
                     transaction,
                     args,
                     data: Vec::new(),
@@ -219,7 +239,10 @@ impl ProtocolClient {
                 let mut path = request.path.as_os_str().as_bytes().to_vec();
                 path.push(0);
                 let flags = request.flags;
-                self.operation = DirectOperation::WaitingClientWriteReady {
+                let ProtocolState::Command(command) = &mut self.protocol_state else {
+                    return;
+                };
+                command.operation = CommandOperation::WaitingClientWriteReady {
                     transaction,
                     request,
                 };
@@ -249,8 +272,10 @@ impl ProtocolClient {
                 stream: FILE_STREAM,
                 data,
             } => {
-                if let DirectOperation::WaitingClientRead { data: buffered, .. } =
-                    &mut self.operation
+                if let ProtocolState::Command(CommandClientState {
+                    operation: CommandOperation::WaitingClientRead { data: buffered, .. },
+                    ..
+                }) = &mut self.protocol_state
                 {
                     buffered.extend_from_slice(&data);
                 }
@@ -259,8 +284,12 @@ impl ProtocolClient {
                 stream: FILE_STREAM,
                 error,
             } => {
-                let operation = std::mem::replace(&mut self.operation, DirectOperation::Idle);
-                let DirectOperation::WaitingClientRead {
+                let ProtocolState::Command(command) = &mut self.protocol_state else {
+                    return;
+                };
+                let operation =
+                    std::mem::replace(&mut command.operation, CommandOperation::AwaitingStep);
+                let CommandOperation::WaitingClientRead {
                     transaction,
                     args,
                     data,
@@ -283,8 +312,12 @@ impl ProtocolClient {
                 stream: FILE_STREAM,
                 error,
             } => {
-                let operation = std::mem::replace(&mut self.operation, DirectOperation::Idle);
-                let DirectOperation::WaitingClientWriteReady {
+                let ProtocolState::Command(command) = &mut self.protocol_state else {
+                    return;
+                };
+                let operation =
+                    std::mem::replace(&mut command.operation, CommandOperation::AwaitingStep);
+                let CommandOperation::WaitingClientWriteReady {
                     mut transaction,
                     request,
                 } = operation
@@ -303,7 +336,10 @@ impl ProtocolClient {
                     }
                     self.start_command_work(target, CommandWork::Advance(transaction), outbox);
                 } else {
-                    self.operation = DirectOperation::WritingClientFile {
+                    let ProtocolState::Command(command) = &mut self.protocol_state else {
+                        return;
+                    };
+                    command.operation = CommandOperation::WritingClientFile {
                         transaction: Some(transaction),
                         request,
                         offset: 0,
@@ -313,7 +349,11 @@ impl ProtocolClient {
                 }
             }
             Message::WriteReady { stream, error } => {
-                if let DirectOperation::Responding(response) = &mut self.operation {
+                if let ProtocolState::Command(CommandClientState {
+                    operation: CommandOperation::Responding(response),
+                    ..
+                }) = &mut self.protocol_state
+                {
                     response.acknowledge(stream, error);
                     self.drive_output(target, outbox);
                 }

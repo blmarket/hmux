@@ -3,7 +3,7 @@
 //! Only the handful of commands the prototype needs are implemented; anything
 //! else returns a nonzero exit with an error line, like tmux does for an unknown
 //! command. Output is returned as text + streams; the protocol layer
-//! ([`crate::native::protocol`]) delivers it over the imsg file protocol.
+//! ([`super::protocol`]) delivers it over the imsg file protocol.
 //!
 //! Behaviors here are pinned against real tmux by the differential conformance
 //! suite (`hmux_conformance::behaviors`), which runs the identical command
@@ -18,7 +18,7 @@ pub(in crate::server) mod execution;
 mod identity;
 pub(in crate::server) mod keys;
 pub(in crate::server) mod panes;
-pub(crate) mod queue;
+pub(in crate::server) mod queue;
 pub(in crate::server) mod server;
 pub(in crate::server) mod sessions;
 pub(in crate::server) mod windows;
@@ -29,7 +29,7 @@ pub(in crate::server) use identity::Command;
 
 use std::collections::BTreeMap;
 use std::io;
-use std::os::fd::{AsRawFd, BorrowedFd};
+use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
@@ -53,6 +53,9 @@ use super::state::{
 use super::style::{
     write_capture_hyperlink, CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder,
 };
+use super::task::{
+    Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest, WaitToken,
+};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.
@@ -75,7 +78,7 @@ pub struct CommandResult {
     pub stdout_bytes: Vec<u8>,
     pub stderr: String,
     pub exit: i32,
-    pub(crate) pane_output_wait: Option<(Arc<crate::server::pane::NativePaneObservation>, u64)>,
+    pub(crate) pane_output_wait: Option<(Arc<super::pane::NativePaneObservation>, u64)>,
     pub(crate) deferred_commands: Vec<DeferredCommand>,
     pub(crate) background_commands: Vec<BackgroundCommandRequest>,
     /// Continue the containing command list despite a nonzero client status.
@@ -107,7 +110,6 @@ pub struct ClientContext {
     pub(crate) preserve_queue_insertions: bool,
     pub(crate) suppress_hooks: bool,
     pub(crate) defer_queue_commands: bool,
-    pub(crate) defer_background_commands: bool,
     pub(crate) defer_attach_commands: bool,
 }
 
@@ -401,7 +403,19 @@ pub(crate) fn command_prompt_template(
 /// stopping at the first one that fails. We reproduce both phases here.
 #[cfg(test)]
 pub fn run(args: &[String], state: &Arc<Mutex<ServerState>>, agents: &PaneAgents) -> CommandResult {
-    run_with_context(args, state, agents, &ClientContext::default())
+    let context = ClientContext::default();
+    let mut result = match start_resumable_command(args, state, agents, &context) {
+        Ok(queue) => crate::native::task::NativeCommandRuntime::run(queue, state),
+        Err(result) => result,
+    };
+    for request in result.background_commands.drain(..) {
+        let _ = crate::native::task::NativeCommandRuntime::spawn_background(
+            request,
+            Arc::clone(state),
+            agents.clone(),
+        );
+    }
+    result
 }
 
 /// Parse and normalize every command before client-side file operations begin.
@@ -647,6 +661,11 @@ pub(crate) enum BackgroundCommandRequest {
         else_command: Option<String>,
         context: ClientContext,
     },
+    RunShell {
+        args: Vec<String>,
+        context: ClientContext,
+        jobs: Arc<BackgroundJobRegistry>,
+    },
 }
 
 impl BackgroundCommandRequest {
@@ -676,17 +695,29 @@ impl BackgroundCommandRequest {
                 let command = if matched { then_command } else { else_command };
                 (BackgroundCommand::Line(command), context)
             }
+            Self::RunShell {
+                args,
+                context,
+                jobs,
+            } => (BackgroundCommand::RunShell { args, jobs }, context),
         }
     }
 
     pub(crate) fn is_ready(&self) -> bool {
-        matches!(self, Self::Ready { .. } | Self::ReadyArgs { .. })
+        matches!(
+            self,
+            Self::Ready { .. } | Self::ReadyArgs { .. } | Self::RunShell { .. }
+        )
     }
 }
 
 pub(crate) enum BackgroundCommand {
     Line(Option<String>),
     Args(Vec<String>),
+    RunShell {
+        args: Vec<String>,
+        jobs: Arc<BackgroundJobRegistry>,
+    },
 }
 
 struct SuspendedCommand {
@@ -714,7 +745,6 @@ pub(crate) enum CommandSuspension {
     RunShell {
         args: Vec<String>,
         context: ClientContext,
-        jobs: Arc<BackgroundJobRegistry>,
     },
     IfShell {
         condition: String,
@@ -762,16 +792,18 @@ pub(crate) struct SourceFileRead {
 }
 
 pub(crate) struct PaneOutputSuspension {
-    observation: Arc<crate::server::pane::NativePaneObservation>,
+    observation: Arc<super::pane::NativePaneObservation>,
     before: u64,
-    subscription: crate::server::pane::OutputSubscription,
+    subscription: super::pane::OutputSubscription,
     deadline: Instant,
     result: Option<CommandResult>,
 }
 
 impl PaneOutputSuspension {
+    const OUTPUT_READY: WaitToken = WaitToken::new(0);
+
     fn new(
-        observation: Arc<crate::server::pane::NativePaneObservation>,
+        observation: Arc<super::pane::NativePaneObservation>,
         before: u64,
         result: CommandResult,
     ) -> Result<Self, CommandResult> {
@@ -789,19 +821,7 @@ impl PaneOutputSuspension {
         })
     }
 
-    pub(crate) fn as_fd(&self) -> BorrowedFd<'_> {
-        self.subscription.as_fd()
-    }
-
-    pub(crate) fn deadline(&self) -> Instant {
-        self.deadline
-    }
-
-    pub(crate) fn is_complete(&self) -> bool {
-        self.observation.contract_revision() != self.before || Instant::now() >= self.deadline
-    }
-
-    pub(crate) fn complete(&mut self) -> CommandSuspensionResult {
+    fn complete(&mut self) -> CommandSuspensionResult {
         self.subscription.drain();
         CommandSuspensionResult::Completed(
             self.result
@@ -810,22 +830,232 @@ impl PaneOutputSuspension {
         )
     }
 
-    fn resolve(mut self) -> CommandSuspensionResult {
-        if !self.is_complete() {
-            let timeout = self.deadline.saturating_duration_since(Instant::now());
-            let timeout_ms = i32::try_from(timeout.as_millis())
-                .unwrap_or(i32::MAX)
-                .max(1);
-            let mut fd = libc::pollfd {
-                fd: self.as_fd().as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
+    fn resolve_blocking(self) -> CommandSuspensionResult {
+        let mut task = TaskState::new(self);
+        task.poll(&ReadySet::default());
+        while task.wait().is_some() {
+            let ready = {
+                let wait = task.wait().expect("pending pane output has a wait request");
+                let source = wait.sources()[0];
+                let timeout = wait
+                    .deadline()
+                    .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+                    .unwrap_or(Duration::MAX);
+                let timeout_ms = i32::try_from(timeout.as_millis())
+                    .unwrap_or(i32::MAX)
+                    .max(1);
+                let mut fd = libc::pollfd {
+                    fd: source.fd().as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                };
+                let result = unsafe { libc::poll(&mut fd, 1, timeout_ms) };
+                if result < 0 && io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
+                    continue;
+                }
+                ReadySet::after_single_source_wakeup(&wait, result > 0, Instant::now())
             };
-            unsafe {
-                libc::poll(&mut fd, 1, timeout_ms);
+            task.poll(&ready);
+        }
+        task.take_output()
+            .expect("completed pane-output task has a result")
+    }
+}
+
+impl Coroutine for PaneOutputSuspension {
+    type Output = CommandSuspensionResult;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        WaitRequest::new(
+            vec![FdInterest::readable(
+                Self::OUTPUT_READY,
+                self.subscription.as_fd(),
+            )],
+            Some(self.deadline),
+        )
+    }
+
+    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
+        let output_changed = self.observation.contract_revision() != self.before;
+        let deadline_elapsed = Instant::now() >= self.deadline;
+        if output_changed
+            || deadline_elapsed
+            || ready.contains(Self::OUTPUT_READY)
+            || ready.timed_out()
+        {
+            TaskPoll::Ready(self.complete())
+        } else {
+            TaskPoll::Pending
+        }
+    }
+}
+
+/// Runtime operation used only for work that cannot be polled directly.
+///
+/// Implementations must return promptly. The returned completion descriptor
+/// becomes readable after the runtime worker has finished the suspension.
+pub(crate) trait CommandRuntime: Send + Sync {
+    fn submit(
+        &self,
+        suspension: CommandSuspension,
+    ) -> io::Result<Completion<CommandSuspensionResult>>;
+}
+
+/// One nonblocking command suspension, regardless of how it is implemented.
+pub(crate) enum CommandTask {
+    Readiness(PaneOutputSuspension),
+    Runtime(Completion<CommandSuspensionResult>),
+}
+
+impl CommandTask {
+    pub(crate) fn start(
+        suspension: CommandSuspension,
+        runtime: &dyn CommandRuntime,
+    ) -> io::Result<Self> {
+        match suspension {
+            CommandSuspension::PaneOutput(wait) => Ok(Self::Readiness(wait)),
+            suspension => runtime.submit(suspension).map(Self::Runtime),
+        }
+    }
+}
+
+impl Coroutine for CommandTask {
+    type Output = io::Result<CommandSuspensionResult>;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match self {
+            Self::Readiness(task) => task.wait(),
+            Self::Runtime(task) => task.wait(),
+        }
+    }
+
+    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
+        match self {
+            Self::Readiness(task) => match task.resume(ready) {
+                TaskPoll::Ready(result) => TaskPoll::Ready(Ok(result)),
+                TaskPoll::Pending => TaskPoll::Pending,
+            },
+            Self::Runtime(task) => task.resume(ready),
+        }
+    }
+}
+
+/// Runtime-facing state for a command suspension.
+pub(crate) struct CommandTaskState(TaskState<CommandTask>);
+
+impl CommandTaskState {
+    pub(crate) fn start(
+        suspension: CommandSuspension,
+        runtime: &dyn CommandRuntime,
+    ) -> io::Result<Self> {
+        Ok(Self(TaskState::new(CommandTask::start(
+            suspension, runtime,
+        )?)))
+    }
+
+    fn wait(&self) -> WaitRequest<'_> {
+        self.0
+            .wait()
+            .expect("completed command task must not remain registered")
+    }
+
+    fn is_complete(&mut self) -> bool {
+        self.0.poll(&ReadySet::default())
+    }
+
+    fn poll(&mut self, ready: &ReadySet) -> bool {
+        self.0.poll(ready)
+    }
+
+    fn take_ready_result(&mut self) -> io::Result<CommandSuspensionResult> {
+        self.0
+            .take_output()
+            .ok_or_else(|| io::Error::other("command task has not completed"))?
+    }
+}
+
+/// A complete command queue represented as one runtime-neutral coroutine.
+pub(crate) struct CommandCoroutine {
+    queue: ResumableCommandQueue,
+    state: Arc<Mutex<ServerState>>,
+    runtime: Arc<dyn CommandRuntime>,
+    pending: Option<CommandTaskState>,
+    pending_allows_attach_io: bool,
+    budget: usize,
+}
+
+impl CommandCoroutine {
+    pub(crate) fn new(
+        queue: ResumableCommandQueue,
+        state: Arc<Mutex<ServerState>>,
+        runtime: Arc<dyn CommandRuntime>,
+        budget: usize,
+    ) -> Self {
+        Self {
+            queue,
+            state,
+            runtime,
+            pending: None,
+            pending_allows_attach_io: false,
+            budget,
+        }
+    }
+
+    pub(crate) fn allows_attach_io(&self) -> bool {
+        self.pending.is_some() && self.pending_allows_attach_io
+    }
+}
+
+impl Coroutine for CommandCoroutine {
+    type Output = io::Result<CommandResult>;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match &self.pending {
+            Some(pending) => pending.wait(),
+            None => WaitRequest::new(Vec::new(), Some(Instant::now())),
+        }
+    }
+
+    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
+        if let Some(pending) = self.pending.as_mut() {
+            if !pending.poll(ready) {
+                return TaskPoll::Pending;
+            }
+            let result = match pending.take_ready_result() {
+                Ok(result) => result,
+                Err(error) => return TaskPoll::Ready(Err(error)),
+            };
+            self.pending = None;
+            self.pending_allows_attach_io = false;
+            self.queue.resume(result, &self.state);
+        }
+
+        loop {
+            match self.queue.drive(&self.state, self.budget) {
+                ResumableCommandTurn::Pending => return TaskPoll::Pending,
+                ResumableCommandTurn::Suspended(suspension) => {
+                    let allows_attach_io = suspension.allows_attach_io();
+                    let mut pending =
+                        match CommandTaskState::start(suspension, self.runtime.as_ref()) {
+                            Ok(pending) => pending,
+                            Err(error) => return TaskPoll::Ready(Err(error)),
+                        };
+                    if !pending.is_complete() {
+                        self.pending = Some(pending);
+                        self.pending_allows_attach_io = allows_attach_io;
+                        return TaskPoll::Pending;
+                    }
+                    let result = match pending.take_ready_result() {
+                        Ok(result) => result,
+                        Err(error) => return TaskPoll::Ready(Err(error)),
+                    };
+                    self.queue.resume(result, &self.state);
+                }
+                ResumableCommandTurn::Complete(result) => {
+                    return TaskPoll::Ready(Ok(result));
+                }
             }
         }
-        self.complete()
     }
 }
 
@@ -837,13 +1067,11 @@ impl CommandSuspension {
         )
     }
 
-    pub(crate) fn resolve(self) -> CommandSuspensionResult {
+    pub(crate) fn resolve_blocking(self) -> CommandSuspensionResult {
         match self {
-            Self::RunShell {
-                args,
-                context,
-                jobs,
-            } => CommandSuspensionResult::RunShell(run_shell_process(&args, &context, jobs)),
+            Self::RunShell { args, context } => {
+                CommandSuspensionResult::RunShell(run_shell_process(&args, &context))
+            }
             Self::IfShell { condition, context } => {
                 let matched = if condition
                     .split_whitespace()
@@ -923,7 +1151,7 @@ impl CommandSuspension {
                 };
                 CommandSuspensionResult::Completed(result)
             }
-            Self::PaneOutput(wait) => wait.resolve(),
+            Self::PaneOutput(wait) => wait.resolve_blocking(),
         }
     }
 }
@@ -1079,10 +1307,7 @@ impl ResumableCommandQueue {
                 source_depth,
                 contributes_status,
             };
-            if inflight.command.spec.name == "run-shell"
-                && !has_flag(&inflight.command.args, "-b")
-                && !has_flag(&inflight.command.args, "-C")
-            {
+            if inflight.command.spec.name == "run-shell" && has_flag(&inflight.command.args, "-b") {
                 let jobs = match state.lock() {
                     Ok(state) => state.background_job_registry(),
                     Err(_) => {
@@ -1091,18 +1316,29 @@ impl ResumableCommandQueue {
                         ));
                     }
                 };
+                let mut result = CommandResult::ok("");
+                result
+                    .background_commands
+                    .push(BackgroundCommandRequest::RunShell {
+                        args: inflight.command.args.clone(),
+                        context: self.context.clone(),
+                        jobs,
+                    });
+                self.finish_execution(inflight, SharedCommandExecution::completed(result), state);
+                continue;
+            }
+            if inflight.command.spec.name == "run-shell"
+                && !has_flag(&inflight.command.args, "-b")
+                && !has_flag(&inflight.command.args, "-C")
+            {
                 let suspension = CommandSuspension::RunShell {
                     args: inflight.command.args.clone(),
                     context: self.context.clone(),
-                    jobs,
                 };
                 self.suspended = Some(inflight);
                 return ResumableCommandTurn::Suspended(suspension);
             }
-            if inflight.command.spec.name == "if-shell"
-                && has_flag(&inflight.command.args, "-b")
-                && self.context.defer_background_commands
-            {
+            if inflight.command.spec.name == "if-shell" && has_flag(&inflight.command.args, "-b") {
                 let positionals = positionals(&inflight.command.args, &["-t"]);
                 let Some(condition) = positionals.first().copied() else {
                     self.finish_execution(
@@ -1254,9 +1490,7 @@ impl ResumableCommandQueue {
                 return ResumableCommandTurn::Suspended(CommandSuspension::SourceFile { paths });
             }
             if inflight.command.spec.name == "load-buffer" && self.context.input_file.is_none() {
-                if let Some(path) = load_buffer_client_path(&inflight.command.args, &self.context)
-                    .filter(|path| path.as_os_str() != "-")
-                {
+                if let Some(path) = load_buffer_client_path(&inflight.command.args, &self.context) {
                     self.suspended = Some(inflight);
                     return ResumableCommandTurn::Suspended(CommandSuspension::LoadBuffer { path });
                 }
@@ -1850,7 +2084,7 @@ fn run_resumable_command(
         match queue.drive(state, usize::MAX) {
             ResumableCommandTurn::Pending => continue,
             ResumableCommandTurn::Suspended(suspension) => {
-                let result = suspension.resolve();
+                let result = suspension.resolve_blocking();
                 queue.resume(result, state);
             }
             ResumableCommandTurn::Complete(result) => return result,
@@ -1925,11 +2159,7 @@ fn run_shell_shared(
         };
         return run_inserted_command_string(command, state, agents, context);
     }
-    let jobs = match state.lock() {
-        Ok(state) => state.background_job_registry(),
-        Err(_) => return CommandResult::err("server state poisoned\n"),
-    };
-    let completion = run_shell_process(args, context, jobs);
+    let completion = run_shell_process(args, context);
     let mut state = match state.lock() {
         Ok(state) => state,
         Err(_) => return CommandResult::err("server state poisoned\n"),
@@ -1981,24 +2211,6 @@ fn run_inserted_command_string(
         }
     }
     result
-}
-
-fn run_shared_tokenized_line(
-    tokens: &[LineToken],
-    state: &Arc<Mutex<ServerState>>,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    let owned_groups = tokenized_command_groups(tokens);
-    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    let aliases = match state.lock() {
-        Ok(state) => state.command_aliases(),
-        Err(_) => return CommandResult::err("server state poisoned\n"),
-    };
-    match parse_command_groups_with_aliases(groups, &aliases) {
-        Ok(parsed) => run_shared_command_groups(parsed, state, agents, context),
-        Err(error) => error,
-    }
 }
 
 fn prepare_source_file_paths(
@@ -4121,7 +4333,7 @@ pub(super) fn vars_full(
     v
 }
 
-fn pane_cursor_character(pane: &crate::server::pane::Pane) -> String {
+fn pane_cursor_character(pane: &super::pane::Pane) -> String {
     let Ok((x, y)) = pane.cursor_position() else {
         return String::new();
     };
@@ -7133,6 +7345,51 @@ fn job_delay(args: &[String]) -> Result<std::time::Duration, CommandResult> {
     Ok(std::time::Duration::from_secs_f64(seconds))
 }
 
+fn wait_job_delay(delay: Duration) {
+    let deadline = Instant::now() + delay;
+    while Instant::now() < deadline {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let millis = remaining.as_nanos().saturating_add(999_999) / 1_000_000;
+        let result = unsafe {
+            libc::poll(
+                std::ptr::null_mut(),
+                0,
+                i32::try_from(millis).unwrap_or(i32::MAX),
+            )
+        };
+        if result >= 0 || io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
+            break;
+        }
+    }
+}
+
+pub(crate) fn run_background_shell(
+    args: &[String],
+    context: &ClientContext,
+    jobs: Arc<BackgroundJobRegistry>,
+) {
+    let Some(command) = positionals(args, &["-t", "-c", "-d"])
+        .into_iter()
+        .next()
+        .map(str::to_string)
+    else {
+        return;
+    };
+    let Ok(delay) = job_delay(args) else {
+        return;
+    };
+    if !delay.is_zero() {
+        wait_job_delay(delay);
+    }
+    let Ok(child) = spawn_background_shell(&command, context) else {
+        return;
+    };
+    let fd = child.stdout.as_ref().map(AsRawFd::as_raw_fd).unwrap_or(-1);
+    let id = jobs.register(command, fd, child.id());
+    let _ = child.wait_with_output();
+    jobs.remove(id);
+}
+
 /// `run-shell command`. Runs the command with `sh -c` and forwards its stdout to
 /// the client, like tmux's non-interactive run-shell.
 fn run_shell(
@@ -7147,7 +7404,7 @@ fn run_shell(
         };
         return run_tokenized_line(&tokenize_line(command), st, agents, context);
     }
-    let completion = run_shell_process(args, context, st.background_job_registry());
+    let completion = run_shell_process(args, context);
     finish_run_shell(completion, st)
 }
 
@@ -7156,11 +7413,7 @@ pub(crate) struct RunShellCompletion {
     view: Option<(String, Vec<u8>)>,
 }
 
-fn run_shell_process(
-    args: &[String],
-    context: &ClientContext,
-    jobs: Arc<BackgroundJobRegistry>,
-) -> RunShellCompletion {
+fn run_shell_process(args: &[String], context: &ClientContext) -> RunShellCompletion {
     let cmd = match positionals(args, &["-t", "-c", "-d"]).into_iter().next() {
         Some(c) => c.to_string(),
         None => {
@@ -7179,40 +7432,9 @@ fn run_shell_process(
             };
         }
     };
-    if has_flag(args, "-b") {
-        if !delay.is_zero() {
-            let context = context.clone();
-            let jobs = Arc::clone(&jobs);
-            std::thread::spawn(move || {
-                std::thread::sleep(delay);
-                if let Ok(child) = spawn_background_shell(&cmd, &context) {
-                    let fd = child.stdout.as_ref().map(AsRawFd::as_raw_fd).unwrap_or(-1);
-                    let id = jobs.register(cmd, fd, child.id());
-                    let _ = child.wait_with_output();
-                    jobs.remove(id);
-                }
-            });
-            return RunShellCompletion {
-                result: CommandResult::ok(""),
-                view: None,
-            };
-        }
-        let result = match spawn_background_shell(&cmd, context) {
-            Ok(child) => {
-                let fd = child.stdout.as_ref().map(AsRawFd::as_raw_fd).unwrap_or(-1);
-                let id = jobs.register(cmd.clone(), fd, child.id());
-                std::thread::spawn(move || {
-                    let _ = child.wait_with_output();
-                    jobs.remove(id);
-                });
-                CommandResult::ok("")
-            }
-            Err(error) => CommandResult::err(format!("{error}\n")),
-        };
-        return RunShellCompletion { result, view: None };
-    }
+    debug_assert!(!has_flag(args, "-b"));
     if !delay.is_zero() {
-        std::thread::sleep(delay);
+        wait_job_delay(delay);
     }
     let mut shell = shell_command(&cmd, context);
     if let Some(cwd) = flag_value(args, "-c") {
@@ -7279,36 +7501,7 @@ fn if_shell(
     };
     let then_cmd = pos.get(1).map(|command| (*command).to_string());
     let else_cmd = pos.get(2).map(|command| (*command).to_string());
-    if has_flag(args, "-b") {
-        let Some(state) = context.command_state.as_ref().map(Arc::clone) else {
-            return CommandResult::err("background command state unavailable\n");
-        };
-        let agents = agents.clone();
-        let context = context.clone();
-        if has_flag(args, "-F") {
-            let expanded = expand_if_cond(&cond, args, st, &agents);
-            let branch = if !expanded.is_empty() && expanded != "0" {
-                then_cmd
-            } else {
-                else_cmd
-            };
-            std::thread::spawn(move || run_async_branch(branch, state, agents, context));
-            return CommandResult::ok("");
-        }
-        return match spawn_background_shell(&cond, &context) {
-            Ok(mut child) => {
-                std::thread::spawn(move || {
-                    let branch = match child.wait() {
-                        Ok(status) if status.success() => then_cmd,
-                        _ => else_cmd,
-                    };
-                    run_async_branch(branch, state, agents, context);
-                });
-                CommandResult::ok("")
-            }
-            Err(error) => CommandResult::err(format!("{error}\n")),
-        };
-    }
+    debug_assert!(!has_flag(args, "-b"));
     let ok = if has_flag(args, "-F") {
         // `-F`: the condition is a *format*, not a shell command. Real tmux
         // expands it and branches on its truthiness — non-empty and not "0" —
@@ -7341,22 +7534,6 @@ fn if_shell(
         }
         None => CommandResult::ok(""),
     }
-}
-
-fn run_async_branch(
-    branch: Option<String>,
-    state: Arc<Mutex<ServerState>>,
-    agents: PaneAgents,
-    context: ClientContext,
-) {
-    let Some(branch) = branch else {
-        return;
-    };
-    let tokens = tokenize_line(&branch);
-    if tokens.is_empty() {
-        return;
-    }
-    let _ = run_shared_tokenized_line(&tokens, &state, &agents, &context);
 }
 
 /// Expand `if-shell -F`'s condition as a format, anchored at the command's
@@ -8178,7 +8355,7 @@ mod tests {
         let ResumableCommandTurn::Suspended(suspension) = queue.drive(&st, 1) else {
             panic!("foreground shell did not suspend its command queue");
         };
-        queue.resume(suspension.resolve(), &st);
+        queue.resume(suspension.resolve_blocking(), &st);
         let ResumableCommandTurn::Complete(result) = queue.drive(&st, 1) else {
             panic!("resumed shell did not complete its command queue");
         };
@@ -8204,7 +8381,7 @@ mod tests {
         let ResumableCommandTurn::Suspended(suspension) = queue.drive(&st, 8) else {
             panic!("foreground shell did not suspend its command queue");
         };
-        queue.resume(suspension.resolve(), &st);
+        queue.resume(suspension.resolve_blocking(), &st);
         let ResumableCommandTurn::Complete(result) = queue.drive(&st, 8) else {
             panic!("resumed queue tail did not complete");
         };
@@ -8228,7 +8405,7 @@ mod tests {
         let ResumableCommandTurn::Suspended(suspension) = queue.drive(&st, 16) else {
             panic!("nested foreground shell did not suspend the owned queue");
         };
-        queue.resume(suspension.resolve(), &st);
+        queue.resume(suspension.resolve_blocking(), &st);
         let ResumableCommandTurn::Complete(result) = queue.drive(&st, 16) else {
             panic!("nested foreground shell did not complete");
         };
@@ -8265,7 +8442,7 @@ mod tests {
         let ResumableCommandTurn::Suspended(suspension) = queue.drive(&st, 16) else {
             panic!("foreground shell in configured hook did not suspend the owned queue");
         };
-        queue.resume(suspension.resolve(), &st);
+        queue.resume(suspension.resolve_blocking(), &st);
         let ResumableCommandTurn::Complete(result) = queue.drive(&st, 16) else {
             panic!("configured hook did not complete");
         };
@@ -8291,7 +8468,7 @@ mod tests {
         let ResumableCommandTurn::Suspended(suspension) = queue.drive(&st, 16) else {
             panic!("if-shell condition did not suspend");
         };
-        queue.resume(suspension.resolve(), &st);
+        queue.resume(suspension.resolve_blocking(), &st);
         let ResumableCommandTurn::Complete(result) = queue.drive(&st, 16) else {
             panic!("if-shell queue did not complete");
         };

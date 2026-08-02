@@ -23,7 +23,7 @@ use crate::tmux::codec::{split_nonblocking_stream_with_queue_limit, split_stream
 use crate::tmux::introspect::{Direction, LoggingReader, LoggingWriter};
 use crate::tmux::traits::{FrameReader, FrameWriter, TmuxServer};
 
-type NativeEventLoop =
+type ReadinessEventLoop =
     EventLoop<crate::event_loop::reactor::MioReactor<crate::event_loop::driver::IoRecipient>>;
 const PROTOCOL_WRITE_QUEUE_LIMIT: usize = MAX_IMSGSIZE;
 
@@ -72,7 +72,7 @@ pub fn run_event_loop(listen_path: &Path, server: Server) -> io::Result<()> {
         if server.event_loop_shutdown_requested() {
             break;
         }
-        dispatch_native_events(
+        dispatch_event_loop_events(
             &server,
             &mut event_loop,
             &listener,
@@ -80,7 +80,7 @@ pub fn run_event_loop(listen_path: &Path, server: Server) -> io::Result<()> {
             DISPATCH_BUDGET,
         )?;
         server.reconcile_event_observations()?;
-        sync_native_panes(&server, &mut event_loop, &mut panes)?;
+        sync_event_loop_panes(&server, &mut event_loop, &mut panes)?;
         reap_protocol_clients(&mut clients);
         if event_loop.pending_events() == 0 {
             event_loop.poll(None)?;
@@ -101,7 +101,7 @@ pub fn run_event_loop(listen_path: &Path, server: Server) -> io::Result<()> {
     while !clients.is_empty() {
         event_loop.dispatch_with_budget(DISPATCH_BUDGET)?;
         server.reconcile_event_observations()?;
-        sync_native_panes(&server, &mut event_loop, &mut panes)?;
+        sync_event_loop_panes(&server, &mut event_loop, &mut panes)?;
         reap_protocol_clients(&mut clients);
         if !clients.is_empty() && event_loop.pending_events() == 0 {
             event_loop.poll(None)?;
@@ -128,9 +128,9 @@ pub fn run_event_loop(listen_path: &Path, server: Server) -> io::Result<()> {
     Ok(())
 }
 
-fn sync_native_panes(
+fn sync_event_loop_panes(
     server: &Server,
-    event_loop: &mut NativeEventLoop,
+    event_loop: &mut ReadinessEventLoop,
     panes: &mut BTreeMap<u64, PaneHandle>,
 ) -> io::Result<()> {
     let Some((new_panes, active_ids)) = server.try_event_pane_snapshot()? else {
@@ -240,16 +240,16 @@ fn bind_listener(listen_path: &Path) -> io::Result<UnixListener> {
 fn add_protocol_client(
     client: UnixStream,
     server: &Server,
-    event_loop: &mut NativeEventLoop,
+    event_loop: &mut ReadinessEventLoop,
 ) -> io::Result<ProtocolHandle> {
     let (reader, writer) =
         split_nonblocking_stream_with_queue_limit(client, PROTOCOL_WRITE_QUEUE_LIMIT)?;
     Ok(event_loop.add_protocol(reader, writer, server.clone()))
 }
 
-fn dispatch_native_events(
+fn dispatch_event_loop_events(
     server: &Server,
-    event_loop: &mut NativeEventLoop,
+    event_loop: &mut ReadinessEventLoop,
     listener: &ListenerHandle,
     clients: &mut Vec<ProtocolHandle>,
     budget: usize,

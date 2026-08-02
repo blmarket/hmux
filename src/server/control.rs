@@ -1,11 +1,9 @@
 //! Runtime-independent control-mode client state.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::io::{self, Read, Write};
+use std::io;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
-use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::integration::status::StatusHub;
@@ -18,6 +16,7 @@ use super::pane::{NativePaneObservation, OutputSubscription};
 use super::registry::{self, Resolution};
 use super::state::{ClientAction, ClientRenderAttachment, ControlStateSnapshot, ServerState};
 use super::status;
+use super::task::{ReadySet, TaskState};
 
 const CONTROL_BUFFER_HIGH: usize = 8192;
 const CLIENT_READONLY: i64 = 0x800;
@@ -48,6 +47,7 @@ pub(crate) enum EventControlSource {
 pub(crate) struct EventControlClient {
     state: Arc<Mutex<ServerState>>,
     hub: StatusHub,
+    command_runtime: Arc<dyn command::CommandRuntime>,
     client_tty: ClientTty,
     client_name: String,
     session_id: u32,
@@ -66,8 +66,7 @@ pub(crate) struct EventControlClient {
     client_size: Option<(u16, u16)>,
     client_window_sizes: BTreeMap<u32, (u16, u16)>,
     command_queue: CommandQueue<ControlQueueItem>,
-    active_command: Option<ActiveControlCommand>,
-    pending_command: Option<PendingControlCommand>,
+    command_state: ControlCommandState,
     command_continuation: bool,
     background_commands: Vec<command::BackgroundCommandRequest>,
     stdin_open: bool,
@@ -76,8 +75,20 @@ pub(crate) struct EventControlClient {
     context: command::ClientContext,
     options: ControlClientOptions,
     frames: VecDeque<Frame>,
-    closing: bool,
-    finished: bool,
+    lifecycle: ControlLifecycle,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ControlLifecycle {
+    Running,
+    Draining,
+    Finished,
+}
+
+enum ControlCommandState {
+    Idle,
+    Running(ActiveControlCommand),
+    Waiting(ActiveControlCommand),
 }
 
 impl EventControlClient {
@@ -87,6 +98,7 @@ impl EventControlClient {
         state: Arc<Mutex<ServerState>>,
         hub: StatusHub,
         context: &command::ClientContext,
+        command_runtime: Arc<dyn command::CommandRuntime>,
     ) -> io::Result<Self> {
         let session = match command::classify(args) {
             command::Intent::NewAttach => {
@@ -228,6 +240,7 @@ impl EventControlClient {
         Ok(Self {
             state,
             hub,
+            command_runtime,
             client_tty,
             client_name,
             session_id,
@@ -246,8 +259,7 @@ impl EventControlClient {
             client_size: None,
             client_window_sizes: BTreeMap::new(),
             command_queue: CommandQueue::new(),
-            active_command: None,
-            pending_command: None,
+            command_state: ControlCommandState::Idle,
             command_continuation: false,
             background_commands: Vec::new(),
             stdin_open: true,
@@ -256,16 +268,15 @@ impl EventControlClient {
             context: control_context,
             options,
             frames,
-            closing: false,
-            finished: false,
+            lifecycle: ControlLifecycle::Running,
         })
     }
 
     pub(crate) fn sources(&self) -> Vec<EventControlSource> {
-        if self.finished {
+        if self.lifecycle == ControlLifecycle::Finished {
             return Vec::new();
         }
-        if self.closing {
+        if self.lifecycle == ControlLifecycle::Draining {
             return self
                 .control_writer
                 .has_pending()
@@ -280,11 +291,13 @@ impl EventControlClient {
         if self.control_writer.has_pending() {
             sources.push(EventControlSource::Output);
         }
-        if self.pending_command.is_some() {
-            sources.push(EventControlSource::Command);
-        } else if self.active_command.is_none() {
-            sources.push(EventControlSource::State);
-            sources.extend(self.streams.keys().copied().map(EventControlSource::Pane));
+        match self.command_state {
+            ControlCommandState::Waiting(_) => sources.push(EventControlSource::Command),
+            ControlCommandState::Idle => {
+                sources.push(EventControlSource::State);
+                sources.extend(self.streams.keys().copied().map(EventControlSource::Pane));
+            }
+            ControlCommandState::Running(_) => {}
         }
         sources
     }
@@ -294,7 +307,12 @@ impl EventControlClient {
             EventControlSource::Input => self.client_tty.stdin.as_ref()?.as_raw_fd(),
             EventControlSource::Output => self.output_fd.as_raw_fd(),
             EventControlSource::State => self.render_attachment.as_raw_fd(),
-            EventControlSource::Command => self.pending_command.as_ref()?.as_raw_fd(),
+            EventControlSource::Command => match &self.command_state {
+                ControlCommandState::Waiting(active) => active.task.wait().and_then(|wait| {
+                    wait.sources().first().map(|source| source.fd().as_raw_fd())
+                })?,
+                _ => return None,
+            },
             EventControlSource::Pane(pane_id) => {
                 self.streams.get(&pane_id)?.subscription.as_raw_fd()
             }
@@ -308,14 +326,15 @@ impl EventControlClient {
     }
 
     pub(crate) fn deadline(&self, now: Instant) -> Option<Instant> {
-        if self.finished || self.closing {
+        if self.lifecycle != ControlLifecycle::Running {
             return None;
         }
-        if let Some(pending) = self.pending_command.as_ref() {
-            return pending.deadline();
-        }
-        if self.active_command.is_some() {
-            return None;
+        match &self.command_state {
+            ControlCommandState::Waiting(active) => {
+                return active.task.wait().and_then(|wait| wait.deadline())
+            }
+            ControlCommandState::Running(_) => return None,
+            ControlCommandState::Idle => {}
         }
         let subscription = self.subscriptions.next_check;
         let alert = self
@@ -347,14 +366,14 @@ impl EventControlClient {
     }
 
     pub(crate) fn is_finished(&self) -> bool {
-        self.finished
+        self.lifecycle == ControlLifecycle::Finished
     }
 
     pub(crate) fn drive(&mut self, source: Option<EventControlSource>) -> io::Result<()> {
-        if self.finished {
+        if self.lifecycle == ControlLifecycle::Finished {
             return Ok(());
         }
-        if self.closing {
+        if self.lifecycle == ControlLifecycle::Draining {
             if matches!(source, Some(EventControlSource::Output)) {
                 self.control_writer.flush()?;
             }
@@ -363,12 +382,12 @@ impl EventControlClient {
         }
 
         self.handle_client_actions()?;
-        if self.closing {
+        if self.lifecycle == ControlLifecycle::Draining {
             self.finish_if_drained();
             return Ok(());
         }
         self.refresh_session()?;
-        if self.closing {
+        if self.lifecycle == ControlLifecycle::Draining {
             self.finish_if_drained();
             return Ok(());
         }
@@ -379,14 +398,14 @@ impl EventControlClient {
             Some(EventControlSource::Input) => self.read_input()?,
             Some(EventControlSource::Output) => self.control_writer.flush()?,
             Some(EventControlSource::State)
-                if self.pending_command.is_none() && self.active_command.is_none() =>
+                if matches!(self.command_state, ControlCommandState::Idle) =>
             {
                 let _ = self.render_attachment.take();
                 state_ready = true;
             }
-            Some(EventControlSource::Command) => self.complete_pending_command()?,
+            Some(EventControlSource::Command) => self.complete_pending_command(true)?,
             Some(EventControlSource::Pane(pane_id))
-                if self.pending_command.is_none() && self.active_command.is_none() =>
+                if matches!(self.command_state, ControlCommandState::Idle) =>
             {
                 if let Some(stream) = self.streams.get_mut(&pane_id) {
                     stream.subscription.drain();
@@ -397,17 +416,16 @@ impl EventControlClient {
             None | Some(_) => {}
         }
 
-        if source.is_none()
-            && self
-                .pending_command
-                .as_ref()
-                .is_some_and(PendingControlCommand::is_complete)
-        {
-            self.complete_pending_command()?;
+        let pending_complete = match &mut self.command_state {
+            ControlCommandState::Waiting(active) => active.task.poll(&ReadySet::default()),
+            _ => false,
+        };
+        if source.is_none() && pending_complete {
+            self.complete_pending_command(false)?;
         }
         self.parse_input()?;
         self.run_command_queue()?;
-        if self.pending_command.is_none() && self.active_command.is_none() {
+        if matches!(self.command_state, ControlCommandState::Idle) {
             if state_ready {
                 self.advance_snapshot()?;
             }
@@ -442,6 +460,7 @@ impl EventControlClient {
                 .next_check
                 .is_some_and(|deadline| Instant::now() >= deadline)
             {
+                self.format_cache.update_agents(self.hub.snapshot());
                 let (cols, rows) = self.client_size.unwrap_or((80, 24));
                 let state = self
                     .state
@@ -461,11 +480,11 @@ impl EventControlClient {
         }
         self.control_writer.flush()?;
         if !self.stdin_open
-            && self.pending_command.is_none()
+            && !matches!(self.command_state, ControlCommandState::Waiting(_))
             && matches!(self.command_queue.state(), QueueState::Empty)
         {
             write_control_output(&mut self.control_writer, &mut self.streams, &self.options)?;
-            self.closing = true;
+            self.lifecycle = ControlLifecycle::Draining;
             self.finish_if_drained();
         }
         Ok(())
@@ -479,7 +498,7 @@ impl EventControlClient {
         let requested_switch = match self.render_attachment.take_action() {
             Some(ClientAction::Switch(session_id)) => Some(session_id),
             Some(ClientAction::Detach) => {
-                self.closing = true;
+                self.lifecycle = ControlLifecycle::Draining;
                 return Ok(());
             }
             Some(ClientAction::Lock(command)) => {
@@ -497,14 +516,14 @@ impl EventControlClient {
                     &self.context,
                     &mut self.background_commands,
                 ) {
-                    self.closing = true;
+                    self.lifecycle = ControlLifecycle::Draining;
                     return Ok(());
                 }
                 None
             }
             Some(ClientAction::Overlay { reply, .. } | ClientAction::Confirm { reply, .. }) => {
                 if let Some(reply) = reply {
-                    let _ = reply.send(crate::server::state::PromptCompletion {
+                    let _ = reply.send(super::state::PromptCompletion {
                         stdout: String::new(),
                         stderr: String::new(),
                         exit: 0,
@@ -548,7 +567,7 @@ impl EventControlClient {
                 })
             } else {
                 self.control_writer.enqueue_line("%sessions-changed");
-                self.closing = true;
+                self.lifecycle = ControlLifecycle::Draining;
                 None
             }
         };
@@ -670,25 +689,27 @@ impl EventControlClient {
         Ok(())
     }
 
-    fn complete_pending_command(&mut self) -> io::Result<()> {
-        let result = self
-            .pending_command
-            .take()
-            .ok_or_else(|| io::Error::other("control command readiness without command"))?
-            .take_result()?;
-        let active = self
-            .active_command
-            .as_mut()
-            .ok_or_else(|| io::Error::other("control suspension without active command"))?;
-        active.queue.resume(result, &self.state);
+    fn complete_pending_command(&mut self, source_ready: bool) -> io::Result<()> {
+        let state = std::mem::replace(&mut self.command_state, ControlCommandState::Idle);
+        let mut active = match state {
+            ControlCommandState::Waiting(active) => active,
+            state => {
+                self.command_state = state;
+                return Ok(());
+            }
+        };
+        active
+            .task
+            .poll_after_single_source_wakeup(source_ready, Instant::now());
+        self.command_state = ControlCommandState::Running(active);
         self.drive_active_command()
     }
 
     fn run_command_queue(&mut self) -> io::Result<()> {
-        if self.active_command.is_some() && self.pending_command.is_none() {
+        if matches!(self.command_state, ControlCommandState::Running(_)) {
             self.drive_active_command()?;
         }
-        while self.active_command.is_none() {
+        while matches!(self.command_state, ControlCommandState::Idle) {
             let Some(started) = self.command_queue.start_next() else {
                 break;
             };
@@ -862,44 +883,52 @@ impl EventControlClient {
                 Ok(queue) => queue,
                 Err(result) => return self.finish_control_command(ticket, id, argv, result),
             };
-        self.active_command = Some(ActiveControlCommand {
+        self.command_state = ControlCommandState::Running(ActiveControlCommand {
             ticket,
             id,
             argv,
-            queue,
+            task: TaskState::new(command::CommandCoroutine::new(
+                queue,
+                Arc::clone(&self.state),
+                Arc::clone(&self.command_runtime),
+                64,
+            )),
         });
         self.drive_active_command()
     }
 
     fn drive_active_command(&mut self) -> io::Result<()> {
-        let turn = self
-            .active_command
-            .as_mut()
-            .ok_or_else(|| io::Error::other("missing active control command"))?
-            .queue
-            .drive(&self.state, 64);
-        match turn {
-            command::ResumableCommandTurn::Pending => {
-                self.command_continuation = true;
-                Ok(())
+        let (complete, has_source) = match &mut self.command_state {
+            ControlCommandState::Running(active) => {
+                let complete = active.task.poll(&ReadySet::default());
+                let has_source = active
+                    .task
+                    .wait()
+                    .is_some_and(|wait| !wait.sources().is_empty());
+                (complete, has_source)
             }
-            command::ResumableCommandTurn::Suspended(suspension) => {
-                let pending = PendingControlCommand::start(suspension)?;
-                let complete = pending.is_complete();
-                self.pending_command = Some(pending);
-                if complete {
-                    self.complete_pending_command()
-                } else {
-                    Ok(())
-                }
-            }
-            command::ResumableCommandTurn::Complete(result) => {
-                let active = self
-                    .active_command
-                    .take()
-                    .expect("completed control command disappeared");
-                self.finish_control_command(active.ticket, active.id, active.argv, result)
-            }
+            _ => return Ok(()),
+        };
+        if complete {
+            let state = std::mem::replace(&mut self.command_state, ControlCommandState::Idle);
+            let ControlCommandState::Running(mut active) = state else {
+                return Ok(());
+            };
+            let result = active
+                .task
+                .take_output()
+                .ok_or_else(|| io::Error::other("completed control command has no result"))??;
+            self.finish_control_command(active.ticket, active.id, active.argv, result)
+        } else if has_source {
+            let state = std::mem::replace(&mut self.command_state, ControlCommandState::Idle);
+            let ControlCommandState::Running(active) = state else {
+                return Ok(());
+            };
+            self.command_state = ControlCommandState::Waiting(active);
+            Ok(())
+        } else {
+            self.command_continuation = true;
+            Ok(())
         }
     }
 
@@ -1008,10 +1037,10 @@ impl EventControlClient {
     }
 
     fn finish_if_drained(&mut self) {
-        if self.closing && !self.control_writer.has_pending() && !self.finished {
+        if self.lifecycle == ControlLifecycle::Draining && !self.control_writer.has_pending() {
             self.frames
                 .push_back(Frame::new(Message::Exit(Some(self.exit_status))));
-            self.finished = true;
+            self.lifecycle = ControlLifecycle::Finished;
         }
     }
 }
@@ -1108,72 +1137,7 @@ struct ActiveControlCommand {
     ticket: QueueTicket,
     id: ControlCommandId,
     argv: Vec<String>,
-    queue: command::ResumableCommandQueue,
-}
-
-enum PendingControlCommand {
-    Worker {
-        completion: UnixStream,
-        result: Arc<Mutex<Option<command::CommandSuspensionResult>>>,
-    },
-    PaneOutput(command::PaneOutputSuspension),
-}
-
-impl PendingControlCommand {
-    fn start(suspension: command::CommandSuspension) -> io::Result<Self> {
-        if let command::CommandSuspension::PaneOutput(wait) = suspension {
-            return Ok(Self::PaneOutput(wait));
-        }
-        let (completion, mut signal) = UnixStream::pair()?;
-        completion.set_nonblocking(true)?;
-        let result = Arc::new(Mutex::new(None));
-        let worker_result = Arc::clone(&result);
-        thread::spawn(move || {
-            let completed = suspension.resolve();
-            if let Ok(mut result) = worker_result.lock() {
-                *result = Some(completed);
-            }
-            let _ = signal.write_all(&[1]);
-        });
-        Ok(Self::Worker { completion, result })
-    }
-
-    fn as_raw_fd(&self) -> i32 {
-        match self {
-            Self::Worker { completion, .. } => completion.as_raw_fd(),
-            Self::PaneOutput(wait) => wait.as_fd().as_raw_fd(),
-        }
-    }
-
-    fn deadline(&self) -> Option<Instant> {
-        match self {
-            Self::Worker { .. } => None,
-            Self::PaneOutput(wait) => Some(wait.deadline()),
-        }
-    }
-
-    fn is_complete(&self) -> bool {
-        match self {
-            Self::Worker { .. } => false,
-            Self::PaneOutput(wait) => wait.is_complete(),
-        }
-    }
-
-    fn take_result(mut self) -> io::Result<command::CommandSuspensionResult> {
-        let Self::Worker { completion, result } = &mut self else {
-            let Self::PaneOutput(wait) = &mut self else {
-                unreachable!();
-            };
-            return Ok(wait.complete());
-        };
-        let mut byte = [0u8; 1];
-        let _ = completion.read(&mut byte);
-        result
-            .lock()
-            .map_err(|_| io::Error::other("control command result poisoned"))?
-            .take()
-            .ok_or_else(|| io::Error::other("control command completed without a result"))
-    }
+    task: TaskState<command::CommandCoroutine>,
 }
 
 fn control_command_has_flag(args: &[String], flag: char) -> bool {
@@ -2141,4 +2105,91 @@ fn control_size_action(args: &[String]) -> Option<ControlSizeAction> {
         cols.parse().ok()?,
         rows.parse().ok()?,
     ))
+}
+
+/// Run a command and stream its output back, then send `MSG_EXIT`.
+#[cfg(test)]
+mod tests {
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+
+    use crate::integration::status::AgentStatus;
+    use crate::integration::AgentState;
+    use crate::observability::v1::PaneId;
+
+    use super::super::state::PaneSpec;
+    use super::*;
+
+    fn drain(stream: &mut UnixStream) -> io::Result<String> {
+        let mut output = Vec::new();
+        loop {
+            let mut buffer = [0; 4096];
+            match stream.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(count) => output.extend_from_slice(&buffer[..count]),
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(String::from_utf8(output).expect("control output must be UTF-8"))
+    }
+
+    #[test]
+    fn control_subscription_observes_agent_status_changes() -> io::Result<()> {
+        let mut server = ServerState::empty();
+        server.create_session("work", PaneSpec::Inert)?;
+        let state = Arc::new(Mutex::new(server));
+        let hub = StatusHub::new();
+
+        let (client_input, mut command_input) = UnixStream::pair()?;
+        let (client_output, mut command_output) = UnixStream::pair()?;
+        command_output.set_nonblocking(true)?;
+
+        let mut tty = ClientTty::new();
+        tty.stdin = Some(client_input.into());
+        tty.stdout = Some(client_output.into());
+        tty.flags = 0x2000;
+        let args = [
+            "attach-session".to_string(),
+            "-t".to_string(),
+            "work".to_string(),
+        ];
+        let mut control = EventControlClient::new(
+            &args,
+            tty,
+            state,
+            hub.clone(),
+            &command::ClientContext::default(),
+            Arc::new(crate::event_loop::task::EventCommandRuntime),
+        )?;
+
+        command_input.write_all(b"refresh-client -B 'agent:%*:#{pane_agent_state}'\n")?;
+        control.drive(Some(EventControlSource::Input))?;
+        control.subscriptions.next_check = Some(Instant::now());
+        control.drive(None)?;
+        let initial = drain(&mut command_output)?;
+        assert!(
+            initial.contains("%subscription-changed agent $0 @0 0 %0 : none"),
+            "unexpected initial control output: {initial:?}"
+        );
+
+        hub.publish(
+            PaneId(0),
+            AgentStatus {
+                agent: "codex",
+                pid: None,
+                session_id: None,
+                state: AgentState::Working,
+            },
+        );
+        control.subscriptions.next_check = Some(Instant::now());
+        control.drive(None)?;
+        let changed = drain(&mut command_output)?;
+        assert!(
+            changed.contains("%subscription-changed agent $0 @0 0 %0 : working"),
+            "unexpected changed control output: {changed:?}"
+        );
+
+        Ok(())
+    }
 }

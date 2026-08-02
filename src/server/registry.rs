@@ -20,9 +20,9 @@ use super::command::{self, Command};
 
 /// Static identity and CLI name for one tmux command.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct CommandSpec {
-    pub(crate) name: &'static str,
-    pub(crate) alias: Option<&'static str>,
+pub(in crate::server) struct CommandSpec {
+    pub(in crate::server) name: &'static str,
+    pub(in crate::server) alias: Option<&'static str>,
     pub(in crate::server) command: Command,
 }
 
@@ -47,7 +47,7 @@ use command::sessions::Command as Session;
 use command::windows::Command as Window;
 
 /// The tmux command catalog, kept in alphabetical order for ambiguity messages.
-pub(crate) static COMMAND_SPECS: &[CommandSpec] = &[
+pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = &[
     CommandSpec::new(
         "attach-session",
         Some("attach"),

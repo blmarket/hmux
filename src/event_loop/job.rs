@@ -1,15 +1,15 @@
 //! Event-loop-owned detached command queues.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
+use std::io;
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 use crate::integration::status::StatusHub;
 use crate::server::command::{
-    self, BackgroundCommand, BackgroundCommandRequest, ClientContext, CommandSuspensionResult,
-    ResumableCommandQueue, ResumableCommandTurn,
+    self, BackgroundCommand, BackgroundCommandRequest, ClientContext, CommandResult,
 };
 use crate::server::state::ServerState;
+use crate::server::task::TaskState;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;
@@ -24,11 +24,10 @@ pub(crate) enum JobEvent {
         command: Option<String>,
         context: ClientContext,
     },
-    SuspensionResolved {
+    CommandCompleted {
         id: u64,
-        result: CommandSuspensionResult,
+        result: io::Result<CommandResult>,
     },
-    Continue(u64),
 }
 
 enum WorkerCompletion {
@@ -37,9 +36,9 @@ enum WorkerCompletion {
         command: Option<String>,
         context: ClientContext,
     },
-    Suspension {
+    Command {
         id: u64,
-        result: CommandSuspensionResult,
+        result: io::Result<CommandResult>,
     },
 }
 
@@ -63,8 +62,12 @@ pub(crate) struct BackgroundCommands {
     hub: StatusHub,
     completions: CompletionSender,
     next_id: u64,
-    waiting_conditions: BTreeSet<u64>,
-    active: BTreeMap<u64, ResumableCommandQueue>,
+    jobs: BTreeMap<u64, JobState>,
+}
+
+enum JobState {
+    ResolvingCondition,
+    Running,
 }
 
 impl BackgroundCommands {
@@ -77,8 +80,7 @@ impl BackgroundCommands {
                 wake,
             },
             next_id: 1,
-            waiting_conditions: BTreeSet::new(),
-            active: BTreeMap::new(),
+            jobs: BTreeMap::new(),
         }
     }
 
@@ -98,8 +100,8 @@ impl BackgroundCommands {
                     command,
                     context,
                 },
-                WorkerCompletion::Suspension { id, result } => {
-                    JobEvent::SuspensionResolved { id, result }
+                WorkerCompletion::Command { id, result } => {
+                    JobEvent::CommandCompleted { id, result }
                 }
             })
             .collect()
@@ -109,50 +111,58 @@ impl BackgroundCommands {
         match event {
             JobEvent::Start(request) if request.is_ready() => {
                 let (command, context) = request.resolve();
-                self.start_command(target, command, context, outbox);
+                self.start_command(None, command, context);
             }
             JobEvent::Start(request) => {
                 let id = self.allocate_id();
-                self.waiting_conditions.insert(id);
+                self.jobs.insert(id, JobState::ResolvingCondition);
                 let completed = self.completions.clone();
-                thread::spawn(move || {
-                    let (command, context) = request.resolve();
-                    let BackgroundCommand::Line(command) = command else {
-                        unreachable!("argv background requests are ready immediately")
-                    };
-                    completed.send(WorkerCompletion::Condition {
-                        id,
-                        command,
-                        context,
-                    });
-                });
+                if super::task::EventCommandRuntime::spawn_blocking(
+                    move || request.resolve(),
+                    move |(command, context)| {
+                        let BackgroundCommand::Line(command) = command else {
+                            unreachable!("argv background requests are ready immediately")
+                        };
+                        completed.send(WorkerCompletion::Condition {
+                            id,
+                            command,
+                            context,
+                        });
+                    },
+                )
+                .is_err()
+                {
+                    self.jobs.remove(&id);
+                }
             }
             JobEvent::ConditionResolved {
                 id,
                 command,
                 context,
             } => {
-                if self.waiting_conditions.remove(&id) {
-                    self.start_command(target, BackgroundCommand::Line(command), context, outbox);
+                if matches!(self.jobs.get(&id), Some(JobState::ResolvingCondition)) {
+                    self.jobs.remove(&id);
+                    self.start_command(Some(id), BackgroundCommand::Line(command), context);
                 }
             }
-            JobEvent::SuspensionResolved { id, result } => {
-                let Some(queue) = self.active.get_mut(&id) else {
+            JobEvent::CommandCompleted { id, result } => {
+                if !matches!(self.jobs.remove(&id), Some(JobState::Running)) {
                     return;
-                };
-                queue.resume(result, &self.state);
-                outbox.enqueue_background(target.clone(), JobEvent::Continue(id));
+                }
+                if let Ok(mut result) = result {
+                    for request in result.background_commands.drain(..) {
+                        outbox.enqueue_background(target.clone(), JobEvent::Start(request));
+                    }
+                }
             }
-            JobEvent::Continue(id) => self.drive_command(target, id, outbox),
         }
     }
 
     fn start_command(
         &mut self,
-        target: &ActorRef<Self>,
+        id: Option<u64>,
         command: BackgroundCommand,
         context: ClientContext,
-        outbox: &mut Outbox,
     ) {
         let agents = self.hub.snapshot().panes;
         let queue = match command {
@@ -168,36 +178,42 @@ impl BackgroundCommands {
                 }
                 command::start_resumable_command(&args, &self.state, &agents, &context)
             }
+            BackgroundCommand::RunShell { args, jobs } => {
+                let id = id.unwrap_or_else(|| self.allocate_id());
+                self.jobs.insert(id, JobState::Running);
+                let completed = self.completions.clone();
+                if super::task::EventCommandRuntime::spawn_blocking(
+                    move || command::run_background_shell(&args, &context, jobs),
+                    move |()| {
+                        completed.send(WorkerCompletion::Command {
+                            id,
+                            result: Ok(CommandResult::ok("")),
+                        });
+                    },
+                )
+                .is_err()
+                {
+                    self.jobs.remove(&id);
+                }
+                return;
+            }
         };
         let Ok(queue) = queue else { return };
-        let id = self.allocate_id();
-        self.active.insert(id, queue);
-        outbox.enqueue_background(target.clone(), JobEvent::Continue(id));
-    }
-
-    fn drive_command(&mut self, target: &ActorRef<Self>, id: u64, outbox: &mut Outbox) {
-        let Some(queue) = self.active.get_mut(&id) else {
-            return;
-        };
-        match queue.drive(&self.state, COMMAND_QUEUE_BUDGET) {
-            ResumableCommandTurn::Pending => {
-                outbox.enqueue_background(target.clone(), JobEvent::Continue(id));
-            }
-            ResumableCommandTurn::Suspended(suspension) => {
-                let completed = self.completions.clone();
-                thread::spawn(move || {
-                    completed.send(WorkerCompletion::Suspension {
-                        id,
-                        result: suspension.resolve(),
-                    });
-                });
-            }
-            ResumableCommandTurn::Complete(mut result) => {
-                self.active.remove(&id);
-                for request in result.background_commands.drain(..) {
-                    outbox.enqueue_background(target.clone(), JobEvent::Start(request));
-                }
-            }
+        let id = id.unwrap_or_else(|| self.allocate_id());
+        self.jobs.insert(id, JobState::Running);
+        let task = TaskState::new(command::CommandCoroutine::new(
+            queue,
+            Arc::clone(&self.state),
+            Arc::new(super::task::EventCommandRuntime),
+            COMMAND_QUEUE_BUDGET,
+        ));
+        let completed = self.completions.clone();
+        if super::task::EventCommandRuntime::spawn_coroutine(task, move |result| {
+            completed.send(WorkerCompletion::Command { id, result });
+        })
+        .is_err()
+        {
+            self.jobs.remove(&id);
         }
     }
 

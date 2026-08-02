@@ -8,12 +8,11 @@ use std::thread::{self, JoinHandle};
 use crate::server::pane::{Pane, PaneIo, PaneIoMode};
 
 impl Pane {
-    /// Spawn `argv` on a fresh pty and drain its output into the screen.
+    /// Spawn `argv` on a fresh pty under the threaded runtime.
     pub fn spawn(argv: &[&str], cols: u16, rows: u16) -> io::Result<Pane> {
         Self::spawn_in(argv, None, cols, rows)
     }
 
-    /// Spawn `argv` on a fresh pty in an optional child working directory.
     pub(crate) fn spawn_in(
         argv: &[&str],
         cwd: Option<&Path>,
@@ -24,8 +23,6 @@ impl Pane {
     }
 }
 
-/// Spawn the compatibility thread that waits around the same nonblocking pane
-/// state used by the central event loop.
 pub(crate) fn spawn_reader(mut pane_io: PaneIo) -> JoinHandle<()> {
     thread::spawn(move || loop {
         let mut wait = libc::pollfd {
@@ -38,10 +35,9 @@ pub(crate) fn spawn_reader(mut pane_io: PaneIo) -> JoinHandle<()> {
                 },
             revents: 0,
         };
-        let r = unsafe { libc::poll(&mut wait, 1, -1) };
-        if r < 0 {
-            let err = io::Error::last_os_error();
-            if err.kind() == io::ErrorKind::Interrupted {
+        let result = unsafe { libc::poll(&mut wait, 1, -1) };
+        if result < 0 {
+            if io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
                 continue;
             }
             break;

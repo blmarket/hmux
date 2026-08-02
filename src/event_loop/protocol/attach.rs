@@ -5,11 +5,9 @@
 //! bounded queues and reactor sources; no attach worker or bridge is involved.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::io::{self, Read, Write};
+use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
-use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::integration::status::StatusHub;
@@ -20,17 +18,18 @@ use crate::server::attach::{
 use crate::server::command::{self, ClientContext};
 use crate::server::pane::PaneIoMode;
 use crate::server::state::ServerState;
+use crate::server::task::{ReadySet, TaskState};
 use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::Frame;
 use crate::tmux::traits::{FrameReader, FrameWriter};
 
 use super::super::actor::ActorRef;
 use super::super::driver::Outbox;
-use super::{
-    DirectOperation, ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide,
-    ProtocolMode,
+use super::super::job::JobEvent;
+use super::client::{
+    AttachClientState, CommandClientState, CommandOperation, ProtocolClient, ProtocolCloseReason,
+    ProtocolEvent, ProtocolIoSide, ProtocolState,
 };
-use crate::server::command::CommandResult;
 
 const ATTACH_QUEUE_LIMIT: usize = MAX_IMSGSIZE * 64;
 const IMMEDIATE_TURN_BUDGET: usize = 64;
@@ -60,7 +59,7 @@ pub(crate) enum AttachRuntimeSource {
 
 /// An attach startup failure reported through the ordinary command response.
 #[derive(Debug)]
-pub(crate) struct AttachStartError {
+struct AttachStartError {
     message: String,
 }
 
@@ -71,7 +70,7 @@ impl AttachStartError {
         }
     }
 
-    pub(crate) fn into_message(self) -> String {
+    fn into_message(self) -> String {
         self.message
     }
 }
@@ -186,7 +185,7 @@ impl FrameWriter for AttachOutput {
 }
 
 /// Interactive attach state driven directly by one protocol actor.
-pub(crate) struct EventAttachClient {
+pub(super) struct EventAttachClient {
     session: AttachSession,
     state: Arc<Mutex<ServerState>>,
     hub: StatusHub,
@@ -197,28 +196,25 @@ pub(crate) struct EventAttachClient {
     registrations: BTreeMap<AttachRuntimeSource, ((RawFd, u64), EventAttachSource)>,
     next_generation: u64,
     deadline: Option<Instant>,
-    active_command: Option<ActiveAttachCommand>,
-    pending_command: Option<PendingAttachCommand>,
+    phase: AttachPhase,
     background_commands: Vec<command::BackgroundCommandRequest>,
-    finished: bool,
 }
 
 struct ActiveAttachCommand {
-    queue: command::ResumableCommandQueue,
+    task: TaskState<command::CommandCoroutine>,
     continuation: AttachCommandContinuation,
     allows_attach_io: bool,
 }
 
-enum PendingAttachCommand {
-    Worker {
-        completion: UnixStream,
-        result: Arc<Mutex<Option<command::CommandSuspensionResult>>>,
-    },
-    PaneOutput(command::PaneOutputSuspension),
+enum AttachPhase {
+    Session,
+    Running(ActiveAttachCommand),
+    Waiting(ActiveAttachCommand),
+    Finished,
 }
 
 impl EventAttachClient {
-    pub(crate) fn new(
+    fn new(
         args: &[String],
         client_tty: ClientTty,
         state: Arc<Mutex<ServerState>>,
@@ -247,33 +243,35 @@ impl EventAttachClient {
             registrations: BTreeMap::new(),
             next_generation: 0,
             deadline: None,
-            active_command: None,
-            pending_command: None,
+            phase: AttachPhase::Session,
             background_commands: Vec::new(),
-            finished: false,
         };
         attach.refresh_wait()?;
         Ok(attach)
     }
 
-    pub(crate) fn sources(&self) -> BTreeSet<EventAttachSource> {
-        if self.finished {
+    fn sources(&self) -> BTreeSet<EventAttachSource> {
+        if matches!(self.phase, AttachPhase::Finished) {
             BTreeSet::new()
         } else {
             self.runtime_desired.clone()
         }
     }
 
-    pub(crate) fn source_fd(&self, source: EventAttachSource) -> Option<BorrowedFd<'_>> {
+    pub(super) fn source_fd(&self, source: EventAttachSource) -> Option<BorrowedFd<'_>> {
         match source {
-            EventAttachSource::Command => {
-                self.pending_command.as_ref().map(PendingAttachCommand::fd)
-            }
+            EventAttachSource::Command => match &self.phase {
+                AttachPhase::Waiting(active) => active
+                    .task
+                    .wait()
+                    .and_then(|wait| wait.sources().first().map(|source| source.fd())),
+                _ => None,
+            },
             EventAttachSource::Runtime { .. } => self.runtime_sources.get(&source).map(AsFd::as_fd),
         }
     }
 
-    pub(crate) fn source_is_writable(source: EventAttachSource) -> bool {
+    pub(super) fn source_is_writable(source: EventAttachSource) -> bool {
         matches!(
             source,
             EventAttachSource::Runtime {
@@ -286,40 +284,42 @@ impl EventAttachClient {
         )
     }
 
-    pub(crate) fn deadline(&self) -> Option<Instant> {
+    fn deadline(&self) -> Option<Instant> {
         self.deadline
     }
 
-    pub(crate) fn pop_frame(&mut self) -> Option<Frame> {
+    fn pop_frame(&mut self) -> Option<Frame> {
         self.output.pop()
     }
 
-    pub(crate) fn accepts_protocol_input(&self) -> bool {
-        self.active_command
-            .as_ref()
-            .is_none_or(|command| command.allows_attach_io)
-            && self.input.is_below_high_water()
+    fn accepts_protocol_input(&self) -> bool {
+        let accepts = match &self.phase {
+            AttachPhase::Session => true,
+            AttachPhase::Running(active) | AttachPhase::Waiting(active) => active.allows_attach_io,
+            AttachPhase::Finished => false,
+        };
+        accepts && self.input.is_below_high_water()
     }
 
-    pub(crate) fn is_finished(&self) -> bool {
-        self.finished && self.output.is_empty()
+    fn is_finished(&self) -> bool {
+        matches!(self.phase, AttachPhase::Finished) && self.output.is_empty()
     }
 
-    pub(crate) fn take_background_commands(&mut self) -> Vec<command::BackgroundCommandRequest> {
+    fn take_background_commands(&mut self) -> Vec<command::BackgroundCommandRequest> {
         std::mem::take(&mut self.background_commands)
     }
 
-    pub(crate) fn handle_frame(&mut self, frame: Frame) -> io::Result<()> {
-        if self.finished {
+    fn handle_frame(&mut self, frame: Frame) -> io::Result<()> {
+        if matches!(self.phase, AttachPhase::Finished) {
             return Ok(());
         }
         self.input.push(frame);
         self.refresh_wait()
     }
 
-    pub(crate) fn drive(&mut self, source: Option<EventAttachSource>) -> io::Result<()> {
+    fn drive(&mut self, source: Option<EventAttachSource>) -> io::Result<()> {
         if matches!(source, Some(EventAttachSource::Command)) {
-            self.complete_pending_command()?;
+            self.complete_pending_command(true)?;
             return self.refresh_wait();
         }
         let ready = match source {
@@ -339,33 +339,24 @@ impl EventAttachClient {
         self.refresh_wait()
     }
 
-    pub(crate) fn drive_timer(&mut self) -> io::Result<()> {
+    pub(super) fn drive_timer(&mut self) -> io::Result<()> {
         self.deadline = None;
-        if self.active_command.is_some() {
-            if self
-                .pending_command
-                .as_ref()
-                .is_some_and(PendingAttachCommand::is_complete)
-            {
-                self.complete_pending_command()?;
-            } else if self
-                .active_command
-                .as_ref()
-                .is_some_and(|command| command.allows_attach_io)
-                && self.pending_command.is_some()
-            {
-                self.drive_session(AttachWaitReady::default())?;
-            } else if self.pending_command.is_none() {
+        if matches!(self.phase, AttachPhase::Waiting(_)) {
+            self.complete_pending_command(false)?;
+            return self.refresh_wait();
+        }
+        match &self.phase {
+            AttachPhase::Running(_) => {
                 self.drive_active_command()?;
             }
-        } else {
-            self.drive_session(AttachWaitReady::default())?;
+            AttachPhase::Session => self.drive_session(AttachWaitReady::default())?,
+            AttachPhase::Waiting(_) | AttachPhase::Finished => {}
         }
         self.refresh_wait()
     }
 
-    pub(crate) fn shutdown(&mut self) {
-        self.finished = true;
+    pub(super) fn shutdown(&mut self) {
+        self.phase = AttachPhase::Finished;
         self.input.frames.clear();
         self.input.bytes = 0;
         self.output.frames.clear();
@@ -373,8 +364,6 @@ impl EventAttachClient {
         self.runtime_desired.clear();
         self.runtime_sources.clear();
         self.deadline = None;
-        self.active_command = None;
-        self.pending_command = None;
     }
 
     fn drive_session(&mut self, ready: AttachWaitReady) -> io::Result<()> {
@@ -392,51 +381,45 @@ impl EventAttachClient {
     }
 
     fn refresh_wait(&mut self) -> io::Result<()> {
-        if self.finished {
+        if matches!(self.phase, AttachPhase::Finished) {
             return Ok(());
         }
-        if self.active_command.is_none() {
+        if matches!(self.phase, AttachPhase::Session) {
             self.start_session_command()?;
         }
-        if self.active_command.is_some() {
-            if self.pending_command.is_none() {
-                self.drive_active_command()?;
-            }
-            if self.active_command.is_some() {
-                if self
-                    .active_command
-                    .as_ref()
-                    .is_some_and(|command| command.allows_attach_io)
-                    && self.pending_command.is_some()
-                {
-                    self.refresh_session_sources()?;
-                    if self.finished {
-                        return Ok(());
-                    }
-                    self.runtime_desired.insert(EventAttachSource::Command);
-                    if let Some(command_deadline) = self
-                        .pending_command
-                        .as_ref()
-                        .and_then(PendingAttachCommand::deadline)
-                    {
-                        self.deadline =
-                            Some(self.deadline.map_or(command_deadline, |deadline| {
-                                deadline.min(command_deadline)
-                            }));
-                    }
+        if matches!(self.phase, AttachPhase::Running(_)) {
+            self.drive_active_command()?;
+        }
+        match &self.phase {
+            AttachPhase::Waiting(active) if active.allows_attach_io => {
+                let command_deadline = active.task.wait().and_then(|wait| wait.deadline());
+                self.refresh_session_sources()?;
+                if matches!(self.phase, AttachPhase::Finished) {
                     return Ok(());
                 }
-                self.runtime_desired.clear();
-                if let Some(pending) = self.pending_command.as_ref() {
-                    self.runtime_desired.insert(EventAttachSource::Command);
-                    self.deadline = pending.deadline();
-                } else {
-                    self.deadline = Some(Instant::now());
+                self.runtime_desired.insert(EventAttachSource::Command);
+                if let Some(command_deadline) = command_deadline {
+                    self.deadline = Some(
+                        self.deadline
+                            .map_or(command_deadline, |deadline| deadline.min(command_deadline)),
+                    );
                 }
-                return Ok(());
+                Ok(())
             }
+            AttachPhase::Waiting(active) => {
+                self.runtime_desired.clear();
+                self.runtime_desired.insert(EventAttachSource::Command);
+                self.deadline = active.task.wait().and_then(|wait| wait.deadline());
+                Ok(())
+            }
+            AttachPhase::Running(_) => {
+                self.runtime_desired.clear();
+                self.deadline = Some(Instant::now());
+                Ok(())
+            }
+            AttachPhase::Session => self.refresh_session_sources(),
+            AttachPhase::Finished => Ok(()),
         }
-        self.refresh_session_sources()
     }
 
     fn refresh_session_sources(&mut self) -> io::Result<()> {
@@ -455,7 +438,7 @@ impl EventAttachClient {
                     return Ok(());
                 }
             }
-            if self.finished {
+            if matches!(self.phase, AttachPhase::Finished) {
                 return Ok(());
             }
         }
@@ -489,8 +472,13 @@ impl EventAttachClient {
         };
         match queue {
             Ok(queue) => {
-                self.active_command = Some(ActiveAttachCommand {
-                    queue,
+                self.phase = AttachPhase::Running(ActiveAttachCommand {
+                    task: TaskState::new(command::CommandCoroutine::new(
+                        queue,
+                        Arc::clone(&self.state),
+                        Arc::new(crate::event_loop::task::EventCommandRuntime),
+                        64,
+                    )),
                     continuation: request.continuation,
                     allows_attach_io: false,
                 });
@@ -504,56 +492,60 @@ impl EventAttachClient {
     }
 
     fn drive_active_command(&mut self) -> io::Result<()> {
-        let turn = self
-            .active_command
-            .as_mut()
-            .ok_or_else(|| io::Error::other("missing active attach command"))?
-            .queue
-            .drive(&self.state, 64);
-        match turn {
-            command::ResumableCommandTurn::Pending => {
-                self.deadline = Some(Instant::now());
+        let (complete, has_source, allows_attach_io) = match &mut self.phase {
+            AttachPhase::Running(active) => {
+                let complete = active.task.poll(&ReadySet::default());
+                let has_source = active
+                    .task
+                    .wait()
+                    .is_some_and(|wait| !wait.sources().is_empty());
+                let allows_attach_io = active.task.task().allows_attach_io();
+                (complete, has_source, allows_attach_io)
             }
-            command::ResumableCommandTurn::Suspended(suspension) => {
-                let allows_attach_io = suspension.allows_attach_io();
-                let pending = PendingAttachCommand::start(suspension)?;
-                let complete = pending.is_complete();
-                self.pending_command = Some(pending);
-                if let Some(active) = self.active_command.as_mut() {
-                    active.allows_attach_io = allows_attach_io;
-                }
-                if complete {
-                    self.complete_pending_command()?;
-                }
-            }
-            command::ResumableCommandTurn::Complete(mut result) => {
-                tracing::debug!(exit = result.exit, "attached-client command completed");
-                self.background_commands
-                    .append(&mut result.background_commands);
-                let active = self
-                    .active_command
-                    .take()
-                    .expect("completed attach command disappeared");
-                self.session
-                    .complete_command(active.continuation, result, &self.state);
-                self.drive_session(AttachWaitReady::default())?;
-            }
+            _ => return Ok(()),
+        };
+        if complete {
+            let phase = std::mem::replace(&mut self.phase, AttachPhase::Session);
+            let AttachPhase::Running(mut active) = phase else {
+                return Ok(());
+            };
+            let mut result = active
+                .task
+                .take_output()
+                .ok_or_else(|| io::Error::other("completed attach command has no result"))??;
+            tracing::debug!(exit = result.exit, "attached-client command completed");
+            self.background_commands
+                .append(&mut result.background_commands);
+            self.session
+                .complete_command(active.continuation, result, &self.state);
+            self.drive_session(AttachWaitReady::default())?;
+        } else if has_source {
+            let phase = std::mem::replace(&mut self.phase, AttachPhase::Finished);
+            let AttachPhase::Running(mut active) = phase else {
+                return Ok(());
+            };
+            active.allows_attach_io = allows_attach_io;
+            self.phase = AttachPhase::Waiting(active);
+        } else {
+            self.deadline = Some(Instant::now());
         }
         Ok(())
     }
 
-    fn complete_pending_command(&mut self) -> io::Result<()> {
-        let result = self
-            .pending_command
-            .take()
-            .ok_or_else(|| io::Error::other("attach command readiness without suspension"))?
-            .take_result()?;
-        let active = self
-            .active_command
-            .as_mut()
-            .ok_or_else(|| io::Error::other("attach suspension without active command"))?;
+    fn complete_pending_command(&mut self, source_ready: bool) -> io::Result<()> {
+        let phase = std::mem::replace(&mut self.phase, AttachPhase::Finished);
+        let mut active = match phase {
+            AttachPhase::Waiting(active) => active,
+            phase => {
+                self.phase = phase;
+                return Ok(());
+            }
+        };
+        active
+            .task
+            .poll_after_single_source_wakeup(source_ready, Instant::now());
         active.allows_attach_io = false;
-        active.queue.resume(result, &self.state);
+        self.phase = AttachPhase::Running(active);
         self.drive_active_command()
     }
 
@@ -622,67 +614,174 @@ impl EventAttachClient {
     }
 
     fn finish(&mut self) {
-        self.finished = true;
+        self.phase = AttachPhase::Finished;
         self.runtime_desired.clear();
         self.runtime_sources.clear();
         self.deadline = None;
     }
 }
 
-impl PendingAttachCommand {
-    fn start(suspension: command::CommandSuspension) -> io::Result<Self> {
-        if let command::CommandSuspension::PaneOutput(wait) = suspension {
-            return Ok(Self::PaneOutput(wait));
-        }
-        let (completion, mut signal) = UnixStream::pair()?;
-        completion.set_nonblocking(true)?;
-        let result = Arc::new(Mutex::new(None));
-        let worker_result = Arc::clone(&result);
-        thread::spawn(move || {
-            let completed = suspension.resolve();
-            if let Ok(mut result) = worker_result.lock() {
-                *result = Some(completed);
-            }
-            let _ = signal.write_all(&[1]);
-        });
-        Ok(Self::Worker { completion, result })
-    }
-
-    fn fd(&self) -> BorrowedFd<'_> {
-        match self {
-            Self::Worker { completion, .. } => completion.as_fd(),
-            Self::PaneOutput(wait) => wait.as_fd(),
-        }
-    }
-
-    fn deadline(&self) -> Option<Instant> {
-        match self {
-            Self::Worker { .. } => None,
-            Self::PaneOutput(wait) => Some(wait.deadline()),
-        }
-    }
-
-    fn is_complete(&self) -> bool {
-        match self {
-            Self::Worker { .. } => false,
-            Self::PaneOutput(wait) => wait.is_complete(),
-        }
-    }
-
-    fn take_result(mut self) -> io::Result<command::CommandSuspensionResult> {
-        let Self::Worker { completion, result } = &mut self else {
-            let Self::PaneOutput(wait) = &mut self else {
-                unreachable!();
-            };
-            return Ok(wait.complete());
+impl ProtocolClient {
+    pub(super) fn begin_attach(
+        &mut self,
+        target: &ActorRef<Self>,
+        args: Vec<String>,
+        outbox: &mut Outbox,
+    ) {
+        let Some((tty, context)) = self.take_identification() else {
+            return;
         };
-        let mut byte = [0u8; 1];
-        completion.read_exact(&mut byte)?;
-        result
-            .lock()
-            .map_err(|_| io::Error::other("attach command result poisoned"))?
-            .take()
-            .ok_or_else(|| io::Error::other("attach command completed without a result"))
+        match EventAttachClient::new(
+            &args,
+            tty,
+            Arc::clone(&self.state),
+            self.hub.clone(),
+            &context,
+        ) {
+            Ok(mut attach) => {
+                if let Err(error) = attach.drive(None) {
+                    self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+                    return;
+                }
+                self.protocol_state = ProtocolState::Attach(AttachClientState {
+                    client: Box::new(attach),
+                    timer_deadline: None,
+                    timer_generation: 0,
+                    input_paused: false,
+                });
+                self.sync_attach(target, outbox);
+            }
+            Err(error) => {
+                self.protocol_state = ProtocolState::Command(CommandClientState {
+                    operation: CommandOperation::AwaitingStep,
+                    timer_generation: 0,
+                });
+                self.begin_response(
+                    target,
+                    command::CommandResult::err(error.into_message()),
+                    outbox,
+                );
+            }
+        }
+    }
+
+    pub(super) fn handle_attach_protocol_frame(
+        &mut self,
+        target: &ActorRef<Self>,
+        frame: Frame,
+        outbox: &mut Outbox,
+    ) {
+        let result = match &mut self.protocol_state {
+            ProtocolState::Attach(attach) => attach.client.handle_frame(frame),
+            _ => return,
+        };
+        if let Err(error) = result {
+            self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+            return;
+        }
+        self.sync_attach(target, outbox);
+    }
+
+    pub(super) fn handle_attach_event(
+        &mut self,
+        target: &ActorRef<Self>,
+        source: Option<EventAttachSource>,
+        outbox: &mut Outbox,
+    ) {
+        let result = match &mut self.protocol_state {
+            ProtocolState::Attach(attach) => attach.client.drive(source),
+            _ => return,
+        };
+        if let Err(error) = result {
+            self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+            return;
+        }
+        self.sync_attach(target, outbox);
+    }
+
+    pub(super) fn sync_attach(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
+        while self.writer_is_below_high_water() {
+            let frame = match &mut self.protocol_state {
+                ProtocolState::Attach(attach) => attach.client.pop_frame(),
+                _ => None,
+            };
+            let Some(frame) = frame else {
+                break;
+            };
+            if !self.queue_frame(target, frame, outbox) {
+                break;
+            }
+        }
+
+        let (desired, deadline, finished, accepts_input, background_commands) =
+            match &mut self.protocol_state {
+                ProtocolState::Attach(attach) => (
+                    attach.client.sources(),
+                    attach.client.deadline(),
+                    attach.client.is_finished(),
+                    attach.client.accepts_protocol_input(),
+                    attach.client.take_background_commands(),
+                ),
+                _ => return,
+            };
+        for request in background_commands {
+            outbox.enqueue_background(self.background_commands.clone(), JobEvent::Start(request));
+        }
+        let was_input_paused = match &self.protocol_state {
+            ProtocolState::Attach(attach) => attach.input_paused,
+            _ => return,
+        };
+        if let ProtocolState::Attach(attach) = &mut self.protocol_state {
+            attach.input_paused = !accepts_input;
+        }
+        let read_enabled = !self.reads_paused && accepts_input && !finished;
+        outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, read_enabled);
+        if was_input_paused && read_enabled && self.reader.has_buffered_frame() {
+            self.schedule_read_continuation(target, outbox);
+        }
+
+        let registered = self
+            .registrations
+            .attach
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        for source in registered.union(&desired).copied() {
+            outbox.set_protocol_interest(
+                target.clone(),
+                ProtocolIoSide::Attach(source),
+                desired.contains(&source),
+            );
+        }
+
+        let timer_changed = match &self.protocol_state {
+            ProtocolState::Attach(attach) => deadline != attach.timer_deadline,
+            _ => false,
+        };
+        if timer_changed {
+            let generation = match &mut self.protocol_state {
+                ProtocolState::Attach(attach) => {
+                    attach.timer_deadline = deadline;
+                    attach.timer_generation = attach.timer_generation.wrapping_add(1);
+                    attach.timer_generation
+                }
+                _ => return,
+            };
+            match deadline {
+                Some(deadline) => outbox.set_protocol_timer_event(
+                    target.clone(),
+                    deadline,
+                    ProtocolEvent::AttachTimer(generation),
+                ),
+                None => outbox.cancel_protocol_timer(target.clone()),
+            }
+        }
+
+        if finished {
+            self.protocol_state = ProtocolState::Draining;
+            outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, false);
+        }
+        self.drive_output(target, outbox);
     }
 }
 
@@ -729,143 +828,5 @@ mod tests {
                 generation: 1,
             }
         ));
-    }
-}
-
-impl ProtocolClient {
-    pub(super) fn begin_attach(
-        &mut self,
-        target: &ActorRef<Self>,
-        args: Vec<String>,
-        outbox: &mut Outbox,
-    ) {
-        let tty = self.take_client_tty();
-        match EventAttachClient::new(
-            &args,
-            tty,
-            Arc::clone(&self.state),
-            self.hub.clone(),
-            &self.context,
-        ) {
-            Ok(mut attach) => {
-                if let Err(error) = attach.drive(None) {
-                    self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
-                    return;
-                }
-                self.mode = ProtocolMode::Attach(Box::new(attach));
-                self.operation = DirectOperation::Idle;
-                self.sync_attach(target, outbox);
-            }
-            Err(error) => {
-                self.mode = ProtocolMode::Direct;
-                self.begin_response(target, CommandResult::err(error.into_message()), outbox);
-            }
-        }
-    }
-
-    pub(super) fn handle_attach_protocol_frame(
-        &mut self,
-        target: &ActorRef<Self>,
-        frame: Frame,
-        outbox: &mut Outbox,
-    ) {
-        let result = match &mut self.mode {
-            ProtocolMode::Attach(attach) => attach.handle_frame(frame),
-            _ => return,
-        };
-        if let Err(error) = result {
-            self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
-            return;
-        }
-        self.sync_attach(target, outbox);
-    }
-
-    pub(super) fn handle_attach_event(
-        &mut self,
-        target: &ActorRef<Self>,
-        source: Option<EventAttachSource>,
-        outbox: &mut Outbox,
-    ) {
-        let result = match &mut self.mode {
-            ProtocolMode::Attach(attach) => attach.drive(source),
-            _ => return,
-        };
-        if let Err(error) = result {
-            self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
-            return;
-        }
-        self.sync_attach(target, outbox);
-    }
-
-    pub(super) fn sync_attach(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
-        while self.writer_is_below_high_water() {
-            let frame = match &mut self.mode {
-                ProtocolMode::Attach(attach) => attach.pop_frame(),
-                _ => None,
-            };
-            let Some(frame) = frame else {
-                break;
-            };
-            if !self.queue_frame(target, frame, outbox) {
-                break;
-            }
-        }
-
-        let (desired, deadline, finished, accepts_input, background_commands) = match &mut self.mode
-        {
-            ProtocolMode::Attach(attach) => (
-                attach.sources(),
-                attach.deadline(),
-                attach.is_finished(),
-                attach.accepts_protocol_input(),
-                attach.take_background_commands(),
-            ),
-            _ => return,
-        };
-        for request in background_commands {
-            outbox.enqueue_background(
-                self.background_commands.clone(),
-                super::super::job::JobEvent::Start(request),
-            );
-        }
-        let was_input_paused = self.attach_input_paused;
-        self.attach_input_paused = !accepts_input;
-        let read_enabled = !self.reads_paused && !self.attach_input_paused && !finished;
-        outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, read_enabled);
-        if was_input_paused && read_enabled && self.reader.has_buffered_frame() {
-            self.schedule_read_continuation(target, outbox);
-        }
-
-        let registered = self.attach_tokens.keys().copied().collect::<BTreeSet<_>>();
-        for source in registered.union(&desired).copied() {
-            outbox.set_protocol_interest(
-                target.clone(),
-                ProtocolIoSide::Attach(source),
-                desired.contains(&source),
-            );
-        }
-
-        if deadline != self.attach_timer_deadline {
-            self.attach_timer_deadline = deadline;
-            self.attach_timer_generation = self.attach_timer_generation.wrapping_add(1);
-            match deadline {
-                Some(deadline) => outbox.set_protocol_timer_event(
-                    target.clone(),
-                    deadline,
-                    ProtocolEvent::AttachTimer(self.attach_timer_generation),
-                ),
-                None => outbox.cancel_protocol_timer(target.clone()),
-            }
-        }
-
-        if finished {
-            self.close_after_flush = true;
-        }
-        self.drive_output(target, outbox);
-    }
-
-    pub(super) fn take_client_tty(&mut self) -> ClientTty {
-        self.identify_bytes = 0;
-        std::mem::replace(&mut self.client_tty, ClientTty::new())
     }
 }

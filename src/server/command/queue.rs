@@ -11,13 +11,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT_QUEUE_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct QueueTicket {
+pub(in crate::server) struct QueueTicket {
     queue: u64,
     item: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum QueueState {
+pub(in crate::server) enum QueueState {
     Empty,
     Ready,
     Running(QueueTicket),
@@ -46,9 +46,9 @@ struct Current {
 }
 
 /// An item checked out by the queue owner for execution.
-pub(crate) struct Started<T> {
-    pub(crate) ticket: QueueTicket,
-    pub(crate) value: T,
+pub(in crate::server) struct Started<T> {
+    pub(in crate::server) ticket: QueueTicket,
+    pub(in crate::server) value: T,
 }
 
 /// Result of an item reaching a terminal state.
@@ -56,20 +56,20 @@ pub(crate) struct Started<T> {
 /// Each inner vector in `insert_next` is a command group. Failure may discard
 /// the unstarted tail of the current group without affecting inserted groups or
 /// later independently submitted groups.
-pub(crate) struct QueueCompletion<T> {
-    pub(crate) discard_group_tail: bool,
-    pub(crate) insert_next: Vec<Vec<T>>,
+pub(in crate::server) struct QueueCompletion<T> {
+    pub(in crate::server) discard_group_tail: bool,
+    pub(in crate::server) insert_next: Vec<Vec<T>>,
 }
 
 impl<T> QueueCompletion<T> {
-    pub(crate) fn done() -> Self {
+    pub(in crate::server) fn done() -> Self {
         Self {
             discard_group_tail: false,
             insert_next: Vec::new(),
         }
     }
 
-    pub(crate) fn failed() -> Self {
+    pub(in crate::server) fn failed() -> Self {
         Self {
             discard_group_tail: true,
             insert_next: Vec::new(),
@@ -79,14 +79,14 @@ impl<T> QueueCompletion<T> {
 
 /// Error returned when an event tries to resume or finish the wrong item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct StaleQueueTicket;
+pub(in crate::server) struct StaleQueueTicket;
 
 /// FIFO command queue with tmux-style insertion immediately after the current
 /// item.
 ///
 /// This type is deliberately not synchronized. A protocol handler or startup
 /// runner owns it, while background work communicates through tickets.
-pub(crate) struct CommandQueue<T> {
+pub(in crate::server) struct CommandQueue<T> {
     id: u64,
     next_item: u64,
     next_group: u64,
@@ -101,7 +101,7 @@ impl<T> Default for CommandQueue<T> {
 }
 
 impl<T> CommandQueue<T> {
-    pub(crate) fn new() -> Self {
+    pub(in crate::server) fn new() -> Self {
         Self {
             id: NEXT_QUEUE_ID.fetch_add(1, Ordering::Relaxed),
             next_item: 1,
@@ -111,7 +111,7 @@ impl<T> CommandQueue<T> {
         }
     }
 
-    pub(crate) fn state(&self) -> QueueState {
+    pub(in crate::server) fn state(&self) -> QueueState {
         match self.current.as_ref() {
             Some(Current {
                 ticket,
@@ -129,7 +129,7 @@ impl<T> CommandQueue<T> {
     }
 
     /// Append an independently submitted command group.
-    pub(crate) fn push_back_group<I>(&mut self, values: I)
+    pub(in crate::server) fn push_back_group<I>(&mut self, values: I)
     where
         I: IntoIterator<Item = T>,
     {
@@ -141,7 +141,7 @@ impl<T> CommandQueue<T> {
     }
 
     /// Start the next item. A waiting or running item must be resolved first.
-    pub(crate) fn start_next(&mut self) -> Option<Started<T>> {
+    pub(in crate::server) fn start_next(&mut self) -> Option<Started<T>> {
         if self.current.is_some() {
             return None;
         }
@@ -162,14 +162,17 @@ impl<T> CommandQueue<T> {
     }
 
     /// Mark the current item as waiting for an external completion event.
-    pub(crate) fn wait(&mut self, ticket: QueueTicket) -> Result<(), StaleQueueTicket> {
+    pub(in crate::server) fn wait(&mut self, ticket: QueueTicket) -> Result<(), StaleQueueTicket> {
         let current = self.current_mut(ticket)?;
         current.state = CurrentState::Waiting;
         Ok(())
     }
 
     /// Mark a waiting item runnable again without completing it.
-    pub(crate) fn resume(&mut self, ticket: QueueTicket) -> Result<(), StaleQueueTicket> {
+    pub(in crate::server) fn resume(
+        &mut self,
+        ticket: QueueTicket,
+    ) -> Result<(), StaleQueueTicket> {
         let current = self.current_mut(ticket)?;
         if current.state != CurrentState::Waiting {
             return Err(StaleQueueTicket);
@@ -180,7 +183,7 @@ impl<T> CommandQueue<T> {
 
     /// Complete the current item, optionally discarding its group tail and
     /// inserting new groups before the previously pending tail.
-    pub(crate) fn complete(
+    pub(in crate::server) fn complete(
         &mut self,
         ticket: QueueTicket,
         completion: QueueCompletion<T>,

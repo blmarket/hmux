@@ -67,9 +67,6 @@ pub struct Pane {
     rows: u16,
 }
 
-/// Starts the compatibility reader for a pane driven outside the event loop.
-/// Supplied by the runtime that owns threads, so pane construction itself stays
-/// free of any thread policy.
 pub(crate) type PaneReaderSpawner = fn(PaneIo) -> JoinHandle<()>;
 
 #[derive(Clone, Copy, Debug)]
@@ -1640,7 +1637,7 @@ pub(crate) struct PaneIo {
 }
 
 impl PaneIo {
-    fn new(
+    pub(crate) fn new(
         master: &OwnedFd,
         observation: Arc<NativePaneObservation>,
         terminal_queries: Arc<Mutex<VecDeque<Vec<u8>>>>,

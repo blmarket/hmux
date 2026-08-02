@@ -7,7 +7,7 @@
 //! with `MSG_EXIT`. This is the exact exchange the conformance suite asserts on.
 //!
 //! The interactive *attach* path (identify carries a tty fd; the server would
-//! then composite panes onto it) is now implemented in `crate::server::attach`:
+//! then composite panes onto it) is now implemented in `super::attach`: on
 //! `attach-session` the handler takes the client's tty fd and drives it
 //! directly via libghostty-vt, matching the real tmux flow where terminal I/O
 //! bypasses imsg after identify.
@@ -19,13 +19,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::integration::status::{PaneAgents, StatusHub};
-use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
-use crate::tmux::traits::{FrameReader, FrameWriter};
-
-use crate::server::attach::{self, ClientTty};
+use crate::server::attach::{AttachFrameReader, ClientTty};
 use crate::server::command;
 use crate::server::control::{EventControlClient, EventControlSource};
 use crate::server::state::ServerState;
+use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
+use crate::tmux::traits::{FrameReader, FrameWriter};
 
 /// stdout / stderr fds the client maps opened streams onto.
 const FD_STDOUT: i32 = 1;
@@ -42,12 +41,13 @@ pub fn handle<R, W>(
     hub: StatusHub,
 ) -> io::Result<()>
 where
-    R: FrameReader + AsRawFd + attach::AttachFrameReader,
+    R: FrameReader + AsRawFd + AttachFrameReader,
     W: FrameWriter,
 {
     let mut client_tty = ClientTty::new();
     let mut client_context = command::ClientContext {
         wait_for_interactions: true,
+        defer_attach_commands: true,
         ..command::ClientContext::default()
     };
     let mut control_mode = false;
@@ -192,11 +192,18 @@ fn handle_control_client<R: FrameReader, W: FrameWriter>(
     _reader: &mut R,
     writer: &mut W,
 ) -> io::Result<()> {
-    let mut control =
-        EventControlClient::new(args, client_tty, Arc::clone(state), hub.clone(), context)?;
+    let mut control = EventControlClient::new(
+        args,
+        client_tty,
+        Arc::clone(state),
+        hub.clone(),
+        context,
+        Arc::new(super::task::NativeCommandRuntime),
+    )?;
 
     loop {
         control.drive(None)?;
+        spawn_control_background(&mut control, state, hub);
         send_event_control_frames(&mut control, writer)?;
         if control.is_finished() {
             return Ok(());
@@ -251,6 +258,7 @@ fn handle_control_client<R: FrameReader, W: FrameWriter>(
             }
             loop {
                 control.drive(Some(source))?;
+                spawn_control_background(&mut control, state, hub);
                 send_event_control_frames(&mut control, writer)?;
                 if control.is_finished() {
                     return Ok(());
@@ -260,6 +268,21 @@ fn handle_control_client<R: FrameReader, W: FrameWriter>(
                 }
             }
         }
+    }
+}
+
+fn spawn_control_background(
+    control: &mut EventControlClient,
+    state: &Arc<Mutex<ServerState>>,
+    hub: &StatusHub,
+) {
+    let agents = hub.snapshot().panes;
+    for request in control.take_background_commands() {
+        let _ = super::task::NativeCommandRuntime::spawn_background(
+            request,
+            Arc::clone(state),
+            agents.clone(),
+        );
     }
 }
 
@@ -273,7 +296,6 @@ fn send_event_control_frames<W: FrameWriter>(
     Ok(())
 }
 
-/// Run a command and stream its output back, then send `MSG_EXIT`.
 fn dispatch_command<R, W>(
     args: &[String],
     state: &Arc<Mutex<ServerState>>,
@@ -391,7 +413,20 @@ where
         if let Some(path) = command::client_input_path(args, context) {
             execution_context.input_file = Some(read_client_file(reader, writer, &path)?);
         }
-        command::run_with_context(args, state, agents, &execution_context)
+        match command::start_resumable_command(args, state, agents, &execution_context) {
+            Ok(queue) => {
+                let mut result = super::task::NativeCommandRuntime::run(queue, state);
+                for request in result.background_commands.drain(..) {
+                    let _ = super::task::NativeCommandRuntime::spawn_background(
+                        request,
+                        Arc::clone(state),
+                        agents.clone(),
+                    );
+                }
+                result
+            }
+            Err(result) => result,
+        }
     })
 }
 

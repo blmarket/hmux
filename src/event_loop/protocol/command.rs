@@ -1,20 +1,25 @@
-use super::*;
-use crate::server::command;
+use std::collections::VecDeque;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use crate::server::command::{self, ClientContext, CommandResult};
+use crate::server::state::ServerState;
+use crate::server::task::TaskState;
 
 /// One validated command line, possibly split around client-side file work.
 pub(crate) struct CommandTransaction {
     pub(super) groups: VecDeque<Vec<String>>,
-    output: CommandResult,
+    pub(super) output: CommandResult,
     pub(super) context: ClientContext,
 }
 
 pub(super) struct ActiveResumableCommand {
     pub(super) transaction: CommandTransaction,
-    pub(super) queue: command::ResumableCommandQueue,
+    pub(super) task: TaskState<command::CommandCoroutine>,
 }
 
 impl CommandTransaction {
-    fn new(groups: Vec<Vec<String>>, context: ClientContext) -> Self {
+    pub(super) fn new(groups: Vec<Vec<String>>, context: ClientContext) -> Self {
         Self {
             groups: groups.into(),
             output: CommandResult::ok(""),
@@ -133,70 +138,5 @@ fn advance_command_transaction(
             args,
             context,
         };
-    }
-}
-
-pub(super) enum PendingCommand {
-    Worker {
-        completion: UnixStream,
-        result: Arc<Mutex<Option<command::CommandSuspensionResult>>>,
-    },
-    PaneOutput(command::PaneOutputSuspension),
-}
-
-impl PendingCommand {
-    pub(super) fn start_suspension(suspension: command::CommandSuspension) -> io::Result<Self> {
-        if let command::CommandSuspension::PaneOutput(wait) = suspension {
-            return Ok(Self::PaneOutput(wait));
-        }
-        let (completion, mut signal) = UnixStream::pair()?;
-        completion.set_nonblocking(true)?;
-        let result = Arc::new(Mutex::new(None));
-        let worker_result = Arc::clone(&result);
-        thread::spawn(move || {
-            let completed = suspension.resolve();
-            if let Ok(mut result) = worker_result.lock() {
-                *result = Some(completed);
-            }
-            let _ = signal.write_all(&[1]);
-        });
-        Ok(Self::Worker { completion, result })
-    }
-
-    pub(super) fn fd(&self) -> BorrowedFd<'_> {
-        match self {
-            Self::Worker { completion, .. } => completion.as_fd(),
-            Self::PaneOutput(wait) => wait.as_fd(),
-        }
-    }
-
-    pub(super) fn deadline(&self) -> Option<Instant> {
-        match self {
-            Self::Worker { .. } => None,
-            Self::PaneOutput(wait) => Some(wait.deadline()),
-        }
-    }
-
-    pub(super) fn is_complete(&self) -> bool {
-        match self {
-            Self::Worker { .. } => false,
-            Self::PaneOutput(wait) => wait.is_complete(),
-        }
-    }
-
-    pub(super) fn take_result(&mut self) -> io::Result<command::CommandSuspensionResult> {
-        let Self::Worker { completion, result } = self else {
-            let Self::PaneOutput(wait) = self else {
-                unreachable!();
-            };
-            return Ok(wait.complete());
-        };
-        let mut byte = [0u8; 1];
-        completion.read_exact(&mut byte)?;
-        result
-            .lock()
-            .map_err(|_| io::Error::other("command result poisoned"))?
-            .take()
-            .ok_or_else(|| io::Error::other("command completed without a result"))
     }
 }

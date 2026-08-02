@@ -8,4 +8,5 @@ pub(crate) mod pane;
 pub(crate) mod process;
 pub(crate) mod protocol;
 pub(crate) mod reactor;
+pub(crate) mod task;
 pub(crate) mod timer;
