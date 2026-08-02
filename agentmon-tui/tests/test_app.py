@@ -298,7 +298,9 @@ def test_dashboard_shows_compact_worktree_tree_and_transcript_side_by_side() -> 
             runs_pane = app.screen.query_one("#runs-pane")
             transcript_pane = app.screen.query_one("#transcript-pane")
             assert runs_pane.region.right == transcript_pane.region.x
-            assert runs_pane.region.width > transcript_pane.region.width
+            # The panes share the width evenly (5fr / 5fr); the transcript pane
+            # carries a 1-column right margin, so allow a one-column difference.
+            assert abs(runs_pane.region.width - transcript_pane.region.width) <= 1
 
             meta = app.screen.query_one("#transcript-meta", Static)
             content = app.screen.query_one("#transcript-content", Static)
@@ -632,6 +634,93 @@ def test_w_opens_shell_at_selected_agent_cwd() -> None:
         assert opened == [app.runs[0]]
 
     asyncio.run(exercise())
+
+
+def test_finished_worktree_shows_state_instead_of_dead_end_note() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(120, 34)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            table.move_cursor(row=table.row_count - 1)
+            await pilot.pause()
+
+            title = app.screen.query_one("#transcript-title", Static)
+            content = app.screen.query_one("#transcript-content", Static)
+            rendered = str(content.render())
+            assert "Worktree · old-fix" in str(title.render())
+            assert "no longer has an active agent session" not in rendered
+            assert "Repository state" in rendered
+            # The merged indicator mirrors the left pane's WORKTREE mark.
+            assert "merged into main" in rendered
+            # The full instruction text is shown verbatim, not collapsed.
+            assert "Fix the parser edge case found during review." in rendered
+            # Repository state precedes the instruction body.
+            assert rendered.index("Repository state") < rendered.index(
+                "Fix the parser edge case"
+            )
+
+    asyncio.run(exercise())
+
+
+def test_render_worktree_overview_shows_repository_state_then_instruction() -> None:
+    from agentmon.services import WorktreeOverview
+
+    # Unmerged with committed + uncommitted changes shows every dimension.
+    active = DashboardScreen._render_worktree_overview(
+        WorktreeOverview(
+            worktree=Path("/demo/done"),
+            branch="done",
+            base_branch="main",
+            merged=False,
+            has_instruction=True,
+            instruction_text="Line one.\nLine two.\n",
+            instruction_commit="abc1234",
+            committed_changes=True,
+            dirty=True,
+        )
+    ).plain
+    assert "not yet merged into main" in active
+    assert "committed changes on top of the instruction" in active
+    assert "uncommitted changes present" in active
+    assert "committed (abc1234)" in active
+    # Instruction newlines are preserved rather than collapsed to one line.
+    assert "Line one.\nLine two." in active
+    assert active.index("Repository state") < active.index("Line one.")
+
+    clean = DashboardScreen._render_worktree_overview(
+        WorktreeOverview(
+            worktree=Path("/demo/prepared"),
+            branch="prepared",
+            base_branch="main",
+            merged=True,
+            has_instruction=True,
+            instruction_text="Do the thing.",
+            instruction_commit="abc1234",
+            committed_changes=False,
+            dirty=False,
+        )
+    ).plain
+    assert "merged into main" in clean
+    assert "clean working tree" in clean
+
+    missing = DashboardScreen._render_worktree_overview(
+        WorktreeOverview(
+            worktree=Path("/demo/blank"),
+            branch="blank",
+            base_branch="main",
+            merged=False,
+            has_instruction=False,
+            instruction_text="",
+            instruction_commit=None,
+            committed_changes=False,
+            dirty=False,
+        )
+    ).plain
+    assert "no instruction.md prepared yet" in missing
 
 
 def test_w_opens_shell_at_recent_finished_worktree() -> None:

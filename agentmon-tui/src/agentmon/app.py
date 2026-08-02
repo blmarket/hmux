@@ -46,7 +46,13 @@ from .model import (
     normalize_launch_agent,
 )
 from .quota import QuotaReport, QuotaService, QuotaWindow
-from .services import AgentmonService, CommandError, discover_repository, discover_socket
+from .services import (
+    AgentmonService,
+    CommandError,
+    WorktreeOverview,
+    discover_repository,
+    discover_socket,
+)
 from .transcript import Transcript, TranscriptError, TranscriptMessage
 
 
@@ -74,6 +80,12 @@ WORKTREE_MARK = {
     "unknown": "? unknown",
     "not-git": "—",
 }
+
+# Relative widths of the dashboard's run list and transcript panes. Adjust
+# these to reslice the split (e.g. 3 / 2 for a 60/40 layout); they are woven
+# into the dashboard CSS below.
+RUNS_PANE_FRACTION = 5
+TRANSCRIPT_PANE_FRACTION = 5
 
 
 def agent_badge(agent: str) -> str:
@@ -189,10 +201,11 @@ class DashboardScreen(Screen):
         self._transcript_session_id: str | None = None
         self._transcript_signature: tuple[object, ...] | None = None
         self._loaded_transcript: Transcript | None = None
+        self._overview_pane_id: str | None = None
         self._row_runs: list[AgentRun | None] = []
         self._row_repositories: list[Repository | None] = []
         table = self.query_one("#runs", DataTable)
-        table.add_column("WORKTREE", width=36)
+        table.add_column("WORKTREE", width=28)
         table.add_column("GIT", width=12)
         table.add_column("HMUX", width=9)
         self.set_interval(30.0, self.refresh_runs)
@@ -383,6 +396,10 @@ class DashboardScreen(Screen):
         self.query_one("#transcript-content", Static).update(message)
 
     def _refresh_transcript(self) -> None:
+        # Reset the worktree-overview tracker; only the overview branch below
+        # re-arms it, so every other path leaves it cleared.
+        previous_overview_pane = self._overview_pane_id
+        self._overview_pane_id = None
         run = self._selected_run()
         if run is None:
             self._clear_transcript("Select a run to inspect its agent session.")
@@ -404,21 +421,39 @@ class DashboardScreen(Screen):
                 "No coding agent is running in this window."
             )
             return
-        self.query_one("#transcript-title", Static).update(
-            f"Transcript · {run.branch} · {agent_name}"
-        )
-        self._set_transcript_meta(None)
         if not run.session_id:
             self._transcript_session_id = None
             self._transcript_signature = None
             self._loaded_transcript = None
-            message = (
+            if run.state == "exited" and run.repository is not None:
+                # A finished or freshly prepared worktree with no live agent
+                # session: show what the worktree holds instead of a dead-end
+                # note about a missing session.
+                self._overview_pane_id = run.pane_id
+                self.query_one("#transcript-title", Static).update(
+                    f"Worktree · {run.branch}"
+                )
+                self._set_transcript_meta(None)
+                if run.pane_id != previous_overview_pane:
+                    self.query_one("#transcript-content", Static).update(
+                        "Inspecting worktree state…"
+                    )
+                self._load_worktree_overview(run)
+                return
+            self.query_one("#transcript-title", Static).update(
+                f"Transcript · {run.branch} · {agent_name}"
+            )
+            self._set_transcript_meta(None)
+            self.query_one("#transcript-content", Static).update(
                 "This finished run no longer has an active agent session."
                 if run.state == "exited"
                 else "Waiting for hmux to discover this agent's session id."
             )
-            self.query_one("#transcript-content", Static).update(message)
             return
+        self.query_one("#transcript-title", Static).update(
+            f"Transcript · {run.branch} · {agent_name}"
+        )
+        self._set_transcript_meta(None)
 
         changed_session = run.session_id != self._transcript_session_id
         self._transcript_session_id = run.session_id
@@ -448,6 +483,87 @@ class DashboardScreen(Screen):
             and selected.pane_id == pane_id
             and selected.session_id == session_id
         )
+
+    @work(thread=True, exclusive=True, group="transcript")
+    def _load_worktree_overview(self, run: AgentRun) -> None:
+        """Gather an agentless worktree's state off the event loop."""
+        try:
+            overview = self.app.service.for_run(run).worktree_overview(run)
+        except (CommandError, OSError) as exc:
+            self.app.call_from_thread(
+                self._show_worktree_error, run.pane_id, str(exc)
+            )
+        else:
+            self.app.call_from_thread(
+                self._apply_worktree_overview, run.pane_id, overview
+            )
+
+    def _apply_worktree_overview(
+        self, pane_id: str, overview: WorktreeOverview
+    ) -> None:
+        if self._overview_pane_id != pane_id:
+            return
+        selected = self._selected_run()
+        if selected is None or selected.pane_id != pane_id:
+            return
+        self.query_one("#transcript-content", Static).update(
+            self._render_worktree_overview(overview)
+        )
+
+    def _show_worktree_error(self, pane_id: str, message: str) -> None:
+        if self._overview_pane_id != pane_id:
+            return
+        selected = self._selected_run()
+        if selected is None or selected.pane_id != pane_id:
+            return
+        self.query_one("#transcript-content", Static).update(
+            Text.assemble(("Worktree state unavailable\n", "bold #ffcb6b"), message)
+        )
+
+    @staticmethod
+    def _render_worktree_overview(overview: WorktreeOverview) -> Text:
+        rendered = Text()
+        rendered.append("Worktree   ", style="bold #8ec8ff")
+        rendered.append(f"{overview.worktree}\n")
+        rendered.append("Branch     ", style="bold #8ec8ff")
+        rendered.append(f"{overview.branch}\n")
+
+        # Repository state expands the left pane's single mark: the merged glyph
+        # matches the WORKTREE column, and the committed/uncommitted lines are
+        # independent, so the combined "committed change + uncommitted change"
+        # case shows both. It stays compact so the instruction gets the space.
+        rendered.append("\nRepository state\n", style="bold #8ec8ff")
+        if overview.merged:
+            rendered.append(
+                f"  ✓ merged into {overview.base_branch}\n", style="#7ec97e"
+            )
+        else:
+            rendered.append(
+                f"  ↑ not yet merged into {overview.base_branch}\n", style="#ffcb6b"
+            )
+        if overview.committed_changes:
+            rendered.append(
+                "  ✓ committed changes on top of the instruction\n", style="#7ec97e"
+            )
+        if overview.dirty:
+            rendered.append("  ! uncommitted changes present\n", style="#ffcb6b")
+        else:
+            rendered.append("  ✓ clean working tree\n", style="#8492a0")
+
+        # The instruction is the essential information for an idle worktree, so
+        # it goes last and is shown verbatim rather than as a collapsed preview.
+        rendered.append("\nInstruction", style="bold #8ec8ff")
+        if not overview.has_instruction:
+            rendered.append("\n  ✗ no instruction.md prepared yet", style="#ffcb6b")
+            return rendered
+        status = (
+            f"  ·  committed ({overview.instruction_commit})"
+            if overview.instruction_commit is not None
+            else "  ·  present, not committed"
+        )
+        rendered.append(f"{status}\n", style="#8492a0")
+        rendered.append(overview.instruction_text.strip("\n") or "(empty instruction.md)")
+        return rendered
 
     def _show_transcript_error(
         self, pane_id: str, session_id: str | None, message: str
@@ -1715,6 +1831,20 @@ class DemoService(AgentmonService):
     def run_instruction(self, run: AgentRun) -> str | None:
         return self.DEMO_INSTRUCTIONS.get(run.branch)
 
+    def worktree_overview(self, run: AgentRun) -> WorktreeOverview:
+        instruction = self.DEMO_INSTRUCTIONS.get(run.branch)
+        return WorktreeOverview(
+            worktree=run.worktree,
+            branch=run.branch,
+            base_branch=self.repo.branch,
+            merged=run.worktree_state == "merged",
+            has_instruction=instruction is not None,
+            instruction_text=instruction or "",
+            instruction_commit="a1b2c3d" if instruction is not None else None,
+            committed_changes=True,
+            dirty=run.worktree_state == "dirty",
+        )
+
     def prepare_worktree(
         self, branch: str, *, base: str | None = None, reset: bool = False
     ) -> Path:
@@ -1770,12 +1900,12 @@ class AgentmonApp(App):
     Screen { background: #101419; color: #d7dde5; }
     #title { height: 3; padding: 1 2; background: #263442; color: #ffffff; text-style: bold; }
     #dashboard-main { height: 1fr; }
-    #runs-pane { width: 3fr; }
+    #runs-pane { width: RUNS_PANE_FRfr; }
     #runs { height: 1fr; margin: 0 1; border: tall #557086; }
     #runs > .datatable--header { background: #263442; color: #b9dcf5; text-style: bold; }
     #runs > .datatable--cursor { background: #315b76; color: #ffffff; }
     #notice { height: auto; max-height: 3; padding: 0 2; color: #ffcb6b; }
-    #transcript-pane { width: 2fr; margin: 0 1 0 0; border: tall #557086; }
+    #transcript-pane { width: TRANSCRIPT_PANE_FRfr; margin: 0 1 0 0; border: tall #557086; }
     #transcript-title { height: 3; padding: 1 2; background: #263442;
                         color: #b9dcf5; text-style: bold; }
     #transcript-meta { height: auto; min-height: 3; padding: 1 2; color: #8ec8ff; }
@@ -1813,7 +1943,9 @@ class AgentmonApp(App):
                     padding: 1 2; border: round #6aa9d8; background: #171d24; }
     #quota-content { min-height: 5; text-wrap: nowrap; text-overflow: ellipsis; }
     #quota-meta { margin-top: 1; }
-    """
+    """.replace("RUNS_PANE_FR", str(RUNS_PANE_FRACTION)).replace(
+        "TRANSCRIPT_PANE_FR", str(TRANSCRIPT_PANE_FRACTION)
+    )
 
     def __init__(
         self,

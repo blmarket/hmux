@@ -198,6 +198,26 @@ def discover_socket(
     )
 
 
+@dataclass(frozen=True)
+class WorktreeOverview:
+    """A snapshot of a worktree that has no live agent session.
+
+    It answers the two questions the dashboard cares about for an idle
+    worktree: is an instruction prepared, and does anything sit on top of the
+    instruction commit (which implies the instruction was already acted on).
+    """
+
+    worktree: Path
+    branch: str
+    base_branch: str
+    merged: bool
+    has_instruction: bool
+    instruction_text: str
+    instruction_commit: str | None
+    committed_changes: bool
+    dirty: bool
+
+
 class AgentmonService:
     def __init__(
         self, repo: Repository | None, *, socket: str, tmux: str = "tmux"
@@ -424,6 +444,58 @@ class AgentmonService:
         if not (worktree / "instruction.md").exists():
             return None
         return self.save_instruction(worktree, run.branch)
+
+    def worktree_overview(self, run: AgentRun) -> WorktreeOverview:
+        """Summarize an agentless worktree's instruction and change state.
+
+        Used when no live agent session backs the selected worktree, so the
+        transcript pane can show what the worktree holds instead of a
+        dead-end note.
+        """
+        worktree = self._worktree_root(run.worktree)
+        text = self.read_instruction(worktree)
+        commit = _run(
+            [
+                "git", "-C", str(worktree), "log", "-1", "--format=%h", "--",
+                *INSTRUCTION_FILENAMES,
+            ],
+            check=False,
+        ).stdout.strip()
+        instruction_commit = commit or None
+        committed_changes = False
+        if instruction_commit:
+            counted = _run(
+                [
+                    "git", "-C", str(worktree), "rev-list", "--count",
+                    f"{instruction_commit}..HEAD",
+                ],
+                check=False,
+            ).stdout.strip()
+            committed_changes = counted.isdigit() and int(counted) > 0
+        status = _run(
+            ["git", "-C", str(worktree), "status", "--porcelain"], check=False
+        )
+        # Compute the merged/unmerged ancestry independently of dirtiness so the
+        # detail still explains the left pane's mark even when uncommitted
+        # changes would otherwise collapse it to "dirty".
+        merged = _run(
+            [
+                "git", "-C", str(worktree), "merge-base", "--is-ancestor", "HEAD",
+                self.repo.branch,
+            ],
+            check=False,
+        ).returncode == 0
+        return WorktreeOverview(
+            worktree=worktree,
+            branch=run.branch or self._branch_at(worktree),
+            base_branch=self.repo.branch,
+            merged=merged,
+            has_instruction=text is not None,
+            instruction_text=text or "",
+            instruction_commit=instruction_commit,
+            committed_changes=committed_changes,
+            dirty=bool(status.stdout.strip()),
+        )
 
     def _prompt_preview(self, cwd: Path, limit: int = 120) -> str:
         """Return a single-line glimpse of the instruction belonging to this run."""
