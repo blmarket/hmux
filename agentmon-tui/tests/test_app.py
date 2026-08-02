@@ -1073,7 +1073,7 @@ def test_quota_dialog_toggles_and_shows_all_subscription_windows() -> None:
                 "Codex 5h",
                 "Claude 5h",
                 "Claude weekly",
-                "Claude Fable weekly",
+                "Fable weekly",
             ):
                 assert label in content
 

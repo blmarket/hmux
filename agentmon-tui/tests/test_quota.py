@@ -91,7 +91,7 @@ def test_parses_claude_limits_including_fable() -> None:
     assert [quota.label for quota in quotas] == [
         "Claude 5h",
         "Claude weekly",
-        "Claude Fable weekly",
+        "Fable weekly",
     ]
     assert [quota.used_percent for quota in quotas] == [41.0, 9.0, 14.0]
     assert quotas[0].resets_at == datetime(2026, 8, 2, 5, tzinfo=timezone.utc)
@@ -167,7 +167,7 @@ def test_report_fetches_both_providers(
         "Codex weekly",
         "Claude 5h",
         "Claude weekly",
-        "Claude Fable weekly",
+        "Fable weekly",
     ]
     assert report.errors == ()
     assert calls == [CODEX_USAGE_URL, CLAUDE_USAGE_URL]

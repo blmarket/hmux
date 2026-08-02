@@ -1435,7 +1435,7 @@ class DemoQuotaService(QuotaService):
                 QuotaWindow("codex", "Codex 5h", 12.0, now),
                 QuotaWindow("claude", "Claude 5h", 41.0, now),
                 QuotaWindow("claude", "Claude weekly", 9.0, now),
-                QuotaWindow("claude", "Claude Fable weekly", 14.0, now),
+                QuotaWindow("claude", "Fable weekly", 14.0, now),
             ),
         )
 

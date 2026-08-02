@@ -129,7 +129,7 @@ def _claude_limit_label(limit: dict) -> str:
         scope = limit.get("scope")
         model = scope.get("model") if isinstance(scope, dict) else None
         name = model.get("display_name") if isinstance(model, dict) else None
-        return f"Claude {name} weekly" if name else "Claude weekly (scoped)"
+        return f"{name} weekly" if name else "Claude weekly (scoped)"
     return f"Claude {kind}" if isinstance(kind, str) else "Claude"
 
 
