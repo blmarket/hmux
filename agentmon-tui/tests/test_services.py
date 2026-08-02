@@ -989,6 +989,25 @@ def test_prepare_worktree_reset_moves_existing_branch_to_base(
     assert stale == main
 
 
+def test_prepare_worktree_forks_new_branch_from_base(
+    repository: Repository,
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    git(repository.root, "branch", "prep-base")
+    (repository.root / "base-only.txt").write_text("base work\n")
+    git(repository.root, "add", "base-only.txt")
+    git(repository.root, "commit", "-m", "commit reachable only from prep-base")
+    git(repository.root, "branch", "-f", "prep-base", "HEAD")
+    git(repository.root, "reset", "--hard", "HEAD~1")
+
+    worktree = service.prepare_worktree("prep-fork", base="prep-base")
+
+    assert git(worktree, "branch", "--show-current").stdout.strip() == "prep-fork"
+    forked = git(worktree, "rev-parse", "HEAD").stdout.strip()
+    base = git(repository.root, "rev-parse", "prep-base").stdout.strip()
+    assert forked == base
+
+
 def test_prepare_worktree_rejects_existing_path(repository: Repository) -> None:
     service = AgentmonService(repository, socket="/tmp/hmux.sock")
     (repository.root.parent / "prep-occupied").mkdir()

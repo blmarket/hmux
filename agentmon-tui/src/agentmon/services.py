@@ -281,8 +281,15 @@ class AgentmonService:
             repository=self.repo,
         )
 
-    def prepare_worktree(self, branch: str, *, reset: bool = False) -> Path:
-        """Create a sibling worktree only; instruction and agent come later."""
+    def prepare_worktree(
+        self, branch: str, *, base: str | None = None, reset: bool = False
+    ) -> Path:
+        """Create a sibling worktree only; instruction and agent come later.
+
+        ``base`` is the start-point a freshly forked branch inherits; when
+        omitted the new branch forks from the main worktree's HEAD. Pass the
+        cursor's worktree branch to fork from it instead of the project base.
+        """
         branch = self._validated_branch(branch)
         worktree = self.suggested_worktree(branch)
         if worktree.exists():
@@ -290,10 +297,15 @@ class AgentmonService:
         args = ["git", "-C", str(self.repo.root), "worktree", "add"]
         if reset:
             args.extend(["-B", branch, str(worktree)])
+            if base is not None:
+                args.append(base)
         elif self.branch_exists(branch):
+            # Reuse the existing branch untouched; base does not apply.
             args.extend([str(worktree), branch])
         else:
             args.extend(["-b", branch, str(worktree)])
+            if base is not None:
+                args.append(base)
         _run(args)
         return worktree
 

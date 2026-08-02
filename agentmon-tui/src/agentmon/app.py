@@ -712,7 +712,15 @@ class DashboardScreen(Screen):
                 "Select a Git repository or Git-backed window to prepare a worktree"
             )
             return
-        self.app.push_screen(PrepareWorktreeScreen(repository=repository))
+        run = self._selected_run()
+        base = (
+            run.branch
+            if run is not None and run.branch and run.branch != "(detached)"
+            else None
+        )
+        self.app.push_screen(
+            PrepareWorktreeScreen(repository=repository, base=base)
+        )
 
     def action_edit_instruction(self) -> None:
         run = self._selected_run()
@@ -1032,23 +1040,26 @@ class NewRunScreen(Screen):
 class PrepareWorktreeScreen(Screen):
     BINDINGS = [("escape", "back", "Back")]
 
-    def __init__(self, *, repository: Repository) -> None:
+    def __init__(
+        self, *, repository: Repository, base: str | None = None
+    ) -> None:
         super().__init__()
         self.repository = repository
+        self.base = base
 
     @property
     def service(self) -> AgentmonService:
         return self.app.service.for_repository(self.repository)
 
     def compose(self) -> ComposeResult:
+        base = self.base or self.service.repo.branch
         with VerticalScroll(id="dialog"):
             yield Label("Prepare worktree", classes="dialog-title")
             yield Label(f"Repository     {self.service.repo.root}")
+            yield Label(f"Fork from      {base}")
             yield Label("Branch")
             yield Input(placeholder="feature-name", id="branch")
-            yield Checkbox(
-                f"Reset existing branch to {self.service.repo.branch}", id="reset"
-            )
+            yield Checkbox(f"Reset existing branch to {base}", id="reset")
             yield Static("Worktree       —", id="worktree")
             yield Static("", id="error")
             with Horizontal(classes="buttons"):
@@ -1082,7 +1093,9 @@ class PrepareWorktreeScreen(Screen):
     @work(thread=True, exclusive=True)
     def _prepare(self) -> None:
         try:
-            worktree = self.service.prepare_worktree(self._branch, reset=self._reset)
+            worktree = self.service.prepare_worktree(
+                self._branch, base=self.base, reset=self._reset
+            )
         except (ValueError, CommandError, OSError) as exc:
             self.app.call_from_thread(self._failed, str(exc))
         else:
@@ -1702,7 +1715,9 @@ class DemoService(AgentmonService):
     def run_instruction(self, run: AgentRun) -> str | None:
         return self.DEMO_INSTRUCTIONS.get(run.branch)
 
-    def prepare_worktree(self, branch: str, *, reset: bool = False) -> Path:
+    def prepare_worktree(
+        self, branch: str, *, base: str | None = None, reset: bool = False
+    ) -> Path:
         raise CommandError("Demo mode does not make changes")
 
     def instruction_edit_target(self, run: AgentRun) -> Path:
