@@ -137,7 +137,7 @@ where
                 // command line (see [`command::classify`]).
                 match command::classify(&args) {
                     command::Intent::Attach => {
-                        return super::attach::handle_attach(
+                        return super::attach::handle(
                             &args,
                             client_tty,
                             &state,
@@ -148,7 +148,7 @@ where
                         );
                     }
                     command::Intent::NewAttach => {
-                        return super::attach::handle_new_session(
+                        return super::attach::handle(
                             &args,
                             client_tty,
                             &state,

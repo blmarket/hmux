@@ -1,33 +1,57 @@
 use super::*;
 
 pub(crate) struct ActiveOverlay {
-    pub(super) state: OverlayState,
-    reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
+    state: OverlayState,
+    reply: Option<std::sync::mpsc::Sender<super::super::state::PromptCompletion>>,
 }
 
-pub(super) enum OverlayState {
+enum OverlayState {
     Menu(MenuOverlay),
     Popup(PopupOverlay),
     DisplayPanes(DisplayPanesOverlay),
 }
 
-pub(super) struct MenuOverlay {
-    pub(super) request: MenuRequest,
-    pub(super) selected: usize,
+struct MenuOverlay {
+    request: MenuRequest,
+    selected: usize,
 }
 
-pub(super) struct PopupOverlay {
-    pub(super) request: Box<PopupRequest>,
-    pub(super) pane: Box<Pane>,
-    pub(super) io: Option<Box<PaneIo>>,
-    pub(super) read_continuation: bool,
-    pub(super) exit_status: Option<i32>,
+struct PopupOverlay {
+    request: Box<PopupRequest>,
+    pane: Box<Pane>,
+    io: Option<Box<PaneIo>>,
+    read_continuation: bool,
+    exit_status: Option<i32>,
 }
 
-pub(super) struct DisplayPanesOverlay {
-    pub(super) deadline: Instant,
-    pub(super) command: Vec<String>,
-    pub(super) accept_input: bool,
+struct DisplayPanesOverlay {
+    deadline: Instant,
+    command: Vec<String>,
+    accept_input: bool,
+}
+
+pub(super) struct OverlayInputOutcome {
+    pub(super) close: bool,
+    pub(super) exit: i32,
+    pub(super) command: Option<Vec<String>>,
+}
+
+impl OverlayInputOutcome {
+    fn stay() -> Self {
+        Self {
+            close: false,
+            exit: 0,
+            command: None,
+        }
+    }
+
+    fn close(exit: i32, command: Option<Vec<String>>) -> Self {
+        Self {
+            close: true,
+            exit,
+            command,
+        }
+    }
 }
 
 impl ActiveOverlay {
@@ -38,7 +62,7 @@ impl ActiveOverlay {
     fn menu_with_reply(
         request: MenuRequest,
         selected: usize,
-        reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
+        reply: Option<std::sync::mpsc::Sender<super::super::state::PromptCompletion>>,
     ) -> Self {
         let selected = selected.min(request.items.len().saturating_sub(1));
         Self {
@@ -49,7 +73,7 @@ impl ActiveOverlay {
 
     pub(super) fn from_request(
         request: OverlayRequest,
-        reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
+        reply: Option<std::sync::mpsc::Sender<super::super::state::PromptCompletion>>,
         cols: u16,
         rows: u16,
         pane_io_mode: PaneIoMode,
@@ -117,7 +141,7 @@ impl ActiveOverlay {
 
     pub(super) fn complete(&mut self, result: command::CommandResult, inserted: bool) {
         if let Some(reply) = self.reply.take() {
-            let _ = reply.send(crate::server::state::PromptCompletion {
+            let _ = reply.send(super::super::state::PromptCompletion {
                 stdout: result.stdout,
                 stderr: result.stderr,
                 exit: result.exit,
@@ -128,39 +152,36 @@ impl ActiveOverlay {
 
     pub(super) fn poll_timeout(&self, now: Instant) -> i32 {
         match &self.state {
-            OverlayState::DisplayPanes(display) => {
-                deadline_poll_timeout(Some(display.deadline), now)
+            OverlayState::DisplayPanes(overlay) => {
+                deadline_poll_timeout(Some(overlay.deadline), now)
             }
             OverlayState::Popup(_) => 50,
             OverlayState::Menu(_) => -1,
         }
     }
 
-    pub(super) fn resize(&mut self, cols: u16, rows: u16) {
-        if let OverlayState::Popup(popup) = &mut self.state {
-            let width = overlay_dimension(popup.request.width.as_deref(), cols, 50)
-                .max(3)
-                .min(cols.max(3));
-            let height = overlay_dimension(popup.request.height.as_deref(), rows, 50)
-                .max(3)
-                .min(rows.max(3));
-            let inset = u16::from(popup.request.border) * 2;
-            let _ = popup.pane.resize(
-                width.saturating_sub(inset).max(1),
-                height.saturating_sub(inset).max(1),
-            );
+    pub(super) fn tick(&mut self, now: Instant) -> Option<i32> {
+        match &mut self.state {
+            OverlayState::DisplayPanes(overlay) => (overlay.deadline <= now).then_some(0),
+            OverlayState::Popup(overlay) => overlay.tick(),
+            OverlayState::Menu(_) => None,
         }
     }
 
-    pub(super) fn sources(&self) -> (RawFd, RawFd) {
-        let OverlayState::Popup(PopupOverlay { io: Some(io), .. }) = &self.state else {
-            return (-1, -1);
-        };
-        let fd = io.as_fd().as_raw_fd();
-        (fd, if io.wants_write() { fd } else { -1 })
+    pub(super) fn resize(&mut self, cols: u16, rows: u16) {
+        if let OverlayState::Popup(overlay) = &mut self.state {
+            overlay.resize(cols, rows);
+        }
     }
 
-    pub(super) fn read_continuation(&self) -> bool {
+    pub(super) fn popup_sources(&self) -> (RawFd, RawFd) {
+        match &self.state {
+            OverlayState::Popup(overlay) => overlay.sources(),
+            _ => (-1, -1),
+        }
+    }
+
+    pub(super) fn popup_read_continuation(&self) -> bool {
         matches!(
             &self.state,
             OverlayState::Popup(PopupOverlay {
@@ -170,22 +191,316 @@ impl ActiveOverlay {
         )
     }
 
-    pub(super) fn drive_io(&mut self, readable: bool, writable: bool) -> io::Result<()> {
-        let OverlayState::Popup(PopupOverlay {
-            io: Some(io),
-            read_continuation,
-            ..
-        }) = &mut self.state
-        else {
+    pub(super) fn drive_popup_io(&mut self, readable: bool, writable: bool) -> io::Result<()> {
+        match &mut self.state {
+            OverlayState::Popup(overlay) => overlay.drive_io(readable, writable),
+            _ => Ok(()),
+        }
+    }
+
+    pub(super) fn handle_key(
+        &mut self,
+        key: &str,
+        raw: &[u8],
+        state: &Arc<Mutex<ServerState>>,
+        target: &str,
+    ) -> OverlayInputOutcome {
+        match &mut self.state {
+            OverlayState::Menu(overlay) => overlay.handle_key(key),
+            OverlayState::Popup(overlay) => overlay.handle_key(key, raw),
+            OverlayState::DisplayPanes(overlay) => overlay.handle_key(key, state, target),
+        }
+    }
+
+    pub(super) fn render(
+        &self,
+        state: &ServerState,
+        target: &str,
+        cols: u16,
+        rows: u16,
+        terminal: &dyn TerminalCapabilities,
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"\x1b[?25l");
+        append_terminal_style_reset(&mut out, terminal);
+        match &self.state {
+            OverlayState::Menu(overlay) => overlay.render(&mut out, cols, rows, terminal),
+            OverlayState::Popup(overlay) => overlay.render(&mut out, cols, rows),
+            OverlayState::DisplayPanes(overlay) => {
+                overlay.render(&mut out, state, target, terminal)
+            }
+        }
+        out
+    }
+}
+
+impl MenuOverlay {
+    fn handle_key(&mut self, key: &str) -> OverlayInputOutcome {
+        match key {
+            "q" | "Escape" | "C-c" => OverlayInputOutcome::close(0, None),
+            "Up" | "k" => {
+                self.selected = self.selected.saturating_sub(1);
+                OverlayInputOutcome::stay()
+            }
+            "Down" | "j" => {
+                self.selected = (self.selected + 1).min(self.request.items.len().saturating_sub(1));
+                OverlayInputOutcome::stay()
+            }
+            "Enter" => OverlayInputOutcome::close(
+                0,
+                self.request
+                    .items
+                    .get(self.selected)
+                    .map(|item| item.command.clone()),
+            ),
+            key => self
+                .request
+                .items
+                .iter()
+                .find(|item| item.key == key)
+                .map(|item| OverlayInputOutcome::close(0, Some(item.command.clone())))
+                .unwrap_or_else(OverlayInputOutcome::stay),
+        }
+    }
+
+    fn render(&self, out: &mut Vec<u8>, cols: u16, rows: u16, terminal: &dyn TerminalCapabilities) {
+        let content_width = self
+            .request
+            .items
+            .iter()
+            .map(|item| {
+                format::display_width(&item.label)
+                    + if item.key.is_empty() {
+                        0
+                    } else {
+                        format::display_width(&item.key) + 3
+                    }
+            })
+            .max()
+            .unwrap_or(1)
+            .max(format::display_width(&self.request.title));
+        let width = (content_width + 4).min(cols as usize).max(3) as u16;
+        let height = (self.request.items.len() + 2).min(rows as usize).max(3) as u16;
+        let left = overlay_position(self.request.x.as_deref(), cols, width);
+        let top = overlay_position(self.request.y.as_deref(), rows, height);
+        draw_overlay_box(out, top, left, width, height, &self.request.title);
+        for (index, item) in self
+            .request
+            .items
+            .iter()
+            .take(height.saturating_sub(2) as usize)
+            .enumerate()
+        {
+            if item.label.is_empty() {
+                out.extend_from_slice(
+                    format!(
+                        "\x1b[{};{}H{}",
+                        top + index as u16 + 2,
+                        left + 2,
+                        "─".repeat(width.saturating_sub(2) as usize)
+                    )
+                    .as_bytes(),
+                );
+                continue;
+            }
+            let key = if item.key.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", item.key)
+            };
+            let text = clip_mode_line(
+                &format!("{}{}", item.label, key),
+                width.saturating_sub(4) as usize,
+            );
+            out.extend_from_slice(
+                format!("\x1b[{};{}H", top + index as u16 + 2, left + 3).as_bytes(),
+            );
+            if index == self.selected {
+                out.extend_from_slice(b"\x1b[7m");
+            }
+            out.extend_from_slice(text.as_bytes());
+            if index == self.selected {
+                append_terminal_style_reset(out, terminal);
+            }
+        }
+    }
+}
+
+impl PopupOverlay {
+    fn tick(&mut self) -> Option<i32> {
+        if !self.pane.has_exited() {
+            return None;
+        }
+        if self.exit_status.is_none() {
+            self.exit_status = self.pane.try_wait();
+        }
+        self.exit_status.filter(|exit| {
+            self.request.close_on_exit || (self.request.close_on_success && *exit == 0)
+        })
+    }
+
+    fn resize(&mut self, cols: u16, rows: u16) {
+        let width = overlay_dimension(self.request.width.as_deref(), cols, 50)
+            .max(3)
+            .min(cols.max(3));
+        let height = overlay_dimension(self.request.height.as_deref(), rows, 50)
+            .max(3)
+            .min(rows.max(3));
+        let inset = u16::from(self.request.border) * 2;
+        let _ = self.pane.resize(
+            width.saturating_sub(inset).max(1),
+            height.saturating_sub(inset).max(1),
+        );
+    }
+
+    fn sources(&self) -> (RawFd, RawFd) {
+        let Some(io) = self.io.as_ref() else {
+            return (-1, -1);
+        };
+        let fd = io.as_fd().as_raw_fd();
+        (fd, if io.wants_write() { fd } else { -1 })
+    }
+
+    fn drive_io(&mut self, readable: bool, writable: bool) -> io::Result<()> {
+        let Some(io) = self.io.as_mut() else {
             return Ok(());
         };
         if writable {
             io.drive_writable();
         }
         if readable {
-            *read_continuation = io.drive_readable()?.continuation;
+            self.read_continuation = io.drive_readable()?.continuation;
         }
         Ok(())
+    }
+
+    fn handle_key(&mut self, key: &str, raw: &[u8]) -> OverlayInputOutcome {
+        if self.exit_status.is_some()
+            || self.request.close_on_key
+            || (matches!(key, "Escape" | "C-c")
+                && !self.request.close_on_exit
+                && !self.request.close_on_success)
+        {
+            return OverlayInputOutcome::close(self.exit_status.unwrap_or(129), None);
+        }
+        let _ = self.pane.input(raw);
+        OverlayInputOutcome::stay()
+    }
+
+    fn render(&self, out: &mut Vec<u8>, cols: u16, rows: u16) {
+        let width = overlay_dimension(self.request.width.as_deref(), cols, 50)
+            .max(3)
+            .min(cols.max(3));
+        let height = overlay_dimension(self.request.height.as_deref(), rows, 50)
+            .max(3)
+            .min(rows.max(3));
+        let left = overlay_position(self.request.x.as_deref(), cols, width);
+        let top = overlay_position(self.request.y.as_deref(), rows, height);
+        let inset = u16::from(self.request.border);
+        if self.request.border {
+            draw_overlay_box(out, top, left, width, height, &self.request.title);
+        }
+        if let Ok(vt) = self.pane.dump_vt() {
+            let (popup_rows, cursor) = split_pane_vt(&vt);
+            let visible_height = height.saturating_sub(inset * 2);
+            let visible_width = width.saturating_sub(inset * 2);
+            for (row, content) in popup_rows
+                .iter()
+                .rev()
+                .take(visible_height as usize)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .enumerate()
+            {
+                out.extend_from_slice(
+                    format!(
+                        "\x1b[{};{}H\x1b[{}X\x1b[{};{}H",
+                        top + inset + row as u16 + 1,
+                        left + inset + 1,
+                        visible_width,
+                        top + inset + row as u16 + 1,
+                        left + inset + 1
+                    )
+                    .as_bytes(),
+                );
+                out.extend_from_slice(content);
+            }
+            if !self.pane.has_exited() {
+                if let Some((cursor_row, cursor_col)) = parse_cup(cursor) {
+                    out.extend_from_slice(
+                        format!(
+                            "\x1b[{};{}H\x1b[?25h",
+                            top + inset + cursor_row,
+                            left + inset + cursor_col
+                        )
+                        .as_bytes(),
+                    );
+                }
+            }
+        }
+    }
+}
+
+impl DisplayPanesOverlay {
+    fn handle_key(
+        &self,
+        key: &str,
+        state: &Arc<Mutex<ServerState>>,
+        target: &str,
+    ) -> OverlayInputOutcome {
+        if !self.accept_input || matches!(key, "Escape" | "q" | "C-c") {
+            return OverlayInputOutcome::close(0, None);
+        }
+        let Some(index) = key
+            .chars()
+            .next()
+            .filter(|_| key.chars().count() == 1)
+            .and_then(|value| value.to_digit(10))
+        else {
+            return OverlayInputOutcome::stay();
+        };
+        let pane_id = state.lock().ok().and_then(|st| {
+            st.active_window_panes(target)
+                .ok()
+                .and_then(|(window, _)| window.panes.get(index as usize))
+                .map(|pane| pane.id)
+        });
+        let Some(pane_id) = pane_id else {
+            return OverlayInputOutcome::stay();
+        };
+        let command = if self.command.is_empty() {
+            vec![
+                "select-pane".to_string(),
+                "-t".to_string(),
+                format!("%{pane_id}"),
+            ]
+        } else {
+            self.command
+                .iter()
+                .map(|word| word.replace("%%", &format!("%{pane_id}")))
+                .collect()
+        };
+        OverlayInputOutcome::close(0, Some(command))
+    }
+
+    fn render(
+        &self,
+        out: &mut Vec<u8>,
+        state: &ServerState,
+        target: &str,
+        terminal: &dyn TerminalCapabilities,
+    ) {
+        if let Ok((window, _)) = state.active_window_panes(target) {
+            for (index, pane) in window.panes.iter().enumerate() {
+                let rect = window.pane_rect(pane.id).unwrap_or_default();
+                let label = index.to_string();
+                let row = rect.top + rect.height / 2 + 1;
+                let col = rect.left + rect.width.saturating_sub(label.len() as u16) / 2 + 1;
+                out.extend_from_slice(format!("\x1b[{row};{col}H\x1b[30;43m{label}").as_bytes());
+                append_terminal_style_reset(out, terminal);
+            }
+        }
     }
 }
 
@@ -251,148 +566,4 @@ fn draw_overlay_box(out: &mut Vec<u8>, top: u16, left: u16, width: u16, height: 
     out.extend_from_slice(
         format!("\x1b[{};{}H└{}┘", top + height, left + 1, "─".repeat(inner)).as_bytes(),
     );
-}
-
-pub(super) fn render_active_overlay(
-    overlay: &ActiveOverlay,
-    st: &ServerState,
-    target: &str,
-    cols: u16,
-    rows: u16,
-    terminal: &dyn TerminalCapabilities,
-) -> Vec<u8> {
-    let mut out = Vec::new();
-    out.extend_from_slice(b"\x1b[?25l");
-    append_terminal_style_reset(&mut out, terminal);
-    match &overlay.state {
-        OverlayState::Menu(MenuOverlay {
-            request, selected, ..
-        }) => {
-            let content_width = request
-                .items
-                .iter()
-                .map(|item| {
-                    format::display_width(&item.label)
-                        + if item.key.is_empty() {
-                            0
-                        } else {
-                            format::display_width(&item.key) + 3
-                        }
-                })
-                .max()
-                .unwrap_or(1)
-                .max(format::display_width(&request.title));
-            let width = (content_width + 4).min(cols as usize).max(3) as u16;
-            let height = (request.items.len() + 2).min(rows as usize).max(3) as u16;
-            let left = overlay_position(request.x.as_deref(), cols, width);
-            let top = overlay_position(request.y.as_deref(), rows, height);
-            draw_overlay_box(&mut out, top, left, width, height, &request.title);
-            for (index, item) in request
-                .items
-                .iter()
-                .take(height.saturating_sub(2) as usize)
-                .enumerate()
-            {
-                if item.label.is_empty() {
-                    out.extend_from_slice(
-                        format!(
-                            "\x1b[{};{}H{}",
-                            top + index as u16 + 2,
-                            left + 2,
-                            "─".repeat(width.saturating_sub(2) as usize)
-                        )
-                        .as_bytes(),
-                    );
-                    continue;
-                }
-                let key = if item.key.is_empty() {
-                    String::new()
-                } else {
-                    format!(" ({})", item.key)
-                };
-                let text = clip_mode_line(
-                    &format!("{}{}", item.label, key),
-                    width.saturating_sub(4) as usize,
-                );
-                out.extend_from_slice(
-                    format!("\x1b[{};{}H", top + index as u16 + 2, left + 3).as_bytes(),
-                );
-                if index == *selected {
-                    out.extend_from_slice(b"\x1b[7m");
-                }
-                out.extend_from_slice(text.as_bytes());
-                if index == *selected {
-                    append_terminal_style_reset(&mut out, terminal);
-                }
-            }
-        }
-        OverlayState::Popup(PopupOverlay { request, pane, .. }) => {
-            let width = overlay_dimension(request.width.as_deref(), cols, 50)
-                .max(3)
-                .min(cols.max(3));
-            let height = overlay_dimension(request.height.as_deref(), rows, 50)
-                .max(3)
-                .min(rows.max(3));
-            let left = overlay_position(request.x.as_deref(), cols, width);
-            let top = overlay_position(request.y.as_deref(), rows, height);
-            let inset = u16::from(request.border);
-            if request.border {
-                draw_overlay_box(&mut out, top, left, width, height, &request.title);
-            }
-            if let Ok(vt) = pane.dump_vt() {
-                let (popup_rows, cursor) = split_pane_vt(&vt);
-                let visible_height = height.saturating_sub(inset * 2);
-                let visible_width = width.saturating_sub(inset * 2);
-                for (row, content) in popup_rows
-                    .iter()
-                    .rev()
-                    .take(visible_height as usize)
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .rev()
-                    .enumerate()
-                {
-                    out.extend_from_slice(
-                        format!(
-                            "\x1b[{};{}H\x1b[{}X\x1b[{};{}H",
-                            top + inset + row as u16 + 1,
-                            left + inset + 1,
-                            visible_width,
-                            top + inset + row as u16 + 1,
-                            left + inset + 1
-                        )
-                        .as_bytes(),
-                    );
-                    out.extend_from_slice(content);
-                }
-                if !pane.has_exited() {
-                    if let Some((cursor_row, cursor_col)) = parse_cup(cursor) {
-                        out.extend_from_slice(
-                            format!(
-                                "\x1b[{};{}H\x1b[?25h",
-                                top + inset + cursor_row,
-                                left + inset + cursor_col
-                            )
-                            .as_bytes(),
-                        );
-                    }
-                }
-            }
-        }
-        OverlayState::DisplayPanes(_) => {
-            if let Ok((window, _)) = st.active_window_panes(target) {
-                for (index, pane) in window.panes.iter().enumerate() {
-                    let rect = window.pane_rect(pane.id).unwrap_or_default();
-                    let label = index.to_string();
-                    let row = rect.top + rect.height / 2 + 1;
-                    let col = rect.left + rect.width.saturating_sub(label.len() as u16) / 2 + 1;
-                    out.extend_from_slice(
-                        format!("\x1b[{row};{col}H\x1b[30;43m{label}").as_bytes(),
-                    );
-                    append_terminal_style_reset(&mut out, terminal);
-                }
-            }
-        }
-    }
-    out
 }

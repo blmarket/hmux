@@ -30,62 +30,54 @@
 
 mod actions;
 mod copy_mode;
+mod input;
 mod overlay;
 mod prompt;
+mod render;
 mod session;
 
-use crate::integration::status::StatusHub;
-use crate::server::cmd_send_keys::base64_encode;
-use crate::server::command;
-use crate::server::format;
-use crate::server::key::{
-    basic_key_bytes, key_from_byte, parse_key_name, KeyBase, KeyCode, SpecialKey,
-};
-use crate::server::latmon::LatMon;
-use crate::server::mouse::{self, MouseEvent, MouseInputState, MousePosition, MouseProtocol};
-#[cfg(test)]
-use crate::server::mouse::{MouseButton, MouseEventKind};
-use crate::server::pane::{OutputSubscription, Pane, PaneInputStats, PaneIo, PaneIoMode};
-use crate::server::state::{
-    copy_search_segments, copy_selection_segments, ClientAction, ClientKey, CopyState, MenuItem,
-    MenuRequest, ModeBindingUpdate, ModeEdit, ModeKind, ModePrompt, ModeView, ModeViewKeyResult,
-    OverlayRequest, PopupRequest, ServerState,
-};
-use crate::server::status;
-use crate::server::term::{self, ResolvedTerm, TerminalCapabilities, TerminalIdentity};
-use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
-use crate::tmux::traits::{FrameReader, FrameWriter};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-pub(crate) use actions::dispatch_control_client_keys;
+use crate::integration::status::StatusHub;
+use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
+use crate::tmux::traits::{FrameReader, FrameWriter};
+
+use super::cmd_send_keys::base64_encode;
+use super::command;
+use super::format;
+use super::key::{key_from_byte, parse_key_name, KeyBase, KeyCode, SpecialKey};
+use super::latmon::LatMon;
+use super::mouse::{self, MouseEvent, MouseInputState, MousePosition, MouseProtocol};
+#[cfg(test)]
+use super::mouse::{MouseButton, MouseEventKind};
+use super::pane::{OutputSubscription, Pane, PaneInputStats, PaneIo, PaneIoMode};
+use super::state::{
+    ClientAction, ClientKey, MenuRequest, ModeKind, ModeView, ModeViewKeyResult, OverlayRequest,
+    PopupRequest, ServerState,
+};
+use super::status;
+use super::term::{self, ResolvedTerm, TerminalCapabilities, TerminalIdentity};
+pub(super) use actions::dispatch_control_client_keys;
 #[cfg(test)]
 use actions::dispatch_prefix_key;
-use actions::{dispatch_key_binding, ActiveConfirm, ConfirmAction, PrefixOutcome};
-pub(crate) use copy_mode::copy_mode_active;
-use copy_mode::{
-    copy_line_number_width, copy_mode_uses_vi_keys, copy_style_escape, copy_table_name,
-    render_copy_line_number, render_copy_mark_and_position, render_copy_search,
-    render_copy_selection, set_copy_mode_state,
+use actions::{
+    dispatch_key_binding, ActiveConfirm, ConfirmAction, ConfirmResolution, PrefixOutcome,
 };
-use overlay::{
-    render_active_overlay, ActiveOverlay, DisplayPanesOverlay, MenuOverlay, OverlayState,
-    PopupOverlay,
-};
-pub(crate) use prompt::CommandPrompt;
+use copy_mode::CopyModeView;
+pub(crate) use overlay::ActiveOverlay;
 use prompt::{
-    clip_prompt_display, render_prompt_completion, take_deferred_attach_command,
-    CommandPromptInput, PromptInputMode,
+    clip_prompt_display, render_prompt_completion, take_deferred_attach_command, CommandPrompt,
+    CommandPromptInput,
 };
 #[cfg(test)]
 use prompt::{prompt_input_width, render_prompt_input};
 
 #[cfg(test)]
 const PREFIX: u8 = 0x02;
-
 const TTY_OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 
 /// Internal capability needed by the event-driven attach loop. This stays
@@ -184,32 +176,141 @@ fn minimum_poll_timeout(left: i32, right: i32) -> i32 {
 /// Client-local compositor data that must survive from one readiness turn to
 /// the next. Keeping it explicit lets the event-loop adapter eventually own
 /// this state without an executor task or a second attach implementation.
-struct AttachCompositorState {
+struct AttachTargetState {
     session_id: u32,
     stable_target: String,
     context: command::ClientContext,
+}
+
+struct AttachRenderState {
     last_render: Vec<u8>,
     seen_large_scroll: BTreeMap<u32, u64>,
     output_cursor_visible: Option<bool>,
     last_title: Option<String>,
     force_clear: bool,
-    prefix_pending: bool,
-    mouse_input: MouseInputState,
+}
+
+struct StatusMessage {
+    text: String,
+    deadline: Instant,
+}
+
+struct AttachUiState {
     confirm: Option<ActiveConfirm>,
     command_prompt: Option<CommandPrompt>,
     active_overlay: Option<ActiveOverlay>,
-    status_message: Option<(String, Instant)>,
-    should_exit: bool,
-    detach_requested: bool,
-    session_ended: bool,
-    locked: bool,
-    suspended: bool,
-    key_prompt_buf: Vec<u8>,
-    key_prompt_deadline: Option<Instant>,
-    terminal_reply_buf: Vec<u8>,
-    terminal_reply_deadline: Option<Instant>,
-    switch_to: Option<u32>,
-    injected_input: VecDeque<ClientKey>,
+    status_message: Option<StatusMessage>,
+}
+
+#[derive(Default)]
+enum KeyPromptState {
+    #[default]
+    Idle,
+    Pending {
+        bytes: Vec<u8>,
+        deadline: Option<Instant>,
+    },
+}
+
+struct PendingTerminalReply {
+    bytes: Vec<u8>,
+    deadline: Instant,
+}
+
+struct AttachInputState {
+    prefix_pending: bool,
+    mouse: MouseInputState,
+    key_prompt: KeyPromptState,
+    terminal_reply: Option<PendingTerminalReply>,
+    injected: VecDeque<ClientKey>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ClientIoState {
+    Active,
+    Locked,
+    Suspended,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AttachFinishReason {
+    ConnectionClosed,
+    Detached,
+    SessionEnded,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AttachTransition {
+    SwitchSession(u32),
+    Finish(AttachFinishReason),
+}
+
+impl AttachTargetState {
+    fn switch_session(&mut self, session_id: u32) {
+        self.session_id = session_id;
+        self.stable_target = format!("${session_id}");
+        self.context.current_session_id = Some(session_id);
+    }
+}
+
+impl KeyPromptState {
+    fn deadline(&self) -> Option<Instant> {
+        match self {
+            Self::Idle => None,
+            Self::Pending { deadline, .. } => *deadline,
+        }
+    }
+
+    fn bytes(&self) -> &[u8] {
+        match self {
+            Self::Idle => &[],
+            Self::Pending { bytes, .. } => bytes,
+        }
+    }
+
+    fn extend(&mut self, input: &[u8]) {
+        match self {
+            Self::Idle => {
+                *self = Self::Pending {
+                    bytes: input.to_vec(),
+                    deadline: None,
+                };
+            }
+            Self::Pending { bytes, .. } => bytes.extend_from_slice(input),
+        }
+    }
+
+    fn clear(&mut self) {
+        *self = Self::Idle;
+    }
+
+    fn deadline_or_insert(&mut self, deadline: Instant) -> Instant {
+        match self {
+            Self::Idle => unreachable!("idle key prompt has no deadline"),
+            Self::Pending {
+                deadline: current, ..
+            } => *current.get_or_insert(deadline),
+        }
+    }
+
+    fn set_deadline_if_none(&mut self, deadline: Instant) {
+        let Self::Pending {
+            deadline: current, ..
+        } = self
+        else {
+            unreachable!("idle key prompt has no deadline");
+        };
+        current.get_or_insert(deadline);
+    }
+}
+
+struct AttachCompositorState {
+    target: AttachTargetState,
+    render: AttachRenderState,
+    ui: AttachUiState,
+    input: AttachInputState,
+    io_state: ClientIoState,
+    transition: Option<AttachTransition>,
 }
 
 /// All native attach state that must remain alive while readiness is owned by
@@ -236,8 +337,8 @@ struct AttachTty {
 }
 
 struct AttachAttachments {
-    prompt_attachment: crate::server::state::ClientPromptAttachment,
-    render_attachment: crate::server::state::ClientRenderAttachment,
+    prompt_attachment: super::state::ClientPromptAttachment,
+    render_attachment: super::state::ClientRenderAttachment,
     agent_status_subscription: crate::integration::status::StatusSubscription,
     output_subscription: OutputSubscription,
     subscribed_window: ActiveWindowOutputKey,
@@ -283,7 +384,7 @@ pub(crate) enum AttachCommandContinuation {
         inserted: bool,
     },
     Confirm {
-        reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
+        reply: Option<std::sync::mpsc::Sender<super::state::PromptCompletion>>,
         inserted: bool,
     },
     Prompt {
@@ -300,9 +401,23 @@ pub(crate) enum AttachCommandContinuation {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AttachFinishState {
     Running,
-    DrainingTty,
+    DrainingTty { reason: AttachFinishReason },
     WaitingForAck { deadline: Instant },
     Done,
+}
+
+struct AttachRenderTriggers {
+    output_ready: bool,
+    status_timer_ready: bool,
+    agent_status_changed: bool,
+    overlay_tick: bool,
+    message_expired: bool,
+    render_invalidation: super::state::RenderInvalidation,
+}
+
+enum AttachNotificationOutcome {
+    Continue(AttachRenderTriggers),
+    Return(AttachDrive),
 }
 
 pub(crate) enum AttachPrepared {
@@ -411,31 +526,33 @@ impl AttachCompositorState {
         target: String,
     ) -> AttachCompositorState {
         AttachCompositorState {
-            session_id,
-            stable_target: target.clone(),
-            context,
-            last_render: Vec::new(),
-            seen_large_scroll: BTreeMap::new(),
-            output_cursor_visible: None,
-            last_title: None,
-            force_clear: true,
-            prefix_pending: false,
-            mouse_input: MouseInputState::default(),
-            confirm: None,
-            command_prompt: None,
-            active_overlay: None,
-            status_message: None,
-            should_exit: false,
-            detach_requested: false,
-            session_ended: false,
-            locked: false,
-            suspended: false,
-            key_prompt_buf: Vec::new(),
-            key_prompt_deadline: None,
-            terminal_reply_buf: Vec::new(),
-            terminal_reply_deadline: None,
-            switch_to: None,
-            injected_input: VecDeque::new(),
+            target: AttachTargetState {
+                session_id,
+                stable_target: target,
+                context,
+            },
+            render: AttachRenderState {
+                last_render: Vec::new(),
+                seen_large_scroll: BTreeMap::new(),
+                output_cursor_visible: None,
+                last_title: None,
+                force_clear: true,
+            },
+            ui: AttachUiState {
+                confirm: None,
+                command_prompt: None,
+                active_overlay: None,
+                status_message: None,
+            },
+            input: AttachInputState {
+                prefix_pending: false,
+                mouse: MouseInputState::default(),
+                key_prompt: KeyPromptState::Idle,
+                terminal_reply: None,
+                injected: VecDeque::new(),
+            },
+            io_state: ClientIoState::Active,
+            transition: None,
         }
     }
 }
@@ -526,7 +643,7 @@ fn is_configured_prefix(state: &Arc<Mutex<ServerState>>, target: &str, key: KeyC
     state.lock().ok().is_some_and(|st| {
         ["prefix", "prefix2"].into_iter().any(|option| {
             st.option_for_target(target, option)
-                .or_else(|| crate::server::options::option_default(option))
+                .or_else(|| super::options::option_default(option))
                 .and_then(parse_key_name)
                 .is_some_and(|prefix| prefix == key)
         })
@@ -819,7 +936,7 @@ fn decode_tty_key(bytes: &[u8]) -> Option<(DecodedTtyKey, usize)> {
             bytes[end] == b'm',
             MousePosition { x, y },
         );
-        let code = mouse.key_code_for(crate::server::key::MouseLocation::Pane);
+        let code = mouse.key_code_for(super::key::MouseLocation::Pane);
         let name = code
             .map(|code| code.to_string())
             .unwrap_or_else(|| "Mouse".into());
@@ -843,7 +960,7 @@ fn decode_tty_key(bytes: &[u8]) -> Option<(DecodedTtyKey, usize)> {
             button & 0xc3 == 3,
             MousePosition { x, y },
         );
-        let code = mouse.key_code_for(crate::server::key::MouseLocation::Pane);
+        let code = mouse.key_code_for(super::key::MouseLocation::Pane);
         let name = code
             .map(|code| code.to_string())
             .unwrap_or_else(|| "Mouse".into());
@@ -942,12 +1059,6 @@ fn append_view_output(state: &Arc<Mutex<ServerState>>, target: &str, output: &[u
 /// Wait until either side of an attached client, its active pane, or its agent
 /// status subscription has work.
 /// Tty readiness needs no flag because the non-blocking input drain runs next.
-
-/// Descriptors observed between turns of the authoritative attach compositor.
-///
-/// This is a crate-private migration boundary: the compatibility path polls
-/// these descriptors directly, while the server event loop registers them with
-/// its reactor and drives the session for one turn at a time.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct AttachWaitSources {
     pub(crate) control: RawFd,
@@ -975,6 +1086,7 @@ pub(crate) struct AttachWaitReady {
     pub(crate) popup_write: bool,
 }
 
+/// Internal wait operation used by the turn-based attach compositor.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ActiveWindowOutputKey {
     panes: Vec<(u32, u64)>,
@@ -1114,7 +1226,7 @@ impl ClientTty {
 
 /// Return only a target supplied by the client. An omitted target must be
 /// resolved with server state, not confused with an explicit `-t 0`.
-pub(crate) fn explicit_target_session(args: &[String]) -> Option<String> {
+fn explicit_target_session(args: &[String]) -> Option<String> {
     // Look for `-t` flag.
     if let Some(idx) = args.iter().position(|a| a == "-t") {
         if let Some(name) = args.get(idx + 1) {
@@ -1244,10 +1356,8 @@ fn restore_termios(fd: RawFd, old: &libc::termios) {
 /// to CR-LF and every command staircases. The restore used to be a plain
 /// statement after the loop, reachable only on the clean paths; this guard makes
 /// it unconditional. The clean paths still restore explicitly (so the tty is
-/// cooked *before* the detach/exit handshake writes to it) and then [`disarm`]
-/// this guard so it doesn't fire twice.
-///
-/// [`disarm`]: TermiosGuard::disarm
+/// cooked *before* the detach/exit handshake writes to it) and disarm this
+/// guard so it doesn't fire twice.
 struct TermiosGuard {
     fd: RawFd,
     saved: Option<libc::termios>,
@@ -1260,8 +1370,6 @@ impl TermiosGuard {
         }
     }
 
-    /// Restore the terminal and mark it as already restored, so `drop` is a
-    /// no-op.
     fn restore_and_disarm(&mut self) {
         self.restore();
         self.saved = None;
@@ -1300,15 +1408,11 @@ fn set_blocking(fd: RawFd) -> io::Result<()> {
     Ok(())
 }
 
-/// The main attach entry point, called from `protocol::handle` when it sees
-/// `attach-session` or `attach`.
-///
-/// `client_tty` must contain the fds captured during identify. If those fds
-/// are not ttys (e.g. the harness passes `/dev/null`), we return a tty-failure
-/// error via the file protocol so the capability matrix counts this as
-/// `Supported` ("recognized; failed for lack of a tty") rather than
-/// `Unsupported`.
-
+/// Send an error result back via the file protocol, matching how tmux reports
+/// command errors to a command client. This is used when attach fails early
+/// (e.g. "can't find session", "not a terminal") so the conformance harness
+/// sees a recognized command that failed for a tty reason, not an "unknown
+/// command" rejection.
 pub(crate) fn attach_target(
     supplied_target: Option<String>,
     state: &mut ServerState,
@@ -1388,15 +1492,6 @@ where
 /// (attach the client instead of exiting). A creation error (e.g. a duplicate
 /// name without `-A`) is reported over the file protocol just like a command
 /// client would see it.
-
-/// Drive an interactive attach to an already-resolved, existing `target`
-/// session: validate the client's tty fds, then run the compositor loop
-/// (render active pane → tty, forward keystrokes → pane, handle resize/detach).
-/// Shared by [`handle_attach`] and [`handle_new_session`].
-
-/// Return the outer-terminal sequence for a changed configured title.
-/// Capability lookup is deliberately all-or-nothing, matching tty_set_title:
-/// terminals need both `tsl` (start title) and `fsl` (finish title).
 fn terminal_title_update(
     state: &ServerState,
     session: &str,
@@ -1411,7 +1506,7 @@ fn terminal_title_update(
     }
     let template = state
         .option_for_target(session, "set-titles-string")
-        .or_else(|| crate::server::options::option_default("set-titles-string"))
+        .or_else(|| super::options::option_default("set-titles-string"))
         .unwrap_or_default();
     let Some(title) = status_cache.expand_format(state, session, template, cols, rows) else {
         return Vec::new();
@@ -1667,7 +1762,12 @@ fn compose_frame_cached(
         0
     };
     let active_mode = st.active_mode_view(target);
-    let (all_rows, mut cursor, cursor_visible, restore_cursor, frame_capacity) =
+    let active_copy = active_mode
+        .is_none()
+        .then(|| st.active_copy_state(target))
+        .flatten();
+    let copy_view = active_copy.map(|copy| CopyModeView::new(st, target, copy, cols, terminal));
+    let (all_rows, cursor, cursor_visible, restore_cursor, frame_capacity) =
         if let Some(view) = active_mode {
             (
                 render_mode_rows(view, cols as usize, pane_height as usize),
@@ -1676,27 +1776,13 @@ fn compose_frame_cached(
                 false,
                 usize::from(cols) * usize::from(pane_height) + 256,
             )
-        } else if let Some(copy) = st.active_copy_state(target) {
-            let top = copy.grid.scrollback_rows.saturating_sub(copy.scroll);
-            let pane_rows = copy
-                .vt_rows()
-                .skip(top)
-                .take(pane_height as usize)
-                .map(<[u8]>::to_vec)
-                .collect::<Vec<_>>();
-            let cursor_row = copy
-                .cursor
-                .row
-                .saturating_sub(top)
-                .min(pane_height.saturating_sub(1) as usize)
-                + 1;
-            let cursor_col = copy.cursor.col.min(cols.saturating_sub(1) as usize) + 1;
+        } else if let Some(copy_view) = copy_view.as_ref() {
             (
-                pane_rows,
-                format!("\x1b[{cursor_row};{cursor_col}H").into_bytes(),
+                copy_view.rows(pane_height),
+                copy_view.cursor(pane_height, cols),
                 true,
                 true,
-                copy.vt.len() + 256,
+                copy_view.serialized_len() + 256,
             )
         } else {
             let (vt, scroll) =
@@ -1724,28 +1810,11 @@ fn compose_frame_cached(
     // not to what we are painting, so keep it hidden and don't reposition it.
     let cursor_shape = st.active_pane_cursor_shape(target).unwrap_or(0);
     let mut out = Vec::with_capacity(frame_capacity);
-    let active_copy = active_mode
-        .is_none()
-        .then(|| st.active_copy_state(target))
-        .flatten();
-    let line_number_width = active_copy
-        .map(|copy| copy_line_number_width(st, target, copy))
+    let line_number_width = copy_view
+        .as_ref()
+        .map(CopyModeView::line_number_width)
         .unwrap_or(0)
         .min(cols.saturating_sub(1) as usize);
-    if let Some(copy) = active_copy {
-        let top = copy.grid.scrollback_rows.saturating_sub(copy.scroll);
-        let row = copy
-            .cursor
-            .row
-            .saturating_sub(top)
-            .min(pane_height.saturating_sub(1) as usize)
-            + 1;
-        let col = line_number_width
-            .saturating_add(copy.cursor.col)
-            .min(cols.saturating_sub(1) as usize)
-            + 1;
-        cursor = format!("\x1b[{row};{col}H").into_bytes();
-    }
 
     // Hide the cursor for the duration of the repaint so it doesn't visibly
     // travel across every row we position to; it is restored (if the pane wants
@@ -1758,22 +1827,8 @@ fn compose_frame_cached(
     // Draw each pane row in place: position, rewrite content, erase to EOL.
     for i in 0..pane_height as usize {
         out.extend_from_slice(format!("\x1b[{};1H", usize::from(pane_top) + i + 1).as_bytes());
-        if let Some(copy) = active_copy {
-            let physical_row = copy
-                .grid
-                .scrollback_rows
-                .saturating_sub(copy.scroll)
-                .saturating_add(i);
-            render_copy_line_number(
-                &mut out,
-                st,
-                target,
-                copy,
-                physical_row,
-                physical_row == copy.cursor.row,
-                line_number_width,
-                terminal,
-            );
+        if let Some(copy_view) = copy_view.as_ref() {
+            copy_view.render_line_number(&mut out, i);
         }
         if line_number_width > 0 {
             out.extend_from_slice(b"\x1b[?7l");
@@ -1787,59 +1842,8 @@ fn compose_frame_cached(
         append_terminal_style_reset(&mut out, terminal);
         out.extend_from_slice(b"\x1b[K");
     }
-    if let Some(copy) = active_copy {
-        render_copy_search(
-            &mut out,
-            copy,
-            copy_mode_uses_vi_keys(st, target),
-            &copy_style_escape(
-                st,
-                target,
-                "copy-mode-match-style",
-                "bg=cyan,fg=black",
-                terminal,
-            ),
-            &copy_style_escape(
-                st,
-                target,
-                "copy-mode-current-match-style",
-                "bg=magenta,fg=black",
-                terminal,
-            ),
-            pane_top,
-            line_number_width as u16,
-            pane_height,
-            cols.saturating_sub(line_number_width as u16),
-            terminal,
-        );
-        render_copy_selection(
-            &mut out,
-            copy,
-            copy_mode_uses_vi_keys(st, target),
-            &copy_style_escape(
-                st,
-                target,
-                "copy-mode-selection-style",
-                "bg=yellow,fg=black",
-                terminal,
-            ),
-            pane_top,
-            line_number_width as u16,
-            pane_height,
-            cols.saturating_sub(line_number_width as u16),
-            terminal,
-        );
-        render_copy_mark_and_position(
-            &mut out,
-            st,
-            target,
-            copy,
-            pane_top,
-            line_number_width as u16,
-            pane_height,
-            cols.saturating_sub(line_number_width as u16),
-            terminal,
-        );
+    if let Some(copy_view) = copy_view.as_ref() {
+        copy_view.render_overlays(&mut out, pane_top, 0, pane_height, cols);
     }
     // Erase any pane rows the previous, taller frame left behind. Clear them one
     // at a time (not `\x1b[J`) so the status region below is never touched.
@@ -1894,7 +1898,6 @@ fn compose_frame_cached(
 }
 
 const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
-
 const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
 
 fn strip_cursor_visibility(frame: &[u8]) -> (Vec<u8>, Option<bool>) {
@@ -2185,25 +2188,18 @@ fn compose_split_frame(
                 owners[y as usize * cols as usize + x as usize] = Some(node.id);
             }
         }
+        let copy_view = node
+            .copy
+            .as_ref()
+            .map(|copy| CopyModeView::new(st, target, copy, width, terminal));
         let (pane_rows, cursor, row_start) = if let Some(view) = node.mode_view.as_ref() {
             (
                 render_mode_rows(view, width as usize, height as usize),
                 Vec::new(),
                 0,
             )
-        } else if let Some(copy) = node.copy.as_ref() {
-            let top = copy.grid.scrollback_rows.saturating_sub(copy.scroll);
-            let cursor_row = copy.cursor.row.saturating_sub(top) as u16 + 1;
-            let cursor_col = copy.cursor.col as u16 + 1;
-            (
-                copy.vt_rows()
-                    .skip(top)
-                    .take(height as usize)
-                    .map(<[u8]>::to_vec)
-                    .collect::<Vec<_>>(),
-                format!("\x1b[{cursor_row};{cursor_col}H").into_bytes(),
-                0,
-            )
+        } else if let Some(copy_view) = copy_view.as_ref() {
+            (copy_view.rows(height), copy_view.cursor(height, width), 0)
         } else {
             let vt = node.pane.dump_vt()?;
             let (pane_rows, cursor) = split_pane_vt(&vt);
@@ -2220,18 +2216,11 @@ fn compose_split_frame(
                 left + cursor_col.min(width.max(1)) - 1,
             );
         }
-        let line_number_width = node
-            .copy
+        let line_number_width = copy_view
             .as_ref()
-            .map(|copy| copy_line_number_width(st, target, copy))
+            .map(CopyModeView::line_number_width)
             .unwrap_or(0)
             .min(width.saturating_sub(1) as usize);
-        if index == active && node.copy.is_some() {
-            active_cursor.1 = active_cursor
-                .1
-                .saturating_add(line_number_width as u16)
-                .min(left + width.saturating_sub(1));
-        }
         for row in 0..height {
             out.extend_from_slice(
                 format!("\x1b[{};{}H", pane_top + top + row + 1, left + 1).as_bytes(),
@@ -2241,22 +2230,8 @@ fn compose_split_frame(
             out.extend_from_slice(
                 format!("\x1b[{};{}H", pane_top + top + row + 1, left + 1).as_bytes(),
             );
-            if let Some(copy) = node.copy.as_ref() {
-                let physical_row = copy
-                    .grid
-                    .scrollback_rows
-                    .saturating_sub(copy.scroll)
-                    .saturating_add(row as usize);
-                render_copy_line_number(
-                    &mut out,
-                    st,
-                    target,
-                    copy,
-                    physical_row,
-                    physical_row == copy.cursor.row,
-                    line_number_width,
-                    terminal,
-                );
+            if let Some(copy_view) = copy_view.as_ref() {
+                copy_view.render_line_number(&mut out, row as usize);
             }
             if let Some(content) = pane_rows.get(row_start + row as usize) {
                 if line_number_width > 0 {
@@ -2268,59 +2243,8 @@ fn compose_split_frame(
                 }
             }
         }
-        if let Some(copy) = node.copy.as_ref() {
-            render_copy_search(
-                &mut out,
-                copy,
-                copy_mode_uses_vi_keys(st, target),
-                &copy_style_escape(
-                    st,
-                    target,
-                    "copy-mode-match-style",
-                    "bg=cyan,fg=black",
-                    terminal,
-                ),
-                &copy_style_escape(
-                    st,
-                    target,
-                    "copy-mode-current-match-style",
-                    "bg=magenta,fg=black",
-                    terminal,
-                ),
-                pane_top + top,
-                left + line_number_width as u16,
-                height,
-                width.saturating_sub(line_number_width as u16),
-                terminal,
-            );
-            render_copy_selection(
-                &mut out,
-                copy,
-                copy_mode_uses_vi_keys(st, target),
-                &copy_style_escape(
-                    st,
-                    target,
-                    "copy-mode-selection-style",
-                    "bg=yellow,fg=black",
-                    terminal,
-                ),
-                pane_top + top,
-                left + line_number_width as u16,
-                height,
-                width.saturating_sub(line_number_width as u16),
-                terminal,
-            );
-            render_copy_mark_and_position(
-                &mut out,
-                st,
-                target,
-                copy,
-                pane_top + top,
-                left + line_number_width as u16,
-                height,
-                width.saturating_sub(line_number_width as u16),
-                terminal,
-            );
+        if let Some(copy_view) = copy_view.as_ref() {
+            copy_view.render_overlays(&mut out, pane_top + top, left, height, width);
         }
     }
 
@@ -2552,9 +2476,9 @@ fn forward_input(
 
 #[cfg(test)]
 mod tests {
+    use super::super::pane::Pane;
+    use super::super::state::PaneSpec;
     use super::*;
-    use crate::server::pane::Pane;
-    use crate::server::state::PaneSpec;
     use std::io::Read as _;
     use std::os::unix::net::UnixStream;
 
@@ -3334,7 +3258,7 @@ mod tests {
                 "0",
                 false,
                 false,
-                crate::server::state::SplitDirection::TopBottom,
+                super::super::state::SplitDirection::TopBottom,
                 PaneSpec::Inert,
             )
             .expect("split inactive pane");
@@ -3673,56 +3597,4 @@ mod tests {
         assert!(!is_changed(&out));
         assert_eq!(snapshot(&state), (1, 0, 1));
     }
-}
-
-/// Send an error result back via the file protocol, matching how tmux reports
-/// command errors to a command client. This is used when attach fails early
-/// (e.g. "can't find session", "not a terminal") so the conformance harness
-/// sees a recognized command that failed for a tty reason, not an "unknown
-/// command" rejection.
-pub(crate) fn send_error_and_exit<R, W>(
-    reader: &mut R,
-    writer: &mut W,
-    msg: &str,
-    exit_code: i32,
-) -> io::Result<()>
-where
-    R: FrameReader,
-    W: FrameWriter,
-{
-    // Reuse the file-protocol helper from protocol.rs logic: open stream 2
-    // (stderr), wait for ready, write, close, then MSG_EXIT.
-    const FD_STDERR: i32 = 2;
-    writer.send(Frame::new(Message::WriteOpen {
-        stream: 2,
-        fd: FD_STDERR,
-        flags: 0,
-        path: Vec::new(),
-    }))?;
-
-    // Wait for WriteReady with a timeout so we don't hang if client is gone.
-    // We use the same blocking recv but with SO_RCVTIMEO set by caller if needed.
-    loop {
-        let frame = match reader.recv() {
-            Ok(f) => f,
-            Err(e)
-                if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut =>
-            {
-                // Client didn't ack in time; give up and just send exit.
-                break;
-            }
-            Err(_) => break,
-        };
-        if let Message::WriteReady { stream: 2, .. } = frame.msg {
-            break;
-        }
-    }
-
-    writer.send(Frame::new(Message::Write {
-        stream: 2,
-        data: msg.as_bytes().to_vec(),
-    }))?;
-    writer.send(Frame::new(Message::WriteClose { stream: 2 }))?;
-    writer.send(Frame::new(Message::Exit(Some(exit_code))))?;
-    Ok(())
 }

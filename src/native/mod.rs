@@ -11,7 +11,7 @@ use crate::server::{state::ServerState, Server};
 use crate::tmux::codec::{split_stream, ImsgReader, ImsgWriter};
 use crate::tmux::traits::TmuxServer;
 
-pub mod attach;
+mod attach;
 mod observation;
 pub(crate) mod pane;
 pub mod protocol;

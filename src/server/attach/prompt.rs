@@ -1,17 +1,30 @@
-use super::*;
+use std::collections::{BTreeSet, VecDeque};
+use std::io;
+use std::sync::{Arc, Mutex};
+
+use crate::integration::status::StatusHub;
+
+use super::super::key::parse_key_name;
+use super::super::state::{
+    self, MenuItem, MenuRequest, ModeBindingUpdate, ModeEdit, ModePrompt, ServerState,
+};
+use super::super::term::TerminalCapabilities;
+use super::super::{command, format, status};
+use super::super::{options, registry};
+use super::{append_view_output, ActiveOverlay};
 
 pub(crate) struct CommandPrompt {
-    pub(super) request: PromptRequest,
+    request: PromptRequest,
     pages: PromptPages,
-    pub(super) editor: PromptEditor,
-    pub(super) presentation: PromptPresentation,
+    editor: PromptEditor,
+    presentation: PromptPresentation,
     execution: PromptExecution,
 }
 
-pub(super) struct PromptRequest {
+struct PromptRequest {
     args: Vec<String>,
     tail: Vec<String>,
-    pub(super) spec: command::CommandPromptSpec,
+    spec: command::CommandPromptSpec,
     action: CommandPromptAction,
 }
 
@@ -26,13 +39,13 @@ struct PromptPage {
     initial: String,
 }
 
-pub(super) struct PromptEditor {
+struct PromptEditor {
     buffer: PromptBuffer,
     last: String,
     yank: Option<String>,
     history_index: usize,
-    pub(super) mode: PromptInputMode,
-    pub(super) completion: Option<PromptCompletionMenu>,
+    mode: PromptInputMode,
+    completion: Option<PromptCompletionMenu>,
 }
 
 struct PromptBuffer {
@@ -41,14 +54,14 @@ struct PromptBuffer {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum PromptInputMode {
+enum PromptInputMode {
     Insert,
     ViCommand,
     QuoteNext,
 }
 
-pub(super) struct PromptPresentation {
-    pub(super) frozen_frame: Option<Vec<u8>>,
+struct PromptPresentation {
+    frozen_frame: Option<Vec<u8>>,
 }
 
 struct PromptExecution {
@@ -56,12 +69,9 @@ struct PromptExecution {
     deferred_incremental: VecDeque<command::DeferredCommand>,
 }
 
-/// Who receives the prompt's result. `Resolved` marks a prompt whose result
-/// has already been delivered, so a second completion is a no-op rather than
-/// output appended to the attached client's view.
 enum PromptOwner {
     Attached,
-    External(crate::server::state::ActiveCommandPrompt),
+    External(state::ActiveCommandPrompt),
     Resolved,
 }
 
@@ -95,7 +105,8 @@ impl PromptEditor {
 
     fn reset(&mut self, initial: String) {
         self.last = initial.clone();
-        self.buffer.replace(&initial);
+        self.buffer.chars = initial.chars().collect();
+        self.buffer.cursor = self.buffer.chars.len();
         self.history_index = 0;
         self.mode = PromptInputMode::Insert;
         self.completion = None;
@@ -121,7 +132,7 @@ enum CommandPromptAction {
     ModeEdit { target: String, edit: ModeEdit },
 }
 
-pub(super) struct PromptCompletionMenu {
+struct PromptCompletionMenu {
     items: Vec<PromptCompletionItem>,
     selected: usize,
     start: usize,
@@ -129,12 +140,12 @@ pub(super) struct PromptCompletionMenu {
     replace_entire: bool,
 }
 
-pub(super) struct PromptCompletionItem {
+struct PromptCompletionItem {
     label: String,
     replacement: String,
 }
 
-pub(crate) enum PromptCompletion {
+enum PromptCompletion {
     None,
     Replace(String),
     Menu {
@@ -150,6 +161,30 @@ pub(super) enum CommandPromptInput {
 }
 
 impl CommandPrompt {
+    pub(super) fn should_freeze(&self) -> bool {
+        !self.request.spec.no_freeze
+    }
+
+    pub(super) fn captures_literal_key(&self) -> bool {
+        self.request.spec.key
+    }
+
+    pub(super) fn freeze(&mut self, frame: Vec<u8>) {
+        self.presentation.frozen_frame = Some(frame);
+    }
+
+    pub(super) fn frozen_frame(&self) -> Option<&[u8]> {
+        self.presentation.frozen_frame.as_deref()
+    }
+
+    pub(super) fn has_completion(&self) -> bool {
+        self.editor.completion.is_some()
+    }
+
+    pub(super) fn is_vi_command(&self) -> bool {
+        self.editor.mode == PromptInputMode::ViCommand
+    }
+
     pub(super) fn apply_deferred_side_effect(
         &self,
         result: &command::CommandResult,
@@ -170,7 +205,7 @@ impl CommandPrompt {
 
     pub(super) fn new(
         args: Vec<String>,
-        external: Option<crate::server::state::ActiveCommandPrompt>,
+        external: Option<state::ActiveCommandPrompt>,
         state: &Arc<Mutex<ServerState>>,
         hub: &StatusHub,
         context: &command::ClientContext,
@@ -432,7 +467,7 @@ impl CommandPrompt {
     ) {
         match std::mem::replace(&mut self.execution.owner, PromptOwner::Resolved) {
             PromptOwner::External(external) => {
-                external.complete(crate::server::state::PromptCompletion {
+                external.complete(state::PromptCompletion {
                     stdout: result.stdout.clone(),
                     stderr: result.stderr.clone(),
                     exit: result.exit,
@@ -985,12 +1020,12 @@ impl CommandPrompt {
                     self.editor.history_index -= 1;
                     if let Ok(st) = state.lock() {
                         let history = st.prompt_history(&self.request.spec.prompt_type);
-                        let recalled = if self.editor.history_index == 0 {
+                        let value = if self.editor.history_index == 0 {
                             ""
                         } else {
                             &history[history.len() - self.editor.history_index]
                         };
-                        self.editor.buffer.replace(recalled);
+                        self.editor.buffer.replace(value);
                     }
                     self.changed('=', state, hub, context);
                 }
@@ -1133,20 +1168,19 @@ impl CommandPrompt {
                     self.editor.history_index -= 1;
                     if let Ok(st) = state.lock() {
                         let history = st.prompt_history(&self.request.spec.prompt_type);
-                        let recalled = if self.editor.history_index == 0 {
+                        let value = if self.editor.history_index == 0 {
                             ""
                         } else {
                             &history[history.len() - self.editor.history_index]
                         };
-                        self.editor.buffer.replace(recalled);
+                        self.editor.buffer.replace(value);
                     }
                     self.changed('=', state, hub, context);
                 }
             }
             "C-r" if self.request.spec.incremental => {
                 let prefix = if self.editor.buffer.chars.is_empty() {
-                    let last = self.editor.last.clone();
-                    self.editor.buffer.replace(&last);
+                    self.editor.buffer.replace(&self.editor.last);
                     '='
                 } else {
                     '-'
@@ -1155,8 +1189,7 @@ impl CommandPrompt {
             }
             "C-s" if self.request.spec.incremental => {
                 let prefix = if self.editor.buffer.chars.is_empty() {
-                    let last = self.editor.last.clone();
-                    self.editor.buffer.replace(&last);
+                    self.editor.buffer.replace(&self.editor.last);
                     '='
                 } else {
                     '+'
@@ -1504,7 +1537,7 @@ fn command_prompt_completion(
             return PromptCompletion::None;
         }
         let mut matches = BTreeSet::new();
-        for candidate in crate::server::registry::COMMAND_SPECS
+        for candidate in registry::COMMAND_SPECS
             .iter()
             .flat_map(|spec| std::iter::once(spec.name).chain(spec.alias.iter().copied()))
         {
@@ -1518,9 +1551,7 @@ fn command_prompt_completion(
             }
         }
         if !at_start {
-            for candidate in
-                crate::server::options::option_names().chain(command::LAYOUT_NAMES.iter().copied())
-            {
+            for candidate in options::option_names().chain(command::LAYOUT_NAMES.iter().copied()) {
                 if candidate.starts_with(word) {
                     matches.insert(candidate.to_string());
                 }
@@ -1713,5 +1744,5 @@ pub(super) fn render_prompt_completion(
         },
         completion.selected,
     );
-    render_active_overlay(&overlay, state, target, cols, rows, terminal)
+    overlay.render(state, target, cols, rows, terminal)
 }

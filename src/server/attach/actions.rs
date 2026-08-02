@@ -1,13 +1,25 @@
-use super::*;
+//! Attach-client actions and key-binding resolution.
+
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
+
+use crate::integration::status::StatusHub;
+
+use super::super::command;
+use super::super::key::{basic_key_bytes, key_from_byte, parse_key_name, KeyCode};
+use super::super::mouse::MouseEvent;
+use super::super::state::{ClientKey, PromptCompletion, ServerState};
+use super::copy_mode::{self, CopyModeAction};
+use super::{client_key_table, decode_tty_key, is_configured_prefix};
 
 /// A destructive binding that tmux guards behind a `confirm-before` `(y/n)`
 /// prompt. The attach loop shows the prompt and only runs the action once the
 /// user answers `y`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ConfirmAction {
-    /// `C-b x` → `confirm-before … kill-pane`.
+    /// `C-b x` -> `confirm-before ... kill-pane`.
     KillPane,
-    /// `C-b &` → `confirm-before … kill-window`.
+    /// `C-b &` -> `confirm-before ... kill-window`.
     KillWindow,
     Command(Vec<String>),
 }
@@ -17,26 +29,86 @@ pub(super) struct ActiveConfirm {
     pub(super) action: ConfirmAction,
     pub(super) confirm_key: u8,
     pub(super) default_yes: bool,
-    pub(super) reply: Option<std::sync::mpsc::Sender<crate::server::state::PromptCompletion>>,
+    pub(super) reply: Option<mpsc::Sender<PromptCompletion>>,
 }
 
-/// What a resolved prefix binding tells the attach loop to do.
+pub(super) enum ConfirmResolution {
+    Complete,
+    Deferred {
+        command: Vec<String>,
+        reply: Option<mpsc::Sender<PromptCompletion>>,
+    },
+}
+
+impl ActiveConfirm {
+    pub(super) fn resolve(
+        self,
+        accepted: bool,
+        state: &Arc<Mutex<ServerState>>,
+        target: &str,
+        cols: u16,
+        pane_rows: u16,
+        hub: &StatusHub,
+        context: &command::ClientContext,
+    ) -> ConfirmResolution {
+        let result = if accepted {
+            match self.action {
+                ConfirmAction::Command(command) => {
+                    if context.defer_attach_commands {
+                        return ConfirmResolution::Deferred {
+                            command,
+                            reply: self.reply,
+                        };
+                    }
+                    let agents = hub.snapshot().panes;
+                    command::run_with_context(&command, state, &agents, context)
+                }
+                action @ (ConfirmAction::KillPane | ConfirmAction::KillWindow) => {
+                    let killed = if let Ok(mut state) = state.lock() {
+                        let killed = match action {
+                            ConfirmAction::KillPane => state.kill_pane(target).is_ok(),
+                            ConfirmAction::KillWindow => state.kill_window(target).is_ok(),
+                            ConfirmAction::Command(_) => unreachable!(),
+                        };
+                        if killed && state.find(target).is_some() {
+                            let _ = state.resize_session(target, cols, pane_rows);
+                        }
+                        killed
+                    } else {
+                        false
+                    };
+                    if killed {
+                        command::CommandResult::ok("")
+                    } else {
+                        command::CommandResult::err("")
+                    }
+                }
+            }
+        } else {
+            command::CommandResult::err("")
+        };
+        if let Some(reply) = self.reply {
+            let _ = reply.send(PromptCompletion {
+                stdout: result.stdout,
+                stderr: result.stderr,
+                exit: result.exit,
+                inserted: accepted,
+            });
+        }
+        ConfirmResolution::Complete
+    }
+}
+
+/// What a resolved key binding tells the attach loop to do.
 pub(super) enum PrefixOutcome {
     /// Detach the client (`C-b d`), ending the attach loop.
     Detach,
     /// Send a literal prefix byte to the pane (`C-b C-b`, i.e. `send-prefix`).
     SendPrefix(Vec<u8>),
     /// Enter the attached client's copy-mode view, optionally paging up.
-    CopyMode {
-        page_up: bool,
-        page_down: bool,
-        slider: bool,
-        mouse: Option<MouseEvent>,
-        begin_selection: bool,
-    },
-    /// Raise a `confirm-before` prompt (`C-b x` / `C-b &`). The loop shows
-    /// `prompt` in the status line and waits for the `y`/`n` answer before
-    /// running `action`.
+    CopyMode(CopyModeAction),
+    /// Raise a `confirm-before` prompt. The loop shows `prompt` in the status
+    /// line and waits for the answer before running `action`.
     Confirm {
         prompt: String,
         action: ConfirmAction,
@@ -61,8 +133,7 @@ pub(super) enum PrefixOutcome {
         explicit_duration: Option<u64>,
     },
     /// The binding ran (or was a no-op / unknown key). `changed` is true when it
-    /// altered the window/pane layout, so the compositor must redraw the
-    /// now-active pane.
+    /// altered the window/pane layout, so the compositor must redraw.
     Handled {
         changed: bool,
     },
@@ -70,22 +141,9 @@ pub(super) enum PrefixOutcome {
 
 /// Resolve and execute one key from an attached client's active table.
 ///
-/// This is the interactive counterpart to the command interpreter: where a
-/// command client sends `new-window` over the imsg control plane, an attached
-/// client presses `C-b c` and this maps it to the same [`ServerState`] mutation.
-/// Default and user bindings share the same mutable table. Ordinary commands
-/// run through the command interpreter in the attached client's context;
-/// client-local operations such as detach, confirmation, and copy-mode entry
-/// return an outcome for the attach loop to apply.
-///
-/// The destructive bindings `&` (kill-window) and `x` (kill-pane) do not mutate
-/// state here: like real tmux they first raise a `confirm-before` `(y/n)` prompt
-/// ([`PrefixOutcome::Confirm`]); the attach loop performs the kill only after the
-/// user answers `y`. Unknown keys are a no-op (real tmux rings the bell).
-///
-/// On any layout change the now-active pane is resized to the client's current
-/// geometry, mirroring tmux keeping every window in a session at the session
-/// size — otherwise a freshly spawned window's pane would keep its 80×24 default.
+/// Ordinary commands run through the command interpreter in the attached
+/// client's context. Client-local operations return an outcome for the attach
+/// loop to apply.
 pub(super) fn dispatch_key_binding(
     table: &str,
     key: KeyCode,
@@ -121,7 +179,7 @@ pub(super) fn dispatch_key_binding(
                 .ok()
                 .and_then(|st| {
                     st.option_for_target(target, option)
-                        .or_else(|| crate::server::options::option_default(option))
+                        .or_else(|| super::super::options::option_default(option))
                         .and_then(parse_key_name)
                 })
                 .and_then(basic_key_bytes)
@@ -129,13 +187,13 @@ pub(super) fn dispatch_key_binding(
             return PrefixOutcome::SendPrefix(bytes);
         }
         "copy-mode" if !binding.command.iter().any(|word| word == ";") => {
-            return PrefixOutcome::CopyMode {
-                page_up: binding.command.iter().any(|word| word == "-u"),
-                page_down: binding.command.iter().any(|word| word == "-d"),
-                slider: binding.command.iter().any(|word| word == "-S"),
+            return PrefixOutcome::CopyMode(CopyModeAction::new(
+                binding.command.iter().any(|word| word == "-u"),
+                binding.command.iter().any(|word| word == "-d"),
+                binding.command.iter().any(|word| word == "-S"),
                 mouse,
-                begin_selection: binding.command.iter().any(|word| word == "-M"),
-            };
+                binding.command.iter().any(|word| word == "-M"),
+            ));
         }
         "command-prompt" => {
             return PrefixOutcome::Prompt {
@@ -250,7 +308,7 @@ pub(super) fn dispatch_key_binding(
     PrefixOutcome::Handled { changed }
 }
 
-pub(crate) fn dispatch_control_client_keys(
+pub(in crate::server) fn dispatch_control_client_keys(
     keys: &[ClientKey],
     prefix_pending: &mut bool,
     state: &Arc<Mutex<ServerState>>,
@@ -284,7 +342,7 @@ pub(crate) fn dispatch_control_client_keys(
                 .ok()
                 .is_some_and(|state| state.copy_mode_active(target))
             {
-                copy_table_name(state, target).to_string()
+                copy_mode::key_table(state, target).to_string()
             } else {
                 client_key_table(state, target)
             };
@@ -308,21 +366,7 @@ pub(crate) fn dispatch_control_client_keys(
                         let _ = state.input_to_active_pane(target, &bytes);
                     }
                 }
-                PrefixOutcome::CopyMode {
-                    page_up, page_down, ..
-                } => {
-                    set_copy_mode_state(state, target, true, page_up);
-                    if page_down {
-                        if let Ok(mut state) = state.lock() {
-                            let vi = copy_mode_uses_vi_keys(&state, target);
-                            let separators = state
-                                .option_for_target(target, "word-separators")
-                                .unwrap_or("")
-                                .to_string();
-                            let _ = state.copy_mode_command(target, "page-down", vi, &separators);
-                        }
-                    }
-                }
+                PrefixOutcome::CopyMode(action) => action.apply(state, target, 24),
                 PrefixOutcome::DeferredCommand { args, context }
                 | PrefixOutcome::DeferredMessage { args, context, .. } => {
                     deferred.push(command::BackgroundCommandRequest::ReadyArgs { args, context });

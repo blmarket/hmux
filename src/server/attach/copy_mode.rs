@@ -1,43 +1,78 @@
-use super::*;
+//! Copy-mode input actions and viewport rendering for attached clients.
 
-pub(crate) fn copy_mode_active(state: &Arc<Mutex<ServerState>>, target: &str) -> bool {
-    state
-        .lock()
-        .ok()
-        .is_some_and(|st| st.active_copy_state(target).is_some())
+use std::sync::{Arc, Mutex};
+
+use super::super::mouse::MouseEvent;
+use super::super::state::{copy_search_segments, copy_selection_segments, CopyState, ServerState};
+use super::super::term::TerminalCapabilities;
+use super::super::{format, options, status};
+use super::append_terminal_style_reset;
+
+pub(super) struct CopyModeAction {
+    page_up: bool,
+    page_down: bool,
+    slider: bool,
+    mouse: Option<MouseEvent>,
+    begin_selection: bool,
 }
 
-pub(super) fn set_copy_mode_state(
-    state: &Arc<Mutex<ServerState>>,
-    target: &str,
-    active: bool,
-    page_up: bool,
-) {
-    if let Ok(mut st) = state.lock() {
-        let _ = st.set_pane_mode(target, active.then_some("copy-mode"));
-        if active && page_up {
-            let vi = match st.option_for_target(target, "mode-keys") {
-                Some(mode) => mode == "vi",
-                None => crate::server::options::mode_keys_default() == "vi",
-            };
-            let separators = st
-                .option_for_target(target, "word-separators")
-                .unwrap_or(" !\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~")
-                .to_string();
-            let _ = st.copy_mode_command(target, "page-up", vi, &separators);
+impl CopyModeAction {
+    pub(super) fn new(
+        page_up: bool,
+        page_down: bool,
+        slider: bool,
+        mouse: Option<MouseEvent>,
+        begin_selection: bool,
+    ) -> Self {
+        Self {
+            page_up,
+            page_down,
+            slider,
+            mouse,
+            begin_selection,
         }
+    }
+
+    pub(super) fn apply(self, state: &Arc<Mutex<ServerState>>, target: &str, pane_rows: u16) {
+        enter(state, target, self.page_up);
+        let Ok(mut state) = state.lock() else {
+            return;
+        };
+        let vi = uses_vi_keys(&state, target);
+        if let Some(mouse) = self.mouse {
+            let position = mouse.pane_position();
+            let _ = state.position_copy_cursor_from_mouse(target, position.x, position.y, vi);
+            if self.slider {
+                let _ = state.set_copy_scroll_from_mouse(target, position.y, pane_rows, vi);
+            }
+            if self.begin_selection {
+                run_command(&mut state, target, "begin-selection", vi, "");
+            }
+        }
+        if self.page_down {
+            run_command(&mut state, target, "page-down", vi, "");
+        }
+    }
+
+    /// Re-entering copy mode from its own key table only honors `-u`.
+    pub(super) fn reactivate(self, state: &Arc<Mutex<ServerState>>, target: &str) {
+        enter(state, target, self.page_up);
     }
 }
 
-pub(super) fn copy_table_name(state: &Arc<Mutex<ServerState>>, target: &str) -> &'static str {
-    let mode = state.lock().ok().and_then(|st| {
-        st.option_for_target(target, "mode-keys")
-            .map(str::to_string)
-    });
-    let vi = match mode.as_deref() {
-        Some(mode) => mode == "vi",
-        None => crate::server::options::mode_keys_default() == "vi",
-    };
+pub(super) fn is_active(state: &Arc<Mutex<ServerState>>, target: &str) -> bool {
+    state
+        .lock()
+        .ok()
+        .is_some_and(|state| state.active_copy_state(target).is_some())
+}
+
+pub(super) fn key_table(state: &Arc<Mutex<ServerState>>, target: &str) -> &'static str {
+    let vi = state
+        .lock()
+        .ok()
+        .map(|state| uses_vi_keys(&state, target))
+        .unwrap_or_else(|| options::mode_keys_default() == "vi");
     if vi {
         "copy-mode-vi"
     } else {
@@ -45,39 +80,268 @@ pub(super) fn copy_table_name(state: &Arc<Mutex<ServerState>>, target: &str) -> 
     }
 }
 
-pub(super) fn copy_mode_uses_vi_keys(st: &ServerState, target: &str) -> bool {
-    match st.option_for_target(target, "mode-keys") {
+pub(super) fn uses_vi_keys(state: &ServerState, target: &str) -> bool {
+    match state.option_for_target(target, "mode-keys") {
         Some(mode) => mode == "vi",
-        None => crate::server::options::mode_keys_default() == "vi",
+        None => options::mode_keys_default() == "vi",
     }
 }
 
-pub(super) fn copy_style_escape(
-    st: &ServerState,
+fn enter(state: &Arc<Mutex<ServerState>>, target: &str, page_up: bool) {
+    if let Ok(mut state) = state.lock() {
+        let _ = state.set_pane_mode(target, Some("copy-mode"));
+        if page_up {
+            let vi = uses_vi_keys(&state, target);
+            run_command(
+                &mut state,
+                target,
+                "page-up",
+                vi,
+                " !\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~",
+            );
+        }
+    }
+}
+
+fn run_command(
+    state: &mut ServerState,
+    target: &str,
+    command: &str,
+    vi: bool,
+    fallback_separators: &str,
+) {
+    let separators = state
+        .option_for_target(target, "word-separators")
+        .unwrap_or(fallback_separators)
+        .to_string();
+    let _ = state.copy_mode_command(target, command, vi, &separators);
+}
+
+pub(super) struct CopyModeView<'a> {
+    state: &'a ServerState,
+    target: &'a str,
+    copy: &'a CopyState,
+    terminal: &'a dyn TerminalCapabilities,
+    vi: bool,
+    line_number_width: usize,
+}
+
+impl<'a> CopyModeView<'a> {
+    pub(super) fn new(
+        state: &'a ServerState,
+        target: &'a str,
+        copy: &'a CopyState,
+        width: u16,
+        terminal: &'a dyn TerminalCapabilities,
+    ) -> Self {
+        let line_number_width =
+            line_number_width(state, target, copy).min(width.saturating_sub(1) as usize);
+        Self {
+            state,
+            target,
+            copy,
+            terminal,
+            vi: uses_vi_keys(state, target),
+            line_number_width,
+        }
+    }
+
+    pub(super) fn serialized_len(&self) -> usize {
+        self.copy.vt.len()
+    }
+
+    pub(super) fn rows(&self, height: u16) -> Vec<Vec<u8>> {
+        self.copy
+            .vt_rows()
+            .skip(self.view_top())
+            .take(height as usize)
+            .map(<[u8]>::to_vec)
+            .collect()
+    }
+
+    pub(super) fn cursor(&self, height: u16, width: u16) -> Vec<u8> {
+        let row = self
+            .copy
+            .cursor
+            .row
+            .saturating_sub(self.view_top())
+            .min(height.saturating_sub(1) as usize)
+            + 1;
+        let col = self
+            .line_number_width
+            .saturating_add(self.copy.cursor.col)
+            .min(width.saturating_sub(1) as usize)
+            + 1;
+        format!("\x1b[{row};{col}H").into_bytes()
+    }
+
+    pub(super) fn line_number_width(&self) -> usize {
+        self.line_number_width
+    }
+
+    pub(super) fn render_line_number(&self, out: &mut Vec<u8>, viewport_row: usize) {
+        let physical_row = self.view_top().saturating_add(viewport_row);
+        render_line_number(
+            self,
+            out,
+            physical_row,
+            physical_row == self.copy.cursor.row,
+        );
+    }
+
+    pub(super) fn render_overlays(
+        &self,
+        out: &mut Vec<u8>,
+        screen_top: u16,
+        screen_left: u16,
+        height: u16,
+        width: u16,
+    ) {
+        let content_left = screen_left.saturating_add(self.line_number_width as u16);
+        let content_width = width.saturating_sub(self.line_number_width as u16);
+        render_search(
+            out,
+            self.copy,
+            self.vi,
+            &style_escape(
+                self.state,
+                self.target,
+                "copy-mode-match-style",
+                "bg=cyan,fg=black",
+                self.terminal,
+            ),
+            &style_escape(
+                self.state,
+                self.target,
+                "copy-mode-current-match-style",
+                "bg=magenta,fg=black",
+                self.terminal,
+            ),
+            screen_top,
+            content_left,
+            height,
+            content_width,
+            self.terminal,
+        );
+        render_selection(
+            out,
+            self.copy,
+            self.vi,
+            &style_escape(
+                self.state,
+                self.target,
+                "copy-mode-selection-style",
+                "bg=yellow,fg=black",
+                self.terminal,
+            ),
+            screen_top,
+            content_left,
+            height,
+            content_width,
+            self.terminal,
+        );
+        render_mark_and_position(self, out, screen_top, content_left, height, content_width);
+    }
+
+    fn view_top(&self) -> usize {
+        self.copy
+            .grid
+            .scrollback_rows
+            .saturating_sub(self.copy.scroll)
+    }
+}
+
+fn style_escape(
+    state: &ServerState,
     target: &str,
     option: &str,
     fallback: &str,
     terminal: &dyn TerminalCapabilities,
 ) -> Vec<u8> {
-    status::option_style_escape_for(st, target, option, fallback, terminal)
+    status::option_style_escape_for(state, target, option, fallback, terminal)
 }
 
-pub(super) fn render_copy_mark_and_position(
+fn line_number_width(state: &ServerState, target: &str, copy: &CopyState) -> usize {
+    if state
+        .option_for_target(target, "copy-mode-line-numbers")
+        .unwrap_or("off")
+        == "off"
+    {
+        0
+    } else {
+        let lines = copy
+            .grid
+            .scrollback_rows
+            .saturating_add(copy.grid.viewport_rows as usize)
+            .saturating_add(1);
+        (lines.max(1).ilog10() as usize + 2).max(4)
+    }
+}
+
+fn render_line_number(
+    view: &CopyModeView<'_>,
     out: &mut Vec<u8>,
-    st: &ServerState,
-    target: &str,
-    copy: &CopyState,
+    physical_row: usize,
+    current: bool,
+) {
+    let state = view.state;
+    let target = view.target;
+    let copy = view.copy;
+    let width = view.line_number_width;
+    let terminal = view.terminal;
+    if width == 0 {
+        return;
+    }
+    let mode = state
+        .option_for_target(target, "copy-mode-line-numbers")
+        .unwrap_or("off");
+    let absolute = physical_row + 1;
+    let relative = physical_row.abs_diff(copy.cursor.row);
+    let number = match mode {
+        "absolute" => absolute,
+        "hybrid" if current => absolute,
+        "relative" | "hybrid" => relative,
+        _ => copy.grid.scrollback_rows.abs_diff(physical_row),
+    };
+    let style = if current {
+        style_escape(
+            state,
+            target,
+            "copy-mode-current-line-number-style",
+            "fg=yellow",
+            terminal,
+        )
+    } else {
+        style_escape(
+            state,
+            target,
+            "copy-mode-line-number-style",
+            "fg=white,dim",
+            terminal,
+        )
+    };
+    out.extend_from_slice(&style);
+    out.extend_from_slice(format!("{number:>w$} ", w = width - 1).as_bytes());
+    append_terminal_style_reset(out, terminal);
+}
+
+fn render_mark_and_position(
+    view: &CopyModeView<'_>,
+    out: &mut Vec<u8>,
     screen_top: u16,
     screen_left: u16,
     height: u16,
     width: u16,
-    terminal: &dyn TerminalCapabilities,
 ) {
+    let state = view.state;
+    let target = view.target;
+    let copy = view.copy;
+    let terminal = view.terminal;
     let view_top = copy.grid.scrollback_rows.saturating_sub(copy.scroll);
     if let Some((row, _)) = copy.mark {
         if row >= view_top && row < view_top.saturating_add(height as usize) {
-            let style = copy_style_escape(
-                st,
+            let style = style_escape(
+                state,
                 target,
                 "copy-mode-mark-style",
                 "bg=red,fg=black",
@@ -121,7 +385,7 @@ pub(super) fn render_copy_mark_and_position(
         )
         .set("copy_cursor_x", copy.cursor.col.to_string())
         .set("copy_cursor_y", copy.cursor.row.to_string());
-    let configured = st
+    let configured = state
         .option_for_target(target, "copy-mode-position-format")
         .filter(|value| !value.is_empty());
     let source = configured.unwrap_or("[#{copy_position}/#{copy_position_limit}]");
@@ -134,8 +398,8 @@ pub(super) fn render_copy_mark_and_position(
         screen_left + 1
     };
     out.extend_from_slice(format!("\x1b[{};{}H", screen_top + 1, col).as_bytes());
-    out.extend_from_slice(&copy_style_escape(
-        st,
+    out.extend_from_slice(&style_escape(
+        state,
         target,
         "copy-mode-position-style",
         "bg=yellow,fg=black",
@@ -145,70 +409,8 @@ pub(super) fn render_copy_mark_and_position(
     append_terminal_style_reset(out, terminal);
 }
 
-pub(super) fn copy_line_number_width(st: &ServerState, target: &str, copy: &CopyState) -> usize {
-    if st
-        .option_for_target(target, "copy-mode-line-numbers")
-        .unwrap_or("off")
-        == "off"
-    {
-        0
-    } else {
-        let lines = copy
-            .grid
-            .scrollback_rows
-            .saturating_add(copy.grid.viewport_rows as usize)
-            .saturating_add(1);
-        (lines.max(1).ilog10() as usize + 2).max(4)
-    }
-}
-
-pub(super) fn render_copy_line_number(
-    out: &mut Vec<u8>,
-    st: &ServerState,
-    target: &str,
-    copy: &CopyState,
-    physical_row: usize,
-    current: bool,
-    width: usize,
-    terminal: &dyn TerminalCapabilities,
-) {
-    if width == 0 {
-        return;
-    }
-    let mode = st
-        .option_for_target(target, "copy-mode-line-numbers")
-        .unwrap_or("off");
-    let absolute = physical_row + 1;
-    let relative = physical_row.abs_diff(copy.cursor.row);
-    let number = match mode {
-        "absolute" => absolute,
-        "hybrid" if current => absolute,
-        "relative" | "hybrid" => relative,
-        _ => copy.grid.scrollback_rows.abs_diff(physical_row),
-    };
-    let style = if current {
-        copy_style_escape(
-            st,
-            target,
-            "copy-mode-current-line-number-style",
-            "fg=yellow",
-            terminal,
-        )
-    } else {
-        copy_style_escape(
-            st,
-            target,
-            "copy-mode-line-number-style",
-            "fg=white,dim",
-            terminal,
-        )
-    };
-    out.extend_from_slice(&style);
-    out.extend_from_slice(format!("{number:>w$} ", w = width - 1).as_bytes());
-    append_terminal_style_reset(out, terminal);
-}
-
-pub(super) fn render_copy_selection(
+#[allow(clippy::too_many_arguments)]
+fn render_selection(
     out: &mut Vec<u8>,
     copy: &CopyState,
     vi: bool,
@@ -242,24 +444,13 @@ pub(super) fn render_copy_selection(
             .as_bytes(),
         );
         out.extend_from_slice(style);
-        for cell in &copy.grid.rows[row].cells[from..to] {
-            if matches!(
-                cell.width,
-                ghostty_sys::GridCellWidth::SpacerTail | ghostty_sys::GridCellWidth::SpacerHead
-            ) {
-                continue;
-            }
-            if cell.text.is_empty() {
-                out.push(b' ');
-            } else {
-                out.extend_from_slice(cell.text.as_bytes());
-            }
-        }
+        render_cells(out, &copy.grid.rows[row].cells[from..to]);
         append_terminal_style_reset(out, terminal);
     }
 }
 
-pub(super) fn render_copy_search(
+#[allow(clippy::too_many_arguments)]
+fn render_search(
     out: &mut Vec<u8>,
     copy: &CopyState,
     vi: bool,
@@ -294,19 +485,23 @@ pub(super) fn render_copy_search(
             .as_bytes(),
         );
         out.extend_from_slice(if current { current_style } else { other_style });
-        for cell in &copy.grid.rows[row].cells[from..to] {
-            if matches!(
-                cell.width,
-                ghostty_sys::GridCellWidth::SpacerTail | ghostty_sys::GridCellWidth::SpacerHead
-            ) {
-                continue;
-            }
-            if cell.text.is_empty() {
-                out.push(b' ');
-            } else {
-                out.extend_from_slice(cell.text.as_bytes());
-            }
-        }
+        render_cells(out, &copy.grid.rows[row].cells[from..to]);
         append_terminal_style_reset(out, terminal);
+    }
+}
+
+fn render_cells(out: &mut Vec<u8>, cells: &[ghostty_sys::GridCellSnapshot]) {
+    for cell in cells {
+        if matches!(
+            cell.width,
+            ghostty_sys::GridCellWidth::SpacerTail | ghostty_sys::GridCellWidth::SpacerHead
+        ) {
+            continue;
+        }
+        if cell.text.is_empty() {
+            out.push(b' ');
+        } else {
+            out.extend_from_slice(cell.text.as_bytes());
+        }
     }
 }

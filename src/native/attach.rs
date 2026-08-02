@@ -5,14 +5,14 @@ use std::sync::{Arc, Mutex};
 
 use crate::integration::status::StatusHub;
 use crate::server::attach::{
-    attach_target, explicit_target_session, send_error_and_exit, AttachDrive, AttachFrameReader,
-    AttachPrepared, AttachSession, AttachStartFailure, AttachWaitReady, AttachWaitSources,
+    self, AttachDrive, AttachFrameReader, AttachPrepared, AttachWaitReady, AttachWaitSources,
     ClientTty,
 };
 use crate::server::command;
+use crate::server::pane::PaneIoMode;
 use crate::server::state::ServerState;
 use crate::tmux::codec::ImsgReader;
-use crate::tmux::message::Frame;
+use crate::tmux::message::{Frame, Message};
 use crate::tmux::traits::FrameWriter;
 
 impl AttachFrameReader for ImsgReader {
@@ -25,7 +25,7 @@ impl AttachFrameReader for ImsgReader {
     }
 }
 
-pub fn handle_attach<R, W>(
+pub(super) fn handle<R, W>(
     args: &[String],
     client_tty: ClientTty,
     state: &Arc<Mutex<ServerState>>,
@@ -38,149 +38,44 @@ where
     R: AttachFrameReader,
     W: FrameWriter,
 {
-    let supplied_target = explicit_target_session(args);
-    let target = {
-        let mut st = state
-            .lock()
-            .map_err(|_| io::Error::other("state poisoned"))?;
-        match attach_target(supplied_target, &mut st, context) {
-            Ok(target) => target,
-            Err(message) => {
-                drop(st);
-                return send_error_and_exit(reader, writer, &message, 1);
-            }
-        }
-    };
-
-    // Check session existence first, before tty checks, to match tmux ordering:
-    // "can't find session" takes precedence over "not a terminal".
-    {
-        let st = state
-            .lock()
-            .map_err(|_| io::Error::other("state poisoned"))?;
-        if st.find(&target).is_none() {
-            let msg = format!("can't find session: {target}\n");
-            drop(st);
-            return send_error_and_exit(reader, writer, &msg, 1);
-        }
-    }
-
-    run_attach(&target, client_tty, state, hub, context, reader, writer)
-}
-
-pub fn handle_new_session<R, W>(
-    args: &[String],
-    client_tty: ClientTty,
-    state: &Arc<Mutex<ServerState>>,
-    hub: &StatusHub,
-    context: &command::ClientContext,
-    reader: &mut R,
-    writer: &mut W,
-) -> io::Result<()>
-where
-    R: AttachFrameReader,
-    W: FrameWriter,
-{
-    let target = {
-        let mut st = state
-            .lock()
-            .map_err(|_| io::Error::other("state poisoned"))?;
-        match command::new_session_for_attach(args, &mut st, context) {
-            Ok(name) => name,
-            Err(msg) => {
-                drop(st);
-                return send_error_and_exit(reader, writer, &msg, 1);
-            }
-        }
-    };
-    run_attach(&target, client_tty, state, hub, context, reader, writer)
-}
-
-fn run_attach<R, W>(
-    target: &str,
-    client_tty: ClientTty,
-    state: &Arc<Mutex<ServerState>>,
-    hub: &StatusHub,
-    context: &command::ClientContext,
-    reader: &mut R,
-    writer: &mut W,
-) -> io::Result<()>
-where
-    R: AttachFrameReader,
-    W: FrameWriter,
-{
-    let mut session = match AttachSession::start(target, client_tty, state, hub, context, writer) {
+    let mut session = match attach::start_attach_session(
+        args,
+        client_tty,
+        state,
+        hub,
+        context,
+        writer,
+        PaneIoMode::Threaded(super::pane::spawn_reader),
+    ) {
         Ok(session) => session,
-        Err(AttachStartFailure::Client(message)) => {
-            return send_error_and_exit(reader, writer, &message, 1);
-        }
-        Err(AttachStartFailure::Io(error)) => return Err(error),
+        Err(failure) => return send_error_and_exit(reader, writer, &failure.into_message(), 1),
     };
-    let imsg_fd = reader.as_raw_fd();
+    let control_fd = reader.as_raw_fd();
 
-    // Main attach loop.
     loop {
-        let ready = match session.prepare_wait(state, imsg_fd, reader.has_buffered_frame())? {
+        let ready = match session.prepare_wait(state, control_fd, reader.has_buffered_frame())? {
             AttachPrepared::Ready(ready) => ready,
-            AttachPrepared::Wait { sources, timeout } => wait_for_attach_events(sources, timeout)?,
+            AttachPrepared::Wait { sources, timeout } => wait_for_events(sources, timeout)?,
             AttachPrepared::Finished => break,
         };
-        match session.drive_ready(state, hub, ready, reader, writer)? {
-            AttachDrive::Continue => continue,
-            AttachDrive::Finished => break,
+        if session.drive_ready(state, hub, ready, reader, writer)? == AttachDrive::Finished {
+            break;
         }
     }
-
     Ok(())
 }
 
-fn wait_for_attach_events(sources: AttachWaitSources, timeout: i32) -> io::Result<AttachWaitReady> {
+fn wait_for_events(sources: AttachWaitSources, timeout: i32) -> io::Result<AttachWaitReady> {
     let mut fds = [
-        libc::pollfd {
-            fd: sources.control,
-            events: libc::POLLIN,
-            revents: 0,
-        },
-        libc::pollfd {
-            fd: sources.input,
-            events: libc::POLLIN,
-            revents: 0,
-        },
-        libc::pollfd {
-            fd: sources.tty_output,
-            events: libc::POLLOUT,
-            revents: 0,
-        },
-        libc::pollfd {
-            fd: sources.output,
-            events: libc::POLLIN,
-            revents: 0,
-        },
-        libc::pollfd {
-            fd: sources.prompt,
-            events: libc::POLLIN,
-            revents: 0,
-        },
-        libc::pollfd {
-            fd: sources.render,
-            events: libc::POLLIN,
-            revents: 0,
-        },
-        libc::pollfd {
-            fd: sources.status,
-            events: libc::POLLIN,
-            revents: 0,
-        },
-        libc::pollfd {
-            fd: sources.popup_read,
-            events: libc::POLLIN,
-            revents: 0,
-        },
-        libc::pollfd {
-            fd: sources.popup_write,
-            events: libc::POLLOUT,
-            revents: 0,
-        },
+        poll_read(sources.control),
+        poll_read(sources.input),
+        poll_write(sources.tty_output),
+        poll_read(sources.output),
+        poll_read(sources.prompt),
+        poll_read(sources.render),
+        poll_read(sources.status),
+        poll_read(sources.popup_read),
+        poll_write(sources.popup_write),
     ];
     let result = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, timeout) };
     if result >= 0 {
@@ -197,24 +92,77 @@ fn wait_for_attach_events(sources: AttachWaitSources, timeout: i32) -> io::Resul
     }
     let error = io::Error::last_os_error();
     if error.kind() == io::ErrorKind::Interrupted {
-        // Re-evaluate the absolute status deadline rather than restarting
-        // the full relative poll timeout after every signal.
         return Ok(AttachWaitReady::default());
     }
     Err(error)
 }
 
+fn poll_read(fd: i32) -> libc::pollfd {
+    libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    }
+}
+
+fn poll_write(fd: i32) -> libc::pollfd {
+    libc::pollfd {
+        fd,
+        events: libc::POLLOUT,
+        revents: 0,
+    }
+}
+
+fn send_error_and_exit<R, W>(
+    reader: &mut R,
+    writer: &mut W,
+    message: &str,
+    exit_code: i32,
+) -> io::Result<()>
+where
+    R: AttachFrameReader,
+    W: FrameWriter,
+{
+    writer.send(Frame::new(Message::WriteOpen {
+        stream: 2,
+        fd: 2,
+        flags: 0,
+        path: Vec::new(),
+    }))?;
+    loop {
+        match reader.recv() {
+            Ok(frame) if matches!(frame.msg, Message::WriteReady { stream: 2, .. }) => break,
+            Ok(_) => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) =>
+            {
+                break;
+            }
+            Err(_) => break,
+        }
+    }
+    writer.send(Frame::new(Message::Write {
+        stream: 2,
+        data: message.as_bytes().to_vec(),
+    }))?;
+    writer.send(Frame::new(Message::WriteClose { stream: 2 }))?;
+    writer.send(Frame::new(Message::Exit(Some(exit_code))))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::integration::status::StatusHub;
+    use crate::integration::status::{AgentStatus, StatusHub};
+    use crate::integration::AgentState;
+    use crate::observability::v1::PaneId;
+    use crate::server::attach::{AttachWaitReady, AttachWaitSources};
+
+    use super::wait_for_events;
 
     #[test]
     fn agent_status_subscription_wakes_attach_poll_without_a_timer() {
-        use crate::integration::status::AgentStatus;
-        use crate::integration::AgentState;
-        use crate::observability::v1::PaneId;
-
         let hub = StatusHub::new();
         let subscription = hub.subscribe().expect("subscribe");
         subscription.drain();
@@ -231,7 +179,7 @@ mod tests {
             popup_write: -1,
         };
         assert_eq!(
-            wait_for_attach_events(sources, 0).expect("poll"),
+            wait_for_events(sources, 0).expect("poll"),
             AttachWaitReady::default()
         );
 
@@ -245,7 +193,7 @@ mod tests {
             },
         );
         assert_eq!(
-            wait_for_attach_events(sources, 100).expect("poll"),
+            wait_for_events(sources, 100).expect("poll"),
             AttachWaitReady {
                 status: true,
                 ..AttachWaitReady::default()
