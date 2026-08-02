@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 from rich.console import Console
 from textual.containers import Vertical
-from textual.widgets import Button, DataTable, Input, Label, Select, Static
+from textual.widgets import Button, DataTable, Input, Label, Select, Static, TextArea
 
 from agentmon.app import (
     AgentmonApp,
@@ -19,8 +19,10 @@ from agentmon.app import (
     DemoQuotaService,
     DemoService,
     HistoryScreen,
+    LaunchAgentScreen,
     LaunchScreen,
     NewRunScreen,
+    PrepareWorktreeScreen,
     QuotaScreen,
     agent_badge,
     main,
@@ -444,7 +446,7 @@ def test_new_run_uses_repository_selected_on_dashboard() -> None:
             dashboard._apply_runs(runs)
             assert table.cursor_row == 1
 
-            await pilot.press("n")
+            dashboard.action_new_run()
             await pilot.pause()
 
             screen = app.screen
@@ -685,9 +687,11 @@ def test_p_populates_new_run_from_selected_finished_run() -> None:
 
         async with app.run_test(size=(110, 34)) as pilot:
             await pilot.pause()
-            table = app.screen.query_one("#runs", DataTable)
+            dashboard = app.screen
+            assert isinstance(dashboard, DashboardScreen)
+            table = dashboard.query_one("#runs", DataTable)
             table.move_cursor(row=table.row_count - 1)
-            await pilot.press("p")
+            dashboard.action_populate_run()
             await pilot.pause()
 
             screen = app.screen
@@ -721,7 +725,9 @@ def test_p_populates_dirty_run_as_editable_new_run() -> None:
 
         async with app.run_test(size=(110, 34)) as pilot:
             await pilot.pause()
-            await pilot.press("p")
+            dashboard = app.screen
+            assert isinstance(dashboard, DashboardScreen)
+            dashboard.action_populate_run()
             await pilot.pause()
 
             screen = app.screen
@@ -747,9 +753,10 @@ def test_demo_navigation() -> None:
 
         async with app.run_test(size=(110, 34)) as pilot:
             await pilot.pause()
-            assert isinstance(app.screen, DashboardScreen)
+            dashboard = app.screen
+            assert isinstance(dashboard, DashboardScreen)
 
-            await pilot.press("n")
+            await pilot.press("s")
             await pilot.pause()
             assert isinstance(app.screen, NewRunScreen)
             continue_button = app.screen.query_one("#continue", Button)
@@ -931,14 +938,133 @@ def test_populate_preserves_selected_claude_agent() -> None:
 
         async with app.run_test(size=(110, 34)) as pilot:
             await pilot.pause()
-            table = app.screen.query_one("#runs", DataTable)
+            dashboard = app.screen
+            assert isinstance(dashboard, DashboardScreen)
+            table = dashboard.query_one("#runs", DataTable)
             table.move_cursor(row=2)
-            await pilot.press("p")
+            dashboard.action_populate_run()
             await pilot.pause()
 
             screen = app.screen
             assert isinstance(screen, NewRunScreen)
             assert screen.query_one("#agent", Select).value == "claude"
+
+    asyncio.run(exercise())
+
+
+def test_n_opens_prepare_worktree_screen() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            await pilot.press("n")
+            await pilot.pause()
+
+            screen = app.screen
+            assert isinstance(screen, PrepareWorktreeScreen)
+            screen.query_one("#branch", Input).value = "prep-run"
+            await pilot.pause()
+            assert "Worktree       /demo/prep-run" in str(
+                screen.query_one("#worktree", Static).render()
+            )
+
+    asyncio.run(exercise())
+
+
+def test_l_opens_launch_agent_screen_with_instruction_and_choices() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(110, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("l")
+            await pilot.pause()
+
+            screen = app.screen
+            assert isinstance(screen, LaunchAgentScreen)
+            assert screen.run.branch == "auth-cleanup"
+            area = screen.query_one("#instruction", TextArea)
+            assert area.text == (
+                "Fix authentication cleanup behavior and add regression tests.\n"
+            )
+            assert screen.query_one("#agent", Select).value == "codex"
+            assert screen.query_one("#model", Select).value == "default"
+            assert not screen.query_one("#effort", Select).disabled
+
+            screen.query_one("#agent", Select).value = "claude"
+            await pilot.pause()
+            assert screen.query_one("#effort", Select).disabled
+            assert screen.query_one("#model", Select).value == "default"
+
+    asyncio.run(exercise())
+
+
+def test_i_opens_editor_and_commits_instruction(monkeypatch) -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        service = DemoService(repo, socket="/tmp/demo")
+        target = Path("/demo/auth-cleanup/instruction.md")
+        committed: list[AgentRun] = []
+        service.instruction_edit_target = lambda run: target  # type: ignore[method-assign]
+        service.commit_instruction = (  # type: ignore[method-assign]
+            lambda run: committed.append(run) or "abc123"
+        )
+        app = AgentmonApp(service)
+        edited: list[list[str]] = []
+
+        def editor(args: list[str], **kwargs: object) -> SimpleNamespace:
+            edited.append(args)
+            return SimpleNamespace(returncode=0)
+
+        monkeypatch.setenv("EDITOR", "demo-editor")
+        monkeypatch.setattr("agentmon.app.subprocess.run", editor)
+        app.suspend = nullcontext  # type: ignore[method-assign]
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            await pilot.press("i")
+            await pilot.pause()
+
+            assert edited == [["demo-editor", str(target)]]
+            assert committed[0].branch == "auth-cleanup"
+            notice = app.screen.query_one("#notice", Static)
+            assert "instruction.md committed (abc123)" in str(notice.render())
+
+    asyncio.run(exercise())
+
+
+def test_full_flow_commands_remain_in_the_command_palette() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            names = {
+                command.title for command in app.get_system_commands(app.screen)
+            }
+
+        for title in (
+            "Prepare worktree",
+            "Setup instruction",
+            "Launch agent",
+            "Simple run",
+            "Populate from run",
+            "Open window",
+            "New shell at CWD",
+            "Clean up worktree",
+            "Refresh",
+            "Full transcript",
+            "Subscription quotas",
+        ):
+            assert title in names
 
     asyncio.run(exercise())
 
@@ -1062,7 +1188,7 @@ def test_quota_dialog_toggles_and_shows_all_subscription_windows() -> None:
 
         async with app.run_test(size=(110, 34)) as pilot:
             await pilot.pause()
-            app.action_toggle_quotas()
+            await pilot.press("u")
             await pilot.pause()
             await pilot.pause()
 

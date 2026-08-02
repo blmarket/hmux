@@ -10,6 +10,19 @@ LAUNCH_AGENT_LABELS = {
     "claude": "Claude Code",
 }
 
+# "default" means the launcher passes no model/effort flag and the agent CLI
+# decides. The remaining entries are a curated list; extend them as the CLIs
+# grow new models or effort levels.
+DEFAULT_LAUNCH_CHOICE = "default"
+LAUNCH_AGENT_MODELS = {
+    "codex": ("default", "gpt-5-codex", "gpt-5"),
+    "claude": ("default", "sonnet", "opus"),
+}
+LAUNCH_AGENT_EFFORTS = {
+    "codex": ("default", "low", "medium", "high", "xhigh"),
+    "claude": ("default",),
+}
+
 
 def normalize_launch_agent(agent: str) -> str:
     if agent == "claude-code":
@@ -72,6 +85,8 @@ class LaunchDraft:
     restart_worktree: bool = False
     existing_branch: bool = False
     agent: str = DEFAULT_LAUNCH_AGENT
+    model: str = DEFAULT_LAUNCH_CHOICE
+    effort: str = DEFAULT_LAUNCH_CHOICE
     repository: Repository | None = None
 
 
