@@ -647,11 +647,11 @@ impl EventControlClient {
                 return Ok(());
             }
             self.pending.extend_from_slice(&buffer[..count as usize]);
-            if count < buffer.len() as isize {
-                break;
-            }
-            self.input_continuation = true;
         }
+        // The budget ran out with the descriptor still readable. Readiness is
+        // edge-triggered, so ask for another pass instead of waiting for an
+        // edge that a fully drained descriptor would never deliver.
+        self.input_continuation = true;
         Ok(())
     }
 

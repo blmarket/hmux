@@ -1,7 +1,7 @@
 //! `hmux` binary: bind a socket and serve `tmux attach`.
 //!
 //! ```text
-//! hmux [--foreground] [-S <sock>] [--engine native|event-loop]
+//! hmux [--foreground] [-S <sock>] [--engine event-loop|native]
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -16,10 +16,10 @@ use hmux::tmux::{NativeServer, Server};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 enum Engine {
-    /// Blocking protocol and threaded pane-I/O runtime.
-    Native,
     /// Single readiness-driven protocol and pane-I/O runtime.
     EventLoop,
+    /// Blocking protocol and threaded pane-I/O runtime.
+    Native,
 }
 
 #[derive(Parser, Debug)]
@@ -35,7 +35,7 @@ struct Args {
     socket: Option<PathBuf>,
 
     /// Server runtime implementation.
-    #[arg(long, value_enum, default_value_t = Engine::Native)]
+    #[arg(long, value_enum, default_value_t = Engine::EventLoop)]
     engine: Engine,
 }
 
@@ -213,17 +213,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn native_engine_remains_the_default() {
+    fn event_loop_engine_is_the_default() {
         let args = Args::try_parse_from(["hmux", "--foreground"]).unwrap();
 
-        assert_eq!(args.engine, Engine::Native);
+        assert_eq!(args.engine, Engine::EventLoop);
     }
 
     #[test]
-    fn event_loop_engine_is_selected_explicitly() {
-        let args =
-            Args::try_parse_from(["hmux", "--foreground", "--engine", "event-loop"]).unwrap();
+    fn native_engine_is_selected_explicitly() {
+        let args = Args::try_parse_from(["hmux", "--foreground", "--engine", "native"]).unwrap();
 
-        assert_eq!(args.engine, Engine::EventLoop);
+        assert_eq!(args.engine, Engine::Native);
     }
 }
