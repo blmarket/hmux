@@ -21,7 +21,9 @@ Creating a run is split into three composable dashboard commands:
 - `l` — launch an agent in the selected worktree: pick Codex or Claude Code
   plus an initial model/effort, with the instruction pre-filled into an
   editable text area. Leaving it empty starts the agent without an initial
-  prompt.
+  prompt. Within the launch dialog, `a`/`m`/`e` cycle the agent, model, and
+  effort pickers and `i` jumps into the instruction box (the letter shortcuts
+  are active while the instruction box is not focused).
 
 The original single-flow commands remain available as "Simple run" (`s`, also
 in the Ctrl+P command palette) and "Populate from run" (palette only). Registered worktrees without an

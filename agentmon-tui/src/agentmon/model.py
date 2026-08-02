@@ -12,15 +12,23 @@ LAUNCH_AGENT_LABELS = {
 
 # "default" means the launcher passes no model/effort flag and the agent CLI
 # decides. The remaining entries are a curated list; extend them as the CLIs
-# grow new models or effort levels.
+# grow new models or effort levels. Values are the exact strings handed to the
+# CLI's model flag, which is why some are full identifiers rather than aliases.
 DEFAULT_LAUNCH_CHOICE = "default"
 LAUNCH_AGENT_MODELS = {
     "codex": ("default", "gpt-5-codex", "gpt-5"),
-    "claude": ("default", "sonnet", "opus"),
+    "claude": ("default", "sonnet", "claude-opus-5", "claude-fable-5"),
 }
 LAUNCH_AGENT_EFFORTS = {
     "codex": ("default", "low", "medium", "high", "xhigh"),
     "claude": ("default",),
+}
+
+# Friendly display names for model/effort identifiers that are otherwise
+# cryptic in the picker. Missing entries fall back to the raw value.
+LAUNCH_CHOICE_LABELS = {
+    "claude-opus-5": "Opus",
+    "claude-fable-5": "Fable",
 }
 
 

@@ -1010,6 +1010,56 @@ def test_l_opens_launch_agent_screen_with_instruction_and_choices() -> None:
     asyncio.run(exercise())
 
 
+def test_launch_agent_cycle_shortcuts() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(110, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("l")
+            await pilot.pause()
+
+            screen = app.screen
+            assert isinstance(screen, LaunchAgentScreen)
+            agent = screen.query_one("#agent", Select)
+            model = screen.query_one("#model", Select)
+            effort = screen.query_one("#effort", Select)
+            assert agent.value == "codex"
+
+            # m cycles the model within the current agent's list.
+            await pilot.press("m")
+            await pilot.pause()
+            assert model.value == "gpt-5-codex"
+
+            # e cycles the effort; codex has several levels.
+            await pilot.press("e")
+            await pilot.pause()
+            assert effort.value == "low"
+
+            # a cycles the agent and repopulates the model list for Claude.
+            await pilot.press("a")
+            await pilot.pause()
+            assert agent.value == "claude"
+            assert model.value == "default"
+            await pilot.press("m")
+            await pilot.press("m")
+            await pilot.pause()
+            assert model.value == "claude-opus-5"
+            # Effort is fixed for Claude, so its shortcut is a no-op.
+            await pilot.press("e")
+            await pilot.pause()
+            assert effort.value == "default"
+
+            # i focuses the instruction box for editing.
+            await pilot.press("i")
+            await pilot.pause()
+            assert app.focused is screen.query_one("#instruction", TextArea)
+
+    asyncio.run(exercise())
+
+
 def test_i_opens_editor_and_commits_instruction(monkeypatch) -> None:
     async def exercise() -> None:
         root = Path("/demo/project")
