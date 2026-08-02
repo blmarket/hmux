@@ -91,6 +91,8 @@ class NavigableDataTable(DataTable):
     BINDINGS = [
         Binding("j", "cursor_down", "Cursor down", show=False),
         Binding("k", "cursor_up", "Cursor up", show=False),
+        Binding("g", "cursor_top", "Cursor to top", show=False),
+        Binding("G", "cursor_bottom", "Cursor to bottom", show=False),
     ]
 
     def __init__(self, **kwargs) -> None:
@@ -115,6 +117,18 @@ class NavigableDataTable(DataTable):
 
     def action_cursor_up(self) -> None:
         self._move_worktree_cursor(-1)
+
+    def _jump_worktree_cursor(self, rows: Iterable[int]) -> None:
+        for row in rows:
+            if row not in self.repository_rows:
+                self.move_cursor(row=row)
+                return
+
+    def action_cursor_top(self) -> None:
+        self._jump_worktree_cursor(range(self.row_count))
+
+    def action_cursor_bottom(self) -> None:
+        self._jump_worktree_cursor(range(self.row_count - 1, -1, -1))
 
 
 class HistorySearchInput(Input):

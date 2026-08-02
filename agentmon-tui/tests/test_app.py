@@ -256,6 +256,12 @@ def test_j_and_k_navigate_dashboard_runs() -> None:
             await pilot.press("k")
             assert table.cursor_row == 2
 
+            await pilot.press("G")
+            assert table.cursor_row == table.row_count - 1
+
+            await pilot.press("g")
+            assert table.cursor_row == 1
+
     asyncio.run(exercise())
 
 
