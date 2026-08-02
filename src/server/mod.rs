@@ -152,6 +152,33 @@ impl Server {
         self.observation.reconcile_once(&self.state)
     }
 
+    /// Recheck monitored windows for bell, activity, and silence alerts.
+    ///
+    /// tmux runs this check in its server event loop (`alerts_callback`), so a
+    /// window is flagged whether or not any client is watching, and a client on
+    /// a tty sees the flag as soon as it is raised. Driving it from the runtime
+    /// loop rather than from a client keeps that property here: pane output
+    /// wakes the loop, and the returned interval is how long the loop may sleep
+    /// before a pending `monitor-silence` timer must be reconsidered.
+    ///
+    /// Recording a control checkpoint on change is what lets control clients
+    /// report the new flags; the render invalidation raised by the check itself
+    /// wakes attached clients to repaint their status line.
+    ///
+    /// A control client rechecks alerts on its own turns as well. The check
+    /// only consumes pane observation deltas it has not seen, so whichever
+    /// caller reaches a delta first raises the flags and the checkpoint.
+    pub(crate) fn refresh_alerts(&self) -> io::Result<Option<std::time::Duration>> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("server state mutex poisoned"))?;
+        if state.refresh_alerts(std::time::Instant::now()) {
+            state.record_control_checkpoint();
+        }
+        Ok(state.alert_poll_timeout())
+    }
+
     pub(crate) fn observation_signal(&self) -> Arc<ObservationSignal> {
         Arc::clone(&self.observation_signal)
     }
@@ -331,6 +358,28 @@ impl ObservationSignal {
         let current = self
             .changed
             .wait_while(current, |current| {
+                *current == revision && !stop.load(Ordering::Acquire)
+            })
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *current
+    }
+
+    /// [`Self::wait_after`] that also returns once `timeout` elapses, so a
+    /// waiter with its own deadline — an idle `monitor-silence` timer, say —
+    /// is not held until the next pane writes.
+    pub(crate) fn wait_after_timeout(
+        &self,
+        revision: u64,
+        stop: &AtomicBool,
+        timeout: std::time::Duration,
+    ) -> u64 {
+        let current = self
+            .revision
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (current, _) = self
+            .changed
+            .wait_timeout_while(current, timeout, |current| {
                 *current == revision && !stop.load(Ordering::Acquire)
             })
             .unwrap_or_else(std::sync::PoisonError::into_inner);

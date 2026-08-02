@@ -27,7 +27,22 @@ impl ObservationWorker {
                     if let Err(error) = server.reconcile_event_observations() {
                         tracing::warn!(target: "hmux::native", %error, "pane observation failed");
                     }
-                    revision = worker_signal.wait_after(revision, &worker_stop);
+                    // This worker is the blocking runtime's only pane-driven
+                    // wake-up, so it is also where alerts are rechecked; the
+                    // event-loop runtime does both from its own loop.
+                    let alert_timeout = match server.refresh_alerts() {
+                        Ok(timeout) => timeout,
+                        Err(error) => {
+                            tracing::warn!(target: "hmux::native", %error, "alert check failed");
+                            None
+                        }
+                    };
+                    revision = match alert_timeout {
+                        Some(timeout) => {
+                            worker_signal.wait_after_timeout(revision, &worker_stop, timeout)
+                        }
+                        None => worker_signal.wait_after(revision, &worker_stop),
+                    };
                 }
             })?;
         Ok(Self {
