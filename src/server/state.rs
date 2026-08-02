@@ -7549,7 +7549,10 @@ impl ServerState {
                     .is_some_and(|(base, index)| base == "command-alias" && index.is_some())
                     .then(|| value.split_once('='))
                     .flatten()
-                    .filter(|(alias, command)| !alias.is_empty() && !command.is_empty())
+                    // Only the `=` separator is required: an entry may carry an
+                    // empty command, which matches the name and expands to no
+                    // commands at all.
+                    .filter(|(alias, _)| !alias.is_empty())
                     .map(|(alias, command)| (alias.to_string(), command.to_string()))
             })
             .collect()
