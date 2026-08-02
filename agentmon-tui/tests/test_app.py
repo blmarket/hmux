@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import nullcontext
-from datetime import datetime
+from datetime import datetime, timezone
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,13 +16,16 @@ from agentmon.app import (
     ConfirmScreen,
     CleanupScreen,
     DashboardScreen,
+    DemoQuotaService,
     DemoService,
     HistoryScreen,
     LaunchScreen,
     NewRunScreen,
+    QuotaScreen,
     agent_badge,
     main,
 )
+from agentmon.quota import QuotaReport
 from agentmon.model import AgentRun, LaunchDraft, PromptHistory, Repository
 from agentmon.services import AgentmonService, CommandError, SocketSelection
 from agentmon.transcript import Transcript, TranscriptMessage
@@ -1044,5 +1047,63 @@ def test_failed_launch_returns_to_form_with_original_contents() -> None:
             assert app.screen is form
             assert form.query_one("#branch", Input).value == branch
             assert form.prompt == prompt
+
+    asyncio.run(exercise())
+
+
+def test_quota_dialog_toggles_and_shows_all_subscription_windows() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(
+            DemoService(repo, socket="/tmp/demo"), quota_service=DemoQuotaService()
+        )
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            app.action_toggle_quotas()
+            await pilot.pause()
+            await pilot.pause()
+
+            assert isinstance(app.screen, QuotaScreen)
+            content = str(app.screen.query_one("#quota-content", Static).render())
+            for label in (
+                "Codex weekly",
+                "Codex 5h",
+                "Claude 5h",
+                "Claude weekly",
+                "Claude Fable weekly",
+            ):
+                assert label in content
+
+            app.action_toggle_quotas()
+            await pilot.pause()
+            assert not isinstance(app.screen, QuotaScreen)
+
+    asyncio.run(exercise())
+
+
+def test_quota_dialog_reports_provider_errors() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        quota_service = DemoQuotaService()
+        quota_service.report = lambda force=False: QuotaReport(  # type: ignore[method-assign]
+            fetched_at=datetime.now(timezone.utc),
+            quotas=(),
+            errors=("codex is down",),
+        )
+        app = AgentmonApp(
+            DemoService(repo, socket="/tmp/demo"), quota_service=quota_service
+        )
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            app.action_toggle_quotas()
+            await pilot.pause()
+            await pilot.pause()
+
+            content = str(app.screen.query_one("#quota-content", Static).render())
+            assert "codex is down" in content
 
     asyncio.run(exercise())

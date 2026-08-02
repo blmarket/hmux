@@ -6,18 +6,19 @@ import shlex
 import subprocess
 import tempfile
 import threading
+from collections.abc import Iterable
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from rich.console import Console
 from rich.text import Text
 from textual import work
-from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.events import Key
-from textual.screen import Screen
+from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, DataTable, Footer, Input, Label, Select, Static
 
 from . import __version__
@@ -31,6 +32,7 @@ from .model import (
     Repository,
     normalize_launch_agent,
 )
+from .quota import QuotaReport, QuotaService, QuotaWindow
 from .services import AgentmonService, CommandError, discover_repository, discover_socket
 from .transcript import Transcript, TranscriptError, TranscriptMessage
 
@@ -1217,6 +1219,88 @@ class LaunchScreen(Screen):
                 dashboard.refresh_runs()
 
 
+class QuotaScreen(ModalScreen):
+    """Floating dialog summarizing subscription quota usage."""
+
+    BINDINGS = [
+        ("escape", "close", "Close"),
+        ("q", "close", "Close"),
+        ("r", "refresh", "Refresh now"),
+    ]
+
+    BAR_WIDTH = 24
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="quota-dialog"):
+            yield Label("Subscription quotas", classes="dialog-title")
+            yield Static("Loading quota usage…", id="quota-content")
+            yield Static("", id="quota-meta")
+            yield Static("r refresh  ·  Esc close", classes="key-hint")
+
+    def on_mount(self) -> None:
+        self._load_report(False)
+
+    @work(thread=True, exclusive=True, group="quota")
+    def _load_report(self, force: bool) -> None:
+        report = self.app.quota_service.report(force=force)
+        self.app.call_from_thread(self._apply_report, report)
+
+    def _apply_report(self, report: QuotaReport) -> None:
+        if not self.is_mounted:
+            return
+        self.query_one("#quota-content", Static).update(self._render_report(report))
+        fetched = report.fetched_at.astimezone().strftime("%H:%M:%S")
+        self.query_one("#quota-meta", Static).update(
+            Text(f"Fetched {fetched} · cached between refreshes", style="#8492a0")
+        )
+
+    @classmethod
+    def _render_report(cls, report: QuotaReport) -> Text:
+        rendered = Text()
+        label_width = max((len(quota.label) for quota in report.quotas), default=0) + 2
+        for index, quota in enumerate(report.quotas):
+            if index:
+                rendered.append("\n")
+            rendered.append_text(cls._render_quota(quota, label_width))
+        if report.errors:
+            if report.quotas:
+                rendered.append("\n\n")
+            for index, error in enumerate(report.errors):
+                if index:
+                    rendered.append("\n")
+                rendered.append(f"! {error}", style="#ffcb6b")
+        if not report.quotas and not report.errors:
+            rendered.append("No quota information is available.", style="#8492a0")
+        return rendered
+
+    @classmethod
+    def _render_quota(cls, quota: QuotaWindow, label_width: int) -> Text:
+        used = max(0.0, min(100.0, quota.used_percent))
+        filled = round(used / 100 * cls.BAR_WIDTH)
+        if used >= 90:
+            color = "#ff6b6b"
+        elif used >= 70:
+            color = "#ffcb6b"
+        else:
+            color = "#7ec97e"
+        row = Text()
+        row.append(quota.label.ljust(label_width))
+        row.append("█" * filled, style=color)
+        row.append("░" * (cls.BAR_WIDTH - filled), style="#33414f")
+        row.append(f"{used:4.0f}% used")
+        if quota.resets_at is not None:
+            resets = quota.resets_at.astimezone().strftime("%m-%d %H:%M")
+            row.append(f"  resets {resets}", style="#8492a0")
+        return row
+
+    def action_close(self) -> None:
+        self.dismiss()
+
+    def action_refresh(self) -> None:
+        self.query_one("#quota-content", Static).update("Refreshing quota usage…")
+        self._load_report(True)
+
+
 class DemoService(AgentmonService):
     def watch_runs(self, on_change, stop) -> None:
         return None
@@ -1338,6 +1422,21 @@ class DemoService(AgentmonService):
         raise CommandError("Demo mode does not make changes")
 
 
+class DemoQuotaService(QuotaService):
+    def report(self, *, force: bool = False) -> QuotaReport:
+        now = datetime.now(timezone.utc)
+        return QuotaReport(
+            fetched_at=now,
+            quotas=(
+                QuotaWindow("codex", "Codex weekly", 37.0, now),
+                QuotaWindow("codex", "Codex 5h", 12.0, now),
+                QuotaWindow("claude", "Claude 5h", 41.0, now),
+                QuotaWindow("claude", "Claude weekly", 9.0, now),
+                QuotaWindow("claude", "Claude Fable weekly", 14.0, now),
+            ),
+        )
+
+
 class AgentmonApp(App):
     CSS = """
     Screen { background: #101419; color: #d7dde5; }
@@ -1378,16 +1477,43 @@ class AgentmonApp(App):
     .steps { margin-top: 1; padding: 1; background: #202832; }
     #progress { min-height: 8; padding: 1; background: #202832; }
     Footer { background: #202832; }
+    QuotaScreen { align: center middle; background: transparent; }
+    #quota-dialog { width: 84; height: auto; max-width: 100%; max-height: 100%;
+                    padding: 1 2; border: round #6aa9d8; background: #171d24; }
+    #quota-content { min-height: 5; text-wrap: nowrap; text-overflow: ellipsis; }
+    #quota-meta { margin-top: 1; }
     """
 
-    def __init__(self, service: AgentmonService, *, startup_warning: str = "") -> None:
+    def __init__(
+        self,
+        service: AgentmonService,
+        *,
+        startup_warning: str = "",
+        quota_service: QuotaService | None = None,
+    ) -> None:
         super().__init__()
         self.service = service
+        self.quota_service = quota_service or QuotaService()
         self.startup_warning = startup_warning
         self.runs: list[AgentRun] = []
 
     def on_mount(self) -> None:
         self.push_screen(DashboardScreen())
+
+    def get_system_commands(self, screen: Screen) -> Iterable[SystemCommand]:
+        yield from super().get_system_commands(screen)
+        yield SystemCommand(
+            "Subscription quotas",
+            "Toggle the Codex/Claude quota usage dialog",
+            self.action_toggle_quotas,
+        )
+
+    def action_toggle_quotas(self) -> None:
+        for existing in self.screen_stack:
+            if isinstance(existing, QuotaScreen):
+                existing.dismiss()
+                return
+        self.push_screen(QuotaScreen())
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -1423,5 +1549,6 @@ def main(argv: list[str] | None = None) -> int:
     AgentmonApp(
         service_type(repo, socket=socket, tmux=args.tmux),
         startup_warning=warning,
+        quota_service=DemoQuotaService() if args.demo else None,
     ).run()
     return 0
