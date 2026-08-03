@@ -768,6 +768,12 @@ impl AttachSession {
         };
         if render_ready {
             for message in self.attachments.render_attachment.take_messages() {
+                if message.bell {
+                    let _ = self.tty.output.queue(self.tty.render_fd.as_raw_fd(), b"\x07");
+                }
+                if message.text.is_empty() {
+                    continue;
+                }
                 self.compositor.ui.status_message = Some(StatusMessage {
                     text: message.text,
                     deadline: Instant::now() + Duration::from_millis(message.duration_ms),

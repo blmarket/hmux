@@ -4046,6 +4046,7 @@ fn display_message(
             ClientMessage {
                 text: expanded.clone(),
                 duration_ms,
+                bell: false,
             },
         ) {
             ClientMessageResult::CurrentControl => {

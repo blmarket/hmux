@@ -407,6 +407,9 @@ pub(crate) enum ClientActionResult {
 pub(crate) struct ClientMessage {
     pub(crate) text: String,
     pub(crate) duration_ms: u64,
+    /// Write a `BEL` to the client's terminal before showing `text`. An alert
+    /// under `visual-* off` is a bell with no message at all.
+    pub(crate) bell: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1693,6 +1696,12 @@ pub struct Window {
     pub(crate) last_layout: Option<usize>,
     pub(crate) last_new_pane_x: u16,
     pub(crate) last_new_pane_y: u16,
+    /// Conditions raised for this window and not yet turned into alerts, as
+    /// `ALERT_*` bits — tmux's `WINDOW_BELL`/`WINDOW_ACTIVITY`/`WINDOW_SILENCE`
+    /// window flags. A bit is cleared only when its monitor option is on and
+    /// the alert is actually delivered, which is what makes a monitor enabled
+    /// after the fact still see the condition that is already pending.
+    pub(crate) pending_alerts: u8,
     options: OptionSet,
 }
 
@@ -2271,6 +2280,29 @@ impl ClientRenderRegistry {
             .filter(|entry| session_ids.contains(&entry.session_id))
             .map(|entry| entry.name.clone())
             .collect()
+    }
+
+    /// Deliver one window alert to every non-control client of `session_id`.
+    fn announce_alert(&self, session_id: u32, bell: bool, text: Option<String>, duration_ms: u64) {
+        let Ok(inner) = self.inner.lock() else {
+            return;
+        };
+        for entry in inner
+            .clients
+            .values()
+            // tmux's `alerts_set_message` skips control clients outright.
+            .filter(|entry| entry.session_id == session_id && !entry.control_mode)
+        {
+            let Ok(mut messages) = entry.slot.messages.lock() else {
+                continue;
+            };
+            messages.push_back(ClientMessage {
+                text: text.clone().unwrap_or_default(),
+                duration_ms,
+                bell,
+            });
+            let _ = entry.slot.wakeup.wake();
+        }
     }
 
     pub(crate) fn publish_session(&self, session_id: u32, reason: RenderInvalidation) {
@@ -3187,6 +3219,9 @@ pub struct ServerState {
     shutdown_requested: bool,
     /// Client-registry generation the unattached sweep last ran against.
     lifecycle_generation: u64,
+    /// Sessions a client just took, whose windows the next alert pass
+    /// re-examines in full (tmux's `alerts_check_session`).
+    alert_check_sessions: BTreeSet<u32>,
     /// Event notifications raised by mutations since the command queue last
     /// drained them, in the order they happened. tmux's `notify_add` appends
     /// to the command queue; hmux collects them here because the mutation
@@ -3286,6 +3321,7 @@ impl ServerState {
             session_groups: BTreeMap::new(),
             shutdown_requested: false,
             lifecycle_generation: 0,
+            alert_check_sessions: BTreeSet::new(),
             pending_notifications: Vec::new(),
             notifications_are_deferred: false,
             known_clients: BTreeMap::new(),
@@ -4986,6 +5022,9 @@ impl ServerState {
                 last_layout: None,
                 last_new_pane_x: 0,
                 last_new_pane_y: 0,
+                // tmux's `window_create` raises activity, so a monitor turned on
+                // later still sees the window as having been active.
+                pending_alerts: ALERT_ACTIVITY,
                 options: OptionSet::default(),
             },
         );
@@ -5374,6 +5413,9 @@ impl ServerState {
                 last_layout: None,
                 last_new_pane_x: 0,
                 last_new_pane_y: 0,
+                // tmux's `window_create` raises activity, so a monitor turned on
+                // later still sees the window as having been active.
+                pending_alerts: ALERT_ACTIVITY,
                 options: OptionSet::default(),
             },
         );
@@ -5514,6 +5556,9 @@ impl ServerState {
                 last_layout: None,
                 last_new_pane_x: 0,
                 last_new_pane_y: 0,
+                // tmux's `window_create` raises activity, so a monitor turned on
+                // later still sees the window as having been active.
+                pending_alerts: ALERT_ACTIVITY,
                 options: OptionSet::default(),
             },
         );
@@ -6097,12 +6142,19 @@ impl ServerState {
             });
         }
 
-        let attached = self
-            .attached_clients()
-            .into_iter()
-            .map(|client| client.session_id)
+        // Windows whose whole condition set is re-examined this pass because a
+        // client took their session (tmux's `alerts_check_session`).
+        let sessions_to_check = std::mem::take(&mut self.alert_check_sessions);
+        let recheck = self
+            .sessions
+            .iter()
+            .filter(|session| sessions_to_check.contains(&session.id))
+            .flat_map(|session| session.windows.iter().map(|link| link.id))
             .collect::<BTreeSet<_>>();
-        let mut changed_sessions = BTreeSet::new();
+
+        // Record each window's raised conditions, exactly as tmux's
+        // `alerts_queue` sets `WINDOW_*` flags before its check runs.
+        let mut deliveries = Vec::new();
         for activity in activities {
             if activity.output {
                 self.window_last_activity
@@ -6123,38 +6175,152 @@ impl ServerState {
             if silence {
                 self.silence_alerted.insert(activity.id);
             }
-            for session in &mut self.sessions {
-                let is_attached = attached.contains(&session.id);
-                let active = session.active;
-                for (position, link) in session.windows.iter_mut().enumerate() {
-                    if link.id != activity.id || (position == active && is_attached) {
-                        continue;
-                    }
-                    let before = link.alert_flags;
-                    if activity.bell && activity.monitor_bell {
-                        link.alert_flags |= ALERT_BELL;
-                    }
-                    if activity.output && activity.monitor_activity {
-                        link.alert_flags |= ALERT_ACTIVITY;
-                    }
-                    if silence {
-                        link.alert_flags |= ALERT_SILENCE;
-                    }
-                    if link.alert_flags != before {
-                        changed_sessions.insert(session.id);
-                    }
+            let Some(window) = self.windows.get_mut(&activity.id) else {
+                continue;
+            };
+            if activity.bell {
+                window.pending_alerts |= ALERT_BELL;
+            }
+            if activity.output {
+                window.pending_alerts |= ALERT_ACTIVITY;
+            }
+            if silence {
+                window.pending_alerts |= ALERT_SILENCE;
+            }
+            // tmux checks bell, then activity, then silence, and only clears
+            // the condition whose monitor is on. A condition is examined when
+            // something queues it — new output, a bell, the silence timer — or
+            // when a client attaches and runs `alerts_check_session`; a
+            // monitor merely being switched on does not, which is what leaves
+            // creation-time activity pending until the first client arrives.
+            let rechecked = recheck.contains(&activity.id);
+            for (bit, monitored, raised) in [
+                (ALERT_BELL, activity.monitor_bell, activity.bell),
+                (ALERT_ACTIVITY, activity.monitor_activity, activity.output),
+                (ALERT_SILENCE, activity.monitor_silence != 0, silence),
+            ] {
+                if monitored && (raised || rechecked) && window.pending_alerts & bit != 0 {
+                    window.pending_alerts &= !bit;
+                    deliveries.push((activity.id, bit));
                 }
             }
+        }
+
+        let mut changed = false;
+        for (window_id, bit) in deliveries {
+            changed |= self.deliver_alert(window_id, bit);
         }
         let live_windows = self.windows.keys().copied().collect::<BTreeSet<_>>();
         self.window_last_activity
             .retain(|window_id, _| live_windows.contains(window_id));
         self.silence_alerted
             .retain(|window_id| live_windows.contains(window_id));
-        for session_id in &changed_sessions {
-            self.invalidate_session(*session_id, RenderInvalidation::STATUS);
+        changed
+    }
+
+    /// tmux's `alerts_check_bell`/`_activity`/`_silence` body: flag every
+    /// winlink of the window, then let the session's `*-action` decide whether
+    /// the hook and the user-visible notification follow.
+    fn deliver_alert(&mut self, window_id: u32, bit: u8) -> bool {
+        let (label, action_option, visual_option, hook) = match bit {
+            ALERT_BELL => ("Bell", "bell-action", "visual-bell", "alert-bell"),
+            ALERT_ACTIVITY => (
+                "Activity",
+                "activity-action",
+                "visual-activity",
+                "alert-activity",
+            ),
+            _ => ("Silence", "silence-action", "visual-silence", "alert-silence"),
+        };
+        let attached = self.attached_session_ids();
+        let links = self
+            .sessions
+            .iter()
+            .enumerate()
+            .flat_map(|(session_index, session)| {
+                session
+                    .windows
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, link)| link.id == window_id)
+                    .map(move |(link_index, _)| (session_index, link_index))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let mut alerted_sessions = BTreeSet::new();
+        let mut changed = false;
+        for (session_index, link_index) in links {
+            let session_id = self.sessions[session_index].id;
+            let is_current = self.sessions[session_index].active == link_index;
+            let is_attached = attached.contains(&session_id);
+            // A bell is announced even on an already-flagged winlink; the
+            // other two are not.
+            if bit != ALERT_BELL
+                && self.sessions[session_index].windows[link_index].alert_flags & bit != 0
+            {
+                continue;
+            }
+            if !is_current || !is_attached {
+                let link = &mut self.sessions[session_index].windows[link_index];
+                if link.alert_flags & bit == 0 {
+                    link.alert_flags |= bit;
+                    changed = true;
+                    self.invalidate_session(session_id, RenderInvalidation::STATUS);
+                }
+            }
+            let applies = match self.sessions[session_index]
+                .options(&self.global_options)
+                .get(action_option)
+                .unwrap_or("other")
+            {
+                "any" => true,
+                "current" => is_current,
+                "other" => !is_current,
+                _ => false,
+            };
+            if !applies {
+                continue;
+            }
+            let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
+            self.notify_session_window(hook, session_id, window_id);
+            self.notifications_are_deferred = was_deferred;
+            // One visual notification per session, however many of its
+            // winlinks alerted.
+            if !alerted_sessions.insert(session_id) {
+                continue;
+            }
+            self.announce_alert(session_index, link_index, label, visual_option);
         }
-        !changed_sessions.is_empty()
+        changed
+    }
+
+    /// tmux's `alerts_set_message`: send each non-control client of the session
+    /// a bell, a status message, or both, per `visual-*`.
+    fn announce_alert(
+        &mut self,
+        session_index: usize,
+        link_index: usize,
+        label: &str,
+        visual_option: &str,
+    ) {
+        let session = &self.sessions[session_index];
+        let session_id = session.id;
+        let options = session.options(&self.global_options);
+        let visual = options.get(visual_option).unwrap_or("off").to_owned();
+        let duration_ms = options
+            .get("display-time")
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(750);
+        let bell = visual != "on";
+        let text = (visual != "off").then(|| {
+            if session.active == link_index {
+                format!("{label} in current window")
+            } else {
+                format!("{label} in window {}", session.windows[link_index].index)
+            }
+        });
+        self.client_renders
+            .announce_alert(session_id, bell, text, duration_ms);
     }
 
     fn cycle_window(&mut self, session: &str, forward: bool) -> io::Result<()> {
@@ -7710,6 +7876,9 @@ impl ServerState {
                 last_layout: None,
                 last_new_pane_x: 0,
                 last_new_pane_y: 0,
+                // tmux's `window_create` raises activity, so a monitor turned on
+                // later still sees the window as having been active.
+                pending_alerts: ALERT_ACTIVITY,
                 options: window_options,
             },
         );
@@ -8562,6 +8731,19 @@ impl ServerState {
         std::mem::take(&mut self.pending_notifications)
     }
 
+    /// tmux's `server_client_set_session` tail: the client's new current window
+    /// loses its alert flags, and the whole session's alert state is examined
+    /// again now that somebody is looking at it.
+    fn take_session_for_client(&mut self, session_id: u32) {
+        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
+            let active = session.active;
+            if let Some(link) = session.windows.get_mut(active) {
+                link.alert_flags = 0;
+            }
+        }
+        self.alert_check_sessions.insert(session_id);
+    }
+
     /// Raise the client-layer notifications tmux emits from `server_client_*`.
     ///
     /// The client registry is owned by the attach loops rather than by the
@@ -8583,10 +8765,12 @@ impl ServerState {
                     // A new client announces its terminal size as part of
                     // attaching, which tmux reports as a resize of its own.
                     self.notify_client("client-resized", name, Some(*session_id));
+                    self.take_session_for_client(*session_id);
                 }
                 Some((old_session, old_cols, old_rows)) => {
                     if old_session != session_id {
                         self.notify_client("client-session-changed", name, Some(*session_id));
+                        self.take_session_for_client(*session_id);
                     }
                     if (old_cols, old_rows) != (cols, rows) {
                         self.notify_client("client-resized", name, Some(*session_id));
