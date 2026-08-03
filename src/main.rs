@@ -154,9 +154,10 @@ fn run_server(args: Args) -> hmux::Result<()> {
         ),
         Engine::EventLoop => serve::run_event_loop(listen_socket, server),
     };
-    // Unix socket pathnames outlive a closed listener. Remove ours on a normal
-    // `exit-empty` shutdown just as the signal teardown path does.
-    let _ = std::fs::remove_file(listen_socket);
+    // The socket pathname is deliberately left behind, as tmux leaves its own:
+    // it only ever unlinks a stale path when binding. A client that finds the
+    // residue then reports "no server running on <path>" (ECONNREFUSED) rather
+    // than a connect error for a missing file.
     result?;
     Ok(())
 }
@@ -184,12 +185,15 @@ fn prepare_default_socket_dir(socket: &Path) -> std::io::Result<()> {
     std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700))
 }
 
-/// Block `SIGINT`/`SIGTERM` process-wide and spawn a thread that waits for one,
-/// removes the listener socket and exits.
+/// Block `SIGINT`/`SIGTERM` process-wide and spawn a thread that waits for one
+/// and exits.
+///
+/// The listener socket is left in place, matching both the normal shutdown path
+/// and tmux, which unlinks a socket pathname only when binding a new one.
 ///
 /// Must be called before any worker threads are spawned so they inherit the
 /// blocked mask and only this dedicated thread receives the signal.
-fn install_signal_teardown(listen_socket: PathBuf) {
+fn install_signal_teardown(_listen_socket: PathBuf) {
     unsafe {
         let mut set: libc::sigset_t = std::mem::zeroed();
         libc::sigemptyset(&mut set);
@@ -202,7 +206,6 @@ fn install_signal_teardown(listen_socket: PathBuf) {
             // Wait for the first blocked signal.
             libc::sigwait(&set, &mut sig);
             info!(signal = sig, "shutting down");
-            let _ = std::fs::remove_file(&listen_socket);
             std::process::exit(0);
         });
     }
