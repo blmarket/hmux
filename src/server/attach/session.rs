@@ -102,8 +102,10 @@ impl AttachSession {
             client_tty.client_pid,
             cols,
             rows,
-            String::new(),
-            false,
+            super::super::state::ClientFlagState::default()
+                .display_flags_with(client_tty.flags, false),
+            client_tty.flags,
+            Default::default(),
             false,
         )?;
 

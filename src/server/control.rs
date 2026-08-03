@@ -14,20 +14,15 @@ use super::command;
 use super::command::queue::{CommandQueue, QueueCompletion, QueueState, QueueTicket};
 use super::pane::{NativePaneObservation, OutputSubscription};
 use super::registry::{self, Resolution};
-use super::state::{ClientAction, ClientRenderAttachment, ControlStateSnapshot, ServerState};
+use super::state::{
+    ClientAction, ClientFlagState as ControlClientOptions, ClientRenderAttachment,
+    ControlStateSnapshot, ServerState,
+};
 use super::status;
 use super::task::{ReadySet, TaskState};
 
 const CONTROL_BUFFER_HIGH: usize = 8192;
-const CLIENT_READONLY: i64 = 0x800;
 const CLIENT_CONTROLCONTROL: i64 = 0x4000;
-const CLIENT_UTF8: i64 = 0x10000;
-const CLIENT_IGNORESIZE: i64 = 0x20000;
-const CLIENT_CONTROL_NOOUTPUT: i64 = 0x4000000;
-const CLIENT_ACTIVEPANE: i64 = 0x80000000;
-const CLIENT_CONTROL_PAUSEAFTER: i64 = 0x100000000;
-const CLIENT_CONTROL_WAITEXIT: i64 = 0x200000000;
-const CLIENT_NO_DETACH_ON_DESTROY: i64 = 0x8000000000;
 
 /// One readiness source owned by an event-loop control client.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -156,7 +151,8 @@ impl EventControlClient {
             80,
             24,
             options.display_flags(client_tty.flags),
-            options.read_only,
+            client_tty.flags,
+            options.clone(),
             true,
         )?;
         let stdin = client_tty
@@ -495,6 +491,7 @@ impl EventControlClient {
             self.control_writer
                 .enqueue_line(format!("%message {}", message.text));
         }
+        self.apply_remote_flag_updates();
         let requested_switch = match self.render_attachment.take_action() {
             Some(ClientAction::Switch(session_id)) => Some(session_id),
             Some(ClientAction::Detach) => {
@@ -550,6 +547,33 @@ impl EventControlClient {
             }
         }
         Ok(())
+    }
+
+    /// Adopt `refresh-client -f` values another client aimed at this one. The
+    /// registry already recorded them, so this only keeps the client's own
+    /// derived state (read-only routing, output policy, `%flags`) in step.
+    fn apply_remote_flag_updates(&mut self) {
+        let updates = self.render_attachment.take_flag_updates();
+        if updates.is_empty() {
+            return;
+        }
+        for value in &updates {
+            self.options.apply_flags(value);
+        }
+        let display_flags = self.options.display_flags(self.client_tty.flags);
+        self.render_attachment
+            .update_control_flags(display_flags.clone(), &self.options);
+        self.format_cache
+            .update_client_flags(display_flags, self.options.read_only);
+        self.context.read_only = self.options.read_only;
+        if self.options.active_pane && self.context.active_panes.is_none() {
+            self.context.active_panes = Some(Arc::new(Mutex::new(BTreeMap::new())));
+        } else if !self.options.active_pane {
+            self.context.active_panes = None;
+        }
+        self.frames.push_back(Frame::new(Message::Flags(
+            self.options.client_flags(self.client_tty.flags),
+        )));
     }
 
     fn refresh_session(&mut self) -> io::Result<()> {
@@ -766,7 +790,7 @@ impl EventControlClient {
         if !refresh_flags.is_empty() || switch_read_only {
             let display_flags = self.options.display_flags(self.client_tty.flags);
             self.render_attachment
-                .update_control_flags(display_flags.clone(), self.options.read_only);
+                .update_control_flags(display_flags.clone(), &self.options);
             self.format_cache
                 .update_client_flags(display_flags, self.options.read_only);
             self.context.read_only = self.options.read_only;
@@ -1177,103 +1201,6 @@ struct ControlPaneStream {
     enabled: bool,
     paused: bool,
     pending_since: Option<Instant>,
-}
-
-#[derive(Default)]
-struct ControlClientOptions {
-    pause_after: Option<Duration>,
-    no_output: bool,
-    wait_exit: bool,
-    read_only: bool,
-    ignore_size: bool,
-    active_pane: bool,
-    no_detach_on_destroy: bool,
-}
-
-impl ControlClientOptions {
-    fn apply_flags(&mut self, value: &str) {
-        for flag in value.split(',') {
-            let (clear, flag) = flag
-                .strip_prefix('!')
-                .map_or((false, flag), |flag| (true, flag));
-            if flag == "pause-after" || flag.starts_with("pause-after=") {
-                if clear {
-                    self.pause_after = None;
-                } else {
-                    let seconds = flag
-                        .strip_prefix("pause-after=")
-                        .and_then(|value| value.parse::<u64>().ok())
-                        .unwrap_or(0);
-                    self.pause_after = Some(Duration::from_secs(seconds));
-                }
-            } else {
-                let enabled = !clear;
-                match flag {
-                    "no-output" => self.no_output = enabled,
-                    "wait-exit" => self.wait_exit = enabled,
-                    // An established read-only client cannot clear itself with
-                    // refresh-client; switch-client -r is the owner escape.
-                    "read-only" if enabled || !self.read_only => self.read_only = enabled,
-                    "ignore-size" => self.ignore_size = enabled,
-                    "active-pane" => self.active_pane = enabled,
-                    "no-detach-on-destroy" => self.no_detach_on_destroy = enabled,
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    fn client_flags(&self, identified: i64) -> i64 {
-        let mut flags = identified;
-        for (enabled, flag) in [
-            (self.no_output, CLIENT_CONTROL_NOOUTPUT),
-            (self.wait_exit, CLIENT_CONTROL_WAITEXIT),
-            (self.pause_after.is_some(), CLIENT_CONTROL_PAUSEAFTER),
-            (self.read_only, CLIENT_READONLY),
-            (self.ignore_size, CLIENT_IGNORESIZE),
-            (self.active_pane, CLIENT_ACTIVEPANE),
-            (self.no_detach_on_destroy, CLIENT_NO_DETACH_ON_DESTROY),
-        ] {
-            if enabled {
-                flags |= flag;
-            } else {
-                flags &= !flag;
-            }
-        }
-        flags
-    }
-
-    fn display_flags(&self, identified: i64) -> String {
-        let mut flags = vec!["attached", "focused", "control-mode"];
-        if self.ignore_size {
-            flags.push("ignore-size");
-        }
-        if self.no_detach_on_destroy {
-            flags.push("no-detach-on-destroy");
-        }
-        if self.no_output {
-            flags.push("no-output");
-        }
-        if self.wait_exit {
-            flags.push("wait-exit");
-        }
-        let pause_after = self
-            .pause_after
-            .map(|duration| format!("pause-after={}", duration.as_secs()));
-        if let Some(pause_after) = pause_after.as_deref() {
-            flags.push(pause_after);
-        }
-        if self.read_only {
-            flags.push("read-only");
-        }
-        if self.active_pane {
-            flags.push("active-pane");
-        }
-        if identified & CLIENT_UTF8 != 0 {
-            flags.push("UTF-8");
-        }
-        flags.join(",")
-    }
 }
 
 #[derive(Clone, Copy)]

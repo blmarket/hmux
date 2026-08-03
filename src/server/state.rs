@@ -13,6 +13,7 @@ use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
+use std::time::Duration;
 
 use super::key::{parse_key_name, KeyCode};
 use super::options::{GlobalOptions, OptionSet, OptionsView};
@@ -1865,8 +1866,25 @@ struct ClientRenderEntry {
     control_mode: bool,
     ignore_size: bool,
     size_changed: bool,
+    /// Identity bits the client sent at handshake time (`CLIENT_UTF8`, …),
+    /// needed to rebuild the display flag string server-side.
+    identified: i64,
+    flag_state: ClientFlagState,
     terminal: Option<ResolvedTerm>,
     slot: Arc<ClientRenderSlot>,
+}
+
+impl ClientRenderEntry {
+    /// Apply one `refresh-client -f` value and republish the derived views the
+    /// rest of the server reads (`#{client_flags}`, sizing, read-only checks).
+    fn apply_flag_value(&mut self, value: &str) {
+        self.flag_state.apply_flags(value);
+        self.ignore_size = self.flag_state.ignore_size;
+        self.read_only = self.flag_state.read_only;
+        self.flags = self
+            .flag_state
+            .display_flags_with(self.identified, self.control_mode);
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1929,10 +1947,135 @@ struct ControlCheckpoint {
 
 const CONTROL_CHECKPOINT_LIMIT: usize = 1024;
 
+const CLIENT_READONLY: i64 = 0x800;
+const CLIENT_UTF8: i64 = 0x10000;
+const CLIENT_IGNORESIZE: i64 = 0x20000;
+const CLIENT_CONTROL_NOOUTPUT: i64 = 0x4000000;
+const CLIENT_ACTIVEPANE: i64 = 0x80000000;
+const CLIENT_CONTROL_PAUSEAFTER: i64 = 0x100000000;
+const CLIENT_CONTROL_WAITEXIT: i64 = 0x200000000;
+const CLIENT_NO_DETACH_ON_DESTROY: i64 = 0x8000000000;
+
+/// The `refresh-client -f` flag set of one client.
+///
+/// Both the client that owns the terminal and the registry entry other clients
+/// see keep one of these, so a `refresh-client -t other -f …` is visible to
+/// `#{client_flags}` and to the destroy policy without waiting for the target
+/// client to wake up.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ClientFlagState {
+    pub(crate) pause_after: Option<Duration>,
+    pub(crate) no_output: bool,
+    pub(crate) wait_exit: bool,
+    pub(crate) read_only: bool,
+    pub(crate) ignore_size: bool,
+    pub(crate) active_pane: bool,
+    pub(crate) no_detach_on_destroy: bool,
+}
+
+impl ClientFlagState {
+    pub(crate) fn apply_flags(&mut self, value: &str) {
+        for flag in value.split(',') {
+            let (clear, flag) = flag
+                .strip_prefix('!')
+                .map_or((false, flag), |flag| (true, flag));
+            if flag == "pause-after" || flag.starts_with("pause-after=") {
+                if clear {
+                    self.pause_after = None;
+                } else {
+                    let seconds = flag
+                        .strip_prefix("pause-after=")
+                        .and_then(|value| value.parse::<u64>().ok())
+                        .unwrap_or(0);
+                    self.pause_after = Some(Duration::from_secs(seconds));
+                }
+            } else {
+                let enabled = !clear;
+                match flag {
+                    "no-output" => self.no_output = enabled,
+                    "wait-exit" => self.wait_exit = enabled,
+                    // An established read-only client cannot clear itself with
+                    // refresh-client; switch-client -r is the owner escape.
+                    "read-only" if enabled || !self.read_only => self.read_only = enabled,
+                    "ignore-size" => self.ignore_size = enabled,
+                    "active-pane" => self.active_pane = enabled,
+                    "no-detach-on-destroy" => self.no_detach_on_destroy = enabled,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    pub(crate) fn client_flags(&self, identified: i64) -> i64 {
+        let mut flags = identified;
+        for (enabled, flag) in [
+            (self.no_output, CLIENT_CONTROL_NOOUTPUT),
+            (self.wait_exit, CLIENT_CONTROL_WAITEXIT),
+            (self.pause_after.is_some(), CLIENT_CONTROL_PAUSEAFTER),
+            (self.read_only, CLIENT_READONLY),
+            (self.ignore_size, CLIENT_IGNORESIZE),
+            (self.active_pane, CLIENT_ACTIVEPANE),
+            (self.no_detach_on_destroy, CLIENT_NO_DETACH_ON_DESTROY),
+        ] {
+            if enabled {
+                flags |= flag;
+            } else {
+                flags &= !flag;
+            }
+        }
+        flags
+    }
+
+    pub(crate) fn display_flags(&self, identified: i64) -> String {
+        self.display_flags_with(identified, true)
+    }
+
+    /// tmux's `server_client_get_flags` ordering. `control_mode` selects the
+    /// `control-mode` marker an interactive attach does not carry.
+    pub(crate) fn display_flags_with(&self, identified: i64, control_mode: bool) -> String {
+        let mut flags = vec!["attached", "focused"];
+        if control_mode {
+            flags.push("control-mode");
+        }
+        if self.ignore_size {
+            flags.push("ignore-size");
+        }
+        if self.no_detach_on_destroy {
+            flags.push("no-detach-on-destroy");
+        }
+        if self.no_output {
+            flags.push("no-output");
+        }
+        if self.wait_exit {
+            flags.push("wait-exit");
+        }
+        let pause_after = self
+            .pause_after
+            .map(|duration| format!("pause-after={}", duration.as_secs()));
+        if let Some(pause_after) = pause_after.as_deref() {
+            flags.push(pause_after);
+        }
+        if self.read_only {
+            flags.push("read-only");
+        }
+        if self.active_pane {
+            flags.push("active-pane");
+        }
+        if identified & CLIENT_UTF8 != 0 {
+            flags.push("UTF-8");
+        }
+        flags.join(",")
+    }
+}
+
 struct ClientRenderSlot {
     pending: AtomicU8,
     action: Mutex<Option<ClientAction>>,
     messages: Mutex<VecDeque<ClientMessage>>,
+    /// `refresh-client -f` values aimed at this client by *another* client.
+    /// Kept out of `action` because flag updates must not displace a queued
+    /// switch or detach, and several may arrive before the client next runs.
+    flag_updates: Mutex<Vec<String>>,
     wakeup: <CurrentPlatform as Platform>::OutputWakeup,
 }
 
@@ -1964,7 +2107,8 @@ impl ClientRenderRegistry {
             80,
             24,
             String::new(),
-            false,
+            0,
+            ClientFlagState::default(),
             false,
         )
     }
@@ -1979,15 +2123,18 @@ impl ClientRenderRegistry {
         cols: u16,
         rows: u16,
         flags: String,
-        read_only: bool,
+        identified: i64,
+        flag_state: ClientFlagState,
         control_mode: bool,
     ) -> io::Result<ClientRenderAttachment> {
+        let read_only = flag_state.read_only;
         let wakeup = CurrentPlatform::new_output_wakeup()?;
         wakeup.clear()?;
         let slot = Arc::new(ClientRenderSlot {
             pending: AtomicU8::new(0),
             action: Mutex::new(None),
             messages: Mutex::new(VecDeque::new()),
+            flag_updates: Mutex::new(Vec::new()),
             wakeup,
         });
         let ignore_size = flags.split(',').any(|flag| flag == "ignore-size");
@@ -2011,6 +2158,8 @@ impl ClientRenderRegistry {
                 control_mode,
                 ignore_size,
                 size_changed: !control_mode,
+                identified,
+                flag_state,
                 terminal: None,
                 slot: Arc::clone(&slot),
             },
@@ -2187,6 +2336,61 @@ impl ClientRenderRegistry {
         } else {
             ClientActionResult::NoCurrentClient
         })
+    }
+
+    fn client_id_for(
+        inner: &ClientRenderRegistryState,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+    ) -> Result<u64, ClientActionResult> {
+        let explicit = target.map(|target| target.strip_suffix(':').unwrap_or(target));
+        let selected = if let Some(target) = explicit {
+            inner.clients.iter().find(|(_, entry)| {
+                entry.name == target
+                    || entry
+                        .name
+                        .strip_prefix("/dev/")
+                        .is_some_and(|tty| tty == target)
+            })
+        } else {
+            invoking_tty
+                .and_then(|tty| inner.clients.iter().find(|(_, entry)| entry.name == tty))
+        };
+        selected
+            .map(|(id, _)| *id)
+            .ok_or(if explicit.is_some() {
+                ClientActionResult::TargetNotFound
+            } else {
+                ClientActionResult::NoCurrentClient
+            })
+    }
+
+    /// Queue `refresh-client -f` values for a client other than the one running
+    /// the command. The client applies them to its own flag state on its next
+    /// turn; the registry copy is what `#{client_flags}` and the destroy policy
+    /// read in the meantime.
+    fn refresh_client_flags(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+        values: &[String],
+    ) -> ClientActionResult {
+        let Ok(mut inner) = self.inner.lock() else {
+            return ClientActionResult::NoCurrentClient;
+        };
+        let id = match Self::client_id_for(&inner, target, invoking_tty) {
+            Ok(id) => id,
+            Err(result) => return result,
+        };
+        let entry = inner.clients.get_mut(&id).expect("selected client present");
+        for value in values {
+            entry.apply_flag_value(value);
+        }
+        if let Ok(mut pending) = entry.slot.flag_updates.lock() {
+            pending.extend(values.iter().cloned());
+        }
+        let _ = entry.slot.wakeup.wake();
+        ClientActionResult::Queued
     }
 
     fn send_message(
@@ -2510,14 +2714,24 @@ impl ClientRenderAttachment {
         }
     }
 
-    pub(crate) fn update_control_flags(&self, flags: String, read_only: bool) {
+    pub(crate) fn update_control_flags(&self, flags: String, flag_state: &ClientFlagState) {
         if let Ok(mut inner) = self.registry.inner.lock() {
             if let Some(entry) = inner.clients.get_mut(&self.id) {
-                entry.ignore_size = flags.split(',').any(|flag| flag == "ignore-size");
+                entry.ignore_size = flag_state.ignore_size;
+                entry.read_only = flag_state.read_only;
+                entry.flag_state = flag_state.clone();
                 entry.flags = flags;
-                entry.read_only = read_only;
             }
         }
+    }
+
+    /// `refresh-client -f` values another client aimed at this one.
+    pub(crate) fn take_flag_updates(&self) -> Vec<String> {
+        self.slot
+            .flag_updates
+            .lock()
+            .map(|mut pending| std::mem::take(&mut *pending))
+            .unwrap_or_default()
     }
 
     pub(crate) fn update_terminal(&self, terminal: &ResolvedTerm) {
@@ -4272,6 +4486,18 @@ impl ServerState {
         invoking_tty: Option<&str>,
     ) -> ClientActionResult {
         self.client_renders.refresh_client(target, invoking_tty)
+    }
+
+    /// Record `refresh-client -f` values on the target client and hand them to
+    /// it so its own flag state follows.
+    pub(crate) fn refresh_client_flags(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+        values: &[String],
+    ) -> ClientActionResult {
+        self.client_renders
+            .refresh_client_flags(target, invoking_tty, values)
     }
 
     pub(crate) fn client_read_only(

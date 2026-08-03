@@ -9711,7 +9711,8 @@ mod tests {
                 80,
                 24,
                 String::new(),
-                false,
+                0,
+                Default::default(),
                 true,
             )
             .unwrap();

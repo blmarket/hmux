@@ -547,6 +547,18 @@ fn suspend_client(args: &[String], state: &ServerState, client: &ClientContext) 
 
 fn refresh_client(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {
     let target = flag_value(args, "-t");
+    // `-F` is the historical spelling of `-f`.
+    let flags = flag_values(args, "-f")
+        .into_iter()
+        .chain(flag_values(args, "-F"))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if !flags.is_empty() {
+        let result = state.refresh_client_flags(target, client.tty_name.as_deref(), &flags);
+        if result != ClientActionResult::Queued {
+            return overlay_result(result, target);
+        }
+    }
     overlay_result(
         state.refresh_client(target, client.tty_name.as_deref()),
         target,
