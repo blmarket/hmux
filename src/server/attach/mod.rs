@@ -1909,9 +1909,16 @@ fn compose_frame_cached(
     // inherit a stray background color from a prior frame.
     append_terminal_style_reset(&mut out, terminal);
 
-    // Draw each pane row in place: position, rewrite content, erase to EOL.
+    // Draw each pane row in place: position, erase the row, rewrite content.
+    //
+    // The erase precedes the content because a row that fills the last column
+    // leaves the terminal in pending wrap with the cursor still *on* that
+    // column, so an erase-to-EOL afterwards would wipe the character just
+    // written there. The split-pane path avoids the same hazard by erasing
+    // (`ECH`) before it paints.
     for i in 0..pane_height as usize {
         out.extend_from_slice(format!("\x1b[{};1H", usize::from(pane_top) + i + 1).as_bytes());
+        out.extend_from_slice(b"\x1b[K");
         if let Some(copy_view) = copy_view.as_ref() {
             copy_view.render_line_number(&mut out, i);
         }
@@ -1925,7 +1932,6 @@ fn compose_frame_cached(
             out.extend_from_slice(b"\x1b[?7h");
         }
         append_terminal_style_reset(&mut out, terminal);
-        out.extend_from_slice(b"\x1b[K");
     }
     if let Some(copy_view) = copy_view.as_ref() {
         copy_view.render_overlays(&mut out, pane_top, 0, pane_height, cols);
