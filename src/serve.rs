@@ -83,6 +83,7 @@ pub fn run_event_loop(listen_path: &Path, server: Server) -> io::Result<()> {
         let alert_timeout = server.refresh_alerts()?;
         sync_event_loop_panes(&server, &mut event_loop, &mut panes)?;
         reap_protocol_clients(&mut clients);
+        server.enforce_lifecycle_policies()?;
         if event_loop.pending_events() == 0 {
             event_loop.poll(alert_timeout)?;
         }

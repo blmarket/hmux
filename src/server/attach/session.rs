@@ -73,12 +73,13 @@ impl AttachSession {
 
         let (cols, rows) = get_winsize(render_fd.as_raw_fd()).unwrap_or((80, 24));
         let (prompt_registry, render_registry, session_id) = {
-            let st = state
+            let mut st = state
                 .lock()
                 .map_err(|_| io::Error::other("state poisoned"))?;
             let session_id = st.session_id(target).ok_or_else(|| {
                 AttachStartFailure::Client(format!("can't find session: {target}\n"))
             })?;
+            st.touch_session_activity(session_id, true);
             (
                 st.client_prompt_registry(),
                 st.client_render_registry(),
@@ -804,9 +805,9 @@ impl AttachSession {
                             self.begin_finish(AttachFinishReason::Detached),
                         ));
                     }
-                    ClientAction::Switch(new_session_id) => {
+                    ClientAction::Switch { session_id, .. } => {
                         self.compositor.transition =
-                            Some(AttachTransition::SwitchSession(new_session_id));
+                            Some(AttachTransition::SwitchSession(session_id));
                         return Ok(AttachNotificationOutcome::Return(AttachDrive::Continue));
                     }
                     ClientAction::Keys(keys)

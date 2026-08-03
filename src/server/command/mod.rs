@@ -4036,6 +4036,20 @@ pub(super) fn vars_full(
         .set("session_id", format!("${}", sess.id))
         .set("session_windows", sess.windows.len().to_string())
         .set("session_created", sess.created_epoch.to_string())
+        .set(
+            "session_activity",
+            (sess.activity_micros / 1_000_000).to_string(),
+        )
+        .set(
+            "session_last_attached",
+            // tmux leaves the variable empty until the session has been
+            // attached at least once.
+            if sess.last_attached_micros == 0 {
+                String::new()
+            } else {
+                (sess.last_attached_micros / 1_000_000).to_string()
+            },
+        )
         .set("session_attached", attached_clients.len().to_string())
         .set(
             "session_many_attached",

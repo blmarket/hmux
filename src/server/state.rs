@@ -362,7 +362,13 @@ pub(crate) enum ClientAction {
     Lock(String),
     Suspend,
     Detach,
-    Switch(u32),
+    Switch {
+        session_id: u32,
+        /// Set when the move is the fallout of the client's old session being
+        /// destroyed, which a control client reports differently from an
+        /// ordinary `switch-client`.
+        destroyed: bool,
+    },
     Keys(Vec<ClientKey>),
     SetSelection(Vec<u8>),
     Overlay {
@@ -1726,6 +1732,15 @@ pub struct Session {
     /// exact value is volatile (conformance only checks its truthiness), but it
     /// is always set, so `#{?session_created,…}` behaves like real tmux.
     pub created_epoch: i64,
+    /// Last activity, in microseconds since the epoch — tmux's
+    /// `session_update_activity`, exposed as `#{session_activity}` (seconds).
+    /// Microsecond resolution is what makes sessions created in the same second
+    /// still orderable, which `detach-on-destroy` relies on.
+    pub(crate) activity_micros: i64,
+    /// When a client last attached to this session, in microseconds since the
+    /// epoch; zero while the session has never been attached. tmux's
+    /// `#{session_last_attached}` (seconds).
+    pub(crate) last_attached_micros: i64,
     environment: BTreeMap<String, String>,
     removed_environment: BTreeSet<String>,
     hidden_environment: BTreeSet<String>,
@@ -1846,6 +1861,10 @@ impl std::ops::BitOr for RenderInvalidation {
 /// Per-client state-change notifications, scoped by stable session id.
 pub(crate) struct ClientRenderRegistry {
     inner: Mutex<ClientRenderRegistryState>,
+    /// Bumped whenever the set of clients, or which session one is on,
+    /// changes. Lets the server loop skip the lifecycle sweep when nothing
+    /// the policies depend on has moved.
+    generation: AtomicU64,
 }
 
 #[derive(Default)]
@@ -2090,7 +2109,16 @@ impl ClientRenderRegistry {
     fn new() -> Self {
         Self {
             inner: Mutex::new(ClientRenderRegistryState::default()),
+            generation: AtomicU64::new(0),
         }
+    }
+
+    fn bump_generation(&self) {
+        self.generation.fetch_add(1, Ordering::Release);
+    }
+
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
     }
 
     #[cfg(test)]
@@ -2171,6 +2199,7 @@ impl ClientRenderRegistry {
             .map(|(_, entry)| Arc::clone(&entry.slot))
             .collect::<Vec<_>>();
         drop(inner);
+        self.bump_generation();
         for peer in peers {
             peer.pending
                 .fetch_or(RenderInvalidation::STATUS.bits(), Ordering::Release);
@@ -2620,13 +2649,27 @@ impl ClientRenderRegistry {
             .expect("selected client disappeared");
         entry.session_id = session_id;
         if let Ok(mut action) = entry.slot.action.lock() {
-            *action = Some(ClientAction::Switch(session_id));
+            *action = Some(ClientAction::Switch {
+                session_id,
+                destroyed: false,
+            });
             let _ = entry.slot.wakeup.wake();
         }
+        drop(inner);
+        self.bump_generation();
         ClientActionResult::Queued
     }
 
-    fn reassign_session(&self, from_session_id: u32, to_session_id: u32) {
+    /// tmux's `server_destroy_session` client fan-out: every client on
+    /// `from_session_id` moves to `to`, except that a client carrying
+    /// `no-detach-on-destroy` falls back to `no_detach_to` when `to` is `None`.
+    /// A client with no destination is left alone and exits on its own.
+    fn reassign_session(
+        &self,
+        from_session_id: u32,
+        to: Option<u32>,
+        no_detach_to: Option<u32>,
+    ) {
         let Ok(mut inner) = self.inner.lock() else {
             return;
         };
@@ -2635,12 +2678,26 @@ impl ClientRenderRegistry {
             .values_mut()
             .filter(|entry| entry.session_id == from_session_id)
         {
-            entry.session_id = to_session_id;
+            let Some(target) = to.or_else(|| {
+                entry
+                    .flag_state
+                    .no_detach_on_destroy
+                    .then_some(no_detach_to)
+                    .flatten()
+            }) else {
+                continue;
+            };
+            entry.session_id = target;
             if let Ok(mut action) = entry.slot.action.lock() {
-                *action = Some(ClientAction::Switch(to_session_id));
+                *action = Some(ClientAction::Switch {
+                    session_id: target,
+                    destroyed: true,
+                });
                 let _ = entry.slot.wakeup.wake();
             }
         }
+        drop(inner);
+        self.bump_generation();
     }
 
     fn overlay_client(
@@ -2704,6 +2761,7 @@ impl ClientRenderAttachment {
                 entry.size_changed = true;
             }
         }
+        self.registry.bump_generation();
     }
 
     pub(crate) fn mark_size_changed(&self) {
@@ -2748,6 +2806,7 @@ impl ClientRenderAttachment {
                 entry.session_id = session_id;
             }
         }
+        self.registry.bump_generation();
     }
 }
 
@@ -2761,6 +2820,7 @@ impl Drop for ClientRenderAttachment {
                 .map(|entry| Arc::clone(&entry.slot))
                 .collect::<Vec<_>>();
             drop(inner);
+            self.registry.bump_generation();
             for peer in peers {
                 peer.pending
                     .fetch_or(RenderInvalidation::STATUS.bits(), Ordering::Release);
@@ -3070,6 +3130,20 @@ pub fn now_epoch() -> i64 {
     unsafe { libc::time(std::ptr::null_mut()) as i64 }
 }
 
+/// Current Unix time in microseconds, the resolution tmux keeps session
+/// activity at (`struct timeval`) and compares with `timercmp`.
+pub(crate) fn now_micros() -> i64 {
+    let mut tv = libc::timeval {
+        tv_sec: 0,
+        tv_usec: 0,
+    };
+    // SAFETY: `gettimeofday` fills the caller-owned `timeval` and the null
+    // timezone pointer is the documented way to skip the obsolete second arg.
+    unsafe { libc::gettimeofday(&mut tv, std::ptr::null_mut()) };
+    // `timeval`'s fields are already `i64` on the supported platforms.
+    tv.tv_sec * 1_000_000 + tv.tv_usec
+}
+
 /// The whole server's state. Guarded by a mutex at the connection layer.
 pub struct ServerState {
     /// True only before this explicitly launched hmux server has created its
@@ -3086,6 +3160,8 @@ pub struct ServerState {
     session_groups: BTreeMap<u32, String>,
     /// Set once a non-empty server becomes empty while `exit-empty` is on.
     shutdown_requested: bool,
+    /// Client-registry generation the unattached sweep last ran against.
+    lifecycle_generation: u64,
     next_session_id: u32,
     next_link_set_id: u32,
     next_winlink_id: u64,
@@ -3170,6 +3246,7 @@ impl ServerState {
             windows: BTreeMap::new(),
             session_groups: BTreeMap::new(),
             shutdown_requested: false,
+            lifecycle_generation: 0,
             next_session_id: 0,
             next_link_set_id: 0,
             next_winlink_id: 0,
@@ -4818,6 +4895,10 @@ impl ServerState {
             last_windows: Vec::new(),
             created: created_stamp(),
             created_epoch: now_epoch(),
+            // tmux seeds activity from the creation time, so creation order is
+            // the initial `detach-on-destroy` ordering.
+            activity_micros: now_micros(),
+            last_attached_micros: 0,
             windows: vec![Winlink {
                 link_id: winlink_id,
                 index: base,
@@ -8159,22 +8240,8 @@ impl ServerState {
             .iter()
             .find(|session| session.name == name)
             .map(|session| session.id);
-        if let Some(session) = self.sessions.iter().find(|session| session.name == name) {
-            let detach = session
-                .options(&self.global_options)
-                .get("detach-on-destroy")
-                .is_none_or(|value| value == "on" || value == "1");
-            if !detach {
-                if let Some(fallback) = self
-                    .sessions
-                    .iter()
-                    .rev()
-                    .find(|candidate| candidate.id != session.id)
-                {
-                    self.client_renders
-                        .reassign_session(session.id, fallback.id);
-                }
-            }
+        if let Some(session_id) = removed_id {
+            self.apply_detach_on_destroy(session_id);
         }
         let before = self.sessions.len();
         self.sessions.retain(|s| s.name != name);
@@ -8189,36 +8256,185 @@ impl ServerState {
         removed
     }
 
-    pub(crate) fn enforce_unattached_options(&mut self) {
-        let attached = self
-            .attached_clients()
+    /// tmux's `session_update_activity`. `attached` additionally stamps
+    /// `last_attached_time`, which only a client taking the session does.
+    pub(crate) fn touch_session_activity(&mut self, session_id: u32, attached: bool) {
+        let now = now_micros();
+        if let Some(session) = self
+            .sessions
+            .iter_mut()
+            .find(|session| session.id == session_id)
+        {
+            session.activity_micros = now;
+            if attached {
+                session.last_attached_micros = now;
+            }
+        }
+    }
+
+    /// The sessions that currently have at least one client attached.
+    fn attached_session_ids(&self) -> BTreeSet<u32> {
+        self.attached_clients()
             .into_iter()
             .map(|client| client.session_id)
-            .collect::<BTreeSet<_>>();
-        let exit_unattached = self
-            .global_options
-            .server()
-            .get("exit-unattached")
-            .is_some_and(|value| value == "on" || value == "1");
-        if exit_unattached && attached.is_empty() {
-            self.kill_server();
-            return;
-        }
-        let destroy = self
+            .collect()
+    }
+
+    /// The session other than `exclude` with the newest activity time, in
+    /// tmux's `server_find_session(server_newer_session)` order: sessions are
+    /// walked by name and the comparison is strict, so equal stamps keep the
+    /// alphabetically first candidate.
+    fn newest_session_excluding(&self, exclude: u32, detached_only: bool) -> Option<u32> {
+        let attached = detached_only.then(|| self.attached_session_ids());
+        let mut candidates = self
             .sessions
             .iter()
+            .filter(|session| session.id != exclude)
             .filter(|session| {
-                !attached.contains(&session.id)
-                    && session
-                        .options(&self.global_options)
-                        .get("destroy-unattached")
-                        .is_some_and(|value| value == "on" || value == "1")
+                attached
+                    .as_ref()
+                    .is_none_or(|attached| !attached.contains(&session.id))
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by(|a, b| a.name.cmp(&b.name));
+        candidates
+            .into_iter()
+            .fold(None::<&Session>, |best, session| match best {
+                Some(best) if session.activity_micros <= best.activity_micros => Some(best),
+                _ => Some(session),
+            })
+            .map(|session| session.id)
+    }
+
+    /// tmux's `session_previous_session`/`session_next_session`: the neighbour
+    /// of `exclude` in the name-ordered session list, wrapping at both ends.
+    fn neighbour_session(&self, exclude: u32, forward: bool) -> Option<u32> {
+        let mut ordered = self.sessions.iter().collect::<Vec<_>>();
+        ordered.sort_by(|a, b| a.name.cmp(&b.name));
+        let count = ordered.len();
+        if count < 2 {
+            return None;
+        }
+        let position = ordered.iter().position(|session| session.id == exclude)?;
+        let next = if forward {
+            (position + 1) % count
+        } else {
+            (position + count - 1) % count
+        };
+        Some(ordered[next].id)
+    }
+
+    /// tmux's `server_destroy_session`: move the clients of a session that is
+    /// about to disappear, according to that session's `detach-on-destroy`.
+    /// Clients with no destination are left in place and exit themselves.
+    fn apply_detach_on_destroy(&mut self, session_id: u32) {
+        let Some(session) = self.sessions.iter().find(|session| session.id == session_id) else {
+            return;
+        };
+        let policy = session
+            .options(&self.global_options)
+            .get("detach-on-destroy")
+            .unwrap_or("on")
+            .to_owned();
+        let new_session = match policy.as_str() {
+            "off" | "0" => self.newest_session_excluding(session_id, false),
+            "no-detached" => self.newest_session_excluding(session_id, true),
+            "previous" => self.neighbour_session(session_id, false),
+            "next" => self.neighbour_session(session_id, true),
+            _ => None,
+        };
+        // `on` and `no-detached` still offer a session to clients that asked
+        // not to be detached when the policy itself found none.
+        let no_detach_session = match (&new_session, policy.as_str()) {
+            (None, "on" | "1" | "no-detached") => self.newest_session_excluding(session_id, false),
+            _ => None,
+        };
+        self.client_renders
+            .reassign_session(session_id, new_session, no_detach_session);
+        // Taking over a session counts as activity on it, exactly as an
+        // ordinary attach does.
+        for adopted in [new_session, no_detach_session].into_iter().flatten() {
+            self.touch_session_activity(adopted, true);
+        }
+    }
+
+    /// tmux's `server_check_unattached`, run whenever a client is lost or
+    /// changes session — not only when the option is set.
+    pub(crate) fn enforce_unattached_options(&mut self) {
+        // tmux walks its name-ordered session tree and destroys in place, so a
+        // group shrinking under `keep-last` spares whichever member is reached
+        // once it is the last one. Re-scanning after each destroy reproduces
+        // that without depending on hmux's creation-ordered session vector.
+        while let Some(name) = self.next_unattached_session_to_destroy() {
+            self.kill_session(&name);
+        }
+    }
+
+    fn next_unattached_session_to_destroy(&self) -> Option<String> {
+        let attached = self.attached_session_ids();
+        let mut ordered = self.sessions.iter().collect::<Vec<_>>();
+        ordered.sort_by(|a, b| a.name.cmp(&b.name));
+        ordered
+            .into_iter()
+            .find(|session| {
+                if attached.contains(&session.id) {
+                    return false;
+                }
+                let grouped = self.is_grouped(session);
+                let group_size = if grouped {
+                    self.session_group_size(session)
+                } else {
+                    1
+                };
+                match session
+                    .options(&self.global_options)
+                    .get("destroy-unattached")
+                    .unwrap_or("off")
+                {
+                    "on" | "1" => true,
+                    // Only a session sharing its group with others is destroyed.
+                    "keep-last" => grouped && group_size > 1,
+                    // A session alone in an explicit group is spared.
+                    "keep-group" => !(grouped && group_size == 1),
+                    _ => false,
+                }
             })
             .map(|session| session.name.clone())
-            .collect::<Vec<_>>();
-        for session in destroy {
-            self.kill_session(&session);
+    }
+
+    /// One pass of tmux's per-loop lifecycle policies: destroy sessions that
+    /// lost their last client, then decide whether the server itself should
+    /// exit. The unattached sweep is skipped while the client set is unchanged.
+    pub(crate) fn enforce_lifecycle_policies(&mut self) {
+        let generation = self.client_renders.generation();
+        if generation != self.lifecycle_generation {
+            self.lifecycle_generation = generation;
+            self.enforce_unattached_options();
         }
+        self.enforce_exit_options();
+    }
+
+    /// tmux's `server_loop` shutdown test: with `exit-empty` on, the server
+    /// exits once nothing holds it — no sessions (or `exit-unattached` on) and
+    /// no client still attached to one.
+    pub(crate) fn enforce_exit_options(&mut self) {
+        // An hmux daemon is launched before any client exists, so the policy
+        // only starts applying once the server has held a session at least
+        // once; tmux never sees this window because its server is forked by
+        // the client that creates the first session.
+        if self.initial_attach_pending {
+            return;
+        }
+        if !self.server_option_is_on("exit-empty", true) {
+            return;
+        }
+        if !self.server_option_is_on("exit-unattached", false) && !self.sessions.is_empty() {
+            return;
+        }
+        if !self.attached_session_ids().is_empty() {
+            return;
+        }
+        self.shutdown_requested = true;
     }
 
     /// `kill-session -g`: destroy every member when the target is grouped, or

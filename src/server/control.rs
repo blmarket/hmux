@@ -129,12 +129,13 @@ impl EventControlClient {
         };
 
         let (render_registry, session_id) = {
-            let state = state
+            let mut state = state
                 .lock()
                 .map_err(|_| io::Error::other("native server state poisoned"))?;
             let session_id = state
                 .session_id(&session)
                 .ok_or_else(|| io::Error::other(format!("can't find session: {session}")))?;
+            state.touch_session_activity(session_id, true);
             (state.client_render_registry(), session_id)
         };
         let client_name = client_tty
@@ -493,7 +494,10 @@ impl EventControlClient {
         }
         self.apply_remote_flag_updates();
         let requested_switch = match self.render_attachment.take_action() {
-            Some(ClientAction::Switch(session_id)) => Some(session_id),
+            Some(ClientAction::Switch {
+                session_id,
+                destroyed,
+            }) => Some((session_id, destroyed)),
             Some(ClientAction::Detach) => {
                 self.lifecycle = ControlLifecycle::Draining;
                 return Ok(());
@@ -531,7 +535,7 @@ impl EventControlClient {
             }
             None => None,
         };
-        if let Some(session_id) = requested_switch {
+        if let Some((session_id, destroyed)) = requested_switch {
             let stable = format!("${session_id}");
             let checkpoint = {
                 let state = self
@@ -543,7 +547,7 @@ impl EventControlClient {
                     .map(|_| state.control_checkpoint_end())
             };
             if let Some(checkpoint) = checkpoint {
-                self.replace_session(session_id, stable, checkpoint, false)?;
+                self.replace_session(session_id, stable, checkpoint, destroyed)?;
             }
         }
         Ok(())
@@ -582,13 +586,11 @@ impl EventControlClient {
                 .state
                 .lock()
                 .map_err(|_| io::Error::other("native server state poisoned"))?;
+            // Where a client goes when its session is destroyed is the server's
+            // `detach-on-destroy` decision, delivered as a switch action before
+            // this runs; reaching here means no session was offered.
             if state.control_snapshot(&self.stable_session).is_some() {
                 None
-            } else if self.options.no_detach_on_destroy {
-                state.sessions().last().map(|session| {
-                    let stable = format!("${}", session.id);
-                    (session.id, stable, state.control_checkpoint_end(), true)
-                })
             } else {
                 self.control_writer.enqueue_line("%sessions-changed");
                 self.lifecycle = ControlLifecycle::Draining;

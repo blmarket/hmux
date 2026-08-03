@@ -179,6 +179,17 @@ impl Server {
         Ok(state.alert_poll_timeout())
     }
 
+    /// tmux's per-loop `server_check_unattached` plus the `server_loop` exit
+    /// test, run once the current batch of client events has been applied.
+    pub(crate) fn enforce_lifecycle_policies(&self) -> io::Result<()> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("server state mutex poisoned"))?;
+        state.enforce_lifecycle_policies();
+        Ok(())
+    }
+
     pub(crate) fn observation_signal(&self) -> Arc<ObservationSignal> {
         Arc::clone(&self.observation_signal)
     }
