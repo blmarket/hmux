@@ -61,9 +61,10 @@ impl Command {
                         if has_flag(args, "-q") {
                             return match st.set_pane_mode(&target, None) {
                                 Ok(()) => CommandResult::ok(""),
-                                Err(_) => {
-                                    CommandResult::err(format!("{}\n", st.pane_target_error(&target)))
-                                }
+                                Err(_) => CommandResult::err(format!(
+                                    "{}\n",
+                                    st.pane_target_error(&target)
+                                )),
                             };
                         }
                         let source = flag_value(args, "-s");
@@ -77,7 +78,10 @@ impl Command {
                             .is_err()
                         {
                             let missing = source.unwrap_or(&target);
-                            return CommandResult::err(format!("{}\n", st.pane_target_error(missing)));
+                            return CommandResult::err(format!(
+                                "{}\n",
+                                st.pane_target_error(missing)
+                            ));
                         }
                         let vi = st
                             .window_options(&target)

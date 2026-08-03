@@ -6465,11 +6465,10 @@ impl ServerState {
             Some(spec) => match self.window_in_session(position, spec, parts.exact_window) {
                 WindowMatch::Found(window) => window,
                 found => {
-                    let residual = found
-                        .ambiguous()
-                        .map_or_else(|| self.session_current(position), |first| {
-                            self.window_current(position, first)
-                        });
+                    let residual = found.ambiguous().map_or_else(
+                        || self.session_current(position),
+                        |first| self.window_current(position, first),
+                    );
                     return Err(TargetMiss::new(window_not_found(spec), Some(residual)));
                 }
             },
