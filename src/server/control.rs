@@ -210,17 +210,20 @@ impl EventControlClient {
         {
             control_writer.enqueue_line(format!("%config-error {error}"));
         }
-        let format_cache = status::RenderCache::for_client(status::ClientContext {
-            term: client_tty.term.clone(),
-            tty: client_tty.tty_name.clone(),
-            pid: client_tty.client_pid,
-            cwd: context.cwd.clone(),
-            environment: context.environment.clone(),
-            control_mode: true,
-            read_only: options.read_only,
-            flags: options.display_flags(client_tty.flags),
-            key_table: super::state::DEFAULT_KEY_TABLE.to_string(),
-        });
+        let format_cache = status::RenderCache::for_client(
+            status::ClientContext {
+                term: client_tty.term.clone(),
+                tty: client_tty.tty_name.clone(),
+                pid: client_tty.client_pid,
+                cwd: context.cwd.clone(),
+                environment: context.environment.clone(),
+                control_mode: true,
+                read_only: options.read_only,
+                flags: options.display_flags(client_tty.flags),
+                key_table: super::state::DEFAULT_KEY_TABLE.to_string(),
+            },
+            render_attachment.format_jobs(),
+        );
         let mut control_context = context.clone();
         control_context.tty_name = Some(client_name.clone());
         control_context.current_session_id = Some(session_id);

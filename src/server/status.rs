@@ -16,8 +16,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader};
+use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -42,6 +43,10 @@ struct FormatJobEntry {
     running: bool,
     generation: u64,
     last_started: Instant,
+    /// The wall-clock second the job last started in — tmux's `fj->last`, which
+    /// is compared for equality, so a finished job is left alone until the
+    /// second it ran in is over.
+    last_started_second: i64,
     last_notified: Instant,
     process: Option<Arc<FormatJobProcess>>,
 }
@@ -49,6 +54,8 @@ struct FormatJobEntry {
 struct FormatJobProcess {
     cancelled: AtomicBool,
     pgid: AtomicI32,
+    /// The pipe the job's output is read from, as `show-messages -J` reports it.
+    fd: AtomicI32,
 }
 
 impl FormatJobProcess {
@@ -56,6 +63,7 @@ impl FormatJobProcess {
         Self {
             cancelled: AtomicBool::new(false),
             pgid: AtomicI32::new(0),
+            fd: AtomicI32::new(-1),
         }
     }
 
@@ -86,6 +94,13 @@ impl FormatJobProcess {
     }
 }
 
+/// One live `#()` job, as `show-messages -J` lists it.
+pub(crate) struct FormatJobInfo {
+    pub(crate) command: String,
+    pub(crate) fd: i32,
+    pub(crate) pid: i32,
+}
+
 impl Drop for FormatJobEntry {
     fn drop(&mut self) {
         if let Some(process) = &self.process {
@@ -94,26 +109,84 @@ impl Drop for FormatJobEntry {
     }
 }
 
+/// One tree of `#()` jobs. tmux keeps one per client and one for formats with
+/// no client, keyed by the command and the session/window/pane the expansion
+/// was anchored at (`fj->tag`).
 pub(crate) struct FormatJobRegistry {
     jobs: Mutex<HashMap<FormatJobKey, FormatJobEntry>>,
-    renders: Arc<ClientRenderRegistry>,
+    /// Weak so a per-client tree stored beside its client entry does not keep
+    /// the render registry that owns the entry alive.
+    renders: Weak<ClientRenderRegistry>,
     eviction_timeout: Duration,
 }
 
 impl FormatJobRegistry {
-    pub(crate) fn new(renders: Arc<ClientRenderRegistry>) -> Self {
+    pub(crate) fn new(renders: &Arc<ClientRenderRegistry>) -> Self {
         Self::with_eviction_timeout(renders, Duration::from_secs(3600))
     }
 
     fn with_eviction_timeout(
-        renders: Arc<ClientRenderRegistry>,
+        renders: &Arc<ClientRenderRegistry>,
         eviction_timeout: Duration,
     ) -> Self {
         Self {
             jobs: Mutex::new(HashMap::new()),
-            renders,
+            renders: Arc::downgrade(renders),
             eviction_timeout,
         }
+    }
+
+    /// The cached output of `command`, starting the job when nothing has run it
+    /// in this wall-clock second. `vars` supplies the scope the tree is keyed
+    /// by, so the same command expanded for two panes gets two entries.
+    pub(crate) fn output_for(
+        self: &Arc<Self>,
+        command: &str,
+        expanded: String,
+        vars: &Vars,
+        session_id: u32,
+        cwd: Option<PathBuf>,
+        environment: Vec<String>,
+        status: bool,
+    ) -> String {
+        let scope = format!(
+            "{}|{}|{}",
+            vars.lookup("session_id").unwrap_or(""),
+            vars.lookup("window_id").unwrap_or(""),
+            vars.lookup("pane_id").unwrap_or("")
+        );
+        self.output(
+            FormatJobKey {
+                scope,
+                command: command.to_string(),
+            },
+            expanded,
+            session_id,
+            cwd,
+            environment,
+            status,
+        )
+    }
+
+    /// The jobs still running, for `show-messages -J`.
+    pub(crate) fn running(&self) -> Vec<FormatJobInfo> {
+        let Ok(jobs) = self.jobs.lock() else {
+            return Vec::new();
+        };
+        let mut running = jobs
+            .iter()
+            .filter(|(_, job)| job.running)
+            .filter_map(|(_, job)| {
+                let process = job.process.as_ref()?;
+                Some(FormatJobInfo {
+                    command: job.expanded_command.clone(),
+                    fd: process.fd.load(Ordering::Acquire),
+                    pid: process.pgid.load(Ordering::Acquire),
+                })
+            })
+            .collect::<Vec<_>>();
+        running.sort_by(|left, right| left.pid.cmp(&right.pid));
+        running
     }
 
     fn output(
@@ -126,6 +199,7 @@ impl FormatJobRegistry {
         status: bool,
     ) -> String {
         let now = Instant::now();
+        let second = super::state::now_epoch();
         let mut launch = None;
         let output = {
             let Ok(mut jobs) = self.jobs.lock() else {
@@ -138,11 +212,10 @@ impl FormatJobRegistry {
             match jobs.get_mut(&key) {
                 Some(job) => {
                     let command_changed = job.expanded_command != expanded_command;
-                    if command_changed
-                        || (!job.running
-                            && now.saturating_duration_since(job.last_started)
-                                >= Duration::from_secs(1))
-                    {
+                    // tmux compares the *second* a job last ran in, not an
+                    // elapsed duration: a finished job is left alone for the
+                    // remainder of that second and re-runs on the next one.
+                    if command_changed || (!job.running && job.last_started_second != second) {
                         if let Some(process) = job.process.take() {
                             process.cancel();
                         }
@@ -151,6 +224,7 @@ impl FormatJobRegistry {
                         job.running = true;
                         job.generation = job.generation.wrapping_add(1);
                         job.last_started = now;
+                        job.last_started_second = second;
                         job.last_notified = now;
                         job.process = Some(Arc::clone(&process));
                         launch = Some((job.generation, process));
@@ -174,6 +248,7 @@ impl FormatJobRegistry {
                             running: true,
                             generation: 1,
                             last_started: now,
+                            last_started_second: second,
                             last_notified: now,
                             process: Some(Arc::clone(&process)),
                         },
@@ -235,8 +310,9 @@ impl FormatJobRegistry {
             }
         };
         if notify && status {
-            self.renders
-                .publish_session(session_id, RenderInvalidation::STATUS);
+            if let Some(renders) = self.renders.upgrade() {
+                renders.publish_session(session_id, RenderInvalidation::STATUS);
+            }
         }
     }
 
@@ -265,9 +341,24 @@ impl FormatJobRegistry {
             }
         }
         if status {
-            self.renders
-                .publish_session(session_id, RenderInvalidation::STATUS);
+            if let Some(renders) = self.renders.upgrade() {
+                renders.publish_session(session_id, RenderInvalidation::STATUS);
+            }
         }
+    }
+}
+
+/// Where a `#()` job runs, following tmux's `server_client_get_cwd`: a client
+/// contributes its own working directory only while it has no session, so a
+/// format expanded by an attached client runs in that client's *session*
+/// directory.
+pub(crate) fn job_cwd(session: Option<&Session>, client_cwd: Option<&std::path::Path>) -> Option<PathBuf> {
+    match session {
+        Some(session) => session
+            .cwd()
+            .map(Path::to_path_buf)
+            .or_else(|| client_cwd.map(Path::to_path_buf)),
+        None => client_cwd.map(Path::to_path_buf),
     }
 }
 
@@ -308,6 +399,7 @@ fn run_format_job(
         let _ = child.wait();
         return String::new();
     };
+    process.fd.store(stdout.as_raw_fd(), Ordering::Release);
     let mut reader = BufReader::new(stdout);
     let mut bytes = Vec::new();
     let mut output = String::new();
@@ -503,7 +595,7 @@ impl StatusRenderer for RenderCache {
             let jobs = self
                 .format_jobs
                 .get_or_insert_with(|| {
-                    Arc::new(FormatJobRegistry::new(state.client_render_registry()))
+                    Arc::new(FormatJobRegistry::new(&state.client_render_registry()))
                 })
                 .clone();
             self.rendered = Some(render_status(
@@ -526,9 +618,13 @@ impl StatusRenderer for RenderCache {
 }
 
 impl RenderCache {
-    pub(crate) fn for_client(client: ClientContext) -> Self {
+    /// Render for one registered client, sharing that client's `#()` job tree
+    /// so a command it runs and its status line reach one cache — tmux's
+    /// per-client `c->jobs`.
+    pub(crate) fn for_client(client: ClientContext, format_jobs: Arc<FormatJobRegistry>) -> Self {
         Self {
             client,
+            format_jobs: Some(format_jobs),
             ..Self::default()
         }
     }
@@ -589,7 +685,7 @@ impl RenderCache {
         let session = state.find(session)?;
         let jobs = self
             .format_jobs
-            .get_or_insert_with(|| Arc::new(FormatJobRegistry::new(state.client_render_registry())))
+            .get_or_insert_with(|| Arc::new(FormatJobRegistry::new(&state.client_render_registry())))
             .clone();
         let context = StatusContext::new(
             state,
@@ -617,7 +713,7 @@ impl RenderCache {
         let session = state.find(session)?;
         let jobs = self
             .format_jobs
-            .get_or_insert_with(|| Arc::new(FormatJobRegistry::new(state.client_render_registry())))
+            .get_or_insert_with(|| Arc::new(FormatJobRegistry::new(&state.client_render_registry())))
             .clone();
         let context = StatusContext::new(
             state,
@@ -1417,20 +1513,12 @@ impl format::FormatContext for StatusContext<'_> {
         let Some(jobs) = self.jobs else {
             return String::new();
         };
-        let scope = format!(
-            "{}|{}|{}",
-            vars.lookup("session_id").unwrap_or(""),
-            vars.lookup("window_id").unwrap_or(""),
-            vars.lookup("pane_id").unwrap_or("")
-        );
-        jobs.output(
-            FormatJobKey {
-                scope,
-                command: command.to_string(),
-            },
+        jobs.output_for(
+            command,
             expanded,
+            vars,
             self.session.id,
-            self.client.cwd.clone(),
+            job_cwd(Some(self.session), self.client.cwd.as_deref()),
             self.client.environment.clone(),
             self.job_status,
         )
@@ -2321,7 +2409,7 @@ mod tests {
     fn format_job_eviction_timeout_is_configurable_for_tests() {
         let state = ServerState::with_test_session().expect("state");
         let jobs = Arc::new(FormatJobRegistry::with_eviction_timeout(
-            state.client_render_registry(),
+            &state.client_render_registry(),
             Duration::from_millis(200),
         ));
         let key = FormatJobKey {

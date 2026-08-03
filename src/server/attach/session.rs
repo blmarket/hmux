@@ -151,14 +151,17 @@ impl AttachSession {
         writer.send(Frame::new(Message::Ready))?;
 
         let status_timer = StatusTimer::new(status_interval, Instant::now());
-        let mut status_cache = status::RenderCache::for_client(status::ClientContext {
-            term: (!terminal.name().is_empty()).then(|| terminal.name().to_string()),
-            tty: client_tty.tty_name.clone(),
-            pid: client_tty.client_pid,
-            cwd: context.cwd.clone(),
-            environment: context.environment.clone(),
-            ..status::ClientContext::default()
-        });
+        let mut status_cache = status::RenderCache::for_client(
+            status::ClientContext {
+                term: (!terminal.name().is_empty()).then(|| terminal.name().to_string()),
+                tty: client_tty.tty_name.clone(),
+                pid: client_tty.client_pid,
+                cwd: context.cwd.clone(),
+                environment: context.environment.clone(),
+                ..status::ClientContext::default()
+            },
+            render_attachment.format_jobs(),
+        );
         let agent_status_subscription = hub.subscribe()?;
         status_cache.update_agents(hub.snapshot());
         let pane_rows = rows.saturating_sub(status_h).max(1);

@@ -696,6 +696,7 @@ struct PreviousCommandTargetContext {
     active_panes: Option<BTreeMap<u32, u32>>,
     hook_vars: Option<Vec<(String, String)>>,
     mouse: Option<MouseEvent>,
+    format_jobs: Option<Arc<CommandJobs>>,
 }
 
 fn install_command_target_context(
@@ -736,6 +737,10 @@ fn install_command_target_context(
             .as_ref()
             .map(|vars| state.replace_hook_format_vars(vars.as_ref().clone())),
         mouse: state.replace_command_mouse(context.mouse.clone()),
+        format_jobs: {
+            let jobs = Arc::new(CommandJobs::new(state, context));
+            state.replace_command_format_jobs(Some(jobs))
+        },
     }
 }
 
@@ -747,6 +752,23 @@ fn restore_command_target_context(state: &mut ServerState, previous: PreviousCom
         state.replace_hook_format_vars(vars);
     }
     state.replace_command_mouse(previous.mouse);
+    state.replace_command_format_jobs(previous.format_jobs);
+}
+
+/// Expand one of a command's format templates, running `#()` jobs in the tree
+/// [`install_command_target_context`] put in place for the running command.
+fn expand_command_format(
+    st: &ServerState,
+    template: &str,
+    vars: &Vars,
+    loops: Option<&dyn format::LoopSource>,
+) -> String {
+    format::expand_with_jobs(template, vars, loops, command_jobs(st))
+}
+
+fn command_jobs(st: &ServerState) -> Option<&dyn format::FormatJobs> {
+    st.command_format_jobs()
+        .map(|jobs| jobs.as_ref() as &dyn format::FormatJobs)
 }
 
 struct SourceLocation {
@@ -3267,12 +3289,12 @@ fn list_sessions(args: &[String], st: &ServerState, agents: &PaneAgents) -> Comm
     for s in order {
         let vars = vars_for(st, s, s.active, agents, marked);
         if let Some(f) = filter {
-            if !format::is_true(&format::expand(f, &vars)) {
+            if !format::is_true(&expand_command_format(st, f, &vars, None)) {
                 continue;
             }
         }
         let line = match template {
-            Some(t) => format::expand(t, &vars),
+            Some(t) => expand_command_format(st, t, &vars, None),
             None => match st.session_group_name(s) {
                 Some(group) => format!("{} (group {group})", s.summary()),
                 None => s.summary(),
@@ -3330,14 +3352,16 @@ fn new_session(args: &[String], st: &mut ServerState, context: &ClientContext) -
     };
     match result {
         Ok(_) => {
-            apply_new_session_opts(args, &name, st, dimensions);
+            apply_new_session_opts(args, &name, st, dimensions, context);
             if has_flag(args, "-P") {
                 let sess = st.find(&name).expect("session just created");
                 let template = flag_value(args, "-F").unwrap_or(NEW_SESSION_TEMPLATE);
                 let marked = st.marked_pane();
-                let line = format::expand(
+                let line = expand_command_format(
+                    st,
                     template,
                     &vars_for(st, sess, sess.active, &PaneAgents::new(), marked),
+                    None,
                 );
                 CommandResult::ok(format!("{line}\n"))
             } else {
@@ -3491,7 +3515,16 @@ fn apply_new_session_opts(
     name: &str,
     st: &mut ServerState,
     dimensions: (Option<u16>, Option<u16>),
+    context: &ClientContext,
 ) {
+    // tmux's `s->cwd`: the `-c` directory, else where the creating client was.
+    // It is what the session's `#()` jobs run in.
+    if let Some(session_id) = st.session_id(name) {
+        let cwd = command_option_value(args, "-c", NEW_SESSION_VALUE_FLAGS)
+            .map(PathBuf::from)
+            .or_else(|| context.cwd.clone());
+        st.set_session_cwd(session_id, cwd);
+    }
     // `-x W -y H` sets the new session's client size.
     let (x, y) = dimensions;
     let joined_existing_group = st
@@ -3719,7 +3752,7 @@ pub fn new_session_for_attach(
     };
     match result {
         Ok(_) => {
-            apply_new_session_opts(&args, &name, st, dimensions);
+            apply_new_session_opts(&args, &name, st, dimensions, context);
             Ok(name)
         }
         // create_session already yields tmux's "duplicate session: <name>".
@@ -3857,9 +3890,11 @@ fn new_window(args: &[String], st: &mut ServerState, context: &ClientContext) ->
                 let sess = st.find(&session).expect("session present");
                 let template = flag_value(args, "-F").unwrap_or(NEW_WINDOW_TEMPLATE);
                 let marked = st.marked_pane();
-                let line = format::expand(
+                let line = expand_command_format(
+                    st,
                     template,
                     &vars_for(st, sess, win_idx, &PaneAgents::new(), marked),
+                    None,
                 );
                 CommandResult::ok(format!("{line}\n"))
             } else {
@@ -3927,13 +3962,13 @@ fn list_windows(args: &[String], st: &ServerState, agents: &PaneAgents) -> Comma
         for (idx, _win) in sess.windows.iter().enumerate() {
             let vars = vars_for(st, sess, idx, agents, marked);
             if let Some(f) = filter {
-                if !format::is_true(&format::expand(f, &vars)) {
+                if !format::is_true(&expand_command_format(st, f, &vars, None)) {
                     continue;
                 }
             }
             // Structural default (tmux's includes a volatile layout id + @id, so
             // this isn't byte-identical; the suite pins `list-windows` via -F).
-            let line = format::expand(template.unwrap_or(default_line), &vars);
+            let line = expand_command_format(st, template.unwrap_or(default_line), &vars, None);
             out.push_str(&line);
             out.push('\n');
         }
@@ -3995,11 +4030,11 @@ fn list_panes(args: &[String], st: &ServerState, agents: &PaneAgents) -> Command
         for pane_idx in 0..win.panes.len() {
             let vars = vars_full(st, sess, win_pos, pane_idx, agents, marked);
             if let Some(f) = filter {
-                if !format::is_true(&format::expand(f, &vars)) {
+                if !format::is_true(&expand_command_format(st, f, &vars, None)) {
                     continue;
                 }
             }
-            let line = format::expand(template.unwrap_or(default_line), &vars);
+            let line = expand_command_format(st, template.unwrap_or(default_line), &vars, None);
             out.push_str(&line);
             out.push('\n');
         }
@@ -4139,10 +4174,11 @@ fn display_message(
     let expanded = if has_flag(args, "-l") {
         message.to_string()
     } else {
-        format::expand_time_with(
+        format::expand_time_with_jobs(
             message,
             &vars,
             loops.as_ref().map(|loops| loops as &dyn format::LoopSource),
+            command_jobs(st),
         )
     };
     let mut out = String::new();
@@ -4204,6 +4240,50 @@ struct TreeLoops<'a> {
     session: usize,
     window: usize,
     agents: &'a PaneAgents,
+}
+
+/// The `#()` jobs of one command's format expansions. tmux runs jobs from every
+/// expansion — `display-message`, `if-shell -F`, a status redraw — caching each
+/// in the tree of the client the format belongs to.
+pub(crate) struct CommandJobs {
+    registry: Arc<super::status::FormatJobRegistry>,
+    session_id: u32,
+    cwd: Option<PathBuf>,
+    environment: Vec<String>,
+}
+
+impl CommandJobs {
+    /// The runner for a command run by `context`.
+    fn new(st: &ServerState, context: &ClientContext) -> Self {
+        let (registry, client_session_id) = st.format_jobs_for_client(context.tty_name.as_deref());
+        // A client contributes its own directory only while it has no session;
+        // otherwise the job runs in the session that client is attached to.
+        let cwd = match client_session_id.and_then(|id| st.session_by_id(id)) {
+            Some(session) => super::status::job_cwd(Some(session), context.cwd.as_deref()),
+            None => context.cwd.clone(),
+        };
+        Self {
+            registry,
+            session_id: client_session_id.unwrap_or_default(),
+            cwd,
+            environment: context.environment.clone(),
+        }
+    }
+}
+
+impl format::FormatJobs for CommandJobs {
+    fn run(&self, command: &str, expanded: String, vars: &Vars) -> String {
+        self.registry.output_for(
+            command,
+            expanded,
+            vars,
+            self.session_id,
+            self.cwd.clone(),
+            self.environment.clone(),
+            // Not a status redraw, so finishing must not invalidate one.
+            false,
+        )
+    }
 }
 
 impl format::LoopSource for TreeLoops<'_> {
@@ -5184,9 +5264,11 @@ fn split_window(args: &[String], st: &mut ServerState, context: &ClientContext) 
             // print target even under `-d`, where the active pane is the original.
             let template = flag_value(args, "-F").unwrap_or(NEW_WINDOW_TEMPLATE);
             let marked = st.marked_pane();
-            let line = format::expand(
+            let line = expand_command_format(
+                st,
                 template,
                 &vars_full(st, sess, resolved.window, pane, &PaneAgents::new(), marked),
+                None,
             );
             if has_flag(args, "-I") {
                 match context.input_file.as_ref() {
@@ -5340,7 +5422,8 @@ fn new_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -> C
     if has_flag(args, "-P") {
         let session = &st.sessions()[resolved.session];
         let template = flag_value(args, "-F").unwrap_or(NEW_WINDOW_TEMPLATE);
-        let line = format::expand(
+        let line = expand_command_format(
+            st,
             template,
             &vars_full(
                 st,
@@ -5350,6 +5433,7 @@ fn new_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -> C
                 &PaneAgents::new(),
                 st.marked_pane(),
             ),
+            None,
         );
         CommandResult::ok(format!("{line}\n"))
     } else {
@@ -6050,9 +6134,11 @@ fn set_option(args: &[String], st: &mut ServerState, window_command: bool) -> Co
             match current_session(st).and_then(|name| st.find(&name)) {
                 Some(sess) => {
                     let window = st.command_window_index(sess);
-                    format::expand(
+                    expand_command_format(
+                        st,
                         raw,
                         &vars_for(st, sess, window, &PaneAgents::new(), st.marked_pane()),
+                        None,
                     )
                 }
                 None => raw.to_string(),
@@ -6532,10 +6618,20 @@ fn show_messages(args: &[String], st: &ServerState) -> CommandResult {
             output.push('\n');
         }
         if show_jobs {
-            for job in st.background_job_registry().jobs() {
+            // tmux keeps one job list for the whole server, so a `#()` still
+            // running for some format is listed beside a `run-shell -b`.
+            let background = st
+                .background_job_registry()
+                .jobs()
+                .into_iter()
+                .map(|job| (job.command, job.fd, job.pid as i32));
+            let format_jobs = st
+                .running_format_jobs()
+                .into_iter()
+                .map(|job| (job.command, job.fd, job.pid));
+            for (id, (command, fd, pid)) in background.chain(format_jobs).enumerate() {
                 output.push_str(&format!(
-                    "Job {}: {} [fd={}, pid={}, status=0]\n",
-                    job.id, job.command, job.fd, job.pid
+                    "Job {id}: {command} [fd={fd}, pid={pid}, status=0]\n"
                 ));
             }
         }
@@ -7652,7 +7748,8 @@ fn break_pane(args: &[String], st: &mut ServerState) -> CommandResult {
                 let sess = &st.sessions()[target.session];
                 let template = flag_value(args, "-F").unwrap_or(NEW_WINDOW_TEMPLATE);
                 let marked = st.marked_pane();
-                let line = format::expand(
+                let line = expand_command_format(
+                    st,
                     template,
                     &vars_full(
                         st,
@@ -7662,6 +7759,7 @@ fn break_pane(args: &[String], st: &mut ServerState) -> CommandResult {
                         &PaneAgents::new(),
                         marked,
                     ),
+                    None,
                 );
                 CommandResult::ok(format!("{line}\n"))
             }
@@ -8030,11 +8128,16 @@ fn list_buffers(args: &[String], st: &ServerState) -> CommandResult {
                     .unwrap_or_default(),
             );
         if let Some(f) = filter {
-            if !format::is_true(&format::expand(f, &v)) {
+            if !format::is_true(&expand_command_format(st, f, &v, None)) {
                 continue;
             }
         }
-        out.push_str(&format::expand(template.unwrap_or(default_line), &v));
+        out.push_str(&expand_command_format(
+            st,
+            template.unwrap_or(default_line),
+            &v,
+            None,
+        ));
         out.push('\n');
     }
     CommandResult::ok(out)
@@ -8353,10 +8456,10 @@ fn expand_if_cond(cond: &str, args: &[String], st: &ServerState, agents: &PaneAg
                 window: r.window,
                 agents,
             };
-            return format::expand_with(cond, &vars, Some(&loops));
+            return expand_command_format(st, cond, &vars, Some(&loops));
         }
     }
-    format::expand_with(cond, &Vars::default(), None)
+    expand_command_format(st, cond, &Vars::default(), None)
 }
 
 /// `source-file [-Fnqv] [-t target] path ...`. Reads each file of tmux commands
