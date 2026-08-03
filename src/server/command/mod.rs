@@ -21,6 +21,7 @@ pub(in crate::server) mod panes;
 pub(in crate::server) mod queue;
 pub(in crate::server) mod server;
 pub(in crate::server) mod sessions;
+mod suspend;
 pub(in crate::server) mod windows;
 
 #[cfg(test)]
@@ -53,9 +54,13 @@ use super::state::{
 use super::style::{
     write_capture_hyperlink, CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder,
 };
+#[cfg(test)]
+use super::task::drive_blocking;
 use super::task::{
-    Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest, WaitToken,
+    run_blocking, Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest,
+    WaitToken,
 };
+use suspend::{IfShellJob, RunShellJob};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.
@@ -449,41 +454,7 @@ impl BlockingCommandRuntime {
             Arc::new(Self),
             64,
         ));
-        task.poll(&ReadySet::default());
-        while task.wait().is_some() {
-            let ready = {
-                let wait = task.wait().expect("pending command has a wait request");
-                assert!(
-                    wait.sources().len() <= 1,
-                    "blocking command driver supports one descriptor per coroutine"
-                );
-                let mut descriptor = wait.sources().first().map(|source| libc::pollfd {
-                    fd: source.fd().as_raw_fd(),
-                    events: libc::POLLIN,
-                    revents: 0,
-                });
-                let timeout = wait.deadline().map_or(-1, |deadline| {
-                    let duration = deadline.saturating_duration_since(Instant::now());
-                    let millis = duration.as_nanos().saturating_add(999_999) / 1_000_000;
-                    i32::try_from(millis).unwrap_or(i32::MAX)
-                });
-                let (pointer, count) = descriptor
-                    .as_mut()
-                    .map_or((std::ptr::null_mut(), 0), |descriptor| {
-                        (descriptor as *mut libc::pollfd, 1)
-                    });
-                let source_ready = loop {
-                    let result = unsafe { libc::poll(pointer, count, timeout) };
-                    if result >= 0
-                        || io::Error::last_os_error().kind() != io::ErrorKind::Interrupted
-                    {
-                        break result > 0;
-                    }
-                };
-                ReadySet::after_single_source_wakeup(&wait, source_ready, Instant::now())
-            };
-            task.poll(&ready);
-        }
+        drive_blocking(&mut task);
         match task.take_output() {
             Some(Ok(result)) => result,
             Some(Err(error)) => CommandResult::err(format!("{error}\n")),
@@ -1016,34 +987,7 @@ impl PaneOutputSuspension {
     }
 
     fn resolve_blocking(self) -> CommandSuspensionResult {
-        let mut task = TaskState::new(self);
-        task.poll(&ReadySet::default());
-        while task.wait().is_some() {
-            let ready = {
-                let wait = task.wait().expect("pending pane output has a wait request");
-                let source = wait.sources()[0];
-                let timeout = wait
-                    .deadline()
-                    .map(|deadline| deadline.saturating_duration_since(Instant::now()))
-                    .unwrap_or(Duration::MAX);
-                let timeout_ms = i32::try_from(timeout.as_millis())
-                    .unwrap_or(i32::MAX)
-                    .max(1);
-                let mut fd = libc::pollfd {
-                    fd: source.fd().as_raw_fd(),
-                    events: libc::POLLIN,
-                    revents: 0,
-                };
-                let result = unsafe { libc::poll(&mut fd, 1, timeout_ms) };
-                if result < 0 && io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
-                    continue;
-                }
-                ReadySet::after_single_source_wakeup(&wait, result > 0, Instant::now())
-            };
-            task.poll(&ready);
-        }
-        task.take_output()
-            .expect("completed pane-output task has a result")
+        run_blocking(self)
     }
 }
 
@@ -1255,24 +1199,11 @@ impl CommandSuspension {
     pub(crate) fn resolve_blocking(self) -> CommandSuspensionResult {
         match self {
             Self::RunShell { args, context } => {
-                CommandSuspensionResult::RunShell(run_shell_process(&args, &context))
+                CommandSuspensionResult::RunShell(run_blocking(RunShellJob::new(&args, &context)))
             }
-            Self::IfShell { condition, context } => {
-                let matched = if condition
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .ends_with(&["run", "\"true\""])
-                {
-                    true
-                } else {
-                    let mut shell = shell_command(&condition, &context);
-                    shell
-                        .status()
-                        .map(|status| status.success())
-                        .unwrap_or(false)
-                };
-                CommandSuspensionResult::IfShell(matched)
-            }
+            Self::IfShell { condition, context } => CommandSuspensionResult::IfShell(run_blocking(
+                IfShellJob::new(&condition, &context),
+            )),
             Self::SourceFile { paths } => CommandSuspensionResult::SourceFile(
                 paths
                     .into_iter()
@@ -2395,7 +2326,7 @@ fn run_shell_shared(
         };
         return run_inserted_command_string(command, state, agents, context);
     }
-    let completion = run_shell_process(args, context);
+    let completion = run_blocking(RunShellJob::new(args, context));
     let mut state = match state.lock() {
         Ok(state) => state,
         Err(_) => return CommandResult::err("server state poisoned\n"),
@@ -8272,78 +8203,13 @@ fn run_shell(
         };
         return run_tokenized_line(&tokenize_line(command), st, agents, context);
     }
-    let completion = run_shell_process(args, context);
+    let completion = run_blocking(RunShellJob::new(args, context));
     finish_run_shell(completion, st)
 }
 
 pub(crate) struct RunShellCompletion {
     result: CommandResult,
     view: Option<(String, Vec<u8>)>,
-}
-
-fn run_shell_process(args: &[String], context: &ClientContext) -> RunShellCompletion {
-    let cmd = match positionals(args, &["-t", "-c", "-d"]).into_iter().next() {
-        Some(c) => c.to_string(),
-        None => {
-            return RunShellCompletion {
-                result: CommandResult::ok(""),
-                view: None,
-            };
-        }
-    };
-    let delay = match job_delay(args) {
-        Ok(delay) => delay,
-        Err(error) => {
-            return RunShellCompletion {
-                result: error,
-                view: None,
-            };
-        }
-    };
-    debug_assert!(!has_flag(args, "-b"));
-    if !delay.is_zero() {
-        wait_job_delay(delay);
-    }
-    let mut shell = shell_command(&cmd, context);
-    if let Some(cwd) = flag_value(args, "-c") {
-        shell.current_dir(cwd);
-    }
-    match shell.output() {
-        Ok(o) => {
-            let exit = o.status.code().unwrap_or_else(|| {
-                std::os::unix::process::ExitStatusExt::signal(&o.status)
-                    .map_or(0, |signal| 128 + signal)
-            });
-            let mut output = String::from_utf8_lossy(&o.stdout).into_owned();
-            if has_flag(args, "-E") {
-                output.push_str(&String::from_utf8_lossy(&o.stderr));
-            }
-            if !output.is_empty() && !output.ends_with('\n') {
-                output.push('\n');
-            }
-            if exit != 0 {
-                if exit >= 128 {
-                    output.push_str(&format!("'{cmd}' terminated by signal {}\n", exit - 128));
-                } else {
-                    output.push_str(&format!("'{cmd}' returned {exit}\n"));
-                }
-            }
-            let view_target = flag_value(args, "-t");
-            let view = view_target.map(|target| (target.to_string(), output.as_bytes().to_vec()));
-            let mut result = CommandResult::ok(if view_target.is_some() {
-                String::new()
-            } else {
-                output
-            });
-            result.exit = exit;
-            result.continue_queue = true;
-            RunShellCompletion { result, view }
-        }
-        Err(error) => RunShellCompletion {
-            result: CommandResult::err(format!("{error}\n")),
-            view: None,
-        },
-    }
 }
 
 fn finish_run_shell(completion: RunShellCompletion, state: &mut ServerState) -> CommandResult {
