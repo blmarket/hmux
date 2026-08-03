@@ -699,7 +699,43 @@ fn encode_key_for_pane(state: &ServerState, target: &str, name: &str) -> Option<
 }
 
 fn encode_parsed_key_for_pane(state: &ServerState, target: &str, code: KeyCode) -> Option<Vec<u8>> {
+    if let Some(bytes) = pane_key_table_entry(code) {
+        // `send-keys` and a client's own keystroke must agree, so both go
+        // through this table first.
+        return Some(bytes.to_vec());
+    }
     with_ghostty_key_event(code, |event| state.encode_pane_key(target, event).ok()).flatten()
+}
+
+/// Keys whose pane encoding comes from tmux's `input-keys.c` table rather than
+/// the terminal engine's key encoder.
+///
+/// The engine encodes bare Home/End the way a modern xterm reports them
+/// (`CSI H` / `CSI F`, or `SS3 H` / `SS3 F` with DECCKM set), but a pane is
+/// told it is running under `screen`/`tmux-256color`, whose `khome`/`kend` are
+/// `CSI 1 ~` and `CSI 4 ~`. Applications that key off that terminfo — `less`
+/// among them — do not recognize the xterm forms: `less` swallows the `CSI`
+/// introducer and runs the trailing `F` as its own "forward forever" command,
+/// leaving the pager parked on `Waiting for data...` instead of jumping to the
+/// end of the file.
+///
+/// Only the unmodified keys need this. tmux builds the modified forms
+/// (`S-End`, `C-Home`, …) from `H`/`F` finals, which is what the engine already
+/// produces.
+///
+/// The interactive path consults the same table: tmux never hands a client's
+/// key bytes to a pane verbatim (it decodes them and re-encodes with
+/// `input_key`), and forwarding them as typed only agrees with tmux where the
+/// two encodings coincide — everywhere except here.
+pub(crate) fn pane_key_table_entry(code: KeyCode) -> Option<&'static [u8]> {
+    if code.modifiers != Modifiers::default() {
+        return None;
+    }
+    match code.base {
+        KeyBase::Special(SpecialKey::Home) => Some(b"\x1b[1~".as_slice()),
+        KeyBase::Special(SpecialKey::End) => Some(b"\x1b[4~".as_slice()),
+        _ => None,
+    }
 }
 
 fn encode_parsed_key_for_client(code: KeyCode) -> Option<ClientKey> {
