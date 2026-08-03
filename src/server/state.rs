@@ -13897,34 +13897,6 @@ mod tests {
     }
 
     #[test]
-    fn respawn_window_replaces_pane_with_running_command() {
-        let mut state = ServerState::with_test_session().expect("state");
-        state
-            .respawn_window_process(
-                "0:0",
-                Some(vec![
-                    "/bin/sh".into(),
-                    "-c".into(),
-                    "printf RESPAWNED; sleep 1".into(),
-                ]),
-                None,
-            )
-            .expect("respawn");
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-        loop {
-            let dump = state.dump_pane("0:0").expect("dump");
-            if dump.contains("RESPAWNED") {
-                break;
-            }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "replacement pane never produced output: {dump:?}"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-    }
-
-    #[test]
     fn create_and_kill_session() {
         let mut state = ServerState::with_test_session().expect("state");
         state
@@ -13956,30 +13928,6 @@ mod tests {
         let mut state = ServerState::with_test_session().expect("state");
         let err = state.create_session("0", PaneSpec::Inert).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
-    }
-
-    #[test]
-    fn exited_last_pane_requests_exit_empty_shutdown() {
-        let mut state = ServerState::empty();
-        state
-            .create_session(
-                "0",
-                PaneSpec::Command(vec!["/bin/sh".into(), "-c".into(), "exit 0".into()]),
-            )
-            .expect("create short-lived pane");
-
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-        while !state.active_pane("0").is_some_and(Pane::has_exited) {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "pane child did not exit"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-
-        assert!(state.reap_exited_panes());
-        assert!(state.sessions().is_empty());
-        assert!(state.shutdown_requested());
     }
 
     #[test]

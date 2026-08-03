@@ -525,8 +525,11 @@ mod tests {
     fn wake_handle_interrupts_a_blocked_poll() {
         let mut reactor = MioReactor::<Recipient>::new().expect("reactor");
         let wake_handle = reactor.wake_handle();
+        // The wake is latched, not edge-triggered on an already-blocked poll, so
+        // the worker does not have to be raced into the window where `poll` is
+        // sleeping: a wake that lands first still returns the next `poll`
+        // immediately. That keeps the check free of a timing delay.
         let wake_thread = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(20));
             wake_handle.wake().expect("wake reactor");
         });
 

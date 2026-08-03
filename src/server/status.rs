@@ -2351,8 +2351,10 @@ mod tests {
 
     #[test]
     fn attached_renderers_own_distinct_format_job_caches() {
-        let mut state = ServerState::with_test_session().expect("state");
-        state.set_global_option("status-format[0]", "#(sleep 0.05; printf client)");
+        // Any render creates the cache's job tree, so this needs no `#()` in
+        // the status format — and must not have one: starting a real job would
+        // fork a shell, which a unit test is not allowed to do.
+        let state = ServerState::with_test_session().expect("state");
         let mut first = RenderCache::default();
         let mut second = RenderCache::default();
 
@@ -2367,42 +2369,13 @@ mod tests {
 
     #[test]
     fn no_client_formats_share_the_global_format_job_cache() {
+        // That the shared tree actually caches an entry across command clients
+        // needs a job to run, so it is pinned by
+        // `hmux-conformance/tests/format_job_cache_scope.rs` instead.
         let state = ServerState::with_test_session().expect("state");
         let first = state.format_job_registry();
         let second = state.format_job_registry();
         assert!(Arc::ptr_eq(&first, &second));
-
-        let key = FormatJobKey {
-            scope: "global".to_string(),
-            command: "printf global".to_string(),
-        };
-        assert_eq!(
-            first.output(
-                key.clone(),
-                "printf global".to_string(),
-                0,
-                None,
-                Vec::new(),
-                false,
-            ),
-            ""
-        );
-        let deadline = Instant::now() + Duration::from_secs(2);
-        let output = loop {
-            let output = second.output(
-                key.clone(),
-                "printf global".to_string(),
-                0,
-                None,
-                Vec::new(),
-                false,
-            );
-            if output == "global" || Instant::now() >= deadline {
-                break output;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        };
-        assert_eq!(output, "global");
     }
 
     #[test]
