@@ -1458,6 +1458,9 @@ where
             target
         }
         command::Intent::NewAttach => {
+            // tmux opens the terminal before creating the session, so a client
+            // that cannot attach leaves nothing behind.
+            AttachSession::check_terminal(&client_tty)?;
             let mut st = state
                 .lock()
                 .map_err(|_| io::Error::other("state poisoned"))?;

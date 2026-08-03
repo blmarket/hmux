@@ -1,6 +1,27 @@
 use super::*;
 
 impl AttachSession {
+    /// Whether this client could be attached at all, without side effects.
+    ///
+    /// tmux's `cmd_new_session_exec` opens the terminal *before* it creates
+    /// anything, so a client with no controlling terminal fails without
+    /// leaving a session behind; running the same test up front is what keeps
+    /// the interactive create path from leaking one.
+    pub(crate) fn check_terminal(client_tty: &ClientTty) -> Result<(), AttachStartFailure> {
+        let failure = || {
+            AttachStartFailure::Client("open terminal failed: not a terminal\n".to_string())
+        };
+        let render = client_tty.render_fd().or_else(|| client_tty.input_fd());
+        let input = client_tty.input_fd().or_else(|| client_tty.render_fd());
+        let (Some(render), Some(input)) = (render, input) else {
+            return Err(failure());
+        };
+        if !is_tty(render.as_raw_fd()) || !is_tty(input.as_raw_fd()) {
+            return Err(failure());
+        }
+        Ok(())
+    }
+
     pub(crate) fn start_in_mode<W>(
         target: &str,
         client_tty: ClientTty,
