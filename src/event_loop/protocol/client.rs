@@ -479,6 +479,11 @@ impl ProtocolClient {
             identifying.identify_bytes += frame_bytes;
         }
         self.observe_identify(&mut frame);
+        if let Message::Command(args) = &mut frame.msg {
+            if args.is_empty() {
+                *args = self.default_client_command();
+            }
+        }
         match &frame.msg {
             Message::Command(args)
                 if self
@@ -506,6 +511,15 @@ impl ProtocolClient {
             }
             _ => {}
         }
+    }
+
+    /// The command line an argument-less client runs, from the server option.
+    /// Falls back to tmux's default when the state lock is unavailable.
+    fn default_client_command(&self) -> Vec<String> {
+        self.state
+            .lock()
+            .map(|state| command::default_client_command(&state))
+            .unwrap_or_else(|_| vec!["new-session".to_string()])
     }
 
     fn is_identify_message(message: &Message) -> bool {

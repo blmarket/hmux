@@ -3371,6 +3371,25 @@ pub enum Intent {
     Command,
 }
 
+/// tmux's `server_client_default_command`: a client that sent no command line
+/// at all runs whatever `default-client-command` holds, parsed as a command
+/// list. The stock default is `new-session`, which is why a bare `tmux` creates
+/// and attaches.
+pub fn default_client_command(st: &ServerState) -> Vec<String> {
+    let value = st
+        .server_options()
+        .get("default-client-command")
+        .unwrap_or("new-session")
+        .to_owned();
+    tokenize_line(&value)
+        .into_iter()
+        .map(|token| match token {
+            LineToken::Word(word) => word,
+            LineToken::Separator => ";".to_string(),
+        })
+        .collect()
+}
+
 /// Classify a client's raw command argv into an [`Intent`]. `attach`/`new` name
 /// resolution goes through the same [`registry`] the command dispatcher uses, so
 /// aliases (`new`, `attach`) and unambiguous prefixes resolve here too.
