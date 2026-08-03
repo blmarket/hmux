@@ -26,6 +26,18 @@ fn mouse_enabled(state: &Arc<Mutex<ServerState>>, target: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Spell a typed key the way the pane it is going to expects it.
+///
+/// `None` is a key that pane has no form for, which tmux drops.
+fn encode_key_for_pane(
+    state: &Arc<Mutex<ServerState>>,
+    target: &str,
+    key: PaneKey,
+) -> Option<Vec<u8>> {
+    let encoding = state.lock().ok()?.encode_pane_key(target, key).ok()?;
+    encoding.complete.then_some(encoding.bytes)
+}
+
 /// Write a mouse report into the pane it landed on, encoded from that pane's
 /// own DECSET modes.
 ///
@@ -605,6 +617,7 @@ impl AttachSession {
                                 name: plain_prompt_key(data[i]),
                                 code: Some(key_from_byte(data[i])),
                                 mouse: None,
+                                flags: TtyKeyFlags::default(),
                             },
                             1,
                         )
@@ -770,6 +783,7 @@ impl AttachSession {
                                 name: plain_prompt_key(data[i]),
                                 code: Some(key_from_byte(data[i])),
                                 mouse: None,
+                                flags: TtyKeyFlags::default(),
                             },
                             1,
                         )
@@ -835,7 +849,7 @@ impl AttachSession {
                 // the pane's. The command key can be a multi-byte escape (e.g.
                 // PgUp), so parse a logical key rather than one raw byte.
                 let start = i;
-                let (key, mouse, consumed) = match decode_tty_key(&data[i..]) {
+                let (key, mouse, consumed, flags) = match decode_tty_key(&data[i..]) {
                     Some((mut decoded, consumed)) => {
                         resolve_mouse_key(
                             &mut decoded,
@@ -846,9 +860,12 @@ impl AttachSession {
                             self.viewport.rows,
                             &mut self.status.status_cache,
                         );
-                        (decoded.code, decoded.mouse, consumed)
+                        (decoded.code, decoded.mouse, consumed, Some(decoded.flags))
                     }
-                    None => (Some(key_from_byte(data[i])), None, 1),
+                    // Bytes that decode to nothing — a truncated escape, or a
+                    // byte that is not valid UTF-8 — have no key identity to
+                    // re-encode from, so they reach the pane as they arrived.
+                    None => (Some(key_from_byte(data[i])), None, 1, None),
                 };
                 i += consumed;
                 let Some(key) = key else {
@@ -895,11 +912,20 @@ impl AttachSession {
                         );
                         forward_mouse_to_pane(state, event);
                     } else if forward_unbound {
-                        // Likewise for a key the client and the pane's terminal
-                        // type report differently: the pane is told what its own
-                        // terminfo describes, not what the client typed.
-                        match pane_key_table_entry(key) {
-                            Some(bytes) => forward_buf.extend_from_slice(bytes),
+                        // Likewise for every other key. tmux never hands a
+                        // client's bytes to a pane verbatim: it decodes them and
+                        // spells the key again for the pane's own terminal type
+                        // and modes, which is how a pane running under
+                        // `TERM=tmux-256color` is spared the `CSI H` and
+                        // `CSI 105;5u` forms a modern client terminal reports.
+                        match flags {
+                            Some(flags) => {
+                                if let Some(bytes) =
+                                    encode_key_for_pane(state, target, flags.pane_key(key))
+                                {
+                                    forward_buf.extend_from_slice(&bytes);
+                                }
+                            }
                             None => forward_buf.extend_from_slice(&data[start..i]),
                         }
                     }

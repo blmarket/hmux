@@ -42,6 +42,12 @@ impl Modifiers {
     fn insert(&mut self, bit: u8) {
         self.0 |= bit;
     }
+
+    /// The same modifiers without meta, for the pane encoder's lookup after it
+    /// has turned meta into a leading `ESC`.
+    pub(crate) fn without_meta(self) -> Self {
+        Self(self.0 & !Self::META)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

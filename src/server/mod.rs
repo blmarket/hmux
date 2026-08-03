@@ -22,6 +22,8 @@ pub(crate) mod cmd_send_keys;
 pub mod command;
 pub(crate) mod control;
 pub mod format;
+#[path = "input-keys.rs"]
+pub(crate) mod input_keys;
 pub(crate) mod key;
 pub mod latmon;
 pub(crate) mod mouse;

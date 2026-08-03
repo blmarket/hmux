@@ -30,6 +30,7 @@ use libc::pid_t;
 
 use crate::ghostty::Terminal;
 use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, ScreenTail};
+use crate::server::input_keys::ExtendedKeys;
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 
 
@@ -180,6 +181,11 @@ pub(crate) struct NativePaneObservation {
     mouse_tracking_mode: AtomicU8,
     mouse_utf8: AtomicBool,
     mouse_sgr: AtomicBool,
+    /// DECCKM, DECKPAM and the requested `modifyOtherKeys` level, which
+    /// together decide how a key is spelled for this pane.
+    cursor_keys: AtomicBool,
+    application_keypad: AtomicBool,
+    extended_keys_request: AtomicU8,
     /// Set when the pane sent DSR ?996 and is waiting for an answer.
     theme_query: AtomicBool,
     background: Mutex<String>,
@@ -634,6 +640,9 @@ impl NativePaneObservation {
             mouse_tracking_mode: AtomicU8::new(0),
             mouse_utf8: AtomicBool::new(false),
             mouse_sgr: AtomicBool::new(false),
+            cursor_keys: AtomicBool::new(false),
+            application_keypad: AtomicBool::new(false),
+            extended_keys_request: AtomicU8::new(0),
             background: Mutex::new("default".to_string()),
             child,
             output_waiters: Mutex::new(Vec::new()),
@@ -645,6 +654,21 @@ impl NativePaneObservation {
             last_output_at: Mutex::new(None),
             bell_count: AtomicU64::new(0),
             clipboard_events: Mutex::new(VecDeque::new()),
+        }
+    }
+
+    /// The pane's own key-output modes. The `extended-keys` option still has to
+    /// be applied to `extended_request`, which is why this is not already a
+    /// `PaneKeyModes`.
+    pub(crate) fn key_state(&self) -> PaneKeyState {
+        PaneKeyState {
+            cursor_keys: self.cursor_keys.load(Ordering::Acquire),
+            application_keypad: self.application_keypad.load(Ordering::Acquire),
+            extended_request: match self.extended_keys_request.load(Ordering::Acquire) {
+                1 => ExtendedKeys::Standard,
+                2 => ExtendedKeys::All,
+                _ => ExtendedKeys::Off,
+            },
         }
     }
 
@@ -1233,15 +1257,6 @@ impl Pane {
         self.input_with_stats(bytes).map(|_| ())
     }
 
-    pub(crate) fn encode_key(&self, event: ghostty_sys::KeyEvent<'_>) -> io::Result<Vec<u8>> {
-        self.observation
-            .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?
-            .encode_key(event)
-            .map_err(ghostty_err)
-    }
-
     pub(crate) fn encode_mouse(&self, event: ghostty_sys::MouseEvent) -> io::Result<Vec<u8>> {
         self.observation
             .term
@@ -1526,6 +1541,12 @@ impl Pane {
 
     pub(crate) fn bracketed_paste_enabled(&self) -> bool {
         self.observation.bracketed_paste.load(Ordering::Acquire)
+    }
+
+    /// The pane's DECCKM, DECKPAM and `modifyOtherKeys` state, which decide how
+    /// a key reaching it is spelled.
+    pub(crate) fn key_state(&self) -> PaneKeyState {
+        self.observation.key_state()
     }
 
     /// Whether the pane asked to be told when focus moves (DECSET 1004).
@@ -1936,6 +1957,21 @@ impl PaneIo {
         self.observation
             .mouse_sgr
             .store(self.mode_query_detector.mouse_sgr, Ordering::Release);
+        self.observation
+            .cursor_keys
+            .store(self.mode_query_detector.cursor_keys, Ordering::Release);
+        self.observation.application_keypad.store(
+            self.mode_query_detector.application_keypad,
+            Ordering::Release,
+        );
+        self.observation.extended_keys_request.store(
+            match self.mode_query_detector.extended_keys_request {
+                ExtendedKeys::Off => 0,
+                ExtendedKeys::Standard => 1,
+                ExtendedKeys::All => 2,
+            },
+            Ordering::Release,
+        );
         if std::mem::take(&mut self.mode_query_detector.theme_query) {
             self.observation.theme_query.store(true, Ordering::Release);
         }
@@ -2455,6 +2491,23 @@ struct ModeQueryDetector {
     mouse_utf8: bool,
     /// DECSET 1006: SGR encoding.
     mouse_sgr: bool,
+    /// DECCKM (DECSET 1): the pane wants the application cursor key forms.
+    cursor_keys: bool,
+    /// DECKPAM (`ESC =`): the pane wants the application keypad forms.
+    application_keypad: bool,
+    /// The `modifyOtherKeys` level the pane asked for with `CSI > 4 ; n m`.
+    /// What it *gets* also depends on the `extended-keys` option, which is
+    /// applied where the key is encoded rather than here.
+    extended_keys_request: ExtendedKeys,
+}
+
+/// A pane's own key-output modes, before the `extended-keys` option decides how
+/// much of the extended request is honoured.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct PaneKeyState {
+    pub(crate) cursor_keys: bool,
+    pub(crate) application_keypad: bool,
+    pub(crate) extended_request: ExtendedKeys,
 }
 
 /// A pane's DECSET mouse state, as `#{mouse_*_flag}` reports it.
@@ -2496,6 +2549,9 @@ impl Default for ModeQueryDetector {
             mouse_tracking: None,
             mouse_utf8: false,
             mouse_sgr: false,
+            cursor_keys: false,
+            application_keypad: false,
+            extended_keys_request: ExtendedKeys::Off,
         }
     }
 }
@@ -2556,6 +2612,25 @@ impl ModeQueryDetector {
             self.mouse_sgr = true;
         } else if tail.ends_with(b"\x1b[?1006l") {
             self.mouse_sgr = false;
+        } else if tail.ends_with(b"\x1b[?1h") {
+            self.cursor_keys = true;
+        } else if tail.ends_with(b"\x1b[?1l") {
+            self.cursor_keys = false;
+        } else if tail.ends_with(b"\x1b=") {
+            self.application_keypad = true;
+        } else if tail.ends_with(b"\x1b>") {
+            self.application_keypad = false;
+        } else if tail.ends_with(b"\x1b[>4;2m") {
+            self.extended_keys_request = ExtendedKeys::All;
+        } else if tail.ends_with(b"\x1b[>4;1m") {
+            self.extended_keys_request = ExtendedKeys::Standard;
+        } else if tail.ends_with(b"\x1b[>4;0m")
+            || tail.ends_with(b"\x1b[>4m")
+            || tail.ends_with(b"\x1b[>4n")
+        {
+            // `CSI > 4 m` with no level, and `CSI > 4 n`, both put the keyboard
+            // back to the standard forms.
+            self.extended_keys_request = ExtendedKeys::Off;
         } else if tail.ends_with(b"\x1b[?996n") {
             // DSR ?996: the pane is asking which theme it is running under.
             self.theme_query = true;

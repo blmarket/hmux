@@ -47,7 +47,8 @@ use crate::integration::status::StatusHub;
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 use crate::tmux::traits::{FrameReader, FrameWriter};
 
-use super::cmd_send_keys::{base64_encode, pane_key_table_entry};
+use super::cmd_send_keys::base64_encode;
+use super::input_keys::PaneKey;
 use super::command;
 use super::format;
 use super::key::{key_from_byte, parse_key_name, KeyBase, KeyCode, SpecialKey};
@@ -862,6 +863,44 @@ struct DecodedTtyKey {
     name: String,
     code: Option<KeyCode>,
     mouse: Option<MouseEvent>,
+    /// How the client spelled this key, which the pane encoder needs on top of
+    /// the semantic identity. tmux keeps the same distinctions in its
+    /// `tty_keys` table.
+    flags: TtyKeyFlags,
+}
+
+/// The terminal-shaped part of a decoded key: which application-mode form it
+/// arrived as, and whether its meta modifier was spelled inside the sequence
+/// rather than as a leading `ESC`.
+#[derive(Clone, Copy, Debug, Default)]
+struct TtyKeyFlags {
+    cursor: bool,
+    keypad: bool,
+    implied_meta: bool,
+}
+
+impl TtyKeyFlags {
+    fn pane_key(self, code: KeyCode) -> PaneKey {
+        PaneKey {
+            code,
+            cursor: self.cursor,
+            keypad: self.keypad,
+            implied_meta: self.implied_meta,
+        }
+    }
+}
+
+/// The flags an `SS3` sequence carries: both keypad and cursor keys have an
+/// application form, and tmux tracks which one the client actually sent.
+fn ss3_flags(final_byte: u8) -> TtyKeyFlags {
+    TtyKeyFlags {
+        cursor: matches!(final_byte, b'A' | b'B' | b'C' | b'D'),
+        keypad: matches!(
+            final_byte,
+            b'M' | b'j' | b'k' | b'm' | b'n' | b'o' | b'p'..=b'y'
+        ),
+        implied_meta: false,
+    }
 }
 
 /// Decode one terminal key for every attached-client consumer.
@@ -890,6 +929,7 @@ fn decode_tty_key(bytes: &[u8]) -> Option<(DecodedTtyKey, usize)> {
                 code: parse_key_name(&name),
                 name,
                 mouse: None,
+                flags: TtyKeyFlags::default(),
             },
             consumed,
         ));
@@ -901,6 +941,7 @@ fn decode_tty_key(bytes: &[u8]) -> Option<(DecodedTtyKey, usize)> {
                 code: parse_key_name(&name),
                 name,
                 mouse: None,
+                flags: TtyKeyFlags::default(),
             },
             1,
         ));
@@ -914,6 +955,7 @@ fn decode_tty_key(bytes: &[u8]) -> Option<(DecodedTtyKey, usize)> {
                     code: parse_key_name(&name),
                     name,
                     mouse: None,
+                    flags: TtyKeyFlags::default(),
                 },
                 2,
             ));
@@ -952,6 +994,7 @@ fn decode_tty_key(bytes: &[u8]) -> Option<(DecodedTtyKey, usize)> {
                 code,
                 name,
                 mouse: Some(mouse),
+                flags: TtyKeyFlags::default(),
             },
             end + 1,
         ));
@@ -976,15 +1019,20 @@ fn decode_tty_key(bytes: &[u8]) -> Option<(DecodedTtyKey, usize)> {
                 code,
                 name,
                 mouse: Some(mouse),
+                flags: TtyKeyFlags::default(),
             },
             start + 5,
         ));
     }
 
-    let (name, consumed) = match bytes.get(start).copied()? {
+    let (name, consumed, mut flags) = match bytes.get(start).copied()? {
         b'O' => {
             let final_byte = *bytes.get(start + 1)?;
-            (decode_ss3(final_byte)?.to_string(), start + 2)
+            (
+                decode_ss3(final_byte)?.to_string(),
+                start + 2,
+                ss3_flags(final_byte),
+            )
         }
         b'[' => {
             let mut end = start + 1;
@@ -995,16 +1043,34 @@ fn decode_tty_key(bytes: &[u8]) -> Option<(DecodedTtyKey, usize)> {
             }
             let final_byte = *bytes.get(end)?;
             let params = std::str::from_utf8(&bytes[start + 1..end]).ok()?;
-            (decode_csi(params, final_byte)?, end + 1)
+            let name = decode_csi(params, final_byte)?;
+            let flags = TtyKeyFlags {
+                // The normal cursor form is an application cursor key too: a
+                // pane in DECCKM is told `SS3 A` whichever one the client sent.
+                cursor: params.is_empty() && matches!(final_byte, b'A' | b'B' | b'C' | b'D'),
+                keypad: false,
+                // A modifier spelled in the parameters carries its own meta.
+                implied_meta: name.contains("M-"),
+            };
+            (name, end + 1, flags)
         }
-        byte => (meta_prompt_key(byte), start + 1),
+        byte => (meta_prompt_key(byte), start + 1, TtyKeyFlags::default()),
     };
-    let name = if meta { format!("M-{name}") } else { name };
+    let name = if meta {
+        // A leading `ESC` is meta the pane has to be told about the same way,
+        // so it stays a prefix — except for Home and End, which tmux lists with
+        // the modifier already implied.
+        flags.implied_meta = matches!(name.as_str(), "Home" | "End");
+        format!("M-{name}")
+    } else {
+        name
+    };
     Some((
         DecodedTtyKey {
             code: parse_key_name(&name),
             name,
             mouse: None,
+            flags,
         },
         consumed,
     ))

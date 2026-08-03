@@ -14,6 +14,7 @@ use crate::integration::status::PaneAgents;
 
 use super::command::{ClientContext, CommandResult};
 use super::format;
+use super::input_keys::{PaneKey, PaneKeyEncoding};
 use super::key::{parse_key_name, KeyBase, KeyCode, Modifiers, SpecialKey};
 use super::options;
 use super::state::{ClientKey, KeyBinding, ServerState};
@@ -528,8 +529,12 @@ fn inject_string(
                     return;
                 }
                 _ => {
-                    inject_parsed_key(state, target, key, output, mode_bindings);
-                    return;
+                    if inject_parsed_key(state, target, key, output, mode_bindings) {
+                        return;
+                    }
+                    // tmux falls through to the literal spelling for a key its
+                    // pane encoder had no form for, so `send-keys C-Escape`
+                    // types those nine characters rather than doing nothing.
                 }
             }
         }
@@ -542,26 +547,30 @@ fn inject_string(
     }
 }
 
+/// Returns whether the key was fully accounted for. A false leaves the caller
+/// to fall back to tmux's literal spelling of the key name.
 fn inject_parsed_key(
     state: &ServerState,
     target: &str,
     key: KeyCode,
     output: &mut Vec<u8>,
     mode_bindings: &mut Vec<KeyBinding>,
-) {
+) -> bool {
     if matches!(key.base, KeyBase::Any | KeyBase::User(_)) {
         let _ = route_mode_key(state, target, key, mode_bindings);
-        return;
+        return true;
     }
     if matches!(key.base, KeyBase::None | KeyBase::Mouse(_)) {
-        return;
+        return true;
     }
     if route_mode_key(state, target, key, mode_bindings) {
-        return;
+        return true;
     }
-    if let Some(bytes) = encode_parsed_key_for_pane(state, target, key) {
-        output.extend_from_slice(&bytes);
-    }
+    let encoding = encode_parsed_key_for_pane(state, target, key);
+    // Whatever the encoder managed before giving up still goes out, exactly as
+    // tmux's writes to the pane are not unwound by a later failure.
+    output.extend_from_slice(&encoding.bytes);
+    encoding.complete
 }
 
 fn literal_key(ch: char) -> KeyCode {
@@ -695,47 +704,18 @@ fn encode_key_for_pane(state: &ServerState, target: &str, name: &str) -> Option<
         return encode_hex_key(name);
     }
     let code = parse_key_name(name)?;
-    encode_parsed_key_for_pane(state, target, code)
+    let encoding = encode_parsed_key_for_pane(state, target, code);
+    encoding.complete.then_some(encoding.bytes)
 }
 
-fn encode_parsed_key_for_pane(state: &ServerState, target: &str, code: KeyCode) -> Option<Vec<u8>> {
-    if let Some(bytes) = pane_key_table_entry(code) {
-        // `send-keys` and a client's own keystroke must agree, so both go
-        // through this table first.
-        return Some(bytes.to_vec());
-    }
-    with_ghostty_key_event(code, |event| state.encode_pane_key(target, event).ok()).flatten()
-}
-
-/// Keys whose pane encoding comes from tmux's `input-keys.c` table rather than
-/// the terminal engine's key encoder.
+/// Encode a key named on a `send-keys` command line for its pane.
 ///
-/// The engine encodes bare Home/End the way a modern xterm reports them
-/// (`CSI H` / `CSI F`, or `SS3 H` / `SS3 F` with DECCKM set), but a pane is
-/// told it is running under `screen`/`tmux-256color`, whose `khome`/`kend` are
-/// `CSI 1 ~` and `CSI 4 ~`. Applications that key off that terminfo — `less`
-/// among them — do not recognize the xterm forms: `less` swallows the `CSI`
-/// introducer and runs the trailing `F` as its own "forward forever" command,
-/// leaving the pager parked on `Waiting for data...` instead of jumping to the
-/// end of the file.
-///
-/// Only the unmodified keys need this. tmux builds the modified forms
-/// (`S-End`, `C-Home`, …) from `H`/`F` finals, which is what the engine already
-/// produces.
-///
-/// The interactive path consults the same table: tmux never hands a client's
-/// key bytes to a pane verbatim (it decodes them and re-encodes with
-/// `input_key`), and forwarding them as typed only agrees with tmux where the
-/// two encodings coincide — everywhere except here.
-pub(crate) fn pane_key_table_entry(code: KeyCode) -> Option<&'static [u8]> {
-    if code.modifiers != Modifiers::default() {
-        return None;
-    }
-    match code.base {
-        KeyBase::Special(SpecialKey::Home) => Some(b"\x1b[1~".as_slice()),
-        KeyBase::Special(SpecialKey::End) => Some(b"\x1b[4~".as_slice()),
-        _ => None,
-    }
+/// The name carries the application cursor/keypad flags of tmux's key-string
+/// table, so `Up` and `KP1` mean "whichever form this pane is asking for".
+fn encode_parsed_key_for_pane(state: &ServerState, target: &str, code: KeyCode) -> PaneKeyEncoding {
+    state
+        .encode_pane_key(target, PaneKey::from_name(code))
+        .unwrap_or_default()
 }
 
 fn encode_parsed_key_for_client(code: KeyCode) -> Option<ClientKey> {
