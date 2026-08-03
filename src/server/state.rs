@@ -79,6 +79,12 @@ pub struct PaneNode {
     pub(crate) start_command: String,
     /// `select-pane -d` blocks input until `select-pane -e` reenables it.
     pub(crate) input_off: bool,
+    /// Title set with `select-pane -T`, which overrides whatever the pane's
+    /// terminal reported.
+    pub(crate) title: Option<String>,
+    /// Whether this pane's child exit has already been announced, so the
+    /// `pane-exited`/`pane-died` notification is raised exactly once.
+    pub(crate) exit_notified: bool,
     /// Active pane mode name (`copy-mode`/`view-mode`), if any.
     pub(crate) mode: Option<String>,
     pub(crate) copy: Option<CopyState>,
@@ -1747,6 +1753,25 @@ pub struct Session {
     options: OptionSet,
 }
 
+/// One event notification waiting to become hook bodies.
+///
+/// tmux appends an equivalent `notify_entry` callback to the command queue at
+/// each mutation point; hmux records it while the state lock is held and lets
+/// the command queue drain it once the triggering command has finished.
+#[derive(Clone, Debug)]
+pub(crate) struct Notification {
+    /// Hook name, e.g. `window-linked`.
+    pub(crate) name: String,
+    /// Target the hook's option lookup and its body's default target resolve
+    /// against. `None` when the subject no longer exists.
+    pub(crate) target: Option<String>,
+    /// `hook*` format variables the body sees.
+    pub(crate) vars: Vec<(String, String)>,
+    /// Raised outside any command (a pane exiting, an alert firing), so the
+    /// server loop must run its body rather than the command queue.
+    pub(crate) deferred: bool,
+}
+
 /// A key-table entry installed by `bind-key`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct KeyBinding {
@@ -3162,6 +3187,17 @@ pub struct ServerState {
     shutdown_requested: bool,
     /// Client-registry generation the unattached sweep last ran against.
     lifecycle_generation: u64,
+    /// Event notifications raised by mutations since the command queue last
+    /// drained them, in the order they happened. tmux's `notify_add` appends
+    /// to the command queue; hmux collects them here because the mutation
+    /// sites hold the state lock and the queue lives above it.
+    pending_notifications: Vec<Notification>,
+    /// Set while a mutation runs outside the command queue, so what it raises
+    /// is marked for the server loop to dispatch.
+    notifications_are_deferred: bool,
+    /// Client name → (session, width, height) as of the last client-layer
+    /// notification sweep.
+    known_clients: BTreeMap<String, (u32, u16, u16)>,
     next_session_id: u32,
     next_link_set_id: u32,
     next_winlink_id: u64,
@@ -3214,6 +3250,9 @@ pub struct ServerState {
     /// transient interpreter hint, set while a client-scoped prompt template
     /// runs and restored before releasing the server-state lock.
     command_session_id: Option<u32>,
+    /// Stable window selected for the command currently executing, when the
+    /// default target names one — a hook body targeting a specific window.
+    command_window_id: Option<u32>,
     /// Per-window pane selections for an `active-pane` client while one of its
     /// commands is executing. Missing entries fall back to the window's global
     /// active pane.
@@ -3247,6 +3286,9 @@ impl ServerState {
             session_groups: BTreeMap::new(),
             shutdown_requested: false,
             lifecycle_generation: 0,
+            pending_notifications: Vec::new(),
+            notifications_are_deferred: false,
+            known_clients: BTreeMap::new(),
             next_session_id: 0,
             next_link_set_id: 0,
             next_winlink_id: 0,
@@ -3271,6 +3313,7 @@ impl ServerState {
             running_hooks: BTreeSet::new(),
             hook_format_vars: Vec::new(),
             command_session_id: None,
+            command_window_id: None,
             command_active_panes: None,
             control_checkpoints: VecDeque::new(),
             next_control_checkpoint: 0,
@@ -4227,6 +4270,18 @@ impl ServerState {
         Self::refresh_last_window(session);
     }
 
+    /// [`Self::select_window_position`] plus tmux's `session-window-changed`
+    /// notification, which only fires when the active window really moved.
+    fn select_session_window(&mut self, session_pos: usize, position: usize) {
+        let session = &mut self.sessions[session_pos];
+        let previous = session.active;
+        Self::select_window_position(session, position);
+        if session.active != previous {
+            let session_id = session.id;
+            self.notify_session("session-window-changed", session_id);
+        }
+    }
+
     fn install_links_by_index(session: &mut Session, links: Vec<Winlink>) {
         let active_index = session.windows.get(session.active).map(|link| link.index);
         let mut stack_indices = session
@@ -4342,22 +4397,33 @@ impl ServerState {
             .unwrap_or(0);
         Self::refresh_last_window(&mut self.sessions[session]);
         self.synchronize_group_from(session);
+        let (session_id, window_id) = {
+            let member = &self.sessions[session];
+            let link = member
+                .windows
+                .iter()
+                .find(|candidate| candidate.link_id == link_id)
+                .expect("inserted winlink is present");
+            (member.id, link.id)
+        };
+        self.notify_session_window("window-linked", session_id, window_id);
         if select || !had_windows {
-            let member = &mut self.sessions[session];
-            let new_active = member
+            let new_active = self.sessions[session]
                 .windows
                 .iter()
                 .position(|candidate| candidate.link_id == link_id)
                 .expect("inserted winlink is present");
-            Self::select_window_position(member, new_active);
+            self.select_session_window(session, new_active);
         }
     }
 
     fn remove_link(&mut self, session: usize, position: usize) -> Winlink {
+        let session_id = self.sessions[session].id;
         let mut links = self.sessions[session].windows.clone();
         let removed = links.remove(position);
         Self::install_links_by_index(&mut self.sessions[session], links);
         self.synchronize_group_from(session);
+        self.notify_session_window("window-unlinked", session_id, removed.id);
         removed
     }
 
@@ -4613,6 +4679,19 @@ impl ServerState {
         std::mem::replace(&mut self.command_session_id, session_id)
     }
 
+    pub(crate) fn replace_command_window_id(&mut self, window_id: Option<u32>) -> Option<u32> {
+        std::mem::replace(&mut self.command_window_id, window_id)
+    }
+
+    /// The window a command with no explicit target defaults to inside
+    /// `session`: the hook target's window while a hook body runs, otherwise
+    /// the session's active window.
+    pub(crate) fn command_window_index(&self, session: &Session) -> usize {
+        self.command_window_id
+            .and_then(|id| session.windows.iter().position(|link| link.id == id))
+            .unwrap_or(session.active)
+    }
+
     pub(crate) fn replace_command_active_panes(
         &mut self,
         panes: Option<BTreeMap<u32, u32>>,
@@ -4712,6 +4791,29 @@ impl ServerState {
                 })
             })
             .collect::<BTreeSet<_>>();
+        // tmux's `server_destroy_pane` reports `pane-died` for a pane held open
+        // by `remain-on-exit` and `pane-exited` for one that goes away. Either
+        // way it is announced once, the first time the child is seen gone.
+        let newly_exited = self
+            .windows
+            .values_mut()
+            .flat_map(|window| window.panes.iter_mut())
+            .filter(|pane| pane.pane.has_exited() && !pane.exit_notified)
+            .map(|pane| {
+                pane.exit_notified = true;
+                pane.id
+            })
+            .collect::<Vec<_>>();
+        self.deferred_notifications(|state| {
+            for pane_id in newly_exited {
+                let name = if retained.contains(&pane_id) {
+                    "pane-died"
+                } else {
+                    "pane-exited"
+                };
+                state.notify_pane(name, pane_id);
+            }
+        });
         for window in self.windows.values_mut() {
             let active_id = window.panes.get(window.active).map(|pane| pane.id);
             let last_id = window
@@ -4866,6 +4968,8 @@ impl ServerState {
                     pane,
                     start_command,
                     input_off: false,
+                    title: None,
+                    exit_notified: false,
                     mode: None,
                     copy: None,
                     mode_view: None,
@@ -4912,6 +5016,7 @@ impl ServerState {
             options: OptionSet::default(),
         });
         self.initial_attach_pending = false;
+        self.notify_session("session-created", session_id);
         self.notify_observation();
         Ok(session_id)
     }
@@ -5091,11 +5196,16 @@ impl ServerState {
                 format!("duplicate session: {to}"),
             ));
         }
+        let mut renamed = false;
         if let Some(s) = self.sessions.iter_mut().find(|s| s.id == session_id) {
             if s.name != to {
                 s.name = to.to_string();
-                self.invalidate_session(session_id, RenderInvalidation::STATUS);
+                renamed = true;
             }
+        }
+        if renamed {
+            self.invalidate_session(session_id, RenderInvalidation::STATUS);
+            self.notify_session("session-renamed", session_id);
         }
         Ok(())
     }
@@ -5246,6 +5356,8 @@ impl ServerState {
                     pane,
                     start_command: String::new(),
                     input_off: false,
+                    title: None,
+                    exit_notified: false,
                     mode: None,
                     copy: None,
                     mode_view: None,
@@ -5384,6 +5496,8 @@ impl ServerState {
                     pane,
                     start_command: String::new(),
                     input_off: false,
+                    title: None,
+                    exit_notified: false,
                     mode: None,
                     copy: None,
                     mode_view: None,
@@ -5440,6 +5554,7 @@ impl ServerState {
         })?;
         let session_id = self.sessions[t.session].id;
         let window = self.window_mut(t.session, t.window);
+        let window_id = window.id;
         let name_changed = window.name != name;
         let rename_changed =
             disable_automatic_rename && window.options.get("automatic-rename") != Some("off");
@@ -5451,6 +5566,9 @@ impl ServerState {
         }
         if name_changed || rename_changed {
             self.invalidate_session(session_id, RenderInvalidation::STATUS);
+        }
+        if name_changed {
+            self.notify_window("window-renamed", window_id);
         }
         Ok(())
     }
@@ -5726,6 +5844,11 @@ impl ServerState {
                 .collect();
             self.replace_link_set(member, links);
         }
+        // Named while the window is still known, but reported per session it
+        // was linked into, exactly as tmux's `session_detach` does.
+        for session_id in &affected {
+            self.notify_session_window("window-unlinked", *session_id, window_id);
+        }
         self.sessions.retain(|session| !session.windows.is_empty());
         self.windows.remove(&window_id);
         self.remove_unlinked_windows();
@@ -5827,7 +5950,7 @@ impl ServerState {
         let t = self.resolve_window_arg(target)?;
         let session_id = self.sessions[t.session].id;
         if self.sessions[t.session].active != t.window {
-            Self::select_window_position(&mut self.sessions[t.session], t.window);
+            self.select_session_window(t.session, t.window);
             self.resize_active_window_to_session_size(t.session)?;
             self.invalidate_session(
                 session_id,
@@ -5877,7 +6000,7 @@ impl ServerState {
             };
             if self.sessions[session_pos].windows[position].alert_flags != 0 {
                 let session_id = self.sessions[session_pos].id;
-                Self::select_window_position(&mut self.sessions[session_pos], position);
+                self.select_session_window(session_pos, position);
                 self.resize_active_window_to_session_size(session_pos)?;
                 self.invalidate_session(
                     session_id,
@@ -6056,7 +6179,7 @@ impl ServerState {
         } else {
             (sess.active + n - 1) % n
         };
-        Self::select_window_position(sess, next);
+        self.select_session_window(pos, next);
         self.resize_active_window_to_session_size(pos)?;
         self.invalidate_session(
             session_id,
@@ -6084,7 +6207,7 @@ impl ServerState {
             .and_then(|id| sess.windows.iter().position(|link| link.link_id == id))
         {
             Some(last) => {
-                Self::select_window_position(sess, last);
+                self.select_session_window(pos, last);
                 self.resize_active_window_to_session_size(pos)?;
                 self.invalidate_session(
                     session_id,
@@ -6190,6 +6313,8 @@ impl ServerState {
                 pane,
                 start_command: String::new(),
                 input_off: false,
+                title: None,
+                exit_notified: false,
                 mode: None,
                 copy: None,
                 mode_view: None,
@@ -6208,16 +6333,23 @@ impl ServerState {
         };
         // `-d` splits in the background: the new pane is added but the original
         // pane stays active. tmux's default is to select the new pane.
-        if select {
+        let window_id = win.id;
+        let active_changed = if select {
             win.last_pane = Some(shifted_old);
             win.active = insert_at;
+            true
         } else {
             win.active = shifted_old;
-        }
+            false
+        };
         self.invalidate_session(
             session_id,
             RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
         );
+        if active_changed {
+            self.notify_window("window-pane-changed", window_id);
+        }
+        self.notify_window("window-layout-changed", window_id);
         self.notify_observation();
         Ok(insert_at)
     }
@@ -6278,6 +6410,8 @@ impl ServerState {
                 pane,
                 start_command: String::new(),
                 input_off: false,
+                title: None,
+                exit_notified: false,
                 mode: None,
                 copy: None,
                 mode_view: None,
@@ -6324,6 +6458,7 @@ impl ServerState {
         let t = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let session_id = self.sessions[t.session].id;
         let win = self.window_mut(t.session, t.window);
+        let window_id = win.id;
         if t.pane != win.active {
             win.last_pane = Some(win.active);
             win.active = t.pane;
@@ -6331,8 +6466,37 @@ impl ServerState {
                 session_id,
                 RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
             );
+            self.notify_window("window-pane-changed", window_id);
         }
         Ok(())
+    }
+
+    /// `select-pane -T title`: pin a pane's title, overriding whatever its
+    /// terminal reported. Raises `pane-title-changed` when the title moves.
+    pub(crate) fn set_pane_title(&mut self, target: &str, title: &str) -> io::Result<()> {
+        let t = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
+        let session_id = self.sessions[t.session].id;
+        let node = &mut self.window_mut(t.session, t.window).panes[t.pane];
+        let pane_id = node.id;
+        if node.title.as_deref() == Some(title) {
+            return Ok(());
+        }
+        node.title = Some(title.to_string());
+        self.invalidate_session(session_id, RenderInvalidation::STATUS);
+        self.notify_pane("pane-title-changed", pane_id);
+        Ok(())
+    }
+
+    /// The title `#{pane_title}` reports: the `select-pane -T` override when
+    /// one is set, else what the pane's terminal last announced.
+    pub(crate) fn pane_title(&self, node: &PaneNode) -> Option<String> {
+        node.title.clone().or_else(|| {
+            node.pane
+                .observation_state()
+                .contract_title()
+                .ok()
+                .flatten()
+        })
     }
 
     pub(crate) fn set_pane_input_off(&mut self, target: &str, input_off: bool) -> io::Result<()> {
@@ -6511,6 +6675,7 @@ impl ServerState {
         } else {
             self.invalidate_session(session_id, RenderInvalidation::SESSION_GONE);
         }
+        self.notify_window("window-layout-changed", window_id);
         self.notify_observation();
         Ok(())
     }
@@ -8101,6 +8266,10 @@ impl ServerState {
                 RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
             );
         }
+        // tmux notifies twice for a named layout: once from `layout_set_*` when
+        // the cells are rebuilt, and once from the command itself.
+        self.notify_window("window-layout-changed", window_id);
+        self.notify_window("window-layout-changed", window_id);
         Ok(())
     }
 
@@ -8156,6 +8325,7 @@ impl ServerState {
                 RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
             );
         }
+        self.notify_window("window-layout-changed", window_id);
         Ok(())
     }
 
@@ -8173,12 +8343,17 @@ impl ServerState {
         let sess_cols = self.sessions[t.session].cols;
         let sess_rows = self.sessions[t.session].rows;
         let win = self.window_mut(t.session, t.window);
-        let (cur_cols, cur_rows) = win.manual_size.unwrap_or((sess_cols, sess_rows));
+        let window_id = win.id;
+        let previous = win.manual_size;
+        let (cur_cols, cur_rows) = previous.unwrap_or((sess_cols, sess_rows));
         let size = (cols.unwrap_or(cur_cols), rows.unwrap_or(cur_rows));
         win.manual_size = Some(size);
         win.layout.resize(size.0, size.1);
         resize_panes_to_layout(win)?;
         self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
+        if previous != Some(size) {
+            self.notify_window("window-resized", window_id);
+        }
         Ok(())
     }
 
@@ -8251,9 +8426,178 @@ impl ServerState {
             self.request_shutdown_if_became_empty(had_sessions);
             if let Some(session_id) = removed_id {
                 self.invalidate_session(session_id, RenderInvalidation::SESSION_GONE);
+                self.notify_closed_session("session-closed", session_id, name);
             }
         }
         removed
+    }
+
+    /// Record an event notification for the command queue to turn into hook
+    /// bodies. Mirrors tmux's `notify_add`.
+    fn notify(&mut self, name: &str, target: Option<String>, mut vars: Vec<(String, String)>) {
+        if !super::options::is_hook(name) {
+            return;
+        }
+        vars.insert(0, ("hook".to_string(), name.to_string()));
+        self.pending_notifications.push(Notification {
+            name: name.to_string(),
+            target,
+            vars,
+            deferred: self.notifications_are_deferred,
+        });
+    }
+
+    /// Mark notifications raised inside `body` as server-loop work rather than
+    /// command-queue work.
+    fn deferred_notifications<T>(&mut self, body: impl FnOnce(&mut Self) -> T) -> T {
+        let previous = std::mem::replace(&mut self.notifications_are_deferred, true);
+        let result = body(self);
+        self.notifications_are_deferred = previous;
+        result
+    }
+
+    /// Take the notifications the server loop owns, leaving the rest for the
+    /// command queue.
+    pub(crate) fn take_deferred_notifications(&mut self) -> Vec<Notification> {
+        let mut deferred = Vec::new();
+        self.pending_notifications.retain(|notification| {
+            if notification.deferred {
+                deferred.push(notification.clone());
+                false
+            } else {
+                true
+            }
+        });
+        deferred
+    }
+
+    /// tmux's `notify_session`: an event about a session as a whole.
+    pub(crate) fn notify_session(&mut self, name: &str, session_id: u32) {
+        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
+            // A closed session is still named by its own event.
+            return;
+        };
+        let vars = vec![
+            ("hook_session".to_string(), format!("${session_id}")),
+            ("hook_session_name".to_string(), session.name.clone()),
+        ];
+        self.notify(name, Some(format!("${session_id}")), vars);
+    }
+
+    /// Like [`Self::notify_session`], for a session that has already been
+    /// removed from the tree and can only be named by the caller.
+    pub(crate) fn notify_closed_session(&mut self, name: &str, session_id: u32, session: &str) {
+        let vars = vec![
+            ("hook_session".to_string(), format!("${session_id}")),
+            ("hook_session_name".to_string(), session.to_string()),
+        ];
+        self.notify(name, None, vars);
+    }
+
+    /// tmux's `notify_window`: an event about a window, carrying no session.
+    pub(crate) fn notify_window(&mut self, name: &str, window_id: u32) {
+        let Some(window) = self.windows.get(&window_id) else {
+            return;
+        };
+        let vars = vec![
+            ("hook_window".to_string(), format!("@{window_id}")),
+            ("hook_window_name".to_string(), window.name.clone()),
+        ];
+        self.notify(name, Some(format!("@{window_id}")), vars);
+    }
+
+    /// tmux's `notify_session_window`/`notify_winlink`: an event about a window
+    /// as seen from one session, so both layers are published.
+    pub(crate) fn notify_session_window(&mut self, name: &str, session_id: u32, window_id: u32) {
+        let session = self.sessions.iter().find(|s| s.id == session_id);
+        let window_name = self.windows.get(&window_id).map(|w| w.name.clone());
+        let mut vars = Vec::new();
+        if let Some(session) = session {
+            vars.push(("hook_session".to_string(), format!("${session_id}")));
+            vars.push(("hook_session_name".to_string(), session.name.clone()));
+        }
+        if let Some(window_name) = window_name {
+            vars.push(("hook_window".to_string(), format!("@{window_id}")));
+            vars.push(("hook_window_name".to_string(), window_name));
+        }
+        // The window may already be unlinked, so the session is the target that
+        // still resolves.
+        let target = self
+            .sessions
+            .iter()
+            .find(|s| s.id == session_id && s.windows.iter().any(|link| link.id == window_id))
+            .map(|_| format!("${session_id}:@{window_id}"))
+            .or_else(|| session.map(|_| format!("${session_id}")));
+        self.notify(name, target, vars);
+    }
+
+    /// tmux's `notify_pane`: an event about a pane, which also publishes the
+    /// window the pane belongs to.
+    pub(crate) fn notify_pane(&mut self, name: &str, pane_id: u32) {
+        let Some((window_id, window_name)) = self.windows.iter().find_map(|(id, window)| {
+            window
+                .panes
+                .iter()
+                .any(|node| node.id == pane_id)
+                .then(|| (*id, window.name.clone()))
+        }) else {
+            return;
+        };
+        let vars = vec![
+            ("hook_pane".to_string(), format!("%{pane_id}")),
+            ("hook_window".to_string(), format!("@{window_id}")),
+            ("hook_window_name".to_string(), window_name),
+        ];
+        self.notify(name, Some(format!("%{pane_id}")), vars);
+    }
+
+    /// tmux's `notify_client`: an event about one client.
+    pub(crate) fn notify_client(&mut self, name: &str, client: &str, session_id: Option<u32>) {
+        let vars = vec![("hook_client".to_string(), client.to_string())];
+        self.notify(name, session_id.map(|id| format!("${id}")), vars);
+    }
+
+    /// Take everything raised since the last drain.
+    pub(crate) fn take_notifications(&mut self) -> Vec<Notification> {
+        std::mem::take(&mut self.pending_notifications)
+    }
+
+    /// Raise the client-layer notifications tmux emits from `server_client_*`.
+    ///
+    /// The client registry is owned by the attach loops rather than by the
+    /// command path, so what changed is read from a snapshot of it instead of
+    /// from a call at each site.
+    fn sync_client_notifications(&mut self) {
+        let current = self
+            .attached_clients()
+            .into_iter()
+            .map(|client| (client.name, (client.session_id, client.cols, client.rows)))
+            .collect::<BTreeMap<_, _>>();
+        let previous = std::mem::replace(&mut self.known_clients, current.clone());
+        let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
+        for (name, (session_id, cols, rows)) in &current {
+            match previous.get(name) {
+                None => {
+                    self.notify_client("client-attached", name, Some(*session_id));
+                    self.notify_client("client-session-changed", name, Some(*session_id));
+                    // A new client announces its terminal size as part of
+                    // attaching, which tmux reports as a resize of its own.
+                    self.notify_client("client-resized", name, Some(*session_id));
+                }
+                Some((old_session, old_cols, old_rows)) => {
+                    if old_session != session_id {
+                        self.notify_client("client-session-changed", name, Some(*session_id));
+                    }
+                    if (old_cols, old_rows) != (cols, rows) {
+                        self.notify_client("client-resized", name, Some(*session_id));
+                    }
+                }
+            }
+        }
+        for name in previous.keys().filter(|name| !current.contains_key(*name)) {
+            self.notify_client("client-detached", name, None);
+        }
+        self.notifications_are_deferred = was_deferred;
     }
 
     /// tmux's `session_update_activity`. `attached` additionally stamps
@@ -8409,6 +8753,7 @@ impl ServerState {
         let generation = self.client_renders.generation();
         if generation != self.lifecycle_generation {
             self.lifecycle_generation = generation;
+            self.sync_client_notifications();
             self.enforce_unattached_options();
         }
         self.enforce_exit_options();
@@ -8878,6 +9223,10 @@ impl ServerState {
     ) -> io::Result<()> {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let session_id = self.sessions[resolved.session].id;
+        let (pane_id, was_in_mode) = {
+            let node = &self.window(resolved.session, resolved.window).panes[resolved.pane];
+            (node.id, node.mode.is_some())
+        };
         {
             let node = &mut self.window_mut(resolved.session, resolved.window).panes[resolved.pane];
             node.mode_view = None;
@@ -8931,12 +9280,21 @@ impl ServerState {
             }
         }
         self.invalidate_session(session_id, RenderInvalidation::MODE);
+        // tmux notifies from `window_pane_set_mode`/`window_pane_reset_mode`,
+        // that is only when the pane actually enters or leaves a mode.
+        if was_in_mode != mode.is_some() {
+            self.notify_pane("pane-mode-changed", pane_id);
+        }
         Ok(())
     }
 
     pub(crate) fn enter_mode_view(&mut self, target: &str, view: ModeView) -> io::Result<()> {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let session_id = self.sessions[resolved.session].id;
+        let (pane_id, was_in_mode) = {
+            let node = &self.window(resolved.session, resolved.window).panes[resolved.pane];
+            (node.id, node.mode.is_some())
+        };
         let node = &mut self.window_mut(resolved.session, resolved.window).panes[resolved.pane];
         node.mode = Some(
             match view.kind {
@@ -8951,6 +9309,9 @@ impl ServerState {
         node.copy = None;
         node.mode_view = Some(view);
         self.invalidate_session(session_id, RenderInvalidation::MODE);
+        if !was_in_mode {
+            self.notify_pane("pane-mode-changed", pane_id);
+        }
         Ok(())
     }
 
@@ -9256,8 +9617,13 @@ impl ServerState {
         } else if let Some(copy) = node.copy.as_mut() {
             copy.hide_position = hide_position;
         }
+        let pane_id = node.id;
+        let entered = node.mode.is_none();
         node.mode = Some("copy-mode".to_string());
         self.invalidate_session(session_id, RenderInvalidation::MODE);
+        if entered {
+            self.notify_pane("pane-mode-changed", pane_id);
+        }
         Ok(())
     }
 
@@ -10107,6 +10473,8 @@ impl ServerState {
             pane,
             start_command: String::new(),
             input_off: false,
+            title: None,
+            exit_notified: false,
             mode: None,
             copy: None,
             mode_view: None,

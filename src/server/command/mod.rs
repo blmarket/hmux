@@ -108,12 +108,24 @@ pub struct ClientContext {
     pub(crate) interaction_reply: Option<mpsc::Sender<PromptCompletion>>,
     pub(crate) wait_for_interactions: bool,
     pub(crate) preserve_queue_insertions: bool,
-    pub(crate) suppress_hooks: bool,
+    /// Set for commands run from a hook body. tmux's `CMDQ_STATE_NOHOOKS`
+    /// suppresses only the `after-*`/`command-error` hooks a command would
+    /// raise; the event notifications its mutations raise still fire, because
+    /// those are queued as fresh items rather than inheriting this state.
+    pub(crate) suppress_after_hooks: bool,
+    /// Set for commands run from an *event* hook body, where tmux's global
+    /// queue carries `CMDQ_STATE_NOHOOKS` and `notify_add` therefore drops
+    /// anything the body raises. This is what stops an event hook that mutates
+    /// its own subject from re-triggering itself.
+    pub(crate) suppress_notifications: bool,
     pub(crate) defer_queue_commands: bool,
     pub(crate) defer_attach_commands: bool,
     /// The `hook*` format variables for a queued hook-body command; installed
     /// into the server state around its execution.
     pub(crate) hook_vars: Option<Arc<Vec<(String, String)>>>,
+    /// The hook's own target, which is what a command in its body resolves
+    /// against when it names no target of its own.
+    pub(crate) hook_target: Option<Arc<str>>,
 }
 
 impl ClientContext {
@@ -571,6 +583,7 @@ pub(crate) fn start_resumable_command_string_with_tail(
 
 struct PreviousCommandTargetContext {
     session_id: Option<u32>,
+    window_id: Option<u32>,
     active_panes: Option<BTreeMap<u32, u32>>,
     hook_vars: Option<Vec<(String, String)>>,
 }
@@ -579,8 +592,20 @@ fn install_command_target_context(
     state: &mut ServerState,
     context: &ClientContext,
 ) -> PreviousCommandTargetContext {
+    // Inside a hook body the hook's own target replaces the client's current
+    // one, so an untargeted command in the body acts on what the hook is about.
+    let hook_target = context
+        .hook_target
+        .as_deref()
+        .and_then(|target| state.resolve(target));
+    let session_id = hook_target
+        .map(|resolved| state.sessions()[resolved.session].id)
+        .or(context.current_session_id);
+    let window_id = hook_target
+        .map(|resolved| state.sessions()[resolved.session].windows[resolved.window].id);
     PreviousCommandTargetContext {
-        session_id: state.replace_command_session_id(context.current_session_id),
+        session_id: state.replace_command_session_id(session_id),
+        window_id: state.replace_command_window_id(window_id),
         active_panes: state.replace_command_active_panes(context.active_panes()),
         hook_vars: context
             .hook_vars
@@ -591,6 +616,7 @@ fn install_command_target_context(
 
 fn restore_command_target_context(state: &mut ServerState, previous: PreviousCommandTargetContext) {
     state.replace_command_session_id(previous.session_id);
+    state.replace_command_window_id(previous.window_id);
     state.replace_command_active_panes(previous.active_panes);
     if let Some(vars) = previous.hook_vars {
         state.replace_hook_format_vars(vars);
@@ -1625,6 +1651,7 @@ impl ResumableCommandQueue {
                             vec![("hook".to_string(), hook.to_string())],
                             state,
                             NestedCapture::Discard,
+                            HookOrigin::Command,
                         );
                         insert_next.push(vec![SharedQueueItem::FinalizeHooks {
                             command: "set-hook",
@@ -1759,7 +1786,7 @@ impl ResumableCommandQueue {
             nested_context.preserve_queue_insertions = true;
         }
         if matches!(capture, NestedCapture::Hook) {
-            nested_context.suppress_hooks = true;
+            nested_context.suppress_after_hooks = true;
         }
         Ok(parsed
             .into_iter()
@@ -1895,7 +1922,7 @@ impl ResumableCommandQueue {
             .background_commands
             .append(&mut execution.result.background_commands);
         let stops_group = exit != 0 && !execution.result.continue_queue;
-        if !self.context.suppress_hooks {
+        if !self.context.suppress_after_hooks {
             if stops_group {
                 execution.insert_next.extend(self.plan_hook(
                     "command-error",
@@ -1911,6 +1938,10 @@ impl ResumableCommandQueue {
                 ));
             }
         }
+        // tmux inserts a command's after-hook directly behind it but *appends*
+        // the notifications its mutations raised, so the after-hook runs first
+        // — and a hook body's own mutations still notify.
+        execution.insert_next.extend(self.plan_notifications(state));
         if inflight.contributes_status {
             self.out.continue_queue |= execution.result.continue_queue;
         }
@@ -1948,26 +1979,40 @@ impl ResumableCommandQueue {
         args: &[String],
         state: &Arc<Mutex<ServerState>>,
     ) -> Vec<Vec<SharedQueueItem>> {
-        if self.context.suppress_hooks {
+        if self.context.suppress_after_hooks {
             return Vec::new();
-        }
-        let mut groups = Vec::new();
-        let notification = match command {
-            "new-session" => Some("session-created"),
-            "rename-window" => Some("window-renamed"),
-            _ => None,
-        };
-        if let Some(notification) = notification {
-            let vars = match state.lock() {
-                Ok(state) => hook_event_vars(notification, flag_value(args, "-t"), &state),
-                Err(_) => Vec::new(),
-            };
-            groups.extend(self.plan_hook(notification, flag_value(args, "-t"), vars, state));
         }
         let after = format!("after-{command}");
         let vars = hook_command_vars(&after, command, args);
-        groups.extend(self.plan_hook(&after, flag_value(args, "-t"), vars, state));
-        groups
+        self.plan_hook(&after, flag_value(args, "-t"), vars, state)
+    }
+
+    /// Turn every notification raised while the last command ran into hook
+    /// bodies, in the order the mutations happened.
+    fn plan_notifications(
+        &self,
+        state: &Arc<Mutex<ServerState>>,
+    ) -> Vec<Vec<SharedQueueItem>> {
+        if self.context.suppress_notifications {
+            return Vec::new();
+        }
+        let notifications = match state.lock() {
+            Ok(mut state) => state.take_notifications(),
+            Err(_) => return Vec::new(),
+        };
+        notifications
+            .into_iter()
+            .flat_map(|notification| {
+                self.plan_hook_with_capture(
+                    &notification.name,
+                    notification.target.as_deref(),
+                    notification.vars,
+                    state,
+                    NestedCapture::Hook,
+                    HookOrigin::Event,
+                )
+            })
+            .collect()
     }
 
     fn plan_hook(
@@ -1977,7 +2022,14 @@ impl ResumableCommandQueue {
         vars: Vec<(String, String)>,
         state: &Arc<Mutex<ServerState>>,
     ) -> Vec<Vec<SharedQueueItem>> {
-        self.plan_hook_with_capture(hook, requested_target, vars, state, NestedCapture::Hook)
+        self.plan_hook_with_capture(
+            hook,
+            requested_target,
+            vars,
+            state,
+            NestedCapture::Hook,
+            HookOrigin::Command,
+        )
     }
 
     fn plan_hook_with_capture(
@@ -1987,6 +2039,7 @@ impl ResumableCommandQueue {
         vars: Vec<(String, String)>,
         state: &Arc<Mutex<ServerState>>,
         capture: NestedCapture,
+        origin: HookOrigin,
     ) -> Vec<Vec<SharedQueueItem>> {
         let (commands, aliases) = {
             let mut state = match state.lock() {
@@ -1994,7 +2047,7 @@ impl ResumableCommandQueue {
                 Err(_) => return Vec::new(),
             };
             let previous = install_command_target_context(&mut state, &self.context);
-            let commands = begin_hook_commands(hook, requested_target, &mut state);
+            let commands = hook_commands(hook, requested_target, &mut state, origin);
             restore_command_target_context(&mut state, previous);
             let Some(commands) = commands else {
                 return Vec::new();
@@ -2004,8 +2057,19 @@ impl ResumableCommandQueue {
 
         let mut hook_context = self.context.clone();
         hook_context.hook_vars = Some(Arc::new(vars));
+        // A hook body resolves an untargeted command against the hook's own
+        // target, not the server's current one.
+        if let Some(target) = requested_target {
+            hook_context.hook_target = Some(Arc::from(target));
+        }
+        if matches!(origin, HookOrigin::Event) {
+            // tmux runs an event hook's body on the global queue with
+            // `CMDQ_STATE_NOHOOKS`, which is exactly what makes `notify_add`
+            // drop anything the body itself raises.
+            hook_context.suppress_notifications = true;
+        }
         if matches!(capture, NestedCapture::Hook) {
-            hook_context.suppress_hooks = true;
+            hook_context.suppress_after_hooks = true;
             hook_context.preserve_queue_insertions = true;
         }
         let mut groups = Vec::new();
@@ -2036,9 +2100,11 @@ impl ResumableCommandQueue {
                 }
             }
         }
-        groups.push(vec![SharedQueueItem::EndHook {
-            name: hook.to_string(),
-        }]);
+        if matches!(origin, HookOrigin::Command) {
+            groups.push(vec![SharedQueueItem::EndHook {
+                name: hook.to_string(),
+            }]);
+        }
         groups
     }
 
@@ -2577,8 +2643,8 @@ fn run_command_groups(
             );
             break;
         }
-        run_notification_hook(command.spec.name, &command.args, st, agents, context);
         run_after_hook(command.spec.name, &command.args, st, agents, context);
+        run_raised_notifications(st, agents, context);
         st.record_control_checkpoint();
     }
     out
@@ -2649,38 +2715,6 @@ fn hook_command_vars(hook: &str, command: &str, args: &[String]) -> Vec<(String,
     vars
 }
 
-/// The `hook*` format variables an event hook body sees: the hook's name plus
-/// the layer the event came from, and only that layer.
-fn hook_event_vars(
-    hook: &str,
-    requested_target: Option<&str>,
-    st: &ServerState,
-) -> Vec<(String, String)> {
-    let mut vars = vec![("hook".to_string(), hook.to_string())];
-    let target = requested_target
-        .map(str::to_string)
-        .or_else(|| current_session(st));
-    let resolved = target.as_deref().and_then(|target| st.resolve(target));
-    match hook {
-        "session-created" | "session-renamed" => {
-            if let Some(resolved) = resolved {
-                let session = &st.sessions()[resolved.session];
-                vars.push(("hook_session".to_string(), format!("${}", session.id)));
-                vars.push(("hook_session_name".to_string(), session.name.clone()));
-            }
-        }
-        "window-renamed" => {
-            if let Some(resolved) = resolved {
-                let session = &st.sessions()[resolved.session];
-                let window = st.session_window(session, resolved.window);
-                vars.push(("hook_window_name".to_string(), window.name.clone()));
-            }
-        }
-        _ => {}
-    }
-    vars
-}
-
 fn run_after_hook(
     command: &str,
     args: &[String],
@@ -2693,20 +2727,76 @@ fn run_after_hook(
     run_hook(&hook, flag_value(args, "-t"), vars, st, agents, context);
 }
 
-fn run_notification_hook(
-    command: &str,
-    args: &[String],
+/// Drain whatever the command just raised, mirroring the queue path's
+/// `plan_notifications` for the synchronous runner.
+fn run_raised_notifications(st: &mut ServerState, agents: &PaneAgents, context: &ClientContext) {
+    if context.suppress_notifications {
+        return;
+    }
+    for notification in st.take_notifications() {
+        run_event_hook(
+            &notification.name,
+            notification.target.as_deref(),
+            notification.vars,
+            st,
+            agents,
+            context,
+        );
+    }
+}
+
+/// Run the bodies of notifications raised outside the command queue — a pane
+/// exiting, an alert firing. tmux dispatches these from its global command
+/// queue; hmux runs them from the server loop, where no client is involved.
+pub(crate) fn run_deferred_notification_hooks(st: &mut ServerState) {
+    // A body that raises further deferred notifications is bounded rather than
+    // allowed to spin the server loop.
+    const MAX_ROUNDS: usize = 8;
+    let agents = PaneAgents::new();
+    let context = ClientContext::default();
+    for _ in 0..MAX_ROUNDS {
+        let notifications = st.take_deferred_notifications();
+        if notifications.is_empty() {
+            return;
+        }
+        for notification in notifications {
+            run_event_hook(
+                &notification.name,
+                notification.target.as_deref(),
+                notification.vars,
+                st,
+                &agents,
+                &context,
+            );
+        }
+    }
+}
+
+fn run_event_hook(
+    hook: &str,
+    requested_target: Option<&str>,
+    vars: Vec<(String, String)>,
     st: &mut ServerState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) {
-    let hook = match command {
-        "new-session" => "session-created",
-        "rename-window" => "window-renamed",
-        _ => return,
+    let Some(commands) = hook_commands(hook, requested_target, st, HookOrigin::Event) else {
+        return;
     };
-    let vars = hook_event_vars(hook, flag_value(args, "-t"), st);
-    run_hook(hook, flag_value(args, "-t"), vars, st, agents, context);
+    let mut context = context.clone();
+    context.hook_target = requested_target.map(Arc::from);
+    context.suppress_after_hooks = true;
+    context.suppress_notifications = true;
+    let previous_targets = install_command_target_context(st, &context);
+    let previous = st.replace_hook_format_vars(vars);
+    for command in commands {
+        let tokens = tokenize_line(&command);
+        if !tokens.is_empty() {
+            let _ = run_tokenized_line(&tokens, st, agents, &context);
+        }
+    }
+    st.replace_hook_format_vars(previous);
+    restore_command_target_context(st, previous_targets);
 }
 
 fn run_hook(
@@ -2731,12 +2821,34 @@ fn run_hook(
     st.end_hook(hook);
 }
 
+/// Whether a hook body comes from a command's `after-*`/`command-error` hook
+/// or from an event notification. The two differ in re-entrancy: a command
+/// hook is guarded by name for the length of its body, while several
+/// notifications for the same event can be raised by one command and all run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HookOrigin {
+    Command,
+    Event,
+}
+
 fn begin_hook_commands(
     hook: &str,
     requested_target: Option<&str>,
     st: &mut ServerState,
 ) -> Option<Vec<String>> {
-    if !options::is_hook(hook) || !st.begin_hook(hook) {
+    hook_commands(hook, requested_target, st, HookOrigin::Command)
+}
+
+fn hook_commands(
+    hook: &str,
+    requested_target: Option<&str>,
+    st: &mut ServerState,
+    origin: HookOrigin,
+) -> Option<Vec<String>> {
+    if !options::is_hook(hook) {
+        return None;
+    }
+    if matches!(origin, HookOrigin::Command) && !st.begin_hook(hook) {
         return None;
     }
     let target = requested_target
@@ -4249,13 +4361,7 @@ pub(super) fn vars_full(
                 .get("pane-base-index")
                 .and_then(|value| value.parse::<usize>().ok())
                 .unwrap_or(0);
-            let pane_title = p
-                .pane
-                .observation_state()
-                .contract_title()
-                .ok()
-                .flatten()
-                .unwrap_or_else(hostname);
+            let pane_title = st.pane_title(p).unwrap_or_else(hostname);
             v.set("pane_index", (pane_base_index + pane_idx).to_string())
                 .set("pane_id", format!("%{}", p.id))
                 .set("pane_start_command", p.start_command.clone())
@@ -5025,6 +5131,12 @@ fn select_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -
         Some(t) => t,
         None => return CommandResult::err("can't establish current session\n"),
     };
+    if let Some(title) = flag_value(args, "-T") {
+        return match st.set_pane_title(&target, title) {
+            Ok(()) => CommandResult::ok(""),
+            Err(error) => CommandResult::err(format!("{error}\n")),
+        };
+    }
     if has_flag(args, "-d") || has_flag(args, "-e") {
         return match st.set_pane_input_off(&target, has_flag(args, "-d")) {
             Ok(()) => CommandResult::ok(""),
@@ -5644,10 +5756,13 @@ fn set_option(args: &[String], st: &mut ServerState, window_command: bool) -> Co
     let mut value = match raw_value {
         Some(raw) if has_bool_flag(args, 'F') => {
             match current_session(st).and_then(|name| st.find(&name)) {
-                Some(sess) => format::expand(
-                    raw,
-                    &vars_for(st, sess, sess.active, &PaneAgents::new(), st.marked_pane()),
-                ),
+                Some(sess) => {
+                    let window = st.command_window_index(sess);
+                    format::expand(
+                        raw,
+                        &vars_for(st, sess, window, &PaneAgents::new(), st.marked_pane()),
+                    )
+                }
                 None => raw.to_string(),
             }
         }
