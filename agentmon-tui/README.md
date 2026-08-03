@@ -11,15 +11,19 @@ uv run agentmon
 
 See command palette(Ctrl + P) for list of available commands.
 
-## Multi-pane windows
+## Opinion
 
-The dashboard shows one row per hmux window, not per pane. When a window mixes
-agent and non-agent panes, the agent pane represents the window (preferring the
-active pane on ties), and the row's badge, state, and transcript all come from
-that single pane; sibling shells or apps are not listed. Panes whose working
-directory is inside a git repository are preferred so the row keeps branch and
-worktree context, but that preference never lets an agentless pane outrank an
-agent pane — an agent running outside any repository still represents its
-window, just without repository details. One caveat remains: a window holding
-two agent panes surfaces only one of them.
+### Multi-pane windows
 
+When a window have multiple panes, then I'm assuming user is more interested in
+agent state, other than other panes. Thus "Window state" is collapsed to an
+agent state it's running.
+
+We can later revisit this decision if we want more support on long running jobs.
+
+No special rules around "multiple agents in a single window" - I hope you're
+okay with having a window per agent for monitoring. Don't want to add subtree
+in order to show multiple agents under a window.
+
+Also we can revisit if there's a strong case we need to run multiple agents in
+a single window.

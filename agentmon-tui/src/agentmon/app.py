@@ -89,6 +89,57 @@ RUNS_PANE_FRACTION = 5
 TRANSCRIPT_PANE_FRACTION = 5
 
 
+# hmux agent states that still belong to a live coding agent. A repository with
+# any of these outranks one whose windows are all plain shells or finished runs.
+LIVE_AGENT_STATES = frozenset({"working", "blocked", "idle"})
+
+# Placeholder agent identifiers hmux never reports; they stand in for panes that
+# run no recognized coding agent (see AGENT_BADGE).
+NON_AGENT_IDENTIFIERS = frozenset({"window", "app", "finished"})
+
+# Sorts after every real "session:index" ordinal, so runs with no live window
+# (and repositories with no windows at all) trail the ones that have them.
+_NO_WINDOW_ORD = ("￿", 1 << 31)
+
+
+def _window_ord(run: AgentRun) -> tuple[str, int]:
+    """Return the hmux window ordinal (session, window index) a run sits in."""
+    session, _, window = run.location.partition(":")
+    index = window.split(".", 1)[0]
+    if not index.isdigit():
+        return _NO_WINDOW_ORD
+    return (session, int(index))
+
+
+def _is_agent_run(run: AgentRun) -> bool:
+    return run.agent not in NON_AGENT_IDENTIFIERS
+
+
+def _run_sort_key(run: AgentRun) -> tuple[int, tuple[str, int]]:
+    """Order a repository's rows: agent windows, other windows, finished runs."""
+    if run.state == "exited":
+        tier = 2
+    else:
+        tier = 0 if _is_agent_run(run) else 1
+    return (tier, _window_ord(run))
+
+
+def _repository_sort_key(runs: list[AgentRun]) -> tuple[int, tuple[str, int]]:
+    """Order repository groups: live agents first, then by their first window.
+
+    "First window" is the lowest window ordinal the repository occupies, not the
+    ordinal of whichever row the within-group ordering floats to the top, so the
+    group order stays independent of which of its windows runs an agent.
+    """
+    live = any(
+        _is_agent_run(run) and run.state in LIVE_AGENT_STATES for run in runs
+    )
+    ordinals = [
+        _window_ord(run) for run in runs if _window_ord(run) != _NO_WINDOW_ORD
+    ]
+    return (0 if live else 1, min(ordinals, default=_NO_WINDOW_ORD))
+
+
 def agent_badge(agent: str) -> str:
     """Return a compact, terminal-safe label for an hmux agent identifier."""
     known = AGENT_BADGE.get(agent)
@@ -276,10 +327,15 @@ class DashboardScreen(Screen):
             key = repository.common_dir if repository is not None else None
             grouped.setdefault(key, (repository, []))[1].append(run)
 
+        ordered_groups = sorted(
+            grouped.values(), key=lambda group: _repository_sort_key(group[1])
+        )
+
         counts: dict[str, int] = {}
         selected_row: int | None = None
         first_worktree_row: int | None = None
-        for group_index, (repository, repository_runs) in enumerate(grouped.values()):
+        for group_index, (repository, repository_runs) in enumerate(ordered_groups):
+            repository_runs = sorted(repository_runs, key=_run_sort_key)
             repository_row = len(self._row_runs)
             repository_key = (
                 repository.common_dir if repository is not None else None
