@@ -52,9 +52,11 @@ use super::command;
 use super::format;
 use super::key::{key_from_byte, parse_key_name, KeyBase, KeyCode, SpecialKey};
 use super::latmon::LatMon;
-use super::mouse::{self, MouseEvent, MouseInputState, MousePosition, MouseProtocol};
+use super::mouse::{
+    self, MouseEvent, MouseEventKind, MouseInputState, MousePosition, MouseProtocol,
+};
 #[cfg(test)]
-use super::mouse::{MouseButton, MouseEventKind};
+use super::mouse::MouseButton;
 use super::pane::{OutputSubscription, Pane, PaneInputStats, PaneIo, PaneIoMode};
 use super::state::{
     ClientAction, ClientKey, MenuRequest, ModeKind, ModeView, ModeViewKeyResult, OverlayRequest,
@@ -367,7 +369,12 @@ struct AttachPaneIo {
 }
 
 struct AttachCommands {
-    pending: Option<AttachCommandRequest>,
+    /// Commands a key binding deferred, in the order their keys arrived.
+    ///
+    /// A queue rather than one slot: a burst of mouse reports in a single read
+    /// defers one command per report, and each has to run — replacing the slot
+    /// would silently drop every binding but the last.
+    pending: VecDeque<AttachCommandRequest>,
     deferred_prompts: VecDeque<AttachCommandRequest>,
 }
 
@@ -1015,17 +1022,77 @@ fn resolve_mouse_key(
     let Some(event) = decoded.mouse.as_mut() else {
         return;
     };
+    // The opening report of a drag resolves where the button went down, not
+    // where the pointer has already moved to — that is how a press on a border
+    // followed by motion is a border drag rather than a drag inside a pane.
+    // Only the *location* comes from there: what the pane is told, and what
+    // `#{mouse_x}`/`#{mouse_y}` report, is still where the pointer is now.
+    let reported_position = event.position;
+    if let Some(position) = input.drag_start_position(event) {
+        event.position = position;
+    }
+    let resolved_position = event.position;
     if let Ok(state) = state.lock() {
         let rendered = status_cache.render(&state, target, cols, rows);
         mouse::resolve_event(&state, target, rows, rendered, event);
     }
     input.observe(event, Instant::now());
+    event.position = reported_position;
+    if resolved_position != reported_position {
+        if let Some(local) = event
+            .target
+            .as_mut()
+            .and_then(|target| target.local_position.as_mut())
+        {
+            local.x = shift_coordinate(local.x, resolved_position.x, reported_position.x);
+            local.y = shift_coordinate(local.y, resolved_position.y, reported_position.y);
+        }
+    }
+    apply_focus_follows_mouse(state, target, event);
     decoded.code = event.key_code();
     if let Some(code) = decoded.code {
         decoded.name = code.to_string();
     } else {
         decoded.name = "Mouse".into();
     }
+}
+
+/// Move a pane-local coordinate by the same amount its screen coordinate moved.
+fn shift_coordinate(local: u16, from: u16, to: u16) -> u16 {
+    if to >= from {
+        local.saturating_add(to - from)
+    } else {
+        local.saturating_sub(from - to)
+    }
+}
+
+/// `focus-follows-mouse`: bare motion over an inactive pane selects it.
+///
+/// tmux does this inside `server_client_check_mouse` rather than through a
+/// binding, so it happens even though `MouseMovePane` cannot be bound at all.
+fn apply_focus_follows_mouse(
+    state: &Arc<Mutex<ServerState>>,
+    target: &str,
+    event: &MouseEvent,
+) {
+    if event.kind != MouseEventKind::Move {
+        return;
+    }
+    let Some(pane_id) = event
+        .target
+        .as_ref()
+        .filter(|resolved| resolved.location == super::key::MouseLocation::Pane)
+        .and_then(|resolved| resolved.pane_id)
+    else {
+        return;
+    };
+    let Ok(mut st) = state.lock() else {
+        return;
+    };
+    if st.option_for_target(target, "focus-follows-mouse") != Some("on") {
+        return;
+    }
+    let _ = st.select_pane(&format!("%{pane_id}"));
 }
 
 /// Decode the key syntax accepted by tmux's `command-prompt -k`.

@@ -325,10 +325,16 @@ fn parse_user_key(lower: &str) -> Option<u16> {
     (value <= 1000).then_some(value)
 }
 
+/// Parse a bindable mouse key name.
+///
+/// tmux generates these names from `key-string.c`'s `KEYC_MOUSE_STRING` table,
+/// which is narrower than the set of mouse keys the server can *produce*:
+/// `MouseMove*` is output-only (`key_string_lookup_key` prints it, nothing
+/// parses it), the numbered kinds cover buttons 1-3 and 6-11 only, and the
+/// wheel kinds carry no button number at all.
 fn parse_mouse_key(name: &str) -> Option<MouseKey> {
     let lower = name.to_ascii_lowercase();
     let (kind, rest) = [
-        ("mousemove", MouseKind::Move),
         ("mousedragend", MouseKind::DragEnd),
         ("secondclick", MouseKind::SecondClick),
         ("doubleclick", MouseKind::DoubleClick),
@@ -352,7 +358,12 @@ fn parse_mouse_key(name: &str) -> Option<MouseKey> {
     } else {
         rest[..button_len].parse::<u8>().ok()?
     };
-    if !matches!(button, 0 | 1 | 2 | 3 | 6..=11) {
+    // The wheel kinds are unnumbered; every other kind needs a real button.
+    if matches!(kind, MouseKind::WheelUp | MouseKind::WheelDown) {
+        if button_len != 0 {
+            return None;
+        }
+    } else if !matches!(button, 1 | 2 | 3 | 6..=11) {
         return None;
     }
     let location = match &rest[button_len..] {
@@ -516,7 +527,6 @@ mod tests {
             "C-M-S-Left",
             "é",
             "User1000",
-            "MouseMovePane",
             "MouseDown1Pane",
             "WheelUpScrollbarSlider",
         ] {
@@ -530,5 +540,31 @@ mod tests {
         assert_eq!(parse_key_name("DefinitelyNotAKey"), None);
         assert_eq!(parse_key_name("User1001"), None);
         assert_eq!(parse_key_name("MouseDown4Pane"), None);
+    }
+
+    #[test]
+    fn rejects_output_only_and_unnumbered_mouse_names() {
+        // `MouseMove*` has no `KEYC_MOUSE_STRING` entry in tmux, button 0 is
+        // not a tmux button, and the wheel kinds never carry a number.
+        for name in [
+            "MouseMovePane",
+            "MouseMoveStatus",
+            "MouseDown0Pane",
+            "WheelUp1Pane",
+        ] {
+            assert_eq!(parse_key_name(name), None, "{name}");
+        }
+        // The output spelling still exists for keys the server produces.
+        assert_eq!(
+            format_key_name(KeyCode::new(
+                KeyBase::Mouse(MouseKey {
+                    kind: MouseKind::Move,
+                    button: 0,
+                    location: MouseLocation::Pane,
+                }),
+                Modifiers::default(),
+            )),
+            "MouseMovePane"
+        );
     }
 }

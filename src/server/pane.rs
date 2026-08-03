@@ -175,6 +175,11 @@ pub(crate) struct NativePaneObservation {
     focus_reporting: AtomicBool,
     /// Whether the pane asked for theme updates (DECSET 2031).
     theme_updates: AtomicBool,
+    /// The pane's DECSET mouse modes: 0 for none, else 1000/1002/1003, with
+    /// 1005 and 1006 as separate flags.
+    mouse_tracking_mode: AtomicU8,
+    mouse_utf8: AtomicBool,
+    mouse_sgr: AtomicBool,
     /// Set when the pane sent DSR ?996 and is waiting for an answer.
     theme_query: AtomicBool,
     background: Mutex<String>,
@@ -626,6 +631,9 @@ impl NativePaneObservation {
             focus_reporting: AtomicBool::new(false),
             theme_updates: AtomicBool::new(false),
             theme_query: AtomicBool::new(false),
+            mouse_tracking_mode: AtomicU8::new(0),
+            mouse_utf8: AtomicBool::new(false),
+            mouse_sgr: AtomicBool::new(false),
             background: Mutex::new("default".to_string()),
             child,
             output_waiters: Mutex::new(Vec::new()),
@@ -637,6 +645,19 @@ impl NativePaneObservation {
             last_output_at: Mutex::new(None),
             bell_count: AtomicU64::new(0),
             clipboard_events: Mutex::new(VecDeque::new()),
+        }
+    }
+
+    pub(crate) fn mouse_modes(&self) -> PaneMouseModes {
+        PaneMouseModes {
+            tracking: match self.mouse_tracking_mode.load(Ordering::Acquire) {
+                1 => Some(MouseTrackingMode::Standard),
+                2 => Some(MouseTrackingMode::Button),
+                3 => Some(MouseTrackingMode::All),
+                _ => None,
+            },
+            utf8: self.mouse_utf8.load(Ordering::Acquire),
+            sgr: self.mouse_sgr.load(Ordering::Acquire),
         }
     }
 
@@ -1517,6 +1538,12 @@ impl Pane {
         self.observation.theme_updates.load(Ordering::Acquire)
     }
 
+    /// The pane program's DECSET mouse reporting state, which decides both
+    /// which reports reach it and how the default bindings treat a click.
+    pub(crate) fn mouse_modes(&self) -> PaneMouseModes {
+        self.observation.mouse_modes()
+    }
+
     /// Take a pending DSR ?996 theme question, if the pane asked one.
     pub(crate) fn take_theme_query(&self) -> bool {
         self.observation.theme_query.swap(false, Ordering::AcqRel)
@@ -1894,6 +1921,21 @@ impl PaneIo {
         self.observation
             .theme_updates
             .store(self.mode_query_detector.theme_updates, Ordering::Release);
+        self.observation.mouse_tracking_mode.store(
+            match self.mode_query_detector.mouse_tracking {
+                None => 0,
+                Some(MouseTrackingMode::Standard) => 1,
+                Some(MouseTrackingMode::Button) => 2,
+                Some(MouseTrackingMode::All) => 3,
+            },
+            Ordering::Release,
+        );
+        self.observation
+            .mouse_utf8
+            .store(self.mode_query_detector.mouse_utf8, Ordering::Release);
+        self.observation
+            .mouse_sgr
+            .store(self.mode_query_detector.mouse_sgr, Ordering::Release);
         if std::mem::take(&mut self.mode_query_detector.theme_query) {
             self.observation.theme_query.store(true, Ordering::Release);
         }
@@ -2405,6 +2447,40 @@ struct ModeQueryDetector {
     theme_query: bool,
     /// DECSET 2031: the pane asked to be told when the theme changes.
     theme_updates: bool,
+    /// The pane program's mouse reporting mode, if any. tmux keeps 1000/1002/
+    /// 1003 mutually exclusive — each one clears the others — and tracks the
+    /// two encoding modes independently.
+    mouse_tracking: Option<MouseTrackingMode>,
+    /// DECSET 1005: UTF-8 coordinate encoding.
+    mouse_utf8: bool,
+    /// DECSET 1006: SGR encoding.
+    mouse_sgr: bool,
+}
+
+/// A pane's DECSET mouse state, as `#{mouse_*_flag}` reports it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct PaneMouseModes {
+    pub(crate) tracking: Option<MouseTrackingMode>,
+    pub(crate) utf8: bool,
+    pub(crate) sgr: bool,
+}
+
+impl PaneMouseModes {
+    /// tmux's `ALL_MOUSE_MODES`: the pane asked for mouse reports at all.
+    pub(crate) fn any(self) -> bool {
+        self.tracking.is_some()
+    }
+}
+
+/// Which DECSET mouse-reporting mode a pane's program asked for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MouseTrackingMode {
+    /// DECSET 1000: presses and releases only.
+    Standard,
+    /// DECSET 1002: adds motion while a button is held.
+    Button,
+    /// DECSET 1003: adds button-less motion.
+    All,
 }
 
 impl Default for ModeQueryDetector {
@@ -2417,11 +2493,22 @@ impl Default for ModeQueryDetector {
             focus_reporting: false,
             theme_updates: false,
             theme_query: false,
+            mouse_tracking: None,
+            mouse_utf8: false,
+            mouse_sgr: false,
         }
     }
 }
 
 impl ModeQueryDetector {
+    fn mouse_mode_status(&self, mode: MouseTrackingMode) -> u8 {
+        if self.mouse_tracking == Some(mode) {
+            1
+        } else {
+            2
+        }
+    }
+
     fn feed_byte(&mut self, byte: u8) -> Option<Vec<u8>> {
         if self.tail.len() == 16 {
             self.tail.pop_front();
@@ -2449,6 +2536,26 @@ impl ModeQueryDetector {
             self.theme_updates = true;
         } else if tail.ends_with(b"\x1b[?2031l") {
             self.theme_updates = false;
+        } else if tail.ends_with(b"\x1b[?1000h") {
+            self.mouse_tracking = Some(MouseTrackingMode::Standard);
+        } else if tail.ends_with(b"\x1b[?1002h") {
+            self.mouse_tracking = Some(MouseTrackingMode::Button);
+        } else if tail.ends_with(b"\x1b[?1003h") {
+            self.mouse_tracking = Some(MouseTrackingMode::All);
+        } else if tail.ends_with(b"\x1b[?1000l")
+            || tail.ends_with(b"\x1b[?1001l")
+            || tail.ends_with(b"\x1b[?1002l")
+            || tail.ends_with(b"\x1b[?1003l")
+        {
+            self.mouse_tracking = None;
+        } else if tail.ends_with(b"\x1b[?1005h") {
+            self.mouse_utf8 = true;
+        } else if tail.ends_with(b"\x1b[?1005l") {
+            self.mouse_utf8 = false;
+        } else if tail.ends_with(b"\x1b[?1006h") {
+            self.mouse_sgr = true;
+        } else if tail.ends_with(b"\x1b[?1006l") {
+            self.mouse_sgr = false;
         } else if tail.ends_with(b"\x1b[?996n") {
             // DSR ?996: the pane is asking which theme it is running under.
             self.theme_query = true;
@@ -2486,6 +2593,23 @@ impl ModeQueryDetector {
                         }
                         2031 => {
                             if self.theme_updates {
+                                1
+                            } else {
+                                2
+                            }
+                        }
+                        1000 => self.mouse_mode_status(MouseTrackingMode::Standard),
+                        1002 => self.mouse_mode_status(MouseTrackingMode::Button),
+                        1003 => self.mouse_mode_status(MouseTrackingMode::All),
+                        1005 => {
+                            if self.mouse_utf8 {
+                                1
+                            } else {
+                                2
+                            }
+                        }
+                        1006 => {
+                            if self.mouse_sgr {
                                 1
                             } else {
                                 2

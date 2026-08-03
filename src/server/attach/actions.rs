@@ -159,9 +159,29 @@ pub(super) fn dispatch_key_binding(
         Ok(st) => st.key_binding(table, key).cloned(),
         Err(_) => None,
     };
-    let Some(binding) = binding else {
+    let Some(mut binding) = binding else {
         return PrefixOutcome::Handled { changed: false };
     };
+    // The default mouse bindings guard their real command behind `if-shell -F`,
+    // so resolve that here: the branch may be a client-local outcome the
+    // command interpreter has no way to express.
+    if matches!(
+        binding.command.first().map(String::as_str),
+        Some("if-shell" | "if")
+    ) {
+        let mut binding_context = context.clone();
+        binding_context.key_event = Some(key);
+        binding_context.mouse = mouse.clone();
+        let agents = hub.snapshot().panes;
+        if let Ok(mut st) = state.lock() {
+            binding.command = command::resolve_conditional_binding(
+                binding.command,
+                &mut st,
+                &agents,
+                &binding_context,
+            );
+        }
+    }
     let Some(command_name) = binding.command.first().map(String::as_str) else {
         return PrefixOutcome::Handled { changed: false };
     };

@@ -695,6 +695,7 @@ struct PreviousCommandTargetContext {
     window_id: Option<u32>,
     active_panes: Option<BTreeMap<u32, u32>>,
     hook_vars: Option<Vec<(String, String)>>,
+    mouse: Option<MouseEvent>,
 }
 
 fn install_command_target_context(
@@ -703,14 +704,28 @@ fn install_command_target_context(
 ) -> PreviousCommandTargetContext {
     // Inside a hook body the hook's own target replaces the client's current
     // one, so an untargeted command in the body acts on what the hook is about.
-    let hook_target = context
+    // A mouse binding does the same with what the event hit (tmux's
+    // `cmd_find_from_mouse`), which is how `MouseDown1Status` acts on the
+    // window that was clicked rather than the current one.
+    let mouse_target = context
+        .mouse
+        .as_ref()
+        .and_then(|mouse| mouse.target.as_ref())
+        .map(|_| "=");
+    let default_target = context
         .hook_target
         .as_deref()
-        .and_then(|target| state.resolve(target));
-    let session_id = hook_target
+        .or(mouse_target)
+        .and_then(|target| {
+            let previous = state.replace_command_mouse(context.mouse.clone());
+            let resolved = state.resolve(target);
+            state.replace_command_mouse(previous);
+            resolved
+        });
+    let session_id = default_target
         .map(|resolved| state.sessions()[resolved.session].id)
         .or(context.current_session_id);
-    let window_id = hook_target
+    let window_id = default_target
         .map(|resolved| state.sessions()[resolved.session].windows[resolved.window].id);
     PreviousCommandTargetContext {
         session_id: state.replace_command_session_id(session_id),
@@ -720,6 +735,7 @@ fn install_command_target_context(
             .hook_vars
             .as_ref()
             .map(|vars| state.replace_hook_format_vars(vars.as_ref().clone())),
+        mouse: state.replace_command_mouse(context.mouse.clone()),
     }
 }
 
@@ -730,6 +746,7 @@ fn restore_command_target_context(state: &mut ServerState, previous: PreviousCom
     if let Some(vars) = previous.hook_vars {
         state.replace_hook_format_vars(vars);
     }
+    state.replace_command_mouse(previous.mouse);
 }
 
 struct SourceLocation {
@@ -4795,7 +4812,81 @@ pub(super) fn vars_full(
     for (key, value) in st.hook_format_vars() {
         v.set(key.clone(), value.clone());
     }
+    set_mouse_vars(st, sess, win_idx, pane_idx, &mut v);
     v
+}
+
+/// Publish `#{mouse_*}`.
+///
+/// The `*_flag` variables describe the *pane* (tmux reads `ft->wp->base.mode`),
+/// so they are available with no mouse event in scope; everything else needs
+/// the event the running command was dispatched from.
+fn set_mouse_vars(
+    st: &ServerState,
+    sess: &Session,
+    win_idx: usize,
+    pane_idx: usize,
+    v: &mut Vars,
+) {
+    let modes = sess
+        .windows
+        .get(win_idx)
+        .map(|link| st.window_for_link(link))
+        .and_then(|window| window.panes.get(pane_idx))
+        .map(|node| node.pane.mouse_modes())
+        .unwrap_or_default();
+    let flag = |set: bool| if set { "1" } else { "0" };
+    v.set("mouse_any_flag", flag(modes.any()))
+        .set(
+            "mouse_standard_flag",
+            flag(modes.tracking == Some(super::pane::MouseTrackingMode::Standard)),
+        )
+        .set(
+            "mouse_button_flag",
+            flag(modes.tracking == Some(super::pane::MouseTrackingMode::Button)),
+        )
+        .set(
+            "mouse_all_flag",
+            flag(modes.tracking == Some(super::pane::MouseTrackingMode::All)),
+        )
+        .set("mouse_sgr_flag", flag(modes.sgr))
+        .set("mouse_utf8_flag", flag(modes.utf8));
+
+    let Some(mouse) = st.command_mouse() else {
+        return;
+    };
+    let Some(target) = mouse.target.as_ref() else {
+        return;
+    };
+    if let Some(line) = target.status_line {
+        v.set("mouse_x", mouse.position.x.to_string())
+            .set("mouse_y", line.to_string())
+            .set("mouse_status_line", line.to_string());
+        if let Some(range) = target.status_range.as_ref() {
+            v.set("mouse_status_range", super::mouse::range_name(range));
+        }
+        return;
+    }
+    let Some(position) = target.local_position else {
+        return;
+    };
+    v.set("mouse_x", position.x.to_string())
+        .set("mouse_y", position.y.to_string());
+    let Some(pane_id) = target.pane_id else {
+        return;
+    };
+    let pane_target = format!("%{pane_id}");
+    v.set("mouse_pane", &pane_target);
+    let Some(resolved) = st.resolve(&pane_target) else {
+        return;
+    };
+    let pane = &st.window(resolved.session, resolved.window).panes[resolved.pane].pane;
+    let separators = st
+        .option_for_target(&pane_target, "word-separators")
+        .unwrap_or(" !\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~")
+        .to_string();
+    let (word, line) = super::mouse::grid_word_and_line(pane, position, &separators);
+    v.set("mouse_word", word).set("mouse_line", line);
 }
 
 fn pane_cursor_character(pane: &super::pane::Pane) -> String {
@@ -5295,19 +5386,7 @@ fn select_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -
         return CommandResult::ok("");
     }
     let target = flag_value(args, "-t")
-        .map(|target| {
-            if target == "=" {
-                context
-                    .mouse
-                    .as_ref()
-                    .and_then(|mouse| mouse.target.as_ref())
-                    .and_then(|target| target.pane_id)
-                    .map(|pane_id| format!("%{pane_id}"))
-                    .unwrap_or_else(|| target.to_string())
-            } else {
-                target.to_string()
-            }
-        })
+        .map(str::to_string)
         .or_else(|| current_session(st));
     let target = match target {
         Some(t) => t,
@@ -7265,6 +7344,76 @@ fn rotate_window(args: &[String], st: &mut ServerState) -> CommandResult {
 }
 
 /// `resize-pane`: toggle zoom or move one boundary in the retained layout tree.
+/// `resize-pane -M`: drag the border the mouse grabbed to where it is now.
+///
+/// tmux installs a drag callback that runs on every later report; hmux instead
+/// keeps the drag pinned to the border it started on (see
+/// `MouseInputState::observe`) and re-runs this on each `MouseDrag1Border`, so
+/// the border tracks the pointer the same way.
+fn resize_pane_to_mouse(st: &mut ServerState) -> CommandResult {
+    // tmux's `cmd_resize_pane_exec` returns quietly when there is no mouse
+    // event, so a command client running `resize-pane -M` is not an error.
+    let Some(mouse) = st.command_mouse() else {
+        return CommandResult::ok("");
+    };
+    let Some((pane_id, side)) = mouse
+        .target
+        .as_ref()
+        .filter(|target| target.location == super::key::MouseLocation::Border)
+        .and_then(|target| Some((target.pane_id?, target.border_side?)))
+    else {
+        return CommandResult::ok("");
+    };
+    let position = mouse.position;
+    let target = format!("%{pane_id}");
+    let Some(resolved) = st.resolve(&target) else {
+        return CommandResult::ok("");
+    };
+    let status_offset = if super::status::at_top(st, &target) {
+        super::status::height(st, &target)
+    } else {
+        0
+    };
+    let Some(rect) = st
+        .window(resolved.session, resolved.window)
+        .pane_rect(pane_id)
+    else {
+        return CommandResult::ok("");
+    };
+    // Moving a pane's own top or left border grows it; moving its bottom or
+    // right border shrinks or grows it from the other end. Either way the new
+    // size is the distance from the edge that stayed put to the pointer.
+    let pane_y = position.y.saturating_sub(status_offset);
+    let (direction, size) = match side {
+        super::mouse::BorderSide::Bottom => (SplitDirection::TopBottom, pane_y.saturating_sub(rect.top)),
+        super::mouse::BorderSide::Top => (
+            SplitDirection::TopBottom,
+            rect.top
+                .saturating_add(rect.height)
+                .saturating_sub(pane_y)
+                .saturating_sub(1),
+        ),
+        super::mouse::BorderSide::Right => (
+            SplitDirection::LeftRight,
+            position.x.saturating_sub(rect.left),
+        ),
+        super::mouse::BorderSide::Left => (
+            SplitDirection::LeftRight,
+            rect.left
+                .saturating_add(rect.width)
+                .saturating_sub(position.x)
+                .saturating_sub(1),
+        ),
+    };
+    if size == 0 {
+        return CommandResult::ok("");
+    }
+    match st.resize_pane_to(&target, direction, size) {
+        Ok(()) => CommandResult::ok(""),
+        Err(_) => CommandResult::ok(""),
+    }
+}
+
 fn resize_pane(args: &[String], st: &mut ServerState) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
@@ -7281,6 +7430,9 @@ fn resize_pane(args: &[String], st: &mut ServerState) -> CommandResult {
             Ok(_) => CommandResult::ok(""),
             Err(e) => CommandResult::err(format!("{e}\n")),
         };
+    }
+    if has_bool_flag(args, 'M') {
+        return resize_pane_to_mouse(st);
     }
     for (flag, direction, label) in [
         ("-x", SplitDirection::LeftRight, "width"),
@@ -8135,6 +8287,48 @@ fn if_shell(
     }
 }
 
+/// Collapse a key binding written as tmux's guarded `if-shell -F` form down to
+/// the branch that will actually run.
+///
+/// The default mouse bindings are all shaped `if -F '#{mouse_any_flag}...'
+/// {send -M} {copy-mode -M}`, and the branch decides between a client-local
+/// outcome (entering copy mode, resizing) and an ordinary command. Resolving
+/// the condition before dispatch is what lets the attach loop keep handling
+/// those outcomes itself instead of losing them inside the command interpreter.
+pub(super) fn resolve_conditional_binding(
+    command: Vec<String>,
+    st: &mut ServerState,
+    agents: &PaneAgents,
+    context: &ClientContext,
+) -> Vec<String> {
+    // Bounded: a binding that somehow nests conditionals forever must not hang
+    // the client's input loop.
+    let mut command = command;
+    for _ in 0..4 {
+        if !matches!(command.first().map(String::as_str), Some("if-shell" | "if")) {
+            break;
+        }
+        let args = normalize_argv("if-shell", &command);
+        if !has_flag(&args, "-F") || has_flag(&args, "-b") {
+            break;
+        }
+        let positional = positionals(&args, &["-t"]);
+        let Some(condition) = positional.first() else {
+            break;
+        };
+        let previous = st.replace_command_mouse(context.mouse.clone());
+        let expanded = expand_if_cond(condition, &args, st, agents);
+        st.replace_command_mouse(previous);
+        let branch = if !expanded.is_empty() && expanded != "0" {
+            positional.get(1)
+        } else {
+            positional.get(2)
+        };
+        command = branch.map(|line| binding_words(line)).unwrap_or_default();
+    }
+    command
+}
+
 /// Expand `if-shell -F`'s condition as a format, anchored at the command's
 /// target (`-t`, else the current session) so `#{...}` references resolve
 /// against the live tree. Falls back to an empty context when no target
@@ -8552,6 +8746,22 @@ fn tokenize_line(line: &str) -> Vec<LineToken> {
 /// error that rejects the whole file, as in tmux's parser.
 fn tokenize_line_checked(line: &str) -> Result<Vec<LineToken>, String> {
     tokenize_line_impl(line, true)
+}
+
+/// Split a command line into the word list a stored key binding holds, with
+/// command separators kept as literal `;` words.
+///
+/// The default key table is written as tmux command lines (the same shape as
+/// `key_bindings_init`'s strings) rather than hand-split argv, so the bindings
+/// stay readable next to the tmux source they come from.
+pub(super) fn binding_words(line: &str) -> Vec<String> {
+    tokenize_line(line)
+        .into_iter()
+        .map(|token| match token {
+            LineToken::Word(word) => word,
+            LineToken::Separator => ";".to_string(),
+        })
+        .collect()
 }
 
 /// Decode one backslash escape whose `\` has already been consumed.

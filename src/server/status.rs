@@ -889,12 +889,20 @@ struct Sections {
     ranges: Vec<PendingRange>,
 }
 
+/// A `#[range=...]` region while the format is still being drawn.
+///
+/// tmux closes a range in `format_draw` with `fr->end = cx + 1`, so the region
+/// it hands to `style_ranges_get_range` reaches one column *past* its own text
+/// — which is why a click on the separator between two window entries still
+/// names the window before it. A range never closed by a later style directive
+/// is dropped rather than reaching the click map at all.
 #[derive(Clone, Debug)]
 struct PendingRange {
     section: Section,
     start: usize,
     end: usize,
     kind: StatusRangeKind,
+    open: bool,
 }
 
 impl Sections {
@@ -1495,6 +1503,10 @@ fn draw_row(expanded: &str, cols: usize, base: &CellStyle) -> StatusRow {
         }
     }
 
+    // A range the format never closed is discarded, exactly as tmux frees the
+    // in-flight `format_range` when it runs out of directives.
+    sections.ranges.retain(|range| !range.open);
+
     let mut fill_style = *base;
     if let Some(fill) = state.fill {
         fill_style.bg = fill;
@@ -1518,20 +1530,28 @@ fn push_cell(text: &str, width: u8, state: &DrawState, sections: &mut Sections) 
     });
     if let Some(kind) = state.range.clone() {
         let end = start + usize::from(width);
-        if let Some(range) = sections
-            .ranges
-            .last_mut()
-            .filter(|range| range.section == section && range.end == start && range.kind == kind)
-        {
+        if let Some(range) = sections.ranges.last_mut().filter(|range| {
+            range.open && range.section == section && range.end == start && range.kind == kind
+        }) {
             range.end = end;
         } else {
+            close_open_range(sections);
             sections.ranges.push(PendingRange {
                 section,
                 start,
                 end,
                 kind,
+                open: true,
             });
         }
+    }
+}
+
+/// End the range currently being drawn, extending it by tmux's trailing column.
+fn close_open_range(sections: &mut Sections) {
+    if let Some(range) = sections.ranges.last_mut().filter(|range| range.open) {
+        range.open = false;
+        range.end += 1;
     }
 }
 
@@ -1663,6 +1683,11 @@ fn apply_status_style(directive: &str, state: &mut DrawState, sections: &mut Sec
             state.current_default_acs = state.base_acs;
         }
         None => {}
+    }
+    // tmux ends a range as soon as the style stops naming it, and that closing
+    // position is what gives the range its trailing column.
+    if state.range != original_state.range {
+        close_open_range(sections);
     }
 }
 

@@ -21,7 +21,6 @@ pub(crate) enum MouseEventKind {
     DragEnd,
     WheelUp,
     WheelDown,
-    #[allow(dead_code)] // emitted once the attach loop gains tmux's delayed click timer
     SecondClick,
     DoubleClick,
     TripleClick,
@@ -90,6 +89,16 @@ pub(crate) enum MouseStatusRange {
     Control(u8),
 }
 
+/// Which of a pane's four borders an event landed on. `resize-pane -M` needs
+/// this to know which way the border it grabbed moves the pane.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BorderSide {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MouseTarget {
     pub(crate) session_id: u32,
@@ -99,6 +108,7 @@ pub(crate) struct MouseTarget {
     pub(crate) local_position: Option<MousePosition>,
     pub(crate) status_line: Option<u16>,
     pub(crate) status_range: Option<MouseStatusRange>,
+    pub(crate) border_side: Option<BorderSide>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -112,6 +122,10 @@ pub(crate) struct MouseEvent {
     pub(crate) protocol: MouseProtocol,
     pub(crate) raw_button: u16,
     pub(crate) target: Option<MouseTarget>,
+    /// tmux's `m->ignore`: set on the click timer's replayed `DoubleClick`,
+    /// which never reaches a pane because the terminal already sent the
+    /// presses this event is derived from.
+    pub(crate) ignore: bool,
 }
 
 impl MouseEvent {
@@ -165,6 +179,7 @@ impl MouseEvent {
             protocol,
             raw_button,
             target: None,
+            ignore: false,
         }
     }
 
@@ -203,6 +218,9 @@ impl MouseEvent {
     }
 
     pub(crate) fn pane_input_event(&self) -> Option<(u32, ghostty_sys::MouseEvent)> {
+        if self.ignore {
+            return None;
+        }
         let target = self.target.as_ref()?;
         let pane_id = target.pane_id?;
         let position = target.local_position?;
@@ -253,23 +271,100 @@ impl MouseEvent {
     }
 }
 
-#[derive(Clone, Debug)]
-struct ClickState {
-    when: Instant,
-    button: Option<MouseButton>,
-    target: Option<MouseTarget>,
-    count: u8,
+/// The `#{mouse_status_range}` spelling of a status range.
+pub(crate) fn range_name(range: &MouseStatusRange) -> String {
+    match range {
+        MouseStatusRange::Left => "left".to_string(),
+        MouseStatusRange::Right => "right".to_string(),
+        MouseStatusRange::Window(_) => "window".to_string(),
+        MouseStatusRange::Pane(_) => "pane".to_string(),
+        MouseStatusRange::Session(_) => "session".to_string(),
+        // A user range reports its own argument, not a fixed word.
+        MouseStatusRange::User(value) => value.clone(),
+        MouseStatusRange::Control(_) => "control".to_string(),
+    }
 }
 
+/// `#{mouse_word}` and `#{mouse_line}` for a pane-local position.
+///
+/// tmux reads these straight off the grid (`format_grid_word`/
+/// `format_grid_line`) rather than through copy mode, and stops a word at the
+/// first `word-separators` character in either direction. Unlike tmux this does
+/// not follow a wrapped line into its neighbour, which only shows up for a word
+/// straddling the right margin.
+pub(crate) fn grid_word_and_line(
+    pane: &super::pane::Pane,
+    position: MousePosition,
+    separators: &str,
+) -> (String, String) {
+    let Ok(dump) = pane.dump() else {
+        return (String::new(), String::new());
+    };
+    let history = pane.scrollback_rows().unwrap_or(0);
+    let Some(line) = dump.lines().nth(history + usize::from(position.y)) else {
+        return (String::new(), String::new());
+    };
+    let line = line.trim_end_matches(' ');
+    let cells: Vec<char> = line.chars().collect();
+    let index = usize::from(position.x);
+    let is_separator = |ch: char| ch == ' ' || separators.contains(ch);
+    let word = match cells.get(index) {
+        Some(&ch) if !is_separator(ch) => {
+            let start = cells[..index]
+                .iter()
+                .rposition(|&ch| is_separator(ch))
+                .map_or(0, |at| at + 1);
+            let end = cells[index..]
+                .iter()
+                .position(|&ch| is_separator(ch))
+                .map_or(cells.len(), |at| index + at);
+            cells[start..end].iter().collect()
+        }
+        _ => String::new(),
+    };
+    (word, line.to_string())
+}
+
+/// tmux's `KEYC_CLICK_TIMEOUT`.
+const CLICK_TIMEOUT: Duration = Duration::from_millis(300);
+
+/// The press the click timer replays if no further click arrives.
+#[derive(Clone, Debug)]
+struct ClickState {
+    event: MouseEvent,
+    button: Option<MouseButton>,
+    identity: Option<(u32, Option<u32>, Option<u32>, MouseLocation)>,
+    deadline: Instant,
+}
+
+/// The per-client mouse state a report is interpreted against: the previous
+/// position and button, whether a drag is in flight, and tmux's two-flag repeat
+/// click machine.
+///
+/// The click shape is not the obvious one. A second press is `SecondClick`, a
+/// third is `TripleClick`, and `DoubleClick` is delivered *afterwards* by the
+/// timer when no third press arrives — so a binding on `DoubleClick1Pane` runs
+/// 300ms after the second release, not on it.
 #[derive(Default)]
 pub(crate) struct MouseInputState {
     last_position: Option<MousePosition>,
     last_button: Option<MouseButton>,
     drag_button: Option<MouseButton>,
+    /// tmux's `CLIENT_DOUBLECLICK`: one press has landed, so the next is a
+    /// `SecondClick`.
+    expect_second: bool,
+    /// tmux's `CLIENT_TRIPLECLICK`: two presses have landed, so the next is a
+    /// `TripleClick` — and if none comes, the timer replays a `DoubleClick`.
+    expect_third: bool,
     click: Option<ClickState>,
+    /// What the in-flight drag started on, tmux's `mouse_last_pane` plus the
+    /// drag callback it installed.
+    drag_origin: Option<MouseTarget>,
 }
 
 impl MouseInputState {
+    /// Fold one freshly resolved report into the client's mouse state,
+    /// rewriting its kind to the key tmux would dispatch.
     pub(crate) fn observe(&mut self, event: &mut MouseEvent, now: Instant) {
         event.last_position = self.last_position;
         event.last_button = self.last_button;
@@ -281,39 +376,115 @@ impl MouseInputState {
             event.kind = MouseEventKind::DragEnd;
         }
         match event.kind {
-            MouseEventKind::Drag => self.drag_button = event.button,
-            MouseEventKind::Up | MouseEventKind::DragEnd => self.drag_button = None,
+            MouseEventKind::Drag => {
+                // A drag belongs to whatever it started on for as long as it
+                // lasts. tmux gets this from the drag callback the opening
+                // command installed, which later reports bypass the key tables
+                // to reach; keeping the origin's location and pane on the event
+                // is the same thing expressed through the ordinary dispatch, so
+                // a border drag keeps producing `MouseDrag1Border` after the
+                // pointer has left the border.
+                match self.drag_origin.as_ref() {
+                    Some(origin) => {
+                        if let Some(target) = event.target.as_mut() {
+                            target.location = origin.location;
+                            target.window_id = origin.window_id;
+                            target.pane_id = origin.pane_id;
+                        } else {
+                            event.target = Some(origin.clone());
+                        }
+                    }
+                    None => self.drag_origin = event.target.clone(),
+                }
+                self.drag_button = event.button;
+            }
+            MouseEventKind::Up | MouseEventKind::DragEnd => {
+                self.drag_button = None;
+                self.drag_origin = None;
+            }
             _ => {}
         }
 
         if event.kind == MouseEventKind::Down {
+            if self.expect_second {
+                self.expect_second = false;
+                self.expect_third = true;
+                event.kind = MouseEventKind::SecondClick;
+            } else if self.expect_third {
+                self.expect_third = false;
+                event.kind = MouseEventKind::TripleClick;
+            } else {
+                self.expect_second = true;
+            }
+        }
+
+        if matches!(
+            event.kind,
+            MouseEventKind::Down | MouseEventKind::SecondClick | MouseEventKind::TripleClick
+        ) {
             let identity = click_identity(event.target.as_ref());
-            let count = match self.click.as_ref() {
-                Some(click)
-                    if click.button == event.button
-                        && click_identity(click.target.as_ref()) == identity
-                        && now.saturating_duration_since(click.when)
-                            <= Duration::from_millis(300) =>
-                {
-                    click.count.saturating_add(1).min(3)
-                }
-                _ => 1,
-            };
-            self.click = Some(ClickState {
-                when: now,
-                button: event.button,
-                target: event.target.clone(),
-                count,
-            });
-            event.kind = match count {
-                2 => MouseEventKind::DoubleClick,
-                3 => MouseEventKind::TripleClick,
-                _ => MouseEventKind::Down,
-            };
+            // A repeat click that moved, changed button, or landed somewhere
+            // else is not a repeat at all: the sequence restarts here.
+            if event.kind != MouseEventKind::Down
+                && self.click.as_ref().is_none_or(|click| {
+                    click.button != event.button || click.identity != identity
+                })
+            {
+                event.kind = MouseEventKind::Down;
+                self.expect_third = false;
+                self.expect_second = true;
+            }
+            if event.kind != MouseEventKind::TripleClick {
+                self.click = Some(ClickState {
+                    event: event.clone(),
+                    button: event.button,
+                    identity,
+                    deadline: now + CLICK_TIMEOUT,
+                });
+            }
         }
 
         self.last_position = Some(event.position);
         self.last_button = event.button;
+    }
+
+    /// Where the opening report of a drag resolves.
+    ///
+    /// tmux starts a drag at `m->lx/m->ly` — the position the button went down
+    /// — so a press on a border followed by motion away from it still resolves
+    /// as a border drag.
+    pub(crate) fn drag_start_position(&self, event: &MouseEvent) -> Option<MousePosition> {
+        (event.kind == MouseEventKind::Drag && self.drag_button.is_none())
+            .then_some(self.last_position)
+            .flatten()
+    }
+
+    /// When the client next has to wake up for the repeat-click timer.
+    pub(crate) fn click_deadline(&self) -> Option<Instant> {
+        (self.expect_second || self.expect_third)
+            .then(|| self.click.as_ref().map(|click| click.deadline))
+            .flatten()
+    }
+
+    /// tmux's `server_client_click_timer`. Two presses with no third mean the
+    /// gesture was a double click after all, so replay the stored press as one;
+    /// a single press just ends the sequence.
+    pub(crate) fn expire_click(&mut self, now: Instant) -> Option<MouseEvent> {
+        let click = self.click.as_ref()?;
+        if now < click.deadline || !(self.expect_second || self.expect_third) {
+            return None;
+        }
+        let replay = self.expect_third.then(|| {
+            let mut event = click.event.clone();
+            event.kind = MouseEventKind::DoubleClick;
+            // The pane already saw the presses this is derived from.
+            event.ignore = true;
+            event
+        });
+        self.expect_second = false;
+        self.expect_third = false;
+        self.click = None;
+        replay
     }
 }
 
@@ -389,6 +560,7 @@ fn resolve_status_target(
         local_position: None,
         status_line: Some(line),
         status_range: None,
+        border_side: None,
     };
     match range {
         None => {}
@@ -469,13 +641,14 @@ fn resolve_pane_target(
                 local_position: Some(local),
                 status_line: None,
                 status_range: None,
+                border_side: None,
             });
         }
     }
     for index in order {
         let pane = &window.panes[index];
         let rect = window.pane_rect(pane.id)?;
-        if on_border(rect, point) {
+        if let Some(side) = on_border(rect, point) {
             return Some(MouseTarget {
                 session_id,
                 window_id: Some(window.id),
@@ -484,6 +657,7 @@ fn resolve_pane_target(
                 local_position: None,
                 status_line: None,
                 status_range: None,
+                border_side: Some(side),
             });
         }
     }
@@ -497,16 +671,26 @@ fn contains(rect: PaneRect, point: MousePosition) -> bool {
         && point.y < rect.top.saturating_add(rect.height)
 }
 
-fn on_border(rect: PaneRect, point: MousePosition) -> bool {
+fn on_border(rect: PaneRect, point: MousePosition) -> Option<BorderSide> {
     let right = rect.left.saturating_add(rect.width);
     let bottom = rect.top.saturating_add(rect.height);
-    let vertical = point.y >= rect.top
-        && point.y <= bottom
-        && (point.x == right || rect.left.checked_sub(1) == Some(point.x));
-    let horizontal = point.x >= rect.left
-        && point.x <= right
-        && (point.y == bottom || rect.top.checked_sub(1) == Some(point.y));
-    vertical || horizontal
+    if point.y >= rect.top && point.y <= bottom {
+        if point.x == right {
+            return Some(BorderSide::Right);
+        }
+        if rect.left.checked_sub(1) == Some(point.x) {
+            return Some(BorderSide::Left);
+        }
+    }
+    if point.x >= rect.left && point.x <= right {
+        if point.y == bottom {
+            return Some(BorderSide::Bottom);
+        }
+        if rect.top.checked_sub(1) == Some(point.y) {
+            return Some(BorderSide::Top);
+        }
+    }
+    None
 }
 
 fn scrollbar_location(
@@ -635,6 +819,7 @@ mod tests {
             local_position: Some(MousePosition { x: 3, y: 2 }),
             status_line: None,
             status_range: None,
+            border_side: None,
         });
 
         let (pane_id, event) = mouse.pane_input_event().expect("pane input event");
@@ -742,6 +927,75 @@ mod tests {
 
         let mut second = event(2, 3);
         state.observe(&mut second, now + Duration::from_millis(10));
-        assert_eq!(second.kind, MouseEventKind::DoubleClick);
+        assert_eq!(second.kind, MouseEventKind::SecondClick);
+    }
+
+    #[test]
+    fn repeat_clicks_follow_tmuxs_second_then_timer_double_shape() {
+        let mut state = MouseInputState::default();
+        let start = Instant::now();
+
+        let mut first = event(2, 3);
+        state.observe(&mut first, start);
+        assert_eq!(first.kind, MouseEventKind::Down);
+        // The timer is armed but a lone press replays nothing.
+        assert_eq!(state.click_deadline(), Some(start + CLICK_TIMEOUT));
+
+        let mut second = event(2, 3);
+        state.observe(&mut second, start + Duration::from_millis(50));
+        assert_eq!(second.kind, MouseEventKind::SecondClick);
+
+        // No third press: the timer delivers the DoubleClick, and it must not
+        // be written into the pane a second time.
+        let replayed = state
+            .expire_click(start + Duration::from_millis(400))
+            .expect("timer replays a double click");
+        assert_eq!(replayed.kind, MouseEventKind::DoubleClick);
+        assert!(replayed.ignore);
+        assert_eq!(state.click_deadline(), None);
+    }
+
+    #[test]
+    fn a_third_press_is_a_triple_click_and_cancels_the_timer() {
+        let mut state = MouseInputState::default();
+        let start = Instant::now();
+        for expected in [
+            MouseEventKind::Down,
+            MouseEventKind::SecondClick,
+            MouseEventKind::TripleClick,
+        ] {
+            let mut press = event(2, 3);
+            state.observe(&mut press, start);
+            assert_eq!(press.kind, expected);
+        }
+        assert_eq!(state.click_deadline(), None);
+        assert_eq!(state.expire_click(start + Duration::from_secs(1)), None);
+    }
+
+    #[test]
+    fn a_repeat_click_somewhere_else_restarts_the_sequence() {
+        let mut state = MouseInputState::default();
+        let now = Instant::now();
+        let mut first = event(2, 3);
+        first.target = Some(pane_target(1));
+        state.observe(&mut first, now);
+
+        let mut elsewhere = event(2, 3);
+        elsewhere.target = Some(pane_target(2));
+        state.observe(&mut elsewhere, now);
+        assert_eq!(elsewhere.kind, MouseEventKind::Down);
+    }
+
+    fn pane_target(pane_id: u32) -> MouseTarget {
+        MouseTarget {
+            session_id: 0,
+            window_id: Some(0),
+            pane_id: Some(pane_id),
+            location: MouseLocation::Pane,
+            local_position: Some(MousePosition { x: 0, y: 0 }),
+            status_line: None,
+            status_range: None,
+            border_side: None,
+        }
     }
 }
