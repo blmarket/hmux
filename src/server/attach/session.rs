@@ -22,6 +22,14 @@ impl AttachSession {
         Ok(())
     }
 
+    /// Whether the server wants terminal focus reporting turned on.
+    fn focus_events(state: &Arc<Mutex<ServerState>>) -> bool {
+        state
+            .lock()
+            .ok()
+            .is_some_and(|st| st.server_options().get("focus-events") == Some("on"))
+    }
+
     pub(crate) fn start_in_mode<W>(
         target: &str,
         client_tty: ClientTty,
@@ -103,8 +111,11 @@ impl AttachSession {
             client_tty.client_pid,
             cols,
             rows,
-            super::super::state::ClientFlagState::default()
-                .display_flags_with(client_tty.flags, false),
+            super::super::state::ClientFlagState::default().display_flags_full(
+                client_tty.flags,
+                false,
+                true,
+            ),
             client_tty.flags,
             Default::default(),
             false,
@@ -167,7 +178,11 @@ impl AttachSession {
         set_nonblock(render_fd.as_raw_fd())?;
 
         let mut tty_output = TtyOutput::new();
-        let tty_start = tty_start_sequence(&terminal);
+        let focus_events = state
+            .lock()
+            .ok()
+            .is_some_and(|st| st.server_options().get("focus-events") == Some("on"));
+        let tty_start = tty_start_sequence(&terminal, focus_events);
         let _ = tty_output.queue(render_fd.as_raw_fd(), &tty_start);
         if state
             .lock()
@@ -1063,7 +1078,7 @@ impl AttachSession {
                     }
                     Message::Unlock if self.compositor.io_state == ClientIoState::Locked => {
                         let _ = make_raw(self.tty.input_fd.as_raw_fd());
-                        let start = tty_start_sequence(&self.tty.terminal);
+                        let start = tty_start_sequence(&self.tty.terminal, Self::focus_events(state));
                         let _ = self
                             .tty
                             .output
@@ -1086,7 +1101,7 @@ impl AttachSession {
                     }
                     Message::Wakeup if self.compositor.io_state == ClientIoState::Suspended => {
                         let _ = make_raw(self.tty.input_fd.as_raw_fd());
-                        let start = tty_start_sequence(&self.tty.terminal);
+                        let start = tty_start_sequence(&self.tty.terminal, Self::focus_events(state));
                         let _ = self
                             .tty
                             .output

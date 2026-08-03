@@ -1,6 +1,81 @@
 use super::*;
 
+/// The terminal reports hmux acts on itself rather than forwarding.
+const FOCUS_IN_REPORT: &[u8] = b"\x1b[I";
+const FOCUS_OUT_REPORT: &[u8] = b"\x1b[O";
+const DARK_THEME_REPORT: &[u8] = b"\x1b[?997;1n";
+const LIGHT_THEME_REPORT: &[u8] = b"\x1b[?997;2n";
+
 impl AttachSession {
+    /// Strip the focus and theme reports out of one tty read and apply them.
+    ///
+    /// tmux decodes these in `tty-keys.c` as `KEYC_FOCUS_IN`/`KEYC_FOCUS_OUT`
+    /// and `KEYC_REPORT_*_THEME`, which never reach a pane as keystrokes; a
+    /// pane that asked for mode 1004 is sent its own copy instead.
+    fn take_terminal_reports(
+        &mut self,
+        data: &[u8],
+        state: &Arc<Mutex<ServerState>>,
+        target: &str,
+    ) -> Vec<u8> {
+        const REPORTS: [&[u8]; 4] = [
+            FOCUS_IN_REPORT,
+            FOCUS_OUT_REPORT,
+            DARK_THEME_REPORT,
+            LIGHT_THEME_REPORT,
+        ];
+        if !REPORTS
+            .iter()
+            .any(|report| data.windows(report.len()).any(|window| window == *report))
+        {
+            return data.to_vec();
+        }
+        let mut kept = Vec::with_capacity(data.len());
+        let mut index = 0;
+        while index < data.len() {
+            let matched = REPORTS
+                .iter()
+                .find(|report| data[index..].starts_with(report));
+            match matched {
+                Some(report) => {
+                    index += report.len();
+                    self.apply_terminal_report(report, state, target);
+                }
+                None => {
+                    kept.push(data[index]);
+                    index += 1;
+                }
+            }
+        }
+        kept
+    }
+
+    fn apply_terminal_report(
+        &mut self,
+        report: &[u8],
+        state: &Arc<Mutex<ServerState>>,
+        target: &str,
+    ) {
+        let client = self.attachments.render_attachment.client_name();
+        let Ok(mut st) = state.lock() else {
+            return;
+        };
+        match report {
+            FOCUS_IN_REPORT | FOCUS_OUT_REPORT => {
+                let focused = report == FOCUS_IN_REPORT;
+                st.set_client_focus(&client, self.compositor.target.session_id, focused, target);
+            }
+            _ => {
+                let dark = report == DARK_THEME_REPORT;
+                st.set_client_theme(
+                    &client,
+                    self.compositor.target.session_id,
+                    if dark { "dark" } else { "light" },
+                );
+            }
+        }
+    }
+
     pub(super) fn drive_input(
         &mut self,
         state: &Arc<Mutex<ServerState>>,
@@ -234,7 +309,15 @@ impl AttachSession {
                     continue;
                 }
             }
-            let data = prompt_tail.as_deref().unwrap_or(read_data);
+            // Focus and theme reports are keys tmux consumes itself rather
+            // than forwarding, so they are taken out of the stream before the
+            // prefix/pane machinery ever sees them.
+            let filtered = self.take_terminal_reports(
+                prompt_tail.as_deref().unwrap_or(read_data),
+                state,
+                target,
+            );
+            let data = filtered.as_slice();
             self.compositor.input.key_prompt.clear();
             let mut i = 0;
             while i < data.len() {

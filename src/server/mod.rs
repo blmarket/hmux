@@ -188,6 +188,7 @@ impl Server {
             .map_err(|_| io::Error::other("server state mutex poisoned"))?;
         state.enforce_lifecycle_policies();
         state.process_pane_clipboard();
+        state.process_pane_themes();
         command::run_deferred_notification_hooks(&mut state);
         Ok(())
     }

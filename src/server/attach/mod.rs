@@ -1270,7 +1270,7 @@ fn get_winsize(fd: RawFd) -> io::Result<(u16, u16)> {
     Ok((cols, rows))
 }
 
-fn tty_start_sequence(terminal: &ResolvedTerm) -> Vec<u8> {
+fn tty_start_sequence(terminal: &ResolvedTerm, focus_events: bool) -> Vec<u8> {
     let mut output = Vec::new();
     for name in ["smcup", "smkx", "clear", "cnorm"] {
         if let Some(value) = term::string_capability(terminal, name) {
@@ -1282,6 +1282,18 @@ fn tty_start_sequence(terminal: &ResolvedTerm) -> Vec<u8> {
     }
     if let Some(value) = term::string_capability(terminal, "Enbp") {
         output.extend_from_slice(value);
+    }
+    if terminal.is_vt100_like() {
+        // Subscribe to theme changes and ask for the current one, as tmux's
+        // `tty_start_tty` does.
+        output.extend_from_slice(b"\x1b[?2031h\x1b[?996n");
+    }
+    // tmux enables focus reporting from `tty_update_features`, gated on the
+    // `focus-events` server option.
+    if focus_events {
+        if let Some(value) = term::string_capability(terminal, "Enfcs") {
+            output.extend_from_slice(value);
+        }
     }
     output
 }
@@ -1308,6 +1320,9 @@ fn tty_stop_sequence(terminal: &ResolvedTerm, rows: u16) -> Vec<u8> {
         if let Some(value) = term::string_capability(terminal, name) {
             output.extend_from_slice(value);
         }
+    }
+    if terminal.is_vt100_like() {
+        output.extend_from_slice(b"\x1b[?2031l");
     }
     output
 }

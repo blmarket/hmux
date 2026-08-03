@@ -236,6 +236,57 @@ pub(crate) fn split_style_parts(value: &str) -> impl Iterator<Item = &str> {
         .filter(|part| !part.is_empty())
 }
 
+/// tmux's `colour_totheme`: whether a colour reads as a dark or light
+/// background. `None` is `THEME_UNKNOWN` — the default colour, which says
+/// nothing about the terminal's theme.
+pub(crate) fn colour_theme(colour: Colour) -> Option<&'static str> {
+    let (red, green, blue) = match colour {
+        Colour::Default => return None,
+        Colour::Rgb(red, green, blue) => (red, green, blue),
+        Colour::Palette(index) => palette_rgb(index),
+    };
+    let brightness = u32::from(red) + u32::from(green) + u32::from(blue);
+    Some(if brightness > 382 { "light" } else { "dark" })
+}
+
+/// The RGB value of an xterm 256-colour palette entry.
+fn palette_rgb(index: u8) -> (u8, u8, u8) {
+    const BASE: [(u8, u8, u8); 16] = [
+        (0, 0, 0),
+        (128, 0, 0),
+        (0, 128, 0),
+        (128, 128, 0),
+        (0, 0, 128),
+        (128, 0, 128),
+        (0, 128, 128),
+        (192, 192, 192),
+        (128, 128, 128),
+        (255, 0, 0),
+        (0, 255, 0),
+        (255, 255, 0),
+        (0, 0, 255),
+        (255, 0, 255),
+        (0, 255, 255),
+        (255, 255, 255),
+    ];
+    const STEPS: [u8; 6] = [0, 95, 135, 175, 215, 255];
+    match index {
+        0..=15 => BASE[index as usize],
+        16..=231 => {
+            let cube = index - 16;
+            (
+                STEPS[(cube / 36) as usize],
+                STEPS[((cube / 6) % 6) as usize],
+                STEPS[(cube % 6) as usize],
+            )
+        }
+        _ => {
+            let level = 8 + 10 * (index - 232);
+            (level, level, level)
+        }
+    }
+}
+
 pub(crate) fn parse_colour(value: &str) -> Option<Colour> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("default")

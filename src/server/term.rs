@@ -517,6 +517,12 @@ impl ResolvedTerm {
         self.terminal_flags
     }
 
+    /// Whether the terminal answers the VT100-family private sequences tmux
+    /// sends unconditionally (theme subscription, extended keys).
+    pub(crate) fn is_vt100_like(&self) -> bool {
+        self.terminal_flags & TERM_VT100_LIKE != 0
+    }
+
     pub(crate) fn descriptions(&self) -> Vec<String> {
         CAPABILITY_NAMES
             .iter()

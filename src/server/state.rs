@@ -1925,6 +1925,11 @@ struct ClientRenderEntry {
     /// Identity bits the client sent at handshake time (`CLIENT_UTF8`, …),
     /// needed to rebuild the display flag string server-side.
     identified: i64,
+    /// Whether the client's terminal currently has focus.
+    focused: bool,
+    /// The theme the client's terminal last reported (`dark`/`light`), empty
+    /// until it says.
+    theme: String,
     /// When a clipboard query was last sent to this client's terminal.
     clipboard_query_at: Option<Instant>,
     flag_state: ClientFlagState,
@@ -1941,7 +1946,7 @@ impl ClientRenderEntry {
         self.read_only = self.flag_state.read_only;
         self.flags = self
             .flag_state
-            .display_flags_with(self.identified, self.control_mode);
+            .display_flags_full(self.identified, self.control_mode, self.focused);
     }
 }
 
@@ -1959,6 +1964,11 @@ pub(crate) struct AttachedClient {
     pub(crate) ignore_size: bool,
     pub(crate) size_changed: bool,
     pub(crate) terminal: Option<ResolvedTerm>,
+    /// The theme this client's terminal reported (`dark`/`light`), empty until
+    /// it says — tmux's `#{client_theme}`.
+    pub(crate) theme: String,
+    /// Whether the client's terminal currently has focus.
+    pub(crate) focused: bool,
 }
 
 #[derive(Clone)]
@@ -2091,7 +2101,19 @@ impl ClientFlagState {
     /// tmux's `server_client_get_flags` ordering. `control_mode` selects the
     /// `control-mode` marker an interactive attach does not carry.
     pub(crate) fn display_flags_with(&self, identified: i64, control_mode: bool) -> String {
-        let mut flags = vec!["attached", "focused"];
+        self.display_flags_full(identified, control_mode, true)
+    }
+
+    pub(crate) fn display_flags_full(
+        &self,
+        identified: i64,
+        control_mode: bool,
+        focused: bool,
+    ) -> String {
+        let mut flags = vec!["attached"];
+        if focused {
+            flags.push("focused");
+        }
         if control_mode {
             flags.push("control-mode");
         }
@@ -2226,6 +2248,8 @@ impl ClientRenderRegistry {
                 ignore_size,
                 size_changed: !control_mode,
                 identified,
+                focused: true,
+                theme: String::new(),
                 clipboard_query_at: None,
                 flag_state,
                 terminal: None,
@@ -2272,6 +2296,8 @@ impl ClientRenderRegistry {
                 ignore_size: entry.ignore_size,
                 size_changed: entry.size_changed,
                 terminal: entry.terminal.clone(),
+                theme: entry.theme.clone(),
+                focused: entry.focused,
             })
             .collect()
     }
@@ -2650,6 +2676,48 @@ impl ClientRenderRegistry {
         ClientActionResult::Queued
     }
 
+    /// Set a client's terminal focus, reporting whether it changed.
+    fn set_client_focused(&self, client: &str, focused: bool) -> bool {
+        let Ok(mut inner) = self.inner.lock() else {
+            return false;
+        };
+        let Some(entry) = inner
+            .clients
+            .values_mut()
+            .find(|entry| entry.name == client)
+        else {
+            return false;
+        };
+        if entry.focused == focused {
+            return false;
+        }
+        entry.focused = focused;
+        entry.flags = entry
+            .flag_state
+            .display_flags_full(entry.identified, entry.control_mode, entry.focused);
+        true
+    }
+
+    /// Record the theme a client's terminal reported, reporting whether it
+    /// changed.
+    fn set_client_theme(&self, client: &str, theme: &str) -> bool {
+        let Ok(mut inner) = self.inner.lock() else {
+            return false;
+        };
+        let Some(entry) = inner
+            .clients
+            .values_mut()
+            .find(|entry| entry.name == client)
+        else {
+            return false;
+        };
+        if entry.theme == theme {
+            return false;
+        }
+        entry.theme = theme.to_string();
+        true
+    }
+
     fn begin_clipboard_query(
         &self,
         target: Option<&str>,
@@ -2880,6 +2948,16 @@ impl ClientRenderAttachment {
                 entry.flags = flags;
             }
         }
+    }
+
+    /// This client's registry name, as `#{client_name}` reports it.
+    pub(crate) fn client_name(&self) -> String {
+        self.registry
+            .inner
+            .lock()
+            .ok()
+            .and_then(|inner| inner.clients.get(&self.id).map(|entry| entry.name.clone()))
+            .unwrap_or_default()
     }
 
     /// `refresh-client -f` values another client aimed at this one.
@@ -3223,6 +3301,15 @@ pub fn created_stamp() -> String {
     }
 }
 
+/// The DSR reply announcing a theme to a pane.
+fn theme_report(theme: &str) -> &'static [u8] {
+    if theme == "dark" {
+        b"\x1b[?997;1n"
+    } else {
+        b"\x1b[?997;2n"
+    }
+}
+
 /// Current Unix time in seconds (tmux's `#{session_created}` unit).
 pub fn now_epoch() -> i64 {
     // SAFETY: `time(NULL)` returns the current time and touches no memory.
@@ -3264,6 +3351,10 @@ pub struct ServerState {
     /// Sessions a client just took, whose windows the next alert pass
     /// re-examines in full (tmux's `alerts_check_session`).
     alert_check_sessions: BTreeSet<u32>,
+    /// The theme last announced to each pane subscribed with DECSET 2031.
+    pane_theme_pushed: BTreeMap<u32, String>,
+    /// Panes currently holding focus, so the focus hooks fire only on a change.
+    focused_panes: BTreeSet<u32>,
     /// Event notifications raised by mutations since the command queue last
     /// drained them, in the order they happened. tmux's `notify_add` appends
     /// to the command queue; hmux collects them here because the mutation
@@ -3364,6 +3455,8 @@ impl ServerState {
             shutdown_requested: false,
             lifecycle_generation: 0,
             alert_check_sessions: BTreeSet::new(),
+            focused_panes: BTreeSet::new(),
+            pane_theme_pushed: BTreeMap::new(),
             pending_notifications: Vec::new(),
             notifications_are_deferred: false,
             known_clients: BTreeMap::new(),
@@ -4556,6 +4649,122 @@ impl ServerState {
     ) -> ClientActionResult {
         self.client_renders
             .set_client_selection(target, invoking_tty, data)
+    }
+
+    /// Record a terminal focus report. The client's `focused` flag follows it
+    /// whatever `focus-events` says — the option only decides whether tmux asks
+    /// the terminal for reports at all — and the active pane's focus moves with
+    /// the client's.
+    pub(crate) fn set_client_focus(
+        &mut self,
+        client: &str,
+        session_id: u32,
+        focused: bool,
+        target: &str,
+    ) {
+        if !self.client_renders.set_client_focused(client, focused) {
+            return;
+        }
+        let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
+        self.notify_client(
+            if focused {
+                "client-focus-in"
+            } else {
+                "client-focus-out"
+            },
+            client,
+            Some(session_id),
+        );
+        self.notifications_are_deferred = was_deferred;
+        let _ = target;
+        if let Some(window_id) = self.current_window_of_session(session_id) {
+            self.update_window_focus(window_id);
+        }
+    }
+
+    /// The id of a session's current window.
+    fn current_window_of_session(&self, session_id: u32) -> Option<u32> {
+        let session = self.sessions.iter().find(|s| s.id == session_id)?;
+        session.windows.get(session.active).map(|link| link.id)
+    }
+
+    /// tmux's `window_update_focus`: recompute whether the window's active pane
+    /// holds focus and announce a change. Deliberately ungated — the
+    /// `focus-events` option decides whether tmux *asks* the terminal for focus
+    /// reports, not whether it acts on what it knows.
+    pub(crate) fn update_window_focus(&mut self, window_id: u32) {
+        let Some(active) = self
+            .windows
+            .get(&window_id)
+            .and_then(|window| window.panes.get(window.active))
+            .map(|pane| pane.id)
+        else {
+            return;
+        };
+        let focused = self.window_has_focused_client(window_id);
+        self.update_pane_focus(active, focused);
+    }
+
+    /// Whether some attached, focused client is currently showing this window.
+    fn window_has_focused_client(&self, window_id: u32) -> bool {
+        self.attached_clients().into_iter().any(|client| {
+            client.focused
+                && self
+                    .current_window_of_session(client.session_id)
+                    .is_some_and(|current| current == window_id)
+        })
+    }
+
+    /// tmux's `window_pane_update_focus`: announce a pane focus change once.
+    pub(crate) fn update_pane_focus(&mut self, pane_id: u32, focused: bool) {
+        let changed = if focused {
+            self.focused_panes.insert(pane_id)
+        } else {
+            self.focused_panes.remove(&pane_id)
+        };
+        if !changed {
+            return;
+        }
+        // A pane that asked for focus reporting gets its own copy of the
+        // escape, exactly as `window_pane_update_focus` sends it.
+        let subscribed = self
+            .windows
+            .values()
+            .flat_map(|window| window.panes.iter())
+            .find(|node| node.id == pane_id)
+            .is_some_and(|node| node.pane.focus_reporting_enabled());
+        if subscribed {
+            let _ = self.write_pane_input(pane_id, if focused { b"\x1b[I" } else { b"\x1b[O" });
+        }
+        let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
+        self.notify_pane(
+            if focused {
+                "pane-focus-in"
+            } else {
+                "pane-focus-out"
+            },
+            pane_id,
+        );
+        self.notifications_are_deferred = was_deferred;
+    }
+
+    /// Record the theme a client's terminal reported, firing the matching hook
+    /// when it changes.
+    pub(crate) fn set_client_theme(&mut self, client: &str, session_id: u32, theme: &str) {
+        if !self.client_renders.set_client_theme(client, theme) {
+            return;
+        }
+        let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
+        self.notify_client(
+            if theme == "dark" {
+                "client-dark-theme"
+            } else {
+                "client-light-theme"
+            },
+            client,
+            Some(session_id),
+        );
+        self.notifications_are_deferred = was_deferred;
     }
 
     /// Whether a clipboard query may be sent to this client now. tmux keeps one
@@ -6330,6 +6539,68 @@ impl ServerState {
         }
     }
 
+    /// Answer pending DSR ?996 questions and push theme changes to the panes
+    /// that subscribed with DECSET 2031, mirroring tmux's
+    /// `window_pane_send_theme_update`.
+    pub(crate) fn process_pane_themes(&mut self) {
+        let panes = self
+            .windows
+            .values()
+            .flat_map(|window| window.panes.iter())
+            .map(|node| (node.id, node.pane.observation_state()))
+            .collect::<Vec<_>>();
+        for (pane_id, _) in &panes {
+            let theme = self.pane_theme(*pane_id);
+            let node = self
+                .windows
+                .values()
+                .flat_map(|window| window.panes.iter())
+                .find(|node| node.id == *pane_id);
+            let Some(node) = node else { continue };
+            let queried = node.pane.take_theme_query();
+            let subscribed = node.pane.theme_updates_enabled();
+            if queried {
+                if let Some(theme) = theme {
+                    let _ = self.write_pane_input(*pane_id, theme_report(theme));
+                }
+            }
+            // A pane learns of a change only after it subscribes, so the theme
+            // in force at subscription time is recorded rather than pushed.
+            if !subscribed {
+                self.pane_theme_pushed.remove(pane_id);
+                continue;
+            }
+            let previous = self.pane_theme_pushed.get(pane_id).cloned();
+            let current = theme.unwrap_or("unknown").to_string();
+            match previous {
+                None => {
+                    self.pane_theme_pushed.insert(*pane_id, current);
+                }
+                Some(previous) if previous != current => {
+                    self.pane_theme_pushed.insert(*pane_id, current);
+                    if let Some(theme) = theme {
+                        let _ = self.write_pane_input(*pane_id, theme_report(theme));
+                    }
+                }
+                Some(_) => {}
+            }
+        }
+        let live = panes.iter().map(|(id, _)| *id).collect::<BTreeSet<_>>();
+        self.pane_theme_pushed.retain(|id, _| live.contains(id));
+    }
+
+    /// tmux's `window_pane_get_theme`, restricted to the half hmux can answer:
+    /// the pane's own background colour. `None` is tmux's `THEME_UNKNOWN`.
+    fn pane_theme(&self, pane_id: u32) -> Option<&'static str> {
+        let style = self.option_for_target(&format!("%{pane_id}"), "window-style")?;
+        let background = style.split(',').find_map(|part| {
+            part.trim()
+                .strip_prefix("bg=")
+                .and_then(super::style::parse_colour)
+        })?;
+        super::style::colour_theme(background)
+    }
+
     /// Write bytes into a pane's input as if its terminal had produced them.
     fn write_pane_input(&self, pane_id: u32, bytes: &[u8]) -> io::Result<()> {
         let pane = self
@@ -6748,6 +7019,7 @@ impl ServerState {
         let session_id = self.sessions[t.session].id;
         let win = self.window_mut(t.session, t.window);
         let window_id = win.id;
+        let previous_active = win.active;
         if t.pane != win.active {
             win.last_pane = Some(win.active);
             win.active = t.pane;
@@ -6756,6 +7028,13 @@ impl ServerState {
                 RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
             );
             self.notify_window("window-pane-changed", window_id);
+            // tmux only follows the active pane with focus while
+            // `focus-events` is on (`window_set_active_pane`).
+            if self.server_option_is_on("focus-events", false) {
+                let previous_pane = self.window(t.session, t.window).panes[previous_active].id;
+                self.update_pane_focus(previous_pane, false);
+                self.update_window_focus(window_id);
+            }
         }
         Ok(())
     }
@@ -8905,6 +9184,16 @@ impl ServerState {
             self.notify_client("client-detached", name, None);
         }
         self.notifications_are_deferred = was_deferred;
+        // Gaining or losing a client moves pane focus, for the window it
+        // arrived at and the one it left.
+        let touched = previous
+            .values()
+            .chain(current.values())
+            .filter_map(|(session_id, _, _)| self.current_window_of_session(*session_id))
+            .collect::<BTreeSet<_>>();
+        for window_id in touched {
+            self.update_window_focus(window_id);
+        }
     }
 
     /// tmux's `session_update_activity`. `attached` additionally stamps

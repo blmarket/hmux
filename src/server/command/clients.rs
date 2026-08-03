@@ -519,7 +519,8 @@ fn list_clients(args: &[String], state: &ServerState, agents: &PaneAgents) -> Co
                 "client_control_mode",
                 if client.control_mode { "1" } else { "0" },
             )
-            .set("client_utf8", if client_utf8 { "1" } else { "0" });
+            .set("client_utf8", if client_utf8 { "1" } else { "0" })
+            .set("client_theme", client.theme);
         if filter.is_some_and(|filter| !format::is_true(&format::expand(filter, &vars))) {
             continue;
         }

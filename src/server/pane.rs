@@ -131,6 +131,12 @@ pub(crate) struct NativePaneObservation {
     /// restores cursor position but does not serialize this terminal state.
     cursor_shape: AtomicU8,
     bracketed_paste: AtomicBool,
+    /// Whether the pane asked for focus reporting (DECSET 1004).
+    focus_reporting: AtomicBool,
+    /// Whether the pane asked for theme updates (DECSET 2031).
+    theme_updates: AtomicBool,
+    /// Set when the pane sent DSR ?996 and is waiting for an answer.
+    theme_query: AtomicBool,
     background: Mutex<String>,
     child: Option<ObservedChild>,
     output_waiters: Mutex<Vec<Weak<OutputEvent>>>,
@@ -578,6 +584,9 @@ impl NativePaneObservation {
             control_output: Mutex::new(ControlOutputJournal::default()),
             cursor_shape: AtomicU8::new(0),
             bracketed_paste: AtomicBool::new(false),
+            focus_reporting: AtomicBool::new(false),
+            theme_updates: AtomicBool::new(false),
+            theme_query: AtomicBool::new(false),
             background: Mutex::new("default".to_string()),
             child,
             output_waiters: Mutex::new(Vec::new()),
@@ -1472,6 +1481,21 @@ impl Pane {
         self.observation.bracketed_paste.load(Ordering::Acquire)
     }
 
+    /// Whether the pane asked to be told when focus moves (DECSET 1004).
+    pub(crate) fn focus_reporting_enabled(&self) -> bool {
+        self.observation.focus_reporting.load(Ordering::Acquire)
+    }
+
+    /// Whether the pane asked to be told when the theme changes (DECSET 2031).
+    pub(crate) fn theme_updates_enabled(&self) -> bool {
+        self.observation.theme_updates.load(Ordering::Acquire)
+    }
+
+    /// Take a pending DSR ?996 theme question, if the pane asked one.
+    pub(crate) fn take_theme_query(&self) -> bool {
+        self.observation.theme_query.swap(false, Ordering::AcqRel)
+    }
+
     pub fn size(&self) -> (u16, u16) {
         (self.cols, self.rows)
     }
@@ -1838,6 +1862,15 @@ impl PaneIo {
         self.observation
             .bracketed_paste
             .store(self.mode_query_detector.bracketed_paste, Ordering::Release);
+        self.observation
+            .focus_reporting
+            .store(self.mode_query_detector.focus_reporting, Ordering::Release);
+        self.observation
+            .theme_updates
+            .store(self.mode_query_detector.theme_updates, Ordering::Release);
+        if std::mem::take(&mut self.mode_query_detector.theme_query) {
+            self.observation.theme_query.store(true, Ordering::Release);
+        }
         if !queries.is_empty() {
             if let Ok(mut queued) = self.terminal_queries.lock() {
                 for query in queries {
@@ -2340,6 +2373,13 @@ struct ModeQueryDetector {
     synchronized_output: bool,
     cursor_visible: bool,
     bracketed_paste: bool,
+    /// DECSET 1004: the pane asked to be told when focus moves.
+    focus_reporting: bool,
+    /// Whether the pane asked which theme it is under (DSR ?996) and has
+    /// not been answered yet.
+    theme_query: bool,
+    /// DECSET 2031: the pane asked to be told when the theme changes.
+    theme_updates: bool,
 }
 
 impl Default for ModeQueryDetector {
@@ -2349,6 +2389,9 @@ impl Default for ModeQueryDetector {
             synchronized_output: false,
             cursor_visible: true,
             bracketed_paste: false,
+            focus_reporting: false,
+            theme_updates: false,
+            theme_query: false,
         }
     }
 }
@@ -2373,6 +2416,17 @@ impl ModeQueryDetector {
             self.bracketed_paste = true;
         } else if tail.ends_with(b"\x1b[?2004l") {
             self.bracketed_paste = false;
+        } else if tail.ends_with(b"\x1b[?1004h") {
+            self.focus_reporting = true;
+        } else if tail.ends_with(b"\x1b[?1004l") {
+            self.focus_reporting = false;
+        } else if tail.ends_with(b"\x1b[?2031h") {
+            self.theme_updates = true;
+        } else if tail.ends_with(b"\x1b[?2031l") {
+            self.theme_updates = false;
+        } else if tail.ends_with(b"\x1b[?996n") {
+            // DSR ?996: the pane is asking which theme it is running under.
+            self.theme_query = true;
         }
 
         let private = tail
@@ -2393,6 +2447,20 @@ impl ModeQueryDetector {
                         }
                         25 => {
                             if self.cursor_visible {
+                                1
+                            } else {
+                                2
+                            }
+                        }
+                        1004 => {
+                            if self.focus_reporting {
+                                1
+                            } else {
+                                2
+                            }
+                        }
+                        2031 => {
+                            if self.theme_updates {
                                 1
                             } else {
                                 2
