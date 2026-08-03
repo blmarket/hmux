@@ -6,6 +6,60 @@ const FOCUS_OUT_REPORT: &[u8] = b"\x1b[O";
 const DARK_THEME_REPORT: &[u8] = b"\x1b[?997;1n";
 const LIGHT_THEME_REPORT: &[u8] = b"\x1b[?997;2n";
 
+/// Whether a binding's outcome ended this pass over the input buffer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BindingFlow {
+    Continue,
+    Break,
+}
+
+/// Whether this session acts on mouse reports at all (`mouse on`).
+fn mouse_enabled(state: &Arc<Mutex<ServerState>>, target: &str) -> bool {
+    state
+        .lock()
+        .ok()
+        .and_then(|st| {
+            st.option_for_target(target, "mouse")
+                .or_else(|| super::super::options::option_default("mouse"))
+                .map(|value| value == "on")
+        })
+        .unwrap_or(false)
+}
+
+/// Write a mouse report into the pane it landed on, encoded from that pane's
+/// own DECSET modes.
+///
+/// Nothing is written when the pane asked for no mouse mode, when the event
+/// hit no pane (status line, border), or when the report is one the pane's
+/// mode does not carry — the encoder answers all three by producing no bytes.
+fn forward_mouse_to_pane(state: &Arc<Mutex<ServerState>>, event: &MouseEvent) {
+    let Some((pane_id, input)) = event.pane_input_event() else {
+        return;
+    };
+    if let Ok(st) = state.lock() {
+        let _ = st.input_mouse_to_pane(&format!("%{pane_id}"), input);
+    }
+}
+
+/// Send the plain bytes buffered so far to the active pane, keeping them ahead
+/// of whatever the caller is about to do.
+fn flush_forward_buf(
+    state: &Arc<Mutex<ServerState>>,
+    target: &str,
+    forward_buf: &mut Vec<u8>,
+    forwarded: &mut PaneInputStats,
+    first_forward_at: &mut Option<Instant>,
+) {
+    if forward_buf.is_empty() {
+        return;
+    }
+    first_forward_at.get_or_insert_with(Instant::now);
+    if let Ok(stats) = forward_input(state, target, forward_buf) {
+        add_input_stats(forwarded, stats);
+    }
+    forward_buf.clear();
+}
+
 impl AttachSession {
     /// Strip the focus and theme reports out of one tty read and apply them.
     ///
@@ -119,11 +173,181 @@ impl AttachSession {
         self.compositor.input.keys.repeat_deadline()
     }
 
+    pub(super) fn click_deadline(&self) -> Option<Instant> {
+        self.compositor.input.mouse.click_deadline()
+    }
+
+    /// Apply one key binding's client-local outcome.
+    ///
+    /// Shared by the tty read loop and the repeat-click timer, which delivers a
+    /// synthesized `DoubleClick` through exactly the same dispatch.
+    fn apply_binding_outcome(
+        &mut self,
+        outcome: PrefixOutcome,
+        state: &Arc<Mutex<ServerState>>,
+        target: &str,
+        hub: &StatusHub,
+        forward_buf: &mut Vec<u8>,
+        force_render: &mut bool,
+    ) -> BindingFlow {
+        match outcome {
+            PrefixOutcome::Detach => {
+                self.compositor.transition =
+                    Some(AttachTransition::Finish(AttachFinishReason::Detached));
+                return BindingFlow::Break;
+            }
+            PrefixOutcome::SendPrefix(bytes) => forward_buf.extend(bytes),
+            PrefixOutcome::CopyMode(action) => {
+                // Re-entering copy mode from inside it only honors `-u`.
+                if copy_mode::is_active(state, target) {
+                    action.reactivate(state, target);
+                } else {
+                    action.apply(state, target, self.viewport.pane_rows);
+                }
+                *force_render = true;
+            }
+            PrefixOutcome::Confirm { prompt, action } => {
+                self.compositor.ui.confirm = Some(ActiveConfirm {
+                    prompt,
+                    action,
+                    confirm_key: b'y',
+                    default_yes: false,
+                    reply: None,
+                });
+                *force_render = true;
+            }
+            PrefixOutcome::Prompt { args } => {
+                if let Ok(mut prompt) =
+                    CommandPrompt::new(args, None, state, hub, &self.compositor.target.context)
+                {
+                    if prompt.should_freeze() {
+                        prompt.freeze(self.compositor.render.last_render.clone());
+                    }
+                    prompt.initial_incremental(state, hub, &self.compositor.target.context);
+                    self.compositor.ui.command_prompt = Some(prompt);
+                }
+                *force_render = true;
+            }
+            PrefixOutcome::Message { text, duration } => {
+                self.compositor.ui.confirm = None;
+                self.compositor.ui.status_message = Some(StatusMessage {
+                    text,
+                    deadline: Instant::now()
+                        .checked_add(duration)
+                        .unwrap_or_else(Instant::now),
+                });
+                *force_render = true;
+            }
+            PrefixOutcome::ViewOutput(bytes) => {
+                append_view_output(state, target, &bytes);
+                *force_render = true;
+            }
+            PrefixOutcome::DeferredCommand { args, context } => {
+                self.commands.pending.push_back(AttachCommandRequest {
+                    source: command::DeferredCommand::Args(args),
+                    context,
+                    continuation: AttachCommandContinuation::PrefixBinding {
+                        target: target.to_string(),
+                        cols: self.viewport.cols,
+                        pane_rows: self.viewport.pane_rows,
+                    },
+                });
+                return BindingFlow::Break;
+            }
+            PrefixOutcome::DeferredMessage {
+                args,
+                context,
+                target,
+                escape_hashes,
+                explicit_duration,
+            } => {
+                self.commands.pending.push_back(AttachCommandRequest {
+                    source: command::DeferredCommand::Args(args),
+                    context,
+                    continuation: AttachCommandContinuation::Message {
+                        target,
+                        escape_hashes,
+                        explicit_duration,
+                    },
+                });
+                return BindingFlow::Break;
+            }
+            PrefixOutcome::Handled { changed } => {
+                if changed {
+                    *force_render = true;
+                }
+            }
+        }
+        BindingFlow::Continue
+    }
+
+    /// tmux's `server_client_click_timer`: with two presses and no third, the
+    /// gesture resolves as a `DoubleClick` delivered after the fact.
+    ///
+    /// The replayed event runs the ordinary key walk, so a `DoubleClick*`
+    /// binding sees the same tables and target a real press would.
+    pub(super) fn expire_click_timer(
+        &mut self,
+        state: &Arc<Mutex<ServerState>>,
+        target: &str,
+        hub: &StatusHub,
+        now: Instant,
+    ) {
+        let Some(event) = self.compositor.input.mouse.expire_click(now) else {
+            return;
+        };
+        let Some(key) = event.key_code() else {
+            return;
+        };
+        let tables = ServerKeyTables::new(state, target);
+        let resolution = self.compositor.input.keys.resolve(key, now, &tables);
+        self.publish_key_table(state);
+        let KeyResolution::Binding { table } = resolution else {
+            return;
+        };
+        let outcome = dispatch_key_binding(
+            &table,
+            key,
+            state,
+            target,
+            self.viewport.cols,
+            self.viewport.pane_rows,
+            hub,
+            &self.compositor.target.context,
+            Some(event),
+        );
+        let mut forward_buf = Vec::new();
+        let mut force_render = false;
+        self.apply_binding_outcome(
+            outcome,
+            state,
+            target,
+            hub,
+            &mut forward_buf,
+            &mut force_render,
+        );
+        if !forward_buf.is_empty() {
+            let _ = forward_input(state, target, &forward_buf);
+        }
+        if force_render {
+            self.compositor.render.last_render.clear();
+            self.compositor.render.force_clear = true;
+            self.status.status_cache.invalidate();
+        }
+    }
+
     pub(super) fn drive_input(
         &mut self,
         state: &Arc<Mutex<ServerState>>,
         hub: &StatusHub,
     ) -> io::Result<Option<AttachDrive>> {
+        // A key binding's command must finish before the next key's runs: a
+        // burst like `select-pane` then `send-keys -M` depends on the order.
+        // Leaving the rest of the input unread — in the kernel buffer or in
+        // `injected` — is what keeps that ordering.
+        if !self.commands.pending.is_empty() {
+            return Ok(None);
+        }
         let stable_target = self.compositor.target.stable_target.clone();
         let target = stable_target.as_str();
         // 2. Relay terminal queries which Ghostty consumed from pane output.
@@ -248,7 +472,7 @@ impl AttachSession {
                                         forward_unbound,
                                     });
                                 }
-                                self.commands.pending = Some(request);
+                                self.commands.pending.push_back(request);
                                 break;
                             }
                             replay_input = tail;
@@ -333,7 +557,7 @@ impl AttachSession {
                                 forward_unbound,
                             });
                         }
-                        self.commands.pending = Some(request);
+                        self.commands.pending.push_back(request);
                         force_render = true;
                         break;
                     }
@@ -410,7 +634,7 @@ impl AttachSession {
                             .active_overlay
                             .take()
                             .expect("overlay checked");
-                        self.commands.pending = Some(AttachCommandRequest {
+                        self.commands.pending.push_back(AttachCommandRequest {
                             source: command::DeferredCommand::Args(command.clone()),
                             context: self.compositor.target.context.clone(),
                             continuation: AttachCommandContinuation::Overlay {
@@ -471,7 +695,7 @@ impl AttachSession {
                                 .take()
                                 .expect("command prompt checked");
                             if let Some(source) = take_deferred_attach_command(&mut result) {
-                                self.commands.pending = Some(AttachCommandRequest {
+                                self.commands.pending.push_back(AttachCommandRequest {
                                     source,
                                     context: self.compositor.target.context.clone(),
                                     continuation: AttachCommandContinuation::Prompt {
@@ -523,7 +747,7 @@ impl AttachSession {
                         hub,
                         &self.compositor.target.context,
                     ) {
-                        self.commands.pending = Some(AttachCommandRequest {
+                        self.commands.pending.push_back(AttachCommandRequest {
                             source: command::DeferredCommand::Args(command),
                             context: self.compositor.target.context.clone(),
                             continuation: AttachCommandContinuation::Confirm {
@@ -566,7 +790,7 @@ impl AttachSession {
                     match outcome {
                         ModeViewKeyResult::Command(command) if !command.is_empty() => {
                             if self.compositor.target.context.defer_attach_commands {
-                                self.commands.pending = Some(AttachCommandRequest {
+                                self.commands.pending.push_back(AttachCommandRequest {
                                     source: command::DeferredCommand::Args(command),
                                     context: self.compositor.target.context.clone(),
                                     continuation: AttachCommandContinuation::Ignore,
@@ -630,6 +854,23 @@ impl AttachSession {
                 let Some(key) = key else {
                     continue;
                 };
+                // With `mouse off` the client never consults its key tables for
+                // a mouse report: tmux hands it straight to the pane under the
+                // pointer (`server_client_key_callback`'s `forward_key`), which
+                // encodes it — or drops it — per its own DECSET modes.
+                if let Some(event) = mouse.as_ref() {
+                    if !mouse_enabled(state, target) {
+                        flush_forward_buf(
+                            state,
+                            target,
+                            &mut forward_buf,
+                            &mut forwarded,
+                            &mut first_forward_at,
+                        );
+                        forward_mouse_to_pane(state, event);
+                        continue;
+                    }
+                }
                 let tables = ServerKeyTables::new(state, target);
                 let resolution = self
                     .compositor
@@ -641,26 +882,36 @@ impl AttachSession {
                 // ended — so republish before acting on the outcome.
                 self.publish_key_table(state);
                 if matches!(resolution, KeyResolution::Forward) {
-                    if forward_unbound {
+                    // An unbound mouse key is re-encoded for the pane rather
+                    // than forwarded verbatim: the pane's protocol (X10, UTF-8
+                    // or SGR) is its own choice, not the client terminal's.
+                    if let Some(event) = mouse.as_ref() {
+                        flush_forward_buf(
+                            state,
+                            target,
+                            &mut forward_buf,
+                            &mut forwarded,
+                            &mut first_forward_at,
+                        );
+                        forward_mouse_to_pane(state, event);
+                    } else if forward_unbound {
                         forward_buf.extend_from_slice(&data[start..i]);
                     }
                     continue;
                 }
                 // The key machinery claimed this key, so flush what preceded
                 // it: a `send-prefix` byte has to stay in typing order.
-                if !forward_buf.is_empty() {
-                    first_forward_at.get_or_insert_with(Instant::now);
-                    if let Ok(stats) = forward_input(state, target, &forward_buf) {
-                        add_input_stats(&mut forwarded, stats);
-                    }
-                    forward_buf.clear();
-                }
+                flush_forward_buf(
+                    state,
+                    target,
+                    &mut forward_buf,
+                    &mut forwarded,
+                    &mut first_forward_at,
+                );
                 let KeyResolution::Binding { table } = resolution else {
                     continue;
                 };
-                // Re-entering copy mode from inside it only honors `-u`.
-                let reentering_copy_mode = copy_mode::is_active(state, target);
-                match dispatch_key_binding(
+                let outcome = dispatch_key_binding(
                     &table,
                     key,
                     state,
@@ -670,102 +921,38 @@ impl AttachSession {
                     hub,
                     &self.compositor.target.context,
                     mouse,
-                ) {
-                    PrefixOutcome::Detach => {
-                        self.compositor.transition =
-                            Some(AttachTransition::Finish(AttachFinishReason::Detached));
-                        break;
-                    }
-                    PrefixOutcome::SendPrefix(bytes) => forward_buf.extend(bytes),
-                    PrefixOutcome::CopyMode(action) => {
-                        if reentering_copy_mode {
-                            action.reactivate(state, target);
-                        } else {
-                            action.apply(state, target, self.viewport.pane_rows);
-                        }
-                        force_render = true;
-                    }
-                    PrefixOutcome::Confirm { prompt, action } => {
-                        self.compositor.ui.confirm = Some(ActiveConfirm {
-                            prompt,
-                            action,
-                            confirm_key: b'y',
-                            default_yes: false,
-                            reply: None,
+                );
+                let flow = self.apply_binding_outcome(
+                    outcome,
+                    state,
+                    target,
+                    hub,
+                    &mut forward_buf,
+                    &mut force_render,
+                );
+                if flow == BindingFlow::Break {
+                    // A deferred command leaves this pass, but the read may
+                    // have carried more keys behind it — a moving mouse sends
+                    // its whole burst in one write. Replay the tail rather than
+                    // dropping it.
+                    if i < data.len() {
+                        self.compositor.input.injected.push_front(ClientKey {
+                            bytes: data[i..].to_vec(),
+                            forward_unbound,
                         });
-                        force_render = true;
                     }
-                    PrefixOutcome::Prompt { args } => {
-                        if let Ok(mut prompt) = CommandPrompt::new(
-                            args,
-                            None,
-                            state,
-                            hub,
-                            &self.compositor.target.context,
-                        ) {
-                            if prompt.should_freeze() {
-                                prompt.freeze(self.compositor.render.last_render.clone());
-                            }
-                            prompt.initial_incremental(state, hub, &self.compositor.target.context);
-                            self.compositor.ui.command_prompt = Some(prompt);
-                        }
-                        force_render = true;
-                    }
-                    PrefixOutcome::Message { text, duration } => {
-                        self.compositor.ui.confirm = None;
-                        self.compositor.ui.status_message = Some(StatusMessage {
-                            text,
-                            deadline: Instant::now()
-                                .checked_add(duration)
-                                .unwrap_or_else(Instant::now),
-                        });
-                        force_render = true;
-                    }
-                    PrefixOutcome::ViewOutput(bytes) => {
-                        append_view_output(state, target, &bytes);
-                        force_render = true;
-                    }
-                    PrefixOutcome::DeferredCommand { args, context } => {
-                        self.commands.pending = Some(AttachCommandRequest {
-                            source: command::DeferredCommand::Args(args),
-                            context,
-                            continuation: AttachCommandContinuation::PrefixBinding {
-                                target: target.to_string(),
-                                cols: self.viewport.cols,
-                                pane_rows: self.viewport.pane_rows,
-                            },
-                        });
-                        break;
-                    }
-                    PrefixOutcome::DeferredMessage {
-                        args,
-                        context,
-                        target,
-                        escape_hashes,
-                        explicit_duration,
-                    } => {
-                        self.commands.pending = Some(AttachCommandRequest {
-                            source: command::DeferredCommand::Args(args),
-                            context,
-                            continuation: AttachCommandContinuation::Message {
-                                target,
-                                escape_hashes,
-                                explicit_duration,
-                            },
-                        });
-                        break;
-                    }
-                    PrefixOutcome::Handled { changed } => {
-                        if changed {
-                            force_render = true;
-                        }
-                    }
+                    break;
                 }
             }
             if matches!(
                 self.compositor.transition,
                 Some(AttachTransition::Finish(_))
             ) {
+                break;
+            }
+            // Only one command can be queued per pass; the replayed tail waits
+            // in `injected` for the next one rather than overwriting it.
+            if !self.commands.pending.is_empty() {
                 break;
             }
         }

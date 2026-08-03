@@ -343,15 +343,34 @@ fn display_menu(args: &[String], state: &ServerState, client: &ClientContext) ->
         args,
         &["-b", "-c", "-C", "-H", "-s", "-S", "-t", "-T", "-x", "-y"],
     );
-    let items = values
-        .chunks(3)
-        .filter(|chunk| chunk.len() == 3)
-        .map(|chunk| MenuItem {
-            label: chunk[0].to_string(),
-            key: chunk[1].to_string(),
-            command: template_command(chunk[2], ""),
-        })
-        .collect::<Vec<_>>();
+    // tmux walks the operands rather than chunking them: an empty name is a
+    // separator line on its own and consumes no key or command, which is how
+    // the default `MouseDown3*` menus group their entries.
+    let mut items = Vec::new();
+    let mut index = 0;
+    while index < values.len() {
+        let label = values[index];
+        index += 1;
+        if label.is_empty() {
+            items.push(MenuItem {
+                label: String::new(),
+                key: String::new(),
+                command: Vec::new(),
+            });
+            continue;
+        }
+        if values.len() - index < 2 {
+            return CommandResult::err("not enough arguments\n");
+        }
+        let key = values[index];
+        let command = values[index + 1];
+        index += 2;
+        items.push(MenuItem {
+            label: label.to_string(),
+            key: key.to_string(),
+            command: template_command(command, ""),
+        });
+    }
     let selected = flag_value(args, "-C")
         .and_then(|value| value.parse().ok())
         .unwrap_or(0);
@@ -575,10 +594,33 @@ fn refresh_client(args: &[String], state: &ServerState, client: &ClientContext) 
     )
 }
 
-fn switch_client(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {
+fn switch_client(args: &[String], state: &mut ServerState, client: &ClientContext) -> CommandResult {
     let Some(target_session) = flag_value(args, "-t") else {
         return CommandResult::err("no current client\n");
     };
+    // tmux resolves a target naming a window or pane — including `=`, the
+    // mouse's — as a pane target and makes that window current before moving
+    // the client, which is what the default `MouseDown1Status` binding relies
+    // on to turn the status line into a window switcher.
+    if target_session == "=" || target_session.contains([':', '.', '%']) {
+        if let Some(resolved) = state.resolve(target_session) {
+            let session = &state.sessions()[resolved.session];
+            let session_id = session.id;
+            let window_target = format!("{}:{}", session.name, session.windows[resolved.window].index);
+            let pane_id = state.window(resolved.session, resolved.window).panes[resolved.pane].id;
+            let _ = state.select_pane(&format!("%{pane_id}"));
+            let _ = state.select_window(&window_target);
+            return match state.switch_client(
+                flag_value(args, "-c"),
+                client.tty_name.as_deref(),
+                session_id,
+            ) {
+                ClientActionResult::Queued => CommandResult::ok(""),
+                ClientActionResult::NoCurrentClient => CommandResult::err("no current client\n"),
+                ClientActionResult::TargetNotFound => CommandResult::err("can't find client\n"),
+            };
+        }
+    }
     let Some(session_id) = state.session_id(target_session) else {
         return CommandResult::err(format!("can't find session: {target_session}\n"));
     };

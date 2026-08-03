@@ -3468,6 +3468,9 @@ pub struct ServerState {
     /// transient interpreter hint, set while a client-scoped prompt template
     /// runs and restored before releasing the server-state lock.
     command_session_id: Option<u32>,
+    /// Mouse event of the command currently executing (tmux's `format_tree.m`),
+    /// installed alongside the target hints above.
+    command_mouse: Option<super::mouse::MouseEvent>,
     /// Stable window selected for the command currently executing, when the
     /// default target names one — a hook body targeting a specific window.
     command_window_id: Option<u32>,
@@ -3533,6 +3536,7 @@ impl ServerState {
             running_hooks: BTreeSet::new(),
             hook_format_vars: Vec::new(),
             command_session_id: None,
+            command_mouse: None,
             command_window_id: None,
             command_active_panes: None,
             control_checkpoints: VecDeque::new(),
@@ -3587,58 +3591,167 @@ impl ServerState {
     }
 
 
+    /// tmux 3.7b's `root` mouse table, in the same order and shape as
+    /// `key_bindings_init`.
+    ///
+    /// The guards are the load-bearing part: a pane whose program enabled a
+    /// DECSET mouse mode (`#{mouse_any_flag}`) or that is in a mode gets the
+    /// report forwarded with `send-keys -M`, and only an inert pane lets the
+    /// client act on the click itself.
     fn install_default_key_bindings(&mut self) {
-        const DEFAULTS: &[(&str, &str, &[&str])] = &[
+        // tmux's `DEFAULT_PANE_MENU`/`DEFAULT_WINDOW_MENU`/`DEFAULT_SESSION_MENU`,
+        // spliced into the bindings below. An operand whose name expands empty
+        // is a separator line.
+        const DEFAULT_PANE_MENU: &str = concat!(
+            " '#{?#{m/r:(copy|view)-mode,#{pane_mode}},Go To Top,}' '<' 'send-keys -X history-top'",
+            " '#{?#{m/r:(copy|view)-mode,#{pane_mode}},Go To Bottom,}' '>'",
+            " 'send-keys -X history-bottom'",
+            " ''",
+            " '#{?#{&&:#{buffer_size},#{!:#{pane_in_mode}}},",
+            "Paste #[underscore]#{=/9/...:buffer_sample},}' 'p' 'paste-buffer'",
+            " ''",
+            " '#{?mouse_word,Search For #[underscore]#{=/9/...:mouse_word},}' 'C-r'",
+            " 'if-shell -F \"#{?#{m/r:(copy|view)-mode,#{pane_mode}},0,1}\" \"copy-mode -t =\" ;",
+            " send-keys -X -t = search-backward -- \"#{q:mouse_word}\"'",
+            " '#{?mouse_word,Type #[underscore]#{=/9/...:mouse_word},}' 'C-y'",
+            " 'copy-mode -q ; send-keys -l -- \"#{q:mouse_word}\"'",
+            " '#{?mouse_word,Copy #[underscore]#{=/9/...:mouse_word},}' 'c'",
+            " 'copy-mode -q ; set-buffer -- \"#{q:mouse_word}\"'",
+            " '#{?mouse_line,Copy Line,}' 'l' 'copy-mode -q ; set-buffer -- \"#{q:mouse_line}\"'",
+            " ''",
+            " '#{?mouse_hyperlink,Type #[underscore]#{=/9/...:mouse_hyperlink},}' 'C-h'",
+            " 'copy-mode -q ; send-keys -l -- \"#{q:mouse_hyperlink}\"'",
+            " '#{?mouse_hyperlink,Copy #[underscore]#{=/9/...:mouse_hyperlink},}' 'h'",
+            " 'copy-mode -q ; set-buffer -- \"#{q:mouse_hyperlink}\"'",
+            " ''",
+            " '#{?#{!:#{pane_floating_flag}},Horizontal Split,}' 'h' 'split-window -h'",
+            " '#{?#{!:#{pane_floating_flag}},Vertical Split,}' 'v' 'split-window -v'",
+            " ''",
+            " '#{?#{&&:#{!:#{pane_floating_flag}},#{>:#{window_panes},1}},Swap Up,}' 'u'",
+            " 'swap-pane -U'",
+            " '#{?#{&&:#{!:#{pane_floating_flag}},#{>:#{window_panes},1}},Swap Down,}' 'd'",
+            " 'swap-pane -D'",
+            " '#{?pane_marked_set,,-}Swap Marked' 's' 'swap-pane'",
+            " ''",
+            " 'Kill' 'X' 'kill-pane'",
+            " 'Respawn' 'R' 'respawn-pane -k'",
+            " '#{?pane_marked,Unmark,Mark}' 'm' 'select-pane -m'",
+            " '#{?#{>:#{window_panes},1},,-}#{?window_zoomed_flag,Unzoom,Zoom}' 'z'",
+            " 'resize-pane -Z'",
+        );
+        const DEFAULT_WINDOW_MENU: &str = concat!(
+            " '#{?#{>:#{session_windows},1},,-}Swap Left' 'l' 'swap-window -t :-1'",
+            " '#{?#{>:#{session_windows},1},,-}Swap Right' 'r' 'swap-window -t :+1'",
+            " '#{?pane_marked_set,,-}Swap Marked' 's' 'swap-window'",
+            " ''",
+            " 'Kill' 'X' 'kill-window'",
+            " 'Respawn' 'R' 'respawn-window -k'",
+            " '#{?pane_marked,Unmark,Mark}' 'm' 'select-pane -m'",
+            " 'Rename' 'n'",
+            " 'command-prompt -F -I \"#W\" \"rename-window -t #{window_id} -- %%\"'",
+            " ''",
+            " 'New After' 'w' 'new-window -a'",
+            " 'New At End' 'W' 'new-window'",
+        );
+        const DEFAULT_SESSION_MENU: &str = concat!(
+            " 'Next' 'n' 'switch-client -n'",
+            " 'Previous' 'p' 'switch-client -p'",
+            " ''",
+            " 'Renumber' 'N' 'move-window -r'",
+            " 'Rename' 'r' 'command-prompt -I \"#S\" \"rename-session -- %%\"'",
+            " 'Detach' 'd' 'detach-client'",
+            " ''",
+            " 'New Session' 's' 'new-session'",
+            " 'New Window' 'w' 'new-window'",
+        );
+        const ROOT_MOUSE_DEFAULTS: &[(&str, &str)] = &[
+            ("MouseDown1Pane", "select-pane -t = ; send-keys -M"),
+            ("C-MouseDown1Pane", "swap-pane -s ="),
             (
-                "root",
-                "MouseDown1Pane",
-                &["select-pane", "-t", "=", ";", "send-keys", "-M"],
+                "MouseDrag1Pane",
+                "if-shell -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' \
+                 'send-keys -M' 'copy-mode -M'",
             ),
-            ("root", "MouseDrag1Pane", &["copy-mode", "-M"]),
-            ("root", "WheelUpPane", &["copy-mode", "-e"]),
             (
-                "root",
+                "WheelUpPane",
+                "if-shell -F '#{||:#{alternate_on},#{||:#{pane_in_mode},#{mouse_any_flag}}}' \
+                 'send-keys -M' 'copy-mode -e'",
+            ),
+            (
+                "MouseDown2Pane",
+                "select-pane -t = ; if-shell -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' \
+                 'send-keys -M' 'paste-buffer -p'",
+            ),
+            (
                 "DoubleClick1Pane",
-                &[
-                    "copy-mode",
-                    "-H",
-                    ";",
-                    "send-keys",
-                    "-X",
-                    "select-word",
-                    ";",
-                    "run-shell",
-                    "-d",
-                    "0.3",
-                    ";",
-                    "send-keys",
-                    "-X",
-                    "copy-pipe-and-cancel",
-                ],
+                "select-pane -t = ; if-shell -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' \
+                 'send-keys -M' \
+                 'copy-mode -H ; send-keys -X select-word ; run-shell -d 0.3 ; \
+                 send-keys -X copy-pipe-and-cancel'",
             ),
             (
-                "root",
                 "TripleClick1Pane",
-                &[
-                    "copy-mode",
-                    "-H",
-                    ";",
-                    "send-keys",
-                    "-X",
-                    "select-line",
-                    ";",
-                    "run-shell",
-                    "-d",
-                    "0.3",
-                    ";",
-                    "send-keys",
-                    "-X",
-                    "copy-pipe-and-cancel",
-                ],
+                "select-pane -t = ; if-shell -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' \
+                 'send-keys -M' \
+                 'copy-mode -H ; send-keys -X select-line ; run-shell -d 0.3 ; \
+                 send-keys -X copy-pipe-and-cancel'",
             ),
-            ("root", "MouseDown1ScrollbarUp", &["copy-mode", "-u"]),
-            ("root", "MouseDown1ScrollbarDown", &["copy-mode", "-d"]),
-            ("root", "MouseDrag1ScrollbarSlider", &["copy-mode", "-S"]),
+            ("MouseDown1Border", "select-pane -M"),
+            ("MouseDrag1Border", "resize-pane -M"),
+            ("MouseDown1Status", "switch-client -t ="),
+            ("C-MouseDown1Status", "swap-window -t ="),
+            ("WheelUpStatus", "previous-window"),
+            ("WheelDownStatus", "next-window"),
+            ("MouseDown1Control8", "resize-pane -Z"),
+            (
+                "MouseDown1Control9",
+                "display-menu -O -t = -x M -y M -T 'Kill pane #{pane_index}?' \
+                 'Yes' 'y' 'kill-pane -t =' 'No' 'n' ''",
+            ),
+            (
+                "MouseDown1ScrollbarUp",
+                "if-shell -F -t = '#{pane_in_mode}' 'send-keys -X page-up' 'copy-mode -u'",
+            ),
+            (
+                "MouseDown1ScrollbarDown",
+                "if-shell -F -t = '#{pane_in_mode}' 'send-keys -X page-down' 'copy-mode -d'",
+            ),
+            (
+                "MouseDrag1ScrollbarSlider",
+                "if-shell -F -t = '#{pane_in_mode}' \
+                 'send-keys -X scroll-to-mouse' 'copy-mode -S'",
+            ),
+            (
+                "MouseDown3Pane",
+                "if-shell -F -t = \
+                 '#{||:#{mouse_any_flag},#{&&:#{pane_in_mode},\
+                 #{?#{m/r:(copy|view)-mode,#{pane_mode}},0,1}}}' \
+                 'select-pane -t = ; send-keys -M' \
+                 'display-menu -t = -x M -y M \
+                 -T \"#[align=centre]#{pane_index} (#{pane_id})\" {PANE_MENU}'",
+            ),
+            ("M-MouseDown3Pane", "display-menu -t = -x M -y M \
+                 -T '#[align=centre]#{pane_index} (#{pane_id})' {PANE_MENU}"),
+            (
+                "MouseDown3Status",
+                "display-menu -t = -x W -y W \
+                 -T '#[align=centre]#{window_index}:#{window_name}' {WINDOW_MENU}",
+            ),
+            (
+                "M-MouseDown3Status",
+                "display-menu -t = -x W -y W \
+                 -T '#[align=centre]#{window_index}:#{window_name}' {WINDOW_MENU}",
+            ),
+            (
+                "MouseDown3StatusLeft",
+                "display-menu -t = -x M -y W -T '#[align=centre]#{session_name}' {SESSION_MENU}",
+            ),
+            (
+                "M-MouseDown3StatusLeft",
+                "display-menu -t = -x M -y W -T '#[align=centre]#{session_name}' {SESSION_MENU}",
+            ),
+        ];
+        const DEFAULTS: &[(&str, &str, &[&str])] = &[
             ("prefix", "C-b", &["send-prefix"]),
             ("prefix", "C-z", &["suspend-client"]),
             ("prefix", "d", &["detach-client"]),
@@ -4202,6 +4315,21 @@ impl ServerState {
                 table,
                 key,
                 command.iter().map(|word| (*word).to_string()).collect(),
+                false,
+                None,
+            );
+        }
+        for &(name, command) in ROOT_MOUSE_DEFAULTS {
+            let key = parse_key_name(name)
+                .unwrap_or_else(|| panic!("invalid default mouse key name: {name}"));
+            let command = command
+                .replace("{PANE_MENU}", DEFAULT_PANE_MENU)
+                .replace("{WINDOW_MENU}", DEFAULT_WINDOW_MENU)
+                .replace("{SESSION_MENU}", DEFAULT_SESSION_MENU);
+            self.bind_key(
+                DEFAULT_KEY_TABLE,
+                key,
+                super::command::binding_words(&command),
                 false,
                 None,
             );
@@ -4915,6 +5043,21 @@ impl ServerState {
 
     pub(crate) fn hook_format_vars(&self) -> &[(String, String)] {
         &self.hook_format_vars
+    }
+
+    /// Install the mouse event of the command currently running, tmux's
+    /// `format_tree.m`. Every `#{mouse_*}` expansion and every `-t =` target
+    /// resolves against it, so it is installed once around a command rather
+    /// than threaded through each consumer.
+    pub(crate) fn replace_command_mouse(
+        &mut self,
+        mouse: Option<super::mouse::MouseEvent>,
+    ) -> Option<super::mouse::MouseEvent> {
+        std::mem::replace(&mut self.command_mouse, mouse)
+    }
+
+    pub(crate) fn command_mouse(&self) -> Option<&super::mouse::MouseEvent> {
+        self.command_mouse.as_ref()
     }
 
     fn lock_commands(&self) -> BTreeMap<u32, String> {
@@ -5957,6 +6100,19 @@ impl ServerState {
     /// part means that window's active pane. Returns `None` if any part can't be
     /// resolved.
     pub fn resolve(&self, target: &str) -> Option<Target> {
+        // `=` — whatever the mouse event that dispatched this command hit
+        // (tmux's `cmd_find_from_mouse`). A status click that only names a
+        // window resolves to that window rather than to a pane.
+        if target == "=" {
+            let mouse = self.command_mouse()?.target.as_ref()?;
+            if let Some(pane) = mouse.pane_id {
+                return self.resolve(&format!("%{pane}"));
+            }
+            if let Some(window) = mouse.window_id {
+                return self.resolve(&format!("@{window}"));
+            }
+            return self.resolve(&format!("${}", mouse.session_id));
+        }
         // `%N` — pane id, resolved directly to its window and session.
         if let Some(id) = target.strip_prefix('%') {
             let id: u32 = id.parse().ok()?;

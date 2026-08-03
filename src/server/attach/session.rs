@@ -230,7 +230,7 @@ impl AttachSession {
                 latmon,
             },
             commands: AttachCommands {
-                pending: None,
+                pending: VecDeque::new(),
                 deferred_prompts: VecDeque::new(),
             },
             compositor,
@@ -241,7 +241,7 @@ impl AttachSession {
     pub(crate) fn take_command_request(&mut self) -> Option<AttachCommandRequest> {
         self.commands
             .pending
-            .take()
+            .pop_front()
             .or_else(|| self.commands.deferred_prompts.pop_front())
             .or_else(|| {
                 let source = self
@@ -579,6 +579,13 @@ impl AttachSession {
             }));
         }
 
+        // Keys held back from an earlier pass — the tail of a coalesced read
+        // whose first key deferred a command — are already in hand, so the
+        // client must not wait on the tty before replaying them.
+        if !self.compositor.input.injected.is_empty() && self.commands.pending.is_empty() {
+            return Ok(AttachPrepared::Ready(AttachWaitReady::default()));
+        }
+
         let now = Instant::now();
         let timeout = minimum_poll_timeout(
             self.status.status_timer.poll_timeout(now),
@@ -617,6 +624,8 @@ impl AttachSession {
             timeout,
             deadline_poll_timeout(self.repeat_deadline(), now),
         );
+        let timeout =
+            minimum_poll_timeout(timeout, deadline_poll_timeout(self.click_deadline(), now));
         let timeout = minimum_poll_timeout(
             timeout,
             deadline_poll_timeout(
@@ -751,6 +760,7 @@ impl AttachSession {
             false
         };
         self.expire_repeat_chain(state, target, now);
+        self.expire_click_timer(state, target, hub, now);
         let status_timer_ready = self.status.status_timer.take_expired(now);
         let overlay_tick = self.compositor.ui.active_overlay.is_some();
         let overlay_exit = self
