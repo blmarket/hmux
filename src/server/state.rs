@@ -1766,6 +1766,10 @@ pub struct Session {
     removed_environment: BTreeSet<String>,
     hidden_environment: BTreeSet<String>,
     options: OptionSet,
+    /// The session's working directory — tmux's `s->cwd`, the `-c` value of the
+    /// `new-session` that created it (else the creating client's directory).
+    /// It is what `#()` jobs expanded by an attached client run in.
+    cwd: Option<PathBuf>,
 }
 
 /// One event notification waiting to become hook bodies.
@@ -1944,6 +1948,10 @@ struct ClientRenderEntry {
     flag_state: ClientFlagState,
     terminal: Option<ResolvedTerm>,
     slot: Arc<ClientRenderSlot>,
+    /// This client's `#()` job tree — tmux's `c->jobs`, shared by every format
+    /// the client expands (its status line and the commands it runs). Dropped
+    /// with the client, which kills the jobs still running in it.
+    format_jobs: Arc<super::status::FormatJobRegistry>,
 }
 
 impl ClientRenderEntry {
@@ -2181,6 +2189,7 @@ pub(crate) struct ClientRenderAttachment {
     registry: Arc<ClientRenderRegistry>,
     id: u64,
     slot: Arc<ClientRenderSlot>,
+    format_jobs: Arc<super::status::FormatJobRegistry>,
 }
 
 impl ClientRenderRegistry {
@@ -2244,6 +2253,7 @@ impl ClientRenderRegistry {
             wakeup,
         });
         let ignore_size = flags.split(',').any(|flag| flag == "ignore-size");
+        let format_jobs = Arc::new(super::status::FormatJobRegistry::new(self));
         let mut inner = self
             .inner
             .lock()
@@ -2273,6 +2283,7 @@ impl ClientRenderRegistry {
                 flag_state,
                 terminal: None,
                 slot: Arc::clone(&slot),
+                format_jobs: Arc::clone(&format_jobs),
             },
         );
         let peers = inner
@@ -2292,6 +2303,7 @@ impl ClientRenderRegistry {
             registry: Arc::clone(self),
             id,
             slot,
+            format_jobs,
         })
     }
 
@@ -2320,6 +2332,31 @@ impl ClientRenderRegistry {
                 key_table: entry.key_table.clone(),
                 activity_micros: entry.activity_micros,
             })
+            .collect()
+    }
+
+    /// The job tree and current session of the client called `name`, which is
+    /// how a command reaches the tree of the client that ran it.
+    fn client_format_jobs(
+        &self,
+        name: &str,
+    ) -> Option<(Arc<super::status::FormatJobRegistry>, u32)> {
+        let inner = self.inner.lock().ok()?;
+        inner
+            .clients
+            .values()
+            .find(|entry| entry.name == name)
+            .map(|entry| (Arc::clone(&entry.format_jobs), entry.session_id))
+    }
+
+    fn all_format_jobs(&self) -> Vec<Arc<super::status::FormatJobRegistry>> {
+        let Ok(inner) = self.inner.lock() else {
+            return Vec::new();
+        };
+        inner
+            .clients
+            .values()
+            .map(|entry| Arc::clone(&entry.format_jobs))
             .collect()
     }
 
@@ -2948,6 +2985,12 @@ impl ClientRenderAttachment {
         self.slot.wakeup.as_fd().as_raw_fd()
     }
 
+    /// This client's `#()` job tree, so its status renderer and the commands it
+    /// runs share one cache — as they do in tmux, where both reach `c->jobs`.
+    pub(crate) fn format_jobs(&self) -> Arc<super::status::FormatJobRegistry> {
+        Arc::clone(&self.format_jobs)
+    }
+
     /// Clear readiness and take every reason published so far.
     ///
     /// Clearing before the atomic swap cannot lose a concurrent publication:
@@ -3247,6 +3290,10 @@ impl Drop for ActiveCommandPrompt {
 }
 
 impl Session {
+    pub(crate) fn cwd(&self) -> Option<&Path> {
+        self.cwd.as_deref()
+    }
+
     pub(crate) fn options<'a>(&'a self, globals: &'a GlobalOptions) -> OptionsView<'a> {
         OptionsView::two(&self.options, globals.session())
     }
@@ -3471,6 +3518,9 @@ pub struct ServerState {
     /// Mouse event of the command currently executing (tmux's `format_tree.m`),
     /// installed alongside the target hints above.
     command_mouse: Option<super::mouse::MouseEvent>,
+    /// `#()` job runner of the command currently executing, so any format it
+    /// expands caches its jobs in the tree of the client that ran it.
+    command_format_jobs: Option<Arc<super::command::CommandJobs>>,
     /// Stable window selected for the command currently executing, when the
     /// default target names one — a hook body targeting a specific window.
     command_window_id: Option<u32>,
@@ -3537,6 +3587,7 @@ impl ServerState {
             hook_format_vars: Vec::new(),
             command_session_id: None,
             command_mouse: None,
+            command_format_jobs: None,
             command_window_id: None,
             command_active_panes: None,
             control_checkpoints: VecDeque::new(),
@@ -3545,9 +3596,7 @@ impl ServerState {
             window_last_activity: BTreeMap::new(),
             silence_alerted: BTreeSet::new(),
             client_prompts: Arc::new(ClientPromptRegistry::new()),
-            format_jobs: Arc::new(super::status::FormatJobRegistry::new(Arc::clone(
-                &client_renders,
-            ))),
+            format_jobs: Arc::new(super::status::FormatJobRegistry::new(&client_renders)),
             client_renders,
             wait_registry: Arc::new(WaitRegistry::default()),
         };
@@ -5024,6 +5073,31 @@ impl ServerState {
         Arc::clone(&self.background_jobs)
     }
 
+    /// The `#()` job tree a format expanded by `client` uses, with the session
+    /// that client is on. tmux caches per client and falls back to one
+    /// process-global tree for a format with no client — a command client that
+    /// is not attached is not one of ours, so it lands in the global tree.
+    pub(crate) fn format_jobs_for_client(
+        &self,
+        client: Option<&str>,
+    ) -> (Arc<super::status::FormatJobRegistry>, Option<u32>) {
+        match client.and_then(|name| self.client_renders.client_format_jobs(name)) {
+            Some((jobs, session_id)) => (jobs, Some(session_id)),
+            None => (self.format_job_registry(), None),
+        }
+    }
+
+    /// Every `#()` job still running, across the per-client trees and the
+    /// clientless one — what `show-messages -J` lists.
+    pub(crate) fn running_format_jobs(&self) -> Vec<super::status::FormatJobInfo> {
+        let mut running = self.format_jobs.running();
+        for jobs in self.client_renders.all_format_jobs() {
+            running.extend(jobs.running());
+        }
+        running.sort_by_key(|job| job.pid);
+        running
+    }
+
     pub(crate) fn begin_hook(&mut self, name: &str) -> bool {
         self.running_hooks.insert(name.to_string())
     }
@@ -5043,6 +5117,20 @@ impl ServerState {
 
     pub(crate) fn hook_format_vars(&self) -> &[(String, String)] {
         &self.hook_format_vars
+    }
+
+    /// Install the `#()` job runner of the command currently running. Like the
+    /// mouse event below it is installed once around a command, so every format
+    /// the command expands starts its jobs in the right client's tree.
+    pub(crate) fn replace_command_format_jobs(
+        &mut self,
+        jobs: Option<Arc<super::command::CommandJobs>>,
+    ) -> Option<Arc<super::command::CommandJobs>> {
+        std::mem::replace(&mut self.command_format_jobs, jobs)
+    }
+
+    pub(crate) fn command_format_jobs(&self) -> Option<&Arc<super::command::CommandJobs>> {
+        self.command_format_jobs.as_ref()
     }
 
     /// Install the mouse event of the command currently running, tmux's
@@ -5168,6 +5256,24 @@ impl ServerState {
 
     pub(crate) fn session_id(&self, name: &str) -> Option<u32> {
         self.resolve_session(name).map(|session| session.id)
+    }
+
+    /// Record where a session was created, which is where the `#()` jobs of the
+    /// clients attached to it run.
+    pub(crate) fn set_session_cwd(&mut self, session_id: u32, cwd: Option<PathBuf>) {
+        if let Some(session) = self
+            .sessions
+            .iter_mut()
+            .find(|session| session.id == session_id)
+        {
+            session.cwd = cwd;
+        }
+    }
+
+    pub(crate) fn session_by_id(&self, session_id: u32) -> Option<&Session> {
+        self.sessions
+            .iter()
+            .find(|session| session.id == session_id)
     }
 
     pub(crate) fn replace_command_session_id(&mut self, session_id: Option<u32>) -> Option<u32> {
@@ -5511,6 +5617,7 @@ impl ServerState {
             removed_environment: BTreeSet::new(),
             hidden_environment: BTreeSet::new(),
             options: OptionSet::default(),
+            cwd: None,
         });
         self.initial_attach_pending = false;
         self.notify_session("session-created", session_id);

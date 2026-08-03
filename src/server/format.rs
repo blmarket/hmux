@@ -158,11 +158,26 @@ pub(super) trait FormatContext {
     }
 }
 
+/// Runs a `#()` command substitution and returns its cached output. tmux starts
+/// jobs from *any* expansion, not only a status redraw, so the caller supplies
+/// the job tree the expansion belongs to.
+pub(super) trait FormatJobs {
+    fn run(&self, command: &str, expanded: String, vars: &Vars) -> String;
+}
+
 struct BasicContext<'a> {
     loops: Option<&'a dyn LoopSource>,
+    jobs: Option<&'a dyn FormatJobs>,
 }
 
 impl FormatContext for BasicContext<'_> {
+    fn job(&self, command: &str, expanded: String, vars: &Vars) -> String {
+        match self.jobs {
+            Some(jobs) => jobs.run(command, expanded, vars),
+            None => String::new(),
+        }
+    }
+
     fn loop_items(
         &self,
         kind: FormatLoopKind,
@@ -252,15 +267,37 @@ pub fn expand(template: &str, vars: &Vars) -> String {
 /// enumerate the session tree. The plain [`expand`] passes `None` (loops then
 /// expand to empty, as they would with nothing to iterate).
 pub fn expand_with(template: &str, vars: &Vars, ls: Option<&dyn LoopSource>) -> String {
-    expand_with_context(template, vars, &BasicContext { loops: ls })
+    expand_with_context(
+        template,
+        vars,
+        &BasicContext {
+            loops: ls,
+            jobs: None,
+        },
+    )
 }
 
-/// Expand a template with loop support after applying current-time directives.
+/// [`expand_with`], but able to start `#()` jobs in `jobs`.
+pub(super) fn expand_with_jobs(
+    template: &str,
+    vars: &Vars,
+    ls: Option<&dyn LoopSource>,
+    jobs: Option<&dyn FormatJobs>,
+) -> String {
+    expand_with_context(template, vars, &BasicContext { loops: ls, jobs })
+}
+
+/// [`expand_with_jobs`], but applying current-time directives first.
 ///
 /// tmux applies `strftime` before resolving `#{...}`, so percent sequences
 /// introduced by variable values remain literal.
-pub fn expand_time_with(template: &str, vars: &Vars, ls: Option<&dyn LoopSource>) -> String {
-    expand_time_with_context(template, vars, &BasicContext { loops: ls })
+pub(super) fn expand_time_with_jobs(
+    template: &str,
+    vars: &Vars,
+    ls: Option<&dyn LoopSource>,
+    jobs: Option<&dyn FormatJobs>,
+) -> String {
+    expand_time_with_context(template, vars, &BasicContext { loops: ls, jobs })
 }
 
 pub(super) fn expand_with_context(
@@ -1630,7 +1667,7 @@ mod tests {
     fn time_expansion_precedes_variable_expansion() {
         let mut v = vars();
         v.set("value", "%Y");
-        let expanded = expand_time_with("%Y #{value}", &v, None);
+        let expanded = expand_time_with_jobs("%Y #{value}", &v, None, None);
         assert!(expanded[..4].bytes().all(|byte| byte.is_ascii_digit()));
         assert!(expanded.ends_with(" %Y"), "{expanded:?}");
     }
