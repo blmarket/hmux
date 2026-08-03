@@ -47,7 +47,7 @@ use crate::integration::status::StatusHub;
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 use crate::tmux::traits::{FrameReader, FrameWriter};
 
-use super::cmd_send_keys::base64_encode;
+use super::cmd_send_keys::{base64_encode, pane_key_table_entry};
 use super::command;
 use super::format;
 use super::key::{key_from_byte, parse_key_name, KeyBase, KeyCode, SpecialKey};
