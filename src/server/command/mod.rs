@@ -3021,7 +3021,7 @@ fn hook_commands(
     let target = requested_target
         .filter(|target| st.resolve(target).is_some())
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let commands = target
         .as_deref()
         .and_then(|target| match options::option_scope(hook) {
@@ -3810,7 +3810,7 @@ fn pane_command_argv(command: &[&str], st: &ServerState, target: Option<&str>) -
 fn rename_session(args: &[String], st: &mut ServerState) -> CommandResult {
     let from = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let to = positionals(args, &["-t"]).into_iter().next();
     match (from, to) {
         (Some(from), Some(to)) => match st.rename_session(&from, to) {
@@ -4011,14 +4011,16 @@ fn list_panes(args: &[String], st: &ServerState, agents: &PaneAgents) -> Command
     } else {
         let target = flag_value(args, "-t")
             .map(str::to_string)
-            .or_else(|| current_session(st));
+            .or_else(|| current_target(st));
         let target = match target {
             Some(t) => t,
             None => return CommandResult::err("can't establish current session\n"),
         };
-        let resolved = match st.resolve(&target) {
-            Some(r) => r,
-            None => return CommandResult::err(format!("can't find window: {target}\n")),
+        // `list-panes -t` is a *window* target, so tmux names the window (or the
+        // session) part that went missing rather than the whole target.
+        let resolved = match st.resolve_window_target(&target) {
+            Ok(resolved) => resolved,
+            Err(error) => return CommandResult::err(format!("{error}\n")),
         };
         vec![(&st.sessions()[resolved.session], resolved.window)]
     };
@@ -4096,13 +4098,16 @@ fn display_message(
 ) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     if target.is_none() && (!has_flag(args, "-p") || has_flag(args, "-I")) {
         return CommandResult::err("can't establish current session\n");
     }
-    // display-message uses tmux's can-fail target lookup. A missing explicit
-    // target supplies an empty format context rather than failing the command.
-    let resolved = target.as_deref().and_then(|target| st.resolve(target));
+    // display-message uses tmux's can-fail target lookup: an unresolvable target
+    // does not fail the command, it formats against however far the lookup got
+    // (the named session's current window, say) or against nothing at all.
+    let resolved = target
+        .as_deref()
+        .and_then(|target| st.resolve_or_residual(target));
     if has_flag(args, "-I") {
         let resolved = match resolved {
             Some(resolved) => resolved,
@@ -5096,6 +5101,15 @@ fn current_session(st: &ServerState) -> Option<String> {
         .or_else(|| st.sessions().last().map(|s| s.name.clone()))
 }
 
+/// The target a command whose `-t` is absent runs against: tmux uses the
+/// client's current pane, which is the current session's current window's
+/// active pane. Spelled with the `:` so the session name stays a *session* —
+/// a bare `0` is pane 0 of the current window in tmux's target grammar, which
+/// is not what "no target given" means.
+fn current_target(st: &ServerState) -> Option<String> {
+    current_session(st).map(|session| format!("{session}:"))
+}
+
 /// Parse a `new-window -t` target into `(session, explicit_index)`.
 ///
 /// - `sess:N`  → session `sess`, explicit index `N`.
@@ -5195,14 +5209,14 @@ fn session_command(
 fn clear_history(args: &[String], st: &mut ServerState) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let target = match target {
         Some(target) => target,
         None => return CommandResult::err("can't establish current session\n"),
     };
     match st.clear_pane_history(&target) {
         Ok(()) => CommandResult::ok(""),
-        Err(_) => CommandResult::err(format!("can't find pane: {target}\n")),
+        Err(_) => CommandResult::err(format!("{}\n", st.pane_target_error(&target))),
     }
 }
 
@@ -5214,7 +5228,7 @@ fn split_window(args: &[String], st: &mut ServerState, context: &ClientContext) 
     const VALUE_FLAGS: &[&str] = &["-c", "-e", "-F", "-l", "-p", "-t"];
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let target = match target {
         Some(t) => t,
         None => return CommandResult::err("can't establish current session\n"),
@@ -5223,7 +5237,7 @@ fn split_window(args: &[String], st: &mut ServerState, context: &ClientContext) 
     // tmux's pane diagnostic ("can't find pane: <t>"), not the session one.
     let resolved = match st.resolve(&target) {
         Some(target) => target,
-        None => return CommandResult::err(format!("can't find pane: {target}\n")),
+        None => return CommandResult::err(format!("{}\n", st.pane_target_error(&target))),
     };
     // `-d` splits in the background: the new pane is created but the original
     // pane stays active (tmux's default is to follow to the new pane).
@@ -5313,13 +5327,13 @@ fn new_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -> C
     ];
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let Some(target) = target else {
         return CommandResult::err("can't establish current session\n");
     };
     let resolved = match st.resolve(&target) {
         Some(target) => target,
-        None => return CommandResult::err(format!("can't find pane: {target}\n")),
+        None => return CommandResult::err(format!("{}\n", st.pane_target_error(&target))),
     };
     let session = &st.sessions()[resolved.session];
     let window = st.window(resolved.session, resolved.window);
@@ -5471,7 +5485,7 @@ fn select_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -
     }
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let target = match target {
         Some(t) => t,
         None => return CommandResult::err("can't establish current session\n"),
@@ -5542,7 +5556,7 @@ fn select_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -
 fn pipe_pane(args: &[String], st: &mut ServerState) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let target = match target {
         Some(t) => t,
         None => return CommandResult::err("can't establish current session\n"),
@@ -5578,7 +5592,7 @@ fn pipe_pane(args: &[String], st: &mut ServerState) -> CommandResult {
 fn kill_pane(args: &[String], st: &mut ServerState) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let target = match target {
         Some(t) => t,
         None => return CommandResult::err("can't establish current session\n"),
@@ -5604,14 +5618,14 @@ fn kill_pane(args: &[String], st: &mut ServerState) -> CommandResult {
 fn respawn_pane(args: &[String], st: &mut ServerState) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let target = match target {
         Some(t) => t,
         None => return CommandResult::err("can't establish current session\n"),
     };
     let resolved = match st.resolve(&target) {
         Some(t) => t,
-        None => return CommandResult::err(format!("can't find pane: {target}\n")),
+        None => return CommandResult::err(format!("{}\n", st.pane_target_error(&target))),
     };
     let sess = &st.sessions()[resolved.session];
     let link = &sess.windows[resolved.window];
@@ -5645,14 +5659,14 @@ fn respawn_pane(args: &[String], st: &mut ServerState) -> CommandResult {
 fn respawn_window(args: &[String], st: &mut ServerState) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let target = match target {
         Some(t) => t,
         None => return CommandResult::err("can't establish current session\n"),
     };
-    let resolved = match st.resolve(&target) {
-        Some(t) => t,
-        None => return CommandResult::err(format!("can't find window: {target}\n")),
+    let resolved = match st.resolve_window_target(&target) {
+        Ok(resolved) => resolved,
+        Err(error) => return CommandResult::err(format!("{error}\n")),
     };
     let sess = &st.sessions()[resolved.session];
     let link = &sess.windows[resolved.window];
@@ -5680,10 +5694,10 @@ fn respawn_window(args: &[String], st: &mut ServerState) -> CommandResult {
 fn swap_window(args: &[String], st: &mut ServerState) -> CommandResult {
     let src = flag_value(args, "-s")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let dst = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     // tmux inverts the usual `-d` sense for swap-window: the plain form leaves
     // the current window where it is, and `-d` selects the swapped target.
     let select = has_flag(args, "-d");
@@ -5715,7 +5729,7 @@ fn move_window(args: &[String], st: &mut ServerState) -> CommandResult {
     }
     let src = flag_value(args, "-s")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let dst = flag_value(args, "-t").map(str::to_string);
     // tmux selects the moved window by default; `-d` leaves the current window
     // where it is.
@@ -5758,7 +5772,7 @@ fn set_environment(args: &[String], st: &mut ServerState) -> CommandResult {
     } else {
         flag_value(args, "-t")
             .map(str::to_string)
-            .or_else(|| current_session(st))
+            .or_else(|| current_target(st))
     };
     if !global && target.is_none() {
         return CommandResult::err("no current session\n");
@@ -5918,7 +5932,7 @@ fn option_command_target(
     let explicit = flag_value(args, "-t");
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let Some(target) = target else {
         return Err(CommandResult::err(format!("no current {}\n", kind.name())));
     };
@@ -6693,7 +6707,7 @@ fn show_environment(args: &[String], st: &ServerState) -> CommandResult {
     if !has_bool_flag(args, 'g') {
         let target = flag_value(args, "-t")
             .map(str::to_string)
-            .or_else(|| current_session(st));
+            .or_else(|| current_target(st));
         let Some(target) = target else {
             return CommandResult::err("no current session\n");
         };
@@ -6787,7 +6801,7 @@ fn show_environment_line(name: &str, value: Option<&str>, shell: bool) -> String
 fn last_pane_cmd(args: &[String], st: &mut ServerState) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     match target {
         Some(t) => match st.last_pane(&t) {
             Ok(()) => CommandResult::ok(""),
@@ -6801,10 +6815,10 @@ fn last_pane_cmd(args: &[String], st: &mut ServerState) -> CommandResult {
 fn move_pane(args: &[String], st: &mut ServerState) -> CommandResult {
     let src = flag_value(args, "-s")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let dst = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let before = has_flag(args, "-b");
     match (src, dst) {
         (Some(s), Some(d)) => match st.move_pane(&s, &d, before) {
@@ -6850,7 +6864,7 @@ struct CaptureRange {
 fn capture_pane(args: &[String], st: &mut ServerState, agents: &PaneAgents) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let target = match target {
         Some(t) => t,
         None => return CommandResult::err("can't establish current session\n"),
@@ -6858,7 +6872,7 @@ fn capture_pane(args: &[String], st: &mut ServerState, agents: &PaneAgents) -> C
 
     let resolved = match st.resolve(&target) {
         Some(resolved) => resolved,
-        None => return CommandResult::err(format!("can't find pane: {target}\n")),
+        None => return CommandResult::err(format!("{}\n", st.pane_target_error(&target))),
     };
 
     // Ghostty's public API exposes only its active screen. A tmux `-a` request
@@ -7392,7 +7406,7 @@ fn apply_capture_control(
 
 /// `swap-pane -s src -t dst`. Both default to the current session's active pane.
 fn swap_pane(args: &[String], st: &mut ServerState) -> CommandResult {
-    let cur = current_session(st);
+    let cur = current_target(st);
     // `-U`/`-D` swap the target (default active) pane with its previous/next
     // neighbour; `-D` takes precedence when both are given (as in tmux).
     if has_bool_flag(args, 'D') || has_bool_flag(args, 'U') {
@@ -7425,7 +7439,7 @@ fn swap_pane(args: &[String], st: &mut ServerState) -> CommandResult {
 fn rotate_window(args: &[String], st: &mut ServerState) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     match target {
         Some(t) => match if has_bool_flag(args, 'D') {
             st.rotate_window_down(&t)
@@ -7513,13 +7527,13 @@ fn resize_pane_to_mouse(st: &mut ServerState) -> CommandResult {
 fn resize_pane(args: &[String], st: &mut ServerState) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let target = match target {
         Some(t) => t,
         None => return CommandResult::err("can't establish current session\n"),
     };
     if st.resolve(&target).is_none() {
-        return CommandResult::err(format!("can't find pane: {target}\n"));
+        return CommandResult::err(format!("{}\n", st.pane_target_error(&target)));
     }
     if has_bool_flag(args, 'Z') {
         return match st.toggle_zoom(&target) {
@@ -7595,7 +7609,7 @@ fn resize_window(args: &[String], st: &mut ServerState) -> CommandResult {
     }
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let target = match target {
         Some(t) => t,
         None => return CommandResult::err("can't establish current session\n"),
@@ -7653,7 +7667,7 @@ fn select_layout(args: &[String], st: &mut ServerState) -> CommandResult {
         if let Some(layout) = known {
             let target = flag_value(args, "-t")
                 .map(str::to_string)
-                .or_else(|| current_session(st));
+                .or_else(|| current_target(st));
             let Some(target) = target else {
                 return CommandResult::err("can't establish current session\n");
             };
@@ -7664,7 +7678,7 @@ fn select_layout(args: &[String], st: &mut ServerState) -> CommandResult {
         }
         let target = flag_value(args, "-t")
             .map(str::to_string)
-            .or_else(|| current_session(st));
+            .or_else(|| current_target(st));
         let Some(target) = target else {
             return CommandResult::err("can't establish current session\n");
         };
@@ -7679,7 +7693,7 @@ fn select_layout(args: &[String], st: &mut ServerState) -> CommandResult {
 fn cycle_layout(args: &[String], st: &mut ServerState, forward: bool) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let Some(target) = target else {
         return CommandResult::err("can't establish current session\n");
     };
@@ -7695,7 +7709,7 @@ fn cycle_layout(args: &[String], st: &mut ServerState, forward: bool) -> Command
 fn link_window(args: &[String], st: &mut ServerState) -> CommandResult {
     let src = flag_value(args, "-s")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let dst = flag_value(args, "-t").map(str::to_string);
     let select = !has_flag(args, "-d");
     // `-a` (after) / `-b` (before) link the window *relative* to the `-t` anchor
@@ -7731,7 +7745,7 @@ fn break_pane(args: &[String], st: &mut ServerState) -> CommandResult {
     }
     let src = flag_value(args, "-s")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let dst = flag_value(args, "-t")
         .map(str::to_string)
         .or_else(|| current_session(st).map(|session| format!("{session}:")));
@@ -7912,12 +7926,12 @@ pub(crate) fn load_buffer_client_path(args: &[String], context: &ClientContext) 
 fn paste_buffer(args: &[String], st: &mut ServerState) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     let Some(target) = target else {
         return CommandResult::err("can't establish current session\n");
     };
     if st.resolve(&target).is_none() {
-        return CommandResult::err(format!("can't find pane: {target}\n"));
+        return CommandResult::err(format!("{}\n", st.pane_target_error(&target)));
     }
     let requested = flag_value(args, "-b");
     let selected = match requested {
@@ -8439,7 +8453,7 @@ pub(super) fn resolve_conditional_binding(
 fn expand_if_cond(cond: &str, args: &[String], st: &ServerState, agents: &PaneAgents) -> String {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(st));
+        .or_else(|| current_target(st));
     if let Some(t) = target {
         if let Some(r) = st.resolve(&t) {
             let vars = vars_full(

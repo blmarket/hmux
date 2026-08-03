@@ -55,14 +55,14 @@ impl Command {
             Self::CopyMode => {
                 let target = flag_value(args, "-t")
                     .map(str::to_string)
-                    .or_else(|| current_session(st));
+                    .or_else(|| current_target(st));
                 match target {
                     Some(target) => {
                         if has_flag(args, "-q") {
                             return match st.set_pane_mode(&target, None) {
                                 Ok(()) => CommandResult::ok(""),
                                 Err(_) => {
-                                    CommandResult::err(format!("can't find pane: {target}\n"))
+                                    CommandResult::err(format!("{}\n", st.pane_target_error(&target)))
                                 }
                             };
                         }
@@ -77,7 +77,7 @@ impl Command {
                             .is_err()
                         {
                             let missing = source.unwrap_or(&target);
-                            return CommandResult::err(format!("can't find pane: {missing}\n"));
+                            return CommandResult::err(format!("{}\n", st.pane_target_error(missing)));
                         }
                         let vi = st
                             .window_options(&target)

@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
+use super::format::glob_match;
 use super::key::{parse_key_name, KeyCode};
 use super::options::{GlobalOptions, OptionSet, OptionsView};
 use super::pane::{
@@ -3370,6 +3371,190 @@ pub struct Target {
     pub pane: usize,
 }
 
+/// What a `-t` target names, mirroring the type argument of tmux's
+/// `cmd_find_target`. It decides how a target that is only a bare word is read:
+/// for a pane target `1` is a pane index in the current window, for a window
+/// target a window index in the current session. Either falls back to the other
+/// (and to a session name) when that first reading finds nothing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TargetKind {
+    Window,
+    Pane,
+}
+
+/// A target that did not resolve: tmux's diagnostic for the part that went
+/// missing, plus the state its lookup had reached when it gave up. Commands
+/// whose `-t` is allowed to fail (`display-message`) run against that residual
+/// state instead of failing.
+struct TargetMiss {
+    error: io::Error,
+    residual: Option<Target>,
+}
+
+impl TargetMiss {
+    fn new(error: io::Error, residual: Option<Target>) -> Self {
+        Self { error, residual }
+    }
+}
+
+/// The `session:window.pane` parts of a target, split by tmux's rules.
+struct TargetParts<'a> {
+    session: Option<&'a str>,
+    window: Option<&'a str>,
+    pane: Option<&'a str>,
+    /// The window part was spelled out with a `:` (or a `.`), so a window that
+    /// doesn't resolve is an error rather than a session name to try next.
+    window_only: bool,
+    /// The pane part was spelled out with a `.`, likewise.
+    pane_only: bool,
+    exact_session: bool,
+    exact_window: bool,
+}
+
+impl<'a> TargetParts<'a> {
+    /// Split a target the way tmux's `cmd_find_target` does: the session part
+    /// ends at the first `:`, the pane part starts at the first `.` after it (or
+    /// at the first `.` at all when the target has no `:`). A target with
+    /// neither separator is a session, window or pane part depending on its `$`,
+    /// `@` or `%` marker, and on the target kind when it has none.
+    fn parse(target: &'a str, kind: TargetKind) -> Self {
+        let colon = target.find(':');
+        let tail = match colon {
+            Some(at) => &target[at + 1..],
+            None => target,
+        };
+        let period = tail.find('.');
+        let (mut session, mut window, mut pane) = (None, None, None);
+        let (mut window_only, mut pane_only) = (false, false);
+        match (colon, period) {
+            (Some(at), Some(dot)) => {
+                session = Some(&target[..at]);
+                window = Some(&tail[..dot]);
+                window_only = true;
+                pane = Some(&tail[dot + 1..]);
+                pane_only = true;
+            }
+            (Some(at), None) => {
+                session = Some(&target[..at]);
+                window = Some(tail);
+                window_only = true;
+            }
+            (None, Some(dot)) => {
+                window = Some(&tail[..dot]);
+                pane = Some(&tail[dot + 1..]);
+                pane_only = true;
+            }
+            (None, None) => match target.as_bytes().first() {
+                Some(b'$') => session = Some(target),
+                Some(b'@') => window = Some(target),
+                Some(b'%') => pane = Some(target),
+                _ => match kind {
+                    TargetKind::Window => window = Some(target),
+                    TargetKind::Pane => pane = Some(target),
+                },
+            },
+        }
+        // `=name` asks for an exact match on that part; the marker is not part
+        // of the name.
+        let exact_session = strip_exact(&mut session);
+        let exact_window = strip_exact(&mut window);
+        // tmux rewrites the long token names to their short forms before it
+        // resolves anything (`cmd_find_map_table`), so a diagnostic about one
+        // names the short form.
+        let window = window.map(|part| map_token(part, WINDOW_TOKENS));
+        let pane = pane.map(|part| map_token(part, PANE_TOKENS));
+        Self {
+            // An empty part is the same as an absent one, so `:win` is the
+            // current session's `win` and `sess:` its current window.
+            session: session.filter(|part| !part.is_empty()),
+            window: window.filter(|part| !part.is_empty()),
+            pane: pane.filter(|part| !part.is_empty()),
+            window_only,
+            pane_only,
+            exact_session,
+            exact_window,
+        }
+    }
+}
+
+/// tmux's `cmd_find_window_table`: the long names of the window tokens and the
+/// short forms it rewrites them to.
+const WINDOW_TOKENS: &[(&str, &str)] = &[
+    ("{start}", "^"),
+    ("{last}", "!"),
+    ("{end}", "$"),
+    ("{next}", "+"),
+    ("{previous}", "-"),
+];
+
+/// tmux's `cmd_find_pane_table`. Only these three have a short form; the rest of
+/// the pane tokens (`{top}`, `{left-of}`, …) are already their own spelling.
+const PANE_TOKENS: &[(&str, &str)] = &[("{last}", "!"), ("{next}", "+"), ("{previous}", "-")];
+
+/// Rewrite a target part through one of the token tables, leaving anything that
+/// isn't a token alone.
+fn map_token<'a>(part: &'a str, table: &[(&str, &'a str)]) -> &'a str {
+    table
+        .iter()
+        .find_map(|(token, short)| (*token == part).then_some(*short))
+        .unwrap_or(part)
+}
+
+/// Strip a target part's `=` exact-match marker, reporting whether it was there.
+fn strip_exact(part: &mut Option<&str>) -> bool {
+    match part.and_then(|part| part.strip_prefix('=')) {
+        Some(stripped) => {
+            *part = Some(stripped);
+            true
+        }
+        None => false,
+    }
+}
+
+/// The one position an iterator of `(position, value)` matches, or `None` when
+/// it matched nothing — or, as tmux treats an ambiguous target, more than one.
+fn unique<T>(mut matches: impl Iterator<Item = (usize, T)>) -> Option<usize> {
+    let (position, _) = matches.next()?;
+    matches.next().is_none().then_some(position)
+}
+
+/// How a target's window part matched the windows of a session.
+enum WindowMatch {
+    Found(usize),
+    /// More than one window matched the name, prefix or pattern. tmux reports
+    /// such a target as unresolvable, but its lookup keeps the first match, so
+    /// that is the residual state a can-fail command formats against.
+    Ambiguous(usize),
+    None,
+}
+
+impl WindowMatch {
+    fn of(position: Option<usize>) -> Self {
+        match position {
+            Some(position) => Self::Found(position),
+            None => Self::None,
+        }
+    }
+
+    fn single<T>(mut matches: impl Iterator<Item = (usize, T)>) -> Self {
+        let Some((position, _)) = matches.next() else {
+            return Self::None;
+        };
+        match matches.next() {
+            Some(_) => Self::Ambiguous(position),
+            None => Self::Found(position),
+        }
+    }
+
+    /// Where an ambiguous match's first candidate was, if this is one.
+    fn ambiguous(&self) -> Option<usize> {
+        match self {
+            Self::Ambiguous(position) => Some(*position),
+            _ => None,
+        }
+    }
+}
+
 /// Format tmux's `(created ...)` timestamp for "now" (e.g.
 /// `Tue Jul  7 20:57:17 2026`). Best-effort; an empty string on failure (the
 /// value is normalized away in conformance comparisons regardless).
@@ -5525,7 +5710,7 @@ impl ServerState {
 
     /// Create a session named `name` with a single window holding one pane.
     pub fn create_session(&mut self, name: &str, spec: PaneSpec) -> io::Result<u32> {
-        if self.find(name).is_some() {
+        if self.find_exact(name).is_some() {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 format!("duplicate session: {name}"),
@@ -5634,24 +5819,13 @@ impl ServerState {
         target: &str,
         spec: PaneSpec,
     ) -> io::Result<u32> {
-        if self.find(name).is_some() {
+        if self.find_exact(name).is_some() {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 format!("duplicate session: {name}"),
             ));
         }
-        let target_session = self.session_index(target).or_else(|| {
-            if target.starts_with('$') || target.starts_with('=') {
-                return None;
-            }
-            let mut matches = self
-                .sessions
-                .iter()
-                .enumerate()
-                .filter(|(_, session)| session.name.starts_with(target));
-            let (position, _) = matches.next()?;
-            matches.next().is_none().then_some(position)
-        });
+        let target_session = self.session_index(target);
         let link_set_id = if let Some(target_session) = target_session {
             let link_set_id = self.sessions[target_session].link_set_id;
             if !self.session_groups.contains_key(&link_set_id) {
@@ -5793,7 +5967,7 @@ impl ServerState {
                 format!("can't find session: {from}"),
             ));
         };
-        if from != to && self.find(to).is_some() {
+        if from != to && self.find_exact(to).is_some() {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 format!("duplicate session: {to}"),
@@ -6200,62 +6374,268 @@ impl ServerState {
     /// tmux target form the control plane uses:
     /// - `%N` — a pane id (searched across all sessions/windows);
     /// - `@N` — a window id (`[.pane]` optional);
-    /// - `$N:...` / `name:...` — a session (by id or name) with an optional
-    ///   `:window` (index or `@id`) and `.pane` (index or `%id`) suffix.
+    /// - `$N:...` / `name:...` — a session (by id, name, unique name prefix or
+    ///   unique `fnmatch` pattern) with an optional `:window` (index, `@id`,
+    ///   special token, name, prefix or pattern) and `.pane` (index or `%id`)
+    ///   suffix.
     ///
     /// A missing window part means the session's active window; a missing pane
     /// part means that window's active pane. Returns `None` if any part can't be
     /// resolved.
     pub fn resolve(&self, target: &str) -> Option<Target> {
+        self.find_target(target, TargetKind::Pane).ok()
+    }
+
+    /// [`Self::resolve`] for tmux's *can-fail* target lookups (`CMD_FIND_CANFAIL`,
+    /// e.g. `display-message`). Those commands do not fail on an unresolvable
+    /// target: they run against however far the lookup got — the named session's
+    /// current window, say — or against nothing at all.
+    pub fn resolve_or_residual(&self, target: &str) -> Option<Target> {
+        match self.find_target(target, TargetKind::Pane) {
+            Ok(target) => Some(target),
+            Err(miss) => miss.residual,
+        }
+    }
+
+    /// tmux's diagnostic for a pane target that doesn't resolve. tmux names only
+    /// the part that went missing, so `can't find pane: <t>` is wrong for a
+    /// target whose *session* or *window* part is the unresolvable one.
+    pub fn pane_target_error(&self, target: &str) -> io::Error {
+        match self.find_target(target, TargetKind::Pane) {
+            Ok(_) => pane_not_found(target),
+            Err(miss) => miss.error,
+        }
+    }
+
+    /// Resolve a target of either kind, following tmux's `cmd_find_target`: split
+    /// the target into its session, window and pane parts, then resolve each part
+    /// against the state the previous one selected, falling back to the current
+    /// session/window for the parts the target leaves out.
+    fn find_target(&self, target: &str, kind: TargetKind) -> Result<Target, TargetMiss> {
+        // `~`/`{marked}` — the server's marked pane, whichever window it is in.
+        if target == "~" || target == "{marked}" {
+            return self
+                .marked_pane()
+                .and_then(|id| self.pane_position(id))
+                .ok_or_else(|| {
+                    TargetMiss::new(
+                        io::Error::new(io::ErrorKind::NotFound, "no marked target"),
+                        None,
+                    )
+                });
+        }
         // `=` — whatever the mouse event that dispatched this command hit
         // (tmux's `cmd_find_from_mouse`). A status click that only names a
         // window resolves to that window rather than to a pane.
         if target == "=" {
-            let mouse = self.command_mouse()?.target.as_ref()?;
-            if let Some(pane) = mouse.pane_id {
-                return self.resolve(&format!("%{pane}"));
-            }
-            if let Some(window) = mouse.window_id {
-                return self.resolve(&format!("@{window}"));
-            }
-            return self.resolve(&format!("${}", mouse.session_id));
-        }
-        // `%N` — pane id, resolved directly to its window and session.
-        if let Some(id) = target.strip_prefix('%') {
-            let id: u32 = id.parse().ok()?;
-            for (si, sess) in self.sessions.iter().enumerate() {
-                for (wi, link) in sess.windows.iter().enumerate() {
-                    let win = self.window_for_link(link);
-                    if let Some(pi) = win.panes.iter().position(|p| p.id == id) {
-                        return Some(Target {
-                            session: si,
-                            window: wi,
-                            pane: pi,
-                        });
-                    }
-                }
-            }
-            return None;
+            let miss = || TargetMiss::new(pane_not_found(target), None);
+            let mouse = self.command_mouse().ok_or_else(miss)?;
+            let mouse = mouse.target.as_ref().ok_or_else(miss)?;
+            let target = if let Some(pane) = mouse.pane_id {
+                format!("%{pane}")
+            } else if let Some(window) = mouse.window_id {
+                format!("@{window}")
+            } else {
+                format!("${}", mouse.session_id)
+            };
+            return self.find_target(&target, kind);
         }
 
-        let (win_target, pane_part) = split_pane_target(target);
-        // Pane/session target: a colon-less bare number is a session name.
-        let (session, window) = self.resolve_window_positions(win_target, false).ok()?;
-        let pane = match pane_part {
-            Some(p) => self.pane_pos(session, window, p)?,
-            None => {
-                let window = self.window(session, window);
-                self.command_active_panes
-                    .as_ref()
-                    .and_then(|panes| panes.get(&window.id))
-                    .and_then(|pane_id| window.panes.iter().position(|pane| pane.id == *pane_id))
-                    .unwrap_or(window.active)
-            }
+        let parts = TargetParts::parse(target, kind);
+        let Some(session) = parts.session else {
+            return match (parts.window, parts.pane) {
+                (Some(window), pane) => {
+                    let (session, window) =
+                        self.window_anywhere(window, parts.exact_window, parts.window_only)?;
+                    self.with_pane(session, window, pane)
+                }
+                (None, Some(pane)) => self.pane_anywhere(pane, parts.pane_only),
+                (None, None) => {
+                    let session = self
+                        .current_session_pos()
+                        .map_err(|error| TargetMiss::new(error, None))?;
+                    Ok(self.session_current(session))
+                }
+            };
         };
-        Some(Target {
+        let Some(position) = self.session_lookup(session, parts.exact_session) else {
+            return Err(TargetMiss::new(session_not_found(session), None));
+        };
+        let window = match parts.window {
+            Some(spec) => match self.window_in_session(position, spec, parts.exact_window) {
+                WindowMatch::Found(window) => window,
+                found => {
+                    let residual = found
+                        .ambiguous()
+                        .map_or_else(|| self.session_current(position), |first| {
+                            self.window_current(position, first)
+                        });
+                    return Err(TargetMiss::new(window_not_found(spec), Some(residual)));
+                }
+            },
+            None => self.sessions[position].active,
+        };
+        self.with_pane(position, window, parts.pane)
+    }
+
+    /// Attach the pane part of a target to an already-resolved window. Without
+    /// one the window's active pane is the target, as in tmux.
+    fn with_pane(
+        &self,
+        session: usize,
+        window: usize,
+        pane: Option<&str>,
+    ) -> Result<Target, TargetMiss> {
+        let Some(spec) = pane else {
+            return Ok(self.window_current(session, window));
+        };
+        match self.pane_pos(session, window, spec) {
+            Some(pane) => Ok(Target {
+                session,
+                window,
+                pane,
+            }),
+            None => Err(TargetMiss::new(
+                pane_not_found(spec),
+                Some(self.window_current(session, window)),
+            )),
+        }
+    }
+
+    /// Resolve a window part that came without a session part: a global `@id`,
+    /// else a window of the current session and — unless the target spelled the
+    /// part out as a window with `:` or `.` (`only`) — finally a session name,
+    /// whose current window it is then.
+    fn window_anywhere(
+        &self,
+        spec: &str,
+        exact: bool,
+        only: bool,
+    ) -> Result<(usize, usize), TargetMiss> {
+        if spec.starts_with('@') {
+            return self
+                .window_by_id(spec)
+                .ok_or_else(|| TargetMiss::new(window_not_found(spec), None));
+        }
+        let session = self
+            .current_session_pos()
+            .map_err(|error| TargetMiss::new(error, None))?;
+        let found = self.window_in_session(session, spec, exact);
+        if let WindowMatch::Found(window) = found {
+            return Ok((session, window));
+        }
+        if !only {
+            // tmux's session fallback overwrites the state it reached with the
+            // (missing) session, so a target that gets this far and still fails
+            // leaves nothing behind for a can-fail lookup to format against.
+            return match self.session_lookup(spec, false) {
+                Some(position) => Ok((position, self.sessions[position].active)),
+                None => Err(TargetMiss::new(window_not_found(spec), None)),
+            };
+        }
+        let residual = found.ambiguous().map_or_else(
+            || self.session_current(session),
+            |first| self.window_current(session, first),
+        );
+        Err(TargetMiss::new(window_not_found(spec), Some(residual)))
+    }
+
+    /// Resolve a pane part that came without a session or window part: a global
+    /// `%id`, else a pane of the current window and — unless the target spelled
+    /// the part out as a pane with `.` (`only`) — a window or session, whose
+    /// active pane it is then.
+    fn pane_anywhere(&self, spec: &str, only: bool) -> Result<Target, TargetMiss> {
+        if spec.starts_with('%') {
+            return self
+                .pane_by_id(spec)
+                .ok_or_else(|| TargetMiss::new(pane_not_found(spec), None));
+        }
+        let session = self
+            .current_session_pos()
+            .map_err(|error| TargetMiss::new(error, None))?;
+        let window = self.sessions[session].active;
+        if let Some(pane) = self.pane_pos(session, window, spec) {
+            return Ok(Target {
+                session,
+                window,
+                pane,
+            });
+        }
+        if !only {
+            if let Ok((session, window)) = self.window_anywhere(spec, false, false) {
+                return Ok(Target {
+                    session,
+                    window,
+                    pane: self.active_pane_pos(session, window),
+                });
+            }
+            // Still tmux's *pane* diagnostic: the window and session attempts
+            // were fallbacks for a target that named a pane.
+            return Err(TargetMiss::new(pane_not_found(spec), None));
+        }
+        Err(TargetMiss::new(
+            pane_not_found(spec),
+            Some(self.session_current(session)),
+        ))
+    }
+
+    /// A session's current window and that window's active pane — what a target
+    /// naming only the session resolves to, and what tmux's can-fail lookups
+    /// fall back to once they have gotten as far as the session.
+    fn session_current(&self, session: usize) -> Target {
+        self.window_current(session, self.sessions[session].active)
+    }
+
+    /// A window and its active pane — what a target naming only the window
+    /// resolves to.
+    fn window_current(&self, session: usize, window: usize) -> Target {
+        Target {
             session,
             window,
-            pane,
+            pane: self.active_pane_pos(session, window),
+        }
+    }
+
+    /// The active pane of a window, honoring the per-client active pane the
+    /// running command was dispatched with.
+    fn active_pane_pos(&self, session: usize, window: usize) -> usize {
+        let window = self.window(session, window);
+        self.command_active_panes
+            .as_ref()
+            .and_then(|panes| panes.get(&window.id))
+            .and_then(|pane_id| window.panes.iter().position(|pane| pane.id == *pane_id))
+            .unwrap_or(window.active)
+    }
+
+    /// Locate a `@id` window anywhere in the tree.
+    fn window_by_id(&self, spec: &str) -> Option<(usize, usize)> {
+        let id: u32 = spec.strip_prefix('@')?.parse().ok()?;
+        self.sessions.iter().enumerate().find_map(|(si, sess)| {
+            let wi = sess.windows.iter().position(|link| link.id == id)?;
+            Some((si, wi))
+        })
+    }
+
+    /// Locate a `%id` pane anywhere in the tree.
+    fn pane_by_id(&self, spec: &str) -> Option<Target> {
+        self.pane_position(spec.strip_prefix('%')?.parse().ok()?)
+    }
+
+    /// Locate a pane by id anywhere in the tree.
+    fn pane_position(&self, id: u32) -> Option<Target> {
+        self.sessions.iter().enumerate().find_map(|(si, sess)| {
+            sess.windows.iter().enumerate().find_map(|(wi, link)| {
+                let pi = self
+                    .window_for_link(link)
+                    .panes
+                    .iter()
+                    .position(|pane| pane.id == id)?;
+                Some(Target {
+                    session: si,
+                    window: wi,
+                    pane: pi,
+                })
+            })
         })
     }
 
@@ -6266,18 +6646,45 @@ impl ServerState {
         self.session_index(spec).map(|i| &self.sessions[i])
     }
 
-    /// Position of a session named by `spec`: a session name, or a `$id`.
+    /// The session named exactly `name`, for the checks that are about the name
+    /// itself rather than about resolving a target — tmux rejects a duplicate
+    /// session name, but only an identical one.
+    pub fn find_exact(&self, name: &str) -> Option<&Session> {
+        self.sessions.iter().find(|session| session.name == name)
+    }
+
+    /// Position of a session named by `spec`: a session name, a `$id`, a unique
+    /// name prefix, or a unique `fnmatch` pattern.
     fn session_index(&self, spec: &str) -> Option<usize> {
         // A leading `=` requests an exact target-name match in tmux target
         // syntax (`-t=test:`). Session names in the model are stored without
         // that selector marker.
-        let spec = spec.strip_prefix('=').unwrap_or(spec);
+        match spec.strip_prefix('=') {
+            Some(spec) => self.session_lookup(spec, true),
+            None => self.session_lookup(spec, false),
+        }
+    }
+
+    /// Position of a session named by `spec`, in tmux's `cmd_find_get_session`
+    /// order: a `$id`, an exact name, then — unless `exact` (the `=` selector) —
+    /// a unique name prefix and a unique `fnmatch` pattern. A prefix or pattern
+    /// matching more than one session is a miss, as in tmux.
+    fn session_lookup(&self, spec: &str, exact: bool) -> Option<usize> {
         if let Some(id) = spec.strip_prefix('$') {
             let id: u32 = id.parse().ok()?;
-            self.sessions.iter().position(|s| s.id == id)
-        } else {
-            self.sessions.iter().position(|s| s.name == spec)
+            return self.sessions.iter().position(|s| s.id == id);
         }
+        let named = |name: &str| self.sessions.iter().position(|s| s.name == name);
+        if let Some(position) = named(spec) {
+            return Some(position);
+        }
+        if exact {
+            return None;
+        }
+        let names = || self.sessions.iter().enumerate().map(|(i, s)| (i, &s.name));
+        unique(names().filter(|(_, name)| name.starts_with(spec))).or_else(|| {
+            unique(names().filter(|(_, name)| glob_match(spec.as_bytes(), name.as_bytes())))
+        })
     }
 
     /// Position of a session (by name or `$id`), for the navigation commands.
@@ -6294,20 +6701,6 @@ impl ServerState {
         })
     }
 
-    /// Resolve a session spec (name or `$id`) to its position, treating an empty
-    /// spec as the current session. Mirrors tmux's `:win` == current-session rule.
-    fn session_or_current(&self, spec: &str) -> io::Result<usize> {
-        if spec.is_empty() {
-            return self.current_session_pos();
-        }
-        self.session_index(spec).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("can't find session: {spec}"),
-            )
-        })
-    }
-
     /// Resolve a pane index within a window from a pane spec: a numeric index
     /// (matched against `Vec` position), a `%id`, or one of tmux's special pane
     /// tokens (`{last}`, `{next}`, `{previous}`, `{top}`, `{bottom}`, `+`, `-`).
@@ -6321,72 +6714,52 @@ impl ServerState {
         pane_pos_in(win, spec, base)
     }
 
-    /// Resolve a `session[:window]` window-target to `(session_pos, window_pos)`.
-    /// The window part may be a numeric index (matched against `Window::index`),
-    /// a `@id`, or empty (the active window); the session part a name or `$id`.
-    /// Also accepts a bare `@id` window target (no session part).
-    ///
-    /// An empty session part (`:win`) always means the current session. The
-    /// colon-less bare-number case is *target-type dependent*, matching tmux's
-    /// `cmd_find_target`: for a window target (`bare_number_is_window`), `1` is
-    /// window index 1 in the current session; for a pane/session target it is a
-    /// session name (so `display-message -t 0` resolves session `0`).
-    fn resolve_window_positions(
-        &self,
-        target: &str,
-        bare_number_is_window: bool,
-    ) -> io::Result<(usize, usize)> {
-        // Bare window id: `@N`.
-        if let Some(id) = target.strip_prefix('@') {
-            let id: u32 = id.parse().map_err(|_| window_not_found(target))?;
-            for (si, sess) in self.sessions.iter().enumerate() {
-                if let Some(wi) = sess.windows.iter().position(|w| w.id == id) {
-                    return Ok((si, wi));
-                }
-            }
-            return Err(window_not_found(target));
-        }
-
-        // Resolve the session part, following tmux's target grammar (the same
-        // rules `parse_window_target` applies to `new-window`/`split-window`):
-        // an empty session part (`:win`) means the current session, and — for a
-        // window target only — a colon-less bare number (`1`) is a *window* index
-        // in the current session, not a session name.
-        let (session, win_part) = match target.split_once(':') {
-            Some((s, w)) => (self.session_or_current(s)?, Some(w)),
-            None if bare_number_is_window && target.parse::<u32>().is_ok() => {
-                (self.current_session_pos()?, Some(target))
-            }
-            None => (self.session_or_current(target)?, None),
-        };
+    /// Resolve the window part of a target within one session, in tmux's
+    /// `cmd_find_get_window_with_session` order: a `@id` linked into the session,
+    /// a `+`/`-` offset, a special token, an index, an exact name, a name prefix
+    /// and finally an `fnmatch` pattern. A name, prefix or pattern matching more
+    /// than one window does not resolve, as in tmux. `exact` (the `=` selector)
+    /// stops the search after the exact name.
+    fn window_in_session(&self, session: usize, spec: &str, exact: bool) -> WindowMatch {
         let sess = &self.sessions[session];
-        let window = match win_part.filter(|w| !w.is_empty()) {
-            Some(w) => {
-                let w = w.strip_prefix('=').unwrap_or(w);
-                if let Some(id) = w.strip_prefix('@') {
-                    let id: u32 = id.parse().map_err(|_| window_not_found(w))?;
-                    sess.windows
-                        .iter()
-                        .position(|win| win.id == id)
-                        .ok_or_else(|| window_not_found(w))?
-                } else if let Some(pos) = window_special(sess, w) {
-                    pos
-                } else {
-                    let idx: u32 = w.parse().map_err(|_| window_not_found(w))?;
-                    sess.windows
-                        .iter()
-                        .position(|win| win.index == idx)
-                        .ok_or_else(|| {
-                            io::Error::new(
-                                io::ErrorKind::NotFound,
-                                format!("can't find window: {idx}"),
-                            )
-                        })?
+        if let Some(id) = spec.strip_prefix('@') {
+            let position = id
+                .parse::<u32>()
+                .ok()
+                .and_then(|id| sess.windows.iter().position(|link| link.id == id));
+            return WindowMatch::of(position);
+        }
+        if !exact {
+            if let Some(position) = window_offset(sess, spec).or_else(|| window_special(sess, spec))
+            {
+                return WindowMatch::Found(position);
+            }
+        }
+        // An offset that got this far named no window; it is never an index.
+        if !spec.starts_with(['+', '-']) {
+            if let Ok(index) = spec.parse::<u32>() {
+                if let Some(position) = sess.windows.iter().position(|link| link.index == index) {
+                    return WindowMatch::Found(position);
                 }
             }
-            None => sess.active,
+        }
+        let names = || {
+            sess.windows
+                .iter()
+                .enumerate()
+                .map(|(position, link)| (position, &self.window_for_link(link).name))
         };
-        Ok((session, window))
+        let by_name = WindowMatch::single(names().filter(|(_, name)| name.as_str() == spec));
+        if !matches!(by_name, WindowMatch::None) || exact {
+            return by_name;
+        }
+        let by_prefix = WindowMatch::single(names().filter(|(_, name)| name.starts_with(spec)));
+        if !matches!(by_prefix, WindowMatch::None) {
+            return by_prefix;
+        }
+        WindowMatch::single(
+            names().filter(|(_, name)| glob_match(spec.as_bytes(), name.as_bytes())),
+        )
     }
 
     /// Resolve `session[:window]` for the window-lifecycle commands, returning
@@ -6394,39 +6767,19 @@ impl ServerState {
     /// missing, `can't find window: <idx>` if the window index doesn't exist.
     fn resolve_window(&self, target: &str) -> io::Result<Target> {
         // Pane/session target (split-window, select-pane, …): a colon-less bare
-        // number names a session, not a window index.
-        let (session, window) = self.resolve_window_positions(target, false)?;
-        let pane = self.window(session, window).active;
-        Ok(Target {
-            session,
-            window,
-            pane,
-        })
+        // number is a pane index in the current window before it is anything else.
+        self.find_target(target, TargetKind::Pane)
+            .map_err(|miss| miss.error)
     }
 
     /// Like [`Self::resolve_window`], but for commands whose `-t` is a genuine
-    /// *window* target (`select-window`, `kill-window`, `kill-window -a`): there
-    /// a colon-less bare number is a window index in the current session, per
-    /// tmux's `cmd_find_target`.
-    fn resolve_window_arg(&self, target: &str) -> io::Result<Target> {
-        let (session, window) = self
-            .resolve_window_positions(target, true)
-            .map_err(|error| {
-                if !target.contains(':')
-                    && !target.starts_with('$')
-                    && error.to_string().starts_with("can't find session:")
-                {
-                    window_not_found(target)
-                } else {
-                    error
-                }
-            })?;
-        let pane = self.window(session, window).active;
-        Ok(Target {
-            session,
-            window,
-            pane,
-        })
+    /// *window* target (`select-window`, `kill-window`, `list-panes`): there a
+    /// colon-less bare word is a window in the current session before it is a
+    /// session name, per tmux's `cmd_find_target`, and a miss reports tmux's
+    /// window diagnostic rather than its pane one.
+    pub fn resolve_window_target(&self, target: &str) -> io::Result<Target> {
+        self.find_target(target, TargetKind::Window)
+            .map_err(|miss| miss.error)
     }
 
     /// Destroy a physical window and every winlink to it. tmux's `kill-window`
@@ -6486,7 +6839,7 @@ impl ServerState {
 
     /// `kill-window target`: destroy the target window everywhere it is linked.
     pub fn kill_window(&mut self, target: &str) -> io::Result<()> {
-        let t = self.resolve_window_arg(target)?;
+        let t = self.resolve_window_target(target)?;
         let window_id = self.sessions[t.session].windows[t.window].id;
         self.destroy_window_id(window_id);
         Ok(())
@@ -6496,7 +6849,7 @@ impl ServerState {
     /// *except* the target itself, matching tmux. The survivor becomes the
     /// session's only (and active) window.
     pub fn kill_other_windows(&mut self, target: &str) -> io::Result<()> {
-        let t = self.resolve_window_arg(target)?;
+        let t = self.resolve_window_target(target)?;
         let keep_id = self.sessions[t.session].windows[t.window].id;
         let links = &self.sessions[t.session].windows;
         let mut destroy = links
@@ -6518,7 +6871,7 @@ impl ServerState {
     /// sessions.
     pub fn unlink_window(&mut self, target: &str, kill: bool) -> io::Result<()> {
         let had_sessions = !self.sessions.is_empty();
-        let t = self.resolve_window_arg(target)?;
+        let t = self.resolve_window_target(target)?;
         let link_set_id = self.sessions[t.session].link_set_id;
         let window_id = self.sessions[t.session].windows[t.window].id;
         let group_members = self
@@ -6564,7 +6917,7 @@ impl ServerState {
     /// `select-window target`: make the target window active (recording the
     /// previous active window as "last").
     pub fn select_window(&mut self, target: &str) -> io::Result<()> {
-        let t = self.resolve_window_arg(target)?;
+        let t = self.resolve_window_target(target)?;
         let session_id = self.sessions[t.session].id;
         if self.sessions[t.session].active != t.window {
             self.select_session_window(t.session, t.window);
@@ -7457,16 +7810,10 @@ impl ServerState {
     /// `session[:window].pane` (default: the active pane). Reports tmux's `can't
     /// find pane: <part>` on a miss.
     pub fn mark_pane(&mut self, target: &str) -> io::Result<()> {
-        let (win_target, pane_part) = split_pane_target(target);
-        let t = self.resolve_window(win_target)?;
-        let idx = match pane_part {
-            None => self.window(t.session, t.window).active,
-            Some(p) => self
-                .pane_pos(t.session, t.window, p)
-                .ok_or_else(|| pane_not_found(p))?,
-        };
-        let win = self.window(t.session, t.window);
-        let id = win.panes[idx].id;
+        let t = self
+            .find_target(target, TargetKind::Pane)
+            .map_err(|miss| miss.error)?;
+        let id = self.window(t.session, t.window).panes[t.pane].id;
         self.marked_pane_id = if self.marked_pane_id == Some(id) {
             None
         } else {
@@ -7580,8 +7927,8 @@ impl ServerState {
     /// targets are `session[:window]`; a missing window part means the session's
     /// active window.
     pub fn swap_window(&mut self, src: &str, dst: &str, select: bool) -> io::Result<()> {
-        let a = self.resolve_window(src)?;
-        let b = self.resolve_window(dst)?;
+        let a = self.resolve_window_target(src)?;
+        let b = self.resolve_window_target(dst)?;
         if a.session != b.session
             && self.sessions[a.session].link_set_id == self.sessions[b.session].link_set_id
         {
@@ -7680,7 +8027,7 @@ impl ServerState {
         after: bool,
         select: bool,
     ) -> io::Result<()> {
-        let s = self.resolve_window(src)?;
+        let s = self.resolve_window_target(src)?;
         let src_session = s.session;
         let src_session_id = self.sessions[src_session].id;
         let moved_link_id = self.sessions[src_session].windows[s.window].link_id;
@@ -7810,7 +8157,7 @@ impl ServerState {
         replace: bool,
         select: bool,
     ) -> io::Result<()> {
-        let s = self.resolve_window(src)?;
+        let s = self.resolve_window_target(src)?;
         let src_session_id = self.sessions[s.session].id;
         let (dst_session, new_index) = self.window_destination(dst, s.session)?;
         let dst_session_id = self.sessions[dst_session].id;
@@ -7984,7 +8331,7 @@ impl ServerState {
     /// `last-pane [-t window]`: make the previously-active pane active. Errors
     /// with `no last pane` when the window has no recorded previous pane.
     pub fn last_pane(&mut self, target: &str) -> io::Result<()> {
-        let t = self.resolve_window(target)?;
+        let t = self.resolve_window_target(target)?;
         let session_id = self.sessions[t.session].id;
         let win = self.window_mut(t.session, t.window);
         match win.last_pane.filter(|&p| p < win.panes.len()) {
@@ -8201,7 +8548,7 @@ impl ServerState {
     }
 
     fn rotate_window_direction(&mut self, target: &str, down: bool) -> io::Result<()> {
-        let t = self.resolve_window(target)?;
+        let t = self.resolve_window_target(target)?;
         let session_id = self.sessions[t.session].id;
         let win = self.window_mut(t.session, t.window);
         let n = win.panes.len();
@@ -8236,7 +8583,7 @@ impl ServerState {
         kill: bool,
         select: bool,
     ) -> io::Result<()> {
-        let s = self.resolve_window(src)?;
+        let s = self.resolve_window_target(src)?;
         let source_window_id = self.sessions[s.session].windows[s.window].id;
         let (dst_session, index) = self.window_destination(dst, s.session)?;
         if s.session != dst_session
@@ -8312,7 +8659,7 @@ impl ServerState {
         after: bool,
         select: bool,
     ) -> io::Result<()> {
-        let s = self.resolve_window(src)?;
+        let s = self.resolve_window_target(src)?;
         let source_window_id = self.sessions[s.session].windows[s.window].id;
         let (dst_sess_name, dst_idx) = parse_index_target(dst);
         let dst_session = match dst_sess_name {
@@ -9147,7 +9494,7 @@ impl ServerState {
     }
 
     pub(crate) fn cycle_layout(&mut self, target: &str, forward: bool) -> io::Result<()> {
-        let resolved = self.resolve_window(target)?;
+        let resolved = self.resolve_window_target(target)?;
         let current = self.window(resolved.session, resolved.window).last_layout;
         let next = match (current, forward) {
             (None, true) => 0,
@@ -9211,7 +9558,7 @@ impl ServerState {
         cols: Option<u16>,
         rows: Option<u16>,
     ) -> io::Result<()> {
-        let t = self.resolve_window(target)?;
+        let t = self.resolve_window_target(target)?;
         let session_id = self.sessions[t.session].id;
         let sess_cols = self.sessions[t.session].cols;
         let sess_rows = self.sessions[t.session].rows;
@@ -9236,7 +9583,7 @@ impl ServerState {
         cols: u16,
         rows: u16,
     ) -> io::Result<()> {
-        let resolved = self.resolve_window_arg(target)?;
+        let resolved = self.resolve_window_target(target)?;
         let window_id = self.sessions[resolved.session].windows[resolved.window].id;
         let affected_sessions: Vec<u32> = self
             .sessions
@@ -11653,7 +12000,7 @@ fn parse_index_target(target: &str) -> (Option<&str>, Option<u32>) {
 /// position, relative to the session's active/last window. Returns `None` if the
 /// token isn't a special form (the caller then tries a numeric index).
 ///
-/// Handled: `{start}`/`^` (first), `{end}`/`$` (last), `{last}` (previous),
+/// Handled: `{start}`/`^` (first), `{end}`/`$` (last), `{last}`/`!` (previous),
 /// `{next}`/`+` (next by order, wrapping), `{previous}`/`-` (previous by order).
 fn window_special(sess: &Session, spec: &str) -> Option<usize> {
     let n = sess.windows.len();
@@ -11663,15 +12010,41 @@ fn window_special(sess: &Session, spec: &str) -> Option<usize> {
     match spec {
         "{start}" | "^" => Some(0),
         "{end}" | "$" => Some(n - 1),
-        "{last}" => sess.last_active.filter(|&p| p < n),
+        "{last}" | "!" => sess.last_active.filter(|&p| p < n),
         "{next}" | "+" => Some((sess.active + 1) % n),
         "{previous}" | "-" => Some((sess.active + n - 1) % n),
         _ => None,
     }
 }
 
+/// Resolve a `+N`/`-N` window offset within a session: `N` windows after or
+/// before the session's active one, wrapping like tmux's
+/// `winlink_next_by_number`. A bare `+`/`-` moves by one. `None` if the spec
+/// isn't an offset.
+fn window_offset(sess: &Session, spec: &str) -> Option<usize> {
+    let n = sess.windows.len();
+    let (sign, count) = match spec.split_at_checked(1)? {
+        ("+", rest) => (1isize, rest),
+        ("-", rest) => (-1, rest),
+        _ => return None,
+    };
+    let count = if count.is_empty() {
+        1
+    } else {
+        count.parse::<usize>().ok()?
+    };
+    if n == 0 {
+        return None;
+    }
+    let step = count % n;
+    Some(match sign {
+        1 => (sess.active + step) % n,
+        _ => (sess.active + n - step) % n,
+    })
+}
+
 /// Resolve a pane spec within `win` to a `Vec` position: a numeric index, a
-/// `%id`, or a special token (`{top}`, `{bottom}`, `{last}`, `{next}`/`+`,
+/// `%id`, or a special token (`{top}`, `{bottom}`, `{last}`/`!`, `{next}`/`+`,
 /// `{previous}`/`-`). Returns `None` on a miss.
 fn pane_pos_in(win: &Window, spec: &str, base: usize) -> Option<usize> {
     let n = win.panes.len();
@@ -11685,7 +12058,7 @@ fn pane_pos_in(win: &Window, spec: &str, base: usize) -> Option<usize> {
     match spec {
         "{top}" => return Some(0),
         "{bottom}" => return Some(n - 1),
-        "{last}" => return win.last_pane.filter(|&p| p < n),
+        "{last}" | "!" => return win.last_pane.filter(|&p| p < n),
         "{next}" | "+" => return Some((win.active + 1) % n),
         "{previous}" | "-" => return Some((win.active + n - 1) % n),
         _ => {}
@@ -13224,6 +13597,14 @@ fn window_not_found(part: &str) -> io::Error {
     io::Error::new(
         io::ErrorKind::NotFound,
         format!("can't find window: {part}"),
+    )
+}
+
+/// tmux's `can't find session: <part>` error.
+fn session_not_found(part: &str) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::NotFound,
+        format!("can't find session: {part}"),
     )
 }
 
