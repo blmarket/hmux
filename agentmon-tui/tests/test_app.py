@@ -393,6 +393,93 @@ def test_dashboard_groups_runs_from_multiple_repositories() -> None:
     asyncio.run(exercise())
 
 
+def test_dashboard_sorts_live_repositories_first_and_agent_windows_first() -> None:
+    async def exercise() -> None:
+        idle_repo = Repository(
+            root=Path("/work/quiet"),
+            common_dir=Path("/work/quiet/.git"),
+            branch="main",
+        )
+        busy_repo = Repository(
+            root=Path("/work/busy"),
+            common_dir=Path("/work/busy/.git"),
+            branch="main",
+        )
+        service = DemoService(None, socket="/tmp/demo")
+        service.runs = lambda: [  # type: ignore[method-assign]
+            # The quiet repository occupies the lower window ordinals, so only
+            # the live agent in the busy one can float it to the top.
+            AgentRun(
+                "window:dev:1",
+                "dev:1",
+                "quiet",
+                "none",
+                "window",
+                Path("/work/quiet"),
+                repository=idle_repo,
+                window_name="quiet",
+            ),
+            AgentRun(
+                "window:dev:2",
+                "dev:2",
+                "shell",
+                "none",
+                "window",
+                Path("/work/busy"),
+                repository=busy_repo,
+                window_name="shell",
+            ),
+            AgentRun(
+                "window:dev:4",
+                "dev:4",
+                "feature",
+                "idle",
+                "codex",
+                Path("/work/busy-feature"),
+                repository=busy_repo,
+                window_name="feature",
+            ),
+            AgentRun(
+                "window:dev:3",
+                "dev:3",
+                "fix",
+                "working",
+                "claude",
+                Path("/work/busy-fix"),
+                repository=busy_repo,
+                window_name="fix",
+            ),
+        ]
+        service.recent_finished_all = lambda _active: [  # type: ignore[method-assign]
+            AgentRun(
+                "finished:/work/busy-done",
+                "0:",
+                "done",
+                "exited",
+                "finished",
+                Path("/work/busy-done"),
+                repository=busy_repo,
+            )
+        ]
+        app = AgentmonApp(service)
+
+        async with app.run_test(size=(120, 24)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#runs", DataTable)
+            labels = [str(table.get_row_at(row)[0]) for row in range(table.row_count)]
+            assert "▾ busy  /work/busy" in labels[0]
+            # Agent windows lead by window ordinal, then plain windows, then
+            # runs whose window is gone.
+            assert "🔄 CLDE fix" in labels[1]
+            assert "💤 CODX feature" in labels[2]
+            assert "🪟 ---- shell" in labels[3]
+            assert "🏁 ---- done" in labels[4]
+            assert "▾ quiet  /work/quiet" in labels[5]
+            assert "🪟 ---- quiet" in labels[6]
+
+    asyncio.run(exercise())
+
+
 def test_dashboard_shows_startup_repository_when_there_are_no_runs() -> None:
     async def exercise() -> None:
         root = Path("/demo/project")
@@ -448,11 +535,13 @@ def test_new_run_uses_repository_selected_on_dashboard() -> None:
             dashboard = app.screen
             assert isinstance(dashboard, DashboardScreen)
             table = dashboard.query_one("#runs", DataTable)
-            assert "▾ hmux  /srv/hmux" in str(table.get_row_at(1)[0])
+            # The startup repository owns no window, so the repository the run
+            # sits in leads the dashboard.
+            assert "▾ hmux  /srv/hmux" in str(table.get_row_at(0)[0])
 
-            table.move_cursor(row=1)
+            table.move_cursor(row=0)
             dashboard._apply_runs(runs)
-            assert table.cursor_row == 1
+            assert table.cursor_row == 0
 
             dashboard.action_new_run()
             await pilot.pause()
@@ -501,12 +590,14 @@ def test_dashboard_groups_windows_without_a_git_repository() -> None:
             await pilot.pause()
             table = app.screen.query_one("#runs", DataTable)
             assert table.row_count == 3
-            assert "▾ hmux  /srv/hmux" in str(table.get_row_at(0)[0])
-            assert "▾ non-Git windows" in str(table.get_row_at(1)[0])
-            assert "directories" in str(table.get_row_at(1)[1])
-            assert "└─ 🔄 CODX ses" in str(table.get_row_at(2)[0])
-            assert str(table.get_row_at(2)[1]) == "—"
-            assert table.cursor_row == 2
+            # The agent is running outside any repository, so its group leads
+            # and the startup repository — which holds no windows — trails.
+            assert "▾ non-Git windows" in str(table.get_row_at(0)[0])
+            assert "directories" in str(table.get_row_at(0)[1])
+            assert "└─ 🔄 CODX ses" in str(table.get_row_at(1)[0])
+            assert str(table.get_row_at(1)[1]) == "—"
+            assert "▾ hmux  /srv/hmux" in str(table.get_row_at(2)[0])
+            assert table.cursor_row == 1
 
     asyncio.run(exercise())
 
