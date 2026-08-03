@@ -895,7 +895,13 @@ impl AttachSession {
                         );
                         forward_mouse_to_pane(state, event);
                     } else if forward_unbound {
-                        forward_buf.extend_from_slice(&data[start..i]);
+                        // Likewise for a key the client and the pane's terminal
+                        // type report differently: the pane is told what its own
+                        // terminfo describes, not what the client typed.
+                        match pane_key_table_entry(key) {
+                            Some(bytes) => forward_buf.extend_from_slice(bytes),
+                            None => forward_buf.extend_from_slice(&data[start..i]),
+                        }
                     }
                     continue;
                 }
