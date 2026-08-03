@@ -122,17 +122,10 @@ pub(crate) struct FormatJobRegistry {
 
 impl FormatJobRegistry {
     pub(crate) fn new(renders: &Arc<ClientRenderRegistry>) -> Self {
-        Self::with_eviction_timeout(renders, Duration::from_secs(3600))
-    }
-
-    fn with_eviction_timeout(
-        renders: &Arc<ClientRenderRegistry>,
-        eviction_timeout: Duration,
-    ) -> Self {
         Self {
             jobs: Mutex::new(HashMap::new()),
             renders: Arc::downgrade(renders),
-            eviction_timeout,
+            eviction_timeout: Duration::from_secs(3600),
         }
     }
 
@@ -166,6 +159,20 @@ impl FormatJobRegistry {
             environment,
             status,
         )
+    }
+
+    /// Drop finished entries nothing has re-run within `eviction_timeout`, so a
+    /// tree that outlives the formats that filled it does not grow without
+    /// bound. A running job is never evicted: its thread still owns the entry's
+    /// generation and would update a key that had been removed.
+    fn evict_expired(
+        jobs: &mut HashMap<FormatJobKey, FormatJobEntry>,
+        eviction_timeout: Duration,
+        now: Instant,
+    ) {
+        jobs.retain(|_, job| {
+            job.running || now.saturating_duration_since(job.last_started) < eviction_timeout
+        });
     }
 
     /// The jobs still running, for `show-messages -J`.
@@ -205,10 +212,7 @@ impl FormatJobRegistry {
             let Ok(mut jobs) = self.jobs.lock() else {
                 return String::new();
             };
-            jobs.retain(|_, job| {
-                job.running
-                    || now.saturating_duration_since(job.last_started) < self.eviction_timeout
-            });
+            Self::evict_expired(&mut jobs, self.eviction_timeout, now);
             match jobs.get_mut(&key) {
                 Some(job) => {
                     let command_changed = job.expanded_command != expanded_command;
@@ -2378,51 +2382,67 @@ mod tests {
         assert!(Arc::ptr_eq(&first, &second));
     }
 
-    #[test]
-    fn format_job_eviction_timeout_is_configurable_for_tests() {
-        let state = ServerState::with_test_session().expect("state");
-        let jobs = Arc::new(FormatJobRegistry::with_eviction_timeout(
-            &state.client_render_registry(),
-            Duration::from_millis(200),
-        ));
-        let key = FormatJobKey {
-            scope: "global".to_string(),
-            command: "printf cached".to_string(),
-        };
-        assert_eq!(
-            jobs.output(
-                key.clone(),
-                "printf cached".to_string(),
-                0,
-                None,
-                Vec::new(),
-                false,
-            ),
-            ""
-        );
-        let deadline = Instant::now() + Duration::from_secs(2);
-        loop {
-            if jobs.output(
-                key.clone(),
-                "printf cached".to_string(),
-                0,
-                None,
-                Vec::new(),
-                false,
-            ) == "cached"
-            {
-                break;
-            }
-            assert!(Instant::now() < deadline, "format job did not complete");
-            std::thread::sleep(Duration::from_millis(2));
+    /// A cache entry with a synthetic age, so eviction can be observed without
+    /// running a job or waiting for a timeout to elapse.
+    fn finished_job_entry(last_started: Instant, output: &str) -> FormatJobEntry {
+        FormatJobEntry {
+            expanded_command: "printf cached".to_string(),
+            output: output.to_string(),
+            running: false,
+            generation: 1,
+            last_started,
+            last_started_second: 0,
+            last_notified: last_started,
+            process: None,
         }
+    }
 
-        std::thread::sleep(Duration::from_millis(225));
-        assert_eq!(
-            jobs.output(key, "printf cached".to_string(), 0, None, Vec::new(), false,),
-            "",
-            "expired cache entry should start fresh"
+    fn job_key(command: &str) -> FormatJobKey {
+        FormatJobKey {
+            scope: "global".to_string(),
+            command: command.to_string(),
+        }
+    }
+
+    #[test]
+    fn finished_format_jobs_are_evicted_once_their_timeout_has_passed() {
+        // `output` reads its cached entry through this same pass, so an evicted
+        // entry is what makes the next expansion start the job again.
+        let timeout = Duration::from_secs(3600);
+        let now = Instant::now();
+        let mut jobs = HashMap::new();
+        jobs.insert(
+            job_key("printf fresh"),
+            finished_job_entry(now - timeout + Duration::from_secs(1), "fresh"),
         );
+        jobs.insert(
+            job_key("printf stale"),
+            finished_job_entry(now - timeout, "stale"),
+        );
+
+        FormatJobRegistry::evict_expired(&mut jobs, timeout, now);
+
+        assert!(jobs.contains_key(&job_key("printf fresh")));
+        assert!(
+            !jobs.contains_key(&job_key("printf stale")),
+            "an entry untouched for the whole timeout must start fresh"
+        );
+    }
+
+    #[test]
+    fn a_running_format_job_survives_its_eviction_timeout() {
+        // The job's thread still holds this key's generation; evicting it would
+        // leave that thread updating an entry that no longer exists.
+        let timeout = Duration::from_millis(200);
+        let now = Instant::now();
+        let mut jobs = HashMap::new();
+        let mut entry = finished_job_entry(now - timeout - Duration::from_secs(1), "");
+        entry.running = true;
+        jobs.insert(job_key("printf slow"), entry);
+
+        FormatJobRegistry::evict_expired(&mut jobs, timeout, now);
+
+        assert!(jobs.contains_key(&job_key("printf slow")));
     }
 
     #[test]

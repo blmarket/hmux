@@ -681,22 +681,14 @@ mod tests {
         let a = unsafe { OwnedFd::from_raw_fd(fds[0]) };
         let b = unsafe { OwnedFd::from_raw_fd(fds[1]) };
 
-        // Give the reader a short receive timeout so a read with no data pending
-        // returns an error rather than blocking forever.
-        let tv = libc::timeval {
-            tv_sec: 0,
-            tv_usec: 50_000,
-        };
-        let rc = unsafe {
-            libc::setsockopt(
-                a.as_raw_fd(),
-                libc::SOL_SOCKET,
-                libc::SO_RCVTIMEO,
-                &tv as *const _ as *const libc::c_void,
-                mem::size_of::<libc::timeval>() as libc::socklen_t,
-            )
-        };
-        assert_eq!(rc, 0, "setsockopt failed");
+        // Make the read fail with no data pending. `SO_RCVTIMEO` is what the
+        // attach loop uses, but its expiry and `O_NONBLOCK` reach `fill` as the
+        // same `EAGAIN` from the same `recvmsg`, and only that error path is
+        // under test — so take the one that does not spend a timeout waiting.
+        let flags = unsafe { libc::fcntl(a.as_raw_fd(), libc::F_GETFL) };
+        assert!(flags >= 0, "fcntl F_GETFL failed");
+        let rc = unsafe { libc::fcntl(a.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) };
+        assert_eq!(rc, 0, "fcntl F_SETFL failed");
 
         let mut reader = ImsgReader::new(a);
 

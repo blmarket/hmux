@@ -505,8 +505,11 @@ mod tests {
 
         sender.write_all(b"x").expect("write after deregister");
         let mut ready = Vec::new();
+        // The byte is already in the socket buffer, so a registered fd would
+        // report readable on a non-blocking poll. Waiting would only slow the
+        // check down without making the absence of an event any stronger.
         let result = reactor
-            .poll(Some(Duration::from_millis(20)), &mut ready)
+            .poll(Some(Duration::ZERO), &mut ready)
             .expect("poll");
         assert_eq!(result.ready_count(), 0);
         assert!(ready.is_empty());

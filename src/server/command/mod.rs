@@ -9476,13 +9476,19 @@ mod tests {
         );
     }
 
+    /// Whether a command's invalidation reached this client's wakeup.
+    ///
+    /// A zero timeout is exact here, not a shortcut: `run` publishes the
+    /// invalidation and writes the wakeup on the calling thread, so the fd is
+    /// already readable by the time `run` returns. Waiting could only mask a
+    /// wakeup that arrived from somewhere else.
     fn fd_is_readable(fd: std::os::fd::RawFd) -> bool {
         let mut pollfd = libc::pollfd {
             fd,
             events: libc::POLLIN,
             revents: 0,
         };
-        assert!(unsafe { libc::poll(&mut pollfd, 1, 100) } >= 0);
+        assert!(unsafe { libc::poll(&mut pollfd, 1, 0) } >= 0);
         pollfd.revents & libc::POLLIN != 0
     }
 
