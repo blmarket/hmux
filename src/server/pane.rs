@@ -137,7 +137,27 @@ pub(crate) struct NativePaneObservation {
     output_timing: Option<Arc<OutputTiming>>,
     last_output_at: Mutex<Option<Instant>>,
     bell_count: AtomicU64,
+    /// OSC 52 sequences the pane emitted, waiting for the server to apply the
+    /// `set-clipboard`/`get-clipboard` policy to them.
+    clipboard_events: Mutex<VecDeque<PaneClipboardEvent>>,
     observation_signal: OnceLock<Arc<ObservationSignal>>,
+}
+
+/// One OSC 52 sequence seen in a pane's output.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum PaneClipboardEvent {
+    /// `OSC 52 ; <selection> ; <base64>` — an application setting the
+    /// clipboard, already decoded.
+    Set { data: Vec<u8> },
+    /// `OSC 52 ; <selection> ; ?` — an application asking for it.
+    Query {
+        /// The selection character echoed back in the reply; empty when the
+        /// request named none that tmux recognises.
+        selection: String,
+        /// Whether the request ended with ST rather than BEL, which the reply
+        /// mirrors.
+        string_terminator: bool,
+    },
 }
 
 struct OutputEvent {
@@ -568,8 +588,26 @@ impl NativePaneObservation {
             }),
             last_output_at: Mutex::new(None),
             bell_count: AtomicU64::new(0),
+            clipboard_events: Mutex::new(VecDeque::new()),
             observation_signal: OnceLock::new(),
         }
+    }
+
+    fn note_clipboard_event(&self, event: PaneClipboardEvent) {
+        if let Ok(mut events) = self.clipboard_events.lock() {
+            // A runaway application must not grow this without bound; tmux
+            // likewise answers only what it can keep up with.
+            if events.len() < 16 {
+                events.push_back(event);
+            }
+        }
+    }
+
+    pub(crate) fn take_clipboard_events(&self) -> Vec<PaneClipboardEvent> {
+        self.clipboard_events
+            .lock()
+            .map(|mut events| events.drain(..).collect())
+            .unwrap_or_default()
     }
 
     fn install_observation_signal(&self, signal: Arc<ObservationSignal>) {
@@ -1630,6 +1668,7 @@ pub(crate) struct PaneIo {
     cursor_shape_detector: CursorShapeDetector,
     mode_query_detector: ModeQueryDetector,
     background_detector: BackgroundColorDetector,
+    clipboard_detector: Osc52Detector,
     utf8_sanitizer: Utf8Sanitizer,
     title_stripper: ScreenTitleStripper,
     bell_detector: BellDetector,
@@ -1660,6 +1699,7 @@ impl PaneIo {
             cursor_shape_detector: CursorShapeDetector::default(),
             mode_query_detector: ModeQueryDetector::default(),
             background_detector: BackgroundColorDetector::default(),
+            clipboard_detector: Osc52Detector::default(),
             utf8_sanitizer: Utf8Sanitizer::default(),
             title_stripper: ScreenTitleStripper::default(),
             bell_detector: BellDetector::default(),
@@ -1790,6 +1830,9 @@ impl PaneIo {
                 if let Ok(mut background) = self.observation.background.lock() {
                     *background = color;
                 }
+            }
+            if let Some(event) = self.clipboard_detector.feed_byte(byte) {
+                self.observation.note_clipboard_event(event);
             }
         }
         self.observation
@@ -1997,6 +2040,119 @@ impl BackgroundColorDetector {
             .then(|| parse_background_color(payload))
             .flatten()
     }
+}
+
+/// Collects `OSC 52 ; selection ; payload` sequences out of a pane's output.
+///
+/// The grid parser consumes the sequence too, but hmux needs the payload at the
+/// server layer to apply `set-clipboard`/`get-clipboard`, so it is recognised
+/// here rather than read back out of the terminal.
+#[derive(Default)]
+struct Osc52Detector {
+    prefix: Vec<u8>,
+    body: Vec<u8>,
+    in_osc: bool,
+    escaped: bool,
+}
+
+impl Osc52Detector {
+    fn feed_byte(&mut self, byte: u8) -> Option<PaneClipboardEvent> {
+        if !self.in_osc {
+            self.prefix.push(byte);
+            if self.prefix.ends_with(b"\x1b]52;") {
+                self.prefix.clear();
+                self.body.clear();
+                self.in_osc = true;
+            } else if self.prefix.len() > 5 {
+                self.prefix.remove(0);
+            }
+            return None;
+        }
+        if self.escaped {
+            self.escaped = false;
+            if byte == b'\\' {
+                return self.finish(true);
+            }
+            self.body.push(0x1b);
+        }
+        match byte {
+            0x07 | 0x9c => self.finish(false),
+            0x1b => {
+                self.escaped = true;
+                None
+            }
+            _ => {
+                // A payload longer than this is not a clipboard update worth
+                // buffering; drop the sequence rather than grow without bound.
+                if self.body.len() < 1024 * 1024 {
+                    self.body.push(byte);
+                    None
+                } else {
+                    self.in_osc = false;
+                    self.body.clear();
+                    None
+                }
+            }
+        }
+    }
+
+    fn finish(&mut self, string_terminator: bool) -> Option<PaneClipboardEvent> {
+        self.in_osc = false;
+        self.escaped = false;
+        let body = std::mem::take(&mut self.body);
+        let text = String::from_utf8(body).ok()?;
+        // A sequence with no `;` at all names no payload and is dropped.
+        let (selection, payload) = text.split_once(';')?;
+        if payload == "?" {
+            return Some(PaneClipboardEvent::Query {
+                selection: osc52_reply_selection(selection),
+                string_terminator,
+            });
+        }
+        // Empty or undecodable data is dropped, as tmux drops it.
+        if payload.is_empty() {
+            return None;
+        }
+        base64_decode_strict(payload).map(|data| PaneClipboardEvent::Set { data })
+    }
+}
+
+/// The selection tmux echoes back in an OSC 52 reply: the first character it
+/// recognises, or nothing when the request named none.
+fn osc52_reply_selection(selection: &str) -> String {
+    selection
+        .chars()
+        .find(|character| "cpqs01234567".contains(*character))
+        .map(String::from)
+        .unwrap_or_default()
+}
+
+/// Decode standard base64, rejecting anything that is not fully padded — which
+/// is what makes tmux drop `aGk` where it accepts `aGk=`.
+fn base64_decode_strict(text: &str) -> Option<Vec<u8>> {
+    const ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let bytes = text.as_bytes();
+    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
+        return None;
+    }
+    let padding = bytes.iter().rev().take_while(|byte| **byte == b'=').count();
+    if padding > 2 {
+        return None;
+    }
+    let data = &bytes[..bytes.len() - padding];
+    let mut out = Vec::with_capacity(data.len() / 4 * 3);
+    let (mut accumulator, mut bits) = (0u32, 0u32);
+    for byte in data {
+        let position = ALPHABET.iter().position(|candidate| candidate == byte)?;
+        accumulator = (accumulator << 6) | position as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(((accumulator >> bits) & 0xff) as u8);
+        }
+    }
+    Some(out)
 }
 
 fn parse_background_color(value: &str) -> Option<String> {

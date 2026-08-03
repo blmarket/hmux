@@ -443,7 +443,7 @@ pub fn getopt(name: &str) -> Option<&'static str> {
         "list-panes" => "aF:f:O:rst:",
         "list-sessions" => "F:f:O:r",
         "list-windows" => "aF:f:O:rt:",
-        "load-buffer" => "b:t:",
+        "load-buffer" => "b:t:w",
         "lock-client" => "t:",
         "lock-server" => "",
         "lock-session" => "t:",

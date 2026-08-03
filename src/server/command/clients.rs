@@ -559,6 +559,15 @@ fn refresh_client(args: &[String], state: &ServerState, client: &ClientContext) 
             return overlay_result(result, target);
         }
     }
+    // `-l` asks the client's terminal for its selection. tmux keeps one
+    // outstanding query per terminal, so a repeat inside the timeout is
+    // dropped rather than queued.
+    if has_flag(args, "-l") && state.begin_clipboard_query(target, client.tty_name.as_deref()) {
+        let result = state.set_client_selection(target, client.tty_name.as_deref(), None);
+        if result != ClientActionResult::Queued {
+            return overlay_result(result, target);
+        }
+    }
     overlay_result(
         state.refresh_client(target, client.tty_name.as_deref()),
         target,

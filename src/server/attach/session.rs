@@ -822,7 +822,12 @@ impl AttachSession {
                         self.compositor.input.injected.extend(keys);
                     }
                     ClientAction::SetSelection(data) => {
-                        let encoded = base64_encode(&data);
+                        // `None` is a query: tmux sends the same capability
+                        // with `?` where the payload would be.
+                        let encoded = data
+                            .as_deref()
+                            .map(base64_encode)
+                            .unwrap_or_else(|| "?".to_string());
                         if let Some(sequence) = term::expand_capability(
                             &self.tty.terminal,
                             "Ms",

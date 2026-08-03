@@ -13,11 +13,13 @@ use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::key::{parse_key_name, KeyCode};
 use super::options::{GlobalOptions, OptionSet, OptionsView};
-use super::pane::{NativePaneObservation, Pane, PaneIo, PaneIoMode, PaneSpawnSpec};
+use super::pane::{
+    NativePaneObservation, Pane, PaneClipboardEvent, PaneIo, PaneIoMode, PaneSpawnSpec,
+};
 use super::term::ResolvedTerm;
 use super::ObservationSignal;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
@@ -376,7 +378,8 @@ pub(crate) enum ClientAction {
         destroyed: bool,
     },
     Keys(Vec<ClientKey>),
-    SetSelection(Vec<u8>),
+    /// Write the client's terminal selection, or query it with `None`.
+    SetSelection(Option<Vec<u8>>),
     Overlay {
         request: OverlayRequest,
         reply: Option<mpsc::Sender<PromptCompletion>>,
@@ -1922,6 +1925,8 @@ struct ClientRenderEntry {
     /// Identity bits the client sent at handshake time (`CLIENT_UTF8`, …),
     /// needed to rebuild the display flag string server-side.
     identified: i64,
+    /// When a clipboard query was last sent to this client's terminal.
+    clipboard_query_at: Option<Instant>,
     flag_state: ClientFlagState,
     terminal: Option<ResolvedTerm>,
     slot: Arc<ClientRenderSlot>,
@@ -2221,6 +2226,7 @@ impl ClientRenderRegistry {
                 ignore_size,
                 size_changed: !control_mode,
                 identified,
+                clipboard_query_at: None,
                 flag_state,
                 terminal: None,
                 slot: Arc::clone(&slot),
@@ -2616,17 +2622,25 @@ impl ClientRenderRegistry {
         ClientActionResult::Queued
     }
 
+    /// Write, or with `None` query, the terminal selection of one client.
+    ///
+    /// An untargeted request run from a client with no terminal of its own —
+    /// an ordinary command client — falls back to the sole attached client,
+    /// which is what tmux's `cmd_find_current_client` resolves to.
     fn set_client_selection(
         &self,
         target: Option<&str>,
         invoking_tty: Option<&str>,
-        data: Vec<u8>,
+        data: Option<Vec<u8>>,
     ) -> ClientActionResult {
         let Ok(inner) = self.inner.lock() else {
             return ClientActionResult::NoCurrentClient;
         };
         let entry = match Self::client_entry(&inner, target, invoking_tty) {
             Ok(entry) => entry,
+            Err(ClientActionResult::NoCurrentClient) if inner.clients.len() == 1 => {
+                inner.clients.values().next().expect("one client present")
+            }
             Err(result) => return result,
         };
         if let Ok(mut action) = entry.slot.action.lock() {
@@ -2634,6 +2648,34 @@ impl ClientRenderRegistry {
             let _ = entry.slot.wakeup.wake();
         }
         ClientActionResult::Queued
+    }
+
+    fn begin_clipboard_query(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+        timeout: Duration,
+    ) -> bool {
+        let Ok(mut inner) = self.inner.lock() else {
+            return false;
+        };
+        let id = match Self::client_id_for(&inner, target, invoking_tty) {
+            Ok(id) => id,
+            Err(ClientActionResult::NoCurrentClient) if inner.clients.len() == 1 => {
+                *inner.clients.keys().next().expect("one client present")
+            }
+            Err(_) => return false,
+        };
+        let now = Instant::now();
+        let entry = inner.clients.get_mut(&id).expect("selected client present");
+        if entry
+            .clipboard_query_at
+            .is_some_and(|at| now.saturating_duration_since(at) < timeout)
+        {
+            return false;
+        }
+        entry.clipboard_query_at = Some(now);
+        true
     }
 
     fn confirm_client(
@@ -4510,10 +4552,23 @@ impl ServerState {
         &self,
         target: Option<&str>,
         invoking_tty: Option<&str>,
-        data: Vec<u8>,
+        data: Option<Vec<u8>>,
     ) -> ClientActionResult {
         self.client_renders
             .set_client_selection(target, invoking_tty, data)
+    }
+
+    /// Whether a clipboard query may be sent to this client now. tmux keeps one
+    /// outstanding request per terminal for `CLIPBOARD_QUERY_TIMEOUT`, so a
+    /// repeat inside the window is dropped instead of queued.
+    pub(crate) fn begin_clipboard_query(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+    ) -> bool {
+        const CLIPBOARD_QUERY_TIMEOUT: Duration = Duration::from_secs(5);
+        self.client_renders
+            .begin_clipboard_query(target, invoking_tty, CLIPBOARD_QUERY_TIMEOUT)
     }
 
     pub(crate) fn overlay_client(
@@ -6216,6 +6271,74 @@ impl ServerState {
         self.silence_alerted
             .retain(|window_id| live_windows.contains(window_id));
         changed
+    }
+
+    /// Apply the clipboard policy to the OSC 52 sequences panes emitted since
+    /// the last pass, mirroring tmux's `input_osc_52`.
+    ///
+    /// Applications may only touch the clipboard under `set-clipboard on`; the
+    /// sequence is not even parsed otherwise. A query is then answered from the
+    /// newest paste buffer when `get-clipboard` is `buffer`, and forwarded to
+    /// the client's terminal under `request`/`both` — which hmux does not do
+    /// yet, so those requests go unanswered exactly as they do with no client.
+    pub(crate) fn process_pane_clipboard(&mut self) {
+        let panes = self
+            .windows
+            .values()
+            .flat_map(|window| window.panes.iter())
+            .map(|node| (node.id, node.pane.observation_state()))
+            .collect::<Vec<_>>();
+        let allow_applications = self.server_options().get("set-clipboard") == Some("on");
+        let answer_from_buffer = self.server_options().get("get-clipboard") == Some("buffer");
+        for (pane_id, observation) in panes {
+            for event in observation.take_clipboard_events() {
+                if !allow_applications {
+                    continue;
+                }
+                match event {
+                    PaneClipboardEvent::Set { data } => {
+                        self.set_buffer(None, &data);
+                        let was_deferred =
+                            std::mem::replace(&mut self.notifications_are_deferred, true);
+                        self.notify_pane("pane-set-clipboard", pane_id);
+                        self.notifications_are_deferred = was_deferred;
+                    }
+                    PaneClipboardEvent::Query {
+                        selection,
+                        string_terminator,
+                    } => {
+                        if !answer_from_buffer {
+                            continue;
+                        }
+                        let Some(data) = self.buffer(None).map(<[u8]>::to_vec) else {
+                            continue;
+                        };
+                        let mut reply = format!(
+                            "\x1b]52;{selection};{}",
+                            super::cmd_send_keys::base64_encode(&data)
+                        )
+                        .into_bytes();
+                        reply.extend_from_slice(if string_terminator {
+                            b"\x1b\\"
+                        } else {
+                            b"\x07"
+                        });
+                        let _ = self.write_pane_input(pane_id, &reply);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Write bytes into a pane's input as if its terminal had produced them.
+    fn write_pane_input(&self, pane_id: u32, bytes: &[u8]) -> io::Result<()> {
+        let pane = self
+            .windows
+            .values()
+            .flat_map(|window| window.panes.iter())
+            .find(|node| node.id == pane_id)
+            .ok_or_else(|| io::Error::other("pane disappeared"))?;
+        pane.pane.input(bytes)
     }
 
     /// tmux's `alerts_check_bell`/`_activity`/`_silence` body: flag every
@@ -10545,6 +10668,17 @@ impl ServerState {
             }
         };
         self.invalidate_session(session_id, RenderInvalidation::MODE);
+        // A copy that produced data writes the terminal selection unless
+        // `set-clipboard` is `off`, and tmux notifies the pane whenever it
+        // does — including under `external`, where the write is the client's.
+        if result.is_some()
+            && self
+                .option_for_target(target, "set-clipboard")
+                .is_none_or(|value| value != "off")
+        {
+            let pane_id = self.window(resolved.session, resolved.window).panes[resolved.pane].id;
+            self.notify_pane("pane-set-clipboard", pane_id);
+        }
         Ok(result)
     }
 

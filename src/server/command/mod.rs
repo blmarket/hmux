@@ -7398,7 +7398,11 @@ fn set_buffer(args: &[String], st: &mut ServerState, context: &ClientContext) ->
             if has_flag(args, "-w") {
                 if let Some(data) = st.buffer(name).map(<[u8]>::to_vec) {
                     let _ =
-                        st.set_client_selection(client_target, context.tty_name.as_deref(), data);
+                        st.set_client_selection(
+                            client_target,
+                            context.tty_name.as_deref(),
+                            Some(data),
+                        );
                 }
             }
             CommandResult::ok("")
@@ -7433,6 +7437,15 @@ fn load_buffer(args: &[String], st: &mut ServerState, context: &ClientContext) -
         Ok(data) => {
             if !data.is_empty() {
                 st.set_buffer(flag_value(args, "-b"), &data);
+                // `-w` additionally writes the loaded buffer to the target
+                // client's terminal selection, exactly as `set-buffer -w` does.
+                if has_flag(args, "-w") {
+                    let _ = st.set_client_selection(
+                        flag_value(args, "-t"),
+                        context.tty_name.as_deref(),
+                        Some(data),
+                    );
+                }
             }
             CommandResult::ok("")
         }
