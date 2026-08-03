@@ -453,6 +453,8 @@ def test_runs_track_each_window_and_prefer_its_agent_pane(
         f"%3\tdev:5.0\tshell\t\t\t{repository.root}\t\t1\tzsh\n"
         f"%4\tdev:6.0\tfallback\t\t\t/tmp/non-git\t\t1\tzsh\n"
         f"%5\tdev:6.1\tfallback\t\t\t{repository.root}\t\t0\tzsh\n"
+        f"%6\tdev:7.0\toffside\tcodex\tworking\t/tmp/non-git\tside-session\t0\tcodex\n"
+        f"%7\tdev:7.1\toffside\t\t\t{repository.root}\t\t1\tzsh\n"
     )
     service = AgentmonService(repository, socket="/tmp/hmux.sock")
     monkeypatch.setattr(
@@ -476,7 +478,7 @@ def test_runs_track_each_window_and_prefer_its_agent_pane(
 
     runs = service.runs()
 
-    assert len(runs) == 3
+    assert len(runs) == 4
     assert runs[0].location == "dev:4"
     assert runs[0].agent == "codex"
     assert runs[0].session_id == "agent-session"
@@ -486,6 +488,10 @@ def test_runs_track_each_window_and_prefer_its_agent_pane(
     assert runs[1].window_name == "shell"
     assert runs[2].location == "dev:6"
     assert runs[2].worktree == repository.root
+    assert runs[3].location == "dev:7"
+    assert runs[3].agent == "codex"
+    assert runs[3].session_id == "side-session"
+    assert runs[3].worktree_state == "not-git"
 
 
 def test_agentless_panes_distinguish_shell_from_app(

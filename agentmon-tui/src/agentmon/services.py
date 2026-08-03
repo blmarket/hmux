@@ -684,6 +684,11 @@ class AgentmonService:
         for window_location, candidates in windows.items():
             selected: tuple[list[str], Path, Path] | None = None
             ordered = sorted(candidates, key=lambda item: item[0], reverse=True)
+            # An agent pane must represent its window even when its cwd is not
+            # a repository, so the repository preference below never reaches
+            # past the agent panes to an agentless one.
+            if ordered[0][0][0]:
+                ordered = [item for item in ordered if item[0][0]]
             for _score, parts in ordered:
                 cwd = self._pane_directory(parts[5])
                 common_dir = self._git_common_dir(cwd)
