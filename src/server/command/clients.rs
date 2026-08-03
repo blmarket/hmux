@@ -129,7 +129,10 @@ fn validate_mode_target(args: &[String], state: &ServerState) -> Result<(), Comm
         return Err(CommandResult::err("no current session\n"));
     };
     if state.resolve(&target).is_none() {
-        return Err(CommandResult::err(format!("{}\n", state.pane_target_error(&target))));
+        return Err(CommandResult::err(format!(
+            "{}\n",
+            state.pane_target_error(&target)
+        )));
     }
     Ok(())
 }
