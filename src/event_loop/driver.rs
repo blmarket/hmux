@@ -848,7 +848,18 @@ where
                     client.set_token(side, Some(token));
                     Ok::<(), io::Error>(())
                 }) {
-                    result?;
+                    match result {
+                        Ok(()) => {}
+                        // A descriptor with no poll operation — a client that
+                        // redirected its output to `/dev/null` is the usual
+                        // case — is rejected by `epoll_ctl` with EPERM. Such a
+                        // descriptor is never *not* ready, so serve it directly
+                        // instead of taking the server down with the client.
+                        Err(error) if error.raw_os_error() == Some(libc::EPERM) => {
+                            self.enqueue_protocol_ready(target, side);
+                        }
+                        Err(error) => return Err(error),
+                    }
                 }
             }
             (false, Some(token)) => {
@@ -858,6 +869,27 @@ where
             _ => {}
         }
         Ok(())
+    }
+
+    /// Deliver a readiness event for a protocol side that cannot be polled.
+    fn enqueue_protocol_ready(&mut self, target: &ActorRef<ProtocolClient>, side: ProtocolIoSide) {
+        if !target
+            .with_mut(|client| client.mark_work_queued(side))
+            .unwrap_or(false)
+        {
+            return;
+        }
+        let event = match side {
+            ProtocolIoSide::Read => ProtocolEvent::Readable,
+            ProtocolIoSide::Write => ProtocolEvent::Writable,
+            ProtocolIoSide::Command => ProtocolEvent::CommandCompleted,
+            ProtocolIoSide::Control(source) => ProtocolEvent::ControlReady(source),
+            ProtocolIoSide::Attach(source) => ProtocolEvent::AttachReady(source),
+        };
+        self.events.push_back(Envelope::Protocol {
+            target: target.clone(),
+            event,
+        });
     }
 
     fn cancel_protocol_timer(&mut self, target: &ActorRef<ProtocolClient>) {
