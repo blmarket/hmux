@@ -234,6 +234,7 @@ impl ProtocolClient {
             }
             CommandStep::Write {
                 transaction,
+                args,
                 request,
             } => {
                 let mut path = request.path.as_os_str().as_bytes().to_vec();
@@ -244,6 +245,7 @@ impl ProtocolClient {
                 };
                 command.operation = CommandOperation::WaitingClientWriteReady {
                     transaction,
+                    args,
                     request,
                 };
                 self.queue_frame(
@@ -319,6 +321,7 @@ impl ProtocolClient {
                     std::mem::replace(&mut command.operation, CommandOperation::AwaitingStep);
                 let CommandOperation::WaitingClientWriteReady {
                     mut transaction,
+                    args,
                     request,
                 } = operation
                 else {
@@ -341,6 +344,7 @@ impl ProtocolClient {
                     };
                     command.operation = CommandOperation::WritingClientFile {
                         transaction: Some(transaction),
+                        args,
                         request,
                         offset: 0,
                         close_generated: false,

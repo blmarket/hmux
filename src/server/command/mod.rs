@@ -2715,6 +2715,25 @@ fn hook_command_vars(hook: &str, command: &str, args: &[String]) -> Vec<(String,
     vars
 }
 
+/// Run the `after-*` hook of a command the client file protocol completed
+/// outside the command queue (`save-buffer` to a client-side path).
+pub(crate) fn run_client_file_after_hook(
+    args: &[String],
+    st: &mut ServerState,
+    context: &ClientContext,
+) {
+    let Some(name) = args.first() else {
+        return;
+    };
+    let Resolution::Name(name) = registry::resolve(name) else {
+        return;
+    };
+    let normalized = normalize_argv(name, args);
+    let agents = PaneAgents::new();
+    run_after_hook(name, &normalized, st, &agents, context);
+    run_raised_notifications(st, &agents, context);
+}
+
 fn run_after_hook(
     command: &str,
     args: &[String],

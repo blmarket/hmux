@@ -57,6 +57,9 @@ pub(crate) enum CommandStep {
     },
     Write {
         transaction: CommandTransaction,
+        /// The `save-buffer` invocation, kept so its `after-*` hook can run
+        /// once the client has written the file.
+        args: Vec<String>,
         request: command::ClientFileWrite,
     },
     Execute {
@@ -118,6 +121,7 @@ fn advance_command_transaction(
                 Ok(request) => {
                     return CommandStep::Write {
                         transaction,
+                        args,
                         request,
                     };
                 }

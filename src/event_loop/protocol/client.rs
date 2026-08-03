@@ -123,10 +123,14 @@ pub(super) enum CommandOperation {
     },
     WaitingClientWriteReady {
         transaction: CommandTransaction,
+        args: Vec<String>,
         request: command::ClientFileWrite,
     },
     WritingClientFile {
         transaction: Option<CommandTransaction>,
+        /// The originating `save-buffer`, whose `after-*` hook runs once the
+        /// handshake completes.
+        args: Vec<String>,
         request: command::ClientFileWrite,
         offset: usize,
         close_generated: bool,
@@ -630,6 +634,7 @@ impl ProtocolClient {
         match &mut command.operation {
             CommandOperation::WritingClientFile {
                 transaction,
+                args,
                 request,
                 offset,
                 close_generated,
@@ -652,6 +657,7 @@ impl ProtocolClient {
                         transaction
                             .take()
                             .expect("client file transaction was already taken"),
+                        std::mem::take(args),
                     )
                 }
             }
@@ -682,8 +688,18 @@ impl ProtocolClient {
                         return;
                     }
                 }
-                GeneratedFrame::ClientFileComplete(mut transaction) => {
+                GeneratedFrame::ClientFileComplete(mut transaction, args) => {
                     let result = CommandResult::ok("");
+                    // The write is the command; its `after-*` hook belongs to
+                    // the completed handshake, not to the queue step that never
+                    // ran it.
+                    if let Ok(mut state) = self.state.lock() {
+                        command::run_client_file_after_hook(
+                            &args,
+                            &mut state,
+                            &transaction.context,
+                        );
+                    }
                     if transaction.complete_group(&result) {
                         transaction.groups.clear();
                     }
@@ -808,7 +824,7 @@ impl ProtocolClient {
 
 enum GeneratedFrame {
     Frame(Frame),
-    ClientFileComplete(CommandTransaction),
+    ClientFileComplete(CommandTransaction, Vec<String>),
     ResponseComplete,
     Blocked,
 }
