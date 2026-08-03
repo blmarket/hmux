@@ -3501,11 +3501,25 @@ mod tests {
     #[test]
     fn input_reaches_child_and_echoes_back() {
         // `cat` echoes stdin back to the pty; the echo lands in the grid.
-        let pane = Pane::spawn(&["/bin/cat"], 40, 5).expect("spawn cat");
+        // Spawn it by name, not as `/bin/cat`: `execvp` finds it on `PATH`, and
+        // systems that keep their binaries elsewhere (NixOS ships only
+        // `/bin/sh`) would otherwise exec nothing at all. The child would then
+        // die with ENOENT and the assertion below would be met only by the pty
+        // line discipline's own echo — which the slave close discards, so the
+        // test would flake instead of failing outright.
+        let pane = Pane::spawn(&["cat"], 40, 5).expect("spawn cat");
         pane.input(b"roundtrip\r").expect("send input");
-        // Give the echo a moment to arrive, then dump.
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        let dump = pane.dump().expect("dump");
+        // The echo depends on `cat` having been scheduled and on the pty round
+        // trip, neither of which is bounded — a fixed sleep flakes under a
+        // loaded test run. Poll until it lands instead.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let dump = loop {
+            let dump = pane.dump().expect("dump");
+            if dump.contains("roundtrip") || std::time::Instant::now() >= deadline {
+                break dump;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
         assert!(
             dump.contains("roundtrip"),
             "echo should appear, got {dump:?}"

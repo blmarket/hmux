@@ -3586,12 +3586,15 @@ mod tests {
         }
         st.active_pane("0").unwrap().feed(&output);
         st.set_global_option("mode-keys", "vi");
-        st.set_pane_mode("0", Some("copy-mode"))
+        // These take a pane target: a bare `0` is pane index 0, which is the
+        // *inactive* half of the split. `0:` is the session's active pane, the
+        // one the frame is fed through.
+        st.set_pane_mode("0:", Some("copy-mode"))
             .expect("enter copy mode in split");
-        st.copy_mode_command("0", "history-top", true, "")
+        st.copy_mode_command("0:", "history-top", true, "")
             .expect("move split copy cursor");
         for command in ["begin-selection", "cursor-right", "cursor-right"] {
-            st.copy_mode_command("0", command, true, "")
+            st.copy_mode_command("0:", command, true, "")
                 .unwrap_or_else(|error| panic!("run {command}: {error}"));
         }
         st.active_pane("0")
