@@ -83,7 +83,6 @@ const TTY_OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 /// Internal capability needed by the event-driven attach loop. This stays
 /// separate from the public `FrameReader` compatibility contract.
 pub(crate) trait AttachFrameReader: FrameReader + AsRawFd {
-    fn has_buffered_frame(&self) -> bool;
     fn try_recv(&mut self) -> io::Result<Frame>;
 }
 

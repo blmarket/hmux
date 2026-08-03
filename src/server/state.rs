@@ -21,7 +21,6 @@ use super::pane::{
     NativePaneObservation, Pane, PaneClipboardEvent, PaneIo, PaneIoMode, PaneSpawnSpec,
 };
 use super::term::ResolvedTerm;
-use super::ObservationSignal;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
 
 #[cfg(not(test))]
@@ -31,7 +30,7 @@ fn default_pane_io_mode() -> PaneIoMode {
 
 #[cfg(test)]
 fn default_pane_io_mode() -> PaneIoMode {
-    PaneIoMode::Threaded(crate::native::pane::spawn_reader)
+    PaneIoMode::Threaded(super::pane::spawn_reader)
 }
 
 /// How to back a new pane's screen.
@@ -678,7 +677,7 @@ pub(crate) struct CopySearchMatch {
     pub(crate) segments: Vec<(usize, usize, usize)>,
 }
 
-/// Direction used by the native attach compositor for an evenly divided window.
+/// Direction used by the attach compositor for an evenly divided window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SplitDirection {
     TopBottom,
@@ -3433,7 +3432,6 @@ pub struct ServerState {
     client_prompts: Arc<ClientPromptRegistry>,
     client_renders: Arc<ClientRenderRegistry>,
     wait_registry: Arc<WaitRegistry>,
-    observation_signal: Arc<ObservationSignal>,
     /// No-client format jobs, corresponding to tmux's process-global job tree.
     /// Current native consumers use client-owned status caches; this remains a
     /// distinct owner for no-client format contexts as those are implemented.
@@ -3497,7 +3495,6 @@ impl ServerState {
             ))),
             client_renders,
             wait_registry: Arc::new(WaitRegistry::default()),
-            observation_signal: Arc::new(ObservationSignal::default()),
         };
         state.install_default_key_bindings();
         state
@@ -3538,17 +3535,6 @@ impl ServerState {
             .collect()
     }
 
-    pub(crate) fn observation_signal(&self) -> Arc<ObservationSignal> {
-        Arc::clone(&self.observation_signal)
-    }
-
-    fn observe_pane(&self, pane: &Pane) {
-        pane.install_observation_signal(Arc::clone(&self.observation_signal));
-    }
-
-    fn notify_observation(&self) {
-        self.observation_signal.notify();
-    }
 
     fn install_default_key_bindings(&mut self) {
         const DEFAULTS: &[(&str, &str, &[&str])] = &[
@@ -4614,7 +4600,6 @@ impl ServerState {
         self.session_groups
             .retain(|link_set_id, _| live_link_sets.contains(link_set_id));
         if self.windows.len() != window_count {
-            self.notify_observation();
         }
     }
 
@@ -5188,7 +5173,6 @@ impl ServerState {
             self.shutdown_requested = true;
         }
         if removed {
-            self.notify_observation();
         }
         removed
     }
@@ -5244,7 +5228,6 @@ impl ServerState {
                 Pane::spawn_in_mode(&refs, Some(&cwd), cols, rows, self.pane_io_mode)?
             }
         };
-        self.observe_pane(&pane);
 
         let session_id = self.next_session_id;
         self.next_session_id += 1;
@@ -5320,7 +5303,6 @@ impl ServerState {
         });
         self.initial_attach_pending = false;
         self.notify_session("session-created", session_id);
-        self.notify_observation();
         Ok(session_id)
     }
 
@@ -5620,7 +5602,6 @@ impl ServerState {
         // untouched.
         let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
         let pane = Pane::spawn_in_mode(&refs, cwd, cols, rows, self.pane_io_mode)?;
-        self.observe_pane(&pane);
 
         let window_id = self.next_window_id;
         self.next_window_id += 1;
@@ -5701,7 +5682,6 @@ impl ServerState {
             RenderInvalidation::STATUS
         };
         self.invalidate_session(session_id, reason);
-        self.notify_observation();
         Ok(pos)
     }
 
@@ -5765,7 +5745,6 @@ impl ServerState {
         let (cols, rows) = (s.cols, s.rows);
         let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
         let pane = Pane::spawn_in_mode(&refs, cwd, cols, rows, self.pane_io_mode)?;
-        self.observe_pane(&pane);
 
         let window_id = self.next_window_id;
         self.next_window_id += 1;
@@ -5845,7 +5824,6 @@ impl ServerState {
                 RenderInvalidation::STATUS
             },
         );
-        self.notify_observation();
         Ok(pos)
     }
 
@@ -6161,7 +6139,6 @@ impl ServerState {
         self.sessions.retain(|session| !session.windows.is_empty());
         self.windows.remove(&window_id);
         self.remove_unlinked_windows();
-        self.notify_observation();
         self.renumber_affected_sessions(&affected);
         self.request_shutdown_if_became_empty(had_sessions);
         for session_id in affected {
@@ -6845,7 +6822,6 @@ impl ServerState {
                 Pane::spawn_in_mode(&refs, Some(&cwd), cols, rows, self.pane_io_mode)?
             }
         };
-        self.observe_pane(&pane);
         let pane_id = self.next_pane_id;
         self.next_pane_id += 1;
         let win = self.window_mut(t.session, t.window);
@@ -6910,7 +6886,6 @@ impl ServerState {
             self.notify_window("window-pane-changed", window_id);
         }
         self.notify_window("window-layout-changed", window_id);
-        self.notify_observation();
         Ok(insert_at)
     }
 
@@ -6939,7 +6914,6 @@ impl ServerState {
             .clamp(1, rows.saturating_sub(1).max(1));
         let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
         let pane = Pane::spawn_in_mode(&refs, cwd, width, height, self.pane_io_mode)?;
-        self.observe_pane(&pane);
         let pane_id = self.next_pane_id;
         self.next_pane_id += 1;
         let window = self.window_mut(target.session, target.window);
@@ -7001,7 +6975,6 @@ impl ServerState {
             session_id,
             RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
         );
-        self.notify_observation();
         Ok(insert_at)
     }
 
@@ -7244,7 +7217,6 @@ impl ServerState {
             self.invalidate_session(session_id, RenderInvalidation::SESSION_GONE);
         }
         self.notify_window("window-layout-changed", window_id);
-        self.notify_observation();
         Ok(())
     }
 
@@ -7269,7 +7241,6 @@ impl ServerState {
             session_id,
             RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
         );
-        self.notify_observation();
         Ok(())
     }
 
@@ -8974,7 +8945,6 @@ impl ServerState {
         self.session_groups.clear();
         self.request_shutdown_if_became_empty(had_sessions);
         self.invalidate_all_clients(RenderInvalidation::SESSION_GONE);
-        self.notify_observation();
     }
 
     /// Remove a session by name. Returns whether it existed (its panes' children
@@ -10992,7 +10962,6 @@ impl ServerState {
             },
         };
         let pane = Pane::spawn_from_spec_mode(&spec, cols, rows, self.pane_io_mode)?;
-        self.observe_pane(&pane);
         let node = &mut self.window_mut(resolved.session, resolved.window).panes[resolved.pane];
         node.pane = pane;
         node.mode = None;
@@ -11002,7 +10971,6 @@ impl ServerState {
             session_id,
             RenderInvalidation::LAYOUT | RenderInvalidation::STATUS | RenderInvalidation::MODE,
         );
-        self.notify_observation();
         Ok(())
     }
 
@@ -11039,9 +11007,6 @@ impl ServerState {
                     Pane::spawn_from_spec_mode(&spec, cols, rows, io_mode).map(Some)
                 })
                 .collect::<io::Result<Vec<_>>>()?;
-            for pane in replacements.iter().flatten() {
-                self.observe_pane(pane);
-            }
             let window = self.window_mut(resolved.session, resolved.window);
             for (node, pane) in window.panes.iter_mut().zip(replacements) {
                 if let Some(pane) = pane {
@@ -11059,7 +11024,6 @@ impl ServerState {
                         | RenderInvalidation::MODE,
                 );
             }
-            self.notify_observation();
             return Ok(());
         }
         let argv = argv.expect("nonempty argv checked above");
@@ -11071,7 +11035,6 @@ impl ServerState {
             let spec = PaneSpawnSpec { argv, cwd };
             Pane::spawn_from_spec_mode(&spec, cols, rows, self.pane_io_mode)?
         };
-        self.observe_pane(&pane);
         let window = self.window_mut(resolved.session, resolved.window);
         let id = window.panes[resolved.pane].id;
         window.panes.clear();
@@ -11100,7 +11063,6 @@ impl ServerState {
                 RenderInvalidation::LAYOUT | RenderInvalidation::STATUS | RenderInvalidation::MODE,
             );
         }
-        self.notify_observation();
         Ok(())
     }
 

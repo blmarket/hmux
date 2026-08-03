@@ -136,10 +136,6 @@ impl AsRawFd for AttachInput {
 }
 
 impl AttachFrameReader for AttachInput {
-    fn has_buffered_frame(&self) -> bool {
-        !self.is_empty()
-    }
-
     fn try_recv(&mut self) -> io::Result<Frame> {
         self.recv()
     }

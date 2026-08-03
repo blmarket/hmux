@@ -1,8 +1,8 @@
 //! Shared tmux-compatible server engine built on libghostty-vt.
 //!
 //! This module owns sessions, windows, panes, command behavior, attach state,
-//! and terminal emulation. Runtime adapters such as [`crate::native`] and
-//! [`crate::event_loop`] supply connection scheduling and readiness handling.
+//! and terminal emulation. The [`crate::event_loop`] runtime supplies
+//! connection scheduling and readiness handling.
 //!
 //! The interactive attach path — compositing panes onto the client's tty — is
 //! implemented in the `attach` module: on attach-identify the server takes the
@@ -36,8 +36,7 @@ pub(crate) mod term;
 
 use std::collections::HashMap;
 use std::io;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 
 use crate::integration::status::StatusHub;
 use crate::observability::v1::{PaneId as PublicPaneId, PaneObservability, ServerObservability};
@@ -63,7 +62,6 @@ pub struct Server {
     /// [`AgentObserver`]: crate::integration::AgentObserver
     status: StatusHub,
     observation: Arc<ObservationState>,
-    observation_signal: Arc<ObservationSignal>,
 }
 
 impl ServerObservability for Server {
@@ -97,13 +95,11 @@ impl ServerObservability for Server {
 
 impl Server {
     fn from_state(state: ServerState, hook: Arc<dyn ObservationHook>) -> io::Result<Server> {
-        let observation_signal = state.observation_signal();
         let state = Arc::new(Mutex::new(state));
         Ok(Server {
             state,
             status: StatusHub::new(),
             observation: Arc::new(ObservationState::new(hook)),
-            observation_signal,
         })
     }
 
@@ -193,9 +189,6 @@ impl Server {
         Ok(())
     }
 
-    pub(crate) fn observation_signal(&self) -> Arc<ObservationSignal> {
-        Arc::clone(&self.observation_signal)
-    }
 
     pub(crate) fn try_event_pane_snapshot(&self) -> io::Result<Option<EventPaneSnapshot>> {
         let mut state = match self.state.try_lock() {
@@ -338,67 +331,6 @@ pub(crate) struct TerminalTail {
 struct ObservationState {
     hook: Arc<dyn ObservationHook>,
     previous: Mutex<HashMap<PaneId, ObservedPane>>,
-}
-
-#[derive(Default)]
-pub(crate) struct ObservationSignal {
-    revision: Mutex<u64>,
-    changed: Condvar,
-}
-
-impl ObservationSignal {
-    pub(crate) fn notify(&self) {
-        let mut revision = self
-            .revision
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *revision = revision.wrapping_add(1);
-        drop(revision);
-        self.changed.notify_all();
-    }
-
-    pub(crate) fn revision(&self) -> u64 {
-        *self
-            .revision
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    pub(crate) fn wait_after(&self, revision: u64, stop: &AtomicBool) -> u64 {
-        let current = self
-            .revision
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let current = self
-            .changed
-            .wait_while(current, |current| {
-                *current == revision && !stop.load(Ordering::Acquire)
-            })
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *current
-    }
-
-    /// [`Self::wait_after`] that also returns once `timeout` elapses, so a
-    /// waiter with its own deadline — an idle `monitor-silence` timer, say —
-    /// is not held until the next pane writes.
-    pub(crate) fn wait_after_timeout(
-        &self,
-        revision: u64,
-        stop: &AtomicBool,
-        timeout: std::time::Duration,
-    ) -> u64 {
-        let current = self
-            .revision
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let (current, _) = self
-            .changed
-            .wait_timeout_while(current, timeout, |current| {
-                *current == revision && !stop.load(Ordering::Acquire)
-            })
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *current
-    }
 }
 
 impl ObservationState {

@@ -4,8 +4,8 @@
 //! This is where the "clone" earns its name — instead of proxying to a backing
 //! tmux, hmux owns the pty/child and maintains the screen itself. tmux keeps this
 //! state in `window_pane` + `screen`/`input.c`; here the grid lives in libghostty
-//! and the master fd is drained by either the compatibility reader thread or
-//! the central event loop.
+//! and the master fd is drained by the central event loop (or a dedicated
+//! reader thread in unit tests).
 //!
 //! Only a text-emulation slice is implemented: spawn, feed output → grid, send
 //! input, resize, dump. Compositing multiple panes onto an attached client's tty
@@ -22,7 +22,7 @@ use std::process::{Command, Stdio};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Sender};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::{Arc, Mutex, Weak};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
@@ -32,7 +32,6 @@ use crate::ghostty::Terminal;
 use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, ScreenTail};
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 
-use super::ObservationSignal;
 
 /// A single pane. Holds the emulated screen and, if live, the child on its pty.
 pub struct Pane {
@@ -67,12 +66,53 @@ pub struct Pane {
     rows: u16,
 }
 
+#[cfg(test)]
 pub(crate) type PaneReaderSpawner = fn(PaneIo) -> JoinHandle<()>;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum PaneIoMode {
+    /// Drain the pane on a dedicated thread. Unit-test scaffolding only; the
+    /// server runtime owns pane I/O through the event loop.
+    #[cfg(test)]
     Threaded(PaneReaderSpawner),
     EventLoop,
+}
+
+/// Threaded driver for shared nonblocking pane I/O. Unit-test scaffolding for
+/// exercising panes without an event loop.
+#[cfg(test)]
+pub(crate) fn spawn_reader(mut pane_io: PaneIo) -> JoinHandle<()> {
+    thread::spawn(move || loop {
+        let mut wait = libc::pollfd {
+            fd: pane_io.as_fd().as_raw_fd(),
+            events: libc::POLLIN
+                | if pane_io.wants_write() {
+                    libc::POLLOUT
+                } else {
+                    0
+                },
+            revents: 0,
+        };
+        let result = unsafe { libc::poll(&mut wait, 1, -1) };
+        if result < 0 {
+            if io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            break;
+        }
+        if wait.revents & libc::POLLOUT != 0 {
+            pane_io.drive_writable();
+        }
+        if wait.revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) == 0 {
+            continue;
+        }
+        match pane_io.drive_readable() {
+            Ok(result) if result.closed => break,
+            Ok(result) if result.continuation => continue,
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -146,7 +186,6 @@ pub(crate) struct NativePaneObservation {
     /// OSC 52 sequences the pane emitted, waiting for the server to apply the
     /// `set-clipboard`/`get-clipboard` policy to them.
     clipboard_events: Mutex<VecDeque<PaneClipboardEvent>>,
-    observation_signal: OnceLock<Arc<ObservationSignal>>,
 }
 
 /// One OSC 52 sequence seen in a pane's output.
@@ -598,7 +637,6 @@ impl NativePaneObservation {
             last_output_at: Mutex::new(None),
             bell_count: AtomicU64::new(0),
             clipboard_events: Mutex::new(VecDeque::new()),
-            observation_signal: OnceLock::new(),
         }
     }
 
@@ -617,16 +655,6 @@ impl NativePaneObservation {
             .lock()
             .map(|mut events| events.drain(..).collect())
             .unwrap_or_default()
-    }
-
-    fn install_observation_signal(&self, signal: Arc<ObservationSignal>) {
-        let _ = self.observation_signal.set(signal);
-    }
-
-    fn notify_observation(&self) {
-        if let Some(signal) = self.observation_signal.get() {
-            signal.notify();
-        }
     }
 
     fn record_output(&self, bytes: &[u8], large_scroll: bool) {
@@ -665,7 +693,6 @@ impl NativePaneObservation {
                 .store(revision, Ordering::Release);
         }
         self.notify_output();
-        self.notify_observation();
     }
 
     fn write_terminal(&self, terminal: &mut Terminal, bytes: &[u8]) -> bool {
@@ -977,6 +1004,7 @@ impl Pane {
             Arc::clone(&alive),
         )?;
         let (reader, event_io) = match io_mode {
+            #[cfg(test)]
             PaneIoMode::Threaded(spawn) => (Some(spawn(pane_io)), None),
             PaneIoMode::EventLoop => (None, Some(pane_io)),
         };
@@ -1006,6 +1034,12 @@ impl Pane {
             cols,
             rows,
         })
+    }
+
+    /// Spawn `argv` on a fresh pty with a dedicated reader thread.
+    #[cfg(test)]
+    pub(crate) fn spawn(argv: &[&str], cols: u16, rows: u16) -> io::Result<Pane> {
+        Self::spawn_in_mode(argv, None, cols, rows, PaneIoMode::Threaded(spawn_reader))
     }
 
     pub(crate) fn spawn_spec(&self) -> Option<PaneSpawnSpec> {
@@ -1102,21 +1136,17 @@ impl Pane {
                 .ok_or_else(|| io::Error::other("pipe child has no stdout"))?;
             let master = child.master.as_fd().try_clone_to_owned()?;
             let pending_input = Arc::clone(&self.pending_input);
-            let observation = Arc::clone(&self.observation);
             thread::spawn(move || {
                 let mut bytes = [0u8; 4096];
                 loop {
                     match stdout.read(&mut bytes) {
                         Ok(0) | Err(_) => break,
                         Ok(count) => {
-                            let stats = enqueue_pane_input(
+                            enqueue_pane_input(
                                 master.as_raw_fd(),
                                 &pending_input,
                                 &bytes[..count],
                             );
-                            if stats.queued != 0 {
-                                observation.notify_observation();
-                            }
                         }
                     }
                 }
@@ -1163,9 +1193,6 @@ impl Pane {
         Arc::clone(&self.observation)
     }
 
-    pub(crate) fn install_observation_signal(&self, signal: Arc<ObservationSignal>) {
-        self.observation.install_observation_signal(signal);
-    }
 
     #[cfg(test)]
     pub(crate) fn subscribe_output(&self) -> io::Result<OutputSubscription> {
@@ -1223,7 +1250,6 @@ impl Pane {
         };
         let stats = enqueue_pane_input(child.master.as_raw_fd(), &self.pending_input, bytes);
         if stats.queued != 0 {
-            self.observation.notify_observation();
         }
         Ok(stats)
     }
@@ -1917,7 +1943,6 @@ impl PaneIo {
         self.closed = true;
         self.alive.store(false, Ordering::Release);
         self.observation.notify_output();
-        self.observation.notify_observation();
     }
 }
 
