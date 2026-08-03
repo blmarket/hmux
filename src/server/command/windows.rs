@@ -69,12 +69,12 @@ fn find_window(args: &[String], state: &mut ServerState) -> CommandResult {
     let folded = pattern.to_lowercase();
     let Some(target) = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(state))
+        .or_else(|| current_target(state))
     else {
         return CommandResult::err("no current session\n");
     };
     if state.resolve(&target).is_none() {
-        return CommandResult::err(format!("can't find pane: {target}\n"));
+        return CommandResult::err(format!("{}\n", state.pane_target_error(&target)));
     }
     let mut items = Vec::new();
     for session in state.sessions() {
@@ -103,7 +103,7 @@ fn find_window(args: &[String], state: &mut ServerState) -> CommandResult {
         ModeView::list(ModeKind::Tree, format!("Find: {pattern}"), items),
     ) {
         Ok(()) => CommandResult::ok(""),
-        Err(_) => CommandResult::err(format!("can't find pane: {target}\n")),
+        Err(_) => CommandResult::err(format!("{}\n", state.pane_target_error(&target))),
     }
 }
 

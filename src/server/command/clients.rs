@@ -111,7 +111,7 @@ fn confirm_before(args: &[String], state: &ServerState, client: &ClientContext) 
 fn mode_target(args: &[String], state: &ServerState) -> Option<String> {
     flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(state))
+        .or_else(|| current_target(state))
 }
 
 fn enter_mode(args: &[String], state: &mut ServerState, view: ModeView) -> CommandResult {
@@ -120,7 +120,7 @@ fn enter_mode(args: &[String], state: &mut ServerState, view: ModeView) -> Comma
     };
     match state.enter_mode_view(&target, view) {
         Ok(()) => CommandResult::ok(""),
-        Err(_) => CommandResult::err(format!("can't find pane: {target}\n")),
+        Err(_) => CommandResult::err(format!("{}\n", state.pane_target_error(&target))),
     }
 }
 
@@ -129,7 +129,7 @@ fn validate_mode_target(args: &[String], state: &ServerState) -> Result<(), Comm
         return Err(CommandResult::err("no current session\n"));
     };
     if state.resolve(&target).is_none() {
-        return Err(CommandResult::err(format!("can't find pane: {target}\n")));
+        return Err(CommandResult::err(format!("{}\n", state.pane_target_error(&target))));
     }
     Ok(())
 }
@@ -273,7 +273,7 @@ fn customize_mode(args: &[String], state: &mut ServerState) -> CommandResult {
                 }),
             })
             .collect::<Vec<_>>(),
-        Err(_) => return CommandResult::err(format!("can't find pane: {target}\n")),
+        Err(_) => return CommandResult::err(format!("{}\n", state.pane_target_error(&target))),
     };
     let bindings = state
         .key_bindings(None)
@@ -446,7 +446,7 @@ fn display_panes(args: &[String], state: &ServerState, client: &ClientContext) -
     let duration_ms = flag_value(args, "-d")
         .and_then(|value| value.parse().ok())
         .or_else(|| {
-            current_session(state).and_then(|target| {
+            current_target(state).and_then(|target| {
                 state
                     .option_for_target(&target, "display-panes-time")
                     .and_then(|value| value.parse().ok())

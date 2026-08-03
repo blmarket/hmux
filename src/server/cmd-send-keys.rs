@@ -29,13 +29,13 @@ pub(crate) fn exec(
 ) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(state));
+        .or_else(|| current_target(state));
     let target = match target {
         Some(target) => target,
         None => return CommandResult::err("can't establish current session\n"),
     };
     if state.resolve(&target).is_none() {
-        return CommandResult::err(format!("can't find pane: {target}\n"));
+        return CommandResult::err(format!("{}\n", state.pane_target_error(&target)));
     }
     let target_client_read_only = flag_value(args, "-c")
         .and_then(|client| state.client_read_only(Some(client), context.tty_name.as_deref()))
@@ -182,7 +182,7 @@ pub(crate) fn exec_prefix(
 ) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
-        .or_else(|| current_session(state));
+        .or_else(|| current_target(state));
     let target = match target {
         Some(target) => target,
         None => return CommandResult::err("can't establish current session\n"),
@@ -191,7 +191,7 @@ pub(crate) fn exec_prefix(
         return CommandResult::err("client is read-only\n");
     }
     if state.resolve(&target).is_none() {
-        return CommandResult::err(format!("can't find pane: {target}\n"));
+        return CommandResult::err(format!("{}\n", state.pane_target_error(&target)));
     }
 
     let option = if has_flag(args, "-2") {
@@ -639,7 +639,7 @@ fn write_pane_input(state: &mut ServerState, target: &str, bytes: &[u8]) -> Comm
             result.pane_output_wait = wait;
             result
         }
-        Err(_) => CommandResult::err(format!("can't find pane: {target}\n")),
+        Err(_) => CommandResult::err(format!("{}\n", state.pane_target_error(target))),
     }
 }
 
@@ -810,6 +810,13 @@ fn current_session(state: &ServerState) -> Option<String> {
     state
         .command_session_name()
         .or_else(|| state.sessions().last().map(|session| session.name.clone()))
+}
+
+/// The target `send-keys` uses without a `-t`: the current session's current
+/// window and active pane. The `:` keeps the session name a session — a bare
+/// `0` is pane 0 of the current window in tmux's target grammar.
+fn current_target(state: &ServerState) -> Option<String> {
+    current_session(state).map(|session| format!("{session}:"))
 }
 
 fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {

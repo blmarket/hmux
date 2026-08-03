@@ -1349,8 +1349,9 @@ impl Expander<'_> {
 }
 
 /// Minimal fnmatch: `*` matches any run (including empty), `?` any single byte,
-/// everything else literal. Enough for the `#{m:...}` cases the suite exercises.
-fn glob_match(pat: &[u8], text: &[u8]) -> bool {
+/// everything else literal. Enough for the `#{m:...}` cases the suite exercises,
+/// and for the `fnmatch` step of target resolution.
+pub(super) fn glob_match(pat: &[u8], text: &[u8]) -> bool {
     // Classic iterative backtracking matcher.
     let (mut p, mut t) = (0, 0);
     let (mut star, mut mark): (Option<usize>, usize) = (None, 0);
