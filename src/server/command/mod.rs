@@ -10084,13 +10084,15 @@ mod tests {
         assert_eq!(grouped.stdout, "0\n1\n2\n");
 
         assert_eq!(run_str(&st, &["select-window", "-t", "0:2"]).exit, 0);
+        // `display-message` takes a pane target, so the session has to be named
+        // with a `:`; a bare `0` would be a pane index in the current session.
         let work = run_str(
             &st,
-            &["display-message", "-t", "0", "-p", "#{window_index}"],
+            &["display-message", "-t", "0:", "-p", "#{window_index}"],
         );
         let mirror = run_str(
             &st,
-            &["display-message", "-t", "g", "-p", "#{window_index}"],
+            &["display-message", "-t", "g:", "-p", "#{window_index}"],
         );
         assert_eq!(work.stdout, "2\n");
         assert_eq!(mirror.stdout, "0\n");
@@ -12015,7 +12017,7 @@ mod tests {
             ],
         );
         assert_eq!(lw.stdout, "0:0\nb:0\n", "got {:?}", lw.stdout);
-        run_str(&st, &["split-window", "-t", "0"]);
+        run_str(&st, &["split-window", "-t", "0:"]);
         let lp = run_str(
             &st,
             &["list-panes", "-a", "-F", "#{session_name}:#{pane_index}"],
@@ -12269,16 +12271,19 @@ mod tests {
     fn session_options_are_local_and_inherit_global_values() {
         let st = state();
         run_str(&st, &["new-session", "-d", "-s", "other"]);
-        run_str(&st, &["set-option", "-t", "0", "status-position", "top"]);
+        // `set-option`/`show-options` take a *pane* target, so a bare `0` is a
+        // pane index in the current session, not the session named `0`. The
+        // trailing `:` is what names the session.
+        run_str(&st, &["set-option", "-t", "0:", "status-position", "top"]);
 
         assert_eq!(
-            run_str(&st, &["show-options", "-t", "0", "-v", "status-position"]).stdout,
+            run_str(&st, &["show-options", "-t", "0:", "-v", "status-position"]).stdout,
             "top\n"
         );
         assert_eq!(
             run_str(
                 &st,
-                &["show-options", "-t", "other", "-v", "status-position"]
+                &["show-options", "-t", "other:", "-v", "status-position"]
             )
             .stdout,
             ""
@@ -12286,7 +12291,14 @@ mod tests {
         assert_eq!(
             run_str(
                 &st,
-                &["show-options", "-A", "-t", "other", "-v", "status-position"]
+                &[
+                    "show-options",
+                    "-A",
+                    "-t",
+                    "other:",
+                    "-v",
+                    "status-position"
+                ]
             )
             .stdout,
             "bottom\n"
@@ -12297,7 +12309,7 @@ mod tests {
     fn session_local_base_index_affects_only_that_session() {
         let st = state();
         run_str(&st, &["new-session", "-d", "-s", "other"]);
-        run_str(&st, &["set-option", "-t", "0", "base-index", "4"]);
+        run_str(&st, &["set-option", "-t", "0:", "base-index", "4"]);
         run_str(&st, &["new-window", "-d", "-t", "0:"]);
         run_str(&st, &["new-window", "-d", "-t", "other:"]);
 
@@ -12321,7 +12333,7 @@ mod tests {
         run_str(&st, &["new-session", "-d", "-s", "other"]);
         run_str(&st, &["link-window", "-s", "0:0", "-t", "other:1"]);
         run_str(&st, &["set-window-option", "-t", "0:0", "@shared", "yes"]);
-        run_str(&st, &["set-option", "-t", "0", "@session", "zero"]);
+        run_str(&st, &["set-option", "-t", "0:", "@session", "zero"]);
 
         assert_eq!(
             run_str(
@@ -12333,7 +12345,7 @@ mod tests {
         );
         let session = run_str(
             &st,
-            &["show-options", "-q", "-t", "other", "-v", "@session"],
+            &["show-options", "-q", "-t", "other:", "-v", "@session"],
         );
         assert_eq!(session.stdout, "");
     }
@@ -12342,7 +12354,7 @@ mod tests {
     fn grouped_sessions_keep_independent_session_options() {
         let st = state();
         run_str(&st, &["new-session", "-d", "-s", "mirror", "-t", "0"]);
-        run_str(&st, &["set-option", "-t", "0", "status-position", "top"]);
+        run_str(&st, &["set-option", "-t", "0:", "status-position", "top"]);
 
         assert_eq!(
             run_str(
@@ -12351,7 +12363,7 @@ mod tests {
                     "show-options",
                     "-q",
                     "-t",
-                    "mirror",
+                    "mirror:",
                     "-v",
                     "status-position"
                 ]
@@ -12366,7 +12378,7 @@ mod tests {
                     "show-options",
                     "-A",
                     "-t",
-                    "mirror",
+                    "mirror:",
                     "-v",
                     "status-position"
                 ]
