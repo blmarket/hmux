@@ -16,10 +16,14 @@ use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use super::format::glob_match;
+use super::input_keys::{
+    self, ExtendedKeys, ExtendedKeysFormat, PaneKey, PaneKeyEncoding, PaneKeyModes, PaneKeyOptions,
+};
 use super::key::{parse_key_name, KeyCode};
 use super::options::{GlobalOptions, OptionSet, OptionsView};
 use super::pane::{
-    NativePaneObservation, Pane, PaneClipboardEvent, PaneIo, PaneIoMode, PaneSpawnSpec,
+    NativePaneObservation, Pane, PaneClipboardEvent, PaneIo, PaneIoMode, PaneKeyState,
+    PaneSpawnSpec,
 };
 use super::term::ResolvedTerm;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
@@ -10436,15 +10440,67 @@ impl ServerState {
         )
     }
 
-    pub(crate) fn encode_pane_key(
-        &self,
-        target: &str,
-        event: ghostty_sys::KeyEvent<'_>,
-    ) -> io::Result<Vec<u8>> {
+    /// Spell one key the way the pane's own terminal type and modes describe
+    /// it, per [`super::input_keys`].
+    pub(crate) fn encode_pane_key(&self, target: &str, key: PaneKey) -> io::Result<PaneKeyEncoding> {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
-        self.window(resolved.session, resolved.window).panes[resolved.pane]
+        let state = self.window(resolved.session, resolved.window).panes[resolved.pane]
             .pane
-            .encode_key(event)
+            .key_state();
+        Ok(input_keys::encode(
+            key,
+            self.pane_key_modes(state),
+            self.pane_key_options(),
+        ))
+    }
+
+    /// Apply the `extended-keys` option to what a pane asked for.
+    ///
+    /// tmux latches this when the pane's request arrives, so a request made
+    /// while the option was `off` stays refused even if the option is turned on
+    /// afterwards. Reading the option here instead means a mid-session change
+    /// applies to requests the pane already made — the only difference, and one
+    /// that needs both an application that asked for extended keys and a user
+    /// who changed the option afterwards. See README.md.
+    fn pane_key_modes(&self, state: PaneKeyState) -> PaneKeyModes {
+        let extended = match self.server_options().get("extended-keys") {
+            // `off`: requests are refused outright.
+            Some("on") => state.extended_request,
+            // `always` keeps a pane in mode 1 even when it asked for nothing,
+            // which is what tmux puts a freshly reset screen into.
+            Some("always") => match state.extended_request {
+                ExtendedKeys::All => ExtendedKeys::All,
+                ExtendedKeys::Standard | ExtendedKeys::Off => ExtendedKeys::Standard,
+            },
+            _ => ExtendedKeys::Off,
+        };
+        PaneKeyModes {
+            cursor_keys: state.cursor_keys,
+            application_keypad: state.application_keypad,
+            extended,
+        }
+    }
+
+    fn pane_key_options(&self) -> PaneKeyOptions {
+        let options = self.server_options();
+        let backspace = match options.get("backspace") {
+            // tmux's stored default is the bare `DEL` code; `C-?` is only how
+            // it prints that byte back. Reading the printed spelling as a key
+            // name would give `'?'` with control instead, which `C-BSpace`
+            // then encodes as `DEL` rather than failing the way tmux does.
+            // A user who sets `backspace C-?` explicitly is indistinguishable
+            // here and gets the default's behaviour. See README.md.
+            Some("C-?") | None => PaneKeyOptions::default().backspace,
+            Some(name) => parse_key_name(name).unwrap_or(PaneKeyOptions::default().backspace),
+        };
+        let extended_keys_format = match options.get("extended-keys-format") {
+            Some("csi-u") => ExtendedKeysFormat::CsiU,
+            _ => ExtendedKeysFormat::Xterm,
+        };
+        PaneKeyOptions {
+            backspace,
+            extended_keys_format,
+        }
     }
 
     pub(crate) fn reset_pane_terminal(&self, target: &str) -> io::Result<()> {
