@@ -5642,6 +5642,37 @@ fn option_target_from_name(
     }
 }
 
+/// Re-print a command list with each command's canonical name, the way tmux's
+/// `cmd_list_print` does for a stored command option. A body that does not
+/// parse is kept verbatim so a not-yet-valid hook still round-trips.
+fn canonical_command_list(value: &str, st: &ServerState) -> String {
+    let tokens = tokenize_line(value);
+    let groups = tokenized_command_groups(&tokens);
+    if groups.is_empty() {
+        return value.to_string();
+    }
+    let aliases = st.command_aliases();
+    let mut printed = Vec::with_capacity(groups.len());
+    for group in &groups {
+        let Some(first) = group.first() else {
+            return value.to_string();
+        };
+        let canonical = match registry::resolve(first) {
+            Resolution::Name(name) => name.to_string(),
+            _ => match aliases.iter().find(|(alias, _)| alias == first) {
+                // An alias expands to a whole command line; leave it alone
+                // rather than half-rewriting it.
+                Some(_) => return value.to_string(),
+                None => return value.to_string(),
+            },
+        };
+        let mut rewritten = group.clone();
+        rewritten[0] = canonical;
+        printed.push(display_command(&rewritten));
+    }
+    printed.join(" ; ")
+}
+
 fn resolve_option_argument(argument: &str) -> Option<(&str, Option<u32>)> {
     let (name, index) = options::parse_option_name(argument)?;
     if name.starts_with('@') {
@@ -5769,6 +5800,12 @@ fn set_option(args: &[String], st: &mut ServerState, window_command: bool) -> Co
         Some(raw) => raw.to_string(),
         None => String::new(),
     };
+    // tmux parses a hook (or any command-typed option) into a command list at
+    // assignment time, so what `show-hooks` prints back is the canonical
+    // command name rather than whatever alias the body was written with.
+    if !unset && raw_value.is_some() && options::is_hook(name) {
+        value = canonical_command_list(&value, st);
+    }
     if !unset {
         if let Some((min, max)) = options::option_number_range(name) {
             match parse_option_number(&value) {
