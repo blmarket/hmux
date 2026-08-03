@@ -31,6 +31,7 @@
 mod actions;
 mod copy_mode;
 mod input;
+mod keys;
 mod overlay;
 mod prompt;
 mod render;
@@ -68,6 +69,7 @@ use actions::{
     dispatch_key_binding, ActiveConfirm, ConfirmAction, ConfirmResolution, PrefixOutcome,
 };
 use copy_mode::CopyModeView;
+use keys::{ClientKeyState, KeyResolution, ServerKeyTables};
 pub(crate) use overlay::ActiveOverlay;
 use prompt::{
     clip_prompt_display, render_prompt_completion, take_deferred_attach_command, CommandPrompt,
@@ -217,7 +219,10 @@ struct PendingTerminalReply {
 }
 
 struct AttachInputState {
-    prefix_pending: bool,
+    keys: ClientKeyState,
+    /// The key table last published to the server, so `#{client_key_table}`
+    /// and the status line only churn when it actually changes.
+    published_key_table: String,
     mouse: MouseInputState,
     key_prompt: KeyPromptState,
     terminal_reply: Option<PendingTerminalReply>,
@@ -544,7 +549,8 @@ impl AttachCompositorState {
                 status_message: None,
             },
             input: AttachInputState {
-                prefix_pending: false,
+                keys: ClientKeyState::new(Instant::now()),
+                published_key_table: super::state::DEFAULT_KEY_TABLE.to_string(),
                 mouse: MouseInputState::default(),
                 key_prompt: KeyPromptState::Idle,
                 terminal_reply: None,
@@ -653,13 +659,8 @@ fn client_key_table(state: &Arc<Mutex<ServerState>>, target: &str) -> String {
     state
         .lock()
         .ok()
-        .and_then(|state| {
-            state
-                .option_for_target(target, "key-table")
-                .map(str::to_string)
-        })
-        .filter(|table| !table.is_empty())
-        .unwrap_or_else(|| "root".to_string())
+        .map(|state| state.session_key_table(target))
+        .unwrap_or_else(|| super::state::DEFAULT_KEY_TABLE.to_string())
 }
 
 fn plain_prompt_key(byte: u8) -> String {

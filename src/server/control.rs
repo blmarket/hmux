@@ -219,6 +219,7 @@ impl EventControlClient {
             control_mode: true,
             read_only: options.read_only,
             flags: options.display_flags(client_tty.flags),
+            key_table: super::state::DEFAULT_KEY_TABLE.to_string(),
         });
         let mut control_context = context.clone();
         control_context.tty_name = Some(client_name.clone());

@@ -1758,6 +1758,10 @@ pub struct Session {
     /// epoch; zero while the session has never been attached. tmux's
     /// `#{session_last_attached}` (seconds).
     pub(crate) last_attached_micros: i64,
+    /// The `activity_micros` value the automatic lock last fired for. tmux's
+    /// lock timer is armed by activity and fires once, so a session that stays
+    /// idle is not locked again until somebody types.
+    locked_at_activity_micros: Option<i64>,
     environment: BTreeMap<String, String>,
     removed_environment: BTreeSet<String>,
     hidden_environment: BTreeSet<String>,
@@ -1929,6 +1933,12 @@ struct ClientRenderEntry {
     /// The theme the client's terminal last reported (`dark`/`light`), empty
     /// until it says.
     theme: String,
+    /// The key table the client is currently in — tmux's `c->keytable`, which
+    /// `#{client_key_table}` and `#{client_prefix}` report.
+    key_table: String,
+    /// When this client last sent a key, in microseconds since the epoch —
+    /// tmux's `c->activity_time`, which orders `cmd_find_best_client`.
+    activity_micros: i64,
     /// When a clipboard query was last sent to this client's terminal.
     clipboard_query_at: Option<Instant>,
     flag_state: ClientFlagState,
@@ -1968,6 +1978,10 @@ pub(crate) struct AttachedClient {
     pub(crate) theme: String,
     /// Whether the client's terminal currently has focus.
     pub(crate) focused: bool,
+    /// The key table the client is in — tmux's `#{client_key_table}`.
+    pub(crate) key_table: String,
+    /// When this client last sent a key, in microseconds since the epoch.
+    pub(crate) activity_micros: i64,
 }
 
 #[derive(Clone)]
@@ -2013,6 +2027,10 @@ struct ControlCheckpoint {
 }
 
 const CONTROL_CHECKPOINT_LIMIT: usize = 1024;
+
+/// The key table a client is in until a session's `key-table` option or the
+/// prefix key moves it elsewhere — tmux's `server_client_get_key_table`.
+pub(crate) const DEFAULT_KEY_TABLE: &str = "root";
 
 const CLIENT_READONLY: i64 = 0x800;
 const CLIENT_UTF8: i64 = 0x10000;
@@ -2249,6 +2267,8 @@ impl ClientRenderRegistry {
                 identified,
                 focused: true,
                 theme: String::new(),
+                key_table: DEFAULT_KEY_TABLE.to_string(),
+                activity_micros: now_micros(),
                 clipboard_query_at: None,
                 flag_state,
                 terminal: None,
@@ -2297,6 +2317,8 @@ impl ClientRenderRegistry {
                 terminal: entry.terminal.clone(),
                 theme: entry.theme.clone(),
                 focused: entry.focused,
+                key_table: entry.key_table.clone(),
+                activity_micros: entry.activity_micros,
             })
             .collect()
     }
@@ -2367,6 +2389,12 @@ impl ClientRenderRegistry {
     }
 
     fn queue_lock(entry: &ClientRenderEntry, command: &str) {
+        // tmux's `server_lock_client` refuses to send an empty MSG_LOCK, so an
+        // empty `lock-command` leaves the client running rather than suspending
+        // it on a command that would do nothing.
+        if command.is_empty() {
+            return;
+        }
         if let Ok(mut action) = entry.slot.action.lock() {
             *action = Some(ClientAction::Lock(command.to_string()));
             let _ = entry.slot.wakeup.wake();
@@ -2715,6 +2743,29 @@ impl ClientRenderRegistry {
         }
         entry.theme = theme.to_string();
         true
+    }
+
+    /// Stamp a client's activity time, tmux's `c->activity_time`.
+    fn touch_client_activity(&self, client: &str, at: i64) {
+        let Ok(mut inner) = self.inner.lock() else {
+            return;
+        };
+        if let Some(entry) = inner.clients.values_mut().find(|entry| entry.name == client) {
+            entry.activity_micros = at;
+        }
+    }
+
+    /// Record the key table a client moved into.
+    fn set_client_key_table(&self, client: &str, table: &str) {
+        let Ok(mut inner) = self.inner.lock() else {
+            return;
+        };
+        let Some(entry) = inner.clients.values_mut().find(|entry| entry.name == client) else {
+            return;
+        };
+        if entry.key_table != table {
+            entry.key_table = table.to_string();
+        }
     }
 
     fn begin_clipboard_query(
@@ -4733,6 +4784,22 @@ impl ServerState {
         self.notifications_are_deferred = was_deferred;
     }
 
+    /// tmux's `server_client_get_key_table`: the table a client attached to
+    /// `target` uses until the prefix key moves it elsewhere.
+    pub(crate) fn session_key_table(&self, target: &str) -> String {
+        self.option_for_target(target, "key-table")
+            .filter(|table| !table.is_empty())
+            .unwrap_or(DEFAULT_KEY_TABLE)
+            .to_string()
+    }
+
+    /// Record the key table an attached client moved into, so
+    /// `#{client_key_table}`/`#{client_prefix}` see it. The owning client
+    /// repaints its own status line; no other client's view depends on it.
+    pub(crate) fn set_client_key_table(&mut self, client: &str, table: &str) {
+        self.client_renders.set_client_key_table(client, table);
+    }
+
     /// Record the theme a client's terminal reported, firing the matching hook
     /// when it changes.
     pub(crate) fn set_client_theme(&mut self, client: &str, session_id: u32, theme: &str) {
@@ -5289,6 +5356,7 @@ impl ServerState {
             // the initial `detach-on-destroy` ordering.
             activity_micros: now_micros(),
             last_attached_micros: 0,
+            locked_at_activity_micros: None,
             windows: vec![Winlink {
                 link_id: winlink_id,
                 index: base,
@@ -9180,6 +9248,65 @@ impl ServerState {
                 session.last_attached_micros = now;
             }
         }
+    }
+
+    /// tmux stamps `c->activity_time` alongside the session's whenever a key
+    /// arrives; it is what orders `cmd_find_best_client`.
+    pub(crate) fn touch_client_activity(&mut self, client: &str, session_id: u32) {
+        self.touch_session_activity(session_id, false);
+        self.client_renders.touch_client_activity(client, now_micros());
+    }
+
+    /// tmux's `session_lock_timer`: lock every client of a session whose
+    /// clients have gone `lock-after-time` seconds without touching a key.
+    ///
+    /// tmux arms the timer from `session_update_activity` and lets libevent
+    /// fire it once; hmux polls instead, so `locked_at_activity_micros` is what
+    /// keeps an idle session from being locked again on every server loop.
+    /// Returns how long the loop may sleep before the next session is due.
+    pub(crate) fn refresh_lock_timers(&mut self) -> Option<Duration> {
+        let attached = self.attached_session_ids();
+        if attached.is_empty() {
+            return None;
+        }
+        let now = now_micros();
+        let mut due = Vec::new();
+        let mut next = None;
+        for session in self
+            .sessions
+            .iter()
+            .filter(|session| attached.contains(&session.id))
+        {
+            let seconds = session
+                .options(&self.global_options)
+                .get("lock-after-time")
+                .and_then(|value| value.parse::<i64>().ok())
+                .unwrap_or(0);
+            if seconds <= 0 || session.locked_at_activity_micros == Some(session.activity_micros) {
+                continue;
+            }
+            let deadline = session.activity_micros + seconds * 1_000_000;
+            if deadline <= now {
+                due.push(session.id);
+            } else {
+                let remaining = Duration::from_micros((deadline - now) as u64);
+                next = Some(next.map_or(remaining, |next: Duration| next.min(remaining)));
+            }
+        }
+        let commands = self.lock_commands();
+        for session_id in due {
+            if let Some(session) = self
+                .sessions
+                .iter_mut()
+                .find(|session| session.id == session_id)
+            {
+                session.locked_at_activity_micros = Some(session.activity_micros);
+            }
+            if let Some(command) = commands.get(&session_id) {
+                self.client_renders.lock_session(session_id, command);
+            }
+        }
+        next
     }
 
     /// The sessions that currently have at least one client attached.

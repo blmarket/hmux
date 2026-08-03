@@ -175,6 +175,17 @@ impl Server {
         Ok(state.alert_poll_timeout())
     }
 
+    /// tmux's `session_lock_timer`, polled once per server loop: lock the
+    /// clients of any session idle past its `lock-after-time`. Returns when the
+    /// next session falls due, so the loop can sleep until then.
+    pub(crate) fn refresh_lock_timers(&self) -> io::Result<Option<std::time::Duration>> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("server state mutex poisoned"))?;
+        Ok(state.refresh_lock_timers())
+    }
+
     /// tmux's per-loop `server_check_unattached` plus the `server_loop` exit
     /// test, run once the current batch of client events has been applied.
     pub(crate) fn enforce_lifecycle_policies(&self) -> io::Result<()> {

@@ -361,7 +361,7 @@ pub(crate) struct RenderCache {
     agents: PaneAgents,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ClientContext {
     pub(crate) term: Option<String>,
     pub(crate) tty: Option<String>,
@@ -371,6 +371,24 @@ pub(crate) struct ClientContext {
     pub(crate) control_mode: bool,
     pub(crate) read_only: bool,
     pub(crate) flags: String,
+    /// The client's current key table — tmux's `#{client_key_table}`.
+    pub(crate) key_table: String,
+}
+
+impl Default for ClientContext {
+    fn default() -> Self {
+        Self {
+            term: None,
+            tty: None,
+            pid: None,
+            cwd: None,
+            environment: Vec::new(),
+            control_mode: false,
+            read_only: false,
+            flags: String::new(),
+            key_table: super::state::DEFAULT_KEY_TABLE.to_string(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -544,6 +562,16 @@ impl RenderCache {
     pub(crate) fn update_client_flags(&mut self, flags: String, read_only: bool) {
         self.client.flags = flags;
         self.client.read_only = read_only;
+        self.invalidate();
+    }
+
+    /// Follow the client into a new key table so `#{client_key_table}` and
+    /// `#{client_prefix}` in the status line track a pending prefix.
+    pub(crate) fn update_client_key_table(&mut self, table: String) {
+        if self.client.key_table == table {
+            return;
+        }
+        self.client.key_table = table;
         self.invalidate();
     }
 
@@ -1098,6 +1126,17 @@ impl<'a> StatusContext<'a> {
                 if self.client.read_only { "1" } else { "0" },
             )
             .set("client_flags", self.client.flags.clone())
+            .set("client_key_table", self.client.key_table.clone())
+            // tmux reports a prefix as "the client left its default table",
+            // which covers a live `bind -r` repeat chain as well.
+            .set(
+                "client_prefix",
+                if self.client.key_table == self.state.session_key_table(&session.name) {
+                    "0"
+                } else {
+                    "1"
+                },
+            )
             .set("window_bigger", "0")
             .set("window_offset_x", "0")
             .set("window_offset_y", "0");

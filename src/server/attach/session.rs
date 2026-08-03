@@ -615,6 +615,10 @@ impl AttachSession {
         );
         let timeout = minimum_poll_timeout(
             timeout,
+            deadline_poll_timeout(self.repeat_deadline(), now),
+        );
+        let timeout = minimum_poll_timeout(
+            timeout,
             deadline_poll_timeout(
                 self.compositor
                     .input
@@ -746,6 +750,7 @@ impl AttachSession {
         } else {
             false
         };
+        self.expire_repeat_chain(state, target, now);
         let status_timer_ready = self.status.status_timer.take_expired(now);
         let overlay_tick = self.compositor.ui.active_overlay.is_some();
         let overlay_exit = self
@@ -1094,6 +1099,12 @@ impl AttachSession {
                                 b"\x1b[?1000h\x1b[?1002h\x1b[?1006h",
                             );
                         }
+                        // tmux stamps session activity when a client comes back
+                        // from MSG_UNLOCK/MSG_WAKEUP, which re-arms the lock
+                        // timer instead of leaving a resumed client unlocked.
+                        if let Ok(mut st) = state.lock() {
+                            st.touch_session_activity(self.compositor.target.session_id, false);
+                        }
                         self.compositor.io_state = ClientIoState::Active;
                         self.compositor.render.last_render.clear();
                         self.compositor.render.force_clear = true;
@@ -1116,6 +1127,12 @@ impl AttachSession {
                                 self.tty.render_fd.as_raw_fd(),
                                 b"\x1b[?1000h\x1b[?1002h\x1b[?1006h",
                             );
+                        }
+                        // tmux stamps session activity when a client comes back
+                        // from MSG_UNLOCK/MSG_WAKEUP, which re-arms the lock
+                        // timer instead of leaving a resumed client unlocked.
+                        if let Ok(mut st) = state.lock() {
+                            st.touch_session_activity(self.compositor.target.session_id, false);
                         }
                         self.compositor.io_state = ClientIoState::Active;
                         self.compositor.render.last_render.clear();

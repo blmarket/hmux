@@ -45,12 +45,12 @@ pub fn run_event_loop(listen_path: &Path, server: Server) -> io::Result<()> {
             DISPATCH_BUDGET,
         )?;
         server.reconcile_event_observations()?;
-        let alert_timeout = server.refresh_alerts()?;
+        let timeout = earliest_timeout(server.refresh_alerts()?, server.refresh_lock_timers()?);
         sync_event_loop_panes(&server, &mut event_loop, &mut panes)?;
         reap_protocol_clients(&mut clients);
         server.enforce_lifecycle_policies()?;
         if event_loop.pending_events() == 0 {
-            event_loop.poll(alert_timeout)?;
+            event_loop.poll(timeout)?;
         }
     }
 
@@ -93,6 +93,19 @@ pub fn run_event_loop(listen_path: &Path, server: Server) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// The soonest of the server loop's own deadlines, or `None` when no timer is
+/// armed and the loop may block until an event arrives.
+fn earliest_timeout(
+    left: Option<std::time::Duration>,
+    right: Option<std::time::Duration>,
+) -> Option<std::time::Duration> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(left.min(right)),
+        (left, None) => left,
+        (None, right) => right,
+    }
 }
 
 fn sync_event_loop_panes(

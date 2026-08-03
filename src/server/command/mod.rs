@@ -4097,6 +4097,12 @@ fn display_message(
         ),
         None => Vars::new(),
     };
+    set_current_client_vars(
+        st,
+        context,
+        resolved.map(|resolved| st.sessions()[resolved.session].id),
+        &mut vars,
+    );
     for (name, value) in st.env_iter() {
         vars.set(name, value);
     }
@@ -4239,6 +4245,53 @@ pub(super) fn vars_for(
 /// `#{...}` names real tmux exposes for the variables the suite exercises, plus
 /// the hmux-private `#{pane_agent*}` variables (looked up in `agents` by pane
 /// id; absent status expands to `"none"` and absent metadata expands empty).
+/// tmux's `cmd_find_client` with no `-c`: a command client has no session of
+/// its own, so client-scoped formats borrow the *current* client — the client
+/// attached to the target session with the most recent activity.
+///
+/// Publishing them is what makes `#{client_key_table}`/`#{client_prefix}`
+/// observable from a plain `display-message -p`, which is the only direct view
+/// of the prefix and repeat-chain state.
+fn set_current_client_vars(
+    st: &ServerState,
+    context: &ClientContext,
+    session_id: Option<u32>,
+    vars: &mut Vars,
+) {
+    let clients = st.attached_clients();
+    // The invoking client itself wins when it is one of the attached clients.
+    let client = context
+        .tty_name
+        .as_deref()
+        .and_then(|tty| clients.iter().find(|client| client.name == tty))
+        .or_else(|| {
+            clients
+                .iter()
+                .filter(|client| session_id.is_none_or(|id| client.session_id == id))
+                .max_by_key(|client| client.activity_micros)
+        });
+    let Some(client) = client else {
+        return;
+    };
+    let default_table = st
+        .sessions()
+        .iter()
+        .find(|session| session.id == client.session_id)
+        .map(|session| st.session_key_table(&session.name))
+        .unwrap_or_else(|| super::state::DEFAULT_KEY_TABLE.to_string());
+    vars.set("client_key_table", client.key_table.clone())
+        // tmux reports a prefix as "the client left its default table", so a
+        // live `bind -r` repeat chain reads as a held prefix too.
+        .set(
+            "client_prefix",
+            if client.key_table == default_table {
+                "0"
+            } else {
+                "1"
+            },
+        );
+}
+
 pub(super) fn vars_full(
     st: &ServerState,
     sess: &Session,

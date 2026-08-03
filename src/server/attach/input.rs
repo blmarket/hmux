@@ -76,6 +76,49 @@ impl AttachSession {
         }
     }
 
+    /// Mirror the client's key table into the server, tmux's
+    /// `server_status_client` after every table change: it is what
+    /// `#{client_key_table}`/`#{client_prefix}` read and what makes a status
+    /// line show a pending prefix.
+    fn publish_key_table(&mut self, state: &Arc<Mutex<ServerState>>) {
+        let table = self.compositor.input.keys.table();
+        if self.compositor.input.published_key_table == table {
+            return;
+        }
+        self.compositor.input.published_key_table = table.to_string();
+        let client = self.attachments.render_attachment.client_name();
+        if let Ok(mut st) = state.lock() {
+            st.set_client_key_table(&client, &self.compositor.input.published_key_table);
+        }
+        self.status
+            .status_cache
+            .update_client_key_table(self.compositor.input.published_key_table.clone());
+    }
+
+    /// tmux's `server_client_repeat_timer`: a `bind -r` chain lapses on its own
+    /// once `repeat-time` passes, with no further input.
+    pub(super) fn expire_repeat_chain(
+        &mut self,
+        state: &Arc<Mutex<ServerState>>,
+        target: &str,
+        now: Instant,
+    ) {
+        let default_table = client_key_table(state, target);
+        if !self
+            .compositor
+            .input
+            .keys
+            .expire_repeat(now, &default_table)
+        {
+            return;
+        }
+        self.publish_key_table(state);
+    }
+
+    pub(super) fn repeat_deadline(&self) -> Option<Instant> {
+        self.compositor.input.keys.repeat_deadline()
+    }
+
     pub(super) fn drive_input(
         &mut self,
         state: &Arc<Mutex<ServerState>>,
@@ -254,6 +297,15 @@ impl AttachSession {
                 replayed.as_slice()
             };
             self.attachments.prompt_attachment.note_activity();
+            // tmux stamps the client and its session on every key, which is
+            // what defers the `lock-after-time` timer while somebody is typing
+            // — including keys that only reach the pane.
+            if let Ok(mut st) = state.lock() {
+                st.touch_client_activity(
+                    &self.attachments.render_attachment.client_name(),
+                    self.compositor.target.session_id,
+                );
+            }
             let mut prompt_tail = None;
             if self
                 .compositor
@@ -553,277 +605,11 @@ impl AttachSession {
                     force_render = true;
                     continue;
                 }
-                if self.compositor.input.prefix_pending {
-                    self.compositor.input.prefix_pending = false;
-                    // Flush any keystrokes typed before this command so the pane
-                    // sees them in order relative to a possible send-prefix byte.
-                    if !forward_buf.is_empty() {
-                        first_forward_at.get_or_insert_with(Instant::now);
-                        if let Ok(stats) = forward_input(state, target, &forward_buf) {
-                            add_input_stats(&mut forwarded, stats);
-                        }
-                        forward_buf.clear();
-                    }
-                    // The command key can be a multi-byte escape (e.g. PgUp), so
-                    // parse a logical key rather than taking one raw byte.
-                    let (key, mouse, consumed) = match decode_tty_key(&data[i..]) {
-                        Some((mut decoded, consumed)) => {
-                            resolve_mouse_key(
-                                &mut decoded,
-                                &mut self.compositor.input.mouse,
-                                state,
-                                target,
-                                self.viewport.cols,
-                                self.viewport.rows,
-                                &mut self.status.status_cache,
-                            );
-                            (decoded.code, decoded.mouse, consumed)
-                        }
-                        None => (Some(key_from_byte(data[i])), None, 1),
-                    };
-                    i += consumed;
-                    let Some(key) = key else {
-                        continue;
-                    };
-                    match dispatch_key_binding(
-                        "prefix",
-                        key,
-                        state,
-                        target,
-                        self.viewport.cols,
-                        self.viewport.pane_rows,
-                        hub,
-                        &self.compositor.target.context,
-                        mouse,
-                    ) {
-                        PrefixOutcome::Detach => {
-                            self.compositor.transition =
-                                Some(AttachTransition::Finish(AttachFinishReason::Detached));
-                            break;
-                        }
-                        PrefixOutcome::SendPrefix(bytes) => forward_buf.extend(bytes),
-                        PrefixOutcome::CopyMode(action) => {
-                            action.apply(state, target, self.viewport.pane_rows);
-                            force_render = true;
-                        }
-                        PrefixOutcome::Confirm { prompt, action } => {
-                            self.compositor.ui.confirm = Some(ActiveConfirm {
-                                prompt,
-                                action,
-                                confirm_key: b'y',
-                                default_yes: false,
-                                reply: None,
-                            });
-                            force_render = true;
-                        }
-                        PrefixOutcome::Prompt { args } => {
-                            if let Ok(mut prompt) = CommandPrompt::new(
-                                args,
-                                None,
-                                state,
-                                hub,
-                                &self.compositor.target.context,
-                            ) {
-                                if prompt.should_freeze() {
-                                    prompt.freeze(self.compositor.render.last_render.clone());
-                                }
-                                prompt.initial_incremental(
-                                    state,
-                                    hub,
-                                    &self.compositor.target.context,
-                                );
-                                self.compositor.ui.command_prompt = Some(prompt);
-                            }
-                            force_render = true;
-                        }
-                        PrefixOutcome::Message { text, duration } => {
-                            self.compositor.ui.confirm = None;
-                            self.compositor.ui.status_message = Some(StatusMessage {
-                                text,
-                                deadline: Instant::now()
-                                    .checked_add(duration)
-                                    .unwrap_or_else(Instant::now),
-                            });
-                            force_render = true;
-                        }
-                        PrefixOutcome::ViewOutput(bytes) => {
-                            append_view_output(state, target, &bytes);
-                            force_render = true;
-                        }
-                        PrefixOutcome::DeferredCommand { args, context } => {
-                            self.commands.pending = Some(AttachCommandRequest {
-                                source: command::DeferredCommand::Args(args),
-                                context,
-                                continuation: AttachCommandContinuation::PrefixBinding {
-                                    target: target.to_string(),
-                                    cols: self.viewport.cols,
-                                    pane_rows: self.viewport.pane_rows,
-                                },
-                            });
-                            break;
-                        }
-                        PrefixOutcome::DeferredMessage {
-                            args,
-                            context,
-                            target,
-                            escape_hashes,
-                            explicit_duration,
-                        } => {
-                            self.commands.pending = Some(AttachCommandRequest {
-                                source: command::DeferredCommand::Args(args),
-                                context,
-                                continuation: AttachCommandContinuation::Message {
-                                    target,
-                                    escape_hashes,
-                                    explicit_duration,
-                                },
-                            });
-                            break;
-                        }
-                        PrefixOutcome::Handled { changed } => {
-                            if changed {
-                                force_render = true;
-                            }
-                        }
-                    }
-                    continue;
-                }
-                if copy_mode::is_active(state, target) {
-                    let (key, mouse, consumed) = match decode_tty_key(&data[i..]) {
-                        Some((mut decoded, consumed)) => {
-                            resolve_mouse_key(
-                                &mut decoded,
-                                &mut self.compositor.input.mouse,
-                                state,
-                                target,
-                                self.viewport.cols,
-                                self.viewport.rows,
-                                &mut self.status.status_cache,
-                            );
-                            (decoded.code, decoded.mouse, consumed)
-                        }
-                        None => (Some(key_from_byte(data[i])), None, 1),
-                    };
-                    i += consumed;
-                    let Some(key) = key else {
-                        continue;
-                    };
-                    if is_configured_prefix(state, target, key) {
-                        self.compositor.input.prefix_pending = true;
-                        continue;
-                    }
-                    let copy_table = copy_mode::key_table(state, target);
-                    let table = state
-                        .lock()
-                        .ok()
-                        .filter(|st| st.key_binding(copy_table, key).is_none())
-                        .and_then(|st| st.key_binding("root", key).map(|_| "root"))
-                        .unwrap_or(copy_table);
-                    match dispatch_key_binding(
-                        table,
-                        key,
-                        state,
-                        target,
-                        self.viewport.cols,
-                        self.viewport.pane_rows,
-                        hub,
-                        &self.compositor.target.context,
-                        mouse,
-                    ) {
-                        PrefixOutcome::Detach => {
-                            self.compositor.transition =
-                                Some(AttachTransition::Finish(AttachFinishReason::Detached));
-                            break;
-                        }
-                        PrefixOutcome::SendPrefix(bytes) => forward_buf.extend(bytes),
-                        PrefixOutcome::CopyMode(action) => {
-                            action.reactivate(state, target);
-                            force_render = true;
-                        }
-                        PrefixOutcome::Confirm { prompt, action } => {
-                            self.compositor.ui.confirm = Some(ActiveConfirm {
-                                prompt,
-                                action,
-                                confirm_key: b'y',
-                                default_yes: false,
-                                reply: None,
-                            });
-                            force_render = true;
-                        }
-                        PrefixOutcome::Prompt { args } => {
-                            if let Ok(mut prompt) = CommandPrompt::new(
-                                args,
-                                None,
-                                state,
-                                hub,
-                                &self.compositor.target.context,
-                            ) {
-                                if prompt.should_freeze() {
-                                    prompt.freeze(self.compositor.render.last_render.clone());
-                                }
-                                prompt.initial_incremental(
-                                    state,
-                                    hub,
-                                    &self.compositor.target.context,
-                                );
-                                self.compositor.ui.command_prompt = Some(prompt);
-                            }
-                            force_render = true;
-                        }
-                        PrefixOutcome::Message { text, duration } => {
-                            self.compositor.ui.confirm = None;
-                            self.compositor.ui.status_message = Some(StatusMessage {
-                                text,
-                                deadline: Instant::now()
-                                    .checked_add(duration)
-                                    .unwrap_or_else(Instant::now),
-                            });
-                            force_render = true;
-                        }
-                        PrefixOutcome::ViewOutput(bytes) => {
-                            append_view_output(state, target, &bytes);
-                            force_render = true;
-                        }
-                        PrefixOutcome::DeferredCommand { args, context } => {
-                            self.commands.pending = Some(AttachCommandRequest {
-                                source: command::DeferredCommand::Args(args),
-                                context,
-                                continuation: AttachCommandContinuation::PrefixBinding {
-                                    target: target.to_string(),
-                                    cols: self.viewport.cols,
-                                    pane_rows: self.viewport.pane_rows,
-                                },
-                            });
-                            break;
-                        }
-                        PrefixOutcome::DeferredMessage {
-                            args,
-                            context,
-                            target,
-                            escape_hashes,
-                            explicit_duration,
-                        } => {
-                            self.commands.pending = Some(AttachCommandRequest {
-                                source: command::DeferredCommand::Args(args),
-                                context,
-                                continuation: AttachCommandContinuation::Message {
-                                    target,
-                                    escape_hashes,
-                                    explicit_duration,
-                                },
-                            });
-                            break;
-                        }
-                        PrefixOutcome::Handled { changed } => {
-                            if changed {
-                                force_render = true;
-                            }
-                        }
-                    }
-                    continue;
-                }
-                // Normal passthrough: forward bytes verbatim (arrow keys, UTF-8,
-                // pastes, …), intercepting only the prefix key.
+                // Everything else goes through the client's key tables, which
+                // decide whether this key runs a binding, belongs to the key
+                // machinery itself (the prefix, or a stray key after it), or is
+                // the pane's. The command key can be a multi-byte escape (e.g.
+                // PgUp), so parse a logical key rather than one raw byte.
                 let start = i;
                 let (key, mouse, consumed) = match decode_tty_key(&data[i..]) {
                     Some((mut decoded, consumed)) => {
@@ -841,134 +627,139 @@ impl AttachSession {
                     None => (Some(key_from_byte(data[i])), None, 1),
                 };
                 i += consumed;
-                if key.is_some_and(|key| is_configured_prefix(state, target, key)) {
-                    // Flush what preceded the prefix, then await the command key.
-                    if !forward_buf.is_empty() {
-                        first_forward_at.get_or_insert_with(Instant::now);
-                        if let Ok(stats) = forward_input(state, target, &forward_buf) {
-                            add_input_stats(&mut forwarded, stats);
-                        }
-                        forward_buf.clear();
+                let Some(key) = key else {
+                    continue;
+                };
+                let tables = ServerKeyTables::new(state, target);
+                let resolution = self
+                    .compositor
+                    .input
+                    .keys
+                    .resolve(key, Instant::now(), &tables);
+                // The walk can move the client between tables even when the key
+                // ends up in the pane — an expired prefix, a chain that just
+                // ended — so republish before acting on the outcome.
+                self.publish_key_table(state);
+                if matches!(resolution, KeyResolution::Forward) {
+                    if forward_unbound {
+                        forward_buf.extend_from_slice(&data[start..i]);
                     }
-                    self.compositor.input.prefix_pending = true;
-                } else if key.is_some_and(|key| {
-                    let table = client_key_table(state, target);
-                    state
-                        .lock()
-                        .ok()
-                        .is_some_and(|st| st.key_binding(&table, key).is_some())
-                }) {
-                    if !forward_buf.is_empty() {
-                        first_forward_at.get_or_insert_with(Instant::now);
-                        if let Ok(stats) = forward_input(state, target, &forward_buf) {
-                            add_input_stats(&mut forwarded, stats);
-                        }
-                        forward_buf.clear();
+                    continue;
+                }
+                // The key machinery claimed this key, so flush what preceded
+                // it: a `send-prefix` byte has to stay in typing order.
+                if !forward_buf.is_empty() {
+                    first_forward_at.get_or_insert_with(Instant::now);
+                    if let Ok(stats) = forward_input(state, target, &forward_buf) {
+                        add_input_stats(&mut forwarded, stats);
                     }
-                    let table = client_key_table(state, target);
-                    match dispatch_key_binding(
-                        &table,
-                        key.expect("checked root binding"),
-                        state,
-                        target,
-                        self.viewport.cols,
-                        self.viewport.pane_rows,
-                        hub,
-                        &self.compositor.target.context,
-                        mouse,
-                    ) {
-                        PrefixOutcome::Detach => {
-                            self.compositor.transition =
-                                Some(AttachTransition::Finish(AttachFinishReason::Detached));
-                            break;
-                        }
-                        PrefixOutcome::SendPrefix(bytes) => forward_buf.extend(bytes),
-                        PrefixOutcome::CopyMode(action) => {
+                    forward_buf.clear();
+                }
+                let KeyResolution::Binding { table } = resolution else {
+                    continue;
+                };
+                // Re-entering copy mode from inside it only honors `-u`.
+                let reentering_copy_mode = copy_mode::is_active(state, target);
+                match dispatch_key_binding(
+                    &table,
+                    key,
+                    state,
+                    target,
+                    self.viewport.cols,
+                    self.viewport.pane_rows,
+                    hub,
+                    &self.compositor.target.context,
+                    mouse,
+                ) {
+                    PrefixOutcome::Detach => {
+                        self.compositor.transition =
+                            Some(AttachTransition::Finish(AttachFinishReason::Detached));
+                        break;
+                    }
+                    PrefixOutcome::SendPrefix(bytes) => forward_buf.extend(bytes),
+                    PrefixOutcome::CopyMode(action) => {
+                        if reentering_copy_mode {
+                            action.reactivate(state, target);
+                        } else {
                             action.apply(state, target, self.viewport.pane_rows);
-                            force_render = true;
                         }
-                        PrefixOutcome::Confirm { prompt, action } => {
-                            self.compositor.ui.confirm = Some(ActiveConfirm {
-                                prompt,
-                                action,
-                                confirm_key: b'y',
-                                default_yes: false,
-                                reply: None,
-                            });
-                            force_render = true;
-                        }
-                        PrefixOutcome::Prompt { args } => {
-                            if let Ok(mut prompt) = CommandPrompt::new(
-                                args,
-                                None,
-                                state,
-                                hub,
-                                &self.compositor.target.context,
-                            ) {
-                                if prompt.should_freeze() {
-                                    prompt.freeze(self.compositor.render.last_render.clone());
-                                }
-                                prompt.initial_incremental(
-                                    state,
-                                    hub,
-                                    &self.compositor.target.context,
-                                );
-                                self.compositor.ui.command_prompt = Some(prompt);
-                            }
-                            force_render = true;
-                        }
-                        PrefixOutcome::Message { text, duration } => {
-                            self.compositor.ui.confirm = None;
-                            self.compositor.ui.status_message = Some(StatusMessage {
-                                text,
-                                deadline: Instant::now()
-                                    .checked_add(duration)
-                                    .unwrap_or_else(Instant::now),
-                            });
-                            force_render = true;
-                        }
-                        PrefixOutcome::ViewOutput(bytes) => {
-                            append_view_output(state, target, &bytes);
-                            force_render = true;
-                        }
-                        PrefixOutcome::DeferredCommand { args, context } => {
-                            self.commands.pending = Some(AttachCommandRequest {
-                                source: command::DeferredCommand::Args(args),
-                                context,
-                                continuation: AttachCommandContinuation::PrefixBinding {
-                                    target: target.to_string(),
-                                    cols: self.viewport.cols,
-                                    pane_rows: self.viewport.pane_rows,
-                                },
-                            });
-                            break;
-                        }
-                        PrefixOutcome::DeferredMessage {
+                        force_render = true;
+                    }
+                    PrefixOutcome::Confirm { prompt, action } => {
+                        self.compositor.ui.confirm = Some(ActiveConfirm {
+                            prompt,
+                            action,
+                            confirm_key: b'y',
+                            default_yes: false,
+                            reply: None,
+                        });
+                        force_render = true;
+                    }
+                    PrefixOutcome::Prompt { args } => {
+                        if let Ok(mut prompt) = CommandPrompt::new(
                             args,
-                            context,
-                            target,
-                            escape_hashes,
-                            explicit_duration,
-                        } => {
-                            self.commands.pending = Some(AttachCommandRequest {
-                                source: command::DeferredCommand::Args(args),
-                                context,
-                                continuation: AttachCommandContinuation::Message {
-                                    target,
-                                    escape_hashes,
-                                    explicit_duration,
-                                },
-                            });
-                            break;
-                        }
-                        PrefixOutcome::Handled { changed } => {
-                            if changed {
-                                force_render = true;
+                            None,
+                            state,
+                            hub,
+                            &self.compositor.target.context,
+                        ) {
+                            if prompt.should_freeze() {
+                                prompt.freeze(self.compositor.render.last_render.clone());
                             }
+                            prompt.initial_incremental(state, hub, &self.compositor.target.context);
+                            self.compositor.ui.command_prompt = Some(prompt);
+                        }
+                        force_render = true;
+                    }
+                    PrefixOutcome::Message { text, duration } => {
+                        self.compositor.ui.confirm = None;
+                        self.compositor.ui.status_message = Some(StatusMessage {
+                            text,
+                            deadline: Instant::now()
+                                .checked_add(duration)
+                                .unwrap_or_else(Instant::now),
+                        });
+                        force_render = true;
+                    }
+                    PrefixOutcome::ViewOutput(bytes) => {
+                        append_view_output(state, target, &bytes);
+                        force_render = true;
+                    }
+                    PrefixOutcome::DeferredCommand { args, context } => {
+                        self.commands.pending = Some(AttachCommandRequest {
+                            source: command::DeferredCommand::Args(args),
+                            context,
+                            continuation: AttachCommandContinuation::PrefixBinding {
+                                target: target.to_string(),
+                                cols: self.viewport.cols,
+                                pane_rows: self.viewport.pane_rows,
+                            },
+                        });
+                        break;
+                    }
+                    PrefixOutcome::DeferredMessage {
+                        args,
+                        context,
+                        target,
+                        escape_hashes,
+                        explicit_duration,
+                    } => {
+                        self.commands.pending = Some(AttachCommandRequest {
+                            source: command::DeferredCommand::Args(args),
+                            context,
+                            continuation: AttachCommandContinuation::Message {
+                                target,
+                                escape_hashes,
+                                explicit_duration,
+                            },
+                        });
+                        break;
+                    }
+                    PrefixOutcome::Handled { changed } => {
+                        if changed {
+                            force_render = true;
                         }
                     }
-                } else if forward_unbound {
-                    forward_buf.extend_from_slice(&data[start..i]);
                 }
             }
             if matches!(
