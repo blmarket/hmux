@@ -9,7 +9,16 @@ from types import SimpleNamespace
 
 from rich.console import Console
 from textual.containers import Vertical
-from textual.widgets import Button, DataTable, Input, Label, Select, Static, TextArea
+from textual.widgets import (
+    Button,
+    Checkbox,
+    DataTable,
+    Input,
+    Label,
+    Select,
+    Static,
+    TextArea,
+)
 
 from agentmon.app import (
     AgentmonApp,
@@ -1116,6 +1125,82 @@ def test_new_run_agent_selector_is_used_for_confirmation() -> None:
     asyncio.run(exercise())
 
 
+def test_new_run_devshell_toggle_is_on_when_a_flake_is_reachable(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from agentmon import app as app_module
+
+    async def exercise() -> None:
+        repo = Repository(root=tmp_path, common_dir=tmp_path / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            app.push_screen(NewRunScreen(branch="nix-run", prompt="Do it.\n"))
+            await pilot.pause()
+            toggle = app.screen.query_one("#devshell", Checkbox)
+            assert toggle.value is True
+            assert toggle.disabled is False
+
+            await pilot.click("#continue")
+            await pilot.pause()
+
+            screen = app.screen
+            assert isinstance(screen, ConfirmScreen)
+            assert screen.draft.devshell is True
+
+    monkeypatch.setattr(app_module, "devshell_available", lambda _path: True)
+    asyncio.run(exercise())
+
+
+def test_new_run_devshell_toggle_is_disabled_without_nix(monkeypatch) -> None:
+    from agentmon import app as app_module
+
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(110, 34)) as pilot:
+            app.push_screen(NewRunScreen(branch="plain-run", prompt="Do it.\n"))
+            await pilot.pause()
+            toggle = app.screen.query_one("#devshell", Checkbox)
+            assert toggle.value is False
+            assert toggle.disabled is True
+
+            await pilot.click("#continue")
+            await pilot.pause()
+
+            screen = app.screen
+            assert isinstance(screen, ConfirmScreen)
+            assert screen.draft.devshell is False
+
+    monkeypatch.setattr(app_module, "devshell_available", lambda _path: False)
+    asyncio.run(exercise())
+
+
+def test_new_run_dialog_fits_80x24_with_the_devshell_toggle(monkeypatch) -> None:
+    from agentmon import app as app_module
+
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(80, 24)) as pilot:
+            app.push_screen(NewRunScreen(branch="nix-run", prompt="Do it.\n"))
+            await pilot.pause()
+
+            dialog = app.screen.query_one("#dialog")
+            toggle = app.screen.query_one("#devshell", Checkbox)
+            assert toggle.region.intersection(dialog.content_region) == toggle.region
+            for selector in ("#edit", "#history", "#continue", "#cancel"):
+                control = app.screen.query_one(selector, Button)
+                assert control.region.intersection(dialog.content_region) == control.region
+
+    monkeypatch.setattr(app_module, "devshell_available", lambda _path: True)
+    asyncio.run(exercise())
+
+
 def test_populate_preserves_selected_claude_agent() -> None:
     async def exercise() -> None:
         root = Path("/demo/project")
@@ -1188,6 +1273,31 @@ def test_l_opens_launch_agent_screen_with_instruction_and_choices() -> None:
             assert screen.query_one("#model", Select).value == "default"
 
     asyncio.run(exercise())
+
+
+def test_launch_agent_screen_reflects_devshell_availability(monkeypatch) -> None:
+    from agentmon import app as app_module
+
+    async def exercise(available: bool) -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(110, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("l")
+            await pilot.pause()
+
+            screen = app.screen
+            assert isinstance(screen, LaunchAgentScreen)
+            toggle = screen.query_one("#devshell", Checkbox)
+            assert toggle.value is available
+            assert toggle.disabled is not available
+
+    monkeypatch.setattr(app_module, "devshell_available", lambda _path: True)
+    asyncio.run(exercise(True))
+    monkeypatch.setattr(app_module, "devshell_available", lambda _path: False)
+    asyncio.run(exercise(False))
 
 
 def test_launch_agent_cycle_shortcuts() -> None:

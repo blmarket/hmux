@@ -51,6 +51,7 @@ from .services import (
     AgentmonService,
     CommandError,
     WorktreeOverview,
+    devshell_available,
     discover_repository,
     discover_socket,
 )
@@ -1080,6 +1081,17 @@ class NewRunScreen(Screen):
                         id="branch",
                         disabled=self.restart_draft is not None,
                     )
+                with Vertical(classes="draft-field"):
+                    yield Label("Dev shell")
+                    # The worktree does not exist until launch, so the repo root
+                    # stands in for the flake the new branch will carry.
+                    devshell = devshell_available(self.service.repo.root)
+                    yield Checkbox(
+                        "nix develop",
+                        value=devshell,
+                        disabled=not devshell,
+                        id="devshell",
+                    )
             yield Static("Worktree       —", id="worktree")
             yield Static("Instruction    Not written", id="prompt-status")
             with Horizontal(classes="buttons"):
@@ -1179,6 +1191,7 @@ class NewRunScreen(Screen):
             branch = self.query_one("#branch", Input).value
             agent = self.query_one("#agent", Select).value
             selected_agent = agent if isinstance(agent, str) else DEFAULT_LAUNCH_AGENT
+            devshell = self.query_one("#devshell", Checkbox).value
             if self.restart_draft is not None:
                 draft = LaunchDraft(
                     branch=self.restart_draft.branch,
@@ -1187,6 +1200,7 @@ class NewRunScreen(Screen):
                     overwrite_worktree=True,
                     restart_worktree=True,
                     agent=selected_agent,
+                    devshell=devshell,
                     repository=self.service.repo,
                 )
                 self.app.push_screen(ConfirmScreen(draft))
@@ -1196,7 +1210,11 @@ class NewRunScreen(Screen):
                 except ValueError as exc:
                     self.query_one("#error", Static).update(str(exc))
                 else:
-                    self.app.push_screen(ConfirmScreen(replace(draft, agent=selected_agent)))
+                    self.app.push_screen(
+                        ConfirmScreen(
+                            replace(draft, agent=selected_agent, devshell=devshell)
+                        )
+                    )
         elif event.button.id == "cancel":
             self.app.pop_screen()
 
@@ -1353,6 +1371,15 @@ class LaunchAgentScreen(Screen):
                         id="effort",
                         disabled=len(efforts) == 1,
                     )
+                with Vertical(classes="draft-field"):
+                    yield Label("Dev shell")
+                    devshell = devshell_available(self.run.worktree)
+                    yield Checkbox(
+                        "nix develop",
+                        value=devshell,
+                        disabled=not devshell,
+                        id="devshell",
+                    )
             yield Label("Instruction (i) — leave empty to start the agent without one")
             yield TextArea(id="instruction")
             yield Static("", id="error")
@@ -1431,6 +1458,7 @@ class LaunchAgentScreen(Screen):
             self.query_one("#effort", Select), DEFAULT_LAUNCH_CHOICE
         )
         self._instruction = self.query_one("#instruction", TextArea).text
+        self._devshell = self.query_one("#devshell", Checkbox).value
         self.query_one("#launch", Button).disabled = True
         self._start_agent()
 
@@ -1443,6 +1471,7 @@ class LaunchAgentScreen(Screen):
                 model=self._model,
                 effort=self._effort,
                 instruction=self._instruction,
+                devshell=self._devshell,
             )
         except (CommandError, OSError) as exc:
             self.app.call_from_thread(self._failed, str(exc))

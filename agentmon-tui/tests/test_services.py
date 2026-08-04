@@ -881,6 +881,89 @@ def test_launch_uses_claude_command_when_selected(
     )
 
 
+def test_launch_with_devshell_probes_before_entering_the_shell(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    from agentmon import services
+
+    worktree = repository.root.parent / "devshell-worktree"
+    worktree.mkdir()
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], *, cwd=None, check=True):
+        calls.append(args)
+        stdout = "abc123\n" if args[-2:] == ["--short", "HEAD"] else ""
+        if "new-window" in args:
+            stdout = "7\n"
+        return subprocess.CompletedProcess(args, 0, stdout, "")
+
+    monkeypatch.setattr(services, "_run", fake_run)
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+
+    service.launch(
+        LaunchDraft("devshell-worktree", worktree, "Do it.\n", devshell=True),
+        lambda _step: None,
+    )
+
+    launch_call = next(call for call in calls if "new-window" in call)
+    assert launch_call[-1] == (
+        "if nix develop . --command true >/dev/null 2>&1; then "
+        'exec nix develop . --command codex --yolo "$(cat instruction.md)"; fi; '
+        'exec codex --yolo "$(cat instruction.md)"'
+    )
+
+
+def test_devshell_fallback_is_not_tied_to_the_agent_exit_status(
+    repository: Repository,
+) -> None:
+    """A failing agent must not silently relaunch itself outside the shell."""
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    command = service._agent_command("codex", devshell=True)
+
+    # The bare fallback is reachable only when the probe fails; once the probe
+    # succeeds the `exec` replaces the shell, so the agent's own exit status can
+    # never reach the fallback.
+    probe, _, rest = command.partition("; then ")
+    assert probe == "if nix develop . --command true >/dev/null 2>&1"
+    assert rest.startswith("exec nix develop . --command ")
+    assert "||" not in command
+
+
+def test_launch_without_devshell_keeps_the_plain_command(
+    repository: Repository,
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+
+    assert service._agent_command("codex") == 'exec codex --yolo "$(cat instruction.md)"'
+    assert "nix" not in service._agent_command("claude")
+
+
+def test_devshell_available_needs_both_nix_and_a_flake(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import services
+
+    monkeypatch.setattr(services.shutil, "which", lambda _name: "/usr/bin/nix")
+    assert not services.devshell_available(tmp_path)
+
+    (tmp_path / "flake.nix").write_text("{}")
+    assert services.devshell_available(tmp_path)
+
+    monkeypatch.setattr(services.shutil, "which", lambda _name: None)
+    assert not services.devshell_available(tmp_path)
+
+
+def test_devshell_available_ignores_a_flake_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import services
+
+    monkeypatch.setattr(services.shutil, "which", lambda _name: "/usr/bin/nix")
+    (tmp_path / "flake.nix").mkdir()
+
+    assert not services.devshell_available(tmp_path)
+
+
 def test_launch_existing_branch_puts_worktree_path_before_branch(
     monkeypatch: pytest.MonkeyPatch, repository: Repository
 ) -> None:
@@ -1082,6 +1165,32 @@ def test_launch_agent_commits_instruction_and_builds_command(
     assert captured["command"] == (
         'exec codex --yolo -m gpt-5-codex -c model_reasoning_effort=high'
         ' "$(cat instruction.md)"'
+    )
+
+
+def test_launch_agent_devshell_wraps_the_interactive_command(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    target = repository.root.parent / "launch-devshell"
+    git(repository.root, "worktree", "add", "-b", "launch-devshell", str(target))
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        service,
+        "_open_agent_window",
+        lambda worktree, name, command: captured.update(command=command) or "9",
+    )
+    run = AgentRun(
+        "finished:devshell", "0:", "launch-devshell", "exited", "finished", target
+    )
+
+    service.launch_agent(run, agent="claude", instruction="  ", devshell=True)
+
+    # No instruction, so neither branch of the guard reads instruction.md.
+    assert captured["command"] == (
+        "if nix develop . --command true >/dev/null 2>&1; then "
+        "exec nix develop . --command claude --dangerously-skip-permissions; fi; "
+        "exec claude --dangerously-skip-permissions"
     )
 
 

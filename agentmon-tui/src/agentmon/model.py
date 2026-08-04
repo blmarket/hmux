@@ -96,6 +96,7 @@ class LaunchDraft:
     agent: str = DEFAULT_LAUNCH_AGENT
     model: str = DEFAULT_LAUNCH_CHOICE
     effort: str = DEFAULT_LAUNCH_CHOICE
+    devshell: bool = False
     repository: Repository | None = None
 
 

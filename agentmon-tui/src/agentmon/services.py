@@ -4,6 +4,7 @@ import os
 import re
 import selectors
 import shlex
+import shutil
 import stat
 import subprocess
 import threading
@@ -38,6 +39,24 @@ INSTRUCTION_FILENAMES = ("instruction.md", "prompt.md")
 SHELL_COMMANDS = frozenset(
     {"sh", "bash", "zsh", "fish", "dash", "ksh", "mksh", "tcsh", "csh", "ash"}
 )
+
+
+# Entering a nix dev shell is deferred into the agent pane: a cold flake can
+# take minutes to build, and there the wait and any error are visible instead
+# of freezing the TUI.
+DEVSHELL_PREFIX = "nix develop . --command"
+DEVSHELL_PROBE = f"{DEVSHELL_PREFIX} true >/dev/null 2>&1"
+
+
+def devshell_available(path: Path) -> bool:
+    """Return whether `path` looks like it can supply a nix dev shell.
+
+    Deliberately cheap: this gates a launch-form toggle, so it must not
+    evaluate the flake. Whether the flake actually exposes a dev shell is
+    settled by the probe in the launch command, where a miss costs a silent
+    fallback instead of a stalled form.
+    """
+    return shutil.which("nix") is not None and (path / "flake.nix").is_file()
 
 
 def _is_shell_command(command: str) -> bool:
@@ -994,7 +1013,9 @@ class AgentmonService:
         commit = self.save_instruction(draft.worktree, draft.branch, draft.prompt)
         progress(LaunchStep("instruction.md committed", commit or "unchanged"))
 
-        command = self._agent_command(draft.agent, draft.model, draft.effort)
+        command = self._agent_command(
+            draft.agent, draft.model, draft.effort, devshell=draft.devshell
+        )
         window = self._open_agent_window(draft.worktree, draft.branch, command)
         progress(LaunchStep("hmux window and agent started", window))
         return window
@@ -1007,6 +1028,7 @@ class AgentmonService:
         model: str = "default",
         effort: str = "default",
         instruction: str = "",
+        devshell: bool = False,
     ) -> str:
         """Start an agent in an existing worktree, without touching branches."""
         worktree = self._worktree_root(run.worktree)
@@ -1014,7 +1036,11 @@ class AgentmonService:
         if with_instruction:
             self.save_instruction(worktree, run.branch, instruction)
         command = self._agent_command(
-            agent, model, effort, with_instruction=with_instruction
+            agent,
+            model,
+            effort,
+            with_instruction=with_instruction,
+            devshell=devshell,
         )
         return self._open_agent_window(worktree, run.branch, command)
 
@@ -1035,6 +1061,7 @@ class AgentmonService:
         effort: str = "default",
         *,
         with_instruction: bool = True,
+        devshell: bool = False,
     ) -> str:
         if agent == "codex":
             parts = ["codex", "--yolo"]
@@ -1048,7 +1075,17 @@ class AgentmonService:
                 parts.extend(["--model", model])
         else:
             raise CommandError(f"Unsupported launch agent: {agent}")
-        command = "exec " + shlex.join(parts)
+        invocation = shlex.join(parts)
         if with_instruction:
-            command += ' "$(cat instruction.md)"'
-        return command
+            invocation += ' "$(cat instruction.md)"'
+        if not devshell:
+            return "exec " + invocation
+        # Probe separately rather than falling back on the agent's own exit
+        # status: `nix develop -c agent || agent` cannot tell "the dev shell
+        # failed to build" from "the agent exited nonzero", and would relaunch
+        # a bare agent behind the user's back. `.` pins the flake to the
+        # worktree instead of letting nix search parent directories.
+        return (
+            f"if {DEVSHELL_PROBE}; then exec {DEVSHELL_PREFIX} {invocation}; fi; "
+            f"exec {invocation}"
+        )
