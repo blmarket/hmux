@@ -12,6 +12,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -2144,7 +2145,7 @@ pub(crate) struct PromptCompletion {
 /// blocking receive this replaces saw when its sender went away.
 #[derive(Clone)]
 pub(crate) struct PromptReply {
-    sender: Arc<Mutex<Option<CompletionSender<Option<PromptCompletion>>>>>,
+    sender: Rc<RefCell<Option<CompletionSender<Option<PromptCompletion>>>>>,
 }
 
 impl PromptReply {
@@ -2152,17 +2153,17 @@ impl PromptReply {
         let (completion, sender) = completion_pair()?;
         Ok((
             Self {
-                sender: Arc::new(Mutex::new(Some(sender))),
+                sender: Rc::new(RefCell::new(Some(sender))),
             },
             completion,
         ))
     }
 
     pub(crate) fn send(&self, completion: Option<PromptCompletion>) {
-        let Ok(mut sender) = self.sender.lock() else {
-            return;
-        };
-        if let Some(sender) = sender.take() {
+        // Taken out from under the borrow: completing writes to a descriptor
+        // whose reader may answer again on the same turn.
+        let sender = self.sender.borrow_mut().take();
+        if let Some(sender) = sender {
             sender.complete(completion);
         }
     }
@@ -2174,7 +2175,10 @@ impl std::fmt::Debug for PromptReply {
             .debug_struct("PromptReply")
             .field(
                 "answered",
-                &self.sender.lock().is_ok_and(|sender| sender.is_none()),
+                &self
+                    .sender
+                    .try_borrow()
+                    .is_ok_and(|sender| sender.is_none()),
             )
             .finish()
     }
@@ -2182,7 +2186,7 @@ impl std::fmt::Debug for PromptReply {
 
 impl Drop for PromptReply {
     fn drop(&mut self) {
-        if Arc::strong_count(&self.sender) == 1 {
+        if Rc::strong_count(&self.sender) == 1 {
             self.send(None);
         }
     }
