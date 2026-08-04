@@ -11,7 +11,7 @@
 //! input, resize, dump. Compositing multiple panes onto an attached client's tty
 //! is the next milestone (see the module docs).
 
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::ffi::CString;
 use std::io::{self, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
@@ -20,7 +20,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex, Weak};
 use std::thread::{self, JoinHandle};
@@ -181,6 +181,15 @@ pub(crate) struct NativePaneObservation {
     mouse_tracking_mode: AtomicU8,
     mouse_utf8: AtomicBool,
     mouse_sgr: AtomicBool,
+    /// The terminal modes tmux publishes as `#{insert_flag}`,
+    /// `#{origin_flag}`, `#{wrap_flag}`, `#{cursor_flag}` and
+    /// `#{cursor_blinking}`. Ghostty owns the emulation; these are tracked
+    /// beside it because it does not expose them.
+    insert_mode: AtomicBool,
+    origin_mode: AtomicBool,
+    wrap_mode: AtomicBool,
+    cursor_visible: AtomicBool,
+    cursor_blinking: AtomicBool,
     /// DECCKM, DECKPAM and the requested `modifyOtherKeys` level, which
     /// together decide how a key is spelled for this pane.
     cursor_keys: AtomicBool,
@@ -189,6 +198,29 @@ pub(crate) struct NativePaneObservation {
     /// Set when the pane sent DSR ?996 and is waiting for an answer.
     theme_query: AtomicBool,
     background: Mutex<String>,
+    /// The rest of the OSC-set pane state, behind `#{pane_fg}`,
+    /// `#{cursor_colour}` and `#{pane_path}`.
+    foreground: Mutex<String>,
+    cursor_colour: Mutex<String>,
+    path: Mutex<String>,
+    /// The OSC 9;4 progress bar, behind `#{pane_pb_state}` (0..=4) and
+    /// `#{pane_pb_progress}`.
+    progress_state: AtomicU8,
+    progress_value: AtomicU8,
+    /// The pane's tab stops, or `None` while they are still the default every
+    /// eight columns. A resize puts them back, as tmux's `screen_reset_tabs`
+    /// does.
+    tab_stops: Mutex<Option<BTreeSet<u16>>>,
+    /// The pane's width, which is what the default tab stops are laid out
+    /// against. Held here so a tab edit never has to lock the terminal.
+    columns: AtomicU16,
+    /// Whether the pane is on its alternate screen (`#{alternate_on}`), and the
+    /// cursor DECSET 1049 saved on the way in. tmux leaves the saved position
+    /// behind on the way out, and starts it at `UINT_MAX` to mean "never set" —
+    /// which is the value `#{alternate_saved_x}` reports.
+    alternate_on: AtomicBool,
+    alternate_saved_x: AtomicU32,
+    alternate_saved_y: AtomicU32,
     child: Option<ObservedChild>,
     output_waiters: Mutex<Vec<Weak<OutputEvent>>>,
     output_timing: Option<Arc<OutputTiming>>,
@@ -621,7 +653,12 @@ impl OutputSubscription {
 }
 
 impl NativePaneObservation {
-    fn new(term: Arc<Mutex<Terminal>>, child: Option<ObservedChild>, rows: u16) -> Self {
+    fn new(
+        term: Arc<Mutex<Terminal>>,
+        child: Option<ObservedChild>,
+        cols: u16,
+        rows: u16,
+    ) -> Self {
         let latency_enabled = matches!(
             std::env::var("HMUX_LATENCY"),
             Ok(value) if !value.is_empty() && value != "0"
@@ -640,10 +677,25 @@ impl NativePaneObservation {
             mouse_tracking_mode: AtomicU8::new(0),
             mouse_utf8: AtomicBool::new(false),
             mouse_sgr: AtomicBool::new(false),
+            insert_mode: AtomicBool::new(false),
+            origin_mode: AtomicBool::new(false),
+            wrap_mode: AtomicBool::new(true),
+            cursor_visible: AtomicBool::new(true),
+            cursor_blinking: AtomicBool::new(false),
             cursor_keys: AtomicBool::new(false),
             application_keypad: AtomicBool::new(false),
             extended_keys_request: AtomicU8::new(0),
             background: Mutex::new("default".to_string()),
+            foreground: Mutex::new("default".to_string()),
+            cursor_colour: Mutex::new("none".to_string()),
+            path: Mutex::new(String::new()),
+            progress_state: AtomicU8::new(0),
+            progress_value: AtomicU8::new(0),
+            tab_stops: Mutex::new(None),
+            columns: AtomicU16::new(cols),
+            alternate_on: AtomicBool::new(false),
+            alternate_saved_x: AtomicU32::new(u32::MAX),
+            alternate_saved_y: AtomicU32::new(u32::MAX),
             child,
             output_waiters: Mutex::new(Vec::new()),
             output_timing: latency_enabled.then(|| {
@@ -669,6 +721,74 @@ impl NativePaneObservation {
                 2 => ExtendedKeys::All,
                 _ => ExtendedKeys::Off,
             },
+        }
+    }
+
+    fn osc_state(&self) -> PaneOscState {
+        let read = |slot: &Mutex<String>| {
+            slot.lock()
+                .map(|value| value.clone())
+                .unwrap_or_default()
+        };
+        PaneOscState {
+            foreground: read(&self.foreground),
+            cursor_colour: read(&self.cursor_colour),
+            path: read(&self.path),
+            progress_state: match self.progress_state.load(Ordering::Acquire) {
+                1 => "normal",
+                2 => "error",
+                3 => "indeterminate",
+                4 => "paused",
+                _ => "hidden",
+            },
+            progress_value: self.progress_value.load(Ordering::Acquire),
+        }
+    }
+
+    /// Apply `edit` to the pane's tab stops, materializing the defaults first
+    /// if the pane has not changed them yet.
+    fn update_tab_stops(&self, edit: impl FnOnce(&mut BTreeSet<u16>)) {
+        let columns = self.columns.load(Ordering::Acquire);
+        if let Ok(mut stops) = self.tab_stops.lock() {
+            edit(stops.get_or_insert_with(|| default_tab_stops(columns)));
+        }
+    }
+
+    /// The pane's tab stops, as `#{pane_tabs}` lists them.
+    fn tab_stops(&self) -> Vec<u16> {
+        self.tab_stops
+            .lock()
+            .ok()
+            .and_then(|stops| stops.as_ref().map(|stops| stops.iter().copied().collect()))
+            .unwrap_or_else(|| {
+                default_tab_stops(self.columns.load(Ordering::Acquire))
+                    .into_iter()
+                    .collect()
+            })
+    }
+
+    /// The pane's scroll region, as `#{scroll_region_upper}`/`#{lower}` report
+    /// it: the DECSTBM region when one is set, else the whole screen.
+    fn scroll_region(&self) -> (u16, u16) {
+        self.redraw_detector
+            .lock()
+            .map(|detector| {
+                let region = detector.region();
+                (region.top, region.bottom)
+            })
+            .unwrap_or((0, 0))
+    }
+
+    fn terminal_modes(&self) -> PaneTerminalModes {
+        PaneTerminalModes {
+            insert: self.insert_mode.load(Ordering::Acquire),
+            origin: self.origin_mode.load(Ordering::Acquire),
+            wrap: self.wrap_mode.load(Ordering::Acquire),
+            cursor_visible: self.cursor_visible.load(Ordering::Acquire),
+            cursor_blinking: self.cursor_blinking.load(Ordering::Acquire),
+            keypad: self.application_keypad.load(Ordering::Acquire),
+            cursor_keys: self.cursor_keys.load(Ordering::Acquire),
+            cursor_shape: PaneCursorShape::from_parameter(self.cursor_shape.load(Ordering::Acquire)),
         }
     }
 
@@ -942,6 +1062,7 @@ impl Pane {
             observation: Arc::new(NativePaneObservation::new(
                 Arc::new(Mutex::new(term)),
                 None,
+                cols,
                 rows,
             )),
             terminal_queries: Arc::new(Mutex::new(VecDeque::new())),
@@ -1037,6 +1158,7 @@ impl Pane {
                 pid: pid as u32,
                 alive: Arc::clone(&alive),
             }),
+            cols,
             rows,
         ));
         let pane_io = PaneIo::new(
@@ -1370,6 +1492,14 @@ impl Pane {
                 detector.resize(rows);
             }
         }
+        // tmux's screen_resize lays the default tab stops out afresh, dropping
+        // whatever the pane had set.
+        self.observation
+            .columns
+            .store(cols, Ordering::Release);
+        if let Ok(mut stops) = self.observation.tab_stops.lock() {
+            *stops = None;
+        }
         if let Some(child) = &self.child {
             let ws = libc::winsize {
                 ws_row: rows,
@@ -1580,6 +1710,38 @@ impl Pane {
         self.observation.mouse_modes()
     }
 
+    /// The pane terminal modes behind `#{insert_flag}` and its neighbours.
+    pub(crate) fn terminal_modes(&self) -> PaneTerminalModes {
+        self.observation.terminal_modes()
+    }
+
+    /// The pane's DECSTBM scroll region, as `#{scroll_region_upper}` and
+    /// `#{scroll_region_lower}` report it.
+    pub(crate) fn scroll_region(&self) -> (u16, u16) {
+        self.observation.scroll_region()
+    }
+
+    /// The pane's tab stops, as `#{pane_tabs}` lists them.
+    pub(crate) fn tab_stops(&self) -> Vec<u16> {
+        self.observation.tab_stops()
+    }
+
+    /// Whether the pane is on its alternate screen, and the cursor DECSET 1049
+    /// saved on the way in — `u32::MAX` in each axis while none has been.
+    pub(crate) fn alternate_screen(&self) -> (bool, u32, u32) {
+        (
+            self.observation.alternate_on.load(Ordering::Acquire),
+            self.observation.alternate_saved_x.load(Ordering::Acquire),
+            self.observation.alternate_saved_y.load(Ordering::Acquire),
+        )
+    }
+
+    /// The pane's OSC-set colours and path: `#{cursor_colour}`, `#{pane_fg}`
+    /// and `#{pane_path}`.
+    pub(crate) fn osc_state(&self) -> PaneOscState {
+        self.observation.osc_state()
+    }
+
     /// Take a pending DSR ?996 theme question, if the pane asked one.
     pub(crate) fn take_theme_query(&self) -> bool {
         self.observation.theme_query.swap(false, Ordering::AcqRel)
@@ -1780,7 +1942,10 @@ pub(crate) struct PaneIo {
     cursor_report_detector: CursorPositionReportQueryDetector,
     cursor_shape_detector: CursorShapeDetector,
     mode_query_detector: ModeQueryDetector,
-    background_detector: BackgroundColorDetector,
+    osc_detector: OscStateDetector,
+    decrqss_detector: DecrqssDetector,
+    tab_stop_detector: TabStopDetector,
+    alternate_detector: AlternateScreenDetector,
     clipboard_detector: Osc52Detector,
     utf8_sanitizer: Utf8Sanitizer,
     title_stripper: ScreenTitleStripper,
@@ -1811,7 +1976,10 @@ impl PaneIo {
             cursor_report_detector: CursorPositionReportQueryDetector::default(),
             cursor_shape_detector: CursorShapeDetector::default(),
             mode_query_detector: ModeQueryDetector::default(),
-            background_detector: BackgroundColorDetector::default(),
+            osc_detector: OscStateDetector::default(),
+            decrqss_detector: DecrqssDetector::default(),
+            tab_stop_detector: TabStopDetector::default(),
+            alternate_detector: AlternateScreenDetector::default(),
             clipboard_detector: Osc52Detector::default(),
             utf8_sanitizer: Utf8Sanitizer::default(),
             title_stripper: ScreenTitleStripper::default(),
@@ -1919,7 +2087,7 @@ impl PaneIo {
                 .count() as u64,
         );
         let mut queries = Vec::new();
-        let mut cursor_report_queries = Vec::new();
+        let mut cursor_events: Vec<(usize, PaneCursorEvent)> = Vec::new();
         let mut mode_replies = Vec::new();
         for (index, &byte) in bytes.iter().enumerate() {
             if self.query_detector.feed_byte(byte) {
@@ -1928,20 +2096,79 @@ impl PaneIo {
             if self.dsr_detector.feed_byte(byte) {
                 queries.push(DEVICE_STATUS_REPORT_QUERY);
             }
-            if let Some(kind) = self.cursor_report_detector.feed_byte(byte) {
-                cursor_report_queries.push((index, kind));
+            if self.cursor_report_detector.feed_byte(byte) {
+                cursor_events.push((index + 1, PaneCursorEvent::PositionReport));
+            }
+            if let Some(event) = self.tab_stop_detector.feed_byte(byte) {
+                cursor_events.push((index + 1, event));
+            }
+            if let Some(change) = self.alternate_detector.feed_byte(byte) {
+                self.observation.alternate_on.store(
+                    !matches!(change, AlternateScreenChange::Leave),
+                    Ordering::Release,
+                );
+                if let AlternateScreenChange::EnterSavingCursor { sequence_len } = change {
+                    // The save has to happen before the sequence runs, since
+                    // switching screens is what moves the cursor away. A
+                    // sequence split across two reads saturates to 0, which is
+                    // still before it — nothing after its ESC has been applied.
+                    cursor_events.push((
+                        (index + 1).saturating_sub(sequence_len),
+                        PaneCursorEvent::SaveCursor,
+                    ));
+                }
             }
             if let Some(shape) = self.cursor_shape_detector.feed_byte(byte) {
                 self.observation
                     .cursor_shape
                     .store(shape, Ordering::Release);
+                // tmux's screen_set_cursor_style: every style but the default
+                // one also decides whether the cursor blinks, odd styles
+                // blinking and even ones steady.
+                if shape != 0 {
+                    self.mode_query_detector.cursor_blinking = !shape.is_multiple_of(2);
+                }
             }
             if let Some(reply) = self.mode_query_detector.feed_byte(byte) {
                 mode_replies.push(reply);
             }
-            if let Some(color) = self.background_detector.feed_byte(byte) {
-                if let Ok(mut background) = self.observation.background.lock() {
-                    *background = color;
+            if let Some(request) = self.decrqss_detector.feed_byte(byte) {
+                mode_replies.push(decrqss_reply(
+                    &request,
+                    PaneCursorShape::from_parameter(
+                        self.observation.cursor_shape.load(Ordering::Acquire),
+                    ),
+                    self.mode_query_detector.cursor_blinking,
+                ));
+            }
+            if let Some(update) = self.osc_detector.feed_byte(byte) {
+                let slot_value = match update {
+                    PaneOscUpdate::Background(color) => Some((&self.observation.background, color)),
+                    PaneOscUpdate::Foreground(color) => Some((&self.observation.foreground, color)),
+                    PaneOscUpdate::CursorColour(color) => {
+                        Some((&self.observation.cursor_colour, color))
+                    }
+                    PaneOscUpdate::Path(path) => Some((&self.observation.path, path)),
+                    PaneOscUpdate::Reply(reply) => {
+                        mode_replies.push(reply);
+                        None
+                    }
+                    PaneOscUpdate::ProgressBar { state, progress } => {
+                        self.observation
+                            .progress_state
+                            .store(state, Ordering::Release);
+                        if let Some(progress) = progress {
+                            self.observation
+                                .progress_value
+                                .store(progress, Ordering::Release);
+                        }
+                        None
+                    }
+                };
+                if let Some((slot, value)) = slot_value {
+                    if let Ok(mut current) = slot.lock() {
+                        *current = value;
+                    }
                 }
             }
             if let Some(event) = self.clipboard_detector.feed_byte(byte) {
@@ -1972,6 +2199,21 @@ impl PaneIo {
         self.observation
             .mouse_sgr
             .store(self.mode_query_detector.mouse_sgr, Ordering::Release);
+        self.observation
+            .insert_mode
+            .store(self.mode_query_detector.insert_mode, Ordering::Release);
+        self.observation
+            .origin_mode
+            .store(self.mode_query_detector.origin_mode, Ordering::Release);
+        self.observation
+            .wrap_mode
+            .store(self.mode_query_detector.wrap_mode, Ordering::Release);
+        self.observation
+            .cursor_visible
+            .store(self.mode_query_detector.cursor_visible, Ordering::Release);
+        self.observation
+            .cursor_blinking
+            .store(self.mode_query_detector.cursor_blinking, Ordering::Release);
         self.observation
             .cursor_keys
             .store(self.mode_query_detector.cursor_keys, Ordering::Release);
@@ -2005,14 +2247,51 @@ impl PaneIo {
         if let Ok(mut terminal) = self.observation.term.lock() {
             let mut segment_start = 0usize;
             let mut large_scroll = false;
-            for (query_end, kind) in cursor_report_queries {
+            // A save-cursor event splits ahead of its own sequence, so the list
+            // is not necessarily in stream order; sorting keeps every split
+            // point ascending, which is what the segment walk below assumes.
+            cursor_events.sort_by_key(|(split_at, _)| *split_at);
+            for (split_at, event) in cursor_events {
                 large_scroll |= self
                     .observation
-                    .write_terminal(&mut terminal, &bytes[segment_start..=query_end]);
-                if let Some(response) = cursor_position_report(&terminal, kind) {
-                    cursor_replies.push(response);
+                    .write_terminal(&mut terminal, &bytes[segment_start..split_at]);
+                // The cursor now reflects exactly the bytes this event needs to
+                // have been applied, and none of the ones it does not.
+                match event {
+                    PaneCursorEvent::PositionReport => {
+                        if let Some(response) = cursor_position_report(&terminal) {
+                            cursor_replies.push(response);
+                        }
+                    }
+                    PaneCursorEvent::SaveCursor => {
+                        if let Ok((x, y)) = terminal.cursor_position() {
+                            self.observation
+                                .alternate_saved_x
+                                .store(u32::from(x), Ordering::Release);
+                            self.observation
+                                .alternate_saved_y
+                                .store(u32::from(y), Ordering::Release);
+                        }
+                    }
+                    PaneCursorEvent::SetTabStop => {
+                        if let Ok((x, _)) = terminal.cursor_position() {
+                            self.observation.update_tab_stops(|stops| {
+                                stops.insert(x);
+                            });
+                        }
+                    }
+                    PaneCursorEvent::ClearTabStop => {
+                        if let Ok((x, _)) = terminal.cursor_position() {
+                            self.observation.update_tab_stops(|stops| {
+                                stops.remove(&x);
+                            });
+                        }
+                    }
+                    PaneCursorEvent::ClearAllTabStops => {
+                        self.observation.update_tab_stops(BTreeSet::clear);
+                    }
                 }
-                segment_start = query_end + 1;
+                segment_start = split_at;
             }
             if segment_start < bytes.len() {
                 large_scroll |= self
@@ -2137,15 +2416,48 @@ struct BackgroundColorQueryDetector {
     matched: usize,
 }
 
-#[derive(Default)]
-struct BackgroundColorDetector {
+/// Collects the OSC sequences whose effect tmux publishes as a format variable
+/// rather than as grid content: the pane's colours and its reported path.
+struct OscStateDetector {
     sequence: Vec<u8>,
     in_osc: bool,
     escaped: bool,
+    /// The pane's `OSC 4` palette, as packed `0xrrggbb`. tmux keeps one per
+    /// pane so a query is answered from what that pane set, not the client's.
+    palette: Box<[Option<u32>; 256]>,
 }
 
-impl BackgroundColorDetector {
-    fn feed_byte(&mut self, byte: u8) -> Option<String> {
+impl Default for OscStateDetector {
+    fn default() -> Self {
+        Self {
+            sequence: Vec::new(),
+            in_osc: false,
+            escaped: false,
+            palette: Box::new([None; 256]),
+        }
+    }
+}
+
+/// One OSC sequence that changed a pane's reported state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum PaneOscUpdate {
+    /// OSC 11 / 111: `#{pane_bg}`.
+    Background(String),
+    /// OSC 10 / 110: `#{pane_fg}`.
+    Foreground(String),
+    /// OSC 12 / 112: `#{cursor_colour}`.
+    CursorColour(String),
+    /// OSC 7: `#{pane_path}`, kept verbatim as tmux keeps it.
+    Path(String),
+    /// Bytes to write back to the querying pane.
+    Reply(Vec<u8>),
+    /// OSC 9;4: `#{pane_pb_state}` and `#{pane_pb_progress}`. The progress is
+    /// absent when the report named only a state, which leaves the old value.
+    ProgressBar { state: u8, progress: Option<u8> },
+}
+
+impl OscStateDetector {
+    fn feed_byte(&mut self, byte: u8) -> Option<PaneOscUpdate> {
         if !self.in_osc {
             self.sequence.push(byte);
             if self.sequence.ends_with(b"\x1b]") {
@@ -2159,12 +2471,13 @@ impl BackgroundColorDetector {
         if self.escaped {
             self.escaped = false;
             if byte == b'\\' {
-                return self.finish();
+                return self.finish(true);
             }
             self.sequence.push(0x1b);
         }
         match byte {
-            0x07 | 0x9c => self.finish(),
+            0x07 => self.finish(false),
+            0x9c => self.finish(true),
             0x1b => {
                 self.escaped = true;
                 None
@@ -2178,19 +2491,138 @@ impl BackgroundColorDetector {
         }
     }
 
-    fn finish(&mut self) -> Option<String> {
+    fn finish(&mut self, string_terminator: bool) -> Option<PaneOscUpdate> {
         self.in_osc = false;
         self.escaped = false;
         let sequence = std::mem::take(&mut self.sequence);
         let text = std::str::from_utf8(&sequence).ok()?;
-        if text == "111" {
-            return Some("default".to_string());
+        // The reset forms. tmux spells an unset cursor colour `none` but an
+        // unset foreground or background `default`.
+        match text {
+            "110" => return Some(PaneOscUpdate::Foreground("default".to_string())),
+            "111" => return Some(PaneOscUpdate::Background("default".to_string())),
+            "112" => return Some(PaneOscUpdate::CursorColour("none".to_string())),
+            // OSC 104 with no index clears the whole palette.
+            "104" => {
+                *self.palette = [None; 256];
+                return None;
+            }
+            _ => {}
         }
-        let payload = text.strip_prefix("11;")?;
-        (payload != "?")
-            .then(|| parse_background_color(payload))
-            .flatten()
+        let (number, payload) = text.split_once(';')?;
+        // OSC 7 carries a URL, not a colour, and tmux stores it unparsed.
+        if number == "7" {
+            return Some(PaneOscUpdate::Path(payload.to_string()));
+        }
+        if number == "4" {
+            return self.palette_request(payload, string_terminator);
+        }
+        if number == "9" {
+            return progress_bar_report(payload);
+        }
+        // OSC 104 with indices clears just those entries.
+        if number == "104" {
+            for index in payload.split(';') {
+                match index.parse::<u8>() {
+                    Ok(index) => self.palette[usize::from(index)] = None,
+                    // tmux stops at the first index it cannot read.
+                    Err(_) => break,
+                }
+            }
+            return None;
+        }
+        // A `?` is the application asking rather than setting.
+        if payload == "?" {
+            return None;
+        }
+        let colour = parse_background_color(payload)?;
+        match number {
+            "10" => Some(PaneOscUpdate::Foreground(colour)),
+            "11" => Some(PaneOscUpdate::Background(colour)),
+            "12" => Some(PaneOscUpdate::CursorColour(colour)),
+            _ => None,
+        }
     }
+
+    /// Apply one `OSC 4` body, which is a run of `index ; value` pairs.
+    ///
+    /// A `?` value asks for the entry back. tmux answers from its own palette
+    /// when the entry has been set and otherwise forwards the question to the
+    /// client's terminal; with nothing stored here the question is dropped,
+    /// which is what keeps an unset entry silent.
+    fn palette_request(&mut self, body: &str, string_terminator: bool) -> Option<PaneOscUpdate> {
+        let mut reply = Vec::new();
+        let mut rest = body;
+        while !rest.is_empty() {
+            let (index, tail) = rest.split_once(';')?;
+            // tmux stops at the first unparseable index rather than skipping it.
+            let index = index.parse::<u8>().ok()?;
+            let (value, tail) = match tail.split_once(';') {
+                Some((value, tail)) => (value, tail),
+                None => (tail, ""),
+            };
+            if value == "?" {
+                if let Some(colour) = self.palette[usize::from(index)] {
+                    let (r, g, b) = (
+                        (colour >> 16) as u8,
+                        (colour >> 8) as u8,
+                        colour as u8,
+                    );
+                    let end = if string_terminator { "\x1b\\" } else { "\x07" };
+                    // tmux answers in 16-bit components, each byte doubled.
+                    reply.extend_from_slice(
+                        format!("\x1b]4;{index};rgb:{r:02x}{r:02x}/{g:02x}{g:02x}/{b:02x}{b:02x}{end}")
+                            .as_bytes(),
+                    );
+                }
+            } else if let Some(packed) = parse_packed_colour(value) {
+                self.palette[usize::from(index)] = Some(packed);
+            }
+            rest = tail;
+        }
+        (!reply.is_empty()).then_some(PaneOscUpdate::Reply(reply))
+    }
+}
+
+/// Parse an `OSC 9` body as tmux's `input_osc_9` does.
+///
+/// Only the `4` subcommand — the ConEmu progress report — means anything to
+/// tmux. A report naming just a state leaves the previous progress in place,
+/// which is why the value is optional.
+fn progress_bar_report(body: &str) -> Option<PaneOscUpdate> {
+    let rest = body.strip_prefix('4')?;
+    // `9;4` and `9;4;` carry no state and are dropped rather than reset.
+    let rest = rest.strip_prefix(';').filter(|rest| !rest.is_empty())?;
+    let (state, rest) = rest.split_at_checked(1)?;
+    let state = state.parse::<u8>().ok().filter(|state| *state <= 4)?;
+    let Some(progress) = rest.strip_prefix(';').filter(|rest| !rest.is_empty()) else {
+        // Anything other than a clean end here is malformed, not a bare state.
+        return rest
+            .is_empty()
+            .then_some(PaneOscUpdate::ProgressBar {
+                state,
+                progress: None,
+            });
+    };
+    let progress = progress.parse::<u8>().ok().filter(|value| *value <= 100)?;
+    Some(PaneOscUpdate::ProgressBar {
+        state,
+        progress: Some(progress),
+    })
+}
+
+/// tmux's `screen_reset_tabs`: a stop every eight columns, skipping column 0.
+fn default_tab_stops(columns: u16) -> BTreeSet<u16> {
+    (1..)
+        .map(|multiple| multiple * 8)
+        .take_while(|stop| *stop < columns)
+        .collect()
+}
+
+/// An X11 colour payload as a packed `0xrrggbb`, for the palette store.
+fn parse_packed_colour(value: &str) -> Option<u32> {
+    let text = parse_background_color(value)?;
+    u32::from_str_radix(text.strip_prefix('#')?, 16).ok()
 }
 
 /// Collects `OSC 52 ; selection ; payload` sequences out of a pane's output.
@@ -2363,22 +2795,15 @@ fn parse_background_color(value: &str) -> Option<String> {
             parts[1].parse().ok()?,
             parts[2].parse().ok()?,
         )
-    } else if value.eq_ignore_ascii_case("DodgerBlue4") {
-        (0x10, 0x4e, 0x8b)
-    } else if value.eq_ignore_ascii_case("grey") || value.eq_ignore_ascii_case("gray") {
-        (0xbe, 0xbe, 0xbe)
     } else {
-        let lower = value.to_ascii_lowercase();
-        let percentage = lower
-            .strip_prefix("grey")
-            .or_else(|| lower.strip_prefix("gray"))?
-            .parse::<u16>()
-            .ok()?;
-        if percentage > 100 {
-            return None;
-        }
-        let component = (percentage as f64 * 2.55).round() as u8;
-        (component, component, component)
+        // Anything left is a name, which tmux resolves against X11's table
+        // rather than the terminal palette — so `red` is #ff0000, not colour 1.
+        let packed = super::x11_colour::colour_by_name(value)?;
+        (
+            (packed >> 16) as u8,
+            (packed >> 8) as u8,
+            packed as u8,
+        )
     };
     Some(format!("#{:02x}{:02x}{:02x}", rgb.0, rgb.1, rgb.2))
 }
@@ -2455,10 +2880,125 @@ impl DeviceStatusReportQueryDetector {
     }
 }
 
+/// Something in a pane's output that can only be handled at an exact point in
+/// the byte stream, because it reads the cursor the surrounding bytes move.
+///
+/// Each is paired with the number of bytes to write to the terminal first.
+/// Most sit *after* their own sequence; [`PaneCursorEvent::SaveCursor`] sits
+/// before it, since the sequence it belongs to moves the cursor it must save.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum CursorPositionReportKind {
-    Standard,
-    Private,
+enum PaneCursorEvent {
+    /// DSR 6n: report where the cursor is.
+    PositionReport,
+    /// DECSET 1049: remember the cursor for the eventual return to the primary
+    /// screen.
+    SaveCursor,
+    /// HTS: set a tab stop in the cursor's column.
+    SetTabStop,
+    /// TBC 0: clear the tab stop in the cursor's column.
+    ClearTabStop,
+    /// TBC 3: clear every tab stop. Listed here so it stays ordered with the
+    /// others even though it does not read the cursor.
+    ClearAllTabStops,
+}
+
+/// Recognizes the DEC modes that switch a pane to and from the alternate
+/// screen, which is what `#{alternate_on}` reports.
+#[derive(Default)]
+struct AlternateScreenDetector {
+    tail: VecDeque<u8>,
+}
+
+/// A switch between a pane's primary and alternate screens.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AlternateScreenChange {
+    /// DECSET 47 or 1047, which do not save the cursor.
+    Enter,
+    /// DECSET 1049, which saves the cursor before switching. Carries the
+    /// sequence's own length so the save can be placed ahead of it.
+    EnterSavingCursor { sequence_len: usize },
+    /// DECRST 47, 1047 or 1049.
+    Leave,
+}
+
+impl AlternateScreenDetector {
+    fn feed_byte(&mut self, byte: u8) -> Option<AlternateScreenChange> {
+        if self.tail.len() == 8 {
+            self.tail.pop_front();
+        }
+        self.tail.push_back(byte);
+        let tail: Vec<u8> = self.tail.iter().copied().collect();
+
+        if tail.ends_with(b"\x1b[?1049h") {
+            return Some(AlternateScreenChange::EnterSavingCursor { sequence_len: 8 });
+        }
+        if tail.ends_with(b"\x1b[?47h") || tail.ends_with(b"\x1b[?1047h") {
+            return Some(AlternateScreenChange::Enter);
+        }
+        if tail.ends_with(b"\x1b[?47l")
+            || tail.ends_with(b"\x1b[?1047l")
+            || tail.ends_with(b"\x1b[?1049l")
+        {
+            return Some(AlternateScreenChange::Leave);
+        }
+        None
+    }
+}
+
+/// Recognizes HTS (`ESC H`) and TBC (`CSI Ps g`), which together decide what
+/// `#{pane_tabs}` reports.
+#[derive(Default)]
+struct TabStopDetector {
+    state: TabStopState,
+    parameter: u16,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum TabStopState {
+    #[default]
+    Ground,
+    Esc,
+    Csi,
+}
+
+impl TabStopDetector {
+    fn feed_byte(&mut self, byte: u8) -> Option<PaneCursorEvent> {
+        use TabStopState::{Csi, Esc, Ground};
+
+        self.state = match (self.state, byte) {
+            (Ground, b'\x1b') => Esc,
+            (Ground, _) => Ground,
+            (Esc, b'H') => {
+                self.state = Ground;
+                return Some(PaneCursorEvent::SetTabStop);
+            }
+            (Esc, b'[') => {
+                self.parameter = 0;
+                Csi
+            }
+            (Esc, b'\x1b') => Esc,
+            (Esc, _) => Ground,
+            (Csi, b'0'..=b'9') => {
+                self.parameter = self
+                    .parameter
+                    .saturating_mul(10)
+                    .saturating_add(u16::from(byte - b'0'));
+                Csi
+            }
+            (Csi, b'g') => {
+                self.state = Ground;
+                // tmux honours only the clear-here and clear-all forms.
+                return match self.parameter {
+                    0 => Some(PaneCursorEvent::ClearTabStop),
+                    3 => Some(PaneCursorEvent::ClearAllTabStops),
+                    _ => None,
+                };
+            }
+            (Csi, b'\x1b') => Esc,
+            (Csi, _) => Ground,
+        };
+        None
+    }
 }
 
 #[derive(Default)]
@@ -2472,8 +3012,7 @@ enum CursorPositionReportState {
     Ground,
     Esc,
     Csi,
-    Private,
-    SawSix(CursorPositionReportKind),
+    SawSix,
 }
 
 /// Streaming recognizer for DECSCUSR (`CSI Ps SP q`). Applications such as
@@ -2506,6 +3045,15 @@ struct ModeQueryDetector {
     mouse_utf8: bool,
     /// DECSET 1006: SGR encoding.
     mouse_sgr: bool,
+    /// IRM (`CSI 4 h`): typed cells shift the rest of the line right.
+    insert_mode: bool,
+    /// DECOM (DECSET 6): cursor addressing is relative to the scroll region.
+    origin_mode: bool,
+    /// DECAWM (DECSET 7): text wraps at the right margin. On by default.
+    wrap_mode: bool,
+    /// tmux's `MODE_CURSOR_BLINKING`, written both by DECSET/DECRST 12 and, as
+    /// a side effect, by every DECSCUSR style except the default one.
+    cursor_blinking: bool,
     /// DECCKM (DECSET 1): the pane wants the application cursor key forms.
     cursor_keys: bool,
     /// DECKPAM (`ESC =`): the pane wants the application keypad forms.
@@ -2523,6 +3071,95 @@ pub(crate) struct PaneKeyState {
     pub(crate) cursor_keys: bool,
     pub(crate) application_keypad: bool,
     pub(crate) extended_request: ExtendedKeys,
+}
+
+/// The pane terminal state tmux keeps in `screen->mode` and publishes as format
+/// variables. Ghostty owns the emulation but does not expose these, so they are
+/// tracked from the pane's byte stream beside it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PaneTerminalModes {
+    /// IRM, as `#{insert_flag}`.
+    pub(crate) insert: bool,
+    /// DECOM, as `#{origin_flag}`.
+    pub(crate) origin: bool,
+    /// DECAWM, as `#{wrap_flag}`.
+    pub(crate) wrap: bool,
+    /// DECTCEM, as `#{cursor_flag}`.
+    pub(crate) cursor_visible: bool,
+    /// `#{cursor_blinking}`, set by DECSET 12 and by DECSCUSR alike.
+    pub(crate) cursor_blinking: bool,
+    /// DECKPAM, as `#{keypad_flag}`.
+    pub(crate) keypad: bool,
+    /// DECCKM, as `#{keypad_cursor_flag}`.
+    pub(crate) cursor_keys: bool,
+    /// The DECSCUSR style, as `#{cursor_shape}`.
+    pub(crate) cursor_shape: PaneCursorShape,
+}
+
+impl Default for PaneTerminalModes {
+    /// A terminal that has been sent none of these sequences: tmux starts a
+    /// screen with the cursor shown and wrapping on.
+    fn default() -> Self {
+        Self {
+            insert: false,
+            origin: false,
+            wrap: true,
+            cursor_visible: true,
+            cursor_blinking: false,
+            keypad: false,
+            cursor_keys: false,
+            cursor_shape: PaneCursorShape::Default,
+        }
+    }
+}
+
+/// The pane state an OSC sequence set, as the formats report it. `#{pane_bg}`
+/// is not here because it already has its own accessor.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct PaneOscState {
+    /// OSC 10, defaulting to `default`.
+    pub(crate) foreground: String,
+    /// OSC 12, defaulting to `none`.
+    pub(crate) cursor_colour: String,
+    /// OSC 7, defaulting to empty.
+    pub(crate) path: String,
+    /// OSC 9;4, as `#{pane_pb_state}` names it.
+    pub(crate) progress_state: &'static str,
+    /// The last progress percentage the pane reported, which survives a state
+    /// change that does not carry one.
+    pub(crate) progress_value: u8,
+}
+
+/// The cursor style a pane asked for with DECSCUSR.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum PaneCursorShape {
+    #[default]
+    Default,
+    Block,
+    Underline,
+    Bar,
+}
+
+impl PaneCursorShape {
+    /// tmux's `screen_set_cursor_style` mapping of a DECSCUSR parameter.
+    fn from_parameter(parameter: u8) -> Self {
+        match parameter {
+            1 | 2 => Self::Block,
+            3 | 4 => Self::Underline,
+            5 | 6 => Self::Bar,
+            _ => Self::Default,
+        }
+    }
+
+    /// The name `#{cursor_shape}` reports.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Block => "block",
+            Self::Underline => "underline",
+            Self::Bar => "bar",
+        }
+    }
 }
 
 /// A pane's DECSET mouse state, as `#{mouse_*_flag}` reports it.
@@ -2564,6 +3201,10 @@ impl Default for ModeQueryDetector {
             mouse_tracking: None,
             mouse_utf8: false,
             mouse_sgr: false,
+            insert_mode: false,
+            origin_mode: false,
+            wrap_mode: true,
+            cursor_blinking: false,
             cursor_keys: false,
             application_keypad: false,
             extended_keys_request: ExtendedKeys::Off,
@@ -2627,6 +3268,22 @@ impl ModeQueryDetector {
             self.mouse_sgr = true;
         } else if tail.ends_with(b"\x1b[?1006l") {
             self.mouse_sgr = false;
+        } else if tail.ends_with(b"\x1b[4h") {
+            self.insert_mode = true;
+        } else if tail.ends_with(b"\x1b[4l") {
+            self.insert_mode = false;
+        } else if tail.ends_with(b"\x1b[?6h") {
+            self.origin_mode = true;
+        } else if tail.ends_with(b"\x1b[?6l") {
+            self.origin_mode = false;
+        } else if tail.ends_with(b"\x1b[?7h") {
+            self.wrap_mode = true;
+        } else if tail.ends_with(b"\x1b[?7l") {
+            self.wrap_mode = false;
+        } else if tail.ends_with(b"\x1b[?12h") {
+            self.cursor_blinking = true;
+        } else if tail.ends_with(b"\x1b[?12l") {
+            self.cursor_blinking = false;
         } else if tail.ends_with(b"\x1b[?1h") {
             self.cursor_keys = true;
         } else if tail.ends_with(b"\x1b[?1l") {
@@ -2649,6 +3306,10 @@ impl ModeQueryDetector {
         } else if tail.ends_with(b"\x1b[?996n") {
             // DSR ?996: the pane is asking which theme it is running under.
             self.theme_query = true;
+        }
+
+        if let Some(reply) = device_attributes_reply(&tail) {
+            return Some(reply);
         }
 
         let private = tail
@@ -2715,6 +3376,117 @@ impl ModeQueryDetector {
     }
 }
 
+/// Collects `DCS $ q Pt ST` (DECRQSS), the request for a setting's current
+/// value.
+///
+/// tmux recognizes only the cursor-style request and answers everything else
+/// with the "invalid request" form, so that is all this reproduces.
+#[derive(Default)]
+struct DecrqssDetector {
+    prefix: Vec<u8>,
+    body: Vec<u8>,
+    in_dcs: bool,
+    escaped: bool,
+}
+
+impl DecrqssDetector {
+    /// Returns the DECRQSS payload once a complete request has been read.
+    fn feed_byte(&mut self, byte: u8) -> Option<Vec<u8>> {
+        if !self.in_dcs {
+            self.prefix.push(byte);
+            if self.prefix.ends_with(b"\x1bP$q") {
+                self.prefix.clear();
+                self.body.clear();
+                self.in_dcs = true;
+            } else if self.prefix.len() > 4 {
+                self.prefix.remove(0);
+            }
+            return None;
+        }
+        if self.escaped {
+            self.escaped = false;
+            if byte == b'\\' {
+                return self.finish();
+            }
+            self.body.push(0x1b);
+        }
+        match byte {
+            0x9c => self.finish(),
+            0x1b => {
+                self.escaped = true;
+                None
+            }
+            _ => {
+                if self.body.len() < 64 {
+                    self.body.push(byte);
+                    None
+                } else {
+                    self.in_dcs = false;
+                    self.body.clear();
+                    None
+                }
+            }
+        }
+    }
+
+    fn finish(&mut self) -> Option<Vec<u8>> {
+        self.in_dcs = false;
+        self.escaped = false;
+        Some(std::mem::take(&mut self.body))
+    }
+}
+
+/// tmux's `input_handle_decrqss` reply. The only setting it reports is the
+/// cursor style; anything else gets `DCS 0 $ r ST`, its "invalid request" form.
+///
+/// Divergence: with no DECSCUSR applied tmux falls back to the `cursor-style`
+/// option, which the pane's reader has no view of, so hmux always reports the
+/// default 0 there. Both agree once a pane has set a style itself.
+fn decrqss_reply(request: &[u8], shape: PaneCursorShape, blinking: bool) -> Vec<u8> {
+    if request != b" q" {
+        return b"\x1bP0$r\x1b\\".to_vec();
+    }
+    let ps = match shape {
+        PaneCursorShape::Default => 0,
+        PaneCursorShape::Block if blinking => 1,
+        PaneCursorShape::Block => 2,
+        PaneCursorShape::Underline if blinking => 3,
+        PaneCursorShape::Underline => 4,
+        PaneCursorShape::Bar if blinking => 5,
+        PaneCursorShape::Bar => 6,
+    };
+    format!("\x1bP1$r q{ps} q\x1b\\").into_bytes()
+}
+
+/// The version XTVERSION reports. hmux presents a tmux-compatible surface, and
+/// an application that special-cases a terminal by name has to see the same
+/// answer the daemon's command language claims to implement.
+const XTVERSION_NAME: &str = "tmux 3.7b";
+
+/// The device queries tmux answers out of its own state rather than the grid.
+///
+/// Each is only answered with parameter 0 or none, as tmux's `input_get`
+/// default does; any other parameter is silently ignored there and here.
+fn device_attributes_reply(tail: &[u8]) -> Option<Vec<u8>> {
+    // Primary DA. The pinned tmux is built with sixel support, which is what
+    // puts the `4` in its answer.
+    if tail.ends_with(b"\x1b[c") || tail.ends_with(b"\x1b[0c") {
+        return Some(b"\x1b[?1;2;4c".to_vec());
+    }
+    // Secondary DA. 84 is `T`, tmux's terminal identifier.
+    if tail.ends_with(b"\x1b[>c") || tail.ends_with(b"\x1b[>0c") {
+        return Some(b"\x1b[>84;0;0c".to_vec());
+    }
+    if tail.ends_with(b"\x1b[>q") || tail.ends_with(b"\x1b[>0q") {
+        return Some(format!("\x1bP>|{XTVERSION_NAME}\x1b\\").into_bytes());
+    }
+    // DSR 5n: the terminal is operating with no malfunction.
+    if tail.ends_with(b"\x1b[5n") {
+        return Some(b"\x1b[0n".to_vec());
+    }
+    None
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum CursorShapeState {
     #[default]
@@ -2760,8 +3532,10 @@ impl CursorShapeDetector {
 }
 
 impl CursorPositionReportQueryDetector {
-    fn feed_byte(&mut self, byte: u8) -> Option<CursorPositionReportKind> {
-        use CursorPositionReportKind::{Private, Standard};
+    /// Recognize DSR 6n. The private form `CSI ? 6 n` (DECXCPR) is deliberately
+    /// not recognized: tmux's private-DSR handler answers only the theme
+    /// question, so a reply hmux sent there would be a divergence of its own.
+    fn feed_byte(&mut self, byte: u8) -> bool {
         use CursorPositionReportState::{Csi, Esc, Ground, SawSix};
 
         let next = match (self.state, byte) {
@@ -2770,22 +3544,18 @@ impl CursorPositionReportQueryDetector {
             (Esc, b'[') => Csi,
             (Esc, b'\x1b') => Esc,
             (Esc, _) => Ground,
-            (Csi, b'6') => SawSix(Standard),
-            (Csi, b'?') => CursorPositionReportState::Private,
+            (Csi, b'6') => SawSix,
             (Csi, b'\x1b') => Esc,
             (Csi, _) => Ground,
-            (CursorPositionReportState::Private, b'6') => SawSix(Private),
-            (CursorPositionReportState::Private, b'\x1b') => Esc,
-            (CursorPositionReportState::Private, _) => Ground,
-            (SawSix(kind), b'n') => {
+            (SawSix, b'n') => {
                 self.state = Ground;
-                return Some(kind);
+                return true;
             }
-            (SawSix(_), b'\x1b') => Esc,
-            (SawSix(_), _) => Ground,
+            (SawSix, b'\x1b') => Esc,
+            (SawSix, _) => Ground,
         };
         self.state = next;
-        None
+        false
     }
 }
 
@@ -2901,13 +3671,9 @@ impl ScreenTitleStripper {
     }
 }
 
-fn cursor_position_report(terminal: &Terminal, kind: CursorPositionReportKind) -> Option<Vec<u8>> {
+fn cursor_position_report(terminal: &Terminal) -> Option<Vec<u8>> {
     let (x, y) = terminal.cursor_position().ok()?;
-    let prefix = match kind {
-        CursorPositionReportKind::Standard => "\x1b[",
-        CursorPositionReportKind::Private => "\x1b[?",
-    };
-    Some(format!("{prefix}{};{}R", y.saturating_add(1), x.saturating_add(1)).into_bytes())
+    Some(format!("\x1b[{};{}R", y.saturating_add(1), x.saturating_add(1)).into_bytes())
 }
 
 /// Upper bound on bytes buffered for a child that is not reading its stdin. A
@@ -3273,21 +4039,14 @@ mod tests {
         assert!(dsr.feed_byte(b'n'));
 
         let mut cpr = CursorPositionReportQueryDetector::default();
-        assert!(!b"before\x1b[6"
-            .iter()
-            .any(|&byte| cpr.feed_byte(byte).is_some()));
-        assert_eq!(
-            cpr.feed_byte(b'n'),
-            Some(CursorPositionReportKind::Standard)
-        );
+        assert!(!b"before\x1b[6".iter().any(|&byte| cpr.feed_byte(byte)));
+        assert!(cpr.feed_byte(b'n'));
 
+        // DECXCPR is not a cursor report tmux answers, so the private form must
+        // pass through without one.
         let mut private_cpr = CursorPositionReportQueryDetector::default();
-        assert!(!b"before\x1b[?6"
+        assert!(!b"before\x1b[?6n"
             .iter()
-            .any(|&byte| private_cpr.feed_byte(byte).is_some()));
-        assert_eq!(
-            private_cpr.feed_byte(b'n'),
-            Some(CursorPositionReportKind::Private)
-        );
+            .any(|&byte| private_cpr.feed_byte(byte)));
     }
 }

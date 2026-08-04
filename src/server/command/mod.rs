@@ -4614,8 +4614,6 @@ pub(super) fn vars_full(
                     p.search_string.as_deref().unwrap_or(""),
                 )
                 .set("pane_synchronized", "0")
-                .set("alternate_on", "0")
-                .set("wrap_flag", "1")
                 .set("pane_at_top", if pane_rect.top == 0 { "1" } else { "0" })
                 .set(
                     "pane_at_bottom",
@@ -4665,7 +4663,6 @@ pub(super) fn vars_full(
                 .set("pane_marked_set", if marked.is_some() { "1" } else { "0" })
                 .set("pane_pipe", if p.pane.pipe_active() { "1" } else { "0" })
                 .set("pane_bg", p.pane.background_color())
-                .set("pane_fg", "default")
                 // The pane's working directory is read live from its child (as
                 // real tmux does via osdep_get_cwd), so it follows a shell that
                 // `cd`s. A childless (inert) pane has no live cwd and falls back
@@ -4679,9 +4676,18 @@ pub(super) fn vars_full(
                     "pane_current_command",
                     p.pane.current_command().unwrap_or_default(),
                 )
-                .set("pane_tabs", pane_tabs(sess.cols))
+                .set(
+                    "pane_tabs",
+                    p.pane
+                        .tab_stops()
+                        .iter()
+                        .map(u16::to_string)
+                        .collect::<Vec<_>>()
+                        .join(","),
+                )
                 // The pane title defaults to the host name, as real tmux does.
                 .set("pane_title", pane_title);
+            set_terminal_mode_vars(&p.pane, &mut v);
             if let Some(copy) = p.copy.as_ref() {
                 let view_top = copy.grid.scrollback_rows.saturating_sub(copy.scroll);
                 let search = copy.search.as_ref();
@@ -4843,6 +4849,38 @@ pub(super) fn vars_full(
     v
 }
 
+/// Publish the pane terminal modes tmux reads out of `screen->mode`.
+///
+/// `cursor_very_visible` is a constant 0: tmux only ever sets
+/// `MODE_CURSOR_VERY_VISIBLE` from a client terminal's own `Cvvis` capability,
+/// never from a pane's output, so no sequence a pane can emit turns it on.
+fn set_terminal_mode_vars(pane: &super::pane::Pane, v: &mut Vars) {
+    let modes = pane.terminal_modes();
+    let osc = pane.osc_state();
+    let (upper, lower) = pane.scroll_region();
+    let (alternate_on, saved_x, saved_y) = pane.alternate_screen();
+    let flag = |set: bool| if set { "1" } else { "0" };
+    v.set("alternate_on", flag(alternate_on))
+        .set("alternate_saved_x", saved_x.to_string())
+        .set("alternate_saved_y", saved_y.to_string())
+        .set("scroll_region_upper", upper.to_string())
+        .set("scroll_region_lower", lower.to_string())
+        .set("cursor_colour", osc.cursor_colour)
+        .set("pane_fg", osc.foreground)
+        .set("pane_path", osc.path)
+        .set("pane_pb_state", osc.progress_state)
+        .set("pane_pb_progress", osc.progress_value.to_string())
+        .set("insert_flag", flag(modes.insert))
+        .set("origin_flag", flag(modes.origin))
+        .set("wrap_flag", flag(modes.wrap))
+        .set("cursor_flag", flag(modes.cursor_visible))
+        .set("cursor_blinking", flag(modes.cursor_blinking))
+        .set("cursor_very_visible", "0")
+        .set("keypad_flag", flag(modes.keypad))
+        .set("keypad_cursor_flag", flag(modes.cursor_keys))
+        .set("cursor_shape", modes.cursor_shape.name());
+}
+
 /// Publish `#{mouse_*}`.
 ///
 /// The `*_flag` variables describe the *pane* (tmux reads `ft->wp->base.mode`),
@@ -4941,17 +4979,6 @@ fn current_dir() -> String {
     std::env::current_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default()
-}
-
-/// tmux's default terminal tab stops (`#{pane_tabs}`): every 8 columns, up to
-/// (but not including) the pane width. E.g. `8,16,…,72` for an 80-column pane.
-fn pane_tabs(cols: u16) -> String {
-    (1..)
-        .map(|i| i * 8)
-        .take_while(|&t| t < cols)
-        .map(|t| t.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
 }
 
 /// The session's MRU window-index stack (`#{session_stack}`): the current window
