@@ -17,11 +17,13 @@ use std::os::fd::RawFd;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use crate::server::command::suspend::{IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob};
+use crate::server::command::suspend::{
+    FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob,
+};
 use crate::server::command::{CommandSuspension, CommandSuspensionResult};
 use crate::server::task::{
-    completion_pair, Completion, CompletionSender, Coroutine, ReadySet, TaskPoll, TaskState,
-    WaitRequest, WaitToken,
+    completion_pair, Completion, CompletionSender, Coroutine, FdDirection, ReadySet, TaskPoll,
+    TaskState, WaitRequest, WaitToken,
 };
 
 use super::reactor::{Token, WakeHandle};
@@ -41,6 +43,7 @@ pub(super) enum ExecutorJob {
     IfShell(IfShellJob),
     SourceFile(SourceFileJob),
     LoadBuffer(LoadBufferJob),
+    SaveBuffer(FileWriteJob),
 }
 
 impl Coroutine for ExecutorJob {
@@ -52,6 +55,7 @@ impl Coroutine for ExecutorJob {
             Self::IfShell(job) => job.wait(),
             Self::SourceFile(job) => job.wait(),
             Self::LoadBuffer(job) => job.wait(),
+            Self::SaveBuffer(job) => job.wait(),
         }
     }
 
@@ -81,6 +85,12 @@ impl Coroutine for ExecutorJob {
                 }
                 TaskPoll::Pending => TaskPoll::Pending,
             },
+            Self::SaveBuffer(job) => match job.resume(ready) {
+                TaskPoll::Ready(result) => {
+                    TaskPoll::Ready(CommandSuspensionResult::SaveBuffer(result))
+                }
+                TaskPoll::Pending => TaskPoll::Pending,
+            },
         }
     }
 }
@@ -96,6 +106,7 @@ struct SubmittedJob {
 pub(super) struct JobRegistration {
     pub(super) source: WaitToken,
     pub(super) fd: RawFd,
+    pub(super) direction: FdDirection,
     pub(super) token: Token,
 }
 
@@ -115,15 +126,15 @@ impl ExecutorJobState {
     }
 
     /// Whether `registrations` already describes exactly `sources`.
-    pub(super) fn is_registered_for(&self, sources: &[(WaitToken, RawFd)]) -> bool {
+    pub(super) fn is_registered_for(&self, sources: &[(WaitToken, RawFd, FdDirection)]) -> bool {
         self.registrations.len() == sources.len()
-            && self
-                .registrations
-                .iter()
-                .zip(sources)
-                .all(|(registration, (source, fd))| {
-                    registration.source == *source && registration.fd == *fd
-                })
+            && self.registrations.iter().zip(sources).all(
+                |(registration, (source, fd, direction))| {
+                    registration.source == *source
+                        && registration.fd == *fd
+                        && registration.direction == *direction
+                },
+            )
     }
 }
 
@@ -153,6 +164,9 @@ impl SuspensionExecutorHandle {
             }
             CommandSuspension::LoadBuffer { path } => {
                 ExecutorJob::LoadBuffer(LoadBufferJob::new(path))
+            }
+            CommandSuspension::SaveBuffer { request } => {
+                ExecutorJob::SaveBuffer(FileWriteJob::new(request))
             }
             suspension => return Err(suspension),
         };

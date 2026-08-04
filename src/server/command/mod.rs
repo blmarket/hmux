@@ -60,7 +60,7 @@ use super::task::{
     run_blocking, Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest,
     WaitToken,
 };
-use suspend::{IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob};
+use suspend::{FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.
@@ -1219,7 +1219,7 @@ impl CommandSuspension {
                 CommandSuspensionResult::LoadBuffer(run_blocking(LoadBufferJob::new(path)))
             }
             Self::SaveBuffer { request } => {
-                CommandSuspensionResult::SaveBuffer(write_client_file_request(request))
+                CommandSuspensionResult::SaveBuffer(run_blocking(FileWriteJob::new(request)))
             }
             Self::WaitFor { args, registry } => {
                 CommandSuspensionResult::Completed(execution::wait_for(&args, &registry))
@@ -2570,31 +2570,6 @@ fn run_save_buffer_shared(
     context: &ClientContext,
 ) -> CommandResult {
     run_single_shared(command, state, agents, context)
-}
-
-fn write_client_file_request(request: ClientFileWrite) -> CommandResult {
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true);
-    if request.flags & libc::O_APPEND != 0 {
-        options.append(true);
-    } else {
-        options.truncate(true);
-    }
-    match options
-        .open(&request.path)
-        .and_then(|mut file| std::io::Write::write_all(&mut file, &request.data))
-    {
-        Ok(()) => CommandResult::ok(""),
-        Err(error) => {
-            let mut result = CommandResult::err(format!(
-                "{}: {}\n",
-                io_error_message(&error),
-                request.display_path
-            ));
-            result.continue_queue = true;
-            result
-        }
-    }
 }
 
 /// Parse and execute a command line against already-locked state. Split out from

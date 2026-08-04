@@ -8,13 +8,14 @@
 //! between its other work, and a blocking test driver can run the very same
 //! job on the calling thread.
 //!
-//! `source-file` and `load-buffer` read a path. Regular files are read inline
-//! (tmux 3.7b reads its configuration on its own loop, so nothing is gained by
-//! deferring them), but a FIFO makes the read wait for a writer that may be
-//! another client of this very server — so those become [`FifoRead`] jobs.
+//! `source-file`, `load-buffer` and `save-buffer` name a path. Regular files
+//! are read and written inline (tmux 3.7b reads its configuration on its own
+//! loop, so nothing is gained by deferring them), but a FIFO makes the transfer
+//! wait for a peer that may be another client of this very server — so those
+//! become [`FifoRead`] and [`FifoWrite`] jobs.
 
 use std::fs::File;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
@@ -24,8 +25,8 @@ use std::time::{Duration, Instant};
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
 
 use super::{
-    flag_value, has_flag, job_delay, positionals, shell_command, ClientContext, CommandResult,
-    RunShellCompletion, SourceFileRead,
+    flag_value, has_flag, io_error_message, job_delay, positionals, shell_command, ClientContext,
+    ClientFileWrite, CommandResult, RunShellCompletion, SourceFileRead,
 };
 
 /// A finished `sh -c` child.
@@ -514,6 +515,218 @@ impl Coroutine for LoadBufferJob {
     }
 }
 
+/// `save-buffer path`, without `-` (the client's stdout): write a paste buffer
+/// out, or report the `errno` the stock client would have seen. Regular files
+/// are written inline for the same reason they are read inline; a FIFO waits
+/// for its reader instead.
+pub(crate) struct FileWriteJob {
+    /// Set until the first resume classifies the path.
+    request: Option<ClientFileWrite>,
+    display_path: String,
+    write: Option<FifoWrite>,
+}
+
+impl FileWriteJob {
+    pub(crate) fn new(request: ClientFileWrite) -> Self {
+        Self {
+            display_path: request.display_path.clone(),
+            request: Some(request),
+            write: None,
+        }
+    }
+
+    fn finish(&self, wrote: io::Result<()>) -> CommandResult {
+        match wrote {
+            Ok(()) => CommandResult::ok(""),
+            Err(error) => {
+                let mut result = CommandResult::err(format!(
+                    "{}: {}\n",
+                    io_error_message(&error),
+                    self.display_path
+                ));
+                result.continue_queue = true;
+                result
+            }
+        }
+    }
+}
+
+impl Coroutine for FileWriteJob {
+    type Output = CommandResult;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match &self.write {
+            Some(write) => write.wait(),
+            None => WaitRequest::new(Vec::new(), Some(Instant::now())),
+        }
+    }
+
+    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
+        if let Some(request) = self.request.take() {
+            match open_write_path(request) {
+                WriteOpen::Inline(wrote) => return TaskPoll::Ready(self.finish(wrote)),
+                WriteOpen::Fifo(write) => self.write = Some(write),
+            }
+        }
+        let Some(write) = self.write.as_mut() else {
+            return TaskPoll::Pending;
+        };
+        match write.resume(ready) {
+            TaskPoll::Ready(wrote) => {
+                self.write = None;
+                TaskPoll::Ready(self.finish(wrote))
+            }
+            TaskPoll::Pending => TaskPoll::Pending,
+        }
+    }
+}
+
+/// How a path is written: everything but a FIFO is written on the spot.
+enum WriteOpen {
+    Inline(io::Result<()>),
+    Fifo(FifoWrite),
+}
+
+fn open_write_path(request: ClientFileWrite) -> WriteOpen {
+    let ClientFileWrite {
+        path, flags, data, ..
+    } = request;
+    let is_fifo = std::fs::metadata(&path).is_ok_and(|metadata| metadata.file_type().is_fifo());
+    if !is_fifo {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true);
+        if flags & libc::O_APPEND != 0 {
+            options.append(true);
+        } else {
+            options.truncate(true);
+        }
+        return WriteOpen::Inline(
+            options
+                .open(&path)
+                .and_then(|mut file| file.write_all(&data)),
+        );
+    }
+    // Opening the write end blocks until a reader attaches, and the reader is
+    // very often another client of this server, so let the job wait for it.
+    WriteOpen::Fifo(FifoWrite::new(path, flags, data))
+}
+
+enum FifoWriteStage {
+    /// No reader has attached yet, so the open still reports `ENXIO`; retrying
+    /// on a backing-off deadline, since an unopened FIFO is not pollable.
+    Opening { retry: Instant, backoff: Duration },
+    /// The write end is open: drain the buffer as the reader consumes it.
+    Writing { file: File, written: usize },
+    /// The buffer was written, or the write failed.
+    Done,
+}
+
+/// The write end of a FIFO, filled until the buffer is gone.
+struct FifoWrite {
+    path: PathBuf,
+    flags: i32,
+    data: Vec<u8>,
+    stage: FifoWriteStage,
+}
+
+impl FifoWrite {
+    const WRITABLE: WaitToken = WaitToken::new(0);
+
+    fn new(path: PathBuf, flags: i32, data: Vec<u8>) -> Self {
+        Self {
+            path,
+            flags,
+            data,
+            stage: FifoWriteStage::Opening {
+                retry: Instant::now(),
+                backoff: FIFO_WRITER_RETRY_MIN,
+            },
+        }
+    }
+
+    /// Try the non-blocking open once. `ENXIO` — no reader yet — is the only
+    /// outcome worth retrying; everything else is the error tmux would report.
+    fn open(&mut self) -> TaskPoll<io::Result<()>> {
+        // `O_TRUNC` and `O_APPEND` mean nothing on a FIFO, but passing the
+        // request's flags through keeps the open identical to the client's.
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .custom_flags(self.flags | libc::O_NONBLOCK)
+            .open(&self.path)
+        {
+            Ok(file) => {
+                self.stage = FifoWriteStage::Writing { file, written: 0 };
+                TaskPoll::Pending
+            }
+            Err(error) if error.raw_os_error() == Some(libc::ENXIO) => {
+                let FifoWriteStage::Opening { retry, backoff } = &mut self.stage else {
+                    unreachable!("only the opening stage opens the FIFO");
+                };
+                *retry = Instant::now() + *backoff;
+                *backoff = (*backoff * 2).min(FIFO_WRITER_RETRY_MAX);
+                TaskPoll::Pending
+            }
+            Err(error) => {
+                self.stage = FifoWriteStage::Done;
+                TaskPoll::Ready(Err(error))
+            }
+        }
+    }
+}
+
+impl Coroutine for FifoWrite {
+    type Output = io::Result<()>;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match &self.stage {
+            FifoWriteStage::Opening { retry, .. } => WaitRequest::new(Vec::new(), Some(*retry)),
+            FifoWriteStage::Writing { file, .. } => WaitRequest::new(
+                vec![FdInterest::writable(Self::WRITABLE, file.as_fd())],
+                None,
+            ),
+            FifoWriteStage::Done => WaitRequest::new(Vec::new(), Some(Instant::now())),
+        }
+    }
+
+    fn resume(&mut self, _ready: &ReadySet) -> TaskPoll<Self::Output> {
+        // Like the read side, every stage only attempts non-blocking work, so a
+        // spurious wakeup costs one syscall and no driver has to describe which
+        // source woke it.
+        if matches!(self.stage, FifoWriteStage::Opening { .. }) {
+            if let TaskPoll::Ready(result) = self.open() {
+                return TaskPoll::Ready(result);
+            }
+        }
+        let FifoWriteStage::Writing { file, written } = &mut self.stage else {
+            return TaskPoll::Pending;
+        };
+        // Write as much as the pipe takes per wakeup: an 8 MiB buffer moves in
+        // pipe-sized bites, and one write per readiness would need a wakeup for
+        // every one of them.
+        while *written < self.data.len() {
+            match file.write(&self.data[*written..]) {
+                Ok(0) => {
+                    self.stage = FifoWriteStage::Done;
+                    return TaskPoll::Ready(Err(io::Error::from(io::ErrorKind::WriteZero)));
+                }
+                Ok(wrote) => *written += wrote,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    return TaskPoll::Pending
+                }
+                Err(error) => {
+                    self.stage = FifoWriteStage::Done;
+                    return TaskPoll::Ready(Err(error));
+                }
+            }
+        }
+        // Dropping the write end here, rather than when the executor retires
+        // the job, is what reports end of file to the reader.
+        self.stage = FifoWriteStage::Done;
+        TaskPoll::Ready(Ok(()))
+    }
+}
+
 /// How a path is read: everything but a FIFO is read on the spot.
 enum PathOpen {
     Inline(io::Result<Vec<u8>>),
@@ -645,8 +858,8 @@ fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob};
-    use crate::server::command::ClientContext;
+    use super::{FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob};
+    use crate::server::command::{ClientContext, ClientFileWrite};
     use crate::server::task::run_blocking;
     use std::fs;
     use std::io;
@@ -814,6 +1027,79 @@ mod tests {
         let contents = run_blocking(LoadBufferJob::new(directory.join("absent")));
 
         assert_eq!(contents, Err(libc::ENOENT));
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    fn file_write(path: &Path, flags: i32, data: &[u8]) -> ClientFileWrite {
+        ClientFileWrite {
+            path: path.to_path_buf(),
+            display_path: path.display().to_string(),
+            flags,
+            data: data.to_vec(),
+        }
+    }
+
+    #[test]
+    fn file_write_job_writes_regular_files_without_waiting() {
+        let directory = temporary_directory("save-regular");
+        let path = directory.join("buffer");
+
+        let truncating = libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC;
+        let result = run_blocking(FileWriteJob::new(file_write(&path, truncating, b"first\n")));
+        assert_eq!(result.exit, 0, "{}", result.stderr);
+        let appending = libc::O_WRONLY | libc::O_CREAT | libc::O_APPEND;
+        let result = run_blocking(FileWriteJob::new(file_write(&path, appending, b"second\n")));
+        assert_eq!(result.exit, 0, "{}", result.stderr);
+
+        assert_eq!(fs::read(&path).expect("saved file"), b"first\nsecond\n");
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn file_write_job_waits_for_the_fifo_reader() {
+        let directory = temporary_directory("save-fifo");
+        let fifo = mkfifo(&directory.join("buffer"));
+        // Comfortably more than a pipe buffer, so the write only finishes as
+        // the reader drains it.
+        let payload = vec![b'x'; 512 * 1024];
+        let reader = thread::spawn({
+            let fifo = fifo.clone();
+            move || {
+                thread::sleep(Duration::from_millis(100));
+                fs::read(&fifo).expect("read FIFO")
+            }
+        });
+
+        let result = run_blocking(FileWriteJob::new(file_write(
+            &fifo,
+            libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
+            &payload,
+        )));
+
+        assert_eq!(result.exit, 0, "{}", result.stderr);
+        assert_eq!(reader.join().expect("reader"), payload);
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn file_write_job_reports_an_unwritable_path_and_continues_the_queue() {
+        let directory = temporary_directory("save-unwritable");
+
+        let result = run_blocking(FileWriteJob::new(file_write(
+            &directory,
+            libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
+            b"buffer",
+        )));
+
+        assert_ne!(result.exit, 0);
+        assert!(
+            result
+                .stderr
+                .ends_with(&format!("{}\n", directory.display())),
+            "{}",
+            result.stderr
+        );
+        assert!(result.continue_queue);
         let _ = fs::remove_dir_all(&directory);
     }
 }

@@ -15,15 +15,37 @@ impl WaitToken {
     }
 }
 
+/// Which way a descriptor has to become ready before its task can make
+/// progress. A task waits for exactly one direction per descriptor: a job that
+/// both reads and writes one fd describes it twice, under two tokens.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FdDirection {
+    Read,
+    Write,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct FdInterest<'a> {
     token: WaitToken,
     fd: BorrowedFd<'a>,
+    direction: FdDirection,
 }
 
 impl<'a> FdInterest<'a> {
     pub(crate) fn readable(token: WaitToken, fd: BorrowedFd<'a>) -> Self {
-        Self { token, fd }
+        Self {
+            token,
+            fd,
+            direction: FdDirection::Read,
+        }
+    }
+
+    pub(crate) fn writable(token: WaitToken, fd: BorrowedFd<'a>) -> Self {
+        Self {
+            token,
+            fd,
+            direction: FdDirection::Write,
+        }
     }
 
     pub(crate) fn fd(self) -> BorrowedFd<'a> {
@@ -32,6 +54,10 @@ impl<'a> FdInterest<'a> {
 
     pub(crate) fn token(self) -> WaitToken {
         self.token
+    }
+
+    pub(crate) fn direction(self) -> FdDirection {
+        self.direction
     }
 }
 
@@ -267,7 +293,10 @@ fn poll_wait_request(request: &WaitRequest<'_>) -> ReadySet {
         .iter()
         .map(|source| libc::pollfd {
             fd: source.fd().as_raw_fd(),
-            events: libc::POLLIN,
+            events: match source.direction() {
+                FdDirection::Read => libc::POLLIN,
+                FdDirection::Write => libc::POLLOUT,
+            },
             revents: 0,
         })
         .collect();

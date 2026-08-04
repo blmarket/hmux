@@ -6,7 +6,7 @@ use std::os::fd::AsRawFd;
 use std::time::{Duration, Instant};
 
 use crate::server::pane::PaneIo;
-use crate::server::task::WaitToken;
+use crate::server::task::{FdDirection, WaitToken};
 use crate::server::Server;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 
@@ -609,7 +609,7 @@ where
                     let sources = wait
                         .sources()
                         .iter()
-                        .map(|source| (source.token(), source.fd().as_raw_fd()))
+                        .map(|source| (source.token(), source.fd().as_raw_fd(), source.direction()))
                         .collect::<Vec<_>>();
                     if !state.is_registered_for(&sources) {
                         for registration in std::mem::take(&mut state.registrations) {
@@ -623,14 +623,15 @@ where
                                     source: source.token(),
                                 },
                             };
-                            let token = self.reactor.register(
-                                source.fd(),
-                                Interest::READABLE,
-                                recipient,
-                            )?;
+                            let interest = match source.direction() {
+                                FdDirection::Read => Interest::READABLE,
+                                FdDirection::Write => Interest::WRITABLE,
+                            };
+                            let token = self.reactor.register(source.fd(), interest, recipient)?;
                             state.registrations.push(JobRegistration {
                                 source: source.token(),
                                 fd: source.fd().as_raw_fd(),
+                                direction: source.direction(),
                                 token,
                             });
                         }
@@ -1043,7 +1044,9 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use crate::server::command::{ClientContext, CommandSuspension, CommandSuspensionResult};
+    use crate::server::command::{
+        ClientContext, ClientFileWrite, CommandSuspension, CommandSuspensionResult,
+    };
     use crate::server::task::TaskState;
 
     use super::*;
@@ -1220,6 +1223,42 @@ mod tests {
             reads[0].contents().expect("FIFO contents"),
             "set-buffer -b sourced yes\n"
         );
+    }
+
+    #[test]
+    fn executor_writes_a_fifo_save_buffer_on_the_loop() {
+        let mut loop_ = EventLoop::new().unwrap();
+        let path = ListenerPath::new();
+        let raw = std::ffi::CString::new(path.0.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(raw.as_ptr(), 0o600) }, 0);
+        // More than a pipe buffer, so the write only completes as the reader
+        // drains it — the loop has to watch for writability, not just once.
+        let payload = vec![b'x'; 512 * 1024];
+        let reader = std::thread::spawn({
+            let path = path.0.clone();
+            move || {
+                std::thread::sleep(Duration::from_millis(50));
+                std::fs::read(&path).unwrap()
+            }
+        });
+
+        let result = resolve_on_loop(
+            &mut loop_,
+            CommandSuspension::SaveBuffer {
+                request: ClientFileWrite {
+                    path: path.0.clone(),
+                    display_path: path.0.display().to_string(),
+                    flags: libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
+                    data: payload.clone(),
+                },
+            },
+        );
+
+        let CommandSuspensionResult::SaveBuffer(result) = result else {
+            panic!("save-buffer suspension resolved as another variant");
+        };
+        assert_eq!(result.exit, 0, "{}", result.stderr);
+        assert_eq!(reader.join().unwrap(), payload);
     }
 
     #[test]
