@@ -121,8 +121,6 @@ fn daemonize() -> std::io::Result<DaemonOutcome> {
 /// Serve the libghostty-vt server through the event-loop protocol engine.
 fn run_server(args: Args) -> hmux::Result<()> {
     let listen_socket = args.socket.as_deref().expect("socket resolved in main");
-    install_signal_teardown(listen_socket.to_path_buf());
-
     info!("engine: event-loop protocol (libghostty-vt)");
     // Start as a server only. The first untargeted `tmux attach` lazily creates
     // session 0, so launching hmux does not speculatively spawn a shell or
@@ -161,32 +159,6 @@ fn prepare_default_socket_dir(socket: &Path) -> std::io::Result<()> {
         .ok_or_else(|| std::io::Error::other("default socket has no parent directory"))?;
     std::fs::create_dir_all(directory)?;
     std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700))
-}
-
-/// Block `SIGINT`/`SIGTERM` process-wide and spawn a thread that waits for one
-/// and exits.
-///
-/// The listener socket is left in place, matching both the normal shutdown path
-/// and tmux, which unlinks a socket pathname only when binding a new one.
-///
-/// Must be called before any worker threads are spawned so they inherit the
-/// blocked mask and only this dedicated thread receives the signal.
-fn install_signal_teardown(_listen_socket: PathBuf) {
-    unsafe {
-        let mut set: libc::sigset_t = std::mem::zeroed();
-        libc::sigemptyset(&mut set);
-        libc::sigaddset(&mut set, libc::SIGINT);
-        libc::sigaddset(&mut set, libc::SIGTERM);
-        libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
-
-        std::thread::spawn(move || {
-            let mut sig: libc::c_int = 0;
-            // Wait for the first blocked signal.
-            libc::sigwait(&set, &mut sig);
-            info!(signal = sig, "shutting down");
-            std::process::exit(0);
-        });
-    }
 }
 
 #[cfg(test)]

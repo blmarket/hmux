@@ -15,6 +15,7 @@ use super::job::{BackgroundCommands, JobEvent};
 use super::listener::{AcceptedClients, Listener, ListenerEvent};
 use super::pane::{EventPane, PaneEvent, PaneInterest};
 use super::process::{ChildSignal, ChildSignalEvent};
+use super::term_signal::{TermSignal, TermSignalEvent};
 use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
 };
@@ -37,6 +38,10 @@ pub(crate) enum Envelope {
     ChildSignal {
         target: ActorRef<ChildSignal>,
         event: ChildSignalEvent,
+    },
+    TermSignal {
+        target: ActorRef<TermSignal>,
+        event: TermSignalEvent,
     },
     Protocol {
         target: ActorRef<ProtocolClient>,
@@ -64,6 +69,10 @@ impl Envelope {
                 target.with_mut(|pane| pane.handle(&dispatch_target, event, outbox));
             }
             Envelope::ChildSignal { target, event } => {
+                let dispatch_target = target.clone();
+                target.with_mut(|signal| signal.handle(&dispatch_target, event, outbox));
+            }
+            Envelope::TermSignal { target, event } => {
                 let dispatch_target = target.clone();
                 target.with_mut(|signal| signal.handle(&dispatch_target, event, outbox));
             }
@@ -97,6 +106,10 @@ enum Effect {
     },
     SetChildSignalInterest {
         target: ActorRef<ChildSignal>,
+        enabled: bool,
+    },
+    SetTermSignalInterest {
+        target: ActorRef<TermSignal>,
         enabled: bool,
     },
     SetProtocolInterest {
@@ -180,6 +193,11 @@ impl Outbox {
             .push(Effect::SetPaneInterest { target, interest });
     }
 
+    pub(crate) fn set_term_signal_interest(&mut self, target: ActorRef<TermSignal>, enabled: bool) {
+        self.effects
+            .push(Effect::SetTermSignalInterest { target, enabled });
+    }
+
     pub(crate) fn set_child_signal_interest(
         &mut self,
         target: ActorRef<ChildSignal>,
@@ -251,6 +269,9 @@ enum IoTarget {
     },
     ChildSignal {
         target: WeakActorRef<ChildSignal>,
+    },
+    TermSignal {
+        target: WeakActorRef<TermSignal>,
     },
     Protocol {
         target: WeakActorRef<ProtocolClient>,
@@ -379,6 +400,7 @@ where
     background_commands: Option<ActorRef<BackgroundCommands>>,
     executor: ActorRef<SuspensionExecutor>,
     executor_handle: SuspensionExecutorHandle,
+    term_signal: Option<ActorRef<TermSignal>>,
 }
 
 impl EventLoop<MioReactor<IoRecipient>> {
@@ -402,6 +424,7 @@ where
             background_commands: None,
             executor: ActorRef::new(executor),
             executor_handle,
+            term_signal: None,
         }
     }
 
@@ -455,6 +478,18 @@ where
             event: PaneEvent::Start,
         });
         PaneHandle { pane, runtime_id }
+    }
+
+    /// Watch for `SIGINT`/`SIGTERM` on the loop. The source lives as long as
+    /// the loop does; the first signal ends the process.
+    pub(crate) fn add_term_signal(&mut self) -> io::Result<()> {
+        let signal = ActorRef::new(TermSignal::new()?);
+        self.events.push_back(Envelope::TermSignal {
+            target: signal.clone(),
+            event: TermSignalEvent::Start,
+        });
+        self.term_signal = Some(signal);
+        Ok(())
     }
 
     pub(crate) fn add_child_signal(&mut self, server: Server) -> io::Result<ChildSignalHandle> {
@@ -719,6 +754,20 @@ where
                     });
                 }
             }
+            IoTarget::TermSignal { target: recipient } => {
+                let Some(target) = recipient.upgrade() else {
+                    return;
+                };
+                let should_enqueue = target
+                    .with_mut(TermSignal::mark_work_queued)
+                    .unwrap_or(false);
+                if should_enqueue {
+                    self.events.push_back(Envelope::TermSignal {
+                        target,
+                        event: TermSignalEvent::Readable,
+                    });
+                }
+            }
             IoTarget::ChildSignal { target: recipient } => {
                 let Some(target) = recipient.upgrade() else {
                     return;
@@ -785,6 +834,9 @@ where
             }
             Effect::SetChildSignalInterest { target, enabled } => {
                 self.set_child_signal_interest(&target, enabled)?;
+            }
+            Effect::SetTermSignalInterest { target, enabled } => {
+                self.set_term_signal_interest(&target, enabled)?;
             }
             Effect::SetProtocolInterest {
                 target,
@@ -897,6 +949,38 @@ where
             Some(token) => {
                 self.reactor.reregister(token, reactor_interest)?;
             }
+        }
+        Ok(())
+    }
+
+    fn set_term_signal_interest(
+        &mut self,
+        target: &ActorRef<TermSignal>,
+        enabled: bool,
+    ) -> io::Result<()> {
+        let token = target.with(TermSignal::token).flatten();
+        match (enabled, token) {
+            (true, None) => {
+                let recipient = IoRecipient {
+                    target: IoTarget::TermSignal {
+                        target: target.downgrade(),
+                    },
+                };
+                if let Some(result) = target.with_mut(|signal| {
+                    let token =
+                        self.reactor
+                            .register(signal.fd(), Interest::READABLE, recipient)?;
+                    signal.set_token(Some(token));
+                    Ok::<(), io::Error>(())
+                }) {
+                    result?;
+                }
+            }
+            (false, Some(token)) => {
+                self.reactor.deregister(token)?;
+                target.with_mut(|signal| signal.set_token(None));
+            }
+            _ => {}
         }
         Ok(())
     }
