@@ -2525,6 +2525,7 @@ mod tests {
                     agent: "codex",
                     pid: Some(42),
                     session_id: None,
+                    model: None,
                     state: agent_state,
                 },
             );
@@ -2558,6 +2559,7 @@ mod tests {
                 agent: "codex",
                 pid: Some(42),
                 session_id: None,
+                model: None,
                 state: AgentState::Working,
             },
         );

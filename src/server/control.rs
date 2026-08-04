@@ -2112,6 +2112,7 @@ mod tests {
                 agent: "codex",
                 pid: None,
                 session_id: None,
+                model: None,
                 state: AgentState::Working,
             },
         );
