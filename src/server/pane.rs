@@ -10,6 +10,7 @@
 //! input, resize, dump. Compositing multiple panes onto an attached client's tty
 //! is the next milestone (see the module docs).
 
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, VecDeque};
 use std::ffi::CString;
 use std::io::{self, Read, Write};
@@ -19,8 +20,9 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::rc::{Rc, Weak};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use libc::pid_t;
@@ -41,7 +43,7 @@ pub struct Pane {
     /// Terminal queries emitted by the child which must be relayed to an
     /// attached outer terminal. Ghostty consumes OSC sequences while updating
     /// the grid, so they need a separate side channel to reach the compositor.
-    terminal_queries: Arc<Mutex<VecDeque<Vec<u8>>>>,
+    terminal_queries: Rc<RefCell<VecDeque<Vec<u8>>>>,
     /// The running child + pty, or `None` for an inert (process-less) pane.
     child: Option<Child>,
     /// Bytes queued to be written to the child's pty (keystrokes and terminal-
@@ -52,12 +54,12 @@ pub struct Pane {
     /// buffer is bounded; once full, further input is dropped rather than allowed
     /// to stall the shared server, matching how tmux tolerates an unresponsive
     /// pane. Shared with the active I/O driver.
-    pending_input: Arc<Mutex<VecDeque<u8>>>,
+    pending_input: Rc<RefCell<VecDeque<u8>>>,
     /// Original process specification retained for command-less respawns.
     spawn_spec: Option<PaneSpawnSpec>,
     /// Buffer the PTY reader appends to when `pipe-pane -O` is active.
-    pipe_output: Arc<Mutex<PanePipeOutbound>>,
-    pipe_output_active: Arc<AtomicBool>,
+    pipe_output: Rc<RefCell<PanePipeOutbound>>,
+    pipe_output_active: Rc<Cell<bool>>,
     pipe: Option<PanePipe>,
     /// Pipe children the loop has not adopted yet.
     new_pipes: Vec<PanePipeIo>,
@@ -109,15 +111,16 @@ impl PanePipeOutbound {
 
 struct PanePipe {
     pid: u32,
-    alive: Arc<AtomicBool>,
-    outbound: Arc<Mutex<PanePipeOutbound>>,
+    alive: Rc<Cell<bool>>,
+    outbound: Rc<RefCell<PanePipeOutbound>>,
 }
 
 impl PanePipe {
     /// Tell the job to close the child's stdin, which is what a `pipe-pane`
     /// command sees as end of input.
     fn close_outbound(&self) {
-        if let Ok(mut outbound) = self.outbound.lock() {
+        {
+            let mut outbound = self.outbound.borrow_mut();
             outbound.closed = true;
         }
     }
@@ -126,7 +129,7 @@ impl PanePipe {
 impl Drop for PanePipe {
     fn drop(&mut self) {
         self.close_outbound();
-        if self.alive.load(Ordering::Acquire) {
+        if self.alive.get() {
             // Closing a pipe is asynchronous. SIGHUP mirrors the lifetime of a
             // tmux job without making the command path wait for the child.
             unsafe {
@@ -147,9 +150,9 @@ pub(crate) struct PanePipeIo {
     stdout: Option<std::process::ChildStdout>,
     /// The pty master pipe input is written to, when the pipe reads back.
     master: Option<OwnedFd>,
-    pending_input: Arc<Mutex<VecDeque<u8>>>,
-    outbound: Arc<Mutex<PanePipeOutbound>>,
-    alive: Arc<AtomicBool>,
+    pending_input: Rc<RefCell<VecDeque<u8>>>,
+    outbound: Rc<RefCell<PanePipeOutbound>>,
+    alive: Rc<Cell<bool>>,
 }
 
 impl PanePipeIo {
@@ -162,9 +165,7 @@ impl PanePipeIo {
         let Some(stdin) = self.stdin.as_mut() else {
             return;
         };
-        let Ok(mut outbound) = self.outbound.lock() else {
-            return;
-        };
+        let mut outbound = self.outbound.borrow_mut();
         while !outbound.queue.is_empty() {
             let (front, _) = outbound.queue.as_slices();
             match stdin.write(front) {
@@ -220,10 +221,9 @@ impl Coroutine for PanePipeIo {
         let mut sources = Vec::new();
         // Writable interest only while there is something to write; an idle
         // pipe would otherwise report ready on every poll.
-        let has_outbound = self
-            .outbound
-            .lock()
-            .is_ok_and(|outbound| !outbound.queue.is_empty() || outbound.closed);
+        let outbound = self.outbound.borrow();
+        let has_outbound = !outbound.queue.is_empty() || outbound.closed;
+        drop(outbound);
         if let Some(stdin) = self.stdin.as_ref().filter(|_| has_outbound) {
             sources.push(FdInterest::writable(Self::STDIN, stdin.as_fd()));
         }
@@ -245,7 +245,7 @@ impl Coroutine for PanePipeIo {
         match self.child.try_wait() {
             Ok(None) => TaskPoll::Pending,
             Ok(Some(_)) | Err(_) => {
-                self.alive.store(false, Ordering::Release);
+                self.alive.set(false);
                 TaskPoll::Ready(())
             }
         }
@@ -262,7 +262,7 @@ static NEXT_PANE_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 struct Child {
     pid: pid_t,
     master: OwnedFd,
-    alive: Arc<AtomicBool>,
+    alive: Rc<Cell<bool>>,
     reaped: bool,
     termination_requested: bool,
     exit_code: Option<i32>,
@@ -286,88 +286,88 @@ pub(crate) struct PaneDeath {
 
 struct ObservedChild {
     pid: u32,
-    alive: Arc<AtomicBool>,
+    alive: Rc<Cell<bool>>,
 }
 
 /// State which remains valid for the lifetime of a resolved observation
 /// handle, even if the pane is subsequently removed from the server tree.
 pub(crate) struct NativePaneObservation {
-    term: Arc<Mutex<Terminal>>,
-    revision: AtomicU64,
+    term: Rc<RefCell<Terminal>>,
+    revision: Cell<u64>,
     /// Revision of the latest scroll operation whose vertical region is large
     /// enough for tmux to prefer one deferred repaint over immediate row draws.
     /// This is monotonic so each attached client can observe it independently.
-    large_scroll_revision: AtomicU64,
-    redraw_detector: Mutex<ScrollRedrawDetector>,
-    control_output: Mutex<ControlOutputJournal>,
+    large_scroll_revision: Cell<u64>,
+    redraw_detector: RefCell<ScrollRedrawDetector>,
+    control_output: RefCell<ControlOutputJournal>,
     /// Last DECSCUSR parameter emitted by the pane (0..=6). The VT formatter
     /// restores cursor position but does not serialize this terminal state.
-    cursor_shape: AtomicU8,
-    bracketed_paste: AtomicBool,
+    cursor_shape: Cell<u8>,
+    bracketed_paste: Cell<bool>,
     /// Whether the pane asked for focus reporting (DECSET 1004).
-    focus_reporting: AtomicBool,
+    focus_reporting: Cell<bool>,
     /// Whether the pane asked for theme updates (DECSET 2031).
-    theme_updates: AtomicBool,
+    theme_updates: Cell<bool>,
     /// The pane's DECSET mouse modes: 0 for none, else 1000/1002/1003, with
     /// 1005 and 1006 as separate flags.
-    mouse_tracking_mode: AtomicU8,
-    mouse_utf8: AtomicBool,
-    mouse_sgr: AtomicBool,
+    mouse_tracking_mode: Cell<u8>,
+    mouse_utf8: Cell<bool>,
+    mouse_sgr: Cell<bool>,
     /// The terminal modes tmux publishes as `#{insert_flag}`,
     /// `#{origin_flag}`, `#{wrap_flag}`, `#{cursor_flag}` and
     /// `#{cursor_blinking}`. Ghostty owns the emulation; these are tracked
     /// beside it because it does not expose them.
-    insert_mode: AtomicBool,
-    origin_mode: AtomicBool,
-    wrap_mode: AtomicBool,
-    cursor_visible: AtomicBool,
-    cursor_blinking: AtomicBool,
+    insert_mode: Cell<bool>,
+    origin_mode: Cell<bool>,
+    wrap_mode: Cell<bool>,
+    cursor_visible: Cell<bool>,
+    cursor_blinking: Cell<bool>,
     /// DECCKM, DECKPAM and the requested `modifyOtherKeys` level, which
     /// together decide how a key is spelled for this pane.
-    cursor_keys: AtomicBool,
-    application_keypad: AtomicBool,
-    extended_keys_request: AtomicU8,
+    cursor_keys: Cell<bool>,
+    application_keypad: Cell<bool>,
+    extended_keys_request: Cell<u8>,
     /// Set when the pane sent DSR ?996 and is waiting for an answer.
-    theme_query: AtomicBool,
-    background: Mutex<String>,
+    theme_query: Cell<bool>,
+    background: RefCell<String>,
     /// The rest of the OSC-set pane state, behind `#{pane_fg}`,
     /// `#{cursor_colour}` and `#{pane_path}`.
-    foreground: Mutex<String>,
-    cursor_colour: Mutex<String>,
-    path: Mutex<String>,
+    foreground: RefCell<String>,
+    cursor_colour: RefCell<String>,
+    path: RefCell<String>,
     /// The OSC 9;4 progress bar, behind `#{pane_pb_state}` (0..=4) and
     /// `#{pane_pb_progress}`.
-    progress_state: AtomicU8,
-    progress_value: AtomicU8,
+    progress_state: Cell<u8>,
+    progress_value: Cell<u8>,
     /// The pane's tab stops, or `None` while they are still the default every
     /// eight columns. A resize puts them back, as tmux's `screen_reset_tabs`
     /// does.
-    tab_stops: Mutex<Option<BTreeSet<u16>>>,
+    tab_stops: RefCell<Option<BTreeSet<u16>>>,
     /// The pane's width, which is what the default tab stops are laid out
     /// against. Held here so a tab edit never has to lock the terminal.
-    columns: AtomicU16,
+    columns: Cell<u16>,
     /// Whether the pane is on its alternate screen (`#{alternate_on}`), and the
     /// cursor DECSET 1049 saved on the way in. tmux leaves the saved position
     /// behind on the way out, and starts it at `UINT_MAX` to mean "never set" —
     /// which is the value `#{alternate_saved_x}` reports.
-    alternate_on: AtomicBool,
-    alternate_saved_x: AtomicU32,
-    alternate_saved_y: AtomicU32,
+    alternate_on: Cell<bool>,
+    alternate_saved_x: Cell<u32>,
+    alternate_saved_y: Cell<u32>,
     child: Option<ObservedChild>,
-    output_waiters: Mutex<Vec<Weak<OutputEvent>>>,
-    output_timing: Option<Arc<OutputTiming>>,
-    last_output_at: Mutex<Option<Instant>>,
-    bell_count: AtomicU64,
+    output_waiters: RefCell<Vec<Weak<OutputEvent>>>,
+    output_timing: Option<Rc<OutputTiming>>,
+    last_output_at: RefCell<Option<Instant>>,
+    bell_count: Cell<u64>,
     /// OSC 52 sequences the pane emitted, waiting for the server to apply the
     /// `set-clipboard`/`get-clipboard` policy to them.
-    clipboard_events: Mutex<VecDeque<PaneClipboardEvent>>,
+    clipboard_events: RefCell<VecDeque<PaneClipboardEvent>>,
     /// `DCS tmux;` payloads the pane emitted, waiting for the server to put them
     /// on the client ttys they are allowed to reach.
-    passthrough: Mutex<VecDeque<PanePassthrough>>,
+    passthrough: RefCell<VecDeque<PanePassthrough>>,
     /// The title the pane last set for itself, tmux's `screen->title`. Tracked
     /// here rather than read back from Ghostty because tmux's limit on it is
     /// `input-buffer-size`, and Ghostty's is its own.
-    announced_title: Mutex<Option<String>>,
+    announced_title: RefCell<Option<String>>,
     /// The options that decide what the pane's own output is allowed to do.
     output_policy: PaneOutputPolicyCell,
 }
@@ -410,49 +410,43 @@ pub(crate) enum PassthroughPolicy {
 /// [`PaneOutputPolicy`] as the pane's parser reads it: shared with the server,
 /// so each field is an atomic rather than behind the state lock.
 struct PaneOutputPolicyCell {
-    alternate_screen: AtomicBool,
-    allow_set_title: AtomicBool,
-    passthrough: AtomicU8,
-    input_buffer_size: AtomicU32,
+    alternate_screen: Cell<bool>,
+    allow_set_title: Cell<bool>,
+    passthrough: Cell<u8>,
+    input_buffer_size: Cell<u32>,
     /// Read only where a pane's bytes are parsed, so a plain mutex is enough.
-    palette: Mutex<Vec<Option<u32>>>,
+    palette: RefCell<Vec<Option<u32>>>,
 }
 
 impl PaneOutputPolicyCell {
     fn load(&self) -> PaneOutputPolicy {
         PaneOutputPolicy {
-            alternate_screen: self.alternate_screen.load(Ordering::Acquire),
-            allow_set_title: self.allow_set_title.load(Ordering::Acquire),
-            passthrough: match self.passthrough.load(Ordering::Acquire) {
+            alternate_screen: self.alternate_screen.get(),
+            allow_set_title: self.allow_set_title.get(),
+            passthrough: match self.passthrough.get() {
                 1 => PassthroughPolicy::Visible,
                 2 => PassthroughPolicy::Always,
                 _ => PassthroughPolicy::Off,
             },
-            input_buffer_size: self.input_buffer_size.load(Ordering::Acquire),
-            palette: self
-                .palette
-                .lock()
-                .map(|palette| palette.clone())
-                .unwrap_or_default(),
+            input_buffer_size: self.input_buffer_size.get(),
+            palette: self.palette.borrow().clone(),
         }
     }
 
     fn store(&self, policy: PaneOutputPolicy) {
         self.alternate_screen
-            .store(policy.alternate_screen, Ordering::Release);
+            .set(policy.alternate_screen);
         self.allow_set_title
-            .store(policy.allow_set_title, Ordering::Release);
-        self.passthrough.store(
-            match policy.passthrough {
+            .set(policy.allow_set_title);
+        self.passthrough.set(match policy.passthrough {
                 PassthroughPolicy::Off => 0,
                 PassthroughPolicy::Visible => 1,
                 PassthroughPolicy::Always => 2,
-            },
-            Ordering::Release,
-        );
+            });
         self.input_buffer_size
-            .store(policy.input_buffer_size, Ordering::Release);
-        if let Ok(mut palette) = self.palette.lock() {
+            .set(policy.input_buffer_size);
+        {
+            let mut palette = self.palette.borrow_mut();
             *palette = policy.palette;
         }
     }
@@ -463,11 +457,11 @@ impl PaneOutputPolicyCell {
 impl Default for PaneOutputPolicyCell {
     fn default() -> Self {
         Self {
-            alternate_screen: AtomicBool::new(true),
-            allow_set_title: AtomicBool::new(true),
-            passthrough: AtomicU8::new(0),
-            input_buffer_size: AtomicU32::new(INPUT_BUFFER_DEFAULT_SIZE),
-            palette: Mutex::new(Vec::new()),
+            alternate_screen: Cell::new(true),
+            allow_set_title: Cell::new(true),
+            passthrough: Cell::new(0),
+            input_buffer_size: Cell::new(INPUT_BUFFER_DEFAULT_SIZE),
+            palette: RefCell::new(Vec::new()),
         }
     }
 }
@@ -829,15 +823,15 @@ unsafe fn clear_child_signal_mask() {
 /// Per-consumer pane-output notification. Each attached client gets its own
 /// wakeup so one client cannot consume another client's notification.
 pub(crate) struct OutputSubscription {
-    event: Arc<OutputEvent>,
-    output_timing: Option<Arc<OutputTiming>>,
+    event: Rc<OutputEvent>,
+    output_timing: Option<Rc<OutputTiming>>,
 }
 
 /// Timestamp side channel used only by the opt-in attach latency monitor.
 /// Keeping it beside the wakeup lets the attach thread distinguish time spent
 /// waiting for the pane from time spent waiting to be scheduled after output.
 struct OutputTiming {
-    last_at: Mutex<Option<Instant>>,
+    last_at: RefCell<Option<Instant>>,
 }
 
 /// What happened to one batch of bytes offered to a pane's non-blocking PTY.
@@ -866,7 +860,7 @@ impl OutputSubscription {
         panes: impl IntoIterator<Item = &'a Pane>,
         active_pane: &Pane,
     ) -> io::Result<Self> {
-        let event = Arc::new(OutputEvent {
+        let event = Rc::new(OutputEvent {
             wakeup: CurrentPlatform::new_output_wakeup()?,
         });
         for pane in panes {
@@ -878,7 +872,7 @@ impl OutputSubscription {
                 .observation
                 .output_timing
                 .as_ref()
-                .map(Arc::clone),
+                .map(Rc::clone),
         })
     }
 
@@ -895,18 +889,13 @@ impl OutputSubscription {
     }
 
     pub(crate) fn last_output_at(&self) -> Option<Instant> {
-        self.output_timing
-            .as_ref()?
-            .last_at
-            .lock()
-            .ok()
-            .and_then(|at| *at)
+        *self.output_timing.as_ref()?.last_at.borrow()
     }
 }
 
 impl NativePaneObservation {
     fn new(
-        term: Arc<Mutex<Terminal>>,
+        term: Rc<RefCell<Terminal>>,
         child: Option<ObservedChild>,
         cols: u16,
         rows: u16,
@@ -917,49 +906,49 @@ impl NativePaneObservation {
         );
         Self {
             term,
-            revision: AtomicU64::new(0),
-            large_scroll_revision: AtomicU64::new(0),
-            redraw_detector: Mutex::new(ScrollRedrawDetector::new(rows)),
-            control_output: Mutex::new(ControlOutputJournal::default()),
-            cursor_shape: AtomicU8::new(0),
-            bracketed_paste: AtomicBool::new(false),
-            focus_reporting: AtomicBool::new(false),
-            theme_updates: AtomicBool::new(false),
-            theme_query: AtomicBool::new(false),
-            mouse_tracking_mode: AtomicU8::new(0),
-            mouse_utf8: AtomicBool::new(false),
-            mouse_sgr: AtomicBool::new(false),
-            insert_mode: AtomicBool::new(false),
-            origin_mode: AtomicBool::new(false),
-            wrap_mode: AtomicBool::new(true),
-            cursor_visible: AtomicBool::new(true),
-            cursor_blinking: AtomicBool::new(false),
-            cursor_keys: AtomicBool::new(false),
-            application_keypad: AtomicBool::new(false),
-            extended_keys_request: AtomicU8::new(0),
-            background: Mutex::new("default".to_string()),
-            foreground: Mutex::new("default".to_string()),
-            cursor_colour: Mutex::new("none".to_string()),
-            path: Mutex::new(String::new()),
-            progress_state: AtomicU8::new(0),
-            progress_value: AtomicU8::new(0),
-            tab_stops: Mutex::new(None),
-            columns: AtomicU16::new(cols),
-            alternate_on: AtomicBool::new(false),
-            alternate_saved_x: AtomicU32::new(u32::MAX),
-            alternate_saved_y: AtomicU32::new(u32::MAX),
+            revision: Cell::new(0),
+            large_scroll_revision: Cell::new(0),
+            redraw_detector: RefCell::new(ScrollRedrawDetector::new(rows)),
+            control_output: RefCell::new(ControlOutputJournal::default()),
+            cursor_shape: Cell::new(0),
+            bracketed_paste: Cell::new(false),
+            focus_reporting: Cell::new(false),
+            theme_updates: Cell::new(false),
+            theme_query: Cell::new(false),
+            mouse_tracking_mode: Cell::new(0),
+            mouse_utf8: Cell::new(false),
+            mouse_sgr: Cell::new(false),
+            insert_mode: Cell::new(false),
+            origin_mode: Cell::new(false),
+            wrap_mode: Cell::new(true),
+            cursor_visible: Cell::new(true),
+            cursor_blinking: Cell::new(false),
+            cursor_keys: Cell::new(false),
+            application_keypad: Cell::new(false),
+            extended_keys_request: Cell::new(0),
+            background: RefCell::new("default".to_string()),
+            foreground: RefCell::new("default".to_string()),
+            cursor_colour: RefCell::new("none".to_string()),
+            path: RefCell::new(String::new()),
+            progress_state: Cell::new(0),
+            progress_value: Cell::new(0),
+            tab_stops: RefCell::new(None),
+            columns: Cell::new(cols),
+            alternate_on: Cell::new(false),
+            alternate_saved_x: Cell::new(u32::MAX),
+            alternate_saved_y: Cell::new(u32::MAX),
             child,
-            output_waiters: Mutex::new(Vec::new()),
+            output_waiters: RefCell::new(Vec::new()),
             output_timing: latency_enabled.then(|| {
-                Arc::new(OutputTiming {
-                    last_at: Mutex::new(None),
+                Rc::new(OutputTiming {
+                    last_at: RefCell::new(None),
                 })
             }),
-            last_output_at: Mutex::new(None),
-            bell_count: AtomicU64::new(0),
-            clipboard_events: Mutex::new(VecDeque::new()),
-            passthrough: Mutex::new(VecDeque::new()),
-            announced_title: Mutex::new(None),
+            last_output_at: RefCell::new(None),
+            bell_count: Cell::new(0),
+            clipboard_events: RefCell::new(VecDeque::new()),
+            passthrough: RefCell::new(VecDeque::new()),
+            announced_title: RefCell::new(None),
             output_policy: PaneOutputPolicyCell::default(),
         }
     }
@@ -974,10 +963,10 @@ impl NativePaneObservation {
     /// `PaneKeyModes`.
     pub(crate) fn key_state(&self) -> PaneKeyState {
         PaneKeyState {
-            cursor_keys: self.cursor_keys.load(Ordering::Acquire),
-            application_keypad: self.application_keypad.load(Ordering::Acquire),
-            bracketed_paste: self.bracketed_paste.load(Ordering::Acquire),
-            extended_request: match self.extended_keys_request.load(Ordering::Acquire) {
+            cursor_keys: self.cursor_keys.get(),
+            application_keypad: self.application_keypad.get(),
+            bracketed_paste: self.bracketed_paste.get(),
+            extended_request: match self.extended_keys_request.get() {
                 1 => ExtendedKeys::Standard,
                 2 => ExtendedKeys::All,
                 _ => ExtendedKeys::Off,
@@ -986,31 +975,28 @@ impl NativePaneObservation {
     }
 
     fn osc_state(&self) -> PaneOscState {
-        let read = |slot: &Mutex<String>| {
-            slot.lock()
-                .map(|value| value.clone())
-                .unwrap_or_default()
-        };
+        let read = |slot: &RefCell<String>| slot.borrow().clone();
         PaneOscState {
             foreground: read(&self.foreground),
             cursor_colour: read(&self.cursor_colour),
             path: read(&self.path),
-            progress_state: match self.progress_state.load(Ordering::Acquire) {
+            progress_state: match self.progress_state.get() {
                 1 => "normal",
                 2 => "error",
                 3 => "indeterminate",
                 4 => "paused",
                 _ => "hidden",
             },
-            progress_value: self.progress_value.load(Ordering::Acquire),
+            progress_value: self.progress_value.get(),
         }
     }
 
     /// Apply `edit` to the pane's tab stops, materializing the defaults first
     /// if the pane has not changed them yet.
     fn update_tab_stops(&self, edit: impl FnOnce(&mut BTreeSet<u16>)) {
-        let columns = self.columns.load(Ordering::Acquire);
-        if let Ok(mut stops) = self.tab_stops.lock() {
+        let columns = self.columns.get();
+        {
+            let mut stops = self.tab_stops.borrow_mut();
             edit(stops.get_or_insert_with(|| default_tab_stops(columns)));
         }
     }
@@ -1018,11 +1004,11 @@ impl NativePaneObservation {
     /// The pane's tab stops, as `#{pane_tabs}` lists them.
     fn tab_stops(&self) -> Vec<u16> {
         self.tab_stops
-            .lock()
-            .ok()
-            .and_then(|stops| stops.as_ref().map(|stops| stops.iter().copied().collect()))
+            .borrow()
+            .as_ref()
+            .map(|stops| stops.iter().copied().collect())
             .unwrap_or_else(|| {
-                default_tab_stops(self.columns.load(Ordering::Acquire))
+                default_tab_stops(self.columns.get())
                     .into_iter()
                     .collect()
             })
@@ -1031,43 +1017,39 @@ impl NativePaneObservation {
     /// The pane's scroll region, as `#{scroll_region_upper}`/`#{lower}` report
     /// it: the DECSTBM region when one is set, else the whole screen.
     fn scroll_region(&self) -> (u16, u16) {
-        self.redraw_detector
-            .lock()
-            .map(|detector| {
-                let region = detector.region();
-                (region.top, region.bottom)
-            })
-            .unwrap_or((0, 0))
+        let region = self.redraw_detector.borrow().region();
+        (region.top, region.bottom)
     }
 
     fn terminal_modes(&self) -> PaneTerminalModes {
         PaneTerminalModes {
-            insert: self.insert_mode.load(Ordering::Acquire),
-            origin: self.origin_mode.load(Ordering::Acquire),
-            wrap: self.wrap_mode.load(Ordering::Acquire),
-            cursor_visible: self.cursor_visible.load(Ordering::Acquire),
-            cursor_blinking: self.cursor_blinking.load(Ordering::Acquire),
-            keypad: self.application_keypad.load(Ordering::Acquire),
-            cursor_keys: self.cursor_keys.load(Ordering::Acquire),
-            cursor_shape: PaneCursorShape::from_parameter(self.cursor_shape.load(Ordering::Acquire)),
+            insert: self.insert_mode.get(),
+            origin: self.origin_mode.get(),
+            wrap: self.wrap_mode.get(),
+            cursor_visible: self.cursor_visible.get(),
+            cursor_blinking: self.cursor_blinking.get(),
+            keypad: self.application_keypad.get(),
+            cursor_keys: self.cursor_keys.get(),
+            cursor_shape: PaneCursorShape::from_parameter(self.cursor_shape.get()),
         }
     }
 
     pub(crate) fn mouse_modes(&self) -> PaneMouseModes {
         PaneMouseModes {
-            tracking: match self.mouse_tracking_mode.load(Ordering::Acquire) {
+            tracking: match self.mouse_tracking_mode.get() {
                 1 => Some(MouseTrackingMode::Standard),
                 2 => Some(MouseTrackingMode::Button),
                 3 => Some(MouseTrackingMode::All),
                 _ => None,
             },
-            utf8: self.mouse_utf8.load(Ordering::Acquire),
-            sgr: self.mouse_sgr.load(Ordering::Acquire),
+            utf8: self.mouse_utf8.get(),
+            sgr: self.mouse_sgr.get(),
         }
     }
 
     fn note_clipboard_event(&self, event: PaneClipboardEvent) {
-        if let Ok(mut events) = self.clipboard_events.lock() {
+        {
+            let mut events = self.clipboard_events.borrow_mut();
             // A runaway application must not grow this without bound; tmux
             // likewise answers only what it can keep up with.
             if events.len() < 16 {
@@ -1077,7 +1059,8 @@ impl NativePaneObservation {
     }
 
     fn note_passthrough(&self, event: PanePassthrough) {
-        if let Ok(mut queued) = self.passthrough.lock() {
+        {
+            let mut queued = self.passthrough.borrow_mut();
             // As with the clipboard queue, an application that outruns the
             // server loop loses the excess rather than growing the server.
             if queued.len() < 16 {
@@ -1088,24 +1071,15 @@ impl NativePaneObservation {
 
     /// The title the pane last set for itself.
     fn announced_title(&self) -> Option<String> {
-        self.announced_title
-            .lock()
-            .ok()
-            .and_then(|title| title.clone())
+        self.announced_title.borrow().clone()
     }
 
     pub(crate) fn take_passthrough(&self) -> Vec<PanePassthrough> {
-        self.passthrough
-            .lock()
-            .map(|mut queued| queued.drain(..).collect())
-            .unwrap_or_default()
+        self.passthrough.borrow_mut().drain(..).collect()
     }
 
     pub(crate) fn take_clipboard_events(&self) -> Vec<PaneClipboardEvent> {
-        self.clipboard_events
-            .lock()
-            .map(|mut events| events.drain(..).collect())
-            .unwrap_or_default()
+        self.clipboard_events.borrow_mut().drain(..).collect()
     }
 
     fn record_output(&self, bytes: &[u8], large_scroll: bool) {
@@ -1117,41 +1091,41 @@ impl NativePaneObservation {
 
     fn note_bells(&self, count: u64) {
         if count != 0 {
-            self.bell_count.fetch_add(count, Ordering::Release);
+            self.bell_count.set(self.bell_count.get().wrapping_add(count));
         }
     }
 
     fn append_control_output(&self, bytes: &[u8]) {
         if !bytes.is_empty() {
-            if let Ok(mut output) = self.control_output.lock() {
+            {
+                let mut output = self.control_output.borrow_mut();
                 output.append(bytes);
             }
         }
     }
 
     fn record_change(&self, large_scroll: bool) {
-        if let Ok(mut at) = self.last_output_at.lock() {
+        {
+            let mut at = self.last_output_at.borrow_mut();
             *at = Some(Instant::now());
         }
         if let Some(timing) = self.output_timing.as_ref() {
-            if let Ok(mut at) = timing.last_at.lock() {
+            {
+                let mut at = timing.last_at.borrow_mut();
                 *at = Some(Instant::now());
             }
         }
-        let revision = self.revision.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
+        let revision = self.revision.get().wrapping_add(1);
+        self.revision.set(revision);
         if large_scroll {
             self.large_scroll_revision
-                .store(revision, Ordering::Release);
+                .set(revision);
         }
         self.notify_output();
     }
 
     fn write_terminal(&self, terminal: &mut Terminal, bytes: &[u8]) -> bool {
-        let actions = self
-            .redraw_detector
-            .lock()
-            .map(|mut detector| detector.scan(bytes))
-            .unwrap_or_default();
+        let actions = self.redraw_detector.borrow_mut().scan(bytes);
         if actions.is_empty() {
             terminal.write(bytes);
             return false;
@@ -1176,9 +1150,7 @@ impl NativePaneObservation {
     }
 
     fn notify_output(&self) {
-        let Ok(mut waiters) = self.output_waiters.lock() else {
-            return;
-        };
+        let mut waiters = self.output_waiters.borrow_mut();
         waiters.retain(|waiter| {
             let Some(event) = waiter.upgrade() else {
                 return false;
@@ -1188,62 +1160,53 @@ impl NativePaneObservation {
         });
     }
 
-    fn register_output_event(&self, event: &Arc<OutputEvent>) -> io::Result<()> {
-        self.output_waiters
-            .lock()
-            .map_err(|_| io::Error::other("pane output waiters mutex poisoned"))?
-            .push(Arc::downgrade(event));
+    fn register_output_event(&self, event: &Rc<OutputEvent>) -> io::Result<()> {
+        self.output_waiters.borrow_mut().push(Rc::downgrade(event));
         Ok(())
     }
 
     pub(crate) fn subscribe_output(&self) -> io::Result<OutputSubscription> {
         // Start signalled so a subscriber performs one state scan and cannot
         // miss output or a terminal query queued just before registration.
-        let event = Arc::new(OutputEvent {
+        let event = Rc::new(OutputEvent {
             wakeup: CurrentPlatform::new_output_wakeup()?,
         });
         self.register_output_event(&event)?;
         Ok(OutputSubscription {
             event,
-            output_timing: self.output_timing.as_ref().map(Arc::clone),
+            output_timing: self.output_timing.as_ref().map(Rc::clone),
         })
     }
 
     pub(crate) fn contract_process(&self) -> (Option<u32>, bool) {
         match &self.child {
-            Some(child) => (Some(child.pid), !child.alive.load(Ordering::Acquire)),
+            Some(child) => (Some(child.pid), !child.alive.get()),
             None => (None, false),
         }
     }
 
     pub(crate) fn contract_revision(&self) -> u64 {
-        self.revision.load(Ordering::Acquire)
+        self.revision.get()
     }
 
     pub(crate) fn large_scroll_revision(&self) -> u64 {
-        self.large_scroll_revision.load(Ordering::Acquire)
+        self.large_scroll_revision.get()
     }
 
     pub(crate) fn alert_snapshot(&self) -> (u64, u64, Option<Instant>) {
         (
-            self.revision.load(Ordering::Acquire),
-            self.bell_count.load(Ordering::Acquire),
-            self.last_output_at.lock().ok().and_then(|at| *at),
+            self.revision.get(),
+            self.bell_count.get(),
+            *self.last_output_at.borrow(),
         )
     }
 
     pub(crate) fn control_output_end(&self) -> u64 {
-        self.control_output
-            .lock()
-            .map(|output| output.end)
-            .unwrap_or_default()
+        self.control_output.borrow().end
     }
 
     pub(crate) fn control_output_chunk(&self, offset: u64, limit: usize) -> (u64, u64, Vec<u8>) {
-        self.control_output
-            .lock()
-            .map(|output| output.chunk(offset, limit))
-            .unwrap_or((offset, offset, Vec::new()))
+        self.control_output.borrow().chunk(offset, limit)
     }
 
     #[allow(dead_code)]
@@ -1261,8 +1224,7 @@ impl NativePaneObservation {
     ) -> io::Result<(Option<String>, String)> {
         let terminal = self
             .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?;
+            .borrow_mut();
         let title = terminal.title().map_err(ghostty_err)?;
         let text = trailing_lines(&terminal.dump_plain().map_err(ghostty_err)?, max_rows);
         Ok((title, text))
@@ -1274,7 +1236,7 @@ impl PaneObservability for NativePaneObservation {
         Ok(match &self.child {
             Some(child) => PaneProcess {
                 child_pid: Some(child.pid),
-                exited: !child.alive.load(Ordering::Acquire),
+                exited: !child.alive.get(),
             },
             None => PaneProcess {
                 child_pid: None,
@@ -1284,14 +1246,13 @@ impl PaneObservability for NativePaneObservation {
     }
 
     fn output_revision(&self) -> io::Result<u64> {
-        Ok(self.revision.load(Ordering::Acquire))
+        Ok(self.revision.get())
     }
 
     fn screen(&self, source: ScreenSource, lines: usize) -> io::Result<ScreenTail> {
         let term = self
             .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?;
+            .borrow_mut();
         let text = match source {
             ScreenSource::Recent => term.dump_plain().map_err(ghostty_err)?,
             ScreenSource::RecentUnwrapped => term.dump_plain_unwrapped().map_err(ghostty_err)?,
@@ -1307,9 +1268,9 @@ impl PaneObservability for NativePaneObservation {
         // Writers advance the revision while holding the same terminal lock,
         // so the formatted text, cursor state, and revision form one coherent
         // snapshot.
-        let revision = self.revision.load(Ordering::Acquire);
+        let revision = self.revision.get();
         let cursor_visible = term.cursor_visible().map_err(ghostty_err)?;
-        let cursor_shape = self.cursor_shape.load(Ordering::Acquire);
+        let cursor_shape = self.cursor_shape.get();
         Ok(ScreenTail {
             revision,
             text: trailing_lines(&text, lines),
@@ -1320,8 +1281,7 @@ impl PaneObservability for NativePaneObservation {
 
     fn scrollback_rows(&self) -> io::Result<usize> {
         self.term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?
+            .borrow_mut()
             .scrollback_rows()
             .map_err(ghostty_err)
     }
@@ -1338,17 +1298,17 @@ impl Pane {
         let term = Terminal::new(cols, rows).map_err(ghostty_err)?;
         Ok(Pane {
             observation: Arc::new(NativePaneObservation::new(
-                Arc::new(Mutex::new(term)),
+                Rc::new(RefCell::new(term)),
                 None,
                 cols,
                 rows,
             )),
-            terminal_queries: Arc::new(Mutex::new(VecDeque::new())),
+            terminal_queries: Rc::new(RefCell::new(VecDeque::new())),
             child: None,
-            pending_input: Arc::new(Mutex::new(VecDeque::new())),
+            pending_input: Rc::new(RefCell::new(VecDeque::new())),
             spawn_spec: None,
-            pipe_output: Arc::new(Mutex::new(PanePipeOutbound::default())),
-            pipe_output_active: Arc::new(AtomicBool::new(false)),
+            pipe_output: Rc::new(RefCell::new(PanePipeOutbound::default())),
+            pipe_output_active: Rc::new(Cell::new(false)),
             pipe: None,
             new_pipes: Vec::new(),
             event_io: None,
@@ -1368,8 +1328,8 @@ impl Pane {
         assert!(!argv.is_empty(), "argv must have at least the program");
 
         let term = Terminal::new(cols, rows).map_err(ghostty_err)?;
-        let term = Arc::new(Mutex::new(term));
-        let terminal_queries = Arc::new(Mutex::new(VecDeque::new()));
+        let term = Rc::new(RefCell::new(term));
+        let terminal_queries = Rc::new(RefCell::new(VecDeque::new()));
 
         // Build the C argv *before* forking: allocation is not async-signal-safe,
         // so between fork and exec the child may only call execvp/_exit.
@@ -1427,15 +1387,15 @@ impl Pane {
         // dup and `Pane::input` share this open file description, so reads (which
         // now poll first) and writes (which drop on `EAGAIN`) are both guarded.
         set_nonblocking(master.as_raw_fd())?;
-        let alive = Arc::new(AtomicBool::new(true));
-        let pending_input = Arc::new(Mutex::new(VecDeque::new()));
-        let pipe_output = Arc::new(Mutex::new(PanePipeOutbound::default()));
-        let pipe_output_active = Arc::new(AtomicBool::new(false));
+        let alive = Rc::new(Cell::new(true));
+        let pending_input = Rc::new(RefCell::new(VecDeque::new()));
+        let pipe_output = Rc::new(RefCell::new(PanePipeOutbound::default()));
+        let pipe_output_active = Rc::new(Cell::new(false));
         let observation = Arc::new(NativePaneObservation::new(
             term,
             Some(ObservedChild {
                 pid: pid as u32,
-                alive: Arc::clone(&alive),
+                alive: Rc::clone(&alive),
             }),
             cols,
             rows,
@@ -1443,11 +1403,11 @@ impl Pane {
         let pane_io = PaneIo::new(
             &master,
             Arc::clone(&observation),
-            Arc::clone(&terminal_queries),
-            Arc::clone(&pending_input),
-            Arc::clone(&pipe_output),
-            Arc::clone(&pipe_output_active),
-            Arc::clone(&alive),
+            Rc::clone(&terminal_queries),
+            Rc::clone(&pending_input),
+            Rc::clone(&pipe_output),
+            Rc::clone(&pipe_output_active),
+            Rc::clone(&alive),
         )?;
         let event_io = match io_mode {
             PaneIoMode::EventLoop => Some(pane_io),
@@ -1506,11 +1466,11 @@ impl Pane {
     pub(crate) fn pipe_active(&self) -> bool {
         self.pipe
             .as_ref()
-            .is_some_and(|pipe| pipe.alive.load(Ordering::Acquire))
+            .is_some_and(|pipe| pipe.alive.get())
     }
 
     pub(crate) fn close_pipe(&mut self) {
-        self.pipe_output_active.store(false, Ordering::Release);
+        self.pipe_output_active.set(false);
         // The job owns the child's stdin; marking the buffer closed is what
         // makes it drop that end, and `PanePipe`'s own drop hangs up the child.
         if let Some(pipe) = self.pipe.take() {
@@ -1553,7 +1513,7 @@ impl Pane {
         }
         let mut process = process.spawn()?;
         let pid = process.id();
-        let alive = Arc::new(AtomicBool::new(true));
+        let alive = Rc::new(Cell::new(true));
 
         let stdin = if output {
             let stdin = process
@@ -1561,10 +1521,11 @@ impl Pane {
                 .take()
                 .ok_or_else(|| io::Error::other("pipe child has no stdin"))?;
             set_nonblocking(stdin.as_raw_fd())?;
-            if let Ok(mut outbound) = self.pipe_output.lock() {
+            {
+                let mut outbound = self.pipe_output.borrow_mut();
                 *outbound = PanePipeOutbound::default();
             }
-            self.pipe_output_active.store(true, Ordering::Release);
+            self.pipe_output_active.set(true);
             Some(stdin)
         } else {
             None
@@ -1594,14 +1555,14 @@ impl Pane {
             stdin,
             stdout,
             master,
-            pending_input: Arc::clone(&self.pending_input),
-            outbound: Arc::clone(&self.pipe_output),
-            alive: Arc::clone(&alive),
+            pending_input: Rc::clone(&self.pending_input),
+            outbound: Rc::clone(&self.pipe_output),
+            alive: Rc::clone(&alive),
         });
         self.pipe = Some(PanePipe {
             pid,
             alive,
-            outbound: Arc::clone(&self.pipe_output),
+            outbound: Rc::clone(&self.pipe_output),
         });
         Ok(())
     }
@@ -1612,14 +1573,15 @@ impl Pane {
         if bytes.is_empty() {
             return;
         }
-        if let Ok(mut t) = self.observation.term.lock() {
+        {
+            let mut t = self.observation.term.borrow_mut();
             let large_scroll = self.observation.write_terminal(&mut t, bytes);
             let mut detector = CursorShapeDetector::default();
             for &byte in bytes {
                 if let Some(shape) = detector.feed_byte(byte) {
                     self.observation
                         .cursor_shape
-                        .store(shape, Ordering::Release);
+                        .set(shape);
                 }
             }
             self.observation.record_output(bytes, large_scroll);
@@ -1659,8 +1621,7 @@ impl Pane {
     pub(crate) fn encode_mouse(&self, event: ghostty_sys::MouseEvent) -> io::Result<Vec<u8>> {
         self.observation
             .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?
+            .borrow_mut()
             .encode_mouse(event)
             .map_err(ghostty_err)
     }
@@ -1670,8 +1631,7 @@ impl Pane {
         let mut terminal = self
             .observation
             .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?;
+            .borrow_mut();
         self.observation.write_terminal(&mut terminal, b"\x1bc");
         self.observation.record_change(false);
         Ok(())
@@ -1749,10 +1709,7 @@ impl Pane {
     /// then comes back through the normal client-input path and reaches
     /// [`Pane::input`], completing the same exchange real tmux provides.
     pub fn take_terminal_queries(&self) -> Vec<Vec<u8>> {
-        self.terminal_queries
-            .lock()
-            .map(|mut queries| queries.drain(..).collect())
-            .unwrap_or_default()
+        self.terminal_queries.borrow_mut().drain(..).collect()
     }
 
     /// Publish the options the pane's output is parsed against. The server
@@ -1776,9 +1733,11 @@ impl Pane {
     pub fn resize(&mut self, cols: u16, rows: u16) -> io::Result<()> {
         self.cols = cols;
         self.rows = rows;
-        if let Ok(mut t) = self.observation.term.lock() {
+        {
+            let mut t = self.observation.term.borrow_mut();
             t.resize(cols, rows).map_err(ghostty_err)?;
-            if let Ok(mut detector) = self.observation.redraw_detector.lock() {
+            {
+                let mut detector = self.observation.redraw_detector.borrow_mut();
                 detector.resize(rows);
             }
         }
@@ -1786,8 +1745,9 @@ impl Pane {
         // whatever the pane had set.
         self.observation
             .columns
-            .store(cols, Ordering::Release);
-        if let Ok(mut stops) = self.observation.tab_stops.lock() {
+            .set(cols);
+        {
+            let mut stops = self.observation.tab_stops.borrow_mut();
             *stops = None;
         }
         if let Some(child) = &self.child {
@@ -1810,8 +1770,7 @@ impl Pane {
     pub fn dump(&self) -> io::Result<String> {
         self.observation
             .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?
+            .borrow_mut()
             .dump_plain()
             .map_err(ghostty_err)
     }
@@ -1829,8 +1788,7 @@ impl Pane {
     pub(crate) fn cursor_position(&self) -> io::Result<(u16, u16)> {
         self.observation
             .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?
+            .borrow_mut()
             .cursor_position()
             .map_err(ghostty_err)
     }
@@ -1841,8 +1799,7 @@ impl Pane {
         let terminal = self
             .observation
             .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?;
+            .borrow_mut();
         let grid = terminal.grid_snapshot().map_err(ghostty_err)?;
         let vt = terminal.dump_vt().map_err(ghostty_err)?;
         let cursor = terminal.cursor_position().map_err(ghostty_err)?;
@@ -1855,30 +1812,27 @@ impl Pane {
     pub(crate) fn grid_snapshot(&self) -> io::Result<ghostty_sys::GridSnapshot> {
         self.observation
             .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?
+            .borrow_mut()
             .grid_snapshot()
             .map_err(ghostty_err)
     }
 
     pub(crate) fn background_color(&self) -> String {
-        self.observation
-            .background
-            .lock()
-            .map(|color| color.clone())
-            .unwrap_or_else(|_| "default".to_string())
+        self.observation.background.borrow().clone()
     }
 
     /// Latest title advertised by the child. Ghostty handles OSC titles; the
     /// screen/tmux `ESC k ... ST` form is consumed before reaching Ghostty, so
     /// recover that form from the bounded raw-output journal.
     pub(crate) fn title(&self) -> Option<String> {
-        let legacy = self
-            .observation
-            .control_output
-            .lock()
-            .ok()
-            .and_then(|output| latest_screen_title(output.bytes.iter().copied()));
+        let legacy = latest_screen_title(
+            self.observation
+                .control_output
+                .borrow()
+                .bytes
+                .iter()
+                .copied(),
+        );
         legacy.or_else(|| self.observation.announced_title())
     }
 
@@ -1888,8 +1842,7 @@ impl Pane {
     pub fn dump_vt(&self) -> io::Result<Vec<u8>> {
         self.observation
             .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?
+            .borrow_mut()
             .dump_vt()
             .map_err(ghostty_err)
     }
@@ -1897,8 +1850,7 @@ impl Pane {
     pub(crate) fn dump_rows_vt(&self, start: usize, rows: usize) -> io::Result<Vec<u8>> {
         self.observation
             .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?
+            .borrow_mut()
             .dump_vt_rows(start, rows, self.cols)
             .map_err(ghostty_err)
     }
@@ -1914,8 +1866,7 @@ impl Pane {
         let terminal = self
             .observation
             .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?;
+            .borrow_mut();
         let scrollback = terminal.scrollback_rows().map_err(ghostty_err)?;
         let scroll = scroll_offset.min(scrollback);
         let start = scrollback - scroll;
@@ -1938,8 +1889,7 @@ impl Pane {
     pub fn scrollback_rows(&self) -> io::Result<usize> {
         self.observation
             .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?
+            .borrow_mut()
             .scrollback_rows()
             .map_err(ghostty_err)
     }
@@ -1953,8 +1903,7 @@ impl Pane {
         let mut terminal = self
             .observation
             .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?;
+            .borrow_mut();
         self.observation.write_terminal(&mut terminal, b"\x1b[3J");
         self.observation.record_change(false);
         Ok(())
@@ -1966,8 +1915,7 @@ impl Pane {
     pub fn cursor_visible(&self) -> io::Result<bool> {
         self.observation
             .term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?
+            .borrow_mut()
             .cursor_visible()
             .map_err(ghostty_err)
     }
@@ -1975,11 +1923,11 @@ impl Pane {
     /// Current DECSCUSR parameter (0/default, 1..=6 block/underline/bar with
     /// blinking encoded by odd values), for mirroring onto the attached tty.
     pub fn cursor_shape(&self) -> u8 {
-        self.observation.cursor_shape.load(Ordering::Acquire)
+        self.observation.cursor_shape.get()
     }
 
     pub(crate) fn bracketed_paste_enabled(&self) -> bool {
-        self.observation.bracketed_paste.load(Ordering::Acquire)
+        self.observation.bracketed_paste.get()
     }
 
     /// The pane's DECCKM, DECKPAM and `modifyOtherKeys` state, which decide how
@@ -1990,12 +1938,12 @@ impl Pane {
 
     /// Whether the pane asked to be told when focus moves (DECSET 1004).
     pub(crate) fn focus_reporting_enabled(&self) -> bool {
-        self.observation.focus_reporting.load(Ordering::Acquire)
+        self.observation.focus_reporting.get()
     }
 
     /// Whether the pane asked to be told when the theme changes (DECSET 2031).
     pub(crate) fn theme_updates_enabled(&self) -> bool {
-        self.observation.theme_updates.load(Ordering::Acquire)
+        self.observation.theme_updates.get()
     }
 
     /// The pane program's DECSET mouse reporting state, which decides both
@@ -2024,9 +1972,9 @@ impl Pane {
     /// saved on the way in — `u32::MAX` in each axis while none has been.
     pub(crate) fn alternate_screen(&self) -> (bool, u32, u32) {
         (
-            self.observation.alternate_on.load(Ordering::Acquire),
-            self.observation.alternate_saved_x.load(Ordering::Acquire),
-            self.observation.alternate_saved_y.load(Ordering::Acquire),
+            self.observation.alternate_on.get(),
+            self.observation.alternate_saved_x.get(),
+            self.observation.alternate_saved_y.get(),
         )
     }
 
@@ -2038,7 +1986,7 @@ impl Pane {
 
     /// Take a pending DSR ?996 theme question, if the pane asked one.
     pub(crate) fn take_theme_query(&self) -> bool {
-        self.observation.theme_query.swap(false, Ordering::AcqRel)
+        self.observation.theme_query.replace(false)
     }
 
     pub fn size(&self) -> (u16, u16) {
@@ -2048,7 +1996,7 @@ impl Pane {
     pub fn is_live(&self) -> bool {
         self.child
             .as_ref()
-            .is_some_and(|child| child.alive.load(Ordering::Acquire))
+            .is_some_and(|child| child.alive.get())
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -2064,7 +2012,7 @@ impl Pane {
     pub fn has_exited(&self) -> bool {
         self.child
             .as_ref()
-            .is_some_and(|child| !child.alive.load(Ordering::Acquire))
+            .is_some_and(|child| !child.alive.get())
     }
 
     /// Reap an exited child without blocking and return its shell-style status.
@@ -2208,7 +2156,10 @@ impl Drop for Child {
 static ORPHANED_CHILDREN: Mutex<Vec<pid_t>> = Mutex::new(Vec::new());
 
 fn register_orphan(pid: pid_t) {
-    if let Ok(mut orphans) = ORPHANED_CHILDREN.lock() {
+    {
+        let Ok(mut orphans) = ORPHANED_CHILDREN.lock() else {
+            return;
+        };
         orphans.push(pid);
     }
 }
@@ -2245,11 +2196,11 @@ pub(crate) struct PaneIoReadResult {
 pub(crate) struct PaneIo {
     fd: OwnedFd,
     observation: Arc<NativePaneObservation>,
-    terminal_queries: Arc<Mutex<VecDeque<Vec<u8>>>>,
-    pending_input: Arc<Mutex<VecDeque<u8>>>,
-    pipe_output: Arc<Mutex<PanePipeOutbound>>,
-    pipe_output_active: Arc<AtomicBool>,
-    alive: Arc<AtomicBool>,
+    terminal_queries: Rc<RefCell<VecDeque<Vec<u8>>>>,
+    pending_input: Rc<RefCell<VecDeque<u8>>>,
+    pipe_output: Rc<RefCell<PanePipeOutbound>>,
+    pipe_output_active: Rc<Cell<bool>>,
+    alive: Rc<Cell<bool>>,
     query_detector: BackgroundColorQueryDetector,
     dsr_detector: DeviceStatusReportQueryDetector,
     cursor_report_detector: CursorPositionReportQueryDetector,
@@ -2273,11 +2224,11 @@ impl PaneIo {
     pub(crate) fn new(
         master: &OwnedFd,
         observation: Arc<NativePaneObservation>,
-        terminal_queries: Arc<Mutex<VecDeque<Vec<u8>>>>,
-        pending_input: Arc<Mutex<VecDeque<u8>>>,
-        pipe_output: Arc<Mutex<PanePipeOutbound>>,
-        pipe_output_active: Arc<AtomicBool>,
-        alive: Arc<AtomicBool>,
+        terminal_queries: Rc<RefCell<VecDeque<Vec<u8>>>>,
+        pending_input: Rc<RefCell<VecDeque<u8>>>,
+        pipe_output: Rc<RefCell<PanePipeOutbound>>,
+        pipe_output_active: Rc<Cell<bool>>,
+        alive: Rc<Cell<bool>>,
     ) -> io::Result<Self> {
         Ok(Self {
             fd: master.as_fd().try_clone_to_owned()?,
@@ -2312,17 +2263,15 @@ impl PaneIo {
     }
 
     pub(crate) fn wants_write(&self) -> bool {
-        self.pending_input
-            .lock()
-            .map(|queued| !queued.is_empty())
-            .unwrap_or(false)
+        !self.pending_input.borrow().is_empty()
     }
 
     pub(crate) fn drive_writable(&mut self) {
         if self.closed {
             return;
         }
-        if let Ok(mut queued) = self.pending_input.lock() {
+        {
+            let mut queued = self.pending_input.borrow_mut();
             flush_pane_input(self.fd.as_raw_fd(), &mut queued);
         }
     }
@@ -2379,11 +2328,13 @@ impl PaneIo {
     }
 
     fn process_output(&mut self, pending: Vec<u8>) {
-        if self.pipe_output_active.load(Ordering::Acquire) {
-            match self.pipe_output.lock() {
-                Ok(mut outbound) if !outbound.closed => outbound.push(&pending),
-                Ok(_) => self.pipe_output_active.store(false, Ordering::Release),
-                Err(_) => self.pipe_output_active.store(false, Ordering::Release),
+        if self.pipe_output_active.get() {
+            let mut outbound = self.pipe_output.borrow_mut();
+            if outbound.closed {
+                drop(outbound);
+                self.pipe_output_active.set(false);
+            } else {
+                outbound.push(&pending);
             }
         }
 
@@ -2404,7 +2355,8 @@ impl PaneIo {
         );
         if let Some(title) = self.title_filter.accepted.pop() {
             self.title_filter.accepted.clear();
-            if let Ok(mut announced) = self.observation.announced_title.lock() {
+            {
+                let mut announced = self.observation.announced_title.borrow_mut();
                 *announced = Some(title);
             }
         }
@@ -2432,10 +2384,7 @@ impl PaneIo {
                 cursor_events.push((index + 1, event));
             }
             if let Some(change) = self.alternate_detector.feed_byte(byte) {
-                self.observation.alternate_on.store(
-                    !matches!(change, AlternateScreenChange::Leave),
-                    Ordering::Release,
-                );
+                self.observation.alternate_on.set(!matches!(change, AlternateScreenChange::Leave));
                 if let AlternateScreenChange::EnterSavingCursor { sequence_len } = change {
                     // The save has to happen before the sequence runs, since
                     // switching screens is what moves the cursor away. A
@@ -2450,7 +2399,7 @@ impl PaneIo {
             if let Some(shape) = self.cursor_shape_detector.feed_byte(byte) {
                 self.observation
                     .cursor_shape
-                    .store(shape, Ordering::Release);
+                    .set(shape);
                 // tmux's screen_set_cursor_style: every style but the default
                 // one also decides whether the cursor blinks, odd styles
                 // blinking and even ones steady.
@@ -2465,7 +2414,7 @@ impl PaneIo {
                 mode_replies.push(decrqss_reply(
                     &request,
                     PaneCursorShape::from_parameter(
-                        self.observation.cursor_shape.load(Ordering::Acquire),
+                        self.observation.cursor_shape.get(),
                     ),
                     self.mode_query_detector.cursor_blinking,
                 ));
@@ -2485,17 +2434,18 @@ impl PaneIo {
                     PaneOscUpdate::ProgressBar { state, progress } => {
                         self.observation
                             .progress_state
-                            .store(state, Ordering::Release);
+                            .set(state);
                         if let Some(progress) = progress {
                             self.observation
                                 .progress_value
-                                .store(progress, Ordering::Release);
+                                .set(progress);
                         }
                         None
                     }
                 };
                 if let Some((slot, value)) = slot_value {
-                    if let Ok(mut current) = slot.lock() {
+                    {
+                        let mut current = slot.borrow_mut();
                         *current = value;
                     }
                 }
@@ -2517,63 +2467,55 @@ impl PaneIo {
         }
         self.observation
             .bracketed_paste
-            .store(self.mode_query_detector.bracketed_paste, Ordering::Release);
+            .set(self.mode_query_detector.bracketed_paste);
         self.observation
             .focus_reporting
-            .store(self.mode_query_detector.focus_reporting, Ordering::Release);
+            .set(self.mode_query_detector.focus_reporting);
         self.observation
             .theme_updates
-            .store(self.mode_query_detector.theme_updates, Ordering::Release);
-        self.observation.mouse_tracking_mode.store(
-            match self.mode_query_detector.mouse_tracking {
+            .set(self.mode_query_detector.theme_updates);
+        self.observation.mouse_tracking_mode.set(match self.mode_query_detector.mouse_tracking {
                 None => 0,
                 Some(MouseTrackingMode::Standard) => 1,
                 Some(MouseTrackingMode::Button) => 2,
                 Some(MouseTrackingMode::All) => 3,
-            },
-            Ordering::Release,
-        );
+            });
         self.observation
             .mouse_utf8
-            .store(self.mode_query_detector.mouse_utf8, Ordering::Release);
+            .set(self.mode_query_detector.mouse_utf8);
         self.observation
             .mouse_sgr
-            .store(self.mode_query_detector.mouse_sgr, Ordering::Release);
+            .set(self.mode_query_detector.mouse_sgr);
         self.observation
             .insert_mode
-            .store(self.mode_query_detector.insert_mode, Ordering::Release);
+            .set(self.mode_query_detector.insert_mode);
         self.observation
             .origin_mode
-            .store(self.mode_query_detector.origin_mode, Ordering::Release);
+            .set(self.mode_query_detector.origin_mode);
         self.observation
             .wrap_mode
-            .store(self.mode_query_detector.wrap_mode, Ordering::Release);
+            .set(self.mode_query_detector.wrap_mode);
         self.observation
             .cursor_visible
-            .store(self.mode_query_detector.cursor_visible, Ordering::Release);
+            .set(self.mode_query_detector.cursor_visible);
         self.observation
             .cursor_blinking
-            .store(self.mode_query_detector.cursor_blinking, Ordering::Release);
+            .set(self.mode_query_detector.cursor_blinking);
         self.observation
             .cursor_keys
-            .store(self.mode_query_detector.cursor_keys, Ordering::Release);
-        self.observation.application_keypad.store(
-            self.mode_query_detector.application_keypad,
-            Ordering::Release,
-        );
-        self.observation.extended_keys_request.store(
-            match self.mode_query_detector.extended_keys_request {
+            .set(self.mode_query_detector.cursor_keys);
+        self.observation.application_keypad.set(self.mode_query_detector.application_keypad);
+        self.observation.extended_keys_request.set(match self.mode_query_detector.extended_keys_request {
                 ExtendedKeys::Off => 0,
                 ExtendedKeys::Standard => 1,
                 ExtendedKeys::All => 2,
-            },
-            Ordering::Release,
-        );
+            });
         if std::mem::take(&mut self.mode_query_detector.theme_query) {
-            self.observation.theme_query.store(true, Ordering::Release);
+            self.observation.theme_query.set(true);
         }
         if !queries.is_empty() {
-            if let Ok(mut queued) = self.terminal_queries.lock() {
+            {
+                let mut queued = self.terminal_queries.borrow_mut();
                 for query in queries {
                     if queued.len() == 16 {
                         break;
@@ -2584,7 +2526,8 @@ impl PaneIo {
         }
 
         let mut cursor_replies = Vec::new();
-        if let Ok(mut terminal) = self.observation.term.lock() {
+        {
+            let mut terminal = self.observation.term.borrow_mut();
             let mut segment_start = 0usize;
             let mut large_scroll = false;
             // A save-cursor event splits ahead of its own sequence, so the list
@@ -2607,10 +2550,10 @@ impl PaneIo {
                         if let Ok((x, y)) = terminal.cursor_position() {
                             self.observation
                                 .alternate_saved_x
-                                .store(u32::from(x), Ordering::Release);
+                                .set(u32::from(x));
                             self.observation
                                 .alternate_saved_y
-                                .store(u32::from(y), Ordering::Release);
+                                .set(u32::from(y));
                         }
                     }
                     PaneCursorEvent::SetTabStop => {
@@ -2653,7 +2596,7 @@ impl PaneIo {
             return;
         }
         self.closed = true;
-        self.alive.store(false, Ordering::Release);
+        self.alive.set(false);
         self.observation.notify_output();
     }
 }
@@ -4426,13 +4369,8 @@ fn set_nonblocking(fd: c_int) -> io::Result<()> {
 /// the child will currently accept. Never blocks: the pty master is non-blocking,
 /// so bytes the child cannot take yet stay queued for the reader thread to flush
 /// on the next writability. Excess beyond [`PANE_INPUT_CAP`] is dropped.
-fn enqueue_pane_input(fd: c_int, pending: &Mutex<VecDeque<u8>>, bytes: &[u8]) -> PaneInputStats {
-    let Ok(mut queued) = pending.lock() else {
-        return PaneInputStats {
-            dropped: bytes.len(),
-            ..PaneInputStats::default()
-        };
-    };
+fn enqueue_pane_input(fd: c_int, pending: &RefCell<VecDeque<u8>>, bytes: &[u8]) -> PaneInputStats {
+    let mut queued = pending.borrow_mut();
     let room = PANE_INPUT_CAP.saturating_sub(queued.len());
     let take = bytes.len().min(room);
     queued.extend(&bytes[..take]);
@@ -4695,11 +4633,11 @@ mod tests {
         PaneIo::new(
             &OwnedFd::from(null),
             pane.observation_state(),
-            Arc::clone(&pane.terminal_queries),
-            Arc::clone(&pane.pending_input),
-            Arc::clone(&pane.pipe_output),
-            Arc::clone(&pane.pipe_output_active),
-            Arc::new(AtomicBool::new(true)),
+            Rc::clone(&pane.terminal_queries),
+            Rc::clone(&pane.pending_input),
+            Rc::clone(&pane.pipe_output),
+            Rc::clone(&pane.pipe_output_active),
+            Rc::new(Cell::new(true)),
         )
         .expect("pane io")
     }
