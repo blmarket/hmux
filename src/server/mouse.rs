@@ -915,6 +915,10 @@ mod tests {
         let mut state = ServerState::with_test_session().expect("state");
         state.resize_session("0", 80, 23).expect("resize");
         state.set_global_option("pane-scrollbars", "on");
+        // The columns a scrollbar reserves are reconciled by the server loop's
+        // per-pass sweep, not by setting the option; without it the bar has no
+        // columns of its own and every point lands on the pane.
+        state.refresh_pane_scrollbars().expect("scrollbars");
         let (window, active) = state.active_window_panes("0").expect("window");
         window.panes[active]
             .pane

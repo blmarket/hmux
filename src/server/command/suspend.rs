@@ -1241,6 +1241,18 @@ mod tests {
             .collect()
     }
 
+    /// A client whose environment carries the test runner's `PATH`. The child
+    /// is spawned with `environ_push` semantics — the context's environment is
+    /// the whole of it — so a command that runs anything but a shell builtin
+    /// has no way to find it otherwise.
+    fn context_with_path() -> ClientContext {
+        let mut context = ClientContext::default();
+        if let Some(path) = std::env::var_os("PATH") {
+            context.environment = vec![format!("PATH={}", path.to_string_lossy())];
+        }
+        context
+    }
+
     #[test]
     fn run_shell_job_reports_stdout_and_the_exit_status() {
         let completion = run_blocking(RunShellJob::new(
@@ -1262,7 +1274,7 @@ mod tests {
         let command = "sh -c 'yes error >&2 & sleep 0.2; kill %1' 2>&1 >/dev/null | head -c 200000 >&2; echo done";
         let completion = run_blocking(RunShellJob::new(
             &args(&["-E", command]),
-            &ClientContext::default(),
+            &context_with_path(),
         ));
 
         assert_eq!(completion.result.exit, 0);

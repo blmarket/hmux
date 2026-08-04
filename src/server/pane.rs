@@ -4756,14 +4756,33 @@ mod tests {
         assert_eq!(parse_window_name(&stringify_argv(&shell)), "zsh");
     }
 
+    /// A `PaneIo` over a placeholder descriptor, for driving the output
+    /// pipeline without a child. `Pane::feed` writes straight to the emulator,
+    /// so it deliberately skips the filters this exercises.
+    fn test_pane_io(pane: &Pane) -> PaneIo {
+        let null = std::fs::File::open("/dev/null").expect("/dev/null");
+        PaneIo::new(
+            &OwnedFd::from(null),
+            pane.observation_state(),
+            Arc::clone(&pane.terminal_queries),
+            Arc::clone(&pane.pending_input),
+            Arc::clone(&pane.pipe_output),
+            Arc::clone(&pane.pipe_output_active),
+            Arc::new(AtomicBool::new(true)),
+        )
+        .expect("pane io")
+    }
+
     #[test]
     fn observation_reports_osc_title() {
         let pane = Pane::inert(40, 5).expect("inert pane");
         let observation = pane.observation();
         // No title set yet.
         assert_eq!(observation.title().expect("title"), None);
-        // Codex reports its live status in the window title via OSC 2.
-        pane.feed(b"\x1b]2;Working (5s)\x07");
+        // Codex reports its live status in the window title via OSC 2. The
+        // title is recorded where the child's output is filtered, since that
+        // is what holds it to `input-buffer-size`.
+        test_pane_io(&pane).process_output(b"\x1b]2;Working (5s)\x07".to_vec());
         assert_eq!(
             observation.title().expect("title").as_deref(),
             Some("Working (5s)")

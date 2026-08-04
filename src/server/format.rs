@@ -1865,7 +1865,7 @@ mod tests {
     fn time_expansion_precedes_variable_expansion() {
         let mut v = vars();
         v.set("value", "%Y");
-        let expanded = expand_time_with_jobs("%Y #{value}", &v, None, None);
+        let expanded = expand_time_with_jobs("%Y #{value}", &v, None, None, None);
         assert!(expanded[..4].bytes().all(|byte| byte.is_ascii_digit()));
         assert!(expanded.ends_with(" %Y"), "{expanded:?}");
     }
