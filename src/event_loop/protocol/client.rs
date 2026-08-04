@@ -21,7 +21,7 @@ use crate::tmux::traits::NonblockingFrameWriter;
 
 use super::super::actor::ActorRef;
 use super::super::driver::Outbox;
-use super::super::job::BackgroundCommands;
+use super::super::job::{BackgroundCommands, JobEvent};
 use super::super::reactor::Token;
 use super::super::suspend::{EventCommandRuntime, SuspensionExecutorHandle};
 use super::super::timer::TimerId;
@@ -699,12 +699,18 @@ impl ProtocolClient {
                     // The write is the command; its `after-*` hook belongs to
                     // the completed handshake, not to the queue step that never
                     // ran it.
-                    {
+                    let hooks = {
                         let mut state = self.state.borrow_mut();
-                        command::run_client_file_after_hook(
+                        command::take_client_file_after_hooks(
                             &args,
                             &mut state,
                             &transaction.context,
+                        )
+                    };
+                    for request in hooks {
+                        outbox.enqueue_background(
+                            self.background_commands.clone(),
+                            JobEvent::Start(request),
                         );
                     }
                     if transaction.complete_group(&result) {

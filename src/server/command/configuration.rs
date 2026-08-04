@@ -25,7 +25,7 @@ impl Command {
             Self::ShowOptions => show_options(args, context.state, false),
             Self::SetWindowOption => set_option(args, context.state, true),
             Self::ShowWindowOptions => show_options(args, context.state, true),
-            Self::SetHook => set_hook(args, context.state, context.agents, context.client),
+            Self::SetHook => set_hook(args, context.state),
             Self::ShowHooks => show_hooks(args, context.state),
         }
     }

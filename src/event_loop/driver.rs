@@ -503,6 +503,38 @@ where
     /// Adopt every `#()` job launched since the last pass. Format expansion
     /// runs deep inside rendering, so the jobs are collected there and handed
     /// to the loop here.
+    /// Hand detached command work to the loop. The loop's own passes raise
+    /// hook bodies with no client behind them; they run as background queues,
+    /// the same way a `-b` command does.
+    pub(crate) fn adopt_background_commands(
+        &mut self,
+        server: &Server,
+        requests: Vec<crate::server::command::BackgroundCommandRequest>,
+    ) -> io::Result<()> {
+        if requests.is_empty() {
+            return Ok(());
+        }
+        let executor_handle = self.executor_handle.clone();
+        let target = self
+            .background_commands
+            .get_or_insert_with(|| {
+                ActorRef::new(BackgroundCommands::new(
+                    server.state(),
+                    server.status_hub(),
+                    self.executor.clone(),
+                    executor_handle,
+                ))
+            })
+            .clone();
+        for request in requests {
+            self.events.push_back(Envelope::Background {
+                target: target.clone(),
+                event: JobEvent::Start(request),
+            });
+        }
+        Ok(())
+    }
+
     pub(crate) fn adopt_format_jobs(&mut self, jobs: Vec<FormatJob>) -> io::Result<()> {
         if jobs.is_empty() {
             return Ok(());

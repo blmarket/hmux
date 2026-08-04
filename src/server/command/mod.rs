@@ -2529,20 +2529,6 @@ fn run_save_buffer_shared(
     run_single_shared(command, state, agents, context)
 }
 
-/// Execute a line that was lexed from a tmux command string. Separator tokens
-/// retain their syntax role, so a quoted or escaped literal `;` remains an
-/// ordinary command argument.
-fn run_tokenized_line(
-    tokens: &[LineToken],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    let owned_groups = tokenized_command_groups(tokens);
-    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    run_command_groups(groups, st, agents, context)
-}
-
 fn tokenized_command_groups(tokens: &[LineToken]) -> Vec<Vec<String>> {
     let mut owned_groups: Vec<Vec<String>> = Vec::new();
     let mut group = Vec::new();
@@ -2562,69 +2548,9 @@ fn tokenized_command_groups(tokens: &[LineToken]) -> Vec<Vec<String>> {
     owned_groups
 }
 
-fn parse_tokenized_line(tokens: &[LineToken]) -> CommandResult {
-    let owned_groups = tokenized_command_groups(tokens);
-    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    match parse_command_groups(groups) {
-        Ok(_) => CommandResult::ok(""),
-        Err(error) => error,
-    }
-}
-
 struct ParsedCommand {
     spec: &'static CommandSpec,
     args: Vec<String>,
-}
-
-fn run_command_groups(
-    groups: Vec<&[String]>,
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    if groups.is_empty() {
-        return CommandResult::ok("");
-    }
-
-    let aliases = st.command_aliases();
-    let parsed = match parse_command_groups_with_aliases(groups, &aliases) {
-        Ok(parsed) => parsed,
-        Err(error) => return error,
-    };
-
-    // Exec phase: run each command in order, accumulating output; stop at the
-    // first one that fails and report its exit code.
-    let mut out = CommandResult::ok("");
-    for command in parsed {
-        st.add_message(format!(
-            "{} command: {}",
-            context
-                .client_pid
-                .map(|pid| format!("client-{pid}"))
-                .unwrap_or_else(|| "client-unknown".to_string()),
-            display_command(&command.args)
-        ));
-        let r = run_single(command.spec.command, &command.args, st, agents, context);
-        st.record_control_checkpoint();
-        out.append_stdout(&r);
-        out.stderr.push_str(&r.stderr);
-        out.exit = r.exit;
-        if r.exit != 0 {
-            run_hook(
-                "command-error",
-                flag_value(&command.args, "-t"),
-                hook_command_vars("command-error", command.spec.name, &command.args),
-                st,
-                agents,
-                context,
-            );
-            break;
-        }
-        run_after_hook(command.spec.name, &command.args, st, agents, context);
-        run_raised_notifications(st, agents, context);
-        st.record_control_checkpoint();
-    }
-    out
 }
 
 pub(crate) fn display_command(args: &[String]) -> String {
@@ -2692,89 +2618,76 @@ fn hook_command_vars(hook: &str, command: &str, args: &[String]) -> Vec<(String,
     vars
 }
 
-/// Run the `after-*` hook of a command the client file protocol completed
-/// outside the command queue (`save-buffer` to a client-side path).
-pub(crate) fn run_client_file_after_hook(
+/// The `after-*` hook of a command the client file protocol completed outside
+/// the command queue (`save-buffer` to a client-side path), plus whatever it
+/// raised, for the loop to run as detached queues.
+pub(crate) fn take_client_file_after_hooks(
     args: &[String],
     st: &mut ServerState,
     context: &ClientContext,
-) {
+) -> Vec<BackgroundCommandRequest> {
     let Some(name) = args.first() else {
-        return;
+        return Vec::new();
     };
     let Resolution::Name(name) = registry::resolve(name) else {
-        return;
+        return Vec::new();
     };
     let normalized = normalize_argv(name, args);
-    let agents = PaneAgents::new();
-    run_after_hook(name, &normalized, st, &agents, context);
-    run_raised_notifications(st, &agents, context);
-}
-
-fn run_after_hook(
-    command: &str,
-    args: &[String],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) {
-    let hook = format!("after-{command}");
-    let vars = hook_command_vars(&hook, command, args);
-    run_hook(&hook, flag_value(args, "-t"), vars, st, agents, context);
-}
-
-/// Drain whatever the command just raised, mirroring the queue path's
-/// `plan_notifications` for the synchronous runner.
-fn run_raised_notifications(st: &mut ServerState, agents: &PaneAgents, context: &ClientContext) {
-    if context.suppress_notifications {
-        return;
-    }
-    for notification in st.take_notifications() {
-        run_event_hook(
-            &notification.name,
-            notification.target.as_deref(),
-            notification.vars,
-            st,
-            agents,
-            context,
-        );
-    }
-}
-
-/// Run the bodies of notifications raised outside the command queue — a pane
-/// exiting, an alert firing. tmux dispatches these from its global command
-/// queue; hmux runs them from the server loop, where no client is involved.
-pub(crate) fn run_deferred_notification_hooks(st: &mut ServerState) {
-    // A body that raises further deferred notifications is bounded rather than
-    // allowed to spin the server loop.
-    const MAX_ROUNDS: usize = 8;
-    let agents = PaneAgents::new();
-    let context = ClientContext::default();
-    for _ in 0..MAX_ROUNDS {
-        let notifications = st.take_deferred_notifications();
-        if notifications.is_empty() {
-            return;
-        }
-        for notification in notifications {
-            run_event_hook(
+    let hook = format!("after-{name}");
+    let vars = hook_command_vars(&hook, name, &normalized);
+    let mut requests = Vec::new();
+    push_event_hook(
+        &hook,
+        flag_value(&normalized, "-t"),
+        vars,
+        st,
+        context,
+        &mut requests,
+    );
+    if !context.suppress_notifications {
+        for notification in st.take_notifications() {
+            push_event_hook(
                 &notification.name,
                 notification.target.as_deref(),
                 notification.vars,
                 st,
-                &agents,
-                &context,
+                context,
+                &mut requests,
             );
         }
     }
+    requests
 }
 
-fn run_event_hook(
+/// The bodies of notifications raised outside the command queue — a pane
+/// exiting, an alert firing. tmux dispatches these from its global command
+/// queue; hmux hands them to the loop as detached queues of their own, so a
+/// body that has to wait for a shell waits there rather than on the loop.
+pub(crate) fn take_deferred_notification_hooks(
+    st: &mut ServerState,
+) -> Vec<BackgroundCommandRequest> {
+    let context = ClientContext::default();
+    let mut requests = Vec::new();
+    for notification in st.take_deferred_notifications() {
+        push_event_hook(
+            &notification.name,
+            notification.target.as_deref(),
+            notification.vars,
+            st,
+            &context,
+            &mut requests,
+        );
+    }
+    requests
+}
+
+fn push_event_hook(
     hook: &str,
     requested_target: Option<&str>,
     vars: Vec<(String, String)>,
     st: &mut ServerState,
-    agents: &PaneAgents,
     context: &ClientContext,
+    requests: &mut Vec<BackgroundCommandRequest>,
 ) {
     let Some(commands) = hook_commands(hook, requested_target, st, HookOrigin::Event) else {
         return;
@@ -2783,38 +2696,16 @@ fn run_event_hook(
     context.hook_target = requested_target.map(Arc::from);
     context.suppress_after_hooks = true;
     context.suppress_notifications = true;
-    let previous_targets = install_command_target_context(st, &context);
-    let previous = st.replace_hook_format_vars(vars);
+    context.hook_vars = Some(Arc::new(vars));
     for command in commands {
-        let tokens = tokenize_line(&command);
-        if !tokens.is_empty() {
-            let _ = run_tokenized_line(&tokens, st, agents, &context);
+        if command.trim().is_empty() {
+            continue;
         }
+        requests.push(BackgroundCommandRequest::Ready {
+            command: Some(command),
+            context: context.clone(),
+        });
     }
-    st.replace_hook_format_vars(previous);
-    restore_command_target_context(st, previous_targets);
-}
-
-fn run_hook(
-    hook: &str,
-    requested_target: Option<&str>,
-    vars: Vec<(String, String)>,
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) {
-    let Some(commands) = begin_hook_commands(hook, requested_target, st) else {
-        return;
-    };
-    let previous = st.replace_hook_format_vars(vars);
-    for command in commands {
-        let tokens = tokenize_line(&command);
-        if !tokens.is_empty() {
-            let _ = run_tokenized_line(&tokens, st, agents, context);
-        }
-    }
-    st.replace_hook_format_vars(previous);
-    st.end_hook(hook);
 }
 
 /// Whether a hook body comes from a command's `after-*`/`command-error` hook
@@ -2825,14 +2716,6 @@ fn run_hook(
 enum HookOrigin {
     Command,
     Event,
-}
-
-fn begin_hook_commands(
-    hook: &str,
-    requested_target: Option<&str>,
-    st: &mut ServerState,
-) -> Option<Vec<String>> {
-    hook_commands(hook, requested_target, st, HookOrigin::Command)
 }
 
 fn hook_commands(
@@ -6469,12 +6352,7 @@ fn show_options(args: &[String], st: &ServerState, window_command: bool) -> Comm
     }
 }
 
-fn set_hook(
-    args: &[String],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
+fn set_hook(args: &[String], st: &mut ServerState) -> CommandResult {
     let hook = positionals(args, &["-t"]).into_iter().next();
     if has_flag(args, "-R") {
         let Some(hook) = hook else {
@@ -6483,9 +6361,9 @@ fn set_hook(
         if !options::is_hook(hook) {
             return CommandResult::err(format!("invalid option: {hook}\n"));
         }
-        let vars = vec![("hook".to_string(), hook.to_string())];
-        run_hook(hook, flag_value(args, "-t"), vars, st, agents, context);
-        return CommandResult::ok("");
+        // `-R` runs the hook's body, which the queue lifts into queue items
+        // of its own before dispatch reaches here.
+        return CommandResult::err("not able to wait\n");
     }
     set_option(args, st, false)
 }
@@ -8120,24 +7998,6 @@ fn job_delay(args: &[String]) -> Result<std::time::Duration, CommandResult> {
     Ok(std::time::Duration::from_secs_f64(seconds))
 }
 
-/// `run-shell command`. Runs the command with `sh -c` and forwards its stdout to
-/// the client, like tmux's non-interactive run-shell.
-fn run_shell(
-    args: &[String],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    if has_flag(args, "-C") {
-        let Some(command) = positionals(args, &["-t", "-c", "-d"]).first().copied() else {
-            return CommandResult::ok("");
-        };
-        return run_tokenized_line(&tokenize_line(command), st, agents, context);
-    }
-    let completion = run_blocking(RunShellJob::new(args, &context.with_job_environment(st)));
-    finish_run_shell(completion, st)
-}
-
 pub(crate) struct RunShellCompletion {
     result: CommandResult,
     view: Option<(String, Vec<u8>)>,
@@ -8158,61 +8018,6 @@ fn finish_run_shell(completion: RunShellCompletion, state: &mut ServerState) -> 
     completion.result
 }
 
-/// `if-shell cond then [else]`. Runs `cond` with `sh -c`; on success executes the
-/// `then` tmux command, otherwise the optional `else` command. The branch is a
-/// tmux command line, executed through the interpreter.
-fn if_shell(
-    args: &[String],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    let pos = positionals(args, &["-t"]);
-    let cond = match pos.first() {
-        Some(c) => (*c).to_string(),
-        None => return CommandResult::err("if-shell: too few arguments\n"),
-    };
-    let then_cmd = pos.get(1).map(|command| (*command).to_string());
-    let else_cmd = pos.get(2).map(|command| (*command).to_string());
-    debug_assert!(!has_flag(args, "-b"));
-    let ok = if has_flag(args, "-F") {
-        // `-F`: the condition is a *format*, not a shell command. Real tmux
-        // expands it and branches on its truthiness — non-empty and not "0" —
-        // without spawning a subprocess (cmd-if-shell.c).
-        let expanded = expand_if_cond(&cond, args, st, agents);
-        !expanded.is_empty() && expanded != "0"
-    } else {
-        if cond
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .ends_with(&["run", "\"true\""])
-        {
-            true
-        } else {
-            let mut shell = shell_command(&cond, &context.with_job_environment(st));
-            shell.status().map(|s| s.success()).unwrap_or(false)
-        }
-    };
-    let branch = if ok { then_cmd } else { else_cmd };
-    match branch {
-        // The branch is a command line; split on whitespace (sufficient for the
-        // simple commands the control plane runs) and execute it.
-        Some(line) => {
-            let tokens = tokenize_line(&line);
-            if tokens.is_empty() {
-                CommandResult::ok("")
-            } else {
-                run_tokenized_line(&tokens, st, agents, context)
-            }
-        }
-        None => CommandResult::ok(""),
-    }
-}
-
-/// Collapse a key binding written as tmux's guarded `if-shell -F` form down to
-/// the branch that will actually run.
-///
-/// The default mouse bindings are all shaped `if -F '#{mouse_any_flag}...'
 /// {send -M} {copy-mode -M}`, and the branch decides between a client-local
 /// outcome (entering copy mode, resizing) and an ordinary command. Resolving
 /// the condition before dispatch is what lets the attach loop keep handling
@@ -8255,6 +8060,11 @@ pub(super) fn resolve_conditional_binding(
 /// target (`-t`, else the current session) so `#{...}` references resolve
 /// against the live tree. Falls back to an empty context when no target
 /// resolves — matching real tmux, which still expands the format.
+
+/// Expand `if-shell -F`'s condition as a format, anchored at the command's
+/// target (`-t`, else the current session) so `#{...}` references resolve
+/// against the live tree. Falls back to an empty context when no target
+/// resolves — matching real tmux, which still expands the format.
 fn expand_if_cond(cond: &str, args: &[String], st: &ServerState, agents: &PaneAgents) -> String {
     let target = flag_value(args, "-t")
         .map(str::to_string)
@@ -8283,104 +8093,6 @@ fn expand_if_cond(cond: &str, args: &[String], st: &ServerState, agents: &PaneAg
 
 /// `source-file [-Fnqv] [-t target] path ...`. Reads each file of tmux commands
 /// and runs them, exactly as `.tmux.conf` is loaded. A path that can't be opened
-/// reports the file-open error (`<strerror>: <path>`, exit 1) unless `-q`
-/// (quiet), which swallows it and keeps exit 0 — the idiom for sourcing an
-/// optional config. `-F` expands each path as a format in the target context.
-/// `-n` validates without mutation and `-v` prints the parsed commands. The
-/// shared-state execution path above inserts sourced commands into its command
-/// queue; this direct-state path is retained for the in-process interpreter.
-fn source_file(
-    args: &[String],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    let quiet = has_flag(args, "-q");
-    let parse_only = has_flag(args, "-n");
-    let verbose = has_flag(args, "-v");
-    let mut out = CommandResult::ok("");
-    for raw_path in positionals(args, &["-t"]) {
-        let path = if has_bool_flag(args, 'F') {
-            expand_if_cond(raw_path, args, st, agents)
-        } else {
-            raw_path.to_string()
-        };
-        match std::fs::read_to_string(&path) {
-            Ok(contents) => {
-                let environment = st
-                    .env_iter()
-                    .map(|(name, value)| (name.clone(), value.clone()))
-                    .collect::<BTreeMap<_, _>>();
-                let parsed = match source_lines(&contents, &environment) {
-                    Ok(parsed) => parsed,
-                    Err((line, message)) => {
-                        out.stderr.push_str(&format!("{path}:{line}: {message}\n"));
-                        out.exit = 1;
-                        continue;
-                    }
-                };
-                if !parse_only {
-                    for (name, value, hidden) in &parsed.assignments {
-                        if *hidden {
-                            st.set_hidden_env(name, value);
-                        } else {
-                            st.set_env(name, value);
-                        }
-                    }
-                }
-                for (line_number, line) in parsed.lines {
-                    if verbose {
-                        out.stdout.push_str(&format!(
-                            "{path}:{line_number}: {}\n",
-                            source_verbose_line(&line)
-                        ));
-                    }
-                    let r = if parse_only {
-                        parse_tokenized_line(&line)
-                    } else {
-                        run_tokenized_line(&line, st, agents, context)
-                    };
-                    if !parse_only {
-                        out.append_stdout(&r);
-                        out.stderr.push_str(&r.stderr);
-                    }
-                    if r.exit != 0 {
-                        let diagnostic = r.stderr.trim_end();
-                        let location = format!("{path}:{line_number}");
-                        let diagnostic = if matches!(
-                            line.iter().find_map(LineToken::word),
-                            Some("if" | "if-shell")
-                        ) {
-                            format!("{location}: {location}: {diagnostic}")
-                        } else {
-                            format!("{location}: {diagnostic}")
-                        };
-                        if parse_only {
-                            out.stdout.push_str(&diagnostic);
-                            out.stdout.push('\n');
-                            out.exit = 1;
-                        } else {
-                            st.push_config_error(diagnostic);
-                        }
-                    }
-                }
-            }
-            Err(e) if quiet => {
-                // `-q`: an unreadable file is not an error. Match tmux, which only
-                // suppresses the missing-file diagnostic — other failures already
-                // surfaced by the sourced commands above still stand.
-                let _ = e;
-            }
-            Err(e) => {
-                out.stderr
-                    .push_str(&format!("{}: {}\n", io_error_message(&e), path));
-                out.exit = 1;
-            }
-        }
-    }
-    out
-}
-
 /// One parsed configuration file: the command lines with their file line
 /// numbers, plus the parser assignments made in active branches, which the
 /// caller publishes to the global environment as tmux does.
@@ -8397,6 +8109,16 @@ struct SourceCondition {
     active: bool,
     seen_else: bool,
 }
+
+/// Split a sourced config file into command argv lines. This preprocessing
+/// layer handles the configuration-only syntax which cannot be represented by
+/// ordinary command argv: conditional directives, parser assignments, and
+/// brace command blocks. `environment` is the server's global environment,
+/// which seeds `$NAME` expansion; an undefined name expands to nothing.
+///
+/// Like tmux, the whole file is parsed before anything runs, so a structural
+/// error — an unbalanced conditional or an invalid escape — rejects the file:
+/// the error is `(line, diagnostic)`.
 
 /// Split a sourced config file into command argv lines. This preprocessing
 /// layer handles the configuration-only syntax which cannot be represented by
