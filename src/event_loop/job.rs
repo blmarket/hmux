@@ -6,7 +6,6 @@
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use crate::integration::status::StatusHub;
 use crate::server::command::{
@@ -34,7 +33,7 @@ pub(crate) enum JobEvent {
 pub(crate) struct BackgroundCommands {
     state: SharedState,
     hub: StatusHub,
-    runtime: Arc<EventCommandRuntime>,
+    runtime: Rc<EventCommandRuntime>,
     executor: ActorRef<SuspensionExecutor>,
     next_id: u64,
     jobs: BTreeMap<u64, JobState>,
@@ -60,7 +59,7 @@ impl BackgroundCommands {
         Self {
             state,
             hub,
-            runtime: Arc::new(EventCommandRuntime::new(executor_handle)),
+            runtime: Rc::new(EventCommandRuntime::new(executor_handle)),
             executor,
             next_id: 1,
             jobs: BTreeMap::new(),
@@ -188,7 +187,7 @@ impl BackgroundCommands {
         let coroutine = command::CommandCoroutine::new(
             queue,
             Rc::clone(&self.state),
-            Arc::clone(&self.runtime) as Arc<dyn command::CommandRuntime>,
+            Rc::clone(&self.runtime) as Rc<dyn command::CommandRuntime>,
             COMMAND_QUEUE_BUDGET,
         );
         self.jobs.insert(id, JobState::Running);

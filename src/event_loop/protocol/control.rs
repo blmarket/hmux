@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::time::Instant;
 
 use crate::server::control::{EventControlClient, EventControlSource};
@@ -30,7 +29,7 @@ impl ProtocolClient {
             Rc::clone(&self.state),
             self.hub.clone(),
             &context,
-            Arc::clone(&self.command_runtime),
+            Rc::clone(&self.command_runtime),
         ) {
             Ok(mut control) => {
                 if let Err(error) = control.drive(None) {

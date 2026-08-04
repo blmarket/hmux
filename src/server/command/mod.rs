@@ -33,7 +33,7 @@ use std::rc::Rc;
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::integration::status::PaneAgents;
@@ -119,10 +119,10 @@ pub struct ClientContext {
     pub(crate) defer_queue_commands: bool,
     /// The `hook*` format variables for a queued hook-body command; installed
     /// into the server state around its execution.
-    pub(crate) hook_vars: Option<Arc<Vec<(String, String)>>>,
+    pub(crate) hook_vars: Option<Rc<Vec<(String, String)>>>,
     /// The hook's own target, which is what a command in its body resolves
     /// against when it names no target of its own.
-    pub(crate) hook_target: Option<Arc<str>>,
+    pub(crate) hook_target: Option<Rc<str>>,
 }
 
 impl ClientContext {
@@ -572,7 +572,7 @@ struct PreviousCommandTargetContext {
     active_panes: Option<BTreeMap<u32, u32>>,
     hook_vars: Option<Vec<(String, String)>>,
     mouse: Option<MouseEvent>,
-    format_jobs: Option<Arc<CommandJobs>>,
+    format_jobs: Option<Rc<CommandJobs>>,
 }
 
 fn install_command_target_context(
@@ -614,7 +614,7 @@ fn install_command_target_context(
             .map(|vars| state.replace_hook_format_vars(vars.as_ref().clone())),
         mouse: state.replace_command_mouse(context.mouse.clone()),
         format_jobs: {
-            let jobs = Arc::new(CommandJobs::new(state, context));
+            let jobs = Rc::new(CommandJobs::new(state, context));
             state.replace_command_format_jobs(Some(jobs))
         },
     }
@@ -1057,7 +1057,7 @@ impl CommandTaskState {
 pub(crate) struct CommandCoroutine {
     queue: ResumableCommandQueue,
     state: SharedState,
-    runtime: Arc<dyn CommandRuntime>,
+    runtime: Rc<dyn CommandRuntime>,
     pending: Option<CommandTaskState>,
     pending_allows_attach_io: bool,
     budget: usize,
@@ -1067,7 +1067,7 @@ impl CommandCoroutine {
     pub(crate) fn new(
         queue: ResumableCommandQueue,
         state: SharedState,
-        runtime: Arc<dyn CommandRuntime>,
+        runtime: Rc<dyn CommandRuntime>,
         budget: usize,
     ) -> Self {
         Self {
@@ -1994,11 +1994,11 @@ impl ResumableCommandQueue {
         };
 
         let mut hook_context = self.context.clone();
-        hook_context.hook_vars = Some(Arc::new(vars));
+        hook_context.hook_vars = Some(Rc::new(vars));
         // A hook body resolves an untargeted command against the hook's own
         // target, not the server's current one.
         if let Some(target) = requested_target {
-            hook_context.hook_target = Some(Arc::from(target));
+            hook_context.hook_target = Some(Rc::from(target));
         }
         if matches!(origin, HookOrigin::Event) {
             // tmux runs an event hook's body on the global queue with
@@ -2499,10 +2499,10 @@ fn push_event_hook(
         return;
     };
     let mut context = context.clone();
-    context.hook_target = requested_target.map(Arc::from);
+    context.hook_target = requested_target.map(Rc::from);
     context.suppress_after_hooks = true;
     context.suppress_notifications = true;
-    context.hook_vars = Some(Arc::new(vars));
+    context.hook_vars = Some(Rc::new(vars));
     for command in commands {
         if command.trim().is_empty() {
             continue;
@@ -3803,7 +3803,7 @@ pub(crate) struct CommandJobs {
     registry: Rc<super::status::FormatJobRegistry>,
     session_id: u32,
     cwd: Option<PathBuf>,
-    environment: Arc<Vec<String>>,
+    environment: Rc<Vec<String>>,
 }
 
 impl CommandJobs {
@@ -3836,7 +3836,7 @@ impl format::FormatJobs for CommandJobs {
             vars,
             self.session_id,
             self.cwd.clone(),
-            Arc::clone(&self.environment),
+            Rc::clone(&self.environment),
             // Not a status redraw, so finishing must not invalidate one.
             false,
         )

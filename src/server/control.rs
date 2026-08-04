@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::rc::Rc;
-use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::integration::status::StatusHub;
@@ -44,7 +43,7 @@ pub(crate) enum EventControlSource {
 pub(crate) struct EventControlClient {
     state: SharedState,
     hub: StatusHub,
-    command_runtime: Arc<dyn command::CommandRuntime>,
+    command_runtime: Rc<dyn command::CommandRuntime>,
     client_tty: ClientTty,
     client_name: String,
     session_id: u32,
@@ -95,7 +94,7 @@ impl EventControlClient {
         state: SharedState,
         hub: StatusHub,
         context: &command::ClientContext,
-        command_runtime: Arc<dyn command::CommandRuntime>,
+        command_runtime: Rc<dyn command::CommandRuntime>,
     ) -> io::Result<Self> {
         let session = match command::classify(args) {
             command::Intent::NewAttach => {
@@ -889,7 +888,7 @@ impl EventControlClient {
             task: TaskState::new(command::CommandCoroutine::new(
                 queue,
                 Rc::clone(&self.state),
-                Arc::clone(&self.command_runtime),
+                Rc::clone(&self.command_runtime),
                 64,
             )),
         });
@@ -2061,7 +2060,7 @@ mod tests {
             state,
             hub.clone(),
             &command::ClientContext::default(),
-            Arc::new(crate::event_loop::suspend::EventCommandRuntime::new(
+            Rc::new(crate::event_loop::suspend::EventCommandRuntime::new(
                 event_loop.executor_handle(),
             )),
         )?;

@@ -22,7 +22,6 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
 use std::rc::{Rc, Weak};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const DEFAULT_STATUS_LEFT: &str = "[#{session_name}] ";
@@ -145,7 +144,7 @@ impl FormatJobRegistry {
         vars: &Vars,
         session_id: u32,
         cwd: Option<PathBuf>,
-        environment: Arc<Vec<String>>,
+        environment: Rc<Vec<String>>,
         status: bool,
     ) -> String {
         let scope = format!(
@@ -211,7 +210,7 @@ impl FormatJobRegistry {
         expanded_command: String,
         session_id: u32,
         cwd: Option<PathBuf>,
-        environment: Arc<Vec<String>>,
+        environment: Rc<Vec<String>>,
         status: bool,
     ) -> String {
         let now = Instant::now();

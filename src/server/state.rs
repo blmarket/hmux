@@ -13,7 +13,6 @@ use std::io;
 use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::format::glob_match;
@@ -4049,7 +4048,7 @@ pub struct ServerState {
     /// and generation it was built for. A command builds its job runner whether
     /// or not it expands a `#()`, and rebuilding the whole environment each
     /// time is not free.
-    job_environment_cache: RefCell<Option<(u64, Option<u32>, Arc<Vec<String>>)>>,
+    job_environment_cache: RefCell<Option<(u64, Option<u32>, Rc<Vec<String>>)>>,
     /// Independent server, global-session, and global-window option tables.
     global_options: GlobalOptions,
     /// The paste-buffer stack, newest first (tmux's `#{buffer_name}` order in
@@ -4094,7 +4093,7 @@ pub struct ServerState {
     command_mouse: Option<super::mouse::MouseEvent>,
     /// `#()` job runner of the command currently executing, so any format it
     /// expands caches its jobs in the tree of the client that ran it.
-    command_format_jobs: Option<Arc<super::command::CommandJobs>>,
+    command_format_jobs: Option<Rc<super::command::CommandJobs>>,
     /// Stable window selected for the command currently executing, when the
     /// default target names one — a hook body targeting a specific window.
     command_window_id: Option<u32>,
@@ -5778,12 +5777,12 @@ impl ServerState {
     /// the command expands starts its jobs in the right client's tree.
     pub(crate) fn replace_command_format_jobs(
         &mut self,
-        jobs: Option<Arc<super::command::CommandJobs>>,
-    ) -> Option<Arc<super::command::CommandJobs>> {
+        jobs: Option<Rc<super::command::CommandJobs>>,
+    ) -> Option<Rc<super::command::CommandJobs>> {
         std::mem::replace(&mut self.command_format_jobs, jobs)
     }
 
-    pub(crate) fn command_format_jobs(&self) -> Option<&Arc<super::command::CommandJobs>> {
+    pub(crate) fn command_format_jobs(&self) -> Option<&Rc<super::command::CommandJobs>> {
         self.command_format_jobs.as_ref()
     }
 
@@ -10040,7 +10039,7 @@ impl ServerState {
     ///
     /// Cached against [`ServerState::environment_generation`], because a
     /// command builds its job runner whether or not it expands a `#()`.
-    pub(crate) fn job_environment(&self, session: Option<&str>) -> Arc<Vec<String>> {
+    pub(crate) fn job_environment(&self, session: Option<&str>) -> Rc<Vec<String>> {
         let session_id = session
             .and_then(|target| self.resolve_session(target))
             .map(|session| session.id);
@@ -10049,14 +10048,14 @@ impl ServerState {
             self.job_environment_cache.borrow().as_ref()
         {
             if *cached_generation == generation && *cached_session == session_id {
-                return Arc::clone(environment);
+                return Rc::clone(environment);
             }
         }
         // Built outside the borrow: `spawn_environment` walks the rest of the
         // state and must not run with the cache borrowed.
-        let environment = Arc::new(self.spawn_environment(session, &[], &[]));
+        let environment = Rc::new(self.spawn_environment(session, &[], &[]));
         *self.job_environment_cache.borrow_mut() =
-            Some((generation, session_id, Arc::clone(&environment)));
+            Some((generation, session_id, Rc::clone(&environment)));
         environment
     }
 

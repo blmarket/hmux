@@ -22,7 +22,6 @@ pub(crate) mod timer;
 pub(crate) mod test_driver {
     use std::io;
     use std::rc::Rc;
-    use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     use crate::server::command::suspend::IfShellJob;
@@ -67,8 +66,8 @@ pub(crate) mod test_driver {
             })
         }
 
-        fn runtime(&self) -> Arc<dyn CommandRuntime> {
-            Arc::new(EventCommandRuntime::new(self.loop_.executor_handle()))
+        fn runtime(&self) -> Rc<dyn CommandRuntime> {
+            Rc::new(EventCommandRuntime::new(self.loop_.executor_handle()))
         }
 
         pub(crate) fn run_queue(

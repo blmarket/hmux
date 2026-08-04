@@ -1,7 +1,6 @@
 use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::time::Instant;
 
 use crate::server::command::{self, CommandResult};
@@ -191,7 +190,7 @@ impl ProtocolClient {
                                 task: TaskState::new(command::CommandCoroutine::new(
                                     queue,
                                     Rc::clone(&self.state),
-                                    Arc::clone(&self.command_runtime),
+                                    Rc::clone(&self.command_runtime),
                                     COMMAND_QUEUE_BUDGET,
                                 )),
                             });

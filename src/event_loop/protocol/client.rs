@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd};
 use std::rc::Rc;
-use std::sync::Arc;
 use std::time::Instant;
 
 use crate::integration::status::StatusHub;
@@ -174,7 +173,7 @@ pub(crate) struct ProtocolClient {
     pub(super) state: SharedState,
     pub(super) hub: StatusHub,
     pub(super) background_commands: ActorRef<BackgroundCommands>,
-    pub(super) command_runtime: Arc<dyn command::CommandRuntime>,
+    pub(super) command_runtime: Rc<dyn command::CommandRuntime>,
     pub(super) protocol_state: ProtocolState,
     pub(super) registrations: ProtocolRegistrations,
     pub(super) work_queued: BTreeSet<ProtocolIoSide>,
@@ -200,7 +199,7 @@ impl ProtocolClient {
                 state,
                 hub,
                 background_commands,
-                command_runtime: Arc::new(EventCommandRuntime::new(executor)),
+                command_runtime: Rc::new(EventCommandRuntime::new(executor)),
                 protocol_state: ProtocolState::Identifying(IdentifyingState {
                     context: ClientContext {
                         wait_for_interactions: true,

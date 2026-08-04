@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd, RawFd};
 use std::rc::Rc;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::integration::status::StatusHub;
@@ -182,7 +181,7 @@ pub(super) struct EventAttachClient {
     deadline: Option<Instant>,
     phase: AttachPhase,
     background_commands: Vec<command::BackgroundCommandRequest>,
-    command_runtime: Arc<dyn command::CommandRuntime>,
+    command_runtime: Rc<dyn command::CommandRuntime>,
 }
 
 struct ActiveAttachCommand {
@@ -205,7 +204,7 @@ impl EventAttachClient {
         state: SharedState,
         hub: StatusHub,
         context: &ClientContext,
-        command_runtime: Arc<dyn command::CommandRuntime>,
+        command_runtime: Rc<dyn command::CommandRuntime>,
     ) -> Result<Self, AttachStartError> {
         let mut output = AttachOutput::new();
         let session = attach::start_attach_session(
@@ -472,7 +471,7 @@ impl EventAttachClient {
                     task: TaskState::new(command::CommandCoroutine::new(
                         queue,
                         Rc::clone(&self.state),
-                        Arc::clone(&self.command_runtime),
+                        Rc::clone(&self.command_runtime),
                         64,
                     )),
                     continuation: request.continuation,
@@ -633,7 +632,7 @@ impl ProtocolClient {
             Rc::clone(&self.state),
             self.hub.clone(),
             &context,
-            Arc::clone(&self.command_runtime),
+            Rc::clone(&self.command_runtime),
         ) {
             Ok(mut attach) => {
                 if let Err(error) = attach.drive(None) {
