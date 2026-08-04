@@ -568,8 +568,39 @@ fn suspend_client(args: &[String], state: &ServerState, client: &ClientContext) 
     )
 }
 
-fn refresh_client(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {
+fn refresh_client(args: &[String], state: &mut ServerState, client: &ClientContext) -> CommandResult {
     let target = flag_value(args, "-t");
+    // `-c` and the four pan directions are handled first and alone, as tmux's
+    // `cmd_refresh_client_exec` returns straight after them.
+    let pan = if has_flag(args, "-L") {
+        Some(Some(WindowResizeAdjust::Left))
+    } else if has_flag(args, "-R") {
+        Some(Some(WindowResizeAdjust::Right))
+    } else if has_flag(args, "-U") {
+        Some(Some(WindowResizeAdjust::Up))
+    } else if has_flag(args, "-D") {
+        Some(Some(WindowResizeAdjust::Down))
+    } else if has_flag(args, "-c") {
+        Some(None)
+    } else {
+        None
+    };
+    if let Some(adjust) = pan {
+        let adjustment = match positionals(args, &["-t", "-A", "-B", "-C", "-f", "-F", "-r"])
+            .first()
+            .copied()
+            .unwrap_or("1")
+            .parse::<u16>()
+        {
+            Ok(0) => return CommandResult::err("adjustment too small\n"),
+            Ok(value) => value,
+            Err(_) => return CommandResult::err("adjustment invalid\n"),
+        };
+        return overlay_result(
+            state.pan_client(target, client.tty_name.as_deref(), adjust, adjustment),
+            target,
+        );
+    }
     // `-F` is the historical spelling of `-f`.
     let flags = flag_values(args, "-f")
         .into_iter()

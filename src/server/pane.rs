@@ -1495,8 +1495,15 @@ impl Pane {
         let scrollback = terminal.scrollback_rows().map_err(ghostty_err)?;
         let scroll = scroll_offset.min(scrollback);
         let start = scrollback - scroll;
+        // A client whose terminal is taller than this pane asks for rows the
+        // grid does not have, and reaching past the last one used to fail the
+        // whole dump — which left such a client with a frame-less, permanently
+        // blank screen. Serve the rows that exist and let the compositor erase
+        // the rest, so the window is drawn at the top as tmux draws it. tmux
+        // pads the remainder with the pane-border fill rather than blanks.
+        let available = scroll.saturating_add(usize::from(self.rows));
         let vt = terminal
-            .dump_vt_rows(start, visible_rows, self.cols)
+            .dump_vt_rows(start, visible_rows.min(available), self.cols)
             .map_err(ghostty_err)?;
         Ok((vt, scroll))
     }

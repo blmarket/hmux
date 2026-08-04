@@ -196,6 +196,10 @@ impl Server {
             .lock()
             .map_err(|_| io::Error::other("server state mutex poisoned"))?;
         state.enforce_lifecycle_policies();
+        // tmux's per-loop `recalculate_sizes`. Most size changes are applied by
+        // whichever path caused them, but a client going away has no such path
+        // — the window it sized has to be re-derived from the clients left.
+        let _ = state.recalculate_sizes();
         state.process_pane_clipboard();
         state.process_pane_themes();
         command::run_deferred_notification_hooks(&mut state);
