@@ -49,7 +49,7 @@ use super::state::{
     BackgroundJobRegistry, ClientActionResult, ClientMessage, ClientMessageResult,
     CommandPromptRequestResult, MenuItem, MenuRequest, ModeEdit, ModeItem, ModeKind, ModeView,
     OverlayRequest, PaneSpec, PopupRequest, PromptCompletion, ServerState, Session, SplitDirection,
-    Target, WaitRegistry,
+    Target, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
 };
 use super::style::{
     write_capture_hyperlink, CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder,
@@ -3463,15 +3463,16 @@ fn apply_new_session_opts(
         .is_some_and(|session| st.is_grouped(session) && st.session_group_size(session) > 1);
     if !joined_existing_group {
         if let Some(sess) = st.find(name) {
-            let default_size = (x.is_none() && y.is_none())
-                .then(|| st.option_for_target(name, "default-size"))
-                .flatten()
-                .and_then(|value| value.split_once('x'))
-                .and_then(|(cols, rows)| Some((cols.parse().ok()?, rows.parse().ok()?)));
-            if x.is_some() || y.is_some() || default_size.is_some() {
-                let (default_cols, default_rows) = default_size.unwrap_or((sess.cols, sess.rows));
-                let (cols, rows) = (x.unwrap_or(default_cols), y.unwrap_or(default_rows));
-                let _ = st.resize_session(name, cols, rows);
+            let (session_cols, session_rows) = (sess.cols, sess.rows);
+            if x.is_some() || y.is_some() {
+                // tmux writes `-x`/`-y` onto the new session's own `default-size`,
+                // which is what shadows the global option for every window later
+                // created in it. An unspecified axis keeps the session's size.
+                let _ = st.set_session_default_size(
+                    name,
+                    x.unwrap_or(session_cols),
+                    y.unwrap_or(session_rows),
+                );
             }
         }
     }
@@ -4503,16 +4504,10 @@ pub(super) fn vars_full(
             )
             .set("window_active_sessions", active_sessions.len().to_string())
             .set("window_active_sessions_list", active_sessions.join(","))
-            // Windows/panes inherit the session's client size in this model,
-            // unless `resize-window -x/-y` forced a manual per-window size.
-            .set(
-                "window_width",
-                win.manual_size.map_or(sess.cols, |(c, _)| c).to_string(),
-            )
-            .set(
-                "window_height",
-                win.manual_size.map_or(sess.rows, |(_, r)| r).to_string(),
-            )
+            // A window has one size however many sessions link it: the size
+            // `recalculate_sizes` derived from the clients that can see it.
+            .set("window_width", win.cols.to_string())
+            .set("window_height", win.rows.to_string())
             .set("window_active", if is_active { "1" } else { "0" })
             .set("window_flags", window_flags)
             .set("window_last_flag", if is_last { "1" } else { "0" })
@@ -4563,8 +4558,7 @@ pub(super) fn vars_full(
             .set("window_layout", window_layout(win))
             .set("window_visible_layout", window_layout(win));
         if let Some(p) = win.panes.get(pane_idx) {
-            let window_width = win.manual_size.map_or(sess.cols, |(c, _)| c);
-            let window_height = win.manual_size.map_or(sess.rows, |(_, r)| r);
+            let (window_width, window_height) = (win.cols, win.rows);
             let pane_rect = win.pane_rect(p.id).unwrap_or(super::state::PaneRect {
                 top: 0,
                 left: 0,
@@ -5266,9 +5260,8 @@ fn new_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -> C
         Some(target) => target,
         None => return CommandResult::err(format!("{}\n", st.pane_target_error(&target))),
     };
-    let session = &st.sessions()[resolved.session];
     let window = st.window(resolved.session, resolved.window);
-    let (window_width, window_height) = window.manual_size.unwrap_or((session.cols, session.rows));
+    let (window_width, window_height) = (window.cols, window.rows);
     let geometry = |flag, total| -> Result<Option<u16>, CommandResult> {
         flag_value(args, flag)
             .map(|value| parse_pane_size(value, total))
@@ -7521,11 +7514,13 @@ fn resize_pane(args: &[String], st: &mut ServerState) -> CommandResult {
     }
 }
 
-/// `resize-window [-x cols] [-y rows] [-t target]`. Only the manual `-x`/`-y`
-/// sizing is modeled observably (`#{window_width}`/`#{window_height}`); the
-/// adjustment/auto forms (`-U/-D/-L/-R`, `-a/-A`) leave the size untouched, as a
-/// detached session has no client geometry to grow toward. An out-of-range or
-/// non-numeric `-x`/`-y` value is rejected exactly like tmux.
+/// `resize-window [-aADLRU] [-x cols] [-y rows] [-t target] [adjustment]`.
+///
+/// Every form pins the window at a manual size: `-x`/`-y` set an axis outright,
+/// `-L/-R/-U/-D` move one edge by `adjustment` cells (default 1), and `-a`/`-A`
+/// snap to the smallest/largest client that can see the window. An
+/// out-of-range or non-numeric `-x`/`-y` value, or a bad adjustment, is
+/// rejected exactly like tmux.
 fn resize_window(args: &[String], st: &mut ServerState) -> CommandResult {
     let cols = match parse_size_flag(args, "-x", "width") {
         Ok(v) => v,
@@ -7535,7 +7530,36 @@ fn resize_window(args: &[String], st: &mut ServerState) -> CommandResult {
         Ok(v) => v,
         Err(e) => return CommandResult::err(e),
     };
-    if cols.is_none() && rows.is_none() {
+    let adjustment = match positionals(args, &["-t", "-x", "-y"])
+        .first()
+        .copied()
+        .unwrap_or("1")
+        .parse::<u16>()
+    {
+        Ok(0) => return CommandResult::err("adjustment too small\n"),
+        Ok(value) => value,
+        Err(_) => return CommandResult::err("adjustment invalid\n"),
+    };
+    let adjust = if has_flag(args, "-L") {
+        Some(WindowResizeAdjust::Left)
+    } else if has_flag(args, "-R") {
+        Some(WindowResizeAdjust::Right)
+    } else if has_flag(args, "-U") {
+        Some(WindowResizeAdjust::Up)
+    } else if has_flag(args, "-D") {
+        Some(WindowResizeAdjust::Down)
+    } else {
+        None
+    };
+    // `-A` wins over `-a`, as tmux's flag order does.
+    let snap = if has_bool_flag(args, 'A') {
+        Some(WindowSizePolicy::Largest)
+    } else if has_bool_flag(args, 'a') {
+        Some(WindowSizePolicy::Smallest)
+    } else {
+        None
+    };
+    if cols.is_none() && rows.is_none() && adjust.is_none() && snap.is_none() {
         return CommandResult::ok("");
     }
     let target = flag_value(args, "-t")
@@ -7545,7 +7569,14 @@ fn resize_window(args: &[String], st: &mut ServerState) -> CommandResult {
         Some(t) => t,
         None => return CommandResult::err("can't establish current session\n"),
     };
-    match st.resize_window(&target, cols, rows) {
+    let request = WindowResizeRequest {
+        cols,
+        rows,
+        adjust,
+        adjustment,
+        snap,
+    };
+    match st.resize_window(&target, request) {
         Ok(()) => CommandResult::ok(""),
         Err(error) => command_target_error(error, &target, "window"),
     }

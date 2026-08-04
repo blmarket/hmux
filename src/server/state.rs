@@ -1501,6 +1501,92 @@ impl LayoutParser<'_> {
     }
 }
 
+/// tmux's `WINDOW_MINIMUM`/`WINDOW_MAXIMUM`.
+const WINDOW_MINIMUM: u16 = 1;
+const WINDOW_MAXIMUM: u16 = 10_000;
+
+/// How a window derives its size from the clients that can see it — the
+/// `window-size` option.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindowSizePolicy {
+    Largest,
+    Smallest,
+    Manual,
+    Latest,
+}
+
+impl WindowSizePolicy {
+    fn parse(value: Option<&str>) -> Self {
+        match value {
+            Some("largest") => Self::Largest,
+            Some("smallest") => Self::Smallest,
+            Some("manual") => Self::Manual,
+            _ => Self::Latest,
+        }
+    }
+}
+
+/// Which edge `resize-window` moves.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindowResizeAdjust {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+/// One `resize-window` invocation, already parsed.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct WindowResizeRequest {
+    /// `-x`/`-y`, replacing that axis before any adjustment.
+    pub cols: Option<u16>,
+    pub rows: Option<u16>,
+    /// `-L/-R/-U/-D`, moved by `adjustment` cells.
+    pub adjust: Option<WindowResizeAdjust>,
+    /// The trailing adjustment argument; tmux defaults it to 1.
+    pub adjustment: u16,
+    /// `-a` (smallest) or `-A` (largest), which overwrite everything else.
+    pub snap: Option<WindowSizePolicy>,
+}
+
+/// A client whose terminal size counts toward window sizing, with its pane area
+/// (terminal minus status line) already measured.
+struct SizingClient {
+    session_id: u32,
+    cols: u16,
+    rows: u16,
+    size_seq: u64,
+}
+
+/// Fold a client set into one size under `policy`, or `None` when it is empty.
+fn fold_client_sizes<'a>(
+    clients: impl Iterator<Item = &'a SizingClient>,
+    policy: WindowSizePolicy,
+) -> Option<(u16, u16)> {
+    clients.fold(None, |best, client| {
+        Some(match best {
+            None => (client.cols, client.rows),
+            Some((cols, rows)) if policy == WindowSizePolicy::Largest => {
+                (cols.max(client.cols), rows.max(client.rows))
+            }
+            Some((cols, rows)) => (cols.min(client.cols), rows.min(client.rows)),
+        })
+    })
+}
+
+fn clamp_window_size((cols, rows): (u16, u16)) -> (u16, u16) {
+    (
+        cols.clamp(WINDOW_MINIMUM, WINDOW_MAXIMUM),
+        rows.clamp(WINDOW_MINIMUM, WINDOW_MAXIMUM),
+    )
+}
+
+/// Parse a `WxH` option value such as `default-size`.
+fn parse_size_pair(value: &str) -> Option<(u16, u16)> {
+    let (cols, rows) = value.split_once('x')?;
+    Some((cols.parse().ok()?, rows.parse().ok()?))
+}
+
 fn resize_panes_to_layout(window: &mut Window) -> io::Result<()> {
     for pane in &mut window.panes {
         if let Some(rect) = pane.floating.or_else(|| window.layout.pane_rect(pane.id)) {
@@ -1694,11 +1780,27 @@ pub struct Window {
     /// Whether the active pane is zoomed (`resize-pane -Z`), tmux's
     /// `#{window_zoomed_flag}`. Toggled by `resize-pane -Z`.
     pub zoomed: bool,
-    /// A manual `(cols, rows)` size forced by `resize-window -x/-y`. When set it
-    /// overrides the session's client size for this window's
-    /// `#{window_width}`/`#{window_height}`; `None` means the window tracks the
-    /// session size (tmux's default automatic sizing).
-    pub manual_size: Option<(u16, u16)>,
+    /// The window's own size — tmux's `w->sx`/`w->sy`, published as
+    /// `#{window_width}`/`#{window_height}`. A window has one size no matter how
+    /// many sessions link it; [`ServerState::recalculate_sizes`] derives it from
+    /// the clients that can see it under `window-size`.
+    pub cols: u16,
+    pub rows: u16,
+    /// The size `window-size manual` pins the window at — tmux's
+    /// `w->manual_sx`/`w->manual_sy`. Always set (a never-resized window carries
+    /// the size it was created at) and moved only by `resize-window`.
+    pub manual_size: (u16, u16),
+    /// The client that most recently sized this window, as the sequence number
+    /// [`AttachedClient::size_seq`] carries — tmux's `w->latest`, which is what
+    /// `window-size latest` follows once more than one client can see the
+    /// window.
+    pub(crate) latest_client: Option<u64>,
+    /// A size derived for this window while no attached session was showing it —
+    /// tmux's `w->new_sx`/`w->new_sy` behind the `WINDOW_RESIZE` flag. It is
+    /// applied by `server_client_check_window_resize` once some session makes
+    /// the window current, so a background window keeps the geometry its panes
+    /// were last drawn at instead of churning on every client resize.
+    pub(crate) pending_size: Option<(u16, u16)>,
     pub(crate) layout: LayoutCell,
     pub(crate) last_layout: Option<usize>,
     pub(crate) last_new_pane_x: u16,
@@ -1919,6 +2021,10 @@ pub(crate) struct ClientRenderRegistry {
 #[derive(Default)]
 struct ClientRenderRegistryState {
     next_id: u64,
+    /// Ticked every time a client declares a terminal size. Ordering these is
+    /// what lets `window-size latest` name the client that sized a window most
+    /// recently, without every resize path having to carry a client identity.
+    next_size_seq: u64,
     clients: BTreeMap<u64, ClientRenderEntry>,
 }
 
@@ -1934,6 +2040,9 @@ struct ClientRenderEntry {
     control_mode: bool,
     ignore_size: bool,
     size_changed: bool,
+    /// When this client last declared its terminal size, on the registry's
+    /// monotonic sequence — tmux's `w->latest` ordering.
+    size_seq: u64,
     /// Identity bits the client sent at handshake time (`CLIENT_UTF8`, …),
     /// needed to rebuild the display flag string server-side.
     identified: i64,
@@ -1985,6 +2094,8 @@ pub(crate) struct AttachedClient {
     pub(crate) control_mode: bool,
     pub(crate) ignore_size: bool,
     pub(crate) size_changed: bool,
+    /// Ordering of this client's latest size declaration; higher is newer.
+    pub(crate) size_seq: u64,
     pub(crate) terminal: Option<ResolvedTerm>,
     /// The theme this client's terminal reported (`dark`/`light`), empty until
     /// it says — tmux's `#{client_theme}`.
@@ -2265,6 +2376,8 @@ impl ClientRenderRegistry {
             .map_err(|_| io::Error::other("client render registry poisoned"))?;
         let id = inner.next_id;
         inner.next_id = inner.next_id.wrapping_add(1);
+        inner.next_size_seq = inner.next_size_seq.wrapping_add(1);
+        let size_seq = inner.next_size_seq;
         inner.clients.insert(
             id,
             ClientRenderEntry {
@@ -2279,6 +2392,7 @@ impl ClientRenderRegistry {
                 control_mode,
                 ignore_size,
                 size_changed: !control_mode,
+                size_seq,
                 identified,
                 focused: true,
                 theme: String::new(),
@@ -2331,6 +2445,7 @@ impl ClientRenderRegistry {
                 control_mode: entry.control_mode,
                 ignore_size: entry.ignore_size,
                 size_changed: entry.size_changed,
+                size_seq: entry.size_seq,
                 terminal: entry.terminal.clone(),
                 theme: entry.theme.clone(),
                 focused: entry.focused,
@@ -3020,10 +3135,14 @@ impl ClientRenderAttachment {
 
     pub(crate) fn update_size(&self, cols: u16, rows: u16) {
         if let Ok(mut inner) = self.registry.inner.lock() {
+            inner.next_size_seq = inner.next_size_seq.wrapping_add(1);
+            let size_seq = inner.next_size_seq;
             if let Some(entry) = inner.clients.get_mut(&self.id) {
                 entry.cols = cols;
                 entry.rows = rows;
                 entry.size_changed = true;
+                // Resizing makes this the latest client, as attaching does.
+                entry.size_seq = size_seq;
             }
         }
         self.registry.bump_generation();
@@ -5720,7 +5839,14 @@ impl ServerState {
                 format!("duplicate session: {name}"),
             ));
         }
-        let (cols, rows) = (self.default_cols, self.default_rows);
+        // The session does not exist yet, so only the global `default-size` can
+        // apply — tmux reads `global_s_options` here for the same reason.
+        let (cols, rows) = self
+            .global_options
+            .session()
+            .get("default-size")
+            .and_then(parse_size_pair)
+            .map_or((self.default_cols, self.default_rows), clamp_window_size);
         let start_command = pane_start_command(&spec);
         let pane = match spec {
             PaneSpec::Inert => Pane::inert(cols, rows)?,
@@ -5769,7 +5895,11 @@ impl ServerState {
                 active: 0,
                 last_pane: None,
                 zoomed: false,
-                manual_size: None,
+                cols,
+                rows,
+                manual_size: (cols, rows),
+                latest_client: None,
+                pending_size: None,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
                 last_new_pane_x: 0,
@@ -6091,9 +6221,10 @@ impl ServerState {
             }
         };
 
-        // Match ordinary new-window: inherit the destination session's current
-        // size rather than briefly spawning at the server's 80x24 defaults.
-        let (cols, rows) = (s.cols, s.rows);
+        // tmux's `default_window_size`: a new window is sized from the clients
+        // that can see it, or from the session's `default-size` when none can.
+        let session_pos = session_pos.expect("session presence checked above");
+        let (cols, rows) = self.default_window_size(session_pos, None, None);
         // Spawn the pane before mutating counters so a spawn failure leaves state
         // untouched.
         let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
@@ -6149,7 +6280,11 @@ impl ServerState {
                 active: 0,
                 last_pane: None,
                 zoomed: false,
-                manual_size: None,
+                cols,
+                rows,
+                manual_size: (cols, rows),
+                latest_client: None,
+                pending_size: None,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
                 last_new_pane_x: 0,
@@ -6235,10 +6370,9 @@ impl ServerState {
             free += 1;
         }
 
-        // Match ordinary new-window: inherit the destination session's current
-        // size rather than briefly spawning at the server's 80x24 defaults.
-        // Spawn before mutating counters so a failure leaves state untouched.
-        let (cols, rows) = (s.cols, s.rows);
+        // tmux's `default_window_size`, as for an appended window. Spawn before
+        // mutating counters so a failure leaves state untouched.
+        let (cols, rows) = self.default_window_size(session_pos, None, None);
         let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
         let pane = Pane::spawn_in_mode(&refs, cwd, cols, rows, self.pane_io_mode)?;
 
@@ -6290,7 +6424,11 @@ impl ServerState {
                 active: 0,
                 last_pane: None,
                 zoomed: false,
-                manual_size: None,
+                cols,
+                rows,
+                manual_size: (cols, rows),
+                latest_client: None,
+                pending_size: None,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
                 last_new_pane_x: 0,
@@ -6924,7 +7062,7 @@ impl ServerState {
         let session_id = self.sessions[t.session].id;
         if self.sessions[t.session].active != t.window {
             self.select_session_window(t.session, t.window);
-            self.resize_active_window_to_session_size(t.session)?;
+            self.recalculate_sizes()?;
             self.invalidate_session(
                 session_id,
                 RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
@@ -6974,7 +7112,7 @@ impl ServerState {
             if self.sessions[session_pos].windows[position].alert_flags != 0 {
                 let session_id = self.sessions[session_pos].id;
                 self.select_session_window(session_pos, position);
-                self.resize_active_window_to_session_size(session_pos)?;
+                self.recalculate_sizes()?;
                 self.invalidate_session(
                     session_id,
                     RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
@@ -7404,7 +7542,7 @@ impl ServerState {
             (sess.active + n - 1) % n
         };
         self.select_session_window(pos, next);
-        self.resize_active_window_to_session_size(pos)?;
+        self.recalculate_sizes()?;
         self.invalidate_session(
             session_id,
             RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
@@ -7432,7 +7570,7 @@ impl ServerState {
         {
             Some(last) => {
                 self.select_session_window(pos, last);
-                self.resize_active_window_to_session_size(pos)?;
+                self.recalculate_sizes()?;
                 self.invalidate_session(
                     session_id,
                     RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
@@ -7494,10 +7632,8 @@ impl ServerState {
         let (_, pane_part) = split_pane_target(target);
         let t = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let session_id = self.sessions[t.session].id;
-        let session = &self.sessions[t.session];
         let window = self.window(t.session, t.window);
-        let cols = window.manual_size.map_or(session.cols, |size| size.0);
-        let rows = window.manual_size.map_or(session.rows, |size| size.1);
+        let (cols, rows) = (window.cols, window.rows);
         let pane = match spec {
             PaneSpec::Inert => Pane::inert(cols, rows)?,
             PaneSpec::Command(argv) => {
@@ -7589,10 +7725,8 @@ impl ServerState {
     ) -> io::Result<usize> {
         let target = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let session_id = self.sessions[target.session].id;
-        let session = &self.sessions[target.session];
         let window = self.window(target.session, target.window);
-        let cols = window.manual_size.map_or(session.cols, |size| size.0);
-        let rows = window.manual_size.map_or(session.rows, |size| size.1);
+        let (cols, rows) = (window.cols, window.rows);
         let width = width
             .unwrap_or(cols / 2)
             .clamp(1, cols.saturating_sub(1).max(1));
@@ -8925,7 +9059,11 @@ impl ServerState {
                 active: 0,
                 last_pane: None,
                 zoomed: false,
-                manual_size: None,
+                cols: source_size.0,
+                rows: source_size.1,
+                manual_size: source_size,
+                latest_client: None,
+                pending_size: None,
                 layout: LayoutCell::pane(node_id, source_size.0, source_size.1),
                 last_layout: None,
                 last_new_pane_x: 0,
@@ -9538,7 +9676,11 @@ impl ServerState {
         let size = (layout.rect().width, layout.rect().height);
         let window = self.window_mut(resolved.session, resolved.window);
         window.layout = layout;
-        window.manual_size = Some(size);
+        // tmux's `layout_parse` resizes the window to the layout it just parsed,
+        // then runs `recalculate_sizes` — so on an attached window the client
+        // set wins straight back, and only a clientless one keeps this size.
+        window.cols = size.0;
+        window.rows = size.1;
         window.last_layout = None;
         window.zoomed = false;
         resize_panes_to_layout(window)?;
@@ -9552,32 +9694,45 @@ impl ServerState {
         Ok(())
     }
 
-    /// `resize-window -x cols -y rows`: force the target window to a manual size,
-    /// observable via `#{window_width}`/`#{window_height}`. A dimension left
-    /// unspecified keeps the window's current effective size for that axis.
+    /// `resize-window`: pin the target window at a manual size.
+    ///
+    /// tmux's `cmd_resize_window_exec` — every form starts from the window's
+    /// current size, applies `-x`/`-y` then one `-L/-R/-U/-D` adjustment, lets
+    /// `-a`/`-A` overwrite the result with the smallest/largest client, and
+    /// finally switches the window's own `window-size` option to `manual` so the
+    /// pinned size survives later client resizes. A shrink wider than the
+    /// current size is a no-op rather than a clamp.
     pub fn resize_window(
         &mut self,
         target: &str,
-        cols: Option<u16>,
-        rows: Option<u16>,
+        request: WindowResizeRequest,
     ) -> io::Result<()> {
         let t = self.resolve_window_target(target)?;
-        let session_id = self.sessions[t.session].id;
-        let sess_cols = self.sessions[t.session].cols;
-        let sess_rows = self.sessions[t.session].rows;
-        let win = self.window_mut(t.session, t.window);
-        let window_id = win.id;
-        let previous = win.manual_size;
-        let (cur_cols, cur_rows) = previous.unwrap_or((sess_cols, sess_rows));
-        let size = (cols.unwrap_or(cur_cols), rows.unwrap_or(cur_rows));
-        win.manual_size = Some(size);
-        win.layout.resize(size.0, size.1);
-        resize_panes_to_layout(win)?;
-        self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
-        if previous != Some(size) {
-            self.notify_window("window-resized", window_id);
+        let window_id = self.sessions[t.session].windows[t.window].id;
+        let window = self.window(t.session, t.window);
+        let mut size = (
+            request.cols.unwrap_or(window.cols),
+            request.rows.unwrap_or(window.rows),
+        );
+        let adjust = request.adjustment;
+        // A shrink wider than the axis is a no-op, not a clamp to the minimum.
+        match request.adjust {
+            Some(WindowResizeAdjust::Left) if size.0 >= adjust => size.0 -= adjust,
+            Some(WindowResizeAdjust::Right) => size.0 = size.0.saturating_add(adjust),
+            Some(WindowResizeAdjust::Up) if size.1 >= adjust => size.1 -= adjust,
+            Some(WindowResizeAdjust::Down) => size.1 = size.1.saturating_add(adjust),
+            _ => {}
         }
-        Ok(())
+        // `-a`/`-A` ignore everything computed above and take the extreme of the
+        // clients that can see the window, falling back to `default-size`.
+        if let Some(policy) = request.snap {
+            size = self.default_window_size(t.session, Some(window_id), Some(policy));
+        }
+        self.window_mut(t.session, t.window)
+            .option_overrides_mut()
+            .set("window-size", "manual");
+        self.window_mut(t.session, t.window).manual_size = size;
+        self.recalculate_sizes()
     }
 
     pub(crate) fn resize_linked_window(
@@ -9588,25 +9743,269 @@ impl ServerState {
     ) -> io::Result<()> {
         let resolved = self.resolve_window_target(target)?;
         let window_id = self.sessions[resolved.session].windows[resolved.window].id;
-        let affected_sessions: Vec<u32> = self
-            .sessions
-            .iter()
-            .filter_map(|session| {
-                session
-                    .windows
-                    .iter()
-                    .any(|window| window.id == window_id)
-                    .then_some(session.id)
-            })
-            .collect();
         let window = self.windows.get_mut(&window_id).expect("window present");
-        window.manual_size = Some((cols, rows));
-        window.layout.resize(cols, rows);
-        let _ = resize_panes_to_layout(window);
-        for session_id in affected_sessions {
-            self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
+        window.manual_size = (cols, rows);
+        window.option_overrides_mut().set("window-size", "manual");
+        self.recalculate_sizes()
+    }
+
+    /// tmux's `default_window_size`: the size to create a window at, or the size
+    /// `resize-window -a`/`-A` snaps to.
+    ///
+    /// `window` scopes the client set — `Some(id)` counts every client whose
+    /// session links that window (the `-a`/`-A` case), `None` counts the
+    /// clients of `session` itself (the window-creation case). With no
+    /// qualifying client, or under `manual`, the session's `default-size`
+    /// decides.
+    pub(crate) fn default_window_size(
+        &self,
+        session: usize,
+        window: Option<u32>,
+        policy: Option<WindowSizePolicy>,
+    ) -> (u16, u16) {
+        let policy = policy.unwrap_or_else(|| {
+            WindowSizePolicy::parse(self.global_options.window().get("window-size"))
+        });
+        let session_id = self.sessions[session].id;
+        if policy != WindowSizePolicy::Manual {
+            let clients = self.sizing_clients();
+            let visible = clients.iter().filter(|client| match window {
+                Some(id) => self.session_links_window(client.session_id, id),
+                None => client.session_id == session_id,
+            });
+            // A window-less `latest` has no `w->latest` to prefer, so tmux lets
+            // every candidate through and folds them as for `smallest`.
+            if let Some(size) = fold_client_sizes(visible, policy) {
+                return clamp_window_size(size);
+            }
         }
-        Ok(())
+        let size = self.sessions[session]
+            .options(&self.global_options)
+            .get("default-size")
+            .and_then(parse_size_pair)
+            .unwrap_or((80, 24));
+        clamp_window_size(size)
+    }
+
+    /// tmux's `recalculate_sizes`: re-derive every window's size from the
+    /// clients that can see it.
+    ///
+    /// Windows are global, so one window has one size however many sessions link
+    /// it. Each window's own `window-size` picks the policy and
+    /// `aggressive-resize` narrows the client set to those actually showing it.
+    /// A window with no qualifying client keeps the size it has — only window
+    /// *creation* falls back to `default-size`.
+    pub(crate) fn recalculate_sizes(&mut self) -> io::Result<()> {
+        self.recalculate_sizes_now(false)
+    }
+
+    /// [`ServerState::recalculate_sizes`], with tmux's `now` flag.
+    ///
+    /// Automatic sizing is deferred for a window no attached session is
+    /// currently showing: the new size is recorded and applied by
+    /// [`ServerState::flush_pending_window_sizes`] once the window becomes
+    /// current, so a background window's panes are not resized under a program
+    /// that cannot see it happen. A manually sized window, or `now`, resizes
+    /// straight away.
+    pub(crate) fn recalculate_sizes_now(&mut self, now: bool) -> io::Result<()> {
+        let clients = self.sizing_clients();
+        let window_ids = self.windows.keys().copied().collect::<Vec<_>>();
+        // tmux's `server_client_update_latest`: a client only ever becomes the
+        // latest client of the window it is currently showing.
+        for window_id in &window_ids {
+            let latest = clients
+                .iter()
+                .filter(|client| self.session_shows_window(client.session_id, *window_id))
+                .max_by_key(|client| client.size_seq)
+                .map(|client| client.size_seq);
+            if let Some(latest) = latest {
+                if let Some(window) = self.windows.get_mut(window_id) {
+                    window.latest_client = Some(latest);
+                }
+            }
+        }
+        let mut result = Ok(());
+        for window_id in window_ids {
+            let Some(window) = self.windows.get(&window_id) else {
+                continue;
+            };
+            let options = window.options(&self.global_options);
+            let policy = WindowSizePolicy::parse(options.get("window-size"));
+            let aggressive = matches!(options.get("aggressive-resize"), Some("on" | "1"));
+            let Some(size) = self.calculate_window_size(&window_id, policy, aggressive, &clients)
+            else {
+                continue;
+            };
+            if now || policy == WindowSizePolicy::Manual {
+                if let Some(window) = self.windows.get_mut(&window_id) {
+                    window.pending_size = None;
+                }
+                if let Err(error) = self.apply_window_size(window_id, size) {
+                    result = Err(error);
+                }
+            } else if let Some(window) = self.windows.get_mut(&window_id) {
+                window.pending_size = Some(size);
+            }
+        }
+        if let Err(error) = self.flush_pending_window_sizes() {
+            result = Err(error);
+        }
+        result
+    }
+
+    /// tmux's `server_client_check_window_resize`: apply a deferred size once
+    /// some attached session is showing the window.
+    fn flush_pending_window_sizes(&mut self) -> io::Result<()> {
+        let visible = self
+            .attached_clients()
+            .iter()
+            .filter_map(|client| self.current_window_of_session(client.session_id))
+            .collect::<BTreeSet<_>>();
+        let mut result = Ok(());
+        for window_id in visible {
+            let Some(size) = self
+                .windows
+                .get_mut(&window_id)
+                .and_then(|window| window.pending_size.take())
+            else {
+                continue;
+            };
+            if let Err(error) = self.apply_window_size(window_id, size) {
+                result = Err(error);
+            }
+        }
+        result
+    }
+
+    /// tmux's `clients_calculate_size` for one window, or `None` when no client
+    /// qualifies and the window should keep its current size.
+    fn calculate_window_size(
+        &self,
+        window_id: &u32,
+        policy: WindowSizePolicy,
+        aggressive: bool,
+        clients: &[SizingClient],
+    ) -> Option<(u16, u16)> {
+        let window = self.windows.get(window_id)?;
+        if policy == WindowSizePolicy::Manual {
+            return Some(window.manual_size);
+        }
+        // `latest` narrows to `w->latest` only once more than one client can see
+        // the window; a lone client is folded as for `smallest`.
+        let linked = clients
+            .iter()
+            .filter(|client| self.session_links_window(client.session_id, *window_id))
+            .count();
+        let candidates = clients.iter().filter(|client| {
+            let visible = if aggressive {
+                self.session_shows_window(client.session_id, *window_id)
+            } else {
+                self.session_links_window(client.session_id, *window_id)
+            };
+            visible
+                && !(policy == WindowSizePolicy::Latest
+                    && linked > 1
+                    && window.latest_client != Some(client.size_seq))
+        });
+        fold_client_sizes(candidates, policy)
+    }
+
+    /// Resize one window and everything laid out inside it.
+    fn apply_window_size(&mut self, window_id: u32, size: (u16, u16)) -> io::Result<()> {
+        let (cols, rows) = clamp_window_size(size);
+        let Some(window) = self.windows.get_mut(&window_id) else {
+            return Ok(());
+        };
+        if window.cols == cols && window.rows == rows {
+            return Ok(());
+        }
+        window.cols = cols;
+        window.rows = rows;
+        window.layout.resize(cols, rows);
+        let result = resize_panes_to_layout(window);
+        for session_id in self.sessions_linking_window(window_id) {
+            self.invalidate_session(
+                session_id,
+                RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
+            );
+        }
+        self.notify_window("window-layout-changed", window_id);
+        self.notify_window("window-resized", window_id);
+        result
+    }
+
+    /// The clients whose terminal size counts, with their pane area already
+    /// measured — tmux's `ignore_client_size` plus `status_line_size`.
+    fn sizing_clients(&self) -> Vec<SizingClient> {
+        let clients = self.attached_clients();
+        // A control client contributes nothing until it declares a size, and an
+        // `ignore-size` client counts only while every client is flagged.
+        let counts = |client: &AttachedClient| !client.control_mode || client.size_changed;
+        let any_unflagged = clients
+            .iter()
+            .any(|client| counts(client) && !client.ignore_size);
+        clients
+            .iter()
+            .filter(|client| counts(client) && !(client.ignore_size && any_unflagged))
+            .filter_map(|client| {
+                let session = self
+                    .sessions
+                    .iter()
+                    .find(|session| session.id == client.session_id)?;
+                // A control client has no status line to pay for, and tmux turns
+                // the status line off rather than shrink a window to nothing on
+                // a terminal too short to hold both (`CLIENT_STATUSOFF`).
+                let status = if client.control_mode {
+                    0
+                } else {
+                    self.status_lines(session)
+                };
+                let rows = if client.rows > status {
+                    client.rows - status
+                } else {
+                    client.rows
+                };
+                Some(SizingClient {
+                    session_id: client.session_id,
+                    cols: client.cols,
+                    rows,
+                    size_seq: client.size_seq,
+                })
+            })
+            .collect()
+    }
+
+    /// The rows a session's status line occupies — tmux's `status_line_size`.
+    fn status_lines(&self, session: &Session) -> u16 {
+        match session.options(&self.global_options).get("status") {
+            Some("off" | "0") => 0,
+            Some("2") => 2,
+            Some("3") => 3,
+            Some("4") => 4,
+            Some("5") => 5,
+            _ => 1,
+        }
+    }
+
+    /// Whether a session links the window at all — tmux's `session_has`.
+    fn session_links_window(&self, session_id: u32, window_id: u32) -> bool {
+        self.sessions
+            .iter()
+            .find(|session| session.id == session_id)
+            .is_some_and(|session| session.windows.iter().any(|link| link.id == window_id))
+    }
+
+    /// Whether the window is the one a session is currently showing.
+    fn session_shows_window(&self, session_id: u32, window_id: u32) -> bool {
+        self.current_window_of_session(session_id) == Some(window_id)
+    }
+
+    fn sessions_linking_window(&self, window_id: u32) -> Vec<u32> {
+        self.sessions
+            .iter()
+            .filter(|session| session.windows.iter().any(|link| link.id == window_id))
+            .map(|session| session.id)
+            .collect()
     }
 
     /// The effective `base-index` (first/lowest window index), default 0.
@@ -10360,16 +10759,14 @@ impl ServerState {
         )
     }
 
-    fn resize_active_window_to_session_size(&mut self, session: usize) -> io::Result<()> {
-        let cols = self.sessions[session].cols;
-        let rows = self.sessions[session].rows;
-        let window_id = self.sessions[session].windows[self.sessions[session].active].id;
-        let window = self.windows.get_mut(&window_id).expect("window present");
-        window.layout.resize(cols, rows);
-        resize_panes_to_layout(window)
-    }
-
-    /// Resize a session and its active pane to `cols`×`rows`.
+    /// Record the viewport a client is showing `session_name` in, then re-derive
+    /// every window's size from the clients that can see it.
+    ///
+    /// `cols`×`rows` is the client's *pane* area (its terminal minus the status
+    /// line). tmux has no session size at all — this keeps hmux's, because pane
+    /// spawns, popups and overlays are still laid out against it — but the
+    /// window sizes it used to set directly now come from
+    /// [`ServerState::recalculate_sizes`].
     pub fn resize_session(&mut self, session_name: &str, cols: u16, rows: u16) -> io::Result<()> {
         let session = self.session_index(session_name).ok_or_else(|| {
             io::Error::new(
@@ -10379,7 +10776,42 @@ impl ServerState {
         })?;
         self.sessions[session].cols = cols;
         self.sessions[session].rows = rows;
-        self.resize_active_window_to_session_size(session)
+        self.recalculate_sizes()
+    }
+
+    /// `new-session -x/-y`: pin the session's own `default-size`.
+    ///
+    /// tmux writes the option onto the new session's option set before creating
+    /// it, so the session's first window *and every later one* are created at
+    /// that size rather than at the global default. hmux creates the session
+    /// first, so the windows already made are resized to match.
+    pub(crate) fn set_session_default_size(
+        &mut self,
+        session_name: &str,
+        cols: u16,
+        rows: u16,
+    ) -> io::Result<()> {
+        let Some(session) = self.session_index(session_name) else {
+            return Ok(());
+        };
+        let (cols, rows) = clamp_window_size((cols, rows));
+        self.sessions[session]
+            .option_overrides_mut()
+            .set("default-size", &format!("{cols}x{rows}"));
+        self.sessions[session].cols = cols;
+        self.sessions[session].rows = rows;
+        for window_id in self.sessions[session]
+            .windows
+            .iter()
+            .map(|link| link.id)
+            .collect::<Vec<_>>()
+        {
+            if let Some(window) = self.windows.get_mut(&window_id) {
+                window.manual_size = (cols, rows);
+            }
+            self.apply_window_size(window_id, (cols, rows))?;
+        }
+        self.recalculate_sizes()
     }
 
     /// Send input bytes to the active pane of a session.
@@ -11820,10 +12252,8 @@ impl ServerState {
         }
         let argv = argv.expect("nonempty argv checked above");
         let pane = {
-            let session = &self.sessions[resolved.session];
             let window = self.window(resolved.session, resolved.window);
-            let cols = window.manual_size.map_or(session.cols, |size| size.0);
-            let rows = window.manual_size.map_or(session.rows, |size| size.1);
+            let (cols, rows) = (window.cols, window.rows);
             let spec = PaneSpawnSpec { argv, cwd };
             Pane::spawn_from_spec_mode(&spec, cols, rows, self.pane_io_mode)?
         };
