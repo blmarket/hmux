@@ -22,7 +22,7 @@ use std::process::{Command, Stdio};
 use std::ptr;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use libc::pid_t;
@@ -2148,27 +2148,28 @@ impl Drop for Child {
     }
 }
 
-/// Children killed by a pane teardown, waiting to be reaped.
-///
-/// `waitpid` on a signalled child can block for an unbounded time — long enough
-/// to stall the loop that asked for the kill — so the pid is parked here and
-/// collected without waiting on the next `SIGCHLD`.
-static ORPHANED_CHILDREN: Mutex<Vec<pid_t>> = Mutex::new(Vec::new());
+thread_local! {
+    /// Children killed by a pane teardown, waiting to be reaped.
+    ///
+    /// `waitpid` on a signalled child can block for an unbounded time — long
+    /// enough to stall the loop that asked for the kill — so the pid is parked
+    /// here and collected without waiting on the next `SIGCHLD`.
+    ///
+    /// The panes and the reaping pass both belong to the server loop, so this
+    /// list belongs to that thread rather than to the process.
+    static ORPHANED_CHILDREN: RefCell<Vec<pid_t>> = const { RefCell::new(Vec::new()) };
+}
 
 fn register_orphan(pid: pid_t) {
-    {
-        let Ok(mut orphans) = ORPHANED_CHILDREN.lock() else {
-            return;
-        };
-        orphans.push(pid);
-    }
+    ORPHANED_CHILDREN.with_borrow_mut(|orphans| orphans.push(pid));
 }
 
 /// Reap every orphan that has exited, keeping the ones still running.
 pub(crate) fn reap_orphans() {
-    let Ok(mut orphans) = ORPHANED_CHILDREN.lock() else {
-        return;
-    };
+    ORPHANED_CHILDREN.with_borrow_mut(reap_orphan_list);
+}
+
+fn reap_orphan_list(orphans: &mut Vec<pid_t>) {
     orphans.retain(|pid| {
         let mut status = 0;
         // SAFETY: reaping our own child pid. No other code waits on it, so
