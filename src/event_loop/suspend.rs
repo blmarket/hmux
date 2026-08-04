@@ -7,9 +7,9 @@
 //! reports the result through the same fd-backed [`Completion`] the protocol
 //! drivers already poll for a suspended command.
 //!
-//! Suspension variants the executor does not own yet are handed back to
-//! [`EventCommandRuntime`](super::task::EventCommandRuntime), which still runs
-//! them on a worker thread.
+//! The job itself lives with the commands
+//! ([`SuspensionJob`](crate::server::command::suspend::SuspensionJob)) so the
+//! blocking test driver resolves a suspension exactly the way the loop does.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -17,14 +17,11 @@ use std::os::fd::RawFd;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use crate::server::command::suspend::{
-    ClientPromptJob, FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob,
-    WaitForJob,
-};
+use crate::server::command::suspend::SuspensionJob;
 use crate::server::command::{CommandSuspension, CommandSuspensionResult};
 use crate::server::task::{
-    completion_pair, Completion, CompletionSender, Coroutine, FdDirection, ReadySet, TaskPoll,
-    TaskState, WaitRequest, WaitToken,
+    completion_pair, Completion, CompletionSender, FdDirection, ReadySet, TaskState,
+    WaitToken,
 };
 
 use super::reactor::{Token, WakeHandle};
@@ -38,83 +35,9 @@ pub(crate) enum ExecutorEvent {
     Timeout { job: u64 },
 }
 
-/// One suspension the loop drives to its [`CommandSuspensionResult`].
-pub(super) enum ExecutorJob {
-    RunShell(RunShellJob),
-    IfShell(IfShellJob),
-    SourceFile(SourceFileJob),
-    LoadBuffer(LoadBufferJob),
-    SaveBuffer(FileWriteJob),
-    WaitFor(WaitForJob),
-    ClientPrompt(ClientPromptJob),
-}
-
-impl Coroutine for ExecutorJob {
-    type Output = CommandSuspensionResult;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        match self {
-            Self::RunShell(job) => job.wait(),
-            Self::IfShell(job) => job.wait(),
-            Self::SourceFile(job) => job.wait(),
-            Self::LoadBuffer(job) => job.wait(),
-            Self::SaveBuffer(job) => job.wait(),
-            Self::WaitFor(job) => job.wait(),
-            Self::ClientPrompt(job) => job.wait(),
-        }
-    }
-
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        match self {
-            Self::RunShell(job) => match job.resume(ready) {
-                TaskPoll::Ready(completion) => {
-                    TaskPoll::Ready(CommandSuspensionResult::RunShell(completion))
-                }
-                TaskPoll::Pending => TaskPoll::Pending,
-            },
-            Self::IfShell(job) => match job.resume(ready) {
-                TaskPoll::Ready(status) => {
-                    TaskPoll::Ready(CommandSuspensionResult::IfShell(status))
-                }
-                TaskPoll::Pending => TaskPoll::Pending,
-            },
-            Self::SourceFile(job) => match job.resume(ready) {
-                TaskPoll::Ready(reads) => {
-                    TaskPoll::Ready(CommandSuspensionResult::SourceFile(reads))
-                }
-                TaskPoll::Pending => TaskPoll::Pending,
-            },
-            Self::LoadBuffer(job) => match job.resume(ready) {
-                TaskPoll::Ready(contents) => {
-                    TaskPoll::Ready(CommandSuspensionResult::LoadBuffer(contents))
-                }
-                TaskPoll::Pending => TaskPoll::Pending,
-            },
-            Self::SaveBuffer(job) => match job.resume(ready) {
-                TaskPoll::Ready(result) => {
-                    TaskPoll::Ready(CommandSuspensionResult::SaveBuffer(result))
-                }
-                TaskPoll::Pending => TaskPoll::Pending,
-            },
-            Self::WaitFor(job) => match job.resume(ready) {
-                TaskPoll::Ready(result) => {
-                    TaskPoll::Ready(CommandSuspensionResult::Completed(result))
-                }
-                TaskPoll::Pending => TaskPoll::Pending,
-            },
-            Self::ClientPrompt(job) => match job.resume(ready) {
-                TaskPoll::Ready(result) => {
-                    TaskPoll::Ready(CommandSuspensionResult::Completed(result))
-                }
-                TaskPoll::Pending => TaskPoll::Pending,
-            },
-        }
-    }
-}
-
 /// A job handed to the executor but not yet adopted by the loop.
 struct SubmittedJob {
-    job: ExecutorJob,
+    job: SuspensionJob,
     sender: CompletionSender<CommandSuspensionResult>,
 }
 
@@ -129,7 +52,7 @@ pub(super) struct JobRegistration {
 
 /// A job the loop has adopted, with the registrations made for it.
 pub(super) struct ExecutorJobState {
-    pub(super) task: TaskState<ExecutorJob>,
+    pub(super) task: TaskState<SuspensionJob>,
     pub(super) registrations: Vec<JobRegistration>,
     pub(super) timer: Option<(Instant, TimerId)>,
     sender: Option<CompletionSender<CommandSuspensionResult>>,
@@ -163,49 +86,15 @@ pub(crate) struct SuspensionExecutorHandle {
 }
 
 impl SuspensionExecutorHandle {
-    /// Hand one suspension to the loop. A variant the executor does not own is
-    /// returned unchanged so the caller can fall back to a worker thread.
+    /// Hand one suspension to the loop, which resolves it as a job of its own.
     pub(crate) fn submit(
         &self,
         suspension: CommandSuspension,
-    ) -> Result<io::Result<Completion<CommandSuspensionResult>>, CommandSuspension> {
-        let job = match suspension {
-            CommandSuspension::RunShell { args, context } => {
-                ExecutorJob::RunShell(RunShellJob::new(&args, &context))
-            }
-            CommandSuspension::IfShell { condition, context } => {
-                ExecutorJob::IfShell(IfShellJob::new(&condition, &context))
-            }
-            CommandSuspension::SourceFile { paths } => {
-                ExecutorJob::SourceFile(SourceFileJob::new(paths))
-            }
-            CommandSuspension::LoadBuffer { path } => {
-                ExecutorJob::LoadBuffer(LoadBufferJob::new(path))
-            }
-            CommandSuspension::SaveBuffer { request } => {
-                ExecutorJob::SaveBuffer(FileWriteJob::new(request))
-            }
-            CommandSuspension::WaitFor { args, registry } => {
-                ExecutorJob::WaitFor(WaitForJob::new(&args, &registry))
-            }
-            CommandSuspension::CommandPrompt {
-                args,
-                registry,
-                target,
-                tty_name,
-                wait,
-            } => ExecutorJob::ClientPrompt(ClientPromptJob::prompt(
-                args, &registry, target, tty_name, wait,
-            )),
-            CommandSuspension::ClientInteraction { completed } => {
-                ExecutorJob::ClientPrompt(ClientPromptJob::interaction(completed))
-            }
-            suspension => return Err(suspension),
-        };
-        Ok(self.enqueue(job))
+    ) -> io::Result<Completion<CommandSuspensionResult>> {
+        self.enqueue(SuspensionJob::new(suspension))
     }
 
-    fn enqueue(&self, job: ExecutorJob) -> io::Result<Completion<CommandSuspensionResult>> {
+    fn enqueue(&self, job: SuspensionJob) -> io::Result<Completion<CommandSuspensionResult>> {
         let (completion, sender) = completion_pair()?;
         self.submitted
             .lock()

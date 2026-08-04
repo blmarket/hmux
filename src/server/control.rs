@@ -2093,7 +2093,7 @@ mod tests {
             state,
             hub.clone(),
             &command::ClientContext::default(),
-            Arc::new(crate::event_loop::task::EventCommandRuntime::detached()),
+            Arc::new(command::BlockingCommandRuntime),
         )?;
 
         command_input.write_all(b"refresh-client -B 'agent:%*:#{pane_agent_state}'\n")?;

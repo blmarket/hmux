@@ -4,32 +4,23 @@ use std::io;
 use std::thread;
 
 use crate::server::command::{CommandRuntime, CommandSuspension, CommandSuspensionResult};
-use crate::server::task::{completion_pair, drive_blocking, Completion, Coroutine, TaskState};
+use crate::server::task::{drive_blocking, Completion, Coroutine, TaskState};
 
 use super::suspend::SuspensionExecutorHandle;
 
 /// Command runtime for clients served by the event loop.
 ///
-/// Suspensions the loop's [`SuspensionExecutor`](super::suspend::SuspensionExecutor)
-/// owns are driven on the loop itself; the remaining variants still resolve on
-/// a worker thread until the executor grows their jobs.
+/// Every suspension is resolved by the loop's
+/// [`SuspensionExecutor`](super::suspend::SuspensionExecutor), which drives it
+/// as one of its own jobs.
 #[derive(Clone)]
 pub(crate) struct EventCommandRuntime {
-    executor: Option<SuspensionExecutorHandle>,
+    executor: SuspensionExecutorHandle,
 }
 
 impl EventCommandRuntime {
     pub(crate) fn new(executor: SuspensionExecutorHandle) -> Self {
-        Self {
-            executor: Some(executor),
-        }
-    }
-
-    /// A runtime with no loop behind it: every suspension takes the worker
-    /// thread. Test scaffolding for control clients driven outside a loop.
-    #[cfg(test)]
-    pub(crate) fn detached() -> Self {
-        Self { executor: None }
+        Self { executor }
     }
 
     pub(crate) fn spawn_coroutine<T, F>(mut task: TaskState<T>, complete: F) -> io::Result<()>
@@ -67,17 +58,6 @@ impl CommandRuntime for EventCommandRuntime {
         &self,
         suspension: CommandSuspension,
     ) -> io::Result<Completion<CommandSuspensionResult>> {
-        let suspension = match self.executor.as_ref() {
-            Some(executor) => match executor.submit(suspension) {
-                Ok(completion) => return completion,
-                Err(suspension) => suspension,
-            },
-            None => suspension,
-        };
-        let (completion, sender) = completion_pair()?;
-        thread::Builder::new()
-            .name("hmux-event-command".to_string())
-            .spawn(move || sender.complete(suspension.resolve_blocking()))?;
-        Ok(completion)
+        self.executor.submit(suspension)
     }
 }

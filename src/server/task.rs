@@ -206,6 +206,16 @@ pub(crate) enum TaskPoll<T> {
     Pending,
 }
 
+impl<T> TaskPoll<T> {
+    /// Re-wrap a finished result, leaving `Pending` alone.
+    pub(crate) fn map<U>(self, wrap: impl FnOnce(T) -> U) -> TaskPoll<U> {
+        match self {
+            Self::Ready(value) => TaskPoll::Ready(wrap(value)),
+            Self::Pending => TaskPoll::Pending,
+        }
+    }
+}
+
 pub(crate) trait Coroutine {
     type Output;
 

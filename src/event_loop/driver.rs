@@ -1138,7 +1138,6 @@ mod tests {
         let completion = loop_
             .executor_handle()
             .submit(suspension)
-            .unwrap_or_else(|_| panic!("executor owns this suspension"))
             .expect("completion pair");
         let mut task = TaskState::new(completion);
         let deadline = Instant::now() + Duration::from_secs(10);

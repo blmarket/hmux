@@ -32,9 +32,92 @@ use crate::server::task::{
 use super::execution::{self, WaitForOutcome};
 use super::{
     flag_value, has_flag, interaction_completion_result, io_error_message, job_delay, positionals,
-    shell_command, ClientContext, ClientFileWrite, CommandResult, RunShellCompletion,
-    SourceFileRead,
+    shell_command, ClientContext, ClientFileWrite, CommandResult, CommandSuspension,
+    CommandSuspensionResult, PaneOutputSuspension, RunShellCompletion, SourceFileRead,
 };
+
+/// One suspension expressed as the coroutine that resolves it.
+///
+/// Both drivers build this from the same [`CommandSuspension`]: the server
+/// loop's executor registers its descriptors and deadlines with the reactor,
+/// and the blocking test driver runs it on the calling thread. There is only
+/// ever one implementation of what a suspension does.
+pub(crate) enum SuspensionJob {
+    RunShell(RunShellJob),
+    IfShell(IfShellJob),
+    SourceFile(SourceFileJob),
+    LoadBuffer(LoadBufferJob),
+    SaveBuffer(FileWriteJob),
+    WaitFor(WaitForJob),
+    ClientPrompt(ClientPromptJob),
+    PaneOutput(PaneOutputSuspension),
+}
+
+impl SuspensionJob {
+    pub(crate) fn new(suspension: CommandSuspension) -> Self {
+        match suspension {
+            CommandSuspension::RunShell { args, context } => {
+                Self::RunShell(RunShellJob::new(&args, &context))
+            }
+            CommandSuspension::IfShell { condition, context } => {
+                Self::IfShell(IfShellJob::new(&condition, &context))
+            }
+            CommandSuspension::SourceFile { paths } => Self::SourceFile(SourceFileJob::new(paths)),
+            CommandSuspension::LoadBuffer { path } => Self::LoadBuffer(LoadBufferJob::new(path)),
+            CommandSuspension::SaveBuffer { request } => {
+                Self::SaveBuffer(FileWriteJob::new(request))
+            }
+            CommandSuspension::WaitFor { args, registry } => {
+                Self::WaitFor(WaitForJob::new(&args, &registry))
+            }
+            CommandSuspension::CommandPrompt {
+                args,
+                registry,
+                target,
+                tty_name,
+                wait,
+            } => Self::ClientPrompt(ClientPromptJob::prompt(
+                args, &registry, target, tty_name, wait,
+            )),
+            CommandSuspension::ClientInteraction { completed } => {
+                Self::ClientPrompt(ClientPromptJob::interaction(completed))
+            }
+            CommandSuspension::PaneOutput(wait) => Self::PaneOutput(wait),
+        }
+    }
+}
+
+impl Coroutine for SuspensionJob {
+    type Output = CommandSuspensionResult;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match self {
+            Self::RunShell(job) => job.wait(),
+            Self::IfShell(job) => job.wait(),
+            Self::SourceFile(job) => job.wait(),
+            Self::LoadBuffer(job) => job.wait(),
+            Self::SaveBuffer(job) => job.wait(),
+            Self::WaitFor(job) => job.wait(),
+            Self::ClientPrompt(job) => job.wait(),
+            Self::PaneOutput(job) => job.wait(),
+        }
+    }
+
+    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
+        match self {
+            Self::RunShell(job) => job
+                .resume(ready)
+                .map(CommandSuspensionResult::RunShell),
+            Self::IfShell(job) => job.resume(ready).map(CommandSuspensionResult::IfShell),
+            Self::SourceFile(job) => job.resume(ready).map(CommandSuspensionResult::SourceFile),
+            Self::LoadBuffer(job) => job.resume(ready).map(CommandSuspensionResult::LoadBuffer),
+            Self::SaveBuffer(job) => job.resume(ready).map(CommandSuspensionResult::SaveBuffer),
+            Self::WaitFor(job) => job.resume(ready).map(CommandSuspensionResult::Completed),
+            Self::ClientPrompt(job) => job.resume(ready).map(CommandSuspensionResult::Completed),
+            Self::PaneOutput(job) => job.resume(ready),
+        }
+    }
+}
 
 /// A finished `sh -c` child.
 struct ShellOutput {

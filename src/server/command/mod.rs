@@ -61,10 +61,7 @@ use super::task::{
     run_blocking, Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest,
     WaitToken,
 };
-use suspend::{
-    ClientPromptJob, FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob,
-    WaitForJob,
-};
+use suspend::{RunShellJob, SuspensionJob};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.
@@ -512,7 +509,7 @@ impl CommandRuntime for BlockingCommandRuntime {
         let (completion, sender) = super::task::completion_pair()?;
         std::thread::Builder::new()
             .name("hmux-blocking-command".to_string())
-            .spawn(move || sender.complete(suspension.resolve_blocking()))?;
+            .spawn(move || sender.complete(run_blocking(SuspensionJob::new(suspension))))?;
         Ok(completion)
     }
 }
@@ -997,10 +994,6 @@ impl PaneOutputSuspension {
                 .expect("pane-output suspension completed twice"),
         )
     }
-
-    fn resolve_blocking(self) -> CommandSuspensionResult {
-        run_blocking(self)
-    }
 }
 
 impl Coroutine for PaneOutputSuspension {
@@ -1208,41 +1201,6 @@ impl CommandSuspension {
         )
     }
 
-    pub(crate) fn resolve_blocking(self) -> CommandSuspensionResult {
-        match self {
-            Self::RunShell { args, context } => {
-                CommandSuspensionResult::RunShell(run_blocking(RunShellJob::new(&args, &context)))
-            }
-            Self::IfShell { condition, context } => CommandSuspensionResult::IfShell(run_blocking(
-                IfShellJob::new(&condition, &context),
-            )),
-            Self::SourceFile { paths } => {
-                CommandSuspensionResult::SourceFile(run_blocking(SourceFileJob::new(paths)))
-            }
-            Self::LoadBuffer { path } => {
-                CommandSuspensionResult::LoadBuffer(run_blocking(LoadBufferJob::new(path)))
-            }
-            Self::SaveBuffer { request } => {
-                CommandSuspensionResult::SaveBuffer(run_blocking(FileWriteJob::new(request)))
-            }
-            Self::WaitFor { args, registry } => CommandSuspensionResult::Completed(run_blocking(
-                WaitForJob::new(&args, &registry),
-            )),
-            Self::CommandPrompt {
-                args,
-                registry,
-                target,
-                tty_name,
-                wait,
-            } => CommandSuspensionResult::Completed(run_blocking(ClientPromptJob::prompt(
-                args, &registry, target, tty_name, wait,
-            ))),
-            Self::ClientInteraction { completed } => CommandSuspensionResult::Completed(
-                run_blocking(ClientPromptJob::interaction(completed)),
-            ),
-            Self::PaneOutput(wait) => wait.resolve_blocking(),
-        }
-    }
 }
 
 impl ResumableCommandQueue {
@@ -2236,7 +2194,7 @@ fn run_resumable_command(
         match queue.drive(state, usize::MAX) {
             ResumableCommandTurn::Pending => continue,
             ResumableCommandTurn::Suspended(suspension) => {
-                let result = suspension.resolve_blocking();
+                let result = run_blocking(SuspensionJob::new(suspension));
                 queue.resume(result, state);
             }
             ResumableCommandTurn::Complete(result) => return result,
