@@ -1,9 +1,11 @@
 //! Runtime-independent control-mode client state.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::integration::status::StatusHub;
@@ -232,7 +234,7 @@ impl EventControlClient {
         control_context.preserve_queue_insertions = true;
         control_context.active_panes = options
             .active_pane
-            .then(|| Arc::new(Mutex::new(BTreeMap::new())));
+            .then(|| Rc::new(RefCell::new(BTreeMap::new())));
         let mut frames = VecDeque::new();
         frames.push_back(Frame::new(Message::Flags(
             options.client_flags(client_tty.flags),
@@ -575,7 +577,7 @@ impl EventControlClient {
             .update_client_flags(display_flags, self.options.read_only);
         self.context.read_only = self.options.read_only;
         if self.options.active_pane && self.context.active_panes.is_none() {
-            self.context.active_panes = Some(Arc::new(Mutex::new(BTreeMap::new())));
+            self.context.active_panes = Some(Rc::new(RefCell::new(BTreeMap::new())));
         } else if !self.options.active_pane {
             self.context.active_panes = None;
         }
@@ -620,9 +622,7 @@ impl EventControlClient {
         self.render_attachment.update_session(session_id);
         self.context.current_session_id = Some(session_id);
         if let Some(active_panes) = &self.context.active_panes {
-            if let Ok(mut active_panes) = active_panes.lock() {
-                active_panes.clear();
-            }
+            active_panes.borrow_mut().clear();
         }
         let next = self
             .state
@@ -801,7 +801,7 @@ impl EventControlClient {
                 .update_client_flags(display_flags, self.options.read_only);
             self.context.read_only = self.options.read_only;
             if self.options.active_pane && self.context.active_panes.is_none() {
-                self.context.active_panes = Some(Arc::new(Mutex::new(BTreeMap::new())));
+                self.context.active_panes = Some(Rc::new(RefCell::new(BTreeMap::new())));
             } else if !self.options.active_pane {
                 self.context.active_panes = None;
             }

@@ -28,11 +28,12 @@ pub(in crate::server) mod windows;
 pub(in crate::server) use identity::all as all_commands;
 pub(in crate::server) use identity::Command;
 
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::integration::status::PaneAgents;
@@ -106,7 +107,7 @@ pub struct ClientContext {
     pub(crate) command_state: Option<SharedState>,
     pub(crate) current_session_id: Option<u32>,
     pub(crate) read_only: bool,
-    pub(crate) active_panes: Option<Arc<Mutex<BTreeMap<u32, u32>>>>,
+    pub(crate) active_panes: Option<Rc<RefCell<BTreeMap<u32, u32>>>>,
     pub(crate) key_event: Option<super::key::KeyCode>,
     pub(crate) mouse: Option<MouseEvent>,
     pub(crate) interaction_reply: Option<PromptReply>,
@@ -157,14 +158,12 @@ impl ClientContext {
     fn active_panes(&self) -> Option<BTreeMap<u32, u32>> {
         self.active_panes
             .as_ref()
-            .and_then(|panes| panes.lock().ok().map(|panes| panes.clone()))
+            .map(|panes| panes.borrow().clone())
     }
 
     fn set_active_pane(&self, window_id: u32, pane_id: u32) {
         if let Some(panes) = &self.active_panes {
-            if let Ok(mut panes) = panes.lock() {
-                panes.insert(window_id, pane_id);
-            }
+            panes.borrow_mut().insert(window_id, pane_id);
         }
     }
 }
