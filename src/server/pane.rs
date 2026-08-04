@@ -159,6 +159,36 @@ impl PanePipeIo {
     const STDIN: WaitToken = WaitToken::new(0);
     const STDOUT: WaitToken = WaitToken::new(1);
 
+    /// A write-only pipe job: `payload` is handed to the child's stdin as it
+    /// accepts it, and the child is reaped once it exits.
+    ///
+    /// `copy-pipe` uses this to give a selection to a filter. Writing it
+    /// inline would stall the loop for as long as a slow — or simply
+    /// uninterested — consumer took to drain more than a pipe buffer.
+    pub(crate) fn for_write(
+        child: std::process::Child,
+        stdin: std::process::ChildStdin,
+        payload: &[u8],
+    ) -> io::Result<Self> {
+        set_nonblocking(stdin.as_raw_fd())?;
+        Ok(Self {
+            child,
+            stdin: Some(stdin),
+            stdout: None,
+            master: None,
+            pending_input: Rc::new(RefCell::new(VecDeque::new())),
+            // The whole payload is queued up front and the write end closes
+            // after it, which is the end of input the child waits for. The
+            // pane cap does not apply: dropping from a selection would hand
+            // the filter a silently truncated one.
+            outbound: Rc::new(RefCell::new(PanePipeOutbound {
+                queue: payload.iter().copied().collect(),
+                closed: true,
+            })),
+            alive: Rc::new(Cell::new(true)),
+        })
+    }
+
     /// Write what the child will take without blocking. The buffer keeps what
     /// it will not.
     fn write_outbound(&mut self) {

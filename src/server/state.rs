@@ -3995,6 +3995,8 @@ pub struct ServerState {
     /// any embedding that never binds a socket.
     socket_path: PathBuf,
     pane_io_mode: PaneIoMode,
+    /// Pipe jobs that belong to no pane, waiting for the loop to adopt them.
+    new_pipes: Vec<super::pane::PanePipeIo>,
     sessions: Vec<Session>,
     /// Windows are owned once by the server and referenced through [`Winlink`].
     windows: BTreeMap<u32, Window>,
@@ -4142,6 +4144,7 @@ impl ServerState {
             initial_attach_pending: true,
             socket_path: PathBuf::new(),
             pane_io_mode: default_pane_io_mode(),
+            new_pipes: Vec::new(),
             sessions: Vec::new(),
             windows: BTreeMap::new(),
             session_groups: BTreeMap::new(),
@@ -4243,13 +4246,23 @@ impl ServerState {
         self.pane_io_mode = mode;
     }
 
-    /// Pipe children opened since the last call, across every pane.
+    /// Hand a pipe job the loop owns from here. `copy-pipe` uses this for the
+    /// child it feeds a selection to, which belongs to no pane.
+    pub(crate) fn adopt_pipe(&mut self, pipe: super::pane::PanePipeIo) {
+        self.new_pipes.push(pipe);
+    }
+
+    /// Pipe children opened since the last call, across every pane and the
+    /// pane-less jobs adopted directly.
     pub(crate) fn take_new_pane_pipes(&mut self) -> Vec<super::pane::PanePipeIo> {
-        self.windows
-            .values_mut()
-            .flat_map(|window| window.panes.iter_mut())
-            .flat_map(|node| node.pane.take_new_pipes())
-            .collect()
+        let mut pipes = std::mem::take(&mut self.new_pipes);
+        pipes.extend(
+            self.windows
+                .values_mut()
+                .flat_map(|window| window.panes.iter_mut())
+                .flat_map(|node| node.pane.take_new_pipes()),
+        );
+        pipes
     }
 
     pub(crate) fn take_event_pane_ios(&mut self) -> Vec<(u64, PaneIo)> {

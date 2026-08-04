@@ -7,7 +7,6 @@
 //! encoding.
 
 use std::ffi::CString;
-use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::integration::status::PaneAgents;
@@ -347,8 +346,17 @@ fn send_copy_mode_command(
                         }
                     }
                     if let Ok(mut child) = shell.spawn() {
-                        if let Some(stdin) = child.stdin.as_mut() {
-                            let _ = stdin.write_all(selection.as_bytes());
+                        if let Some(stdin) = child.stdin.take() {
+                            // The loop writes the selection as the filter
+                            // takes it; a big selection and a slow reader
+                            // would otherwise stall every client.
+                            if let Ok(job) = super::pane::PanePipeIo::for_write(
+                                child,
+                                stdin,
+                                selection.as_bytes(),
+                            ) {
+                                state.adopt_pipe(job);
+                            }
                         }
                     }
                 }
