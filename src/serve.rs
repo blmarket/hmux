@@ -143,7 +143,7 @@ fn sync_event_loop_panes(
                 "duplicate pane runtime id {runtime_id}"
             )));
         }
-        panes.insert(runtime_id, event_loop.add_pane(runtime_id, io));
+        panes.insert(runtime_id, event_loop.add_pane(io));
     }
 
     let active_ids = active_ids.into_iter().collect::<BTreeSet<_>>();
@@ -216,9 +216,7 @@ fn reap_protocol_clients(clients: &mut Vec<ProtocolHandle>) {
         }
         match client.close_reason() {
             Some(
-                ProtocolCloseReason::Completed
-                | ProtocolCloseReason::PeerClosed
-                | ProtocolCloseReason::Shutdown,
+                ProtocolCloseReason::Completed | ProtocolCloseReason::PeerClosed,
             ) => {}
             Some(ProtocolCloseReason::Error(kind)) => {
                 warn!(?kind, "event-loop protocol client ended with an I/O error");

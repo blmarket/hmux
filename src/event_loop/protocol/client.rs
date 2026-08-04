@@ -52,7 +52,6 @@ pub(crate) enum ProtocolCloseReason {
     Completed,
     PeerClosed,
     Error(io::ErrorKind),
-    Shutdown,
     IdentifyExceedsLimit,
     FrameExceedsQueueLimit,
 }
@@ -72,7 +71,6 @@ pub(crate) enum ProtocolEvent {
     ControlTimer(u64),
     AttachReady(EventAttachSource),
     AttachTimer(u64),
-    Shutdown,
 }
 
 /// Completion state retained after direct protocol descriptors are dropped.
@@ -425,9 +423,6 @@ impl ProtocolClient {
                     }
                     self.sync_attach(target, outbox);
                 }
-            }
-            ProtocolEvent::Shutdown => {
-                self.close(target, ProtocolCloseReason::Shutdown, outbox);
             }
         }
     }

@@ -117,6 +117,7 @@ pub(crate) struct Ready<R> {
 }
 
 impl<R> Ready<R> {
+    #[cfg(test)]
     pub(crate) fn token(&self) -> Token {
         self.token
     }
@@ -137,6 +138,7 @@ pub(crate) struct PollResult {
 }
 
 impl PollResult {
+    #[cfg(test)]
     pub(crate) fn ready_count(self) -> usize {
         self.ready_count
     }
