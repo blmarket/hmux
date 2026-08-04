@@ -422,14 +422,12 @@ struct BackgroundJobRegistryState {
 
 #[derive(Default)]
 pub(crate) struct BackgroundJobRegistry {
-    inner: Mutex<BackgroundJobRegistryState>,
+    inner: RefCell<BackgroundJobRegistryState>,
 }
 
 impl BackgroundJobRegistry {
     pub(crate) fn register(&self, command: String, fd: RawFd, pid: u32) -> u64 {
-        let Ok(mut inner) = self.inner.lock() else {
-            return u64::MAX;
-        };
+        let mut inner = self.inner.borrow_mut();
         let id = inner.next_id;
         inner.next_id = inner.next_id.wrapping_add(1);
         inner.jobs.insert(
@@ -445,16 +443,11 @@ impl BackgroundJobRegistry {
     }
 
     pub(crate) fn remove(&self, id: u64) {
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.jobs.remove(&id);
-        }
+        self.inner.borrow_mut().jobs.remove(&id);
     }
 
     pub(crate) fn jobs(&self) -> Vec<BackgroundJob> {
-        self.inner
-            .lock()
-            .map(|inner| inner.jobs.values().cloned().collect())
-            .unwrap_or_default()
+        self.inner.borrow().jobs.values().cloned().collect()
     }
 }
 
@@ -539,14 +532,12 @@ pub(crate) enum WaitOutcome {
 
 #[derive(Default)]
 pub(crate) struct WaitRegistry {
-    channels: Mutex<BTreeMap<String, WaitChannel>>,
+    channels: RefCell<BTreeMap<String, WaitChannel>>,
 }
 
 impl WaitRegistry {
     pub(crate) fn signal(&self, name: &str) {
-        let Ok(mut channels) = self.channels.lock() else {
-            return;
-        };
+        let mut channels = self.channels.borrow_mut();
         let channel = channels.entry(name.to_string()).or_default();
         channel.woken = true;
         // Every waiter is released together, as the condvar broadcast this
@@ -566,9 +557,7 @@ impl WaitRegistry {
     }
 
     pub(crate) fn wait(&self, name: &str) -> WaitOutcome {
-        let Ok(mut channels) = self.channels.lock() else {
-            return WaitOutcome::Ready;
-        };
+        let mut channels = self.channels.borrow_mut();
         let channel = channels.entry(name.to_string()).or_default();
         if channel.woken {
             if channel.locked {
@@ -586,9 +575,7 @@ impl WaitRegistry {
     }
 
     pub(crate) fn lock(&self, name: &str) -> WaitOutcome {
-        let Ok(mut channels) = self.channels.lock() else {
-            return WaitOutcome::Ready;
-        };
+        let mut channels = self.channels.borrow_mut();
         let channel = channels.entry(name.to_string()).or_default();
         if !channel.locked {
             channel.locked = true;
@@ -602,9 +589,7 @@ impl WaitRegistry {
     }
 
     pub(crate) fn unlock(&self, name: &str) -> bool {
-        let Ok(mut channels) = self.channels.lock() else {
-            return false;
-        };
+        let mut channels = self.channels.borrow_mut();
         let Some(channel) = channels.get_mut(name) else {
             return false;
         };
@@ -4161,7 +4146,7 @@ pub struct ServerState {
     /// read once rather than on every option change.
     prompt_history_file_loaded: Option<PathBuf>,
     message_log: Vec<MessageLogEntry>,
-    background_jobs: Arc<BackgroundJobRegistry>,
+    background_jobs: Rc<BackgroundJobRegistry>,
     running_hooks: BTreeSet<String>,
     /// The `hook*` format variables published to the hook body currently
     /// executing; empty outside hook bodies. Like `command_session_id`, a
@@ -4191,7 +4176,7 @@ pub struct ServerState {
     silence_alerted: BTreeSet<u32>,
     client_prompts: Arc<ClientPromptRegistry>,
     client_renders: Arc<ClientRenderRegistry>,
-    wait_registry: Arc<WaitRegistry>,
+    wait_registry: Rc<WaitRegistry>,
     /// No-client format jobs, corresponding to tmux's process-global job tree.
     /// Current native consumers use client-owned status caches; this remains a
     /// distinct owner for no-client format contexts as those are implemented.
@@ -4256,7 +4241,7 @@ impl ServerState {
             prompt_history: BTreeMap::new(),
             prompt_history_file_loaded: None,
             message_log: Vec::new(),
-            background_jobs: Arc::new(BackgroundJobRegistry::default()),
+            background_jobs: Rc::new(BackgroundJobRegistry::default()),
             running_hooks: BTreeSet::new(),
             hook_format_vars: Vec::new(),
             command_session_id: None,
@@ -4272,7 +4257,7 @@ impl ServerState {
             client_prompts: Arc::new(ClientPromptRegistry::new()),
             format_jobs: Arc::new(super::status::FormatJobRegistry::new(&client_renders)),
             client_renders,
-            wait_registry: Arc::new(WaitRegistry::default()),
+            wait_registry: Rc::new(WaitRegistry::default()),
         };
         state.install_default_key_bindings();
         state
@@ -5753,8 +5738,8 @@ impl ServerState {
         )
     }
 
-    pub(crate) fn wait_registry(&self) -> Arc<WaitRegistry> {
-        Arc::clone(&self.wait_registry)
+    pub(crate) fn wait_registry(&self) -> Rc<WaitRegistry> {
+        Rc::clone(&self.wait_registry)
     }
 
     #[allow(dead_code)]
@@ -5791,8 +5776,8 @@ impl ServerState {
         &self.message_log
     }
 
-    pub(crate) fn background_job_registry(&self) -> Arc<BackgroundJobRegistry> {
-        Arc::clone(&self.background_jobs)
+    pub(crate) fn background_job_registry(&self) -> Rc<BackgroundJobRegistry> {
+        Rc::clone(&self.background_jobs)
     }
 
     /// The `#()` job tree a format expanded by `client` uses, with the session

@@ -28,6 +28,7 @@ pub(in crate::server) mod windows;
 pub(in crate::server) use identity::all as all_commands;
 pub(in crate::server) use identity::Command;
 
+use std::rc::Rc;
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -872,7 +873,7 @@ pub(crate) enum BackgroundCommandRequest {
     RunShell {
         args: Vec<String>,
         context: ClientContext,
-        jobs: Arc<BackgroundJobRegistry>,
+        jobs: Rc<BackgroundJobRegistry>,
     },
 }
 
@@ -939,7 +940,7 @@ pub(crate) enum BackgroundCommand {
     Args(Vec<String>),
     RunShell {
         args: Vec<String>,
-        jobs: Arc<BackgroundJobRegistry>,
+        jobs: Rc<BackgroundJobRegistry>,
     },
 }
 
@@ -984,7 +985,7 @@ pub(crate) enum CommandSuspension {
     },
     WaitFor {
         args: Vec<String>,
-        registry: Arc<WaitRegistry>,
+        registry: Rc<WaitRegistry>,
     },
     CommandPrompt {
         args: Vec<String>,

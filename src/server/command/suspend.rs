@@ -20,8 +20,8 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::platform::{CurrentPlatform, Platform};
@@ -68,7 +68,7 @@ impl SuspensionJob {
     pub(crate) fn background_shell(
         args: &[String],
         context: &ClientContext,
-        jobs: Arc<BackgroundJobRegistry>,
+        jobs: Rc<BackgroundJobRegistry>,
     ) -> Self {
         Self::BackgroundShell(BackgroundShellJob::new(args, context, jobs))
     }
@@ -150,15 +150,15 @@ impl Coroutine for SuspensionJob {
 pub(crate) struct BackgroundShellJob {
     process: Option<ShellProcess>,
     /// `(registry, command)` until the child exists to register.
-    pending: Option<(Arc<BackgroundJobRegistry>, String)>,
-    registered: Option<(Arc<BackgroundJobRegistry>, u64)>,
+    pending: Option<(Rc<BackgroundJobRegistry>, String)>,
+    registered: Option<(Rc<BackgroundJobRegistry>, u64)>,
 }
 
 impl BackgroundShellJob {
     pub(crate) fn new(
         args: &[String],
         context: &ClientContext,
-        jobs: Arc<BackgroundJobRegistry>,
+        jobs: Rc<BackgroundJobRegistry>,
     ) -> Self {
         let done = Self {
             process: None,
