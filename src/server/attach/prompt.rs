@@ -394,50 +394,29 @@ impl CommandPrompt {
                     };
                 }
                 CommandPromptAction::ModeEdit { target, edit } => {
-                    return run_mode_edit(edit, value, target, state, hub, context);
+                    return run_mode_edit(edit, value, target, state);
                 }
                 CommandPromptAction::ModeCommand { item_target } => {
-                    return run_mode_command(value, item_target, state, hub, context);
+                    return run_mode_command(value, item_target);
                 }
                 CommandPromptAction::Command => {}
             }
         }
-        if context.defer_attach_commands {
-            let template = command::command_prompt_template(
-                &self.request.args,
-                values,
-                state,
-                &hub.snapshot().panes,
-                context,
-            );
-            let mut result = command::CommandResult::ok("");
-            if !template.trim().is_empty() || !self.request.tail.is_empty() {
-                result
-                    .deferred_commands
-                    .push(command::DeferredCommand::Line {
-                        line: template,
-                        tail: self.request.tail.clone(),
-                    });
-            }
-            return result;
-        }
-        let mut result = command::run_command_prompt_template(
+        let template = command::command_prompt_template(
             &self.request.args,
             values,
             state,
             &hub.snapshot().panes,
             context,
         );
-        if result.exit == 0 && !self.request.tail.is_empty() {
-            let tail = command::run_with_context(
-                &self.request.tail,
-                state,
-                &hub.snapshot().panes,
-                context,
-            );
-            result.append_stdout(&tail);
-            result.stderr.push_str(&tail.stderr);
-            result.exit = tail.exit;
+        let mut result = command::CommandResult::ok("");
+        if !template.trim().is_empty() || !self.request.tail.is_empty() {
+            result
+                .deferred_commands
+                .push(command::DeferredCommand::Line {
+                    line: template,
+                    tail: self.request.tail.clone(),
+                });
         }
         result
     }
@@ -1200,53 +1179,21 @@ impl CommandPrompt {
     }
 }
 
-fn run_mode_command(
-    value: &str,
-    item_target: &str,
-    state: &SharedState,
-    hub: &StatusHub,
-    context: &command::ClientContext,
-) -> command::CommandResult {
+fn run_mode_command(value: &str, item_target: &str) -> command::CommandResult {
     if value.is_empty() {
         return command::CommandResult::ok("");
     }
     let line = command::replace_prompt_template(value, item_target, 1);
-    if context.defer_attach_commands {
-        let mut result = command::CommandResult::ok("");
-        if !line.trim().is_empty() {
-            result
-                .deferred_commands
-                .push(command::DeferredCommand::Line {
-                    line,
-                    tail: Vec::new(),
-                });
-        }
-        return result;
+    let mut result = command::CommandResult::ok("");
+    if !line.trim().is_empty() {
+        result
+            .deferred_commands
+            .push(command::DeferredCommand::Line {
+                line,
+                tail: Vec::new(),
+            });
     }
-    let argv = match command_line_argv(&line, state) {
-        Ok(argv) => argv,
-        Err(error) => return error,
-    };
-    command::run_with_context(&argv, state, &hub.snapshot().panes, context)
-}
-
-fn command_line_argv(
-    line: &str,
-    state: &SharedState,
-) -> Result<Vec<String>, command::CommandResult> {
-    let aliases = {
-        let state = state.borrow_mut();
-        state.command_aliases()
-    };
-    let groups = command::command_string_groups_with_aliases(line, &aliases)?;
-    let mut argv = Vec::new();
-    for group in groups {
-        if !argv.is_empty() {
-            argv.push(";".to_string());
-        }
-        argv.extend(group);
-    }
-    Ok(argv)
+    result
 }
 
 fn run_mode_edit(
@@ -1254,8 +1201,6 @@ fn run_mode_edit(
     value: &str,
     target: &str,
     state: &SharedState,
-    hub: &StatusHub,
-    context: &command::ClientContext,
 ) -> command::CommandResult {
     match edit {
         ModeEdit::Option { name, .. } => {
@@ -1267,20 +1212,10 @@ fn run_mode_edit(
                 name.clone(),
                 value.to_string(),
             ];
-            if context.defer_attach_commands {
-                let mut result = command::CommandResult::ok("");
-                result
-                    .deferred_commands
-                    .push(command::DeferredCommand::Args(args));
-                return result;
-            }
-            let result = command::run_with_context(&args, state, &hub.snapshot().panes, context);
-            if result.exit == 0 {
-                {
-                    let mut state = state.borrow_mut();
-                    let _ = state.mode_view_update_edit(target, edit, value);
-                }
-            }
+            let mut result = command::CommandResult::ok("");
+            result
+                .deferred_commands
+                .push(command::DeferredCommand::Args(args));
             result
         }
         ModeEdit::BindingCommand {

@@ -251,20 +251,6 @@ impl AttachSession {
                 }
                 *force_render = true;
             }
-            PrefixOutcome::Message { text, duration } => {
-                self.compositor.ui.confirm = None;
-                self.compositor.ui.status_message = Some(StatusMessage {
-                    text,
-                    deadline: Instant::now()
-                        .checked_add(duration)
-                        .unwrap_or_else(Instant::now),
-                });
-                *force_render = true;
-            }
-            PrefixOutcome::ViewOutput(bytes) => {
-                append_view_output(state, target, &bytes);
-                *force_render = true;
-            }
             PrefixOutcome::DeferredCommand { args, context } => {
                 self.commands.pending.push_back(AttachCommandRequest {
                     source: command::DeferredCommand::Args(args),
@@ -333,8 +319,6 @@ impl AttachSession {
             key,
             state,
             target,
-            self.viewport.cols,
-            self.viewport.pane_rows,
             hub,
             &self.compositor.target.context,
             Some(event),
@@ -658,7 +642,6 @@ impl AttachSession {
                     if let Some(command) = selected_command
                         .as_ref()
                         .filter(|command| !command.is_empty())
-                        .filter(|_| self.compositor.target.context.defer_attach_commands)
                     {
                         let overlay = self
                             .compositor
@@ -776,8 +759,6 @@ impl AttachSession {
                         target,
                         self.viewport.cols,
                         self.viewport.pane_rows,
-                        hub,
-                        &self.compositor.target.context,
                     ) {
                         self.commands.pending.push_back(AttachCommandRequest {
                             source: command::DeferredCommand::Args(command),
@@ -810,21 +791,12 @@ impl AttachSession {
                         .unwrap_or(ModeViewKeyResult::None);
                     match outcome {
                         ModeViewKeyResult::Command(command) if !command.is_empty() => {
-                            if self.compositor.target.context.defer_attach_commands {
-                                self.commands.pending.push_back(AttachCommandRequest {
-                                    source: command::DeferredCommand::Args(command),
-                                    context: self.compositor.target.context.clone(),
-                                    continuation: AttachCommandContinuation::Ignore,
-                                });
-                                break;
-                            }
-                            let agents = hub.snapshot().panes;
-                            let _ = command::run_with_context(
-                                &command,
-                                state,
-                                &agents,
-                                &self.compositor.target.context,
-                            );
+                            self.commands.pending.push_back(AttachCommandRequest {
+                                source: command::DeferredCommand::Args(command),
+                                context: self.compositor.target.context.clone(),
+                                continuation: AttachCommandContinuation::Ignore,
+                            });
+                            break;
                         }
                         ModeViewKeyResult::Prompt(request) => {
                             if let Ok(mut prompt) = CommandPrompt::for_mode(
@@ -1010,8 +982,6 @@ impl AttachSession {
                     key,
                     state,
                     target,
-                    self.viewport.cols,
-                    self.viewport.pane_rows,
                     hub,
                     &self.compositor.target.context,
                     mouse,

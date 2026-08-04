@@ -399,6 +399,11 @@ pub(crate) enum AttachCommandContinuation {
         escape_hashes: bool,
         explicit_duration: Option<u64>,
     },
+    /// A popup's `on_close` command. The file it was editing is removed once
+    /// the command that reads it has finished.
+    CloseHook {
+        remove: Option<std::path::PathBuf>,
+    },
     Ignore,
 }
 

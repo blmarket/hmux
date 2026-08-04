@@ -124,7 +124,6 @@ pub struct ClientContext {
     /// its own subject from re-triggering itself.
     pub(crate) suppress_notifications: bool,
     pub(crate) defer_queue_commands: bool,
-    pub(crate) defer_attach_commands: bool,
     /// The `hook*` format variables for a queued hook-body command; installed
     /// into the server state around its execution.
     pub(crate) hook_vars: Option<Arc<Vec<(String, String)>>>,
@@ -375,31 +374,6 @@ pub(crate) fn expand_command_prompt_format(
         .unwrap_or_else(|| source.to_string());
     st.replace_command_session_id(previous_session);
     expanded
-}
-
-pub(crate) fn run_command_prompt_template(
-    args: &[String],
-    values: &[String],
-    state: &SharedState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    let mut execution_context = context.clone();
-    execution_context.command_state = Some(Rc::clone(state));
-    execution_context.defer_queue_commands = true;
-    let template = command_prompt_template(args, values, state, agents, context);
-    let tokens = tokenize_line(&template);
-    if tokens.is_empty() {
-        return CommandResult::ok("");
-    }
-    let mut st = {
-        let guard = state.borrow_mut();
-        guard
-    };
-    let previous_session = st.replace_command_session_id(execution_context.current_session_id);
-    let result = run_tokenized_line(&tokens, &mut st, agents, &execution_context);
-    st.replace_command_session_id(previous_session);
-    result
 }
 
 pub(crate) fn command_prompt_template(

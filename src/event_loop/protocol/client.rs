@@ -204,7 +204,6 @@ impl ProtocolClient {
                 protocol_state: ProtocolState::Identifying(IdentifyingState {
                     context: ClientContext {
                         wait_for_interactions: true,
-                        defer_attach_commands: true,
                         ..ClientContext::default()
                     },
                     client_tty: ClientTty::new(),

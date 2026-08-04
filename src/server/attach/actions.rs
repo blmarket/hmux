@@ -1,6 +1,5 @@
 //! Attach-client actions and key-binding resolution.
 
-use std::time::Duration;
 
 use crate::integration::status::StatusHub;
 
@@ -47,20 +46,14 @@ impl ActiveConfirm {
         target: &str,
         cols: u16,
         pane_rows: u16,
-        hub: &StatusHub,
-        context: &command::ClientContext,
     ) -> ConfirmResolution {
         let result = if accepted {
             match self.action {
                 ConfirmAction::Command(command) => {
-                    if context.defer_attach_commands {
-                        return ConfirmResolution::Deferred {
-                            command,
-                            reply: self.reply,
-                        };
-                    }
-                    let agents = hub.snapshot().panes;
-                    command::run_with_context(&command, state, &agents, context)
+                    return ConfirmResolution::Deferred {
+                        command,
+                        reply: self.reply,
+                    };
                 }
                 action @ (ConfirmAction::KillPane | ConfirmAction::KillWindow) => {
                     let killed = {
@@ -114,11 +107,6 @@ pub(super) enum PrefixOutcome {
     Prompt {
         args: Vec<String>,
     },
-    Message {
-        text: String,
-        duration: Duration,
-    },
-    ViewOutput(Vec<u8>),
     DeferredCommand {
         args: Vec<String>,
         context: command::ClientContext,
@@ -147,8 +135,6 @@ pub(super) fn dispatch_key_binding(
     key: KeyCode,
     state: &SharedState,
     target: &str,
-    cols: u16,
-    pane_rows: u16,
     hub: &StatusHub,
     context: &command::ClientContext,
     mouse: Option<MouseEvent>,
@@ -229,42 +215,15 @@ pub(super) fn dispatch_key_binding(
                 .windows(2)
                 .find(|words| words[0] == "-d")
                 .and_then(|words| words[1].parse::<u64>().ok());
-            if context.defer_attach_commands {
-                let mut binding_context = context.clone();
-                binding_context.key_event = Some(key);
-                binding_context.mouse = mouse;
-                return PrefixOutcome::DeferredMessage {
-                    args: command,
-                    context: binding_context,
-                    target: target.to_string(),
-                    escape_hashes: binding.command.iter().any(|word| word == "-N"),
-                    explicit_duration,
-                };
-            }
-            let agents = hub.snapshot().panes;
-            let result = command::run_with_context(&command, state, &agents, context);
-            if result.exit != 0 {
-                return PrefixOutcome::Handled { changed: false };
-            }
-            let mut text = result
-                .stdout
-                .strip_suffix('\n')
-                .unwrap_or(&result.stdout)
-                .to_string();
-            if binding.command.iter().any(|word| word == "-N") {
-                text = text.replace('#', "##");
-            }
-            let milliseconds = explicit_duration
-                .or_else(|| {
-                    let state = state.borrow_mut();
-                    state
-                        .option_for_target(target, "display-time")
-                        .and_then(|value| value.parse().ok())
-                })
-                .unwrap_or(750);
-            return PrefixOutcome::Message {
-                text,
-                duration: Duration::from_millis(milliseconds),
+            let mut binding_context = context.clone();
+            binding_context.key_event = Some(key);
+            binding_context.mouse = mouse;
+            return PrefixOutcome::DeferredMessage {
+                args: command,
+                context: binding_context,
+                target: target.to_string(),
+                escape_hashes: binding.command.iter().any(|word| word == "-N"),
+                explicit_duration,
             };
         }
         "confirm-before" | "confirm"
@@ -294,28 +253,13 @@ pub(super) fn dispatch_key_binding(
         _ => {}
     }
 
-    let agents = hub.snapshot().panes;
     let mut binding_context = context.clone();
     binding_context.key_event = Some(key);
     binding_context.mouse = mouse;
-    if context.defer_attach_commands {
-        return PrefixOutcome::DeferredCommand {
-            args: binding.command,
-            context: binding_context,
-        };
+    PrefixOutcome::DeferredCommand {
+        args: binding.command,
+        context: binding_context,
     }
-    let result = command::run_with_context(&binding.command, state, &agents, &binding_context);
-    if result.exit == 0 && !result.stdout_data().is_empty() {
-        return PrefixOutcome::ViewOutput(result.stdout_data().to_vec());
-    }
-    let changed = result.exit == 0;
-    if changed {
-        {
-            let mut st = state.borrow_mut();
-            let _ = st.resize_session(target, cols, pane_rows);
-        }
-    }
-    PrefixOutcome::Handled { changed }
 }
 
 pub(in crate::server) fn dispatch_control_client_keys(
@@ -363,7 +307,7 @@ pub(in crate::server) fn dispatch_control_client_keys(
                 continue;
             }
 
-            match dispatch_key_binding(&table, key, state, target, 80, 24, hub, context, None) {
+            match dispatch_key_binding(&table, key, state, target, hub, context, None) {
                 PrefixOutcome::Detach => return true,
                 PrefixOutcome::SendPrefix(bytes) => {
                     {
@@ -378,8 +322,6 @@ pub(in crate::server) fn dispatch_control_client_keys(
                 }
                 PrefixOutcome::Confirm { .. }
                 | PrefixOutcome::Prompt { .. }
-                | PrefixOutcome::Message { .. }
-                | PrefixOutcome::ViewOutput(_)
                 | PrefixOutcome::Handled { .. } => {}
             }
         }
@@ -387,6 +329,8 @@ pub(in crate::server) fn dispatch_control_client_keys(
     false
 }
 
+/// Resolve one prefix key and run whatever binding it deferred, standing in
+/// for the attach loop's continuation. Test scaffolding.
 #[cfg(test)]
 pub(super) fn dispatch_prefix_key(
     key: u8,
@@ -400,15 +344,24 @@ pub(super) fn dispatch_prefix_key(
         current_session_id,
         ..command::ClientContext::default()
     };
-    dispatch_key_binding(
+    let hub = StatusHub::new();
+    let outcome = dispatch_key_binding(
         "prefix",
         key_from_byte(key),
         state,
         target,
-        cols,
-        pane_rows,
-        &StatusHub::new(),
+        &hub,
         &context,
         None,
-    )
+    );
+    let PrefixOutcome::DeferredCommand { args, context } = outcome else {
+        return outcome;
+    };
+    let result = command::run_with_context(&args, state, &hub.snapshot().panes, &context);
+    let changed = result.exit == 0;
+    if changed {
+        let mut st = state.borrow_mut();
+        let _ = st.resize_session(target, cols, pane_rows);
+    }
+    PrefixOutcome::Handled { changed }
 }

@@ -326,6 +326,12 @@ impl AttachSession {
                 }
                 self.compositor.render.force_clear = true;
             }
+            AttachCommandContinuation::CloseHook { remove } => {
+                if let Some(path) = remove {
+                    let _ = std::fs::remove_file(path);
+                }
+                self.compositor.render.force_clear = true;
+            }
             AttachCommandContinuation::Ignore => {
                 self.compositor.render.force_clear = true;
             }
@@ -763,15 +769,15 @@ impl AttachSession {
                 // back before it is forgotten; the file goes with it.
                 if let Some((command, remove)) = overlay.take_on_close() {
                     if overlay_exit == 0 {
-                        let agents = hub.snapshot().panes;
-                        let _ = command::run_with_context(
-                            &command,
-                            state,
-                            &agents,
-                            &self.compositor.target.context,
-                        );
-                    }
-                    if let Some(path) = remove {
+                        // Queued rather than run here: the close hook is an
+                        // ordinary command line and may suspend. The file it
+                        // reads is removed by the continuation, once it has.
+                        self.commands.pending.push_back(AttachCommandRequest {
+                            source: command::DeferredCommand::Args(command),
+                            context: self.compositor.target.context.clone(),
+                            continuation: AttachCommandContinuation::CloseHook { remove },
+                        });
+                    } else if let Some(path) = remove {
                         let _ = std::fs::remove_file(path);
                     }
                 }

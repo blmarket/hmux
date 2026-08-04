@@ -221,7 +221,6 @@ impl EventControlClient {
         control_context.tty_name = Some(client_name.clone());
         control_context.current_session_id = Some(session_id);
         control_context.read_only = options.read_only;
-        control_context.defer_attach_commands = context.defer_attach_commands;
         control_context.preserve_queue_insertions = true;
         control_context.active_panes = options
             .active_pane
