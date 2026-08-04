@@ -45,11 +45,10 @@ use super::mouse::MouseEvent;
 use super::options::{self, OptionScope, OptionSet, OptionsView};
 use super::registry::{self, CommandSpec, Resolution, SpecResolution};
 use super::state::{
-    BackgroundJobRegistry, SharedState, ClientActionResult, ClientMessage, ClientMessageResult,
-    MenuItem, MenuRequest, ModeEdit, ModeItem, ModeKind, ModeView,
-    OverlayRequest, PaneSpec, PopupRequest, PromptCompletion, PromptReply, ServerState, Session,
-    SplitDirection, Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest,
-    WindowSizePolicy,
+    BackgroundJobRegistry, ClientActionResult, ClientMessage, ClientMessageResult, MenuItem,
+    MenuRequest, ModeEdit, ModeItem, ModeKind, ModeView, OverlayRequest, PaneSpec, PopupRequest,
+    PromptCompletion, PromptReply, ServerState, Session, SharedState, SplitDirection, Target,
+    WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
 };
 use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
 use super::task::{

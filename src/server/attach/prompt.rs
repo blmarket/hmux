@@ -3,8 +3,8 @@ use std::collections::{BTreeSet, VecDeque};
 use crate::integration::status::StatusHub;
 
 use super::super::key::parse_key_name;
-use super::super::state::{SharedState, 
-    self, MenuItem, MenuRequest, ModeBindingUpdate, ModeEdit, ModePrompt, ServerState,
+use super::super::state::{
+    self, MenuItem, MenuRequest, ModeBindingUpdate, ModeEdit, ModePrompt, ServerState, SharedState,
 };
 use super::super::term::TerminalCapabilities;
 use super::super::{command, format, status};

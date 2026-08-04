@@ -2,7 +2,9 @@
 
 
 use super::super::mouse::MouseEvent;
-use super::super::state::{SharedState, copy_search_segments, copy_selection_segments, CopyState, ServerState};
+use super::super::state::{
+    copy_search_segments, copy_selection_segments, CopyState, ServerState, SharedState,
+};
 use super::super::term::TerminalCapabilities;
 use super::super::{format, options, status};
 use super::append_terminal_style_reset;

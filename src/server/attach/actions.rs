@@ -6,7 +6,7 @@ use crate::integration::status::StatusHub;
 use super::super::command;
 use super::super::key::{basic_key_bytes, key_from_byte, parse_key_name, KeyCode};
 use super::super::mouse::MouseEvent;
-use super::super::state::{SharedState, ClientKey, PromptCompletion, PromptReply};
+use super::super::state::{ClientKey, PromptCompletion, PromptReply, SharedState};
 use super::copy_mode::{self, CopyModeAction};
 use super::{client_key_table, decode_tty_key, is_configured_prefix};
 

@@ -16,9 +16,9 @@ use super::command;
 use super::command::queue::{CommandQueue, QueueCompletion, QueueState, QueueTicket};
 use super::pane::{NativePaneObservation, OutputSubscription};
 use super::registry::{self, Resolution};
-use super::state::{SharedState, 
+use super::state::{
     ClientAction, ClientFlagState as ControlClientOptions, ClientRenderAttachment,
-    ControlStateSnapshot, ServerState,
+    ControlStateSnapshot, ServerState, SharedState,
 };
 use super::status;
 use super::task::{ReadySet, TaskState};

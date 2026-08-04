@@ -57,9 +57,9 @@ use super::mouse::{
 #[cfg(test)]
 use super::mouse::MouseButton;
 use super::pane::{OutputSubscription, Pane, PaneInputStats, PaneIo};
-use super::state::{SharedState, 
+use super::state::{
     ClientAction, ClientKey, MenuRequest, ModeKind, ModeView, ModeViewKeyResult, OverlayRequest,
-    PopupRequest, ServerState,
+    PopupRequest, ServerState, SharedState,
 };
 use super::status;
 use super::term::{self, ResolvedTerm, TerminalCapabilities, TerminalIdentity};
