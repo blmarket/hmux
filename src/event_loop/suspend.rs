@@ -25,6 +25,7 @@ use crate::server::command::suspend::SuspensionJob;
 use crate::server::command::{
     CommandCoroutine, CommandResult, CommandRuntime, CommandSuspension, CommandSuspensionResult,
 };
+use crate::server::pane::PanePipeIo;
 use crate::server::status::FormatJob;
 use crate::server::task::{
     completion_pair, Completion, CompletionSender, Coroutine, FdDirection, ReadySet, TaskPoll,
@@ -77,12 +78,15 @@ pub(crate) enum ExecutorJob {
     Queue(CommandCoroutine),
     /// A `#()` format job, which publishes to its registry as it reads.
     Format(FormatJob),
+    /// An open `pipe-pane` child, in both directions.
+    PanePipe(PanePipeIo),
 }
 
 pub(crate) enum ExecutorJobOutput {
     Suspension(CommandSuspensionResult),
     Queue(io::Result<CommandResult>),
     Format,
+    PanePipe,
 }
 
 impl Coroutine for ExecutorJob {
@@ -93,6 +97,7 @@ impl Coroutine for ExecutorJob {
             Self::Suspension(job) => job.wait(),
             Self::Queue(queue) => queue.wait(),
             Self::Format(job) => job.wait(),
+            Self::PanePipe(pipe) => pipe.wait(),
         }
     }
 
@@ -101,6 +106,7 @@ impl Coroutine for ExecutorJob {
             Self::Suspension(job) => job.resume(ready).map(ExecutorJobOutput::Suspension),
             Self::Queue(queue) => queue.resume(ready).map(ExecutorJobOutput::Queue),
             Self::Format(job) => job.resume(ready).map(|()| ExecutorJobOutput::Format),
+            Self::PanePipe(pipe) => pipe.resume(ready).map(|()| ExecutorJobOutput::PanePipe),
         }
     }
 }
@@ -295,6 +301,11 @@ impl SuspensionExecutor {
     /// Take on one `#()` job the format registry has already spawned.
     pub(super) fn adopt_format_job(&mut self, job: FormatJob, outbox: &mut Outbox) {
         self.adopt(ExecutorJob::Format(job), JobSink::Detached, outbox);
+    }
+
+    /// Take on one `pipe-pane` child the pane has already spawned.
+    pub(super) fn adopt_pane_pipe(&mut self, pipe: PanePipeIo, outbox: &mut Outbox) {
+        self.adopt(ExecutorJob::PanePipe(pipe), JobSink::Detached, outbox);
     }
 
     fn adopt(&mut self, job: ExecutorJob, sink: JobSink, outbox: &mut Outbox) {

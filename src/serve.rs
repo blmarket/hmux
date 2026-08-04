@@ -64,6 +64,7 @@ pub fn run_event_loop(
         );
         sync_event_loop_panes(&server, &mut event_loop, &mut panes)?;
         event_loop.adopt_format_jobs(server.take_pending_format_jobs())?;
+        event_loop.adopt_pane_pipes(server.take_new_pane_pipes())?;
         reap_protocol_clients(&mut clients);
         server.enforce_lifecycle_policies()?;
         if event_loop.pending_events() == 0 {

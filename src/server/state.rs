@@ -4053,6 +4053,15 @@ impl ServerState {
         self.pane_io_mode = mode;
     }
 
+    /// Pipe children opened since the last call, across every pane.
+    pub(crate) fn take_new_pane_pipes(&mut self) -> Vec<super::pane::PanePipeIo> {
+        self.windows
+            .values_mut()
+            .flat_map(|window| window.panes.iter_mut())
+            .flat_map(|node| node.pane.take_new_pipes())
+            .collect()
+    }
+
     pub(crate) fn take_event_pane_ios(&mut self) -> Vec<(u64, PaneIo)> {
         self.windows
             .values_mut()

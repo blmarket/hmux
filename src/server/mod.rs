@@ -150,6 +150,14 @@ impl Server {
         self.observation.reconcile_once(&self.state)
     }
 
+    /// Every `pipe-pane` child opened since the last call.
+    pub(crate) fn take_new_pane_pipes(&self) -> Vec<crate::server::pane::PanePipeIo> {
+        match self.state.try_lock() {
+            Ok(mut state) => state.take_new_pane_pipes(),
+            Err(_) => Vec::new(),
+        }
+    }
+
     /// Every `#()` job a format expansion has launched since the last call.
     pub(crate) fn take_pending_format_jobs(&self) -> Vec<crate::server::status::FormatJob> {
         self.state
@@ -246,6 +254,7 @@ impl Server {
     }
 
     pub(crate) fn try_reap_event_children(&self) -> bool {
+        crate::server::pane::reap_orphans();
         match self.state.try_lock() {
             Ok(mut state) => {
                 state.reap_exited_panes();

@@ -15,6 +15,7 @@ use super::job::{BackgroundCommands, JobEvent};
 use super::listener::{AcceptedClients, Listener, ListenerEvent};
 use super::pane::{EventPane, PaneEvent, PaneInterest};
 use super::process::{ChildSignal, ChildSignalEvent};
+use crate::server::pane::PanePipeIo;
 use crate::server::status::FormatJob;
 use super::term_signal::{TermSignal, TermSignalEvent};
 use super::protocol::{
@@ -514,6 +515,24 @@ where
         executor.with_mut(|executor| {
             for job in jobs {
                 executor.adopt_format_job(job, &mut outbox);
+            }
+        });
+        for effect in outbox.effects {
+            self.apply(effect)?;
+        }
+        Ok(())
+    }
+
+    /// Adopt every `pipe-pane` child opened since the last pass.
+    pub(crate) fn adopt_pane_pipes(&mut self, pipes: Vec<PanePipeIo>) -> io::Result<()> {
+        if pipes.is_empty() {
+            return Ok(());
+        }
+        let executor = self.executor.clone();
+        let mut outbox = Outbox::new();
+        executor.with_mut(|executor| {
+            for pipe in pipes {
+                executor.adopt_pane_pipe(pipe, &mut outbox);
             }
         });
         for effect in outbox.effects {
