@@ -190,7 +190,7 @@ impl ProtocolClient {
                                 task: TaskState::new(command::CommandCoroutine::new(
                                     queue,
                                     Arc::clone(&self.state),
-                                    Arc::new(crate::event_loop::task::EventCommandRuntime),
+                                    Arc::clone(&self.command_runtime),
                                     COMMAND_QUEUE_BUDGET,
                                 )),
                             });

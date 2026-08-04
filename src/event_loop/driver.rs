@@ -2,9 +2,11 @@
 
 use std::collections::VecDeque;
 use std::io;
+use std::os::fd::AsRawFd;
 use std::time::{Duration, Instant};
 
 use crate::server::pane::PaneIo;
+use crate::server::task::WaitToken;
 use crate::server::Server;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 
@@ -17,6 +19,9 @@ use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
 };
 use super::reactor::{Interest, MioReactor, PollResult, Reactor, Ready};
+use super::suspend::{
+    ExecutorEvent, JobRegistration, SuspensionExecutor, SuspensionExecutorHandle,
+};
 use super::timer::{ExpiredTimer, TimerQueue};
 
 /// One queued event with a direct reference to its destination.
@@ -40,6 +45,10 @@ pub(crate) enum Envelope {
     Background {
         target: ActorRef<BackgroundCommands>,
         event: JobEvent,
+    },
+    Executor {
+        target: ActorRef<SuspensionExecutor>,
+        event: ExecutorEvent,
     },
 }
 
@@ -65,6 +74,12 @@ impl Envelope {
             Envelope::Background { target, event } => {
                 let dispatch_target = target.clone();
                 target.with_mut(|jobs| jobs.handle(&dispatch_target, event, outbox));
+            }
+            // The executor answers only to its own jobs: it neither addresses
+            // other actors nor changes its registrations itself, so the loop
+            // reconciles those once per dispatch instead.
+            Envelope::Executor { target, event } => {
+                target.with_mut(|executor| executor.handle(event));
             }
         }
     }
@@ -241,6 +256,11 @@ enum IoTarget {
         target: WeakActorRef<ProtocolClient>,
         side: ProtocolIoSide,
     },
+    Executor {
+        target: WeakActorRef<SuspensionExecutor>,
+        job: u64,
+        source: WaitToken,
+    },
 }
 
 /// References returned when a Unix listener is added to the loop.
@@ -357,6 +377,8 @@ where
     timers: TimerQueue<Envelope>,
     expired_timers: Vec<ExpiredTimer<Envelope>>,
     background_commands: Option<ActorRef<BackgroundCommands>>,
+    executor: ActorRef<SuspensionExecutor>,
+    executor_handle: SuspensionExecutorHandle,
 }
 
 impl EventLoop<MioReactor<IoRecipient>> {
@@ -370,6 +392,7 @@ where
     R: Reactor<IoRecipient>,
 {
     fn with_reactor(reactor: R) -> Self {
+        let (executor, executor_handle) = SuspensionExecutor::new(reactor.wake_handle());
         Self {
             reactor,
             events: VecDeque::new(),
@@ -377,6 +400,8 @@ where
             timers: TimerQueue::new(),
             expired_timers: Vec::new(),
             background_commands: None,
+            executor: ActorRef::new(executor),
+            executor_handle,
         }
     }
 
@@ -386,6 +411,7 @@ where
         writer: NonblockingImsgWriter,
         server: Server,
     ) -> ProtocolHandle {
+        let executor_handle = self.executor_handle.clone();
         let background_commands = self
             .background_commands
             .get_or_insert_with(|| {
@@ -393,10 +419,12 @@ where
                     server.state(),
                     server.status_hub(),
                     self.reactor.wake_handle(),
+                    executor_handle.clone(),
                 ))
             })
             .clone();
-        let (protocol, status) = ProtocolClient::new(reader, writer, server, background_commands);
+        let (protocol, status) =
+            ProtocolClient::new(reader, writer, server, background_commands, executor_handle);
         let protocol = ActorRef::new(protocol);
         self.events.push_back(Envelope::Protocol {
             target: protocol.clone(),
@@ -499,8 +527,14 @@ where
         self.events.len()
     }
 
+    #[cfg(test)]
+    fn executor_handle(&self) -> SuspensionExecutorHandle {
+        self.executor_handle.clone()
+    }
+
     pub(crate) fn dispatch_one(&mut self) -> io::Result<bool> {
         self.enqueue_background_completions();
+        self.sync_executor()?;
         let Some(envelope) = self.events.pop_front() else {
             return Ok(false);
         };
@@ -522,6 +556,7 @@ where
     }
 
     pub(crate) fn poll(&mut self, timeout: Option<Duration>) -> io::Result<PollResult> {
+        self.sync_executor()?;
         let timer_timeout = self.timers.time_until_next(Instant::now());
         let timeout = match (timeout, timer_timeout) {
             (Some(requested), Some(timer)) => Some(requested.min(timer)),
@@ -540,6 +575,91 @@ where
             .extend(self.expired_timers.drain(..).map(ExpiredTimer::into_value));
         self.enqueue_background_completions();
         Ok(result)
+    }
+
+    /// Adopt newly submitted suspension jobs, then make the reactor and the
+    /// timer queue describe exactly what every live job is waiting for.
+    fn sync_executor(&mut self) -> io::Result<()> {
+        let executor = self.executor.clone();
+        executor
+            .with_mut(|executor| -> io::Result<()> {
+                executor.adopt_submitted();
+                for id in executor.job_ids() {
+                    let Some(state) = executor.job_mut(id) else {
+                        continue;
+                    };
+                    if state.is_finished() {
+                        // The job already reported its result to the suspended
+                        // command queue; only its registrations are left.
+                        for registration in std::mem::take(&mut state.registrations) {
+                            self.reactor.deregister(registration.token)?;
+                        }
+                        if let Some((_, timer)) = state.timer.take() {
+                            self.timers.cancel(timer);
+                        }
+                        executor.remove_job(id);
+                        continue;
+                    }
+                    let Some(state) = executor.job_mut(id) else {
+                        continue;
+                    };
+                    let Some(wait) = state.task.wait() else {
+                        continue;
+                    };
+                    let sources = wait
+                        .sources()
+                        .iter()
+                        .map(|source| (source.token(), source.fd().as_raw_fd()))
+                        .collect::<Vec<_>>();
+                    if !state.is_registered_for(&sources) {
+                        for registration in std::mem::take(&mut state.registrations) {
+                            self.reactor.deregister(registration.token)?;
+                        }
+                        for source in wait.sources() {
+                            let recipient = IoRecipient {
+                                target: IoTarget::Executor {
+                                    target: self.executor.downgrade(),
+                                    job: id,
+                                    source: source.token(),
+                                },
+                            };
+                            let token = self.reactor.register(
+                                source.fd(),
+                                Interest::READABLE,
+                                recipient,
+                            )?;
+                            state.registrations.push(JobRegistration {
+                                source: source.token(),
+                                fd: source.fd().as_raw_fd(),
+                                token,
+                            });
+                        }
+                    }
+                    match (wait.deadline(), state.timer) {
+                        (Some(deadline), Some((armed, _))) if armed == deadline => {}
+                        (Some(deadline), previous) => {
+                            if let Some((_, timer)) = previous {
+                                self.timers.cancel(timer);
+                            }
+                            let timer = self.timers.set(
+                                deadline,
+                                Envelope::Executor {
+                                    target: self.executor.clone(),
+                                    event: ExecutorEvent::Timeout { job: id },
+                                },
+                            );
+                            state.timer = Some((deadline, timer));
+                        }
+                        (None, Some((_, timer))) => {
+                            self.timers.cancel(timer);
+                            state.timer = None;
+                        }
+                        (None, None) => {}
+                    }
+                }
+                Ok(())
+            })
+            .unwrap_or(Ok(()))
     }
 
     fn enqueue_background_completions(&mut self) {
@@ -641,6 +761,22 @@ where
                     ProtocolIoSide::Attach(source) => ProtocolEvent::AttachReady(*source),
                 };
                 self.events.push_back(Envelope::Protocol { target, event });
+            }
+            IoTarget::Executor {
+                target: recipient,
+                job,
+                source,
+            } => {
+                let Some(target) = recipient.upgrade() else {
+                    return;
+                };
+                self.events.push_back(Envelope::Executor {
+                    target,
+                    event: ExecutorEvent::Ready {
+                        job: *job,
+                        source: *source,
+                    },
+                });
             }
         }
     }
@@ -907,6 +1043,9 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    use crate::server::command::{ClientContext, CommandSuspension, CommandSuspensionResult};
+    use crate::server::task::TaskState;
+
     use super::*;
 
     const POLL_TIMEOUT: Duration = Duration::from_secs(1);
@@ -986,6 +1125,88 @@ mod tests {
         loop_.shutdown_listener(&listener);
         dispatch_all(&mut loop_);
         assert!(!listener.is_alive());
+    }
+
+    /// Run loop turns until a submitted suspension reports its result.
+    fn resolve_on_loop(
+        loop_: &mut EventLoop<MioReactor<IoRecipient>>,
+        suspension: CommandSuspension,
+    ) -> CommandSuspensionResult {
+        let completion = loop_
+            .executor_handle()
+            .submit(suspension)
+            .unwrap_or_else(|_| panic!("executor owns this suspension"))
+            .expect("completion pair");
+        let mut task = TaskState::new(completion);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !task.poll_after_single_source_wakeup(true, Instant::now()) {
+            assert!(Instant::now() < deadline, "suspension never completed");
+            // The completion descriptor belongs to the caller, not to this
+            // loop, so keep turns short instead of blocking on the reactor.
+            loop_.run_turn(Some(Duration::from_millis(10)), 64).unwrap();
+        }
+        task.take_output()
+            .expect("completed suspension")
+            .expect("suspension result")
+    }
+
+    fn run_shell(args: &[&str]) -> CommandSuspension {
+        CommandSuspension::RunShell {
+            args: std::iter::once("run-shell")
+                .chain(args.iter().copied())
+                .map(str::to_string)
+                .collect(),
+            context: ClientContext::default(),
+        }
+    }
+
+    #[test]
+    fn executor_resolves_a_shell_suspension_without_a_thread() {
+        let mut loop_ = EventLoop::new().unwrap();
+
+        let result = resolve_on_loop(&mut loop_, run_shell(&["echo hello; exit 3"]));
+
+        let CommandSuspensionResult::RunShell(completion) = result else {
+            panic!("run-shell suspension resolved as another variant");
+        };
+        assert_eq!(completion.result().exit, 3);
+        assert_eq!(
+            completion.result().stdout,
+            "hello\n'echo hello; exit 3' returned 3\n"
+        );
+    }
+
+    #[test]
+    fn executor_arms_a_loop_timer_for_a_delayed_shell_suspension() {
+        let mut loop_ = EventLoop::new().unwrap();
+        let started = Instant::now();
+
+        let result = resolve_on_loop(&mut loop_, run_shell(&["-d", "0.2", "echo late"]));
+
+        let CommandSuspensionResult::RunShell(completion) = result else {
+            panic!("run-shell suspension resolved as another variant");
+        };
+        assert!(started.elapsed() >= Duration::from_millis(150));
+        assert_eq!(completion.result().stdout, "late\n");
+        assert!(loop_.timers.is_empty(), "the job's timer outlived the job");
+    }
+
+    #[test]
+    fn executor_releases_every_registration_once_a_job_finishes() {
+        let mut loop_ = EventLoop::new().unwrap();
+
+        resolve_on_loop(&mut loop_, run_shell(&["true"]));
+        // The completed job is retired by the next sync, not by the poll that
+        // produced its result.
+        loop_.dispatch_one().unwrap();
+
+        assert_eq!(
+            loop_
+                .executor
+                .with(|executor| executor.job_ids().len())
+                .unwrap(),
+            0
+        );
     }
 
     #[test]

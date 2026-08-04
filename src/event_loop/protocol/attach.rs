@@ -194,6 +194,7 @@ pub(super) struct EventAttachClient {
     deadline: Option<Instant>,
     phase: AttachPhase,
     background_commands: Vec<command::BackgroundCommandRequest>,
+    command_runtime: Arc<dyn command::CommandRuntime>,
 }
 
 struct ActiveAttachCommand {
@@ -216,6 +217,7 @@ impl EventAttachClient {
         state: Arc<Mutex<ServerState>>,
         hub: StatusHub,
         context: &ClientContext,
+        command_runtime: Arc<dyn command::CommandRuntime>,
     ) -> Result<Self, AttachStartError> {
         let mut output = AttachOutput::new();
         let session = attach::start_attach_session(
@@ -241,6 +243,7 @@ impl EventAttachClient {
             deadline: None,
             phase: AttachPhase::Session,
             background_commands: Vec::new(),
+            command_runtime,
         };
         attach.refresh_wait()?;
         Ok(attach)
@@ -472,7 +475,7 @@ impl EventAttachClient {
                     task: TaskState::new(command::CommandCoroutine::new(
                         queue,
                         Arc::clone(&self.state),
-                        Arc::new(crate::event_loop::task::EventCommandRuntime),
+                        Arc::clone(&self.command_runtime),
                         64,
                     )),
                     continuation: request.continuation,
@@ -633,6 +636,7 @@ impl ProtocolClient {
             Arc::clone(&self.state),
             self.hub.clone(),
             &context,
+            Arc::clone(&self.command_runtime),
         ) {
             Ok(mut attach) => {
                 if let Err(error) = attach.drive(None) {

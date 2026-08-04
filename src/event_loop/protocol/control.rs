@@ -29,7 +29,7 @@ impl ProtocolClient {
             Arc::clone(&self.state),
             self.hub.clone(),
             &context,
-            Arc::new(crate::event_loop::task::EventCommandRuntime),
+            Arc::clone(&self.command_runtime),
         ) {
             Ok(mut control) => {
                 if let Err(error) = control.drive(None) {

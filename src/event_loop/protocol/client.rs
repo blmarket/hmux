@@ -23,6 +23,8 @@ use super::super::actor::ActorRef;
 use super::super::driver::Outbox;
 use super::super::job::BackgroundCommands;
 use super::super::reactor::Token;
+use super::super::suspend::SuspensionExecutorHandle;
+use super::super::task::EventCommandRuntime;
 use super::super::timer::TimerId;
 use super::attach::{EventAttachClient, EventAttachSource};
 use super::command::{ActiveResumableCommand, CommandStep, CommandTransaction, CommandWork};
@@ -169,6 +171,7 @@ pub(crate) struct ProtocolClient {
     pub(super) state: Arc<Mutex<ServerState>>,
     pub(super) hub: StatusHub,
     pub(super) background_commands: ActorRef<BackgroundCommands>,
+    pub(super) command_runtime: Arc<dyn command::CommandRuntime>,
     pub(super) protocol_state: ProtocolState,
     pub(super) registrations: ProtocolRegistrations,
     pub(super) work_queued: BTreeSet<ProtocolIoSide>,
@@ -182,6 +185,7 @@ impl ProtocolClient {
         writer: NonblockingImsgWriter,
         server: Server,
         background_commands: ActorRef<BackgroundCommands>,
+        executor: SuspensionExecutorHandle,
     ) -> (Self, ProtocolStatus) {
         let status = ProtocolStatus::new();
         let state = server.state();
@@ -193,6 +197,7 @@ impl ProtocolClient {
                 state,
                 hub,
                 background_commands,
+                command_runtime: Arc::new(EventCommandRuntime::new(executor)),
                 protocol_state: ProtocolState::Identifying(IdentifyingState {
                     context: ClientContext {
                         wait_for_interactions: true,

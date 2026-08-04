@@ -4,8 +4,9 @@
 //! exit status before the command queue can continue. Expressing them as
 //! [`Coroutine`]s instead of a blocking `Command::output()` gives the suspension
 //! an explicit readiness description — an optional pre-spawn delay, then the
-//! child's stdout and stderr pipes — so the same job can be driven by a worker
-//! thread today and by the server loop once it owns the suspensions.
+//! child's stdout and stderr pipes — so the server loop can drive the job
+//! between its other work, and a blocking test driver can run the very same
+//! job on the calling thread.
 
 use std::io::{self, Read};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
@@ -195,11 +196,23 @@ impl Coroutine for IfShellJob {
     }
 }
 
+/// How long to wait before asking again for the exit status of a child that
+/// closed its pipes without exiting. The first attempt is always immediate, so
+/// only a child that outlives its own output ever waits this long.
+const REAP_RETRY_MIN: Duration = Duration::from_millis(1);
+const REAP_RETRY_MAX: Duration = Duration::from_millis(50);
+
 enum Stage {
     /// Waiting out `run-shell -d` before the child is spawned.
     Delay { deadline: Instant, spawn: Command },
     /// Draining the child's pipes until both report end of file.
     Running(RunningShell),
+    /// Both pipes reported end of file; collecting the exit status.
+    Reaping {
+        shell: RunningShell,
+        retry: Instant,
+        backoff: Duration,
+    },
     /// The child was reaped; the job has produced its output.
     Done,
 }
@@ -227,6 +240,7 @@ impl Coroutine for ShellProcess {
         match &self.stage {
             Stage::Delay { deadline, .. } => WaitRequest::new(Vec::new(), Some(*deadline)),
             Stage::Running(running) => WaitRequest::new(running.sources(), None),
+            Stage::Reaping { retry, .. } => WaitRequest::new(Vec::new(), Some(*retry)),
             Stage::Done => WaitRequest::new(Vec::new(), Some(Instant::now())),
         }
     }
@@ -244,17 +258,38 @@ impl Coroutine for ShellProcess {
                 Err(error) => return TaskPoll::Ready(Err(error)),
             }
         }
-        let Stage::Running(running) = &mut self.stage else {
-            return TaskPoll::Pending;
-        };
-        running.drain(ready);
-        if !running.is_drained() {
-            return TaskPoll::Pending;
+        if let Stage::Running(running) = &mut self.stage {
+            running.drain(ready);
+            if !running.is_drained() {
+                return TaskPoll::Pending;
+            }
+            let Stage::Running(shell) = std::mem::replace(&mut self.stage, Stage::Done) else {
+                unreachable!("the running stage was just observed");
+            };
+            self.stage = Stage::Reaping {
+                shell,
+                retry: Instant::now(),
+                backoff: REAP_RETRY_MIN,
+            };
         }
-        let Stage::Running(running) = std::mem::replace(&mut self.stage, Stage::Done) else {
-            unreachable!("the running stage was just observed");
+        let Stage::Reaping {
+            shell,
+            retry,
+            backoff,
+        } = &mut self.stage
+        else {
+            return TaskPoll::Pending;
         };
-        TaskPoll::Ready(Ok(running.reap()))
+        let Some(output) = shell.try_reap() else {
+            // A child may close both pipes and keep running. Nothing portable
+            // makes that observable, so ask again on a backing-off deadline
+            // rather than blocking the driver in `wait(2)`.
+            *retry = Instant::now() + *backoff;
+            *backoff = (*backoff * 2).min(REAP_RETRY_MAX);
+            return TaskPoll::Pending;
+        };
+        self.stage = Stage::Done;
+        TaskPoll::Ready(Ok(output))
     }
 }
 
@@ -319,21 +354,24 @@ impl RunningShell {
         self.stdout.is_none() && self.stderr.is_none()
     }
 
-    /// Collect the exit status. Both pipes are already closed here, so the
-    /// child has exited or is about to: this mirrors what `Command::output()`
-    /// does after it has read the child dry.
-    fn reap(mut self) -> ShellOutput {
-        let exit = self.child.wait().map_or(0, |status| {
-            status.code().unwrap_or_else(|| {
+    /// Collect the exit status if the child has already exited. Both pipes are
+    /// closed by the time this is called, so the usual answer is immediate —
+    /// but unlike `Command::output()` a driver that shares its thread with
+    /// other work must not block here.
+    fn try_reap(&mut self) -> Option<ShellOutput> {
+        let exit = match self.child.try_wait() {
+            Ok(Some(status)) => status.code().unwrap_or_else(|| {
                 std::os::unix::process::ExitStatusExt::signal(&status)
                     .map_or(0, |signal| 128 + signal)
-            })
-        });
-        ShellOutput {
-            stdout: self.captured_stdout,
-            stderr: self.captured_stderr,
+            }),
+            Ok(None) => return None,
+            Err(_) => 0,
+        };
+        Some(ShellOutput {
+            stdout: std::mem::take(&mut self.captured_stdout),
+            stderr: std::mem::take(&mut self.captured_stderr),
             exit,
-        }
+        })
     }
 }
 

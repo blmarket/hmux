@@ -14,6 +14,8 @@ use crate::server::task::TaskState;
 use super::actor::ActorRef;
 use super::driver::Outbox;
 use super::reactor::WakeHandle;
+use super::suspend::SuspensionExecutorHandle;
+use super::task::EventCommandRuntime;
 
 const COMMAND_QUEUE_BUDGET: usize = 64;
 
@@ -60,6 +62,7 @@ impl CompletionSender {
 pub(crate) struct BackgroundCommands {
     state: Arc<Mutex<ServerState>>,
     hub: StatusHub,
+    runtime: Arc<EventCommandRuntime>,
     completions: CompletionSender,
     next_id: u64,
     jobs: BTreeMap<u64, JobState>,
@@ -71,10 +74,16 @@ enum JobState {
 }
 
 impl BackgroundCommands {
-    pub(crate) fn new(state: Arc<Mutex<ServerState>>, hub: StatusHub, wake: WakeHandle) -> Self {
+    pub(crate) fn new(
+        state: Arc<Mutex<ServerState>>,
+        hub: StatusHub,
+        wake: WakeHandle,
+        executor: SuspensionExecutorHandle,
+    ) -> Self {
         Self {
             state,
             hub,
+            runtime: Arc::new(EventCommandRuntime::new(executor)),
             completions: CompletionSender {
                 pending: Arc::new(Mutex::new(VecDeque::new())),
                 wake,
@@ -117,7 +126,7 @@ impl BackgroundCommands {
                 let id = self.allocate_id();
                 self.jobs.insert(id, JobState::ResolvingCondition);
                 let completed = self.completions.clone();
-                if super::task::EventCommandRuntime::spawn_blocking(
+                if EventCommandRuntime::spawn_blocking(
                     move || request.resolve(),
                     move |(command, context)| {
                         let BackgroundCommand::Line(command) = command else {
@@ -182,7 +191,7 @@ impl BackgroundCommands {
                 let id = id.unwrap_or_else(|| self.allocate_id());
                 self.jobs.insert(id, JobState::Running);
                 let completed = self.completions.clone();
-                if super::task::EventCommandRuntime::spawn_blocking(
+                if EventCommandRuntime::spawn_blocking(
                     move || command::run_background_shell(&args, &context, jobs),
                     move |()| {
                         completed.send(WorkerCompletion::Command {
@@ -204,11 +213,11 @@ impl BackgroundCommands {
         let task = TaskState::new(command::CommandCoroutine::new(
             queue,
             Arc::clone(&self.state),
-            Arc::new(super::task::EventCommandRuntime),
+            Arc::clone(&self.runtime) as Arc<dyn command::CommandRuntime>,
             COMMAND_QUEUE_BUDGET,
         ));
         let completed = self.completions.clone();
-        if super::task::EventCommandRuntime::spawn_coroutine(task, move |result| {
+        if EventCommandRuntime::spawn_coroutine(task, move |result| {
             completed.send(WorkerCompletion::Command { id, result });
         })
         .is_err()

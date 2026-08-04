@@ -21,7 +21,7 @@ pub(in crate::server) mod panes;
 pub(in crate::server) mod queue;
 pub(in crate::server) mod server;
 pub(in crate::server) mod sessions;
-mod suspend;
+pub(crate) mod suspend;
 pub(in crate::server) mod windows;
 
 #[cfg(test)]
@@ -8210,6 +8210,14 @@ fn run_shell(
 pub(crate) struct RunShellCompletion {
     result: CommandResult,
     view: Option<(String, Vec<u8>)>,
+}
+
+impl RunShellCompletion {
+    /// What the suspended `run-shell` will report to its client.
+    #[cfg(test)]
+    pub(crate) fn result(&self) -> &CommandResult {
+        &self.result
+    }
 }
 
 fn finish_run_shell(completion: RunShellCompletion, state: &mut ServerState) -> CommandResult {
