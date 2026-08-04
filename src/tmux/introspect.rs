@@ -1,18 +1,14 @@
-//! Introspection tap: logging decorators over the frame reader/writer halves.
+//! Introspection tap: logging for frames as they cross a connection.
 //!
-//! Wrapping either half logs each frame as it passes, giving a control-plane
-//! trace for free. This is the only place hmux "sees" the conversation —
-//! keystrokes and screen output travel over the passed tty fd, not through
-//! frames (design.md "Scope & limits").
+//! Logging a frame on the way past gives a control-plane trace for free. This
+//! is the only place hmux "sees" the conversation — keystrokes and screen
+//! output travel over the passed tty fd, not through frames.
 
-use std::{fmt, io};
+use std::fmt;
 
 use tracing::info;
 
 use super::message::{Frame, Message};
-use super::traits::{
-    FrameWriter, NonblockingFrameReader, NonblockingFrameWriter, WriteQueueFull,
-};
 
 /// Direction label for logged frames.
 #[derive(Clone, Copy)]
@@ -29,65 +25,6 @@ impl Direction {
             Direction::ClientToServer => "c->s",
             Direction::ServerToClient => "s->c",
         }
-    }
-}
-
-/// Logs each received frame, then hands it through unchanged.
-pub struct LoggingReader<R> {
-    inner: R,
-    dir: Direction,
-}
-
-impl<R> LoggingReader<R> {
-    pub fn new(inner: R, dir: Direction) -> Self {
-        LoggingReader { inner, dir }
-    }
-}
-
-impl<R: NonblockingFrameReader> NonblockingFrameReader for LoggingReader<R> {
-    fn try_recv(&mut self) -> io::Result<Frame> {
-        let frame = self.inner.try_recv()?;
-        log_frame(self.dir, &frame);
-        Ok(frame)
-    }
-}
-
-/// Logs each frame before sending it through unchanged.
-pub struct LoggingWriter<W> {
-    inner: W,
-    dir: Direction,
-}
-
-impl<W> LoggingWriter<W> {
-    pub fn new(inner: W, dir: Direction) -> Self {
-        LoggingWriter { inner, dir }
-    }
-}
-
-impl<W: FrameWriter> FrameWriter for LoggingWriter<W> {
-    fn send(&mut self, frame: Frame) -> io::Result<()> {
-        log_frame(self.dir, &frame);
-        self.inner.send(frame)
-    }
-}
-
-impl<W> NonblockingFrameWriter for LoggingWriter<W>
-where
-    W: NonblockingFrameWriter<Frame = Frame>,
-{
-    type Frame = Frame;
-
-    fn try_queue(&mut self, frame: Self::Frame) -> Result<(), WriteQueueFull<Self::Frame>> {
-        log_frame(self.dir, &frame);
-        self.inner.try_queue(frame)
-    }
-
-    fn try_flush(&mut self) -> io::Result<()> {
-        self.inner.try_flush()
-    }
-
-    fn has_pending(&self) -> bool {
-        self.inner.has_pending()
     }
 }
 

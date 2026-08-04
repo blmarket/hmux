@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd, RawFd};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -119,12 +119,6 @@ impl AttachInput {
 
     fn is_empty(&self) -> bool {
         self.frames.is_empty()
-    }
-}
-
-impl AsRawFd for AttachInput {
-    fn as_raw_fd(&self) -> RawFd {
-        -1
     }
 }
 

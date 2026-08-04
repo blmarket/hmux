@@ -89,7 +89,7 @@ const TTY_OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 /// separate from the public frame-reader compatibility contracts: the loop only
 /// ever polls, so it must not force implementations to provide a blocking
 /// `recv`.
-pub(crate) trait AttachFrameReader: AsRawFd {
+pub(crate) trait AttachFrameReader {
     fn try_recv(&mut self) -> io::Result<Frame>;
 }
 
