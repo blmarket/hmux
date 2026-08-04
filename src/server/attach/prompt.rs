@@ -1,11 +1,10 @@
 use std::collections::{BTreeSet, VecDeque};
 use std::io;
-use std::sync::{Arc, Mutex};
 
 use crate::integration::status::StatusHub;
 
 use super::super::key::parse_key_name;
-use super::super::state::{
+use super::super::state::{SharedState, 
     self, MenuItem, MenuRequest, ModeBindingUpdate, ModeEdit, ModePrompt, ServerState,
 };
 use super::super::term::TerminalCapabilities;
@@ -188,7 +187,7 @@ impl CommandPrompt {
     pub(super) fn apply_deferred_side_effect(
         &self,
         result: &command::CommandResult,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) {
         if result.exit != 0 {
             return;
@@ -206,7 +205,7 @@ impl CommandPrompt {
     pub(super) fn new(
         args: Vec<String>,
         external: Option<state::ActiveCommandPrompt>,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
     ) -> Result<Self, String> {
@@ -264,7 +263,7 @@ impl CommandPrompt {
     pub(super) fn for_mode(
         request: ModePrompt,
         target: &str,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
     ) -> Result<Self, String> {
@@ -384,7 +383,7 @@ impl CommandPrompt {
     fn run(
         &self,
         values: &[String],
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
     ) -> command::CommandResult {
@@ -462,7 +461,7 @@ impl CommandPrompt {
     pub(super) fn complete(
         &mut self,
         result: &command::CommandResult,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         context: &command::ClientContext,
     ) {
         match std::mem::replace(&mut self.execution.owner, PromptOwner::Resolved) {
@@ -495,7 +494,7 @@ impl CommandPrompt {
 
     pub(super) fn initial_incremental(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
     ) {
@@ -512,7 +511,7 @@ impl CommandPrompt {
     fn changed(
         &mut self,
         prefix: char,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
     ) {
@@ -532,7 +531,7 @@ impl CommandPrompt {
 
     fn finish_page(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
     ) -> CommandPromptInput {
@@ -677,7 +676,7 @@ impl CommandPrompt {
         self.editor.buffer.cursor = index;
     }
 
-    fn paste(&mut self, state: &Arc<Mutex<ServerState>>) {
+    fn paste(&mut self, state: &SharedState) {
         let source = self.editor.yank.clone().unwrap_or_else(|| {
             state
                 .lock()
@@ -703,7 +702,7 @@ impl CommandPrompt {
 
     fn complete_word(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         context: &command::ClientContext,
     ) -> bool {
         let Some((start, end)) =
@@ -824,7 +823,7 @@ impl CommandPrompt {
     pub(super) fn handle_key(
         &mut self,
         key: &str,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
     ) -> CommandPromptInput {
@@ -1227,7 +1226,7 @@ impl CommandPrompt {
 fn run_mode_command(
     value: &str,
     item_target: &str,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     hub: &StatusHub,
     context: &command::ClientContext,
 ) -> command::CommandResult {
@@ -1256,7 +1255,7 @@ fn run_mode_command(
 
 fn command_line_argv(
     line: &str,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
 ) -> Result<Vec<String>, command::CommandResult> {
     let aliases = match state.lock() {
         Ok(state) => state.command_aliases(),
@@ -1277,7 +1276,7 @@ fn run_mode_edit(
     edit: &ModeEdit,
     value: &str,
     target: &str,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     hub: &StatusHub,
     context: &command::ClientContext,
 ) -> command::CommandResult {

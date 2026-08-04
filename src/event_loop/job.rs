@@ -5,13 +5,13 @@
 //! executor as a job of its own and reports back here when it finishes.
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::integration::status::StatusHub;
 use crate::server::command::{
     self, BackgroundCommand, BackgroundCommandRequest, ClientContext, PendingBackground,
 };
-use crate::server::state::ServerState;
+use crate::server::state::SharedState;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;
@@ -31,7 +31,7 @@ pub(crate) enum JobEvent {
 }
 
 pub(crate) struct BackgroundCommands {
-    state: Arc<Mutex<ServerState>>,
+    state: SharedState,
     hub: StatusHub,
     runtime: Arc<EventCommandRuntime>,
     executor: ActorRef<SuspensionExecutor>,
@@ -51,7 +51,7 @@ enum JobState {
 
 impl BackgroundCommands {
     pub(crate) fn new(
-        state: Arc<Mutex<ServerState>>,
+        state: SharedState,
         hub: StatusHub,
         executor: ActorRef<SuspensionExecutor>,
         executor_handle: SuspensionExecutorHandle,

@@ -14,7 +14,7 @@ use super::command;
 use super::command::queue::{CommandQueue, QueueCompletion, QueueState, QueueTicket};
 use super::pane::{NativePaneObservation, OutputSubscription};
 use super::registry::{self, Resolution};
-use super::state::{
+use super::state::{SharedState, 
     ClientAction, ClientFlagState as ControlClientOptions, ClientRenderAttachment,
     ControlStateSnapshot, ServerState,
 };
@@ -40,7 +40,7 @@ pub(crate) enum EventControlSource {
 /// This state owns only the descriptors passed during identification and the
 /// native subscriptions needed by a control client.
 pub(crate) struct EventControlClient {
-    state: Arc<Mutex<ServerState>>,
+    state: SharedState,
     hub: StatusHub,
     command_runtime: Arc<dyn command::CommandRuntime>,
     client_tty: ClientTty,
@@ -90,7 +90,7 @@ impl EventControlClient {
     pub(crate) fn new(
         args: &[String],
         client_tty: ClientTty,
-        state: Arc<Mutex<ServerState>>,
+        state: SharedState,
         hub: StatusHub,
         context: &command::ClientContext,
         command_runtime: Arc<dyn command::CommandRuntime>,
@@ -1320,7 +1320,7 @@ fn control_refresh_flag_values(args: &[String]) -> Vec<&str> {
 
 fn apply_control_colour_report(
     args: &[String],
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
 ) -> io::Result<bool> {
     let Some(Resolution::Name("refresh-client")) = args.first().map(|name| registry::resolve(name))
     else {
@@ -1442,7 +1442,7 @@ fn sync_control_pane_streams(
 
 #[allow(clippy::too_many_arguments)]
 fn advance_control_snapshot(
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     session_id: u32,
     stable_session: &str,
     checkpoint: &mut u64,

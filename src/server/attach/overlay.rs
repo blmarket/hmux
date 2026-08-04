@@ -1,4 +1,5 @@
 use super::*;
+use crate::server::state::SharedState;
 
 pub(crate) struct ActiveOverlay {
     state: OverlayState,
@@ -295,7 +296,7 @@ impl ActiveOverlay {
         mouse: Option<&MouseEvent>,
         cols: u16,
         rows: u16,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
     ) -> OverlayInputOutcome {
         match &mut self.state {
@@ -872,7 +873,7 @@ impl DisplayPanesOverlay {
     fn handle_key(
         &self,
         key: &str,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
     ) -> OverlayInputOutcome {
         if !self.accept_input || matches!(key, "Escape" | "q" | "C-c") {

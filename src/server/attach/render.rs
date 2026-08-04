@@ -1,9 +1,10 @@
 use super::*;
+use crate::server::state::SharedState;
 
 impl AttachSession {
     pub(super) fn render_turn(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         triggers: AttachRenderTriggers,
     ) -> io::Result<()> {
         let AttachRenderTriggers {

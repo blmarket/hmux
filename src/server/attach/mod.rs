@@ -39,7 +39,6 @@ mod session;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::integration::status::StatusHub;
@@ -58,7 +57,7 @@ use super::mouse::{
 #[cfg(test)]
 use super::mouse::MouseButton;
 use super::pane::{OutputSubscription, Pane, PaneInputStats, PaneIo, PaneIoMode};
-use super::state::{
+use super::state::{SharedState, 
     ClientAction, ClientKey, MenuRequest, ModeKind, ModeView, ModeViewKeyResult, OverlayRequest,
     PopupRequest, ServerState,
 };
@@ -566,7 +565,7 @@ impl AttachCompositorState {
 fn handle_command_prompt_key(
     prompt: &mut Option<CommandPrompt>,
     key: &str,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     hub: &StatusHub,
     context: &command::ClientContext,
 ) -> Option<AttachCommandRequest> {
@@ -645,7 +644,7 @@ fn read_key(bytes: &[u8]) -> (Key, usize) {
     (key, consumed)
 }
 
-fn is_configured_prefix(state: &Arc<Mutex<ServerState>>, target: &str, key: KeyCode) -> bool {
+fn is_configured_prefix(state: &SharedState, target: &str, key: KeyCode) -> bool {
     state.lock().ok().is_some_and(|st| {
         ["prefix", "prefix2"].into_iter().any(|option| {
             st.option_for_target(target, option)
@@ -656,7 +655,7 @@ fn is_configured_prefix(state: &Arc<Mutex<ServerState>>, target: &str, key: KeyC
     })
 }
 
-fn client_key_table(state: &Arc<Mutex<ServerState>>, target: &str) -> String {
+fn client_key_table(state: &SharedState, target: &str) -> String {
     state
         .lock()
         .ok()
@@ -1072,7 +1071,7 @@ fn decode_tty_key(bytes: &[u8]) -> Option<(DecodedTtyKey, usize)> {
 fn resolve_mouse_key(
     decoded: &mut DecodedTtyKey,
     input: &mut MouseInputState,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     target: &str,
     cols: u16,
     rows: u16,
@@ -1130,7 +1129,7 @@ fn shift_coordinate(local: u16, from: u16, to: u16) -> u16 {
 /// tmux does this inside `server_client_check_mouse` rather than through a
 /// binding, so it happens even though `MouseMovePane` cannot be bound at all.
 fn apply_focus_follows_mouse(
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     target: &str,
     event: &MouseEvent,
 ) {
@@ -1165,7 +1164,7 @@ fn decode_prompt_key(bytes: &[u8]) -> Option<(String, usize)> {
 /// (`tty_keys_next`), so preserve that lower bound here. Invalid stored values
 /// fall back to the modeled tmux default rather than turning into an unbounded
 /// poll.
-fn prompt_escape_delay(state: &Arc<Mutex<ServerState>>) -> Duration {
+fn prompt_escape_delay(state: &SharedState) -> Duration {
     let milliseconds = state
         .lock()
         .ok()
@@ -1176,7 +1175,7 @@ fn prompt_escape_delay(state: &Arc<Mutex<ServerState>>) -> Duration {
     Duration::from_millis(milliseconds)
 }
 
-fn append_view_output(state: &Arc<Mutex<ServerState>>, target: &str, output: &[u8]) {
+fn append_view_output(state: &SharedState, target: &str, output: &[u8]) {
     if let Ok(mut state) = state.lock() {
         let _ = state.append_view_output(target, output);
     }
@@ -1241,7 +1240,7 @@ fn active_window_output_subscription(
 /// the active window's pane set or selection. Returns true when the caller must
 /// redraw and ignore readiness reported for the old platform wakeup.
 fn refresh_active_window_output_subscription(
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     session: &str,
     subscribed_window: &mut ActiveWindowOutputKey,
     subscription: &mut OutputSubscription,
@@ -1574,7 +1573,7 @@ pub(crate) fn attach_target(
 pub(crate) fn start_attach_session<W>(
     args: &[String],
     client_tty: ClientTty,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     hub: &StatusHub,
     context: &command::ClientContext,
     writer: &mut W,
@@ -3147,7 +3146,7 @@ fn add_input_stats(total: &mut PaneInputStats, batch: PaneInputStats) {
 }
 
 fn forward_input(
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     session: &str,
     bytes: &[u8],
 ) -> io::Result<PaneInputStats> {
@@ -3164,6 +3163,7 @@ mod tests {
     use super::*;
     use std::io::Read as _;
     use std::os::unix::net::UnixStream;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn tty_output_retains_a_bounded_suffix_until_writable() {
@@ -3851,7 +3851,7 @@ mod tests {
     // suite covers the same bindings end to end against real tmux). The default
     // session is "0" with one window (index 0) holding one pane.
 
-    fn fresh_state() -> Arc<Mutex<ServerState>> {
+    fn fresh_state() -> SharedState {
         Arc::new(Mutex::new(
             ServerState::with_test_session().expect("build state"),
         ))
@@ -4012,7 +4012,7 @@ mod tests {
 
     /// (window count, active window index, active window's pane count) for
     /// session "0".
-    fn snapshot(state: &Arc<Mutex<ServerState>>) -> (usize, u32, usize) {
+    fn snapshot(state: &SharedState) -> (usize, u32, usize) {
         let st = state.lock().unwrap();
         let s = st.find("0").expect("session 0");
         let link = &s.windows[s.active];

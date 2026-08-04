@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd, RawFd};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::integration::status::StatusHub;
@@ -17,7 +17,7 @@ use crate::server::attach::{
 };
 use crate::server::command::{self, ClientContext};
 use crate::server::pane::PaneIoMode;
-use crate::server::state::ServerState;
+use crate::server::state::SharedState;
 use crate::server::task::{ReadySet, TaskState};
 use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::Frame;
@@ -171,7 +171,7 @@ impl FrameWriter for AttachOutput {
 /// Interactive attach state driven directly by one protocol actor.
 pub(super) struct EventAttachClient {
     session: AttachSession,
-    state: Arc<Mutex<ServerState>>,
+    state: SharedState,
     hub: StatusHub,
     input: AttachInput,
     output: AttachOutput,
@@ -202,7 +202,7 @@ impl EventAttachClient {
     fn new(
         args: &[String],
         client_tty: ClientTty,
-        state: Arc<Mutex<ServerState>>,
+        state: SharedState,
         hub: StatusHub,
         context: &ClientContext,
         command_runtime: Arc<dyn command::CommandRuntime>,

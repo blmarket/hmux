@@ -13,7 +13,7 @@ use std::io;
 use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::format::glob_match;
@@ -33,6 +33,14 @@ use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
 fn default_pane_io_mode() -> PaneIoMode {
     PaneIoMode::EventLoop
 }
+
+/// The server state, shared by everything running on the loop.
+///
+/// One owner would be simpler, but the state outlives any single command: the
+/// protocol drivers, the attach compositors and the command queues all hold it
+/// across suspensions of their own. They all run on the loop, so the sharing is
+/// ownership, not concurrency.
+pub(crate) type SharedState = Arc<Mutex<ServerState>>;
 
 /// How to back a new pane's screen.
 pub enum PaneSpec {

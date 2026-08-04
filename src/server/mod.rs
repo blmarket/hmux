@@ -47,6 +47,7 @@ use crate::observability::v1::{PaneId as PublicPaneId, PaneObservability, Server
 
 use pane::{PaneIo, PaneIoMode};
 use state::ServerState;
+use crate::server::state::SharedState;
 
 type EventPaneSnapshot = (Vec<(u64, PaneIo)>, Vec<u64>);
 
@@ -63,7 +64,7 @@ pub(crate) const TMUX_VERSION: &str = "3.7b";
 /// command or session implementation.
 #[derive(Clone)]
 pub struct Server {
-    state: Arc<Mutex<ServerState>>,
+    state: SharedState,
     /// Shared per-pane agent status, written by the [`AgentObserver`] and read by
     /// format renderers (`#{pane_agent*}`). A sibling of
     /// `state`, not part of it, so `ServerState` and the observability traits are
@@ -145,7 +146,7 @@ impl Server {
 
     /// Shared state handle (for embedding hmux in a larger app, e.g. querying
     /// sessions for agent detection).
-    pub fn state(&self) -> Arc<Mutex<ServerState>> {
+    pub fn state(&self) -> SharedState {
         Arc::clone(&self.state)
     }
 
@@ -406,7 +407,7 @@ impl ObservationState {
         }
     }
 
-    fn reconcile_once(&self, state: &Arc<Mutex<ServerState>>) -> io::Result<()> {
+    fn reconcile_once(&self, state: &SharedState) -> io::Result<()> {
         let current = pane_snapshot(state)?;
         let mut previous = self.previous.borrow_mut();
         reconcile(&mut previous, current, self.hook.as_ref());
@@ -420,7 +421,7 @@ struct ObservedPane {
     exited: bool,
 }
 
-fn pane_snapshot(state: &Arc<Mutex<ServerState>>) -> io::Result<HashMap<PaneId, ObservedPane>> {
+fn pane_snapshot(state: &SharedState) -> io::Result<HashMap<PaneId, ObservedPane>> {
     let state = state
         .lock()
         .map_err(|_| io::Error::other("server state mutex poisoned"))?;

@@ -5,14 +5,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::integration::status::StatusHub;
 use crate::server::attach::ClientTty;
 use crate::server::command::{self, ClientContext, CommandResult};
 use crate::server::control::{EventControlClient, EventControlSource};
-use crate::server::state::ServerState;
+use crate::server::state::SharedState;
 use crate::server::Server;
 use crate::tmux::codec::{encode_bytes, ImsgReader, NonblockingImsgWriter, MAX_IMSGSIZE};
 use crate::tmux::introspect::{log_frame, Direction};
@@ -171,7 +171,7 @@ pub(super) struct ProtocolRegistrations {
 pub(crate) struct ProtocolClient {
     pub(super) reader: ImsgReader,
     pub(super) writer: NonblockingImsgWriter,
-    pub(super) state: Arc<Mutex<ServerState>>,
+    pub(super) state: SharedState,
     pub(super) hub: StatusHub,
     pub(super) background_commands: ActorRef<BackgroundCommands>,
     pub(super) command_runtime: Arc<dyn command::CommandRuntime>,

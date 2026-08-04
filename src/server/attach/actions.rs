@@ -1,6 +1,5 @@
 //! Attach-client actions and key-binding resolution.
 
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::integration::status::StatusHub;
@@ -8,7 +7,7 @@ use crate::integration::status::StatusHub;
 use super::super::command;
 use super::super::key::{basic_key_bytes, key_from_byte, parse_key_name, KeyCode};
 use super::super::mouse::MouseEvent;
-use super::super::state::{ClientKey, PromptCompletion, PromptReply, ServerState};
+use super::super::state::{SharedState, ClientKey, PromptCompletion, PromptReply};
 use super::copy_mode::{self, CopyModeAction};
 use super::{client_key_table, decode_tty_key, is_configured_prefix};
 
@@ -44,7 +43,7 @@ impl ActiveConfirm {
     pub(super) fn resolve(
         self,
         accepted: bool,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
         cols: u16,
         pane_rows: u16,
@@ -147,7 +146,7 @@ pub(super) enum PrefixOutcome {
 pub(super) fn dispatch_key_binding(
     table: &str,
     key: KeyCode,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     target: &str,
     cols: u16,
     pane_rows: u16,
@@ -332,7 +331,7 @@ pub(super) fn dispatch_key_binding(
 pub(in crate::server) fn dispatch_control_client_keys(
     keys: &[ClientKey],
     prefix_pending: &mut bool,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     target: &str,
     hub: &StatusHub,
     context: &command::ClientContext,
@@ -406,7 +405,7 @@ pub(in crate::server) fn dispatch_control_client_keys(
 #[cfg(test)]
 pub(super) fn dispatch_prefix_key(
     key: u8,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     target: &str,
     cols: u16,
     pane_rows: u16,

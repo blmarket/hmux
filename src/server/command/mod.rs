@@ -44,7 +44,7 @@ use super::mouse::MouseEvent;
 use super::options::{self, OptionScope, OptionSet, OptionsView};
 use super::registry::{self, CommandSpec, Resolution, SpecResolution};
 use super::state::{
-    BackgroundJobRegistry, ClientActionResult, ClientMessage, ClientMessageResult,
+    BackgroundJobRegistry, SharedState, ClientActionResult, ClientMessage, ClientMessageResult,
     MenuItem, MenuRequest, ModeEdit, ModeItem, ModeKind, ModeView,
     OverlayRequest, PaneSpec, PopupRequest, PromptCompletion, PromptReply, ServerState, Session,
     SplitDirection, Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest,
@@ -103,7 +103,7 @@ pub struct ClientContext {
     pub tty_name: Option<String>,
     pub client_pid: Option<i32>,
     pub(crate) input_file: Option<Result<Vec<u8>, i32>>,
-    pub(crate) command_state: Option<Arc<Mutex<ServerState>>>,
+    pub(crate) command_state: Option<SharedState>,
     pub(crate) current_session_id: Option<u32>,
     pub(crate) read_only: bool,
     pub(crate) active_panes: Option<Arc<Mutex<BTreeMap<u32, u32>>>>,
@@ -344,7 +344,7 @@ pub(crate) fn command_prompt_spec(args: &[String]) -> Result<CommandPromptSpec, 
 
 pub(crate) fn expand_command_prompt_format(
     source: &str,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> String {
@@ -383,7 +383,7 @@ pub(crate) fn expand_command_prompt_format(
 pub(crate) fn run_command_prompt_template(
     args: &[String],
     values: &[String],
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
@@ -408,7 +408,7 @@ pub(crate) fn run_command_prompt_template(
 pub(crate) fn command_prompt_template(
     args: &[String],
     values: &[String],
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> String {
@@ -435,7 +435,7 @@ pub(crate) fn command_prompt_template(
 /// entire line before anything runs — then executes the commands in order,
 /// stopping at the first one that fails. We reproduce both phases here.
 #[cfg(test)]
-pub fn run(args: &[String], state: &Arc<Mutex<ServerState>>, agents: &PaneAgents) -> CommandResult {
+pub fn run(args: &[String], state: &SharedState, agents: &PaneAgents) -> CommandResult {
     let context = ClientContext::default();
     let mut result = match start_resumable_command(args, state, agents, &context) {
         Ok(queue) => BlockingCommandRuntime::run(queue, state),
@@ -458,7 +458,7 @@ pub(crate) struct BlockingCommandRuntime;
 impl BlockingCommandRuntime {
     pub(crate) fn run(
         queue: ResumableCommandQueue,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) -> CommandResult {
         let mut task = TaskState::new(CommandCoroutine::new(
             queue,
@@ -480,7 +480,7 @@ impl BlockingCommandRuntime {
     /// them to, so it runs them where it stands.
     pub(crate) fn run_background(
         request: BackgroundCommandRequest,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         agents: &PaneAgents,
     ) {
         let (command, context) = request.resolve();
@@ -583,7 +583,7 @@ pub(crate) fn uses_client_file_protocol(args: &[String]) -> bool {
 
 pub fn run_with_context(
     args: &[String],
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
@@ -596,7 +596,7 @@ pub fn run_with_context(
 
 pub(crate) fn start_resumable_command(
     args: &[String],
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> Result<ResumableCommandQueue, CommandResult> {
@@ -618,7 +618,7 @@ pub(crate) fn start_resumable_command(
 
 pub(crate) fn start_resumable_command_string(
     line: &str,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> Result<ResumableCommandQueue, CommandResult> {
@@ -643,7 +643,7 @@ pub(crate) fn start_resumable_command_string(
 pub(crate) fn start_resumable_command_string_with_tail(
     line: &str,
     tail: &[String],
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> Result<ResumableCommandQueue, CommandResult> {
@@ -1178,7 +1178,7 @@ impl CommandTaskState {
 /// A complete command queue represented as one runtime-neutral coroutine.
 pub(crate) struct CommandCoroutine {
     queue: ResumableCommandQueue,
-    state: Arc<Mutex<ServerState>>,
+    state: SharedState,
     runtime: Arc<dyn CommandRuntime>,
     pending: Option<CommandTaskState>,
     pending_allows_attach_io: bool,
@@ -1188,7 +1188,7 @@ pub(crate) struct CommandCoroutine {
 impl CommandCoroutine {
     pub(crate) fn new(
         queue: ResumableCommandQueue,
-        state: Arc<Mutex<ServerState>>,
+        state: SharedState,
         runtime: Arc<dyn CommandRuntime>,
         budget: usize,
     ) -> Self {
@@ -1291,7 +1291,7 @@ impl ResumableCommandQueue {
 
     pub(crate) fn drive(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         budget: usize,
     ) -> ResumableCommandTurn {
         for _ in 0..budget {
@@ -1828,7 +1828,7 @@ impl ResumableCommandQueue {
         &self,
         args: &[String],
         matched: bool,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) -> SharedCommandExecution {
         let positionals = positionals(args, &["-t"]);
         let branch = if matched {
@@ -1861,7 +1861,7 @@ impl ResumableCommandQueue {
     fn plan_nested_command_line(
         &self,
         line: &str,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         capture: NestedCapture,
     ) -> Result<Vec<SharedQueueItem>, CommandResult> {
         let tokens = tokenize_line(line);
@@ -1899,7 +1899,7 @@ impl ResumableCommandQueue {
     fn plan_deferred_commands(
         &self,
         commands: Vec<DeferredCommand>,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) -> Result<Vec<SharedQueueItem>, CommandResult> {
         let aliases = match state.lock() {
             Ok(state) => state.command_aliases(),
@@ -1939,7 +1939,7 @@ impl ResumableCommandQueue {
     pub(crate) fn resume(
         &mut self,
         result: CommandSuspensionResult,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) {
         if let Some(nested) = self.nested.as_mut() {
             nested.queue.resume(result, state);
@@ -1993,7 +1993,7 @@ impl ResumableCommandQueue {
         &mut self,
         inflight: SuspendedCommand,
         mut execution: SharedCommandExecution,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) {
         let command = &inflight.command;
         let exit = execution.result.exit;
@@ -2072,7 +2072,7 @@ impl ResumableCommandQueue {
         &self,
         command: &str,
         args: &[String],
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) -> Vec<Vec<SharedQueueItem>> {
         if self.context.suppress_after_hooks {
             return Vec::new();
@@ -2086,7 +2086,7 @@ impl ResumableCommandQueue {
     /// bodies, in the order the mutations happened.
     fn plan_notifications(
         &self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) -> Vec<Vec<SharedQueueItem>> {
         if self.context.suppress_notifications {
             return Vec::new();
@@ -2115,7 +2115,7 @@ impl ResumableCommandQueue {
         hook: &str,
         requested_target: Option<&str>,
         vars: Vec<(String, String)>,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) -> Vec<Vec<SharedQueueItem>> {
         self.plan_hook_with_capture(
             hook,
@@ -2132,7 +2132,7 @@ impl ResumableCommandQueue {
         hook: &str,
         requested_target: Option<&str>,
         vars: Vec<(String, String)>,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         capture: NestedCapture,
         origin: HookOrigin,
     ) -> Vec<Vec<SharedQueueItem>> {
@@ -2252,7 +2252,7 @@ impl ResumableCommandQueue {
 /// with the same client/session context and hook behavior.
 fn run_shared_command_groups(
     parsed: Vec<ParsedCommand>,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
@@ -2261,7 +2261,7 @@ fn run_shared_command_groups(
 
 fn run_resumable_command(
     mut queue: ResumableCommandQueue,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
 ) -> CommandResult {
     loop {
         match queue.drive(state, usize::MAX) {
@@ -2309,7 +2309,7 @@ fn interaction_completion_result(completion: PromptCompletion) -> CommandResult 
 
 fn run_single_shared(
     command: &ParsedCommand,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
@@ -2332,7 +2332,7 @@ fn run_single_shared(
 
 fn run_shell_shared(
     args: &[String],
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
@@ -2363,7 +2363,7 @@ fn run_shell_shared(
 /// not discard the original group's tail.
 fn run_inserted_command_string(
     line: &str,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
@@ -2402,7 +2402,7 @@ fn run_inserted_command_string(
 
 fn prepare_source_file_paths(
     args: &[String],
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> Result<Vec<String>, CommandResult> {
@@ -2427,7 +2427,7 @@ fn plan_source_file_completion(
     args: &[String],
     source_depth: u8,
     reads: Vec<SourceFileRead>,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
 ) -> SharedCommandExecution {
     let quiet = has_flag(args, "-q");
     let parse_only = has_flag(args, "-n");
@@ -2576,7 +2576,7 @@ fn plan_source_file_completion(
 
 fn run_load_buffer_shared(
     command: &ParsedCommand,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
@@ -2588,7 +2588,7 @@ fn run_load_buffer_shared(
 
 fn run_save_buffer_shared(
     command: &ParsedCommand,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
@@ -9328,17 +9328,17 @@ fn pane_argv(
 mod tests {
     use super::*;
 
-    fn state() -> Arc<Mutex<ServerState>> {
+    fn state() -> SharedState {
         Arc::new(Mutex::new(ServerState::with_test_session().unwrap()))
     }
 
-    fn run_str(st: &Arc<Mutex<ServerState>>, args: &[&str]) -> CommandResult {
+    fn run_str(st: &SharedState, args: &[&str]) -> CommandResult {
         let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
         run(&owned, st, &PaneAgents::new())
     }
 
     fn run_str_agents(
-        st: &Arc<Mutex<ServerState>>,
+        st: &SharedState,
         agents: &PaneAgents,
         args: &[&str],
     ) -> CommandResult {
@@ -12187,7 +12187,7 @@ mod tests {
     #[test]
     fn exit_empty_takes_hmux_after_session_beside_tmux_flag_values() {
         let st = state();
-        let show = |st: &Arc<Mutex<ServerState>>| {
+        let show = |st: &SharedState| {
             run_str(st, &["show-options", "-s", "-v", "exit-empty"]).stdout
         };
         assert_eq!(show(&st), "after-session\n");

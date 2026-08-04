@@ -1,9 +1,8 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 use crate::server::command::{self, ClientContext, CommandResult};
-use crate::server::state::ServerState;
+use crate::server::state::SharedState;
 use crate::server::task::TaskState;
 
 /// One validated command line, possibly split around client-side file work.
@@ -69,7 +68,7 @@ pub(crate) enum CommandStep {
     },
 }
 
-pub(super) fn run_command_work(work: CommandWork, state: &Arc<Mutex<ServerState>>) -> CommandStep {
+pub(super) fn run_command_work(work: CommandWork, state: &SharedState) -> CommandStep {
     match work {
         CommandWork::Initial { args, context } => {
             let aliases = match state.lock() {
@@ -99,7 +98,7 @@ pub(super) fn run_command_work(work: CommandWork, state: &Arc<Mutex<ServerState>
 
 fn advance_command_transaction(
     mut transaction: CommandTransaction,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
 ) -> CommandStep {
     loop {
         let Some(args) = transaction.groups.pop_front() else {

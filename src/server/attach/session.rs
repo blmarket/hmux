@@ -1,4 +1,5 @@
 use super::*;
+use crate::server::state::SharedState;
 
 impl AttachSession {
     /// Whether this client could be attached at all, without side effects.
@@ -23,7 +24,7 @@ impl AttachSession {
     }
 
     /// Whether the server wants terminal focus reporting turned on.
-    fn focus_events(state: &Arc<Mutex<ServerState>>) -> bool {
+    fn focus_events(state: &SharedState) -> bool {
         state
             .lock()
             .ok()
@@ -33,7 +34,7 @@ impl AttachSession {
     pub(crate) fn start_in_mode<W>(
         target: &str,
         client_tty: ClientTty,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
         writer: &mut W,
@@ -270,7 +271,7 @@ impl AttachSession {
         &mut self,
         continuation: AttachCommandContinuation,
         result: command::CommandResult,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) {
         match continuation {
             AttachCommandContinuation::PrefixBinding {
@@ -416,7 +417,7 @@ impl AttachSession {
 
     fn drive_finish<R, W>(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         ready: AttachWaitReady,
         reader: &mut R,
         writer: &mut W,
@@ -491,7 +492,7 @@ impl AttachSession {
 
     pub(crate) fn prepare_wait(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         control_fd: RawFd,
         control_buffered: bool,
     ) -> io::Result<AttachPrepared> {
@@ -696,7 +697,7 @@ impl AttachSession {
 
     pub(crate) fn drive_ready<R, W>(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         ready: AttachWaitReady,
         reader: &mut R,
@@ -746,7 +747,7 @@ impl AttachSession {
 
     fn handle_notifications<W>(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         ready: &AttachWaitReady,
         writer: &mut W,
@@ -1073,7 +1074,7 @@ impl AttachSession {
 
     fn handle_control_message<R, W>(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         reader: &mut R,
         writer: &mut W,
     ) -> io::Result<Option<AttachDrive>>

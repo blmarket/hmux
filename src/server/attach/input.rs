@@ -14,7 +14,7 @@ enum BindingFlow {
 }
 
 /// Whether this session acts on mouse reports at all (`mouse on`).
-fn mouse_enabled(state: &Arc<Mutex<ServerState>>, target: &str) -> bool {
+fn mouse_enabled(state: &SharedState, target: &str) -> bool {
     state
         .lock()
         .ok()
@@ -30,7 +30,7 @@ fn mouse_enabled(state: &Arc<Mutex<ServerState>>, target: &str) -> bool {
 ///
 /// `None` is a key that pane has no form for, which tmux drops.
 fn encode_key_for_pane(
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     target: &str,
     key: PaneKey,
 ) -> Option<Vec<u8>> {
@@ -44,7 +44,7 @@ fn encode_key_for_pane(
 /// Nothing is written when the pane asked for no mouse mode, when the event
 /// hit no pane (status line, border), or when the report is one the pane's
 /// mode does not carry — the encoder answers all three by producing no bytes.
-fn forward_mouse_to_pane(state: &Arc<Mutex<ServerState>>, event: &MouseEvent) {
+fn forward_mouse_to_pane(state: &SharedState, event: &MouseEvent) {
     let Some((pane_id, input)) = event.pane_input_event() else {
         return;
     };
@@ -58,7 +58,7 @@ fn forward_mouse_to_pane(state: &Arc<Mutex<ServerState>>, event: &MouseEvent) {
 /// Continue a copy-mode drag: the pointer moves the selection's far end in the
 /// pane the drag started in. `false` when that pane has no drag under way, so
 /// the report falls through to the key tables.
-fn drag_copy_selection(state: &Arc<Mutex<ServerState>>, event: &MouseEvent) -> bool {
+fn drag_copy_selection(state: &SharedState, event: &MouseEvent) -> bool {
     let Some(target) = event.target.as_ref() else {
         return false;
     };
@@ -74,7 +74,7 @@ fn drag_copy_selection(state: &Arc<Mutex<ServerState>>, event: &MouseEvent) -> b
 }
 
 fn flush_forward_buf(
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     target: &str,
     forward_buf: &mut Vec<u8>,
     forwarded: &mut PaneInputStats,
@@ -99,7 +99,7 @@ impl AttachSession {
     fn take_terminal_reports(
         &mut self,
         data: &[u8],
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
     ) -> Vec<u8> {
         const REPORTS: [&[u8]; 4] = [
@@ -137,7 +137,7 @@ impl AttachSession {
     fn apply_terminal_report(
         &mut self,
         report: &[u8],
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
     ) {
         let client = self.attachments.render_attachment.client_name();
@@ -164,7 +164,7 @@ impl AttachSession {
     /// `server_status_client` after every table change: it is what
     /// `#{client_key_table}`/`#{client_prefix}` read and what makes a status
     /// line show a pending prefix.
-    fn publish_key_table(&mut self, state: &Arc<Mutex<ServerState>>) {
+    fn publish_key_table(&mut self, state: &SharedState) {
         let table = self.compositor.input.keys.table();
         if self.compositor.input.published_key_table == table {
             return;
@@ -183,7 +183,7 @@ impl AttachSession {
     /// once `repeat-time` passes, with no further input.
     pub(super) fn expire_repeat_chain(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
         now: Instant,
     ) {
@@ -214,7 +214,7 @@ impl AttachSession {
     fn apply_binding_outcome(
         &mut self,
         outcome: PrefixOutcome,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
         hub: &StatusHub,
         forward_buf: &mut Vec<u8>,
@@ -318,7 +318,7 @@ impl AttachSession {
     /// binding sees the same tables and target a real press would.
     pub(super) fn expire_click_timer(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
         hub: &StatusHub,
         now: Instant,
@@ -368,7 +368,7 @@ impl AttachSession {
 
     pub(super) fn drive_input(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
     ) -> io::Result<Option<AttachDrive>> {
         // A key binding's command must finish before the next key's runs: a
@@ -1129,7 +1129,7 @@ impl AttachSession {
 /// tmux's `tty_keys_user` matches the option's array by index: entry *n* is the
 /// key `Usern`.
 fn user_key_at(
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     target: &str,
     data: &[u8],
 ) -> Option<(super::super::key::KeyCode, usize)> {
