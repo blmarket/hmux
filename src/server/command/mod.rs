@@ -1041,8 +1041,8 @@ impl Coroutine for PaneOutputSuspension {
 /// Runtime operation used only for work that cannot be polled directly.
 ///
 /// Implementations must return promptly. The returned completion descriptor
-/// becomes readable after the runtime worker has finished the suspension.
-pub(crate) trait CommandRuntime: Send + Sync {
+/// becomes readable once the runtime has resolved the suspension.
+pub(crate) trait CommandRuntime {
     fn submit(
         &self,
         suspension: CommandSuspension,
