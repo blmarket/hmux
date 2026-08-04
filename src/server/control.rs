@@ -99,9 +99,7 @@ impl EventControlClient {
     ) -> io::Result<Self> {
         let session = match command::classify(args) {
             command::Intent::NewAttach => {
-                let mut state = state
-                    .lock()
-                    .map_err(|_| io::Error::other("native server state poisoned"))?;
+                let mut state = state.borrow_mut();
                 command::new_session_for_attach(args, &mut state, context)
                     .map_err(io::Error::other)?
             }
@@ -117,9 +115,7 @@ impl EventControlClient {
                         })
                     })
                     .map(|target| target.split(':').next().unwrap_or(target).to_string());
-                let mut state = state
-                    .lock()
-                    .map_err(|_| io::Error::other("native server state poisoned"))?;
+                let mut state = state.borrow_mut();
                 let target = attach::attach_target(supplied_target, &mut state, context)
                     .map_err(io::Error::other)?;
                 if state.find(&target).is_none() {
@@ -131,9 +127,7 @@ impl EventControlClient {
         };
 
         let (render_registry, session_id) = {
-            let mut state = state
-                .lock()
-                .map_err(|_| io::Error::other("native server state poisoned"))?;
+            let mut state = state.borrow_mut();
             let session_id = state
                 .session_id(&session)
                 .ok_or_else(|| io::Error::other(format!("can't find session: {session}")))?;
@@ -183,9 +177,7 @@ impl EventControlClient {
         let mut control_writer = ControlWriter::new(output_fd.as_raw_fd())?;
         let stable_session = format!("${session_id}");
         let (snapshot, checkpoint) = {
-            let state = state
-                .lock()
-                .map_err(|_| io::Error::other("native server state poisoned"))?;
+            let state = state.borrow_mut();
             (
                 state
                     .control_snapshot(&stable_session)
@@ -206,8 +198,7 @@ impl EventControlClient {
             snapshot.session_id, snapshot.session_name
         ));
         for error in state
-            .lock()
-            .map_err(|_| io::Error::other("native server state poisoned"))?
+            .borrow_mut()
             .take_config_errors()
         {
             control_writer.enqueue_line(format!("%config-error {error}"));
@@ -342,9 +333,8 @@ impl EventControlClient {
         let subscription = self.subscriptions.next_check;
         let alert = self
             .state
-            .lock()
-            .ok()
-            .and_then(|state| state.alert_poll_timeout())
+            .borrow_mut()
+            .alert_poll_timeout()
             .and_then(|duration| now.checked_add(duration));
         match (subscription, alert) {
             (Some(left), Some(right)) => Some(left.min(right)),
@@ -433,10 +423,7 @@ impl EventControlClient {
                 self.advance_snapshot()?;
             }
             let alert_changed = {
-                let mut state = self
-                    .state
-                    .lock()
-                    .map_err(|_| io::Error::other("native server state poisoned"))?;
+                let mut state = self.state.borrow_mut();
                 let changed = state.refresh_alerts(Instant::now());
                 if changed {
                     state.record_control_checkpoint();
@@ -449,10 +436,7 @@ impl EventControlClient {
             write_control_output(&mut self.control_writer, &mut self.streams, &self.options)?;
             if pane_state_ready {
                 {
-                    let mut state = self
-                        .state
-                        .lock()
-                        .map_err(|_| io::Error::other("native server state poisoned"))?;
+                    let mut state = self.state.borrow_mut();
                     state.reap_exited_panes();
                     state.record_control_checkpoint();
                 }
@@ -465,10 +449,7 @@ impl EventControlClient {
             {
                 self.format_cache.update_agents(self.hub.snapshot());
                 let (cols, rows) = self.client_size.unwrap_or((80, 24));
-                let state = self
-                    .state
-                    .lock()
-                    .map_err(|_| io::Error::other("native server state poisoned"))?;
+                let state = self.state.borrow_mut();
                 check_control_subscriptions(
                     &mut self.subscriptions,
                     &mut self.format_cache,
@@ -544,10 +525,7 @@ impl EventControlClient {
         if let Some((session_id, destroyed)) = requested_switch {
             let stable = format!("${session_id}");
             let checkpoint = {
-                let state = self
-                    .state
-                    .lock()
-                    .map_err(|_| io::Error::other("native server state poisoned"))?;
+                let state = self.state.borrow_mut();
                 state
                     .control_snapshot(&stable)
                     .map(|_| state.control_checkpoint_end())
@@ -588,10 +566,7 @@ impl EventControlClient {
 
     fn refresh_session(&mut self) -> io::Result<()> {
         let replacement = {
-            let state = self
-                .state
-                .lock()
-                .map_err(|_| io::Error::other("native server state poisoned"))?;
+            let state = self.state.borrow_mut();
             // Where a client goes when its session is destroyed is the server's
             // `detach-on-destroy` decision, delivered as a switch action before
             // this runs; reaching here means no session was offered.
@@ -626,8 +601,7 @@ impl EventControlClient {
         }
         let next = self
             .state
-            .lock()
-            .map_err(|_| io::Error::other("native server state poisoned"))?
+            .borrow_mut()
             .control_snapshot(&self.stable_session)
             .ok_or_else(|| io::Error::other("fallback control session disappeared"))?;
         self.control_writer.enqueue_line(format!(
@@ -700,8 +674,7 @@ impl EventControlClient {
             }
             let aliases = self
                 .state
-                .lock()
-                .map_err(|_| io::Error::other("native server state poisoned"))?
+                .borrow_mut()
                 .command_aliases();
             match command::command_string_groups_with_aliases(&line, &aliases) {
                 Ok(groups) if !groups.is_empty() => self.command_queue.push_back_group(
@@ -825,10 +798,7 @@ impl EventControlClient {
         }
         if let Some(size) = control_size_action(&argv) {
             let next = {
-                let mut state = self
-                    .state
-                    .lock()
-                    .map_err(|_| io::Error::other("native server state poisoned"))?;
+                let mut state = self.state.borrow_mut();
                 match size {
                     ControlSizeAction::Client(cols, rows) => {
                         self.client_size = Some((cols, rows));
@@ -919,7 +889,7 @@ impl EventControlClient {
             argv,
             task: TaskState::new(command::CommandCoroutine::new(
                 queue,
-                Arc::clone(&self.state),
+                Rc::clone(&self.state),
                 Arc::clone(&self.command_runtime),
                 64,
             )),
@@ -988,8 +958,7 @@ impl EventControlClient {
             ) {
                 let _ = self
                     .state
-                    .lock()
-                    .map_err(|_| io::Error::other("native server state poisoned"))?
+                    .borrow_mut()
                     .resize_linked_window(target, cols, rows);
             }
         }
@@ -1044,8 +1013,7 @@ impl EventControlClient {
     fn enqueue_config_errors(&mut self) -> io::Result<()> {
         for error in self
             .state
-            .lock()
-            .map_err(|_| io::Error::other("native server state poisoned"))?
+            .borrow_mut()
             .take_config_errors()
         {
             self.control_writer
@@ -1348,8 +1316,7 @@ fn apply_control_colour_report(
         return Ok(true);
     }
     let _ = state
-        .lock()
-        .map_err(|_| io::Error::other("native server state poisoned"))?
+        .borrow_mut()
         .report_pane_control_colour(pane, report.as_bytes());
     Ok(true)
 }
@@ -1451,9 +1418,7 @@ fn advance_control_snapshot(
     writer: &mut ControlWriter,
 ) -> io::Result<()> {
     let (end, mut updates, current) = {
-        let state = state
-            .lock()
-            .map_err(|_| io::Error::other("native server state poisoned"))?;
+        let state = state.borrow_mut();
         let (end, updates) = state.control_checkpoints_since(session_id, *checkpoint);
         (end, updates, state.control_snapshot(stable_session))
     };

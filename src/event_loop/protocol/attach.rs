@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd, RawFd};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -472,7 +473,7 @@ impl EventAttachClient {
                 self.phase = AttachPhase::Running(ActiveAttachCommand {
                     task: TaskState::new(command::CommandCoroutine::new(
                         queue,
-                        Arc::clone(&self.state),
+                        Rc::clone(&self.state),
                         Arc::clone(&self.command_runtime),
                         64,
                     )),
@@ -631,7 +632,7 @@ impl ProtocolClient {
         match EventAttachClient::new(
             &args,
             tty,
-            Arc::clone(&self.state),
+            Rc::clone(&self.state),
             self.hub.clone(),
             &context,
             Arc::clone(&self.command_runtime),

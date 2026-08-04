@@ -887,12 +887,12 @@ impl DisplayPanesOverlay {
         else {
             return OverlayInputOutcome::stay();
         };
-        let pane_id = state.lock().ok().and_then(|st| {
-            st.active_window_panes(target)
-                .ok()
-                .and_then(|(window, _)| window.panes.get(index as usize))
-                .map(|pane| pane.id)
-        });
+        let pane_id = state
+            .borrow_mut()
+            .active_window_panes(target)
+            .ok()
+            .and_then(|(window, _)| window.panes.get(index as usize))
+            .map(|pane| pane.id);
         let Some(pane_id) = pane_id else {
             return OverlayInputOutcome::stay();
         };

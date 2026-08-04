@@ -529,12 +529,8 @@ impl ProtocolClient {
     }
 
     /// The command line an argument-less client runs, from the server option.
-    /// Falls back to tmux's default when the state lock is unavailable.
     fn default_client_command(&self) -> Vec<String> {
-        self.state
-            .lock()
-            .map(|state| command::default_client_command(&state))
-            .unwrap_or_else(|_| vec!["new-session".to_string()])
+        command::default_client_command(&self.state.borrow_mut())
     }
 
     fn is_identify_message(message: &Message) -> bool {
@@ -704,7 +700,8 @@ impl ProtocolClient {
                     // The write is the command; its `after-*` hook belongs to
                     // the completed handshake, not to the queue step that never
                     // ran it.
-                    if let Ok(mut state) = self.state.lock() {
+                    {
+                        let mut state = self.state.borrow_mut();
                         command::run_client_file_after_hook(
                             &args,
                             &mut state,

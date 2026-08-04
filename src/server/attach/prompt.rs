@@ -1,5 +1,4 @@
 use std::collections::{BTreeSet, VecDeque};
-use std::io;
 
 use crate::integration::status::StatusHub;
 
@@ -197,7 +196,8 @@ impl CommandPrompt {
         else {
             return;
         };
-        if let Ok(mut state) = state.lock() {
+        {
+            let mut state = state.borrow_mut();
             let _ = state.mode_view_update_edit(target, edit, value);
         }
     }
@@ -328,14 +328,6 @@ impl CommandPrompt {
             .unwrap_or(":")
     }
 
-    pub(super) fn display(&self) -> String {
-        format!("{}{}", self.label(), self.editor.buffer.text())
-    }
-
-    pub(super) fn display_cursor(&self) -> usize {
-        self.label().chars().count() + self.editor.buffer.cursor
-    }
-
     pub(super) fn formatted_display(
         &self,
         state: &ServerState,
@@ -390,21 +382,13 @@ impl CommandPrompt {
         if let Some(value) = values.last() {
             match &self.request.action {
                 CommandPromptAction::ModeSearch { target } => {
-                    return match state
-                        .lock()
-                        .map_err(|_| io::Error::other("server state poisoned"))
-                        .and_then(|mut state| state.mode_view_search(target, value))
-                    {
+                    return match state.borrow_mut().mode_view_search(target, value) {
                         Ok(()) => command::CommandResult::ok(""),
                         Err(error) => command::CommandResult::err(format!("{error}\n")),
                     };
                 }
                 CommandPromptAction::ModeFilter { target } => {
-                    return match state
-                        .lock()
-                        .map_err(|_| io::Error::other("server state poisoned"))
-                        .and_then(|mut state| state.mode_view_filter(target, value))
-                    {
+                    return match state.borrow_mut().mode_view_filter(target, value) {
                         Ok(()) => command::CommandResult::ok(""),
                         Err(error) => command::CommandResult::err(format!("{error}\n")),
                     };
@@ -537,7 +521,8 @@ impl CommandPrompt {
     ) -> CommandPromptInput {
         let input = self.editor.buffer.text();
         if !input.is_empty() {
-            if let Ok(mut st) = state.lock() {
+            {
+                let mut st = state.borrow_mut();
                 st.add_prompt_history(&self.request.spec.prompt_type, &input);
             }
         }
@@ -679,9 +664,9 @@ impl CommandPrompt {
     fn paste(&mut self, state: &SharedState) {
         let source = self.editor.yank.clone().unwrap_or_else(|| {
             state
-                .lock()
-                .ok()
-                .and_then(|st| st.buffer(None).map(prompt_paste_text))
+                .borrow_mut()
+                .buffer(None)
+                .map(prompt_paste_text)
                 .unwrap_or_default()
         });
         let inserted = source.chars().collect::<Vec<_>>();
@@ -716,19 +701,13 @@ impl CommandPrompt {
         if word.len() >= 64 {
             return false;
         }
-        let completion = state
-            .lock()
-            .ok()
-            .map(|state| {
-                command_prompt_completion(
-                    &state,
-                    context,
-                    &self.request.spec.prompt_type,
-                    &word,
-                    start == 0,
-                )
-            })
-            .unwrap_or(PromptCompletion::None);
+        let completion = command_prompt_completion(
+            &state.borrow_mut(),
+            context,
+            &self.request.spec.prompt_type,
+            &word,
+            start == 0,
+        );
         match completion {
             PromptCompletion::None => false,
             PromptCompletion::Replace(replacement) => {
@@ -886,17 +865,11 @@ impl CommandPrompt {
             .map(|id| format!("${id}"))
             .unwrap_or_default();
         let separators = state
-            .lock()
-            .ok()
-            .and_then(|st| {
-                st.option_for_target(&target, "word-separators")
-                    .map(str::to_string)
-            })
+            .borrow_mut()
+            .option_for_target(&target, "word-separators")
+            .map(str::to_string)
             .unwrap_or_else(|| " !\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~".to_string());
-        let vi_keys = state
-            .lock()
-            .ok()
-            .is_some_and(|st| st.option_for_target(&target, "status-keys") == Some("vi"));
+        let vi_keys = state.borrow_mut().option_for_target(&target, "status-keys") == Some("vi");
         if self.editor.mode == PromptInputMode::ViCommand {
             match key {
                 "i" => {
@@ -1004,7 +977,8 @@ impl CommandPrompt {
                     self.changed('=', state, hub, context);
                 }
                 "Up" | "k" => {
-                    if let Ok(st) = state.lock() {
+                    {
+                        let st = state.borrow_mut();
                         let history = st.prompt_history(&self.request.spec.prompt_type);
                         if self.editor.history_index < history.len() {
                             self.editor.history_index += 1;
@@ -1017,7 +991,8 @@ impl CommandPrompt {
                 }
                 "Down" | "j" if self.editor.history_index > 0 => {
                     self.editor.history_index -= 1;
-                    if let Ok(st) = state.lock() {
+                    {
+                        let st = state.borrow_mut();
                         let history = st.prompt_history(&self.request.spec.prompt_type);
                         let value = if self.editor.history_index == 0 {
                             ""
@@ -1151,7 +1126,8 @@ impl CommandPrompt {
                 self.changed('=', state, hub, context);
             }
             "Up" | "C-p" => {
-                if let Ok(st) = state.lock() {
+                {
+                    let st = state.borrow_mut();
                     let history = st.prompt_history(&self.request.spec.prompt_type);
                     if self.editor.history_index < history.len() {
                         self.editor.history_index += 1;
@@ -1165,7 +1141,8 @@ impl CommandPrompt {
             "Down" | "C-n" => {
                 if self.editor.history_index > 0 {
                     self.editor.history_index -= 1;
-                    if let Ok(st) = state.lock() {
+                    {
+                        let st = state.borrow_mut();
                         let history = st.prompt_history(&self.request.spec.prompt_type);
                         let value = if self.editor.history_index == 0 {
                             ""
@@ -1257,9 +1234,9 @@ fn command_line_argv(
     line: &str,
     state: &SharedState,
 ) -> Result<Vec<String>, command::CommandResult> {
-    let aliases = match state.lock() {
-        Ok(state) => state.command_aliases(),
-        Err(_) => return Err(command::CommandResult::err("server state poisoned\n")),
+    let aliases = {
+        let state = state.borrow_mut();
+        state.command_aliases()
     };
     let groups = command::command_string_groups_with_aliases(line, &aliases)?;
     let mut argv = Vec::new();
@@ -1299,7 +1276,8 @@ fn run_mode_edit(
             }
             let result = command::run_with_context(&args, state, &hub.snapshot().panes, context);
             if result.exit == 0 {
-                if let Ok(mut state) = state.lock() {
+                {
+                    let mut state = state.borrow_mut();
                     let _ = state.mode_view_update_edit(target, edit, value);
                 }
             }
@@ -1315,9 +1293,9 @@ fn run_mode_edit(
             if value.is_empty() {
                 return command::CommandResult::ok("");
             }
-            let aliases = match state.lock() {
-                Ok(state) => state.command_aliases(),
-                Err(_) => return command::CommandResult::err("server state poisoned\n"),
+            let aliases = {
+                let state = state.borrow_mut();
+                state.command_aliases()
             };
             let groups = match command::command_string_groups_with_aliases(value, &aliases) {
                 Ok(groups) => groups,
@@ -1333,9 +1311,9 @@ fn run_mode_edit(
             let Some(key_code) = parse_key_name(key) else {
                 return command::CommandResult::err(format!("unknown key: {key}\n"));
             };
-            let mut state = match state.lock() {
-                Ok(state) => state,
-                Err(_) => return command::CommandResult::err("server state poisoned\n"),
+            let mut state = {
+                let state = state.borrow_mut();
+                state
             };
             state.bind_key(table, key_code, commands.clone(), *repeat, note.clone());
             let display = command::display_command(&commands);
@@ -1365,9 +1343,9 @@ fn run_mode_edit(
             let Some(key_code) = parse_key_name(key) else {
                 return command::CommandResult::err(format!("unknown key: {key}\n"));
             };
-            let mut state = match state.lock() {
-                Ok(state) => state,
-                Err(_) => return command::CommandResult::err("server state poisoned\n"),
+            let mut state = {
+                let state = state.borrow_mut();
+                state
             };
             state.bind_key(
                 table,

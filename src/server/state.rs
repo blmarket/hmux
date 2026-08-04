@@ -13,7 +13,7 @@ use std::io;
 use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::format::glob_match;
@@ -40,11 +40,11 @@ fn default_pane_io_mode() -> PaneIoMode {
 /// protocol drivers, the attach compositors and the command queues all hold it
 /// across suspensions of their own. They all run on the loop, so the sharing is
 /// ownership, not concurrency.
-pub(crate) type SharedState = Arc<Mutex<ServerState>>;
+pub(crate) type SharedState = Rc<RefCell<ServerState>>;
 
 /// Wrap a fresh [`ServerState`] in the handle everything on the loop shares.
 pub(crate) fn shared_state(state: ServerState) -> SharedState {
-    Arc::new(Mutex::new(state))
+    Rc::new(RefCell::new(state))
 }
 
 /// How to back a new pane's screen.

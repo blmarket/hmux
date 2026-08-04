@@ -347,9 +347,7 @@ pub(crate) fn expand_command_prompt_format(
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> String {
-    let Ok(mut st) = state.lock() else {
-        return source.to_string();
-    };
+    let mut st = state.borrow_mut();
     let previous_session = st.replace_command_session_id(context.current_session_id);
     let target = current_session(&st);
     let expanded = target
@@ -387,16 +385,16 @@ pub(crate) fn run_command_prompt_template(
     context: &ClientContext,
 ) -> CommandResult {
     let mut execution_context = context.clone();
-    execution_context.command_state = Some(Arc::clone(state));
+    execution_context.command_state = Some(Rc::clone(state));
     execution_context.defer_queue_commands = true;
     let template = command_prompt_template(args, values, state, agents, context);
     let tokens = tokenize_line(&template);
     if tokens.is_empty() {
         return CommandResult::ok("");
     }
-    let mut st = match state.lock() {
-        Ok(guard) => guard,
-        Err(_) => return CommandResult::err("server state poisoned\n"),
+    let mut st = {
+        let guard = state.borrow_mut();
+        guard
     };
     let previous_session = st.replace_command_session_id(execution_context.current_session_id);
     let result = run_tokenized_line(&tokens, &mut st, agents, &execution_context);
@@ -461,7 +459,7 @@ impl BlockingCommandRuntime {
     ) -> CommandResult {
         let mut task = TaskState::new(CommandCoroutine::new(
             queue,
-            Arc::clone(state),
+            Rc::clone(state),
             Arc::new(Self),
             64,
         ));
@@ -600,12 +598,12 @@ pub(crate) fn start_resumable_command(
     context: &ClientContext,
 ) -> Result<ResumableCommandQueue, CommandResult> {
     let mut execution_context = context.clone();
-    execution_context.command_state = Some(Arc::clone(state));
+    execution_context.command_state = Some(Rc::clone(state));
     let expanded_args = expand_attached_separators(args);
     let groups = split_commands(&expanded_args);
-    let aliases = match state.lock() {
-        Ok(state) => state.command_aliases(),
-        Err(_) => return Err(CommandResult::err("server state poisoned\n")),
+    let aliases = {
+        let state = state.borrow_mut();
+        state.command_aliases()
     };
     let parsed = parse_command_groups_with_aliases(groups, &aliases)?;
     Ok(ResumableCommandQueue::new(
@@ -624,13 +622,13 @@ pub(crate) fn start_resumable_command_string(
     let tokens = tokenize_line(line);
     let owned_groups = tokenized_command_groups(&tokens);
     let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    let aliases = match state.lock() {
-        Ok(state) => state.command_aliases(),
-        Err(_) => return Err(CommandResult::err("server state poisoned\n")),
+    let aliases = {
+        let state = state.borrow_mut();
+        state.command_aliases()
     };
     let parsed = parse_command_groups_with_aliases(groups, &aliases)?;
     let mut execution_context = context.clone();
-    execution_context.command_state = Some(Arc::clone(state));
+    execution_context.command_state = Some(Rc::clone(state));
     execution_context.defer_queue_commands = true;
     Ok(ResumableCommandQueue::new(
         parsed,
@@ -649,9 +647,9 @@ pub(crate) fn start_resumable_command_string_with_tail(
     let tokens = tokenize_line(line);
     let owned_groups = tokenized_command_groups(&tokens);
     let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    let aliases = match state.lock() {
-        Ok(state) => state.command_aliases(),
-        Err(_) => return Err(CommandResult::err("server state poisoned\n")),
+    let aliases = {
+        let state = state.borrow_mut();
+        state.command_aliases()
     };
     let mut parsed = parse_command_groups_with_aliases(groups, &aliases)?;
     if !tail.is_empty() {
@@ -662,7 +660,7 @@ pub(crate) fn start_resumable_command_string_with_tail(
         )?);
     }
     let mut execution_context = context.clone();
-    execution_context.command_state = Some(Arc::clone(state));
+    execution_context.command_state = Some(Rc::clone(state));
     execution_context.defer_queue_commands = true;
     Ok(ResumableCommandQueue::new(
         parsed,
@@ -1383,7 +1381,8 @@ impl ResumableCommandQueue {
                     continue;
                 }
                 SharedQueueItem::EndHook { name } => {
-                    if let Ok(mut state) = state.lock() {
+                    {
+                        let mut state = state.borrow_mut();
                         state.end_hook(&name);
                         state.record_control_checkpoint();
                     }
@@ -1395,13 +1394,9 @@ impl ResumableCommandQueue {
             };
 
             {
-                let mut state = match state.lock() {
-                    Ok(state) => state,
-                    Err(_) => {
-                        return ResumableCommandTurn::Complete(CommandResult::err(
-                            "server state poisoned\n",
-                        ));
-                    }
+                let mut state = {
+                    let state = state.borrow_mut();
+                    state
                 };
                 state.add_message(format!(
                     "{} command: {}",
@@ -1421,13 +1416,9 @@ impl ResumableCommandQueue {
                 contributes_status,
             };
             if inflight.command.spec.name == "run-shell" && has_flag(&inflight.command.args, "-b") {
-                let jobs = match state.lock() {
-                    Ok(state) => state.background_job_registry(),
-                    Err(_) => {
-                        return ResumableCommandTurn::Complete(CommandResult::err(
-                            "server state poisoned\n",
-                        ));
-                    }
+                let jobs = {
+                    let state = state.borrow_mut();
+                    state.background_job_registry()
                 };
                 let mut result = CommandResult::ok("");
                 result
@@ -1446,9 +1437,9 @@ impl ResumableCommandQueue {
             {
                 let suspension = CommandSuspension::RunShell {
                     args: inflight.command.args.clone(),
-                    context: match state.lock() {
-                        Ok(state) => self.context.with_job_environment(&state),
-                        Err(_) => self.context.clone(),
+                    context: {
+                        let state = state.borrow_mut();
+                        self.context.with_job_environment(&state)
                     },
                 };
                 self.suspended = Some(inflight);
@@ -1469,8 +1460,8 @@ impl ResumableCommandQueue {
                 let then_command = positionals.get(1).map(|command| (*command).to_string());
                 let else_command = positionals.get(2).map(|command| (*command).to_string());
                 let request = if has_flag(&inflight.command.args, "-F") {
-                    let matched = match state.lock() {
-                        Ok(mut state) => {
+                    let matched = {
+                        let mut state = state.borrow_mut();
                             let previous =
                                 install_command_target_context(&mut state, &self.context);
                             let expanded = expand_if_cond(
@@ -1481,8 +1472,6 @@ impl ResumableCommandQueue {
                             );
                             restore_command_target_context(&mut state, previous);
                             !expanded.is_empty() && expanded != "0"
-                        }
-                        Err(_) => false,
                     };
                     BackgroundCommandRequest::Ready {
                         command: if matched { then_command } else { else_command },
@@ -1548,8 +1537,8 @@ impl ResumableCommandQueue {
                     continue;
                 };
                 if has_flag(&inflight.command.args, "-F") {
-                    let matched = match state.lock() {
-                        Ok(mut state) => {
+                    let matched = {
+                        let mut state = state.borrow_mut();
                             let previous =
                                 install_command_target_context(&mut state, &self.context);
                             let expanded = expand_if_cond(
@@ -1560,8 +1549,6 @@ impl ResumableCommandQueue {
                             );
                             restore_command_target_context(&mut state, previous);
                             !expanded.is_empty() && expanded != "0"
-                        }
-                        Err(_) => false,
                     };
                     let execution =
                         self.plan_if_shell_branch(&inflight.command.args, matched, state);
@@ -1570,9 +1557,9 @@ impl ResumableCommandQueue {
                 }
                 let suspension = CommandSuspension::IfShell {
                     condition: condition.to_string(),
-                    context: match state.lock() {
-                        Ok(state) => self.context.with_job_environment(&state),
-                        Err(_) => self.context.clone(),
+                    context: {
+                        let state = state.borrow_mut();
+                        self.context.with_job_environment(&state)
                     },
                 };
                 self.suspended = Some(inflight);
@@ -1615,11 +1602,9 @@ impl ResumableCommandQueue {
                 }
             }
             if inflight.command.spec.name == "save-buffer" {
-                let request = match state.lock() {
-                    Ok(state) => {
+                let request = {
+                    let state = state.borrow_mut();
                         save_buffer_client_request(&inflight.command.args, &state, &self.context)
-                    }
-                    Err(_) => Some(Err(CommandResult::err("server state poisoned\n"))),
                 };
                 if let Some(request) = request {
                     match request {
@@ -1641,18 +1626,9 @@ impl ResumableCommandQueue {
                 }
             }
             if inflight.command.spec.name == "wait-for" {
-                let registry = match state.lock() {
-                    Ok(state) => state.wait_registry(),
-                    Err(_) => {
-                        self.finish_execution(
-                            inflight,
-                            SharedCommandExecution::completed(CommandResult::err(
-                                "server state poisoned\n",
-                            )),
-                            state,
-                        );
-                        continue;
-                    }
+                let registry = {
+                    let state = state.borrow_mut();
+                    state.wait_registry()
                 };
                 let args = inflight.command.args.clone();
                 self.suspended = Some(inflight);
@@ -1671,18 +1647,9 @@ impl ResumableCommandQueue {
                     );
                     continue;
                 }
-                let registry = match state.lock() {
-                    Ok(state) => state.client_prompt_registry(),
-                    Err(_) => {
-                        self.finish_execution(
-                            inflight,
-                            SharedCommandExecution::completed(CommandResult::err(
-                                "server state poisoned\n",
-                            )),
-                            state,
-                        );
-                        continue;
-                    }
+                let registry = {
+                    let state = state.borrow_mut();
+                    state.client_prompt_registry()
                 };
                 let suspension = CommandSuspension::CommandPrompt {
                     target: command_prompt_target(&inflight.command.args),
@@ -1866,9 +1833,9 @@ impl ResumableCommandQueue {
         let tokens = tokenize_line(line);
         let owned_groups = tokenized_command_groups(&tokens);
         let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-        let aliases = match state.lock() {
-            Ok(state) => state.command_aliases(),
-            Err(_) => return Err(CommandResult::err("server state poisoned\n")),
+        let aliases = {
+            let state = state.borrow_mut();
+            state.command_aliases()
         };
         let parsed =
             parse_command_groups_with_aliases(groups, &aliases).map_err(|mut result| {
@@ -1900,9 +1867,9 @@ impl ResumableCommandQueue {
         commands: Vec<DeferredCommand>,
         state: &SharedState,
     ) -> Result<Vec<SharedQueueItem>, CommandResult> {
-        let aliases = match state.lock() {
-            Ok(state) => state.command_aliases(),
-            Err(_) => return Err(CommandResult::err("server state poisoned\n")),
+        let aliases = {
+            let state = state.borrow_mut();
+            state.command_aliases()
         };
         let mut planned = Vec::new();
         for command in commands {
@@ -1950,15 +1917,13 @@ impl ResumableCommandQueue {
             .expect("command suspension completed without an active queue item");
         let execution = match result {
             CommandSuspensionResult::RunShell(completion) => {
-                let result = match state.lock() {
-                    Ok(mut state) => {
+                let result = {
+                    let mut state = state.borrow_mut();
                         let previous = install_command_target_context(&mut state, &self.context);
                         let result = finish_run_shell(completion, &mut state);
                         state.record_control_checkpoint();
                         restore_command_target_context(&mut state, previous);
                         result
-                    }
-                    Err(_) => CommandResult::err("server state poisoned\n"),
                 };
                 SharedCommandExecution::completed(result)
             }
@@ -2005,7 +1970,8 @@ impl ResumableCommandQueue {
                 } else {
                     format!("{location}: {diagnostic}")
                 };
-                if let Ok(mut state) = state.lock() {
+                {
+                    let mut state = state.borrow_mut();
                     state.push_config_error(diagnostic);
                 }
             }
@@ -2090,9 +2056,9 @@ impl ResumableCommandQueue {
         if self.context.suppress_notifications {
             return Vec::new();
         }
-        let notifications = match state.lock() {
-            Ok(mut state) => state.take_notifications(),
-            Err(_) => return Vec::new(),
+        let notifications = {
+            let mut state = state.borrow_mut();
+            state.take_notifications()
         };
         notifications
             .into_iter()
@@ -2136,9 +2102,9 @@ impl ResumableCommandQueue {
         origin: HookOrigin,
     ) -> Vec<Vec<SharedQueueItem>> {
         let (commands, aliases) = {
-            let mut state = match state.lock() {
-                Ok(state) => state,
-                Err(_) => return Vec::new(),
+            let mut state = {
+                let state = state.borrow_mut();
+                state
             };
             let previous = install_command_target_context(&mut state, &self.context);
             let commands = hook_commands(hook, requested_target, &mut state, origin);
@@ -2312,9 +2278,9 @@ fn run_single_shared(
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
-    let mut state = match state.lock() {
-        Ok(state) => state,
-        Err(_) => return CommandResult::err("server state poisoned\n"),
+    let mut state = {
+        let state = state.borrow_mut();
+        state
     };
     let previous = install_command_target_context(&mut state, context);
     let result = run_single(
@@ -2341,14 +2307,14 @@ fn run_shell_shared(
         };
         return run_inserted_command_string(command, state, agents, context);
     }
-    let context = match state.lock() {
-        Ok(state) => context.with_job_environment(&state),
-        Err(_) => return CommandResult::err("server state poisoned\n"),
+    let context = {
+        let state = state.borrow_mut();
+        context.with_job_environment(&state)
     };
     let completion = run_blocking(RunShellJob::new(args, &context));
-    let mut state = match state.lock() {
-        Ok(state) => state,
-        Err(_) => return CommandResult::err("server state poisoned\n"),
+    let mut state = {
+        let state = state.borrow_mut();
+        state
     };
     let previous = install_command_target_context(&mut state, &context);
     let result = finish_run_shell(completion, &mut state);
@@ -2369,9 +2335,9 @@ fn run_inserted_command_string(
     let tokens = tokenize_line(line);
     let owned_groups = tokenized_command_groups(&tokens);
     let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    let aliases = match state.lock() {
-        Ok(state) => state.command_aliases(),
-        Err(_) => return CommandResult::err("server state poisoned\n"),
+    let aliases = {
+        let state = state.borrow_mut();
+        state.command_aliases()
     };
     let parsed = match parse_command_groups_with_aliases(groups, &aliases) {
         Ok(parsed) => parsed,
@@ -2411,9 +2377,7 @@ fn prepare_source_file_paths(
             if !has_bool_flag(args, 'F') {
                 return Ok(raw_path.to_string());
             }
-            let mut state = state
-                .lock()
-                .map_err(|_| CommandResult::err("server state poisoned\n"))?;
+            let mut state = state.borrow_mut();
             let previous = install_command_target_context(&mut state, context);
             let path = expand_if_cond(raw_path, args, &state, agents);
             restore_command_target_context(&mut state, previous);
@@ -2443,16 +2407,12 @@ fn plan_source_file_completion(
             Ok(contents) => {
                 let mut file_insertions = Vec::new();
                 let mut file_parse_error = false;
-                let environment = match state.lock() {
-                    Ok(state) => state
+                let environment = {
+                    let state = state.borrow_mut();
+                    state
                         .env_iter()
                         .map(|(name, value)| (name.clone(), value.clone()))
-                        .collect::<BTreeMap<_, _>>(),
-                    Err(_) => {
-                        return SharedCommandExecution::completed(CommandResult::err(
-                            "server state poisoned\n",
-                        ))
-                    }
+                        .collect::<BTreeMap<_, _>>()
                 };
                 let parsed = match source_lines(&contents, &environment) {
                     Ok(parsed) => parsed,
@@ -2464,7 +2424,8 @@ fn plan_source_file_completion(
                     }
                 };
                 if !parse_only {
-                    if let Ok(mut state) = state.lock() {
+                    {
+                        let mut state = state.borrow_mut();
                         for (name, value, hidden) in &parsed.assignments {
                             if *hidden {
                                 state.set_hidden_env(name, value);
@@ -2486,13 +2447,9 @@ fn plan_source_file_completion(
                     let parsed = if parse_only {
                         parse_command_groups(groups)
                     } else {
-                        let aliases = match state.lock() {
-                            Ok(state) => state.command_aliases(),
-                            Err(_) => {
-                                return SharedCommandExecution::completed(CommandResult::err(
-                                    "server state poisoned\n",
-                                ))
-                            }
+                        let aliases = {
+                            let state = state.borrow_mut();
+                            state.command_aliases()
                         };
                         parse_command_groups_with_aliases(groups, &aliases)
                     };
@@ -2537,7 +2494,8 @@ fn plan_source_file_completion(
                                 out.stderr.push_str(&result.stderr);
                                 out.exit = 1;
                                 out.continue_queue = true;
-                                if let Ok(mut state) = state.lock() {
+                                {
+                                    let mut state = state.borrow_mut();
                                     state.push_config_error(diagnostic);
                                 }
                             }
@@ -9398,7 +9356,7 @@ mod tests {
     fn read_only_command_does_not_invalidate_an_attached_client() {
         let st = state();
         let (pane_output, render) = {
-            let guard = st.lock().unwrap();
+            let guard = st.borrow_mut();
             let pane_output = guard.subscribe_active_pane_output("0").unwrap();
             let registry = guard.client_render_registry();
             let session_id = guard.session_id("0").unwrap();
@@ -9425,7 +9383,7 @@ mod tests {
     fn window_status_change_invalidates_only_its_attached_session() {
         let st = state();
         let (registry, session_0, session_1) = {
-            let mut guard = st.lock().unwrap();
+            let mut guard = st.borrow_mut();
             guard.create_session("1", PaneSpec::Inert).unwrap();
             (
                 guard.client_render_registry(),
@@ -9455,7 +9413,7 @@ mod tests {
     fn status_interval_change_wakes_attached_clients_to_reschedule_timer() {
         let st = state();
         let attached = {
-            let guard = st.lock().unwrap();
+            let guard = st.borrow_mut();
             let registry = guard.client_render_registry();
             registry
                 .attach(guard.session_id("0").unwrap(), "test-client".into())
@@ -9477,7 +9435,7 @@ mod tests {
     fn terminal_override_change_wakes_clients_to_rebuild_their_profiles() {
         let st = state();
         let attached = {
-            let guard = st.lock().unwrap();
+            let guard = st.borrow_mut();
             let registry = guard.client_render_registry();
             registry
                 .attach(guard.session_id("0").unwrap(), "test-client".into())
@@ -9756,7 +9714,7 @@ mod tests {
         // oldest top of scrollback history.
         let st = state();
         {
-            let mut g = st.lock().unwrap();
+            let mut g = st.borrow_mut();
             let _ = g.resize_session("0", 80, 24);
             let mut feed = b"HEAD_OLDEST\r\n".to_vec();
             for i in 1..=60 {
@@ -9789,7 +9747,7 @@ mod tests {
         // on a fresh server), not on stdout.
         let st = state();
         {
-            let g = st.lock().unwrap();
+            let g = st.borrow_mut();
             g.active_pane("0").unwrap().feed(b"CAPTURED_LINE");
         }
         let cap = run_str(&st, &["capture-pane", "-t", "0"]);
@@ -10028,7 +9986,7 @@ mod tests {
     fn display_message_routes_to_control_clients() {
         let st = state();
         let (session_id, registry) = {
-            let st = st.lock().unwrap();
+            let st = st.borrow_mut();
             (st.sessions()[0].id, st.client_render_registry())
         };
         let attachment = registry
@@ -11256,8 +11214,7 @@ mod tests {
             "brk\n"
         );
         assert_eq!(
-            st.lock()
-                .expect("state lock")
+            st.borrow_mut()
                 .option_for_target("0:1", "automatic-rename"),
             Some("off")
         );
@@ -12322,7 +12279,7 @@ mod tests {
     #[test]
     fn multi_command_stdout_preserves_text_and_binary_order() {
         let st = state();
-        st.lock().unwrap().set_buffer(Some("raw"), b"middle\0\xff");
+        st.borrow_mut().set_buffer(Some("raw"), b"middle\0\xff");
 
         let result = run_str(
             &st,
@@ -12492,7 +12449,7 @@ mod tests {
     #[test]
     fn new_session_for_attach_creates_and_returns_name() {
         let st = state();
-        let mut g = st.lock().unwrap();
+        let mut g = st.borrow_mut();
         // Explicit name.
         let context = ClientContext::default();
         let name = new_session_for_attach(
@@ -12539,7 +12496,7 @@ mod tests {
     #[test]
     fn new_session_for_attach_a_finds_existing() {
         let st = state();
-        let mut g = st.lock().unwrap();
+        let mut g = st.borrow_mut();
         // The default session "0" exists; `-A -s 0` must return it, not error.
         let name = new_session_for_attach(
             &["new-session".into(), "-A".into(), "-s".into(), "0".into()],
@@ -12553,7 +12510,7 @@ mod tests {
     #[test]
     fn new_session_for_attach_duplicate_errors_without_a() {
         let st = state();
-        let mut g = st.lock().unwrap();
+        let mut g = st.borrow_mut();
         // "0" already exists; creating it again without -A is tmux's duplicate error.
         let err = new_session_for_attach(
             &["new-session".into(), "-s".into(), "0".into()],
@@ -12567,7 +12524,7 @@ mod tests {
     #[test]
     fn new_session_for_attach_creates_session_group() {
         let st = state();
-        let mut g = st.lock().unwrap();
+        let mut g = st.borrow_mut();
         let name = new_session_for_attach(
             &[
                 "new-session".into(),

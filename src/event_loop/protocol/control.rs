@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -26,7 +27,7 @@ impl ProtocolClient {
         match EventControlClient::new(
             &args,
             tty,
-            Arc::clone(&self.state),
+            Rc::clone(&self.state),
             self.hub.clone(),
             &context,
             Arc::clone(&self.command_runtime),

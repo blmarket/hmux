@@ -582,8 +582,7 @@ mod tests {
             drain_fd(&master, &mut tty_output);
             let size = server
                 .state()
-                .lock()
-                .unwrap()
+                .borrow_mut()
                 .sessions()
                 .iter()
                 .find(|session| session.name == "direct-attach")

@@ -77,10 +77,7 @@ pub struct Server {
 
 impl ServerObservability for Server {
     fn pane_ids(&self) -> io::Result<Vec<PublicPaneId>> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| io::Error::other("server state mutex poisoned"))?;
+        let state = self.state.borrow_mut();
         let mut ids = state
             .all_windows()
             .flat_map(|window| &window.panes)
@@ -91,10 +88,7 @@ impl ServerObservability for Server {
     }
 
     fn resolve_pane(&self, id: PublicPaneId) -> io::Result<Option<Arc<dyn PaneObservability>>> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| io::Error::other("server state mutex poisoned"))?;
+        let state = self.state.borrow_mut();
         let pane = state
             .all_windows()
             .flat_map(|window| &window.panes)
@@ -138,8 +132,7 @@ impl Server {
     /// the `TMUX` variable of a spawned process both name.
     pub fn set_socket_path(&self, path: impl Into<std::path::PathBuf>) -> io::Result<()> {
         self.state
-            .lock()
-            .map_err(|_| io::Error::other("server state mutex poisoned"))?
+            .borrow_mut()
             .set_socket_path(path);
         Ok(())
     }
@@ -147,7 +140,7 @@ impl Server {
     /// Shared state handle (for embedding hmux in a larger app, e.g. querying
     /// sessions for agent detection).
     pub fn state(&self) -> SharedState {
-        Arc::clone(&self.state)
+        Rc::clone(&self.state)
     }
 
     /// A clone of this server's status hub, so the [`AgentObserver`] can publish
@@ -160,8 +153,7 @@ impl Server {
 
     pub(crate) fn enable_event_loop_pane_io(&self) -> io::Result<()> {
         self.state
-            .lock()
-            .map_err(|_| io::Error::other("server state mutex poisoned"))?
+            .borrow_mut()
             .set_pane_io_mode(PaneIoMode::EventLoop);
         Ok(())
     }
@@ -172,7 +164,7 @@ impl Server {
 
     /// Every `pipe-pane` child opened since the last call.
     pub(crate) fn take_new_pane_pipes(&self) -> Vec<crate::server::pane::PanePipeIo> {
-        match self.state.try_lock() {
+        match self.state.try_borrow_mut() {
             Ok(mut state) => state.take_new_pane_pipes(),
             Err(_) => Vec::new(),
         }
@@ -180,10 +172,7 @@ impl Server {
 
     /// Every `#()` job a format expansion has launched since the last call.
     pub(crate) fn take_pending_format_jobs(&self) -> Vec<crate::server::status::FormatJob> {
-        self.state
-            .lock()
-            .map(|state| state.take_pending_format_jobs())
-            .unwrap_or_default()
+        self.state.borrow_mut().take_pending_format_jobs()
     }
 
     /// Recheck monitored windows for bell, activity, and silence alerts.
@@ -203,10 +192,7 @@ impl Server {
     /// only consumes pane observation deltas it has not seen, so whichever
     /// caller reaches a delta first raises the flags and the checkpoint.
     pub(crate) fn refresh_alerts(&self) -> io::Result<Option<std::time::Duration>> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| io::Error::other("server state mutex poisoned"))?;
+        let mut state = self.state.borrow_mut();
         if state.refresh_alerts(std::time::Instant::now()) {
             state.record_control_checkpoint();
         }
@@ -217,27 +203,18 @@ impl Server {
     /// clients of any session idle past its `lock-after-time`. Returns when the
     /// next session falls due, so the loop can sleep until then.
     pub(crate) fn refresh_lock_timers(&self) -> io::Result<Option<std::time::Duration>> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| io::Error::other("server state mutex poisoned"))?;
-        Ok(state.refresh_lock_timers())
+        Ok(self.state.borrow_mut().refresh_lock_timers())
     }
 
     /// tmux's per-loop `server_check_unattached` plus the `server_loop` exit
     /// test, run once the current batch of client events has been applied.
     /// tmux's `status_prompt_save_history`, run as the server exits.
     pub(crate) fn save_prompt_history(&self) {
-        if let Ok(state) = self.state.lock() {
-            state.save_prompt_history();
-        }
+        self.state.borrow_mut().save_prompt_history();
     }
 
     pub(crate) fn enforce_lifecycle_policies(&self) -> io::Result<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| io::Error::other("server state mutex poisoned"))?;
+        let mut state = self.state.borrow_mut();
         state.enforce_lifecycle_policies();
         // tmux's per-loop `recalculate_sizes`. Most size changes are applied by
         // whichever path caused them, but a client going away has no such path
@@ -255,12 +232,8 @@ impl Server {
 
 
     pub(crate) fn try_event_pane_snapshot(&self) -> io::Result<Option<EventPaneSnapshot>> {
-        let mut state = match self.state.try_lock() {
-            Ok(state) => state,
-            Err(std::sync::TryLockError::WouldBlock) => return Ok(None),
-            Err(std::sync::TryLockError::Poisoned(_)) => {
-                return Err(io::Error::other("server state mutex poisoned"));
-            }
+        let Ok(mut state) = self.state.try_borrow_mut() else {
+            return Ok(None);
         };
         let runtimes = state.take_event_pane_ios();
         let active = state.pane_runtime_ids().into_iter().collect();
@@ -274,25 +247,23 @@ impl Server {
     /// so re-entering the guard here would wedge it; a busy state therefore
     /// defers the shutdown decision to a later turn.
     pub(crate) fn event_loop_shutdown_requested(&self) -> bool {
-        match self.state.try_lock() {
+        match self.state.try_borrow_mut() {
             Ok(mut state) => {
                 state.reap_exited_panes();
                 state.shutdown_requested()
             }
-            Err(std::sync::TryLockError::WouldBlock) => false,
-            Err(std::sync::TryLockError::Poisoned(_)) => true,
+            Err(_) => false,
         }
     }
 
     pub(crate) fn try_reap_event_children(&self) -> bool {
         crate::server::pane::reap_orphans();
-        match self.state.try_lock() {
+        match self.state.try_borrow_mut() {
             Ok(mut state) => {
                 state.reap_exited_panes();
                 true
             }
-            Err(std::sync::TryLockError::WouldBlock) => false,
-            Err(std::sync::TryLockError::Poisoned(_)) => true,
+            Err(_) => false,
         }
     }
 }
@@ -422,9 +393,7 @@ struct ObservedPane {
 }
 
 fn pane_snapshot(state: &SharedState) -> io::Result<HashMap<PaneId, ObservedPane>> {
-    let state = state
-        .lock()
-        .map_err(|_| io::Error::other("server state mutex poisoned"))?;
+    let state = state.borrow_mut();
     let mut snapshot = HashMap::new();
     for window in state.all_windows() {
         for node in &window.panes {
@@ -545,14 +514,14 @@ mod tests {
 
         {
             let state = server.state();
-            let state = state.lock().unwrap();
+            let state = state.borrow_mut();
             state.window(0, 0).panes[0].pane.feed(b"first\r\nsecond");
         }
         server.reconcile_event_observations().unwrap();
         let tail = handle.terminal_tail(1).expect("tail");
         assert_eq!(tail.text, "second");
 
-        assert!(server.state().lock().unwrap().kill_session("0"));
+        assert!(server.state().borrow_mut().kill_session("0"));
         server.reconcile_event_observations().unwrap();
 
         let events = hook.0.borrow();
@@ -591,7 +560,7 @@ mod tests {
 
         {
             let state = server.state();
-            let state = state.lock().expect("server state");
+            let state = state.borrow_mut();
             state.window(0, 0).panes[0]
                 .pane
                 .feed(b"one\r\ntwo\r\nthree");
@@ -603,7 +572,7 @@ mod tests {
         assert_eq!(tail.text, "two\nthree");
 
         let state = server.state();
-        assert!(state.lock().expect("server state").kill_session("0"));
+        assert!(state.borrow_mut().kill_session("0"));
         assert!(server
             .resolve_pane(PaneId(0))
             .expect("resolve removed pane")

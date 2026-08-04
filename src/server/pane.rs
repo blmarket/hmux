@@ -1222,9 +1222,7 @@ impl NativePaneObservation {
         &self,
         max_rows: usize,
     ) -> io::Result<(Option<String>, String)> {
-        let terminal = self
-            .term
-            .borrow_mut();
+        let terminal = self.term.borrow_mut();
         let title = terminal.title().map_err(ghostty_err)?;
         let text = trailing_lines(&terminal.dump_plain().map_err(ghostty_err)?, max_rows);
         Ok((title, text))
@@ -1250,9 +1248,7 @@ impl PaneObservability for NativePaneObservation {
     }
 
     fn screen(&self, source: ScreenSource, lines: usize) -> io::Result<ScreenTail> {
-        let term = self
-            .term
-            .borrow_mut();
+        let term = self.term.borrow_mut();
         let text = match source {
             ScreenSource::Recent => term.dump_plain().map_err(ghostty_err)?,
             ScreenSource::RecentUnwrapped => term.dump_plain_unwrapped().map_err(ghostty_err)?,
@@ -1628,10 +1624,7 @@ impl Pane {
 
     /// Reset the emulated terminal state without sending bytes to the child.
     pub(crate) fn reset_terminal(&self) -> io::Result<()> {
-        let mut terminal = self
-            .observation
-            .term
-            .borrow_mut();
+        let mut terminal = self.observation.term.borrow_mut();
         self.observation.write_terminal(&mut terminal, b"\x1bc");
         self.observation.record_change(false);
         Ok(())
@@ -1796,10 +1789,7 @@ impl Pane {
     pub(crate) fn copy_snapshot(
         &self,
     ) -> io::Result<(ghostty_sys::GridSnapshot, Vec<u8>, (u16, u16))> {
-        let terminal = self
-            .observation
-            .term
-            .borrow_mut();
+        let terminal = self.observation.term.borrow_mut();
         let grid = terminal.grid_snapshot().map_err(ghostty_err)?;
         let vt = terminal.dump_vt().map_err(ghostty_err)?;
         let cursor = terminal.cursor_position().map_err(ghostty_err)?;
@@ -1863,10 +1853,7 @@ impl Pane {
         scroll_offset: usize,
         visible_rows: usize,
     ) -> io::Result<(Vec<u8>, usize)> {
-        let terminal = self
-            .observation
-            .term
-            .borrow_mut();
+        let terminal = self.observation.term.borrow_mut();
         let scrollback = terminal.scrollback_rows().map_err(ghostty_err)?;
         let scroll = scroll_offset.min(scrollback);
         let start = scrollback - scroll;
@@ -1900,10 +1887,7 @@ impl Pane {
     /// chosen terminal engine authoritative instead of reconstructing its grid
     /// in hmux.
     pub fn clear_history(&self) -> io::Result<()> {
-        let mut terminal = self
-            .observation
-            .term
-            .borrow_mut();
+        let mut terminal = self.observation.term.borrow_mut();
         self.observation.write_terminal(&mut terminal, b"\x1b[3J");
         self.observation.record_change(false);
         Ok(())

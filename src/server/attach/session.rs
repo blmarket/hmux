@@ -25,10 +25,7 @@ impl AttachSession {
 
     /// Whether the server wants terminal focus reporting turned on.
     fn focus_events(state: &SharedState) -> bool {
-        state
-            .lock()
-            .ok()
-            .is_some_and(|st| st.server_options().get("focus-events") == Some("on"))
+        state.borrow_mut().server_options().get("focus-events") == Some("on")
     }
 
     pub(crate) fn start_in_mode<W>(
@@ -82,9 +79,7 @@ impl AttachSession {
 
         let (cols, rows) = get_winsize(render_fd.as_raw_fd()).unwrap_or((80, 24));
         let (prompt_registry, render_registry, session_id) = {
-            let mut st = state
-                .lock()
-                .map_err(|_| io::Error::other("state poisoned"))?;
+            let mut st = state.borrow_mut();
             let session_id = st.session_id(target).ok_or_else(|| {
                 AttachStartFailure::Client(format!("can't find session: {target}\n"))
             })?;
@@ -136,9 +131,7 @@ impl AttachSession {
         )
         .with_utf8(client_tty.flags & 0x10000 != 0);
         let (status_h, status_interval, terminal) = {
-            let st = state
-                .lock()
-                .map_err(|_| io::Error::other("state poisoned"))?;
+            let st = state.borrow_mut();
             (
                 status::height(&st, target),
                 status::interval(&st, target),
@@ -167,9 +160,7 @@ impl AttachSession {
         status_cache.update_agents(hub.snapshot());
         let pane_rows = rows.saturating_sub(status_h).max(1);
         {
-            let mut st = state
-                .lock()
-                .map_err(|_| io::Error::other("state poisoned"))?;
+            let mut st = state.borrow_mut();
             let _ = st.resize_session(target, cols, pane_rows);
         }
 
@@ -182,23 +173,14 @@ impl AttachSession {
         set_nonblock(render_fd.as_raw_fd())?;
 
         let mut tty_output = TtyOutput::new();
-        let focus_events = state
-            .lock()
-            .ok()
-            .is_some_and(|st| st.server_options().get("focus-events") == Some("on"));
+        let focus_events = Self::focus_events(state);
         let tty_start = tty_start_sequence(&terminal, focus_events);
         let _ = tty_output.queue(render_fd.as_raw_fd(), &tty_start);
-        if state
-            .lock()
-            .ok()
-            .is_some_and(|st| st.option_for_target(target, "mouse") == Some("on"))
-        {
+        if state.borrow_mut().option_for_target(target, "mouse") == Some("on") {
             let _ = tty_output.queue(render_fd.as_raw_fd(), b"\x1b[?1000h\x1b[?1002h\x1b[?1006h");
         }
         let (subscribed_window, output_subscription) = {
-            let st = state
-                .lock()
-                .map_err(|_| io::Error::other("state poisoned"))?;
+            let st = state.borrow_mut();
             active_window_output_subscription(&st, target)?
         };
         let latmon = LatMon::new(format!("sess={target}"));
@@ -283,7 +265,8 @@ impl AttachSession {
                     append_view_output(state, &target, result.stdout_data());
                 }
                 if result.exit == 0 {
-                    if let Ok(mut state) = state.lock() {
+                    {
+                        let mut state = state.borrow_mut();
                         let _ = state.resize_session(&target, cols, pane_rows);
                     }
                 }
@@ -328,11 +311,10 @@ impl AttachSession {
                     }
                     let milliseconds = explicit_duration
                         .or_else(|| {
-                            state.lock().ok().and_then(|state| {
-                                state
-                                    .option_for_target(&target, "display-time")
-                                    .and_then(|value| value.parse().ok())
-                            })
+                            state
+                                .borrow_mut()
+                                .option_for_target(&target, "display-time")
+                                .and_then(|value| value.parse().ok())
                         })
                         .unwrap_or(750);
                     self.compositor.ui.status_message = Some(StatusMessage {
@@ -443,16 +425,11 @@ impl AttachSession {
                 match reason {
                     AttachFinishReason::Detached => {
                         let session_name = state
-                            .lock()
-                            .ok()
-                            .and_then(|st| {
-                                st.sessions()
-                                    .iter()
-                                    .find(|candidate| {
-                                        candidate.id == self.compositor.target.session_id
-                                    })
-                                    .map(|candidate| candidate.name.clone())
-                            })
+                            .borrow_mut()
+                            .sessions()
+                            .iter()
+                            .find(|candidate| candidate.id == self.compositor.target.session_id)
+                            .map(|candidate| candidate.name.clone())
                             .unwrap_or_else(|| self.compositor.target.stable_target.clone());
                         writer.send(Frame::new(Message::Detach(Some(session_name))))?;
                     }
@@ -504,7 +481,8 @@ impl AttachSession {
                 AttachTransition::SwitchSession(session_id) => {
                     self.compositor.target.switch_session(session_id);
                     let target = self.compositor.target.stable_target.as_str();
-                    if let Ok(mut st) = state.lock() {
+                    {
+                        let mut st = state.borrow_mut();
                         self.viewport.status_height = status::height(&st, target);
                         self.viewport.pane_rows = self
                             .viewport
@@ -530,8 +508,8 @@ impl AttachSession {
         let stable_target = self.compositor.target.stable_target.clone();
         let target = stable_target.as_str();
 
-        let target_exists = match state.lock() {
-            Ok(mut st) => {
+        let target_exists = {
+            let mut st = state.borrow_mut();
                 if st.reap_exited_panes() {
                     let _ = st.resize_session(target, self.viewport.cols, self.viewport.pane_rows);
                     self.compositor.render.last_render.clear();
@@ -539,8 +517,6 @@ impl AttachSession {
                     self.status.status_cache.invalidate();
                 }
                 st.find(target).is_some()
-            }
-            Err(_) => false,
         };
         if !target_exists {
             self.begin_finish(AttachFinishReason::SessionEnded);
@@ -615,10 +591,11 @@ impl AttachSession {
                 .as_ref()
                 .map(|overlay| overlay.poll_timeout(now))
                 .unwrap_or_else(|| {
-                    if state.lock().ok().is_some_and(|st| {
-                        st.active_mode_view(target)
-                            .is_some_and(|view| view.kind == ModeKind::Clock)
-                    }) {
+                    if state
+                        .borrow_mut()
+                        .active_mode_view(target)
+                        .is_some_and(|view| view.kind == ModeKind::Clock)
+                    {
                         1000
                     } else {
                         -1
@@ -980,9 +957,7 @@ impl AttachSession {
             self.compositor.render.last_render.clear();
         }
         if render_invalidation.contains(super::super::state::RenderInvalidation::STATUS) {
-            let mut st = state
-                .lock()
-                .map_err(|_| io::Error::other("state poisoned"))?;
+            let mut st = state.borrow_mut();
             if render_invalidation.contains(super::super::state::RenderInvalidation::TERMINAL) {
                 self.tty
                     .terminal
@@ -1105,7 +1080,8 @@ impl AttachSession {
                                 self.attachments
                                     .render_attachment
                                     .update_size(self.viewport.cols, self.viewport.rows);
-                                if let Ok(mut st) = state.lock() {
+                                {
+                                    let mut st = state.borrow_mut();
                                     self.viewport.status_height = status::height(&st, target);
                                     self.viewport.pane_rows = self
                                         .viewport
@@ -1134,11 +1110,7 @@ impl AttachSession {
                             .output
                             .queue(self.tty.render_fd.as_raw_fd(), &start);
                         self.compositor.render.output_cursor_visible = None;
-                        if state
-                            .lock()
-                            .ok()
-                            .is_some_and(|st| st.option_for_target(target, "mouse") == Some("on"))
-                        {
+                        if state.borrow_mut().option_for_target(target, "mouse") == Some("on") {
                             let _ = self.tty.output.queue(
                                 self.tty.render_fd.as_raw_fd(),
                                 b"\x1b[?1000h\x1b[?1002h\x1b[?1006h",
@@ -1147,7 +1119,8 @@ impl AttachSession {
                         // tmux stamps session activity when a client comes back
                         // from MSG_UNLOCK/MSG_WAKEUP, which re-arms the lock
                         // timer instead of leaving a resumed client unlocked.
-                        if let Ok(mut st) = state.lock() {
+                        {
+                            let mut st = state.borrow_mut();
                             st.touch_session_activity(self.compositor.target.session_id, false);
                         }
                         self.compositor.io_state = ClientIoState::Active;
@@ -1163,11 +1136,7 @@ impl AttachSession {
                             .output
                             .queue(self.tty.render_fd.as_raw_fd(), &start);
                         self.compositor.render.output_cursor_visible = None;
-                        if state
-                            .lock()
-                            .ok()
-                            .is_some_and(|st| st.option_for_target(target, "mouse") == Some("on"))
-                        {
+                        if state.borrow_mut().option_for_target(target, "mouse") == Some("on") {
                             let _ = self.tty.output.queue(
                                 self.tty.render_fd.as_raw_fd(),
                                 b"\x1b[?1000h\x1b[?1002h\x1b[?1006h",
@@ -1176,7 +1145,8 @@ impl AttachSession {
                         // tmux stamps session activity when a client comes back
                         // from MSG_UNLOCK/MSG_WAKEUP, which re-arms the lock
                         // timer instead of leaving a resumed client unlocked.
-                        if let Ok(mut st) = state.lock() {
+                        {
+                            let mut st = state.borrow_mut();
                             st.touch_session_activity(self.compositor.target.session_id, false);
                         }
                         self.compositor.io_state = ClientIoState::Active;

@@ -645,22 +645,17 @@ fn read_key(bytes: &[u8]) -> (Key, usize) {
 }
 
 fn is_configured_prefix(state: &SharedState, target: &str, key: KeyCode) -> bool {
-    state.lock().ok().is_some_and(|st| {
-        ["prefix", "prefix2"].into_iter().any(|option| {
-            st.option_for_target(target, option)
-                .or_else(|| super::options::option_default(option))
-                .and_then(parse_key_name)
-                .is_some_and(|prefix| prefix == key)
-        })
+    let st = state.borrow_mut();
+    ["prefix", "prefix2"].into_iter().any(|option| {
+        st.option_for_target(target, option)
+            .or_else(|| super::options::option_default(option))
+            .and_then(parse_key_name)
+            .is_some_and(|prefix| prefix == key)
     })
 }
 
 fn client_key_table(state: &SharedState, target: &str) -> String {
-    state
-        .lock()
-        .ok()
-        .map(|state| state.session_key_table(target))
-        .unwrap_or_else(|| super::state::DEFAULT_KEY_TABLE.to_string())
+    state.borrow_mut().session_key_table(target)
 }
 
 fn plain_prompt_key(byte: u8) -> String {
@@ -1090,7 +1085,8 @@ fn resolve_mouse_key(
         event.position = position;
     }
     let resolved_position = event.position;
-    if let Ok(state) = state.lock() {
+    {
+        let state = state.borrow_mut();
         let rendered = status_cache.render(&state, target, cols, rows);
         mouse::resolve_event(&state, target, rows, rendered, event);
     }
@@ -1144,9 +1140,7 @@ fn apply_focus_follows_mouse(
     else {
         return;
     };
-    let Ok(mut st) = state.lock() else {
-        return;
-    };
+    let mut st = state.borrow_mut();
     if st.option_for_target(target, "focus-follows-mouse") != Some("on") {
         return;
     }
@@ -1166,9 +1160,10 @@ fn decode_prompt_key(bytes: &[u8]) -> Option<(String, usize)> {
 /// poll.
 fn prompt_escape_delay(state: &SharedState) -> Duration {
     let milliseconds = state
-        .lock()
-        .ok()
-        .and_then(|st| st.server_options().get("escape-time")?.parse::<u64>().ok())
+        .borrow_mut()
+        .server_options()
+        .get("escape-time")
+        .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(10)
         .min(i32::MAX as u64)
         .max(1);
@@ -1176,7 +1171,8 @@ fn prompt_escape_delay(state: &SharedState) -> Duration {
 }
 
 fn append_view_output(state: &SharedState, target: &str, output: &[u8]) {
-    if let Ok(mut state) = state.lock() {
+    {
+        let mut state = state.borrow_mut();
         let _ = state.append_view_output(target, output);
     }
 }
@@ -1245,9 +1241,7 @@ fn refresh_active_window_output_subscription(
     subscribed_window: &mut ActiveWindowOutputKey,
     subscription: &mut OutputSubscription,
 ) -> io::Result<bool> {
-    let st = state
-        .lock()
-        .map_err(|_| io::Error::other("state poisoned"))?;
+    let st = state.borrow_mut();
     let (panes, active) = st.active_window_pane_identities(session).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,
@@ -1585,9 +1579,7 @@ where
     let target = match command::classify(args) {
         command::Intent::Attach => {
             let supplied_target = explicit_target_session(args);
-            let mut st = state
-                .lock()
-                .map_err(|_| io::Error::other("state poisoned"))?;
+            let mut st = state.borrow_mut();
             let target = attach_target(supplied_target, &mut st, context)
                 .map_err(AttachStartFailure::Client)?;
             if st.find(&target).is_none() {
@@ -1607,9 +1599,7 @@ where
             // tmux opens the terminal before creating the session, so a client
             // that cannot attach leaves nothing behind.
             AttachSession::check_terminal(&client_tty)?;
-            let mut st = state
-                .lock()
-                .map_err(|_| io::Error::other("state poisoned"))?;
+            let mut st = state.borrow_mut();
             command::new_session_for_attach(args, &mut st, context)
                 .map_err(AttachStartFailure::Client)?
         }
@@ -3150,9 +3140,7 @@ fn forward_input(
     session: &str,
     bytes: &[u8],
 ) -> io::Result<PaneInputStats> {
-    let st = state
-        .lock()
-        .map_err(|_| io::Error::other("state poisoned"))?;
+    let st = state.borrow_mut();
     st.input_to_active_pane_with_stats(session, bytes)
 }
 
@@ -3163,7 +3151,6 @@ mod tests {
     use super::*;
     use std::io::Read as _;
     use std::os::unix::net::UnixStream;
-    use std::sync::{Arc, Mutex};
 
     #[test]
     fn tty_output_retains_a_bounded_suffix_until_writable() {
@@ -3321,7 +3308,7 @@ mod tests {
     #[test]
     fn compose_frame_never_full_clears_and_erases_each_row() {
         let state = fresh_state();
-        let st = state.lock().unwrap();
+        let st = state.borrow_mut();
         let status_h = status::height(&st, "0");
         let frame = compose_frame(&st, "0", 80, 24, status_h, 0).expect("compose");
         assert!(
@@ -3349,12 +3336,12 @@ mod tests {
         let state = fresh_state();
         // Pane app hides its cursor and paints content (like a TUI).
         {
-            let st = state.lock().unwrap();
+            let st = state.borrow_mut();
             st.active_pane("0")
                 .unwrap()
                 .feed(b"\x1b[?25l\x1b[H\x1b[2Jpainted");
         }
-        let st = state.lock().unwrap();
+        let st = state.borrow_mut();
         let status_h = status::height(&st, "0");
         let frame = compose_frame(&st, "0", 80, 24, status_h, 0).expect("compose");
         assert!(
@@ -3372,11 +3359,11 @@ mod tests {
     fn compose_frame_shows_cursor_when_pane_shows_it() {
         let state = fresh_state();
         {
-            let st = state.lock().unwrap();
+            let st = state.borrow_mut();
             // Default is visible; be explicit and paint something.
             st.active_pane("0").unwrap().feed(b"\x1b[?25h\x1b[Hshell");
         }
-        let st = state.lock().unwrap();
+        let st = state.borrow_mut();
         let status_h = status::height(&st, "0");
         let frame = compose_frame(&st, "0", 80, 24, status_h, 0).expect("compose");
         assert!(
@@ -3396,11 +3383,11 @@ mod tests {
     fn compose_frame_restores_pane_cursor_shape() {
         let state = fresh_state();
         {
-            let st = state.lock().unwrap();
+            let st = state.borrow_mut();
             // Neovim uses DECSCUSR 6 for its steady bar insert-mode cursor.
             st.active_pane("0").unwrap().feed(b"\x1b[6 qeditor");
         }
-        let st = state.lock().unwrap();
+        let st = state.borrow_mut();
         let status_h = status::height(&st, "0");
         let frame = compose_frame(&st, "0", 80, 24, status_h, 0).expect("compose");
         assert!(
@@ -3539,7 +3526,7 @@ mod tests {
     #[test]
     fn carriage_return_line_update_is_a_single_cursor_row_delta() {
         let state = fresh_state();
-        let mut st = state.lock().unwrap();
+        let mut st = state.borrow_mut();
         replace_active_pane_with_inert(&mut st);
         let status_h = status::height(&st, "0");
         let _ = st.resize_session("0", 80, 24 - status_h);
@@ -3572,7 +3559,7 @@ mod tests {
     #[test]
     fn compose_frame_renders_visible_tail_after_scroll_not_oldest_history() {
         let state = fresh_state();
-        let mut st = state.lock().unwrap();
+        let mut st = state.borrow_mut();
         // Size the pane exactly as run_attach does: a client of the frame's own
         // size, whose status line the window sizing then pays for.
         let status_h = status::height(&st, "0");
@@ -3610,7 +3597,7 @@ mod tests {
     #[test]
     fn compose_frame_carries_pane_osc8_hyperlinks() {
         let state = fresh_state();
-        let mut st = state.lock().unwrap();
+        let mut st = state.borrow_mut();
         let status_h = status::height(&st, "0");
         let _client = st
             .attach_test_client("0", 80, 24)
@@ -3640,7 +3627,7 @@ mod tests {
     #[test]
     fn compose_frame_scrolls_back_into_history_with_offset() {
         let state = fresh_state();
-        let mut st = state.lock().unwrap();
+        let mut st = state.borrow_mut();
         let status_h = status::height(&st, "0");
         let _client = st
             .attach_test_client("0", 80, 24)
@@ -3687,7 +3674,7 @@ mod tests {
     #[test]
     fn compose_frame_hides_cursor_while_scrolled_back() {
         let state = fresh_state();
-        let mut st = state.lock().unwrap();
+        let mut st = state.borrow_mut();
         let status_h = status::height(&st, "0");
         let _ = st.resize_session("0", 80, 24 - status_h);
         let mut feed = Vec::new();
@@ -3708,7 +3695,7 @@ mod tests {
     #[test]
     fn compose_frame_uses_the_frozen_styled_copy_snapshot() {
         let state = fresh_state();
-        let mut st = state.lock().unwrap();
+        let mut st = state.borrow_mut();
         let status_h = status::height(&st, "0");
         let _ = st.resize_session("0", 20, 6);
         st.active_pane("0")
@@ -3754,7 +3741,7 @@ mod tests {
     #[test]
     fn compose_frame_after_clear_shows_blank_not_stale_scrollback() {
         let state = fresh_state();
-        let mut st = state.lock().unwrap();
+        let mut st = state.borrow_mut();
         let status_h = status::height(&st, "0");
         let _ = st.resize_session("0", 80, 24 - status_h);
         let mut feed = Vec::new();
@@ -3852,9 +3839,9 @@ mod tests {
     // session is "0" with one window (index 0) holding one pane.
 
     fn fresh_state() -> SharedState {
-        Arc::new(Mutex::new(
+        crate::server::state::shared_state(
             ServerState::with_test_session().expect("build state"),
-        ))
+        )
     }
 
     fn replace_active_pane_with_inert(st: &mut ServerState) {
@@ -3871,7 +3858,7 @@ mod tests {
     fn output_subscription_follows_external_active_window_change() {
         let state = fresh_state();
         let (mut subscribed_window, mut subscription) = {
-            let st = state.lock().unwrap();
+            let st = state.borrow_mut();
             active_window_output_subscription(&st, "0").expect("initial subscription")
         };
         let original_pane_id = subscribed_active_identity(&subscribed_window).0;
@@ -3879,8 +3866,7 @@ mod tests {
         // Model a separate tmux command connection selecting a newly-created
         // window while this attach loop is blocked on the original pane.
         state
-            .lock()
-            .unwrap()
+            .borrow_mut()
             .new_window("0", None, true)
             .expect("external new-window");
 
@@ -3913,8 +3899,7 @@ mod tests {
         // half of the live regression: the temporary window made typing smooth,
         // then closing it left the client subscribed to the removed pane.
         state
-            .lock()
-            .unwrap()
+            .borrow_mut()
             .kill_window("0:1")
             .expect("close selected window");
         assert!(
@@ -3937,12 +3922,12 @@ mod tests {
     fn output_subscription_follows_respawned_runtime_with_same_pane_id() {
         let state = fresh_state();
         let (mut subscribed_window, mut subscription) = {
-            let st = state.lock().unwrap();
+            let st = state.borrow_mut();
             active_window_output_subscription(&st, "0").expect("initial subscription")
         };
         let (original_pane_id, original_runtime_id) =
             subscribed_active_identity(&subscribed_window);
-        replace_active_pane_with_inert(&mut state.lock().unwrap());
+        replace_active_pane_with_inert(&mut state.borrow_mut());
 
         assert!(refresh_active_window_output_subscription(
             &state,
@@ -3960,12 +3945,11 @@ mod tests {
     fn output_subscription_wakes_for_visible_inactive_pane() {
         let state = fresh_state();
         let (mut subscribed_window, mut subscription) = {
-            let st = state.lock().unwrap();
+            let st = state.borrow_mut();
             active_window_output_subscription(&st, "0").expect("initial subscription")
         };
         state
-            .lock()
-            .unwrap()
+            .borrow_mut()
             .split_window_direction_with_spec(
                 "0",
                 false,
@@ -3986,7 +3970,7 @@ mod tests {
         subscription.drain();
 
         {
-            let st = state.lock().unwrap();
+            let st = state.borrow_mut();
             let (window, active) = st.active_window_panes("0").expect("active window");
             let inactive = window
                 .panes
@@ -4013,7 +3997,7 @@ mod tests {
     /// (window count, active window index, active window's pane count) for
     /// session "0".
     fn snapshot(state: &SharedState) -> (usize, u32, usize) {
-        let st = state.lock().unwrap();
+        let st = state.borrow_mut();
         let s = st.find("0").expect("session 0");
         let link = &s.windows[s.active];
         let window = st.window_for_link(link);
@@ -4044,12 +4028,11 @@ mod tests {
     fn prefix_new_window_is_active_and_sized() {
         let state = fresh_state();
         let _client = state
-            .lock()
-            .unwrap()
+            .borrow_mut()
             .attach_test_client("0", 100, 41)
             .expect("attach sizing client");
         dispatch_prefix_key(b'c', &state, "0", 100, 40);
-        let st = state.lock().unwrap();
+        let st = state.borrow_mut();
         let s = st.find("0").unwrap();
         // The new window (index 1) is the active one.
         assert_eq!(s.windows[s.active].index, 1);
@@ -4087,7 +4070,7 @@ mod tests {
         for (key, separator) in [(b'"', "─"), (b'%', "│")] {
             let state = fresh_state();
             dispatch_prefix_key(key, &state, "0", 80, 24);
-            let st = state.lock().unwrap();
+            let st = state.borrow_mut();
             let session = st.find("0").unwrap();
             let win = st.session_window(session, 0);
             assert_eq!(win.panes.len(), 2);
@@ -4109,14 +4092,13 @@ mod tests {
     fn mixed_splits_compose_a_t_junction() {
         let state = fresh_state();
         let _client = state
-            .lock()
-            .unwrap()
+            .borrow_mut()
             .attach_test_client("0", 20, 9)
             .expect("attach sizing client");
         dispatch_prefix_key(b'%', &state, "0", 20, 8);
         dispatch_prefix_key(b'"', &state, "0", 20, 8);
 
-        let st = state.lock().unwrap();
+        let st = state.borrow_mut();
         let frame = compose_frame(&st, "0", 20, 9, 1, 0).expect("compose mixed splits");
 
         assert!(
@@ -4129,12 +4111,11 @@ mod tests {
     fn split_compositor_restores_active_pane_relative_cursor() {
         let state = fresh_state();
         let _client = state
-            .lock()
-            .unwrap()
+            .borrow_mut()
             .attach_test_client("0", 80, 24)
             .expect("attach sizing client");
         dispatch_prefix_key(b'"', &state, "0", 80, 23);
-        let mut st = state.lock().unwrap();
+        let mut st = state.borrow_mut();
         replace_active_pane_with_inert(&mut st);
         st.active_pane("0").unwrap().feed(b"\x1b[3;5H");
         let frame = compose_frame(&st, "0", 80, 24, 1, 0).expect("compose split");
@@ -4148,12 +4129,11 @@ mod tests {
     fn split_compositor_renders_the_active_panes_copy_snapshot() {
         let state = fresh_state();
         let _client = state
-            .lock()
-            .unwrap()
+            .borrow_mut()
             .attach_test_client("0", 40, 13)
             .expect("attach sizing client");
         dispatch_prefix_key(b'"', &state, "0", 40, 12);
-        let mut st = state.lock().unwrap();
+        let mut st = state.borrow_mut();
         replace_active_pane_with_inert(&mut st);
         let mut output = Vec::new();
         for index in 1..=30 {
@@ -4194,7 +4174,7 @@ mod tests {
     #[test]
     fn compositor_highlights_a_stopped_shared_copy_selection() {
         let state = fresh_state();
-        let mut st = state.lock().unwrap();
+        let mut st = state.borrow_mut();
         st.set_global_option("mode-keys", "vi");
         st.active_pane("0").unwrap().feed(b"abcdef");
         st.set_pane_mode("0", Some("copy-mode"))
@@ -4228,7 +4208,7 @@ mod tests {
     #[test]
     fn compositor_distinguishes_current_and_other_literal_search_matches() {
         let state = fresh_state();
-        let mut st = state.lock().unwrap();
+        let mut st = state.borrow_mut();
         st.set_global_option("mode-keys", "vi");
         st.active_pane("0").unwrap().feed(b"alpha one alpha two");
         st.set_pane_mode("0", Some("copy-mode"))

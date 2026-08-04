@@ -5,6 +5,7 @@
 //! executor as a job of its own and reports back here when it finishes.
 
 use std::collections::BTreeMap;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::integration::status::StatusHub;
@@ -141,9 +142,9 @@ impl BackgroundCommands {
     /// The client context a shell job runs with: the caller's, with the
     /// environment tmux's `environ_for_session` would have built for it.
     fn job_context(&self, context: &ClientContext) -> ClientContext {
-        match self.state.lock() {
-            Ok(state) => context.with_job_environment(&state),
-            Err(_) => context.clone(),
+        {
+            let state = self.state.borrow_mut();
+            context.with_job_environment(&state)
         }
     }
 
@@ -186,7 +187,7 @@ impl BackgroundCommands {
         let id = self.allocate_id();
         let coroutine = command::CommandCoroutine::new(
             queue,
-            Arc::clone(&self.state),
+            Rc::clone(&self.state),
             Arc::clone(&self.runtime) as Arc<dyn command::CommandRuntime>,
             COMMAND_QUEUE_BUDGET,
         );

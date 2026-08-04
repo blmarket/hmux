@@ -309,14 +309,10 @@ impl<'a> ServerKeyTables<'a> {
     }
 
     fn option_number(&self, name: &str) -> u64 {
-        self.state
-            .lock()
-            .ok()
-            .and_then(|st| {
-                st.option_for_target(self.target, name)
-                    .or_else(|| super::super::options::option_default(name))
-                    .and_then(|value| value.parse::<u64>().ok())
-            })
+        let st = self.state.borrow_mut();
+        st.option_for_target(self.target, name)
+            .or_else(|| super::super::options::option_default(name))
+            .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(0)
     }
 }
@@ -336,7 +332,7 @@ impl KeyTableSource for ServerKeyTables<'_> {
     }
 
     fn binding(&self, table: &str, key: KeyCode) -> Option<BindingInfo> {
-        let st = self.state.lock().ok()?;
+        let st = self.state.borrow_mut();
         let binding = st.key_binding(table, key)?;
         Some(BindingInfo {
             repeat: binding.repeat,

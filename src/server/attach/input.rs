@@ -15,15 +15,10 @@ enum BindingFlow {
 
 /// Whether this session acts on mouse reports at all (`mouse on`).
 fn mouse_enabled(state: &SharedState, target: &str) -> bool {
-    state
-        .lock()
-        .ok()
-        .and_then(|st| {
-            st.option_for_target(target, "mouse")
-                .or_else(|| super::super::options::option_default("mouse"))
-                .map(|value| value == "on")
-        })
-        .unwrap_or(false)
+    let st = state.borrow_mut();
+    st.option_for_target(target, "mouse")
+        .or_else(|| super::super::options::option_default("mouse"))
+        .is_some_and(|value| value == "on")
 }
 
 /// Spell a typed key the way the pane it is going to expects it.
@@ -34,7 +29,7 @@ fn encode_key_for_pane(
     target: &str,
     key: PaneKey,
 ) -> Option<Vec<u8>> {
-    let encoding = state.lock().ok()?.encode_pane_key(target, key).ok()?;
+    let encoding = state.borrow_mut().encode_pane_key(target, key).ok()?;
     encoding.complete.then_some(encoding.bytes)
 }
 
@@ -48,7 +43,8 @@ fn forward_mouse_to_pane(state: &SharedState, event: &MouseEvent) {
     let Some((pane_id, input)) = event.pane_input_event() else {
         return;
     };
-    if let Ok(st) = state.lock() {
+    {
+        let st = state.borrow_mut();
         let _ = st.input_mouse_to_pane(&format!("%{pane_id}"), input);
     }
 }
@@ -65,9 +61,7 @@ fn drag_copy_selection(state: &SharedState, event: &MouseEvent) -> bool {
     let (Some(pane_id), Some(position)) = (target.pane_id, target.local_position) else {
         return false;
     };
-    let Ok(mut state) = state.lock() else {
-        return false;
-    };
+    let mut state = state.borrow_mut();
     let pane_target = format!("%{pane_id}");
     let vi = super::copy_mode::uses_vi_keys(&state, &pane_target);
     state.drag_copy_selection_to_mouse(&pane_target, position.x, position.y, vi)
@@ -141,9 +135,7 @@ impl AttachSession {
         target: &str,
     ) {
         let client = self.attachments.render_attachment.client_name();
-        let Ok(mut st) = state.lock() else {
-            return;
-        };
+        let mut st = state.borrow_mut();
         match report {
             FOCUS_IN_REPORT | FOCUS_OUT_REPORT => {
                 let focused = report == FOCUS_IN_REPORT;
@@ -171,7 +163,8 @@ impl AttachSession {
         }
         self.compositor.input.published_key_table = table.to_string();
         let client = self.attachments.render_attachment.client_name();
-        if let Ok(mut st) = state.lock() {
+        {
+            let mut st = state.borrow_mut();
             st.set_client_key_table(&client, &self.compositor.input.published_key_table);
         }
         self.status
@@ -386,9 +379,8 @@ impl AttachSession {
         //    an OSC 11 default-background request followed by a CSI 5n status
         //    request; it needs both the RGB and CSI 0n replies.
         let terminal_queries = state
-            .lock()
-            .ok()
-            .and_then(|st| st.take_active_pane_terminal_queries(target).ok())
+            .borrow_mut()
+            .take_active_pane_terminal_queries(target)
             .unwrap_or_default();
         for query in terminal_queries {
             let _ = self
@@ -554,7 +546,8 @@ impl AttachSession {
             // tmux stamps the client and its session on every key, which is
             // what defers the `lock-after-time` timer while somebody is typing
             // — including keys that only reach the pane.
-            if let Ok(mut st) = state.lock() {
+            {
+                let mut st = state.borrow_mut();
                 st.touch_client_activity(
                     &self.attachments.render_attachment.client_name(),
                     self.compositor.target.session_id,
@@ -798,11 +791,7 @@ impl AttachSession {
                     }
                     continue;
                 }
-                if state
-                    .lock()
-                    .ok()
-                    .is_some_and(|st| st.mode_view_active(target))
-                {
+                if state.borrow_mut().mode_view_active(target) {
                     let (decoded, consumed) = decode_tty_key(&data[i..]).unwrap_or_else(|| {
                         (
                             DecodedTtyKey {
@@ -816,16 +805,8 @@ impl AttachSession {
                     });
                     i += consumed;
                     let outcome = state
-                        .lock()
-                        .ok()
-                        .and_then(|mut st| {
-                            st.mode_view_key(
-                                target,
-                                &decoded.name,
-                                self.viewport.pane_rows as usize,
-                            )
-                            .ok()
-                        })
+                        .borrow_mut()
+                        .mode_view_key(target, &decoded.name, self.viewport.pane_rows as usize)
                         .unwrap_or(ModeViewKeyResult::None);
                     match outcome {
                         ModeViewKeyResult::Command(command) if !command.is_empty() => {
@@ -1102,9 +1083,7 @@ impl AttachSession {
             self.compositor.render.last_render.clear();
             self.compositor.render.force_clear = true;
             self.status.status_cache.invalidate();
-            let st = state
-                .lock()
-                .map_err(|_| io::Error::other("state poisoned"))?;
+            let st = state.borrow_mut();
             match active_window_output_subscription(&st, target) {
                 Ok(subscription) => {
                     (
@@ -1133,7 +1112,7 @@ fn user_key_at(
     target: &str,
     data: &[u8],
 ) -> Option<(super::super::key::KeyCode, usize)> {
-    let state = state.lock().ok()?;
+    let state = state.borrow_mut();
     let sequences = state.user_key_sequences(target);
     sequences
         .iter()
