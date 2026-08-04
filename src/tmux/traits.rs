@@ -54,7 +54,11 @@ impl<F> error::Error for WriteQueueFull<F> {}
 
 /// A tmux control-plane server: something a client can connect to and exchange
 /// [`Frame`]s with.
-pub trait TmuxServer: Send + Sync {
+///
+/// A server and the halves it hands out belong to one thread: the connection
+/// they describe is driven by a single readiness loop. Callers that do need to
+/// move one across threads bound it themselves.
+pub trait TmuxServer {
     type Reader: FrameReader;
     type Writer: FrameWriter;
 
@@ -63,7 +67,7 @@ pub trait TmuxServer: Send + Sync {
 }
 
 /// The receiving half of a connection.
-pub trait FrameReader: Send {
+pub trait FrameReader {
     /// Block until the next frame arrives. Returns an `UnexpectedEof` error when
     /// the peer closes at a frame boundary.
     fn recv(&mut self) -> io::Result<Frame>;
@@ -74,7 +78,7 @@ pub trait FrameReader: Send {
 /// This trait is intentionally independent of [`FrameReader`]. Event-driven
 /// users should not need to implement or depend on the legacy blocking
 /// operation.
-pub trait NonblockingFrameReader: Send {
+pub trait NonblockingFrameReader {
     /// Return the next complete frame without blocking.
     ///
     /// Returns [`io::ErrorKind::WouldBlock`] when no complete frame is
@@ -87,7 +91,7 @@ pub trait NonblockingFrameReader: Send {
 ///
 /// Implementations choose their input frame type and privately own all queued
 /// and partial-write state.
-pub trait NonblockingFrameWriter: Send {
+pub trait NonblockingFrameWriter {
     /// One owned logical value accepted by the writer.
     type Frame;
 
@@ -111,7 +115,7 @@ pub trait NonblockingFrameWriter: Send {
 }
 
 /// The sending half of a connection.
-pub trait FrameWriter: Send {
+pub trait FrameWriter {
     /// Send a frame, forwarding any attached `SCM_RIGHTS` fd.
     fn send(&mut self, frame: Frame) -> io::Result<()>;
 }
