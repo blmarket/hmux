@@ -22,8 +22,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
+use crate::server::state::WaitRegistry;
+use crate::server::task::{
+    Completion, Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken,
+};
 
+use super::execution::{self, WaitForOutcome};
 use super::{
     flag_value, has_flag, io_error_message, job_delay, positionals, shell_command, ClientContext,
     ClientFileWrite, CommandResult, RunShellCompletion, SourceFileRead,
@@ -581,6 +585,54 @@ impl Coroutine for FileWriteJob {
     }
 }
 
+/// `wait-for`, in whichever of its four forms.
+///
+/// `-S`, `-U` and an uncontended `-L` finish the moment the registry is
+/// touched; the forms that have to wait for another client hold the completion
+/// the registry signals, so the waiting queue is resumed by its own driver
+/// rather than by parking a thread inside the registry.
+pub(crate) enum WaitForJob {
+    Done(Option<CommandResult>),
+    Waiting(Completion<()>),
+}
+
+impl WaitForJob {
+    pub(crate) fn new(args: &[String], registry: &WaitRegistry) -> Self {
+        match execution::wait_for(args, registry) {
+            WaitForOutcome::Done(result) => Self::Done(Some(result)),
+            WaitForOutcome::Pending(completion) => Self::Waiting(completion),
+        }
+    }
+}
+
+impl Coroutine for WaitForJob {
+    type Output = CommandResult;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match self {
+            // Already resolved: `resume` reports it before anyone waits.
+            Self::Done(_) => WaitRequest::new(Vec::new(), Some(Instant::now())),
+            Self::Waiting(completion) => completion.wait(),
+        }
+    }
+
+    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
+        match self {
+            Self::Done(result) => TaskPoll::Ready(
+                result
+                    .take()
+                    .expect("resolved wait-for reported its result twice"),
+            ),
+            Self::Waiting(completion) => match completion.resume(ready) {
+                // The registry drops a sender only when the server is going
+                // away, which the stock client sees as the wait being over.
+                TaskPoll::Ready(_) => TaskPoll::Ready(CommandResult::ok("")),
+                TaskPoll::Pending => TaskPoll::Pending,
+            },
+        }
+    }
+}
+
 /// How a path is written: everything but a FIFO is written on the spot.
 enum WriteOpen {
     Inline(io::Result<()>),
@@ -858,13 +910,15 @@ fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob};
+    use super::{FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob, WaitForJob};
     use crate::server::command::{ClientContext, ClientFileWrite};
+    use crate::server::state::WaitRegistry;
     use crate::server::task::run_blocking;
     use std::fs;
     use std::io;
     use std::path::{Path, PathBuf};
     use std::process;
+    use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -1101,5 +1155,80 @@ mod tests {
         );
         assert!(result.continue_queue);
         let _ = fs::remove_dir_all(&directory);
+    }
+
+    fn wait_for_args(values: &[&str]) -> Vec<String> {
+        std::iter::once("wait-for")
+            .chain(values.iter().copied())
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn wait_for_job_consumes_a_signal_that_already_arrived() {
+        let registry = WaitRegistry::default();
+
+        run_blocking(WaitForJob::new(&wait_for_args(&["-S", "ready"]), &registry));
+        let started = Instant::now();
+        let result = run_blocking(WaitForJob::new(&wait_for_args(&["ready"]), &registry));
+
+        assert_eq!(result.exit, 0, "{}", result.stderr);
+        assert!(started.elapsed() < Duration::from_millis(50));
+    }
+
+    #[test]
+    fn wait_for_job_resumes_when_the_signal_arrives() {
+        let registry = Arc::new(WaitRegistry::default());
+        let signaller = thread::spawn({
+            let registry = Arc::clone(&registry);
+            move || {
+                thread::sleep(Duration::from_millis(100));
+                registry.signal("later");
+            }
+        });
+
+        let started = Instant::now();
+        let result = run_blocking(WaitForJob::new(&wait_for_args(&["later"]), &registry));
+
+        assert_eq!(result.exit, 0, "{}", result.stderr);
+        assert!(started.elapsed() >= Duration::from_millis(50));
+        signaller.join().expect("signaller");
+    }
+
+    #[test]
+    fn wait_for_job_hands_the_lock_to_the_next_waiter_in_order() {
+        let registry = Arc::new(WaitRegistry::default());
+
+        // The first `-L` takes the lock outright.
+        let result = run_blocking(WaitForJob::new(&wait_for_args(&["-L", "gate"]), &registry));
+        assert_eq!(result.exit, 0, "{}", result.stderr);
+
+        let unlocker = thread::spawn({
+            let registry = Arc::clone(&registry);
+            move || {
+                thread::sleep(Duration::from_millis(100));
+                assert!(registry.unlock("gate"), "first unlock");
+            }
+        });
+        let started = Instant::now();
+        let result = run_blocking(WaitForJob::new(&wait_for_args(&["-L", "gate"]), &registry));
+
+        assert_eq!(result.exit, 0, "{}", result.stderr);
+        assert!(started.elapsed() >= Duration::from_millis(50));
+        unlocker.join().expect("unlocker");
+        // The handoff kept the channel locked, so the second holder can release
+        // it and nobody else can.
+        assert!(registry.unlock("gate"), "second unlock");
+        assert!(!registry.unlock("gate"), "third unlock");
+    }
+
+    #[test]
+    fn wait_for_job_reports_an_unlock_of_a_free_channel() {
+        let registry = WaitRegistry::default();
+
+        let result = run_blocking(WaitForJob::new(&wait_for_args(&["-U", "free"]), &registry));
+
+        assert_ne!(result.exit, 0);
+        assert_eq!(result.stderr, "channel free not locked\n");
     }
 }

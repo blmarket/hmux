@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::server::command::suspend::{
-    FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob,
+    FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob, WaitForJob,
 };
 use crate::server::command::{CommandSuspension, CommandSuspensionResult};
 use crate::server::task::{
@@ -44,6 +44,7 @@ pub(super) enum ExecutorJob {
     SourceFile(SourceFileJob),
     LoadBuffer(LoadBufferJob),
     SaveBuffer(FileWriteJob),
+    WaitFor(WaitForJob),
 }
 
 impl Coroutine for ExecutorJob {
@@ -56,6 +57,7 @@ impl Coroutine for ExecutorJob {
             Self::SourceFile(job) => job.wait(),
             Self::LoadBuffer(job) => job.wait(),
             Self::SaveBuffer(job) => job.wait(),
+            Self::WaitFor(job) => job.wait(),
         }
     }
 
@@ -88,6 +90,12 @@ impl Coroutine for ExecutorJob {
             Self::SaveBuffer(job) => match job.resume(ready) {
                 TaskPoll::Ready(result) => {
                     TaskPoll::Ready(CommandSuspensionResult::SaveBuffer(result))
+                }
+                TaskPoll::Pending => TaskPoll::Pending,
+            },
+            Self::WaitFor(job) => match job.resume(ready) {
+                TaskPoll::Ready(result) => {
+                    TaskPoll::Ready(CommandSuspensionResult::Completed(result))
                 }
                 TaskPoll::Pending => TaskPoll::Pending,
             },
@@ -167,6 +175,9 @@ impl SuspensionExecutorHandle {
             }
             CommandSuspension::SaveBuffer { request } => {
                 ExecutorJob::SaveBuffer(FileWriteJob::new(request))
+            }
+            CommandSuspension::WaitFor { args, registry } => {
+                ExecutorJob::WaitFor(WaitForJob::new(&args, &registry))
             }
             suspension => return Err(suspension),
         };

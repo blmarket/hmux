@@ -49,7 +49,7 @@ use super::state::{
     BackgroundJobRegistry, ClientActionResult, ClientMessage, ClientMessageResult,
     CommandPromptRequestResult, MenuItem, MenuRequest, ModeEdit, ModeItem, ModeKind, ModeView,
     OverlayRequest, PaneSpec, PopupRequest, PromptCompletion, ServerState, Session, SplitDirection,
-    Target, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
+    Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
 };
 use super::style::{
     write_capture_hyperlink, CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder,
@@ -60,7 +60,7 @@ use super::task::{
     run_blocking, Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest,
     WaitToken,
 };
-use suspend::{FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob};
+use suspend::{FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob, WaitForJob};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.
@@ -1221,9 +1221,9 @@ impl CommandSuspension {
             Self::SaveBuffer { request } => {
                 CommandSuspensionResult::SaveBuffer(run_blocking(FileWriteJob::new(request)))
             }
-            Self::WaitFor { args, registry } => {
-                CommandSuspensionResult::Completed(execution::wait_for(&args, &registry))
-            }
+            Self::WaitFor { args, registry } => CommandSuspensionResult::Completed(run_blocking(
+                WaitForJob::new(&args, &registry),
+            )),
             Self::CommandPrompt {
                 args,
                 registry,
