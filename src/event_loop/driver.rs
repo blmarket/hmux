@@ -1192,6 +1192,37 @@ mod tests {
     }
 
     #[test]
+    fn executor_reads_a_fifo_source_file_on_the_loop() {
+        let mut loop_ = EventLoop::new().unwrap();
+        let path = ListenerPath::new();
+        let raw = std::ffi::CString::new(path.0.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(raw.as_ptr(), 0o600) }, 0);
+        let writer = std::thread::spawn({
+            let path = path.0.clone();
+            move || {
+                std::thread::sleep(Duration::from_millis(50));
+                std::fs::write(&path, b"set-buffer -b sourced yes\n").unwrap();
+            }
+        });
+
+        let result = resolve_on_loop(
+            &mut loop_,
+            CommandSuspension::SourceFile {
+                paths: vec![path.0.display().to_string()],
+            },
+        );
+
+        writer.join().unwrap();
+        let CommandSuspensionResult::SourceFile(reads) = result else {
+            panic!("source-file suspension resolved as another variant");
+        };
+        assert_eq!(
+            reads[0].contents().expect("FIFO contents"),
+            "set-buffer -b sourced yes\n"
+        );
+    }
+
+    #[test]
     fn executor_releases_every_registration_once_a_job_finishes() {
         let mut loop_ = EventLoop::new().unwrap();
 

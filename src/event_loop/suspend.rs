@@ -17,7 +17,7 @@ use std::os::fd::RawFd;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use crate::server::command::suspend::{IfShellJob, RunShellJob};
+use crate::server::command::suspend::{IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob};
 use crate::server::command::{CommandSuspension, CommandSuspensionResult};
 use crate::server::task::{
     completion_pair, Completion, CompletionSender, Coroutine, ReadySet, TaskPoll, TaskState,
@@ -39,6 +39,8 @@ pub(crate) enum ExecutorEvent {
 pub(super) enum ExecutorJob {
     RunShell(RunShellJob),
     IfShell(IfShellJob),
+    SourceFile(SourceFileJob),
+    LoadBuffer(LoadBufferJob),
 }
 
 impl Coroutine for ExecutorJob {
@@ -48,6 +50,8 @@ impl Coroutine for ExecutorJob {
         match self {
             Self::RunShell(job) => job.wait(),
             Self::IfShell(job) => job.wait(),
+            Self::SourceFile(job) => job.wait(),
+            Self::LoadBuffer(job) => job.wait(),
         }
     }
 
@@ -62,6 +66,18 @@ impl Coroutine for ExecutorJob {
             Self::IfShell(job) => match job.resume(ready) {
                 TaskPoll::Ready(status) => {
                     TaskPoll::Ready(CommandSuspensionResult::IfShell(status))
+                }
+                TaskPoll::Pending => TaskPoll::Pending,
+            },
+            Self::SourceFile(job) => match job.resume(ready) {
+                TaskPoll::Ready(reads) => {
+                    TaskPoll::Ready(CommandSuspensionResult::SourceFile(reads))
+                }
+                TaskPoll::Pending => TaskPoll::Pending,
+            },
+            Self::LoadBuffer(job) => match job.resume(ready) {
+                TaskPoll::Ready(contents) => {
+                    TaskPoll::Ready(CommandSuspensionResult::LoadBuffer(contents))
                 }
                 TaskPoll::Pending => TaskPoll::Pending,
             },
@@ -131,6 +147,12 @@ impl SuspensionExecutorHandle {
             }
             CommandSuspension::IfShell { condition, context } => {
                 ExecutorJob::IfShell(IfShellJob::new(&condition, &context))
+            }
+            CommandSuspension::SourceFile { paths } => {
+                ExecutorJob::SourceFile(SourceFileJob::new(paths))
+            }
+            CommandSuspension::LoadBuffer { path } => {
+                ExecutorJob::LoadBuffer(LoadBufferJob::new(path))
             }
             suspension => return Err(suspension),
         };
