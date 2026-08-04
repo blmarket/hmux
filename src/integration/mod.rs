@@ -26,8 +26,10 @@ use crate::platform::{CurrentPlatform, Platform};
 pub mod claude;
 pub mod codex;
 pub mod pi;
+pub mod session_model;
 pub mod status;
 
+use session_model::ModelScan;
 use status::{AgentStatus, StatusHub};
 
 #[cfg(test)]
@@ -275,6 +277,7 @@ struct ReportedStatus {
     state: AgentState,
     pid: Option<u32>,
     session_id: Option<String>,
+    model: Option<String>,
 }
 
 struct TrackedPane {
@@ -295,6 +298,12 @@ struct TrackedPane {
     /// when the agent's live session changes (a new Codex rollout, or a newer
     /// Claude transcript in the same project directory).
     agent_session_id: Option<String>,
+    /// Incremental scanner over the resolved session file, keyed on its path so
+    /// a session switch restarts the scan from the new file's beginning.
+    model_scan: Option<ModelScan>,
+    /// The model the session file most recently named, as published on the
+    /// pane's status.
+    agent_model: Option<String>,
 }
 
 fn run<O: ServerObservability>(
@@ -369,6 +378,8 @@ fn poll<O: ServerObservability>(
                         agent: None,
                         agent_pid: None,
                         agent_session_id: None,
+                        model_scan: None,
+                        agent_model: None,
                     });
                 }
                 Ok(None) => continue,
@@ -428,6 +439,8 @@ fn inspect(
     if process.exited {
         tracked.agent_pid = None;
         tracked.agent_session_id = None;
+        tracked.model_scan = None;
+        tracked.agent_model = None;
         publish(
             id,
             tracked,
@@ -467,6 +480,8 @@ fn inspect(
         tracked.agent = None;
         tracked.agent_pid = None;
         tracked.agent_session_id = None;
+        tracked.model_scan = None;
+        tracked.agent_model = None;
         tracked.revision = Some(revision);
         publish(
             id,
@@ -491,11 +506,14 @@ fn inspect(
         TreeScan::NotFound => false,
     };
     let previous_session_id = tracked.agent_session_id.clone();
+    let previous_model = tracked.agent_model.clone();
     match scan {
         TreeScan::Found { detector, pid, .. } => {
             let agent_changed = tracked.agent != Some(detector) || tracked.agent_pid != Some(pid);
             if agent_changed {
                 tracked.agent_session_id = None;
+                tracked.model_scan = None;
+                tracked.agent_model = None;
             }
             if let Some(source) = detectors[detector].session_id_source() {
                 // Both sources are rechecked every poll so switching threads or
@@ -510,8 +528,23 @@ fn inspect(
                         find_cwd_transcript_session(snapshot, pid, detectors[detector].as_ref())
                     }
                 };
-                if let Some(session_id) = resolved {
+                if let Some((session_id, session_file)) = resolved {
                     tracked.agent_session_id = Some(session_id);
+                    // A new session file restarts the model scan from its
+                    // beginning; the model belongs to the session, so the value
+                    // read from the previous file is dropped with it.
+                    if tracked.model_scan.as_ref().map(ModelScan::path) != Some(&*session_file) {
+                        tracked.model_scan = Some(ModelScan::new(session_file));
+                        tracked.agent_model = None;
+                    }
+                }
+            }
+            // Read any bytes the agent appended to its session file since the
+            // last poll; the newest model named there replaces the published
+            // one. No new mention retains the current value.
+            if let Some(scan) = tracked.model_scan.as_mut() {
+                if let Some(model) = scan.advance(snapshot.source) {
+                    tracked.agent_model = Some(model);
                 }
             }
             tracked.agent = Some(detector);
@@ -520,13 +553,17 @@ fn inspect(
         TreeScan::NoProcessTable => {
             tracked.agent_pid = None;
             tracked.agent_session_id = None;
+            tracked.model_scan = None;
+            tracked.agent_model = None;
         }
         TreeScan::NotFound => {}
     }
     let session_id_changed = tracked.agent_session_id != previous_session_id;
+    let model_changed = tracked.agent_model != previous_model;
     if !agent_started
         && !agent_pid_changed
         && !session_id_changed
+        && !model_changed
         && tracked.revision == Some(revision)
     {
         return;
@@ -656,6 +693,7 @@ fn publish(
         state,
         pid: agent_pid,
         session_id: tracked.agent_session_id.clone(),
+        model: tracked.agent_model.clone(),
     };
     if tracked.reported.as_ref() == Some(&reported) {
         return;
@@ -682,6 +720,7 @@ fn publish(
                 agent: agent.unwrap_or(""),
                 pid: agent_pid,
                 session_id: tracked.agent_session_id.clone(),
+                model: tracked.agent_model.clone(),
                 state,
             },
         );
@@ -725,6 +764,14 @@ pub(crate) trait ProcessSource: Send + Sync {
     /// Paths currently open by `pid`. Empty when unsupported or unreadable.
     fn open_files(&self, _pid: u32) -> Vec<PathBuf> {
         Vec::new()
+    }
+
+    /// Up to `max_len` bytes of the file at `path` starting at byte `offset`,
+    /// used to scan agent session files incrementally. An empty vector means
+    /// end of file; `None` means the file is unreadable or the platform does
+    /// not support inspection.
+    fn read_span(&self, _path: &Path, _offset: u64, _max_len: usize) -> Option<Vec<u8>> {
+        None
     }
 }
 
@@ -770,6 +817,24 @@ impl ProcessSource for SystemProcesses {
 
     fn open_files(&self, pid: u32) -> Vec<PathBuf> {
         CurrentPlatform::process_open_files(pid)
+    }
+
+    fn read_span(&self, path: &Path, offset: u64, max_len: usize) -> Option<Vec<u8>> {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file = std::fs::File::open(path).ok()?;
+        file.seek(SeekFrom::Start(offset)).ok()?;
+        let mut buffer = vec![0; max_len];
+        let mut filled = 0;
+        while filled < buffer.len() {
+            match file.read(&mut buffer[filled..]) {
+                Ok(0) => break,
+                Ok(read) => filled += read,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(_) => return None,
+            }
+        }
+        buffer.truncate(filled);
+        Some(buffer)
     }
 }
 
@@ -818,27 +883,27 @@ impl<'a> ProcessSnapshot<'a> {
     }
 }
 
-/// Find a detector-recognized session file on an agent process or descendant.
-/// Launchers named `codex` commonly keep the actual Codex runtime as a child,
-/// and that runtime owns the open rollout descriptor.
+/// Find a detector-recognized session file on an agent process or descendant,
+/// returning the session id together with the file that named it. Launchers
+/// named `codex` commonly keep the actual Codex runtime as a child, and that
+/// runtime owns the open rollout descriptor.
 fn find_open_file_session_in_tree(
     snapshot: &ProcessSnapshot,
     root: u32,
     detector: &dyn AgentDetector,
-) -> Option<String> {
+) -> Option<(String, PathBuf)> {
     let mut pending = vec![root];
     let mut visited = HashSet::new();
     while let Some(pid) = pending.pop() {
         if !visited.insert(pid) {
             continue;
         }
-        if let Some(session_id) = snapshot
-            .source
-            .open_files(pid)
-            .iter()
-            .find_map(|path| detector.session_id_from_open_file(path))
-        {
-            return Some(session_id);
+        if let Some(found) = snapshot.source.open_files(pid).iter().find_map(|path| {
+            detector
+                .session_id_from_open_file(path)
+                .map(|session_id| (session_id, path.clone()))
+        }) {
+            return Some(found);
         }
         pending.extend(snapshot.children_of(pid).iter().copied());
     }
@@ -847,14 +912,15 @@ fn find_open_file_session_in_tree(
 
 /// Resolve a session id from the agent's working directory: the detector maps
 /// its cwd to a per-project session directory, and the newest file whose name
-/// the detector recognizes names the live session. Reading the cwd once from the
-/// matched process suffices — an agent and any wrapper below it share the working
-/// directory they were launched in.
+/// the detector recognizes names the live session. Returns the id together with
+/// the session file. Reading the cwd once from the matched process suffices — an
+/// agent and any wrapper below it share the working directory they were
+/// launched in.
 fn find_cwd_transcript_session(
     snapshot: &ProcessSnapshot,
     pid: u32,
     detector: &dyn AgentDetector,
-) -> Option<String> {
+) -> Option<(String, PathBuf)> {
     let cwd = snapshot.source.cwd(pid)?;
     let dir = detector.session_dir_for_cwd(&cwd)?;
     snapshot
@@ -864,6 +930,7 @@ fn find_cwd_transcript_session(
         .find_map(|path| {
             path.file_name()
                 .and_then(|name| detector.session_id_from_file_name(name))
+                .map(|session_id| (session_id, path.clone()))
         })
 }
 

@@ -4790,21 +4790,24 @@ pub(super) fn vars_full(
             }
             // hmux-private agent status (see PROTOCOL.md). Absent from the hub
             // (no agent, or non-native engine) reads as empty metadata + "none".
-            let (agent, state, state_emoji, pid, session_id) = match agents.get(&PaneId(p.id)) {
-                Some(status) => (
-                    status.agent,
-                    status.state.wire_str(),
-                    status.state.emoji(),
-                    status.pid.map(|pid| pid.to_string()).unwrap_or_default(),
-                    status.session_id.clone().unwrap_or_default(),
-                ),
-                None => ("", "none", "", String::new(), String::new()),
-            };
+            let (agent, state, state_emoji, pid, session_id, model) =
+                match agents.get(&PaneId(p.id)) {
+                    Some(status) => (
+                        status.agent,
+                        status.state.wire_str(),
+                        status.state.emoji(),
+                        status.pid.map(|pid| pid.to_string()).unwrap_or_default(),
+                        status.session_id.clone().unwrap_or_default(),
+                        status.model.clone().unwrap_or_default(),
+                    ),
+                    None => ("", "none", "", String::new(), String::new(), String::new()),
+                };
             v.set("pane_agent", agent)
                 .set("pane_agent_state", state)
                 .set("pane_agent_state_emoji", state_emoji)
                 .set("pane_agent_pid", pid)
-                .set("pane_agent_session_id", session_id);
+                .set("pane_agent_session_id", session_id)
+                .set("pane_agent_model", model);
         }
     }
     // `hook*` variables of the hook body currently executing, if any.
@@ -9552,6 +9555,7 @@ mod tests {
                 agent: "claude",
                 pid: Some(4242),
                 session_id: Some("sess-4242".to_string()),
+                model: Some("claude-fable-5".to_string()),
                 state: AgentState::Working,
             },
         );
@@ -9562,12 +9566,12 @@ mod tests {
                 "list-panes",
                 "-a",
                 "-F",
-                "#{pane_id} #{pane_agent} #{pane_agent_state} #{pane_agent_state_emoji} #{pane_agent_pid} #{pane_agent_session_id}",
+                "#{pane_id} #{pane_agent} #{pane_agent_state} #{pane_agent_state_emoji} #{pane_agent_pid} #{pane_agent_session_id} #{pane_agent_model}",
             ],
         );
         assert_eq!(r.exit, 0);
         assert_eq!(
-            r.stdout, "%0 claude working 🔄 4242 sess-4242\n",
+            r.stdout, "%0 claude working 🔄 4242 sess-4242 claude-fable-5\n",
             "got {:?}",
             r.stdout
         );
@@ -9582,11 +9586,11 @@ mod tests {
                 "list-panes",
                 "-a",
                 "-F",
-                "#{pane_agent}|#{pane_agent_state}|#{pane_agent_state_emoji}|#{pane_agent_pid}",
+                "#{pane_agent}|#{pane_agent_state}|#{pane_agent_state_emoji}|#{pane_agent_pid}|#{pane_agent_model}",
             ],
         );
         assert_eq!(r.exit, 0);
-        assert_eq!(r.stdout, "|none||\n", "got {:?}", r.stdout);
+        assert_eq!(r.stdout, "|none|||\n", "got {:?}", r.stdout);
     }
 
     #[test]

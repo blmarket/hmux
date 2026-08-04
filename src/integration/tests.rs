@@ -34,6 +34,9 @@ struct FakeProcessSource {
     /// Per-directory file listing, newest first, seeded with
     /// [`with_files`](Self::with_files).
     files: HashMap<PathBuf, Vec<PathBuf>>,
+    /// Per-file contents served through `read_span`, seeded with
+    /// [`with_file_content`](Self::with_file_content).
+    file_contents: HashMap<PathBuf, Vec<u8>>,
     open_files: HashMap<u32, Vec<PathBuf>>,
     has_process_table: bool,
     /// Number of full-table scans, so tests can assert the process table is read
@@ -54,6 +57,7 @@ impl FakeProcessSource {
             arguments,
             cwd: HashMap::new(),
             files: HashMap::new(),
+            file_contents: HashMap::new(),
             open_files: HashMap::new(),
             has_process_table,
             scans: Arc::new(AtomicUsize::new(0)),
@@ -69,6 +73,12 @@ impl FakeProcessSource {
     /// Seed `dir`'s file listing, newest modified first.
     fn with_files(mut self, dir: PathBuf, files: Vec<PathBuf>) -> Self {
         self.files.insert(dir, files);
+        self
+    }
+
+    /// Seed the bytes `read_span` serves for `path`.
+    fn with_file_content(mut self, path: PathBuf, content: &[u8]) -> Self {
+        self.file_contents.insert(path, content.to_vec());
         self
     }
 
@@ -105,6 +115,13 @@ impl ProcessSource for FakeProcessSource {
 
     fn open_files(&self, pid: u32) -> Vec<PathBuf> {
         self.open_files.get(&pid).cloned().unwrap_or_default()
+    }
+
+    fn read_span(&self, path: &Path, offset: u64, max_len: usize) -> Option<Vec<u8>> {
+        let content = self.file_contents.get(path)?;
+        let start = (offset as usize).min(content.len());
+        let end = (start + max_len).min(content.len());
+        Some(content[start..end].to_vec())
     }
 }
 
@@ -335,6 +352,7 @@ fn claude_below_shell_is_detected_and_transitions_are_logged() {
             agent: "claude",
             pid: Some(200),
             session_id: None,
+            model: None,
             state: AgentState::Idle,
         }),
         "hub should reflect the final classified status"
@@ -391,6 +409,14 @@ fn claude_session_id_is_read_from_the_newest_cwd_transcript() {
             transcript_dir.join(format!("{session_id}.jsonl")),
             transcript_dir.join("5f0b4e66-2f15-406d-bbd1-fb4eaa4284a5.jsonl"),
         ],
+    )
+    .with_file_content(
+        transcript_dir.join(format!("{session_id}.jsonl")),
+        // The transcript names the session's model on its assistant messages;
+        // the newest mention wins (a mid-session `/model` switch).
+        br#"{"type":"assistant","message":{"model":"claude-opus-5","role":"assistant"}}
+{"type":"assistant","message":{"model":"claude-fable-5","role":"assistant"}}
+"#,
     );
 
     let pane = ScriptedPane::new(
@@ -418,6 +444,11 @@ fn claude_session_id_is_read_from_the_newest_cwd_transcript() {
         status.session_id.as_deref(),
         Some(session_id),
         "the newest transcript in the cwd's project directory should be attributed"
+    );
+    assert_eq!(
+        status.model.as_deref(),
+        Some("claude-fable-5"),
+        "the model last named in the session transcript should be published"
     );
 }
 
@@ -482,6 +513,7 @@ fn pi_lifecycle_and_session_are_published() {
             agent: "pi",
             pid: Some(200),
             session_id: Some(session_id.to_string()),
+            model: None,
             state: AgentState::Idle,
         })
     );
@@ -583,6 +615,7 @@ fn headless_codex_is_working_for_the_process_lifetime() {
             agent: "codex",
             pid: Some(200),
             session_id: None,
+            model: None,
             state: AgentState::Working,
         })
     );
@@ -618,6 +651,7 @@ fn no_process_table_static_title_does_not_identify_codex() {
             agent: "",
             pid: None,
             session_id: None,
+            model: None,
             state: AgentState::Unknown,
         })
     );
@@ -776,6 +810,7 @@ fn steady_server_scans_proc_once_per_poll_not_per_pane_or_output() {
                 agent: "claude",
                 pid: Some((n + 1) * 100 + 1),
                 session_id: None,
+                model: None,
                 state: AgentState::Working,
             }),
             "pane {n} should be a working claude agent"

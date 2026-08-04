@@ -33,6 +33,10 @@ pub struct AgentStatus {
     /// detector defines a source (for example a cwd-scoped Claude/Pi transcript
     /// or an active Codex rollout). `None` when unknown.
     pub session_id: Option<String>,
+    /// The model the agent most recently recorded in its session file (for
+    /// example `claude-opus-5` or `gpt-5-codex`). `None` when the session file
+    /// is unknown or names no model yet.
+    pub model: Option<String>,
     /// The pane's classified lifecycle state.
     pub state: AgentState,
 }
@@ -181,6 +185,7 @@ mod tests {
             agent,
             pid: None,
             session_id: None,
+            model: None,
             state,
         }
     }
