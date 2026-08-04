@@ -63,6 +63,7 @@ pub fn run_event_loop(
             Some(next_observer_tick.saturating_duration_since(Instant::now())),
         );
         sync_event_loop_panes(&server, &mut event_loop, &mut panes)?;
+        event_loop.adopt_format_jobs(server.take_pending_format_jobs())?;
         reap_protocol_clients(&mut clients);
         server.enforce_lifecycle_policies()?;
         if event_loop.pending_events() == 0 {

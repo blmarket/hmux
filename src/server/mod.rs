@@ -150,6 +150,14 @@ impl Server {
         self.observation.reconcile_once(&self.state)
     }
 
+    /// Every `#()` job a format expansion has launched since the last call.
+    pub(crate) fn take_pending_format_jobs(&self) -> Vec<crate::server::status::FormatJob> {
+        self.state
+            .lock()
+            .map(|state| state.take_pending_format_jobs())
+            .unwrap_or_default()
+    }
+
     /// Recheck monitored windows for bell, activity, and silence alerts.
     ///
     /// tmux runs this check in its server event loop (`alerts_callback`), so a

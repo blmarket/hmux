@@ -2574,7 +2574,7 @@ impl ClientRenderRegistry {
             .map(|entry| (Arc::clone(&entry.format_jobs), entry.session_id))
     }
 
-    fn all_format_jobs(&self) -> Vec<Arc<super::status::FormatJobRegistry>> {
+    pub(crate) fn all_format_jobs(&self) -> Vec<Arc<super::status::FormatJobRegistry>> {
         let Ok(inner) = self.inner.lock() else {
             return Vec::new();
         };
@@ -5482,6 +5482,16 @@ impl ServerState {
     #[allow(dead_code)]
     pub(crate) fn format_job_registry(&self) -> Arc<super::status::FormatJobRegistry> {
         Arc::clone(&self.format_jobs)
+    }
+
+    /// Every `#()` job launched since the last call, across the per-client
+    /// trees and the clientless one, for the loop to drive.
+    pub(crate) fn take_pending_format_jobs(&self) -> Vec<super::status::FormatJob> {
+        let mut pending = self.format_jobs.take_pending();
+        for jobs in self.client_renders.all_format_jobs() {
+            pending.extend(jobs.take_pending());
+        }
+        pending
     }
 
     pub(crate) fn add_message(&mut self, text: String) {

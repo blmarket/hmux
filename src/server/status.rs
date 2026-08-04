@@ -12,14 +12,15 @@ use super::style::CaptureStyleWriter;
 use super::style::{self, CellPresentation, CellStyle, Colour, TerminalStyleWriter, VisualToken};
 use super::term::{terminal_acs, terminal_utf8, TerminalCapabilities};
 use crate::integration::status::{PaneAgents, StatusSnapshot};
+use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::io::{BufRead, BufReader};
-use std::os::fd::AsRawFd;
+use std::io::{self, Read};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
@@ -114,6 +115,10 @@ impl Drop for FormatJobEntry {
 /// was anchored at (`fj->tag`).
 pub(crate) struct FormatJobRegistry {
     jobs: Mutex<HashMap<FormatJobKey, FormatJobEntry>>,
+    /// Jobs whose child is running but which the loop has not adopted yet.
+    /// Format expansion happens deep inside rendering, so a launch records the
+    /// job here and the loop picks it up on its next pass.
+    pending: Mutex<Vec<FormatJob>>,
     /// Weak so a per-client tree stored beside its client entry does not keep
     /// the render registry that owns the entry alive.
     renders: Weak<ClientRenderRegistry>,
@@ -124,6 +129,7 @@ impl FormatJobRegistry {
     pub(crate) fn new(renders: &Arc<ClientRenderRegistry>) -> Self {
         Self {
             jobs: Mutex::new(HashMap::new()),
+            pending: Mutex::new(Vec::new()),
             renders: Arc::downgrade(renders),
             eviction_timeout: Duration::from_secs(3600),
         }
@@ -161,9 +167,17 @@ impl FormatJobRegistry {
         )
     }
 
+    /// Jobs launched since the last call, for the loop to drive.
+    pub(crate) fn take_pending(&self) -> Vec<FormatJob> {
+        self.pending
+            .lock()
+            .map(|mut pending| std::mem::take(&mut *pending))
+            .unwrap_or_default()
+    }
+
     /// Drop finished entries nothing has re-run within `eviction_timeout`, so a
     /// tree that outlives the formats that filled it does not grow without
-    /// bound. A running job is never evicted: its thread still owns the entry's
+    /// bound. A running job is never evicted: the loop still owns the entry's
     /// generation and would update a key that had been removed.
     fn evict_expired(
         jobs: &mut HashMap<FormatJobKey, FormatJobEntry>,
@@ -264,24 +278,20 @@ impl FormatJobRegistry {
         };
 
         if let Some((generation, process)) = launch {
-            let registry = Arc::downgrade(self);
-            std::thread::spawn(move || {
-                let update_key = key.clone();
-                let output = run_format_job(
-                    &expanded_command,
-                    cwd.as_deref(),
-                    &environment,
-                    &process,
-                    |output| {
-                        if let Some(registry) = Weak::upgrade(&registry) {
-                            registry.update(&update_key, generation, session_id, status, output);
-                        }
-                    },
-                );
-                if let Some(registry) = Weak::upgrade(&registry) {
-                    registry.complete(key, generation, session_id, status, output);
-                }
-            });
+            let job = FormatJob::spawn(
+                Arc::downgrade(self),
+                key,
+                generation,
+                session_id,
+                status,
+                &expanded_command,
+                cwd.as_deref(),
+                &environment,
+                process,
+            );
+            if let Ok(mut pending) = self.pending.lock() {
+                pending.push(job);
+            }
         }
         output
     }
@@ -366,69 +376,249 @@ pub(crate) fn job_cwd(session: Option<&Session>, client_cwd: Option<&std::path::
     }
 }
 
-fn run_format_job(
-    command: &str,
-    cwd: Option<&std::path::Path>,
-    environment: &[String],
-    process: &FormatJobProcess,
-    mut update: impl FnMut(String),
-) -> String {
-    if process.cancelled.load(Ordering::Acquire) {
-        return String::new();
-    }
-    let mut shell = Command::new("sh");
-    shell
-        .arg("-c")
-        .arg(command)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .process_group(0);
-    if let Some(cwd) = cwd {
-        shell.current_dir(cwd);
-    }
-    for entry in environment {
-        if let Some((name, value)) = entry.split_once('=') {
-            shell.env(name, value);
-        }
-    }
-    let Ok(mut child) = shell.spawn() else {
-        return String::new();
-    };
-    if !process.register(child.id() as i32) {
-        let _ = child.wait();
-        return String::new();
-    }
-    let Some(stdout) = child.stdout.take() else {
-        let _ = child.wait();
-        return String::new();
-    };
-    process.fd.store(stdout.as_raw_fd(), Ordering::Release);
-    let mut reader = BufReader::new(stdout);
-    let mut bytes = Vec::new();
-    let mut output = String::new();
-    loop {
-        bytes.clear();
-        let Ok(count) = reader.read_until(b'\n', &mut bytes) else {
-            break;
+/// One `#()` job, driven by the server loop.
+///
+/// The child is spawned where the job is launched, so its process group is
+/// registered for cancellation before anything can observe the entry. What is
+/// left — reading its output a line at a time and reaping it — is what the loop
+/// drives, publishing each complete line to the registry as tmux does.
+pub(crate) struct FormatJob {
+    registry: Weak<FormatJobRegistry>,
+    key: FormatJobKey,
+    generation: u64,
+    session_id: u32,
+    status: bool,
+    /// Kept alive so the entry's `show-messages -J` view stays valid, and so
+    /// cancellation still has the process group to kill.
+    _process: Arc<FormatJobProcess>,
+    stage: FormatJobStage,
+    /// The last line seen, which is what the finished job reports.
+    output: String,
+}
+
+enum FormatJobStage {
+    Reading {
+        child: Child,
+        stdout: ChildStdout,
+        /// Bytes of the line currently being accumulated.
+        partial: Vec<u8>,
+    },
+    Reaping {
+        child: Child,
+        retry: Instant,
+        backoff: Duration,
+    },
+    Done,
+}
+
+impl FormatJob {
+    const STDOUT: WaitToken = WaitToken::new(0);
+
+    #[allow(clippy::too_many_arguments)]
+    fn spawn(
+        registry: Weak<FormatJobRegistry>,
+        key: FormatJobKey,
+        generation: u64,
+        session_id: u32,
+        status: bool,
+        command: &str,
+        cwd: Option<&std::path::Path>,
+        environment: &[String],
+        process: Arc<FormatJobProcess>,
+    ) -> Self {
+        let done = |process| Self {
+            registry: registry.clone(),
+            key: key.clone(),
+            generation,
+            session_id,
+            status,
+            _process: process,
+            stage: FormatJobStage::Done,
+            output: String::new(),
         };
-        if count == 0 {
-            break;
+        if process.cancelled.load(Ordering::Acquire) {
+            return done(process);
         }
-        let complete_line = bytes.last() == Some(&b'\n');
-        if complete_line {
-            bytes.pop();
+        let mut shell = Command::new("sh");
+        shell
+            .arg("-c")
+            .arg(command)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .process_group(0);
+        if let Some(cwd) = cwd {
+            shell.current_dir(cwd);
         }
-        if bytes.last() == Some(&b'\r') {
-            bytes.pop();
+        for entry in environment {
+            if let Some((name, value)) = entry.split_once('=') {
+                shell.env(name, value);
+            }
         }
-        output = String::from_utf8_lossy(&bytes).into_owned();
-        if complete_line {
-            update(output.clone());
+        let Ok(mut child) = shell.spawn() else {
+            return done(process);
+        };
+        if !process.register(child.id() as i32) {
+            let _ = child.wait();
+            return done(process);
+        }
+        let Some(stdout) = child.stdout.take() else {
+            let _ = child.wait();
+            return done(process);
+        };
+        process.fd.store(stdout.as_raw_fd(), Ordering::Release);
+        // The loop reads this pipe between its other work, so the read may
+        // never block once the child stalls mid-line.
+        if set_nonblocking(stdout.as_fd()).is_err() {
+            let _ = child.wait();
+            return done(process);
+        }
+        Self {
+            registry,
+            key,
+            generation,
+            session_id,
+            status,
+            _process: process,
+            stage: FormatJobStage::Reading {
+                child,
+                stdout,
+                partial: Vec::new(),
+            },
+            output: String::new(),
         }
     }
-    let _ = child.wait();
-    output
+
+    /// Consume whatever complete lines `partial` now holds, publishing each.
+    fn take_lines(&mut self) {
+        let FormatJobStage::Reading { partial, .. } = &mut self.stage else {
+            return;
+        };
+        let mut lines = Vec::new();
+        while let Some(end) = partial.iter().position(|byte| *byte == b'\n') {
+            let mut line: Vec<u8> = partial.drain(..=end).collect();
+            line.pop();
+            if line.last() == Some(&b'\r') {
+                line.pop();
+            }
+            lines.push(String::from_utf8_lossy(&line).into_owned());
+        }
+        for line in lines {
+            self.output = line;
+            if let Some(registry) = Weak::upgrade(&self.registry) {
+                registry.update(
+                    &self.key,
+                    self.generation,
+                    self.session_id,
+                    self.status,
+                    self.output.clone(),
+                );
+            }
+        }
+    }
+
+    /// At end of file a line without its newline is still the job's output, but
+    /// tmux never published it as an update.
+    fn take_trailing_line(&mut self) {
+        let FormatJobStage::Reading { partial, .. } = &mut self.stage else {
+            return;
+        };
+        if partial.is_empty() {
+            return;
+        }
+        if partial.last() == Some(&b'\r') {
+            partial.pop();
+        }
+        self.output = String::from_utf8_lossy(partial).into_owned();
+        partial.clear();
+    }
+}
+
+impl Coroutine for FormatJob {
+    type Output = ();
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match &self.stage {
+            FormatJobStage::Reading { stdout, .. } => WaitRequest::new(
+                vec![FdInterest::readable(Self::STDOUT, stdout.as_fd())],
+                None,
+            ),
+            FormatJobStage::Reaping { retry, .. } => WaitRequest::new(Vec::new(), Some(*retry)),
+            FormatJobStage::Done => WaitRequest::new(Vec::new(), Some(Instant::now())),
+        }
+    }
+
+    fn resume(&mut self, _ready: &ReadySet) -> TaskPoll<Self::Output> {
+        if let FormatJobStage::Reading { stdout, partial, .. } = &mut self.stage {
+            let mut bytes = [0u8; 4096];
+            let ended = loop {
+                match stdout.read(&mut bytes) {
+                    Ok(0) => break true,
+                    Ok(count) => partial.extend_from_slice(&bytes[..count]),
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => break false,
+                    Err(_) => break true,
+                }
+            };
+            self.take_lines();
+            if !ended {
+                return TaskPoll::Pending;
+            }
+            self.take_trailing_line();
+            let FormatJobStage::Reading { child, .. } =
+                std::mem::replace(&mut self.stage, FormatJobStage::Done)
+            else {
+                unreachable!("the reading stage was just observed");
+            };
+            self.stage = FormatJobStage::Reaping {
+                child,
+                retry: Instant::now(),
+                backoff: FORMAT_REAP_RETRY_MIN,
+            };
+        }
+        if let FormatJobStage::Reaping {
+            child,
+            retry,
+            backoff,
+        } = &mut self.stage
+        {
+            match child.try_wait() {
+                Ok(Some(_)) | Err(_) => {}
+                Ok(None) => {
+                    // The child can close its pipe and keep running; ask again
+                    // rather than blocking the loop in `wait(2)`.
+                    *retry = Instant::now() + *backoff;
+                    *backoff = (*backoff * 2).min(FORMAT_REAP_RETRY_MAX);
+                    return TaskPoll::Pending;
+                }
+            }
+            self.stage = FormatJobStage::Done;
+            if let Some(registry) = Weak::upgrade(&self.registry) {
+                registry.complete(
+                    self.key.clone(),
+                    self.generation,
+                    self.session_id,
+                    self.status,
+                    std::mem::take(&mut self.output),
+                );
+            }
+        }
+        TaskPoll::Ready(())
+    }
+}
+
+const FORMAT_REAP_RETRY_MIN: Duration = Duration::from_millis(1);
+const FORMAT_REAP_RETRY_MAX: Duration = Duration::from_millis(50);
+
+fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
+    let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) };
+    if flags < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 /// The boundary used by the attach compositor. There is intentionally one

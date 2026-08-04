@@ -15,6 +15,7 @@ use super::job::{BackgroundCommands, JobEvent};
 use super::listener::{AcceptedClients, Listener, ListenerEvent};
 use super::pane::{EventPane, PaneEvent, PaneInterest};
 use super::process::{ChildSignal, ChildSignalEvent};
+use crate::server::status::FormatJob;
 use super::term_signal::{TermSignal, TermSignalEvent};
 use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
@@ -499,6 +500,26 @@ where
             event: ChildSignalEvent::Start,
         });
         Ok(ChildSignalHandle { signal })
+    }
+
+    /// Adopt every `#()` job launched since the last pass. Format expansion
+    /// runs deep inside rendering, so the jobs are collected there and handed
+    /// to the loop here.
+    pub(crate) fn adopt_format_jobs(&mut self, jobs: Vec<FormatJob>) -> io::Result<()> {
+        if jobs.is_empty() {
+            return Ok(());
+        }
+        let executor = self.executor.clone();
+        let mut outbox = Outbox::new();
+        executor.with_mut(|executor| {
+            for job in jobs {
+                executor.adopt_format_job(job, &mut outbox);
+            }
+        });
+        for effect in outbox.effects {
+            self.apply(effect)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn sync_pane(&mut self, target: &PaneHandle) -> io::Result<()> {

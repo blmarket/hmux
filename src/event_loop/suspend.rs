@@ -25,6 +25,7 @@ use crate::server::command::suspend::SuspensionJob;
 use crate::server::command::{
     CommandCoroutine, CommandResult, CommandRuntime, CommandSuspension, CommandSuspensionResult,
 };
+use crate::server::status::FormatJob;
 use crate::server::task::{
     completion_pair, Completion, CompletionSender, Coroutine, FdDirection, ReadySet, TaskPoll,
     TaskState, WaitRequest, WaitToken,
@@ -74,11 +75,14 @@ pub(crate) enum ExecutorJob {
     Suspension(SuspensionJob),
     /// A detached command queue the loop owns outright.
     Queue(CommandCoroutine),
+    /// A `#()` format job, which publishes to its registry as it reads.
+    Format(FormatJob),
 }
 
 pub(crate) enum ExecutorJobOutput {
     Suspension(CommandSuspensionResult),
     Queue(io::Result<CommandResult>),
+    Format,
 }
 
 impl Coroutine for ExecutorJob {
@@ -88,6 +92,7 @@ impl Coroutine for ExecutorJob {
         match self {
             Self::Suspension(job) => job.wait(),
             Self::Queue(queue) => queue.wait(),
+            Self::Format(job) => job.wait(),
         }
     }
 
@@ -95,6 +100,7 @@ impl Coroutine for ExecutorJob {
         match self {
             Self::Suspension(job) => job.resume(ready).map(ExecutorJobOutput::Suspension),
             Self::Queue(queue) => queue.resume(ready).map(ExecutorJobOutput::Queue),
+            Self::Format(job) => job.resume(ready).map(|()| ExecutorJobOutput::Format),
         }
     }
 }
@@ -108,6 +114,8 @@ enum JobSink {
         target: ActorRef<BackgroundCommands>,
         id: u64,
     },
+    /// Nothing waits on the result; the job publishes its own.
+    Detached,
 }
 
 impl JobSink {
@@ -125,6 +133,7 @@ impl JobSink {
                     event: JobEvent::JobFinished { id, output },
                 });
             }
+            (Self::Detached, _) => {}
         }
     }
 }
@@ -281,6 +290,11 @@ impl SuspensionExecutor {
             JobSink::Background { target, id },
             outbox,
         );
+    }
+
+    /// Take on one `#()` job the format registry has already spawned.
+    pub(super) fn adopt_format_job(&mut self, job: FormatJob, outbox: &mut Outbox) {
+        self.adopt(ExecutorJob::Format(job), JobSink::Detached, outbox);
     }
 
     fn adopt(&mut self, job: ExecutorJob, sink: JobSink, outbox: &mut Outbox) {
