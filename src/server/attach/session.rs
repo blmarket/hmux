@@ -422,7 +422,7 @@ impl AttachSession {
         writer: &mut W,
     ) -> io::Result<AttachDrive>
     where
-        R: AttachFrameReader,
+        R: NonblockingFrameReader,
         W: FrameWriter,
     {
         match self.finish {
@@ -703,7 +703,7 @@ impl AttachSession {
         writer: &mut W,
     ) -> io::Result<AttachDrive>
     where
-        R: AttachFrameReader,
+        R: NonblockingFrameReader,
         W: FrameWriter,
     {
         if self.finish != AttachFinishState::Running {
@@ -1078,7 +1078,7 @@ impl AttachSession {
         writer: &mut W,
     ) -> io::Result<Option<AttachDrive>>
     where
-        R: AttachFrameReader,
+        R: NonblockingFrameReader,
         W: FrameWriter,
     {
         let target = self.compositor.target.stable_target.as_str();

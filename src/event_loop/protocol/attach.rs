@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use crate::integration::status::StatusHub;
 use crate::server::attach::{
-    self, AttachCommandContinuation, AttachDrive, AttachFrameReader, AttachPrepared, AttachSession,
+    self, AttachCommandContinuation, AttachDrive, AttachPrepared, AttachSession,
     AttachStartFailure, AttachWaitReady, AttachWaitSources, ClientTty,
 };
 use crate::server::command::{self, ClientContext};
@@ -21,7 +21,7 @@ use crate::server::state::ServerState;
 use crate::server::task::{ReadySet, TaskState};
 use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::Frame;
-use crate::tmux::traits::FrameWriter;
+use crate::tmux::traits::{FrameWriter, NonblockingFrameReader};
 
 use super::super::actor::ActorRef;
 use super::super::driver::Outbox;
@@ -122,7 +122,7 @@ impl AttachInput {
     }
 }
 
-impl AttachFrameReader for AttachInput {
+impl NonblockingFrameReader for AttachInput {
     fn try_recv(&mut self) -> io::Result<Frame> {
         self.pop()
             .ok_or_else(|| io::Error::from(io::ErrorKind::WouldBlock))
