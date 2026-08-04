@@ -4090,6 +4090,7 @@ fn display_message(
         st,
         context,
         resolved.map(|resolved| st.sessions()[resolved.session].id),
+        flag_value(args, "-c"),
         &mut vars,
     );
     for (name, value) in st.env_iter() {
@@ -4290,14 +4291,20 @@ fn set_current_client_vars(
     st: &ServerState,
     context: &ClientContext,
     session_id: Option<u32>,
+    named: Option<&str>,
     vars: &mut Vars,
 ) {
     let clients = st.attached_clients();
-    // The invoking client itself wins when it is one of the attached clients.
-    let client = context
-        .tty_name
-        .as_deref()
-        .and_then(|tty| clients.iter().find(|client| client.name == tty))
+    // An explicit `-c` names the client the format is evaluated for; otherwise
+    // the invoking client wins when it is one of the attached clients.
+    let client = named
+        .and_then(|name| clients.iter().find(|client| client.name == name))
+        .or_else(|| {
+            context
+                .tty_name
+                .as_deref()
+                .and_then(|tty| clients.iter().find(|client| client.name == tty))
+        })
         .or_else(|| {
             clients
                 .iter()
@@ -4307,6 +4314,16 @@ fn set_current_client_vars(
     let Some(client) = client else {
         return;
     };
+    // The per-client viewport onto an oversized window. tmux leaves the offsets
+    // *unset* rather than zero when the window fits, so a format testing
+    // `#{window_bigger}` can tell "flush" from "panned to the origin".
+    if let Some(view) = st.client_window_offset(client) {
+        vars.set("window_bigger", if view.bigger { "1" } else { "0" });
+        if view.bigger {
+            vars.set("window_offset_x", view.ox.to_string())
+                .set("window_offset_y", view.oy.to_string());
+        }
+    }
     let default_table = st
         .sessions()
         .iter()

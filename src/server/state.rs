@@ -1549,6 +1549,21 @@ pub struct WindowResizeRequest {
     pub snap: Option<WindowSizePolicy>,
 }
 
+/// Where one client's terminal sits over the window it is showing — tmux's
+/// `tty->oox`/`ooy`/`osx`/`osy` and the `oflag` that reports whether the window
+/// is bigger than the terminal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ClientViewport {
+    /// Whether the window is bigger than the client — `#{window_bigger}`.
+    pub bigger: bool,
+    /// The viewport's top-left corner in window coordinates.
+    pub ox: u16,
+    pub oy: u16,
+    /// The viewport's own size.
+    pub sx: u16,
+    pub sy: u16,
+}
+
 /// A client whose terminal size counts toward window sizing, with its pane area
 /// (terminal minus status line) already measured.
 struct SizingClient {
@@ -2043,6 +2058,13 @@ struct ClientRenderEntry {
     /// When this client last declared its terminal size, on the registry's
     /// monotonic sequence — tmux's `w->latest` ordering.
     size_seq: u64,
+    /// The window this client's `refresh-client` pan applies to, and the pan
+    /// itself — tmux's `c->pan_window`/`c->pan_ox`/`c->pan_oy`. A pan is
+    /// abandoned as soon as the client shows a different window or the window
+    /// shrinks to fit, which is what makes `refresh-client -c` a reset.
+    pan_window: Option<u32>,
+    pan_ox: u16,
+    pan_oy: u16,
     /// Identity bits the client sent at handshake time (`CLIENT_UTF8`, …),
     /// needed to rebuild the display flag string server-side.
     identified: i64,
@@ -2096,6 +2118,10 @@ pub(crate) struct AttachedClient {
     pub(crate) size_changed: bool,
     /// Ordering of this client's latest size declaration; higher is newer.
     pub(crate) size_seq: u64,
+    /// The window this client's pan applies to, and the pan itself.
+    pub(crate) pan_window: Option<u32>,
+    pub(crate) pan_ox: u16,
+    pub(crate) pan_oy: u16,
     pub(crate) terminal: Option<ResolvedTerm>,
     /// The theme this client's terminal reported (`dark`/`light`), empty until
     /// it says — tmux's `#{client_theme}`.
@@ -2393,6 +2419,9 @@ impl ClientRenderRegistry {
                 ignore_size,
                 size_changed: !control_mode,
                 size_seq,
+                pan_window: None,
+                pan_ox: 0,
+                pan_oy: 0,
                 identified,
                 focused: true,
                 theme: String::new(),
@@ -2446,6 +2475,9 @@ impl ClientRenderRegistry {
                 ignore_size: entry.ignore_size,
                 size_changed: entry.size_changed,
                 size_seq: entry.size_seq,
+                pan_window: entry.pan_window,
+                pan_ox: entry.pan_ox,
+                pan_oy: entry.pan_oy,
                 terminal: entry.terminal.clone(),
                 theme: entry.theme.clone(),
                 focused: entry.focused,
@@ -2861,6 +2893,33 @@ impl ClientRenderRegistry {
     }
 
     /// Set a client's terminal focus, reporting whether it changed.
+    /// Store a client's `refresh-client` pan. `None` clears it (`-c`).
+    fn set_client_pan(&self, client: &str, pan: Option<(u32, u16, u16)>) -> bool {
+        let Ok(mut inner) = self.inner.lock() else {
+            return false;
+        };
+        let Some(entry) = inner
+            .clients
+            .values_mut()
+            .find(|entry| entry.name == client)
+        else {
+            return false;
+        };
+        match pan {
+            Some((window, ox, oy)) => {
+                entry.pan_window = Some(window);
+                entry.pan_ox = ox;
+                entry.pan_oy = oy;
+            }
+            None => {
+                entry.pan_window = None;
+                entry.pan_ox = 0;
+                entry.pan_oy = 0;
+            }
+        }
+        true
+    }
+
     fn set_client_focused(&self, client: &str, focused: bool) -> bool {
         let Ok(mut inner) = self.inner.lock() else {
             return false;
@@ -9998,6 +10057,151 @@ impl ServerState {
     /// Whether the window is the one a session is currently showing.
     fn session_shows_window(&self, session_id: u32, window_id: u32) -> bool {
         self.current_window_of_session(session_id) == Some(window_id)
+    }
+
+    /// tmux's `tty_window_offset1`: where a client's terminal sits over the
+    /// window it is showing.
+    ///
+    /// When the window fits, the client sees all of it at the origin and any
+    /// pan is abandoned. When it does not, the client shows a `sx`×`sy`
+    /// viewport at `(ox, oy)` — an explicit `refresh-client` pan if one is live
+    /// for this window, otherwise a window that follows the cursor so the
+    /// active pane's cursor stays on screen.
+    pub(crate) fn client_window_offset(&self, client: &AttachedClient) -> Option<ClientViewport> {
+        let window_id = self.current_window_of_session(client.session_id)?;
+        let window = self.windows.get(&window_id)?;
+        let session = self
+            .sessions
+            .iter()
+            .find(|session| session.id == client.session_id)?;
+        let status = if client.control_mode {
+            0
+        } else {
+            self.status_lines(session)
+        };
+        let (view_cols, view_rows) = (client.cols, client.rows.saturating_sub(status));
+        if view_cols >= window.cols && view_rows >= window.rows {
+            return Some(ClientViewport {
+                bigger: false,
+                ox: 0,
+                oy: 0,
+                sx: window.cols,
+                sy: window.rows,
+            });
+        }
+        let (sx, sy) = (view_cols, view_rows);
+        // A pan survives only while it belongs to the window on screen.
+        if client.pan_window == Some(window_id) {
+            return Some(ClientViewport {
+                bigger: true,
+                ox: if sx >= window.cols {
+                    0
+                } else {
+                    client.pan_ox.min(window.cols - sx)
+                },
+                oy: if sy >= window.rows {
+                    0
+                } else {
+                    client.pan_oy.min(window.rows - sy)
+                },
+                sx,
+                sy,
+            });
+        }
+        // Otherwise centre the viewport on the active pane's cursor, as tmux
+        // does for a window the client has never panned.
+        let (mut ox, mut oy) = (0, 0);
+        if let Some(pane) = window.panes.get(window.active) {
+            if let (Some(rect), Ok((cursor_x, cursor_y))) =
+                (window.pane_rect(pane.id), pane.pane.cursor_position())
+            {
+                let cx = rect.left.saturating_add(cursor_x);
+                let cy = rect.top.saturating_add(cursor_y);
+                ox = if cx < sx {
+                    0
+                } else if cx > window.cols.saturating_sub(sx) {
+                    window.cols.saturating_sub(sx)
+                } else {
+                    cx - sx / 2
+                };
+                oy = if cy < sy {
+                    0
+                } else if cy > window.rows.saturating_sub(sy) {
+                    window.rows.saturating_sub(sy)
+                } else {
+                    cy.saturating_sub(sy) + 1
+                };
+            }
+        }
+        Some(ClientViewport {
+            bigger: true,
+            ox,
+            oy,
+            sx,
+            sy,
+        })
+    }
+
+    /// `refresh-client -L/-R/-U/-D`, and `-c` to drop the pan.
+    ///
+    /// tmux seeds a new pan from the offset the client is already showing, so
+    /// panning away from a cursor-following viewport continues from where it
+    /// was rather than jumping to the window origin.
+    pub(crate) fn pan_client(
+        &mut self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+        adjust: Option<WindowResizeAdjust>,
+        adjustment: u16,
+    ) -> ClientActionResult {
+        let clients = self.attached_clients();
+        let Some(client) = target
+            .and_then(|name| clients.iter().find(|client| client.name == name))
+            .or_else(|| {
+                invoking_tty.and_then(|tty| clients.iter().find(|client| client.name == tty))
+            })
+        else {
+            return if target.is_some() {
+                ClientActionResult::TargetNotFound
+            } else {
+                ClientActionResult::NoCurrentClient
+            };
+        };
+        let Some(adjust) = adjust else {
+            self.client_renders.set_client_pan(&client.name, None);
+            self.invalidate_session(client.session_id, RenderInvalidation::LAYOUT);
+            return ClientActionResult::Queued;
+        };
+        let Some(window_id) = self.current_window_of_session(client.session_id) else {
+            return ClientActionResult::NoCurrentClient;
+        };
+        let Some(view) = self.client_window_offset(client) else {
+            return ClientActionResult::NoCurrentClient;
+        };
+        let (mut ox, mut oy) = if client.pan_window == Some(window_id) {
+            (client.pan_ox, client.pan_oy)
+        } else {
+            (view.ox, view.oy)
+        };
+        let window = self.windows.get(&window_id);
+        let (limit_x, limit_y) = window.map_or((0, 0), |window| {
+            (
+                window.cols.saturating_sub(view.sx),
+                window.rows.saturating_sub(view.sy),
+            )
+        });
+        match adjust {
+            WindowResizeAdjust::Left => ox = ox.saturating_sub(adjustment),
+            WindowResizeAdjust::Right => ox = ox.saturating_add(adjustment).min(limit_x),
+            WindowResizeAdjust::Up => oy = oy.saturating_sub(adjustment),
+            WindowResizeAdjust::Down => oy = oy.saturating_add(adjustment).min(limit_y),
+        }
+        let session_id = client.session_id;
+        let name = client.name.clone();
+        self.client_renders
+            .set_client_pan(&name, Some((window_id, ox, oy)));
+        self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
+        ClientActionResult::Queued
     }
 
     fn sessions_linking_window(&self, window_id: u32) -> Vec<u32> {
