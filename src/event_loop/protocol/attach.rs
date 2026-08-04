@@ -21,7 +21,7 @@ use crate::server::state::ServerState;
 use crate::server::task::{ReadySet, TaskState};
 use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::Frame;
-use crate::tmux::traits::{FrameReader, FrameWriter};
+use crate::tmux::traits::FrameWriter;
 
 use super::super::actor::ActorRef;
 use super::super::driver::Outbox;
@@ -122,13 +122,6 @@ impl AttachInput {
     }
 }
 
-impl FrameReader for AttachInput {
-    fn recv(&mut self) -> io::Result<Frame> {
-        self.pop()
-            .ok_or_else(|| io::Error::from(io::ErrorKind::WouldBlock))
-    }
-}
-
 impl AsRawFd for AttachInput {
     fn as_raw_fd(&self) -> RawFd {
         -1
@@ -137,7 +130,8 @@ impl AsRawFd for AttachInput {
 
 impl AttachFrameReader for AttachInput {
     fn try_recv(&mut self) -> io::Result<Frame> {
-        self.recv()
+        self.pop()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::WouldBlock))
     }
 }
 

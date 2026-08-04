@@ -1,4 +1,4 @@
-//! Introspection tap: logging decorators over [`FrameReader`]/[`FrameWriter`].
+//! Introspection tap: logging decorators over the frame reader/writer halves.
 //!
 //! Wrapping either half logs each frame as it passes, giving a control-plane
 //! trace for free. This is the only place hmux "sees" the conversation —
@@ -11,7 +11,7 @@ use tracing::info;
 
 use super::message::{Frame, Message};
 use super::traits::{
-    FrameReader, FrameWriter, NonblockingFrameReader, NonblockingFrameWriter, WriteQueueFull,
+    FrameWriter, NonblockingFrameReader, NonblockingFrameWriter, WriteQueueFull,
 };
 
 /// Direction label for logged frames.
@@ -41,14 +41,6 @@ pub struct LoggingReader<R> {
 impl<R> LoggingReader<R> {
     pub fn new(inner: R, dir: Direction) -> Self {
         LoggingReader { inner, dir }
-    }
-}
-
-impl<R: FrameReader> FrameReader for LoggingReader<R> {
-    fn recv(&mut self) -> io::Result<Frame> {
-        let frame = self.inner.recv()?;
-        log_frame(self.dir, &frame);
-        Ok(frame)
     }
 }
 

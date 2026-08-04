@@ -45,7 +45,7 @@ use std::time::{Duration, Instant};
 
 use crate::integration::status::StatusHub;
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
-use crate::tmux::traits::{FrameReader, FrameWriter};
+use crate::tmux::traits::FrameWriter;
 
 use super::cmd_send_keys::base64_encode;
 use super::input_keys::PaneKey;
@@ -86,8 +86,10 @@ const PREFIX: u8 = 0x02;
 const TTY_OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 
 /// Internal capability needed by the event-driven attach loop. This stays
-/// separate from the public `FrameReader` compatibility contract.
-pub(crate) trait AttachFrameReader: FrameReader + AsRawFd {
+/// separate from the public frame-reader compatibility contracts: the loop only
+/// ever polls, so it must not force implementations to provide a blocking
+/// `recv`.
+pub(crate) trait AttachFrameReader: AsRawFd {
     fn try_recv(&mut self) -> io::Result<Frame>;
 }
 
