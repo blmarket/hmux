@@ -1,6 +1,6 @@
 //! Attach-client actions and key-binding resolution.
 
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::integration::status::StatusHub;
@@ -8,7 +8,7 @@ use crate::integration::status::StatusHub;
 use super::super::command;
 use super::super::key::{basic_key_bytes, key_from_byte, parse_key_name, KeyCode};
 use super::super::mouse::MouseEvent;
-use super::super::state::{ClientKey, PromptCompletion, ServerState};
+use super::super::state::{ClientKey, PromptCompletion, PromptReply, ServerState};
 use super::copy_mode::{self, CopyModeAction};
 use super::{client_key_table, decode_tty_key, is_configured_prefix};
 
@@ -29,14 +29,14 @@ pub(super) struct ActiveConfirm {
     pub(super) action: ConfirmAction,
     pub(super) confirm_key: u8,
     pub(super) default_yes: bool,
-    pub(super) reply: Option<mpsc::Sender<PromptCompletion>>,
+    pub(super) reply: Option<PromptReply>,
 }
 
 pub(super) enum ConfirmResolution {
     Complete,
     Deferred {
         command: Vec<String>,
-        reply: Option<mpsc::Sender<PromptCompletion>>,
+        reply: Option<PromptReply>,
     },
 }
 
@@ -88,12 +88,12 @@ impl ActiveConfirm {
             command::CommandResult::err("")
         };
         if let Some(reply) = self.reply {
-            let _ = reply.send(PromptCompletion {
+            reply.send(Some(PromptCompletion {
                 stdout: result.stdout,
                 stderr: result.stderr,
                 exit: result.exit,
                 inserted: accepted,
-            });
+            }));
         }
         ConfirmResolution::Complete
     }

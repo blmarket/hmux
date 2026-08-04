@@ -2,7 +2,7 @@ use super::*;
 
 pub(crate) struct ActiveOverlay {
     state: OverlayState,
-    reply: Option<std::sync::mpsc::Sender<super::super::state::PromptCompletion>>,
+    reply: Option<super::super::state::PromptReply>,
 }
 
 enum OverlayState {
@@ -62,7 +62,7 @@ impl ActiveOverlay {
     fn menu_with_reply(
         request: MenuRequest,
         selected: usize,
-        reply: Option<std::sync::mpsc::Sender<super::super::state::PromptCompletion>>,
+        reply: Option<super::super::state::PromptReply>,
     ) -> Self {
         let selected = selected.min(request.items.len().saturating_sub(1));
         Self {
@@ -73,7 +73,7 @@ impl ActiveOverlay {
 
     pub(super) fn from_request(
         request: OverlayRequest,
-        reply: Option<std::sync::mpsc::Sender<super::super::state::PromptCompletion>>,
+        reply: Option<super::super::state::PromptReply>,
         cols: u16,
         rows: u16,
         pane_io_mode: PaneIoMode,
@@ -141,12 +141,12 @@ impl ActiveOverlay {
 
     pub(super) fn complete(&mut self, result: command::CommandResult, inserted: bool) {
         if let Some(reply) = self.reply.take() {
-            let _ = reply.send(super::super::state::PromptCompletion {
+            reply.send(Some(super::super::state::PromptCompletion {
                 stdout: result.stdout,
                 stderr: result.stderr,
                 exit: result.exit,
                 inserted,
-            });
+            }));
         }
     }
 

@@ -33,7 +33,7 @@ use std::io;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::integration::status::PaneAgents;
@@ -47,9 +47,10 @@ use super::options::{self, OptionScope, OptionSet, OptionsView};
 use super::registry::{self, CommandSpec, Resolution, SpecResolution};
 use super::state::{
     BackgroundJobRegistry, ClientActionResult, ClientMessage, ClientMessageResult,
-    CommandPromptRequestResult, MenuItem, MenuRequest, ModeEdit, ModeItem, ModeKind, ModeView,
-    OverlayRequest, PaneSpec, PopupRequest, PromptCompletion, ServerState, Session, SplitDirection,
-    Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
+    MenuItem, MenuRequest, ModeEdit, ModeItem, ModeKind, ModeView,
+    OverlayRequest, PaneSpec, PopupRequest, PromptCompletion, PromptReply, ServerState, Session,
+    SplitDirection, Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest,
+    WindowSizePolicy,
 };
 use super::style::{
     write_capture_hyperlink, CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder,
@@ -60,7 +61,10 @@ use super::task::{
     run_blocking, Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest,
     WaitToken,
 };
-use suspend::{FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob, WaitForJob};
+use suspend::{
+    ClientPromptJob, FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob,
+    WaitForJob,
+};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.
@@ -110,7 +114,7 @@ pub struct ClientContext {
     pub(crate) active_panes: Option<Arc<Mutex<BTreeMap<u32, u32>>>>,
     pub(crate) key_event: Option<super::key::KeyCode>,
     pub(crate) mouse: Option<MouseEvent>,
-    pub(crate) interaction_reply: Option<mpsc::Sender<PromptCompletion>>,
+    pub(crate) interaction_reply: Option<PromptReply>,
     pub(crate) wait_for_interactions: bool,
     pub(crate) preserve_queue_insertions: bool,
     /// Set for commands run from a hook body. tmux's `CMDQ_STATE_NOHOOKS`
@@ -927,7 +931,7 @@ pub(crate) enum CommandSuspension {
         wait: bool,
     },
     ClientInteraction {
-        completed: mpsc::Receiver<PromptCompletion>,
+        completed: Completion<Option<PromptCompletion>>,
     },
     PaneOutput(PaneOutputSuspension),
 }
@@ -1230,40 +1234,12 @@ impl CommandSuspension {
                 target,
                 tty_name,
                 wait,
-            } => {
-                let result = match registry.request_command(
-                    target.as_deref(),
-                    tty_name.as_deref(),
-                    args,
-                    wait,
-                ) {
-                    CommandPromptRequestResult::Completed(completion) => {
-                        interaction_completion_result(completion)
-                    }
-                    CommandPromptRequestResult::Queued | CommandPromptRequestResult::Busy => {
-                        CommandResult::ok("")
-                    }
-                    CommandPromptRequestResult::NoCurrentClient => {
-                        CommandResult::err("no current client\n")
-                    }
-                    CommandPromptRequestResult::TargetNotFound => CommandResult::err(format!(
-                        "can't find client: {}\n",
-                        target.unwrap_or_default()
-                    )),
-                };
-                CommandSuspensionResult::Completed(result)
-            }
-            Self::ClientInteraction { completed } => {
-                let result = match completed.recv() {
-                    Ok(completion) => interaction_completion_result(completion),
-                    Err(_) => {
-                        let mut result = CommandResult::ok("");
-                        result.continue_queue = true;
-                        result
-                    }
-                };
-                CommandSuspensionResult::Completed(result)
-            }
+            } => CommandSuspensionResult::Completed(run_blocking(ClientPromptJob::prompt(
+                args, &registry, target, tty_name, wait,
+            ))),
+            Self::ClientInteraction { completed } => CommandSuspensionResult::Completed(
+                run_blocking(ClientPromptJob::interaction(completed)),
+            ),
             Self::PaneOutput(wait) => wait.resolve_blocking(),
         }
     }
@@ -1691,7 +1667,19 @@ impl ResumableCommandQueue {
             if self.context.wait_for_interactions
                 && client_interaction_waits(inflight.command.spec.name, &inflight.command.args)
             {
-                let (reply, completed) = mpsc::channel();
+                let (reply, completed) = match PromptReply::new() {
+                    Ok(reply) => reply,
+                    Err(error) => {
+                        self.finish_execution(
+                            inflight,
+                            SharedCommandExecution::completed(CommandResult::err(format!(
+                                "{error}\n"
+                            ))),
+                            state,
+                        );
+                        continue;
+                    }
+                };
                 let mut interaction_context = self.context.clone();
                 interaction_context.interaction_reply = Some(reply);
                 let initial =

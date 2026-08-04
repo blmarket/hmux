@@ -22,15 +22,18 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::server::state::WaitRegistry;
+use crate::server::state::{
+    ClientPromptRegistry, CommandPromptRequestResult, PromptCompletion, WaitRegistry,
+};
 use crate::server::task::{
     Completion, Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken,
 };
 
 use super::execution::{self, WaitForOutcome};
 use super::{
-    flag_value, has_flag, io_error_message, job_delay, positionals, shell_command, ClientContext,
-    ClientFileWrite, CommandResult, RunShellCompletion, SourceFileRead,
+    flag_value, has_flag, interaction_completion_result, io_error_message, job_delay, positionals,
+    shell_command, ClientContext, ClientFileWrite, CommandResult, RunShellCompletion,
+    SourceFileRead,
 };
 
 /// A finished `sh -c` child.
@@ -630,6 +633,98 @@ impl Coroutine for WaitForJob {
                 TaskPoll::Pending => TaskPoll::Pending,
             },
         }
+    }
+}
+
+/// A command queue waiting for a client to answer something.
+///
+/// `command-prompt -w` waits for the prompt it put up on one client;
+/// `confirm-before`, `display-menu` and `display-popup` wait for the overlay
+/// they opened. Both hold the completion the answering side signals, so the
+/// queue is resumed by its own driver instead of blocking on a receive.
+pub(crate) enum ClientPromptJob {
+    /// Nothing to wait for: no client took the request, or `-w` was absent.
+    Done(Option<CommandResult>),
+    /// An unanswered `command-prompt` reports the empty completion, which is
+    /// what the stock client's queue continues with.
+    Prompt(Completion<Option<PromptCompletion>>),
+    /// A client that goes away mid-overlay leaves the queue running.
+    Interaction(Completion<Option<PromptCompletion>>),
+}
+
+impl ClientPromptJob {
+    pub(crate) fn prompt(
+        args: Vec<String>,
+        registry: &ClientPromptRegistry,
+        target: Option<String>,
+        tty_name: Option<String>,
+        wait: bool,
+    ) -> Self {
+        let result = match registry.request_command(
+            target.as_deref(),
+            tty_name.as_deref(),
+            args,
+            wait,
+        ) {
+            CommandPromptRequestResult::Waiting(completion) => return Self::Prompt(completion),
+            CommandPromptRequestResult::Queued | CommandPromptRequestResult::Busy => {
+                CommandResult::ok("")
+            }
+            CommandPromptRequestResult::NoCurrentClient => CommandResult::err("no current client\n"),
+            CommandPromptRequestResult::TargetNotFound => CommandResult::err(format!(
+                "can't find client: {}\n",
+                target.unwrap_or_default()
+            )),
+        };
+        Self::Done(Some(result))
+    }
+
+    pub(crate) fn interaction(completed: Completion<Option<PromptCompletion>>) -> Self {
+        Self::Interaction(completed)
+    }
+}
+
+impl Coroutine for ClientPromptJob {
+    type Output = CommandResult;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match self {
+            // Already resolved: `resume` reports it before anyone waits.
+            Self::Done(_) => WaitRequest::new(Vec::new(), Some(Instant::now())),
+            Self::Prompt(completion) | Self::Interaction(completion) => completion.wait(),
+        }
+    }
+
+    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
+        let answered = match self {
+            Self::Done(result) => {
+                return TaskPoll::Ready(
+                    result
+                        .take()
+                        .expect("resolved client prompt reported its result twice"),
+                )
+            }
+            Self::Prompt(completion) | Self::Interaction(completion) => {
+                match completion.resume(ready) {
+                    TaskPoll::Ready(answered) => answered.ok().flatten(),
+                    TaskPoll::Pending => return TaskPoll::Pending,
+                }
+            }
+        };
+        TaskPoll::Ready(match (&self, answered) {
+            (_, Some(completion)) => interaction_completion_result(completion),
+            (Self::Prompt(_), None) => interaction_completion_result(PromptCompletion {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit: 0,
+                inserted: false,
+            }),
+            (_, None) => {
+                let mut result = CommandResult::ok("");
+                result.continue_queue = true;
+                result
+            }
+        })
     }
 }
 

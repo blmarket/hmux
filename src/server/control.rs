@@ -528,12 +528,12 @@ impl EventControlClient {
             }
             Some(ClientAction::Overlay { reply, .. } | ClientAction::Confirm { reply, .. }) => {
                 if let Some(reply) = reply {
-                    let _ = reply.send(super::state::PromptCompletion {
+                    reply.send(Some(super::state::PromptCompletion {
                         stdout: String::new(),
                         stderr: String::new(),
                         exit: 0,
                         inserted: false,
-                    });
+                    }));
                 }
                 None
             }

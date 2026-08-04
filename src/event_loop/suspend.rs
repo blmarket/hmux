@@ -18,7 +18,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::server::command::suspend::{
-    FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob, WaitForJob,
+    ClientPromptJob, FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob,
+    WaitForJob,
 };
 use crate::server::command::{CommandSuspension, CommandSuspensionResult};
 use crate::server::task::{
@@ -45,6 +46,7 @@ pub(super) enum ExecutorJob {
     LoadBuffer(LoadBufferJob),
     SaveBuffer(FileWriteJob),
     WaitFor(WaitForJob),
+    ClientPrompt(ClientPromptJob),
 }
 
 impl Coroutine for ExecutorJob {
@@ -58,6 +60,7 @@ impl Coroutine for ExecutorJob {
             Self::LoadBuffer(job) => job.wait(),
             Self::SaveBuffer(job) => job.wait(),
             Self::WaitFor(job) => job.wait(),
+            Self::ClientPrompt(job) => job.wait(),
         }
     }
 
@@ -94,6 +97,12 @@ impl Coroutine for ExecutorJob {
                 TaskPoll::Pending => TaskPoll::Pending,
             },
             Self::WaitFor(job) => match job.resume(ready) {
+                TaskPoll::Ready(result) => {
+                    TaskPoll::Ready(CommandSuspensionResult::Completed(result))
+                }
+                TaskPoll::Pending => TaskPoll::Pending,
+            },
+            Self::ClientPrompt(job) => match job.resume(ready) {
                 TaskPoll::Ready(result) => {
                     TaskPoll::Ready(CommandSuspensionResult::Completed(result))
                 }
@@ -178,6 +187,18 @@ impl SuspensionExecutorHandle {
             }
             CommandSuspension::WaitFor { args, registry } => {
                 ExecutorJob::WaitFor(WaitForJob::new(&args, &registry))
+            }
+            CommandSuspension::CommandPrompt {
+                args,
+                registry,
+                target,
+                tty_name,
+                wait,
+            } => ExecutorJob::ClientPrompt(ClientPromptJob::prompt(
+                args, &registry, target, tty_name, wait,
+            )),
+            CommandSuspension::ClientInteraction { completed } => {
+                ExecutorJob::ClientPrompt(ClientPromptJob::interaction(completed))
             }
             suspension => return Err(suspension),
         };

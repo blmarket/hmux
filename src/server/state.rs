@@ -12,7 +12,7 @@ use std::io;
 use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::format::glob_match;
@@ -387,14 +387,14 @@ pub(crate) enum ClientAction {
     SetSelection(Option<Vec<u8>>),
     Overlay {
         request: OverlayRequest,
-        reply: Option<mpsc::Sender<PromptCompletion>>,
+        reply: Option<PromptReply>,
     },
     Confirm {
         prompt: String,
         command: Vec<String>,
         confirm_key: u8,
         default_yes: bool,
-        reply: Option<mpsc::Sender<PromptCompletion>>,
+        reply: Option<PromptReply>,
     },
 }
 
@@ -1973,7 +1973,7 @@ struct ClientPromptSlotState {
 
 struct QueuedCommandPrompt {
     args: Vec<String>,
-    reply: mpsc::Sender<Option<PromptCompletion>>,
+    reply: PromptReply,
 }
 
 /// Registration owned by one interactive attach loop.
@@ -1987,7 +1987,7 @@ pub(crate) struct ClientPromptAttachment {
 pub(crate) struct ActiveCommandPrompt {
     slot: Arc<ClientPromptSlot>,
     args: Vec<String>,
-    reply: Option<mpsc::Sender<Option<PromptCompletion>>>,
+    reply: Option<PromptReply>,
 }
 
 #[derive(Clone, Debug)]
@@ -1998,8 +1998,62 @@ pub(crate) struct PromptCompletion {
     pub(crate) inserted: bool,
 }
 
+/// The answering end of an interactive prompt, menu, popup or confirmation.
+///
+/// One command queue waits for one answer, so the reply is a one-shot: only the
+/// first [`send`](Self::send) is delivered. It is clonable because the client
+/// context carrying it is cloned into every nested command that might answer,
+/// and dropping the last clone unanswered reports `None` — the disconnect the
+/// blocking receive this replaces saw when its sender went away.
+#[derive(Clone)]
+pub(crate) struct PromptReply {
+    sender: Arc<Mutex<Option<CompletionSender<Option<PromptCompletion>>>>>,
+}
+
+impl PromptReply {
+    pub(crate) fn new() -> io::Result<(Self, Completion<Option<PromptCompletion>>)> {
+        let (completion, sender) = completion_pair()?;
+        Ok((
+            Self {
+                sender: Arc::new(Mutex::new(Some(sender))),
+            },
+            completion,
+        ))
+    }
+
+    pub(crate) fn send(&self, completion: Option<PromptCompletion>) {
+        let Ok(mut sender) = self.sender.lock() else {
+            return;
+        };
+        if let Some(sender) = sender.take() {
+            sender.complete(completion);
+        }
+    }
+}
+
+impl std::fmt::Debug for PromptReply {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PromptReply")
+            .field(
+                "answered",
+                &self.sender.lock().is_ok_and(|sender| sender.is_none()),
+            )
+            .finish()
+    }
+}
+
+impl Drop for PromptReply {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.sender) == 1 {
+            self.send(None);
+        }
+    }
+}
+
 pub(crate) enum CommandPromptRequestResult {
-    Completed(PromptCompletion),
+    /// The prompt is up and `-w` asked to wait for the answer.
+    Waiting(Completion<Option<PromptCompletion>>),
     Queued,
     NoCurrentClient,
     TargetNotFound,
@@ -3039,7 +3093,7 @@ impl ClientRenderRegistry {
         command: Vec<String>,
         confirm_key: u8,
         default_yes: bool,
-        reply: Option<mpsc::Sender<PromptCompletion>>,
+        reply: Option<PromptReply>,
     ) -> ClientActionResult {
         let Ok(inner) = self.inner.lock() else {
             return ClientActionResult::NoCurrentClient;
@@ -3157,7 +3211,7 @@ impl ClientRenderRegistry {
         target: Option<&str>,
         invoking_tty: Option<&str>,
         request: OverlayRequest,
-        reply: Option<mpsc::Sender<PromptCompletion>>,
+        reply: Option<PromptReply>,
     ) -> ClientActionResult {
         let Ok(inner) = self.inner.lock() else {
             return ClientActionResult::NoCurrentClient;
@@ -3394,7 +3448,9 @@ impl ClientPromptRegistry {
                 };
             };
             let slot = Arc::clone(&entry.slot);
-            let (reply, completed) = mpsc::channel();
+            let Ok((reply, completed)) = PromptReply::new() else {
+                return CommandPromptRequestResult::NoCurrentClient;
+            };
             let Ok(mut state) = slot.inner.lock() else {
                 return CommandPromptRequestResult::NoCurrentClient;
             };
@@ -3411,15 +3467,7 @@ impl ClientPromptRegistry {
         if !wait {
             return CommandPromptRequestResult::Queued;
         }
-        match completed.recv() {
-            Ok(Some(result)) => CommandPromptRequestResult::Completed(result),
-            Ok(None) | Err(_) => CommandPromptRequestResult::Completed(PromptCompletion {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit: 0,
-                inserted: false,
-            }),
-        }
+        CommandPromptRequestResult::Waiting(completed)
     }
 }
 
@@ -3453,7 +3501,7 @@ impl Drop for ClientPromptAttachment {
         }
         if let Ok(mut state) = self.slot.inner.lock() {
             if let Some(queued) = state.queued_command.take() {
-                let _ = queued.reply.send(None);
+                queued.reply.send(None);
             }
         }
     }
@@ -3469,7 +3517,7 @@ impl ActiveCommandPrompt {
             state.active = false;
         }
         if let Some(reply) = self.reply.take() {
-            let _ = reply.send(Some(result));
+            reply.send(Some(result));
         }
     }
 
@@ -3478,7 +3526,7 @@ impl ActiveCommandPrompt {
             state.active = false;
         }
         if let Some(reply) = self.reply.take() {
-            let _ = reply.send(None);
+            reply.send(None);
         }
     }
 }
@@ -5400,7 +5448,7 @@ impl ServerState {
         target: Option<&str>,
         invoking_tty: Option<&str>,
         request: OverlayRequest,
-        reply: Option<mpsc::Sender<PromptCompletion>>,
+        reply: Option<PromptReply>,
     ) -> ClientActionResult {
         self.client_renders
             .overlay_client(target, invoking_tty, request, reply)
@@ -5414,7 +5462,7 @@ impl ServerState {
         command: Vec<String>,
         confirm_key: u8,
         default_yes: bool,
-        reply: Option<mpsc::Sender<PromptCompletion>>,
+        reply: Option<PromptReply>,
     ) -> ClientActionResult {
         self.client_renders.confirm_client(
             target,
@@ -14319,6 +14367,7 @@ fn session_not_found(part: &str) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::server::task::run_blocking;
 
     #[test]
     fn copy_vt_rows_exclude_crlf_and_trailing_cursor() {
@@ -14417,21 +14466,15 @@ mod tests {
             .attach("/dev/pts/8".to_string(), Some(800), 8)
             .expect("attach client B");
 
-        let requester = Arc::clone(&registry);
-        let request = std::thread::spawn(move || {
-            requester.request_command(
-                Some("/dev/pts/7"),
-                None,
-                vec!["command-prompt".to_string()],
-                true,
-            )
-        });
-        let mut prompt_fd = libc::pollfd {
-            fd: client_a.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
+        let request = registry.request_command(
+            Some("/dev/pts/7"),
+            None,
+            vec!["command-prompt".to_string()],
+            true,
+        );
+        let CommandPromptRequestResult::Waiting(answer) = request else {
+            panic!("waiting request");
         };
-        assert_eq!(unsafe { libc::poll(&mut prompt_fd, 1, 1_000) }, 1);
         assert!(client_b.take_command_prompt().is_none());
         let prompt = client_a.take_command_prompt().expect("client A prompt");
         assert_eq!(prompt.args(), &["command-prompt".to_string()]);
@@ -14441,11 +14484,10 @@ mod tests {
             exit: 0,
             inserted: true,
         });
-        assert!(matches!(
-            request.join().expect("request thread"),
-            CommandPromptRequestResult::Completed(result)
-                if result.stdout == "Up" && result.exit == 0
-        ));
+
+        let answered = run_blocking(answer).expect("answer").expect("completion");
+        assert_eq!(answered.stdout, "Up");
+        assert_eq!(answered.exit, 0);
     }
 
     #[test]
@@ -14454,31 +14496,19 @@ mod tests {
         let client = registry
             .attach("/dev/pts/7".to_string(), Some(700), 7)
             .expect("attach client");
-        let requester = Arc::clone(&registry);
-        let request = std::thread::spawn(move || {
-            requester.request_command(
-                Some("/dev/pts/7"),
-                None,
-                vec!["command-prompt".to_string()],
-                true,
-            )
-        });
-        let mut prompt_fd = libc::pollfd {
-            fd: client.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
+        let request = registry.request_command(
+            Some("/dev/pts/7"),
+            None,
+            vec!["command-prompt".to_string()],
+            true,
+        );
+        let CommandPromptRequestResult::Waiting(answer) = request else {
+            panic!("waiting request");
         };
-        assert_eq!(unsafe { libc::poll(&mut prompt_fd, 1, 1_000) }, 1);
         drop(client);
-        assert!(matches!(
-            request.join().expect("request thread"),
-            CommandPromptRequestResult::Completed(PromptCompletion {
-                stdout,
-                stderr,
-                exit: 0,
-                ..
-            }) if stdout.is_empty() && stderr.is_empty()
-        ));
+
+        // A detached client answers nothing; the queue continues on its own.
+        assert!(run_blocking(answer).expect("answer").is_none());
     }
 
     #[test]
