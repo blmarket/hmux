@@ -49,9 +49,7 @@ use super::state::{
     SplitDirection, Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest,
     WindowSizePolicy,
 };
-use super::style::{
-    write_capture_hyperlink, CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder,
-};
+use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
 #[cfg(test)]
 use super::task::drive_blocking;
 use super::task::{
@@ -7100,10 +7098,7 @@ fn serialize_capture(
             }
             links.join(" ")
         } else if let Some(styled) = styled_rows {
-            capture_add_hyperlinks(
-                styled.get(relative).map(String::as_str).unwrap_or_default(),
-                row,
-            )
+            styled.get(relative).cloned().unwrap_or_default()
         } else {
             capture_plain_row(row, args)
         };
@@ -7124,86 +7119,6 @@ fn serialize_capture(
         }
     }
     out
-}
-
-fn capture_add_hyperlinks(styled: &str, row: &ghostty_sys::GridRowSnapshot) -> String {
-    let mut out = Vec::with_capacity(styled.len());
-    let bytes = styled.as_bytes();
-    let mut offset = 0;
-    let mut cell_index = 0;
-    let mut current: Option<Hyperlink> = None;
-
-    while offset < bytes.len() {
-        if bytes[offset] == 0x1b {
-            let end = capture_escape_sequence_end(bytes, offset);
-            out.extend_from_slice(&bytes[offset..end]);
-            offset = end;
-            continue;
-        }
-
-        while cell_index < row.cells.len()
-            && matches!(
-                row.cells[cell_index].width,
-                ghostty_sys::GridCellWidth::SpacerTail | ghostty_sys::GridCellWidth::SpacerHead
-            )
-        {
-            cell_index += 1;
-        }
-        let Some(cell) = row.cells.get(cell_index) else {
-            out.push(bytes[offset]);
-            offset += 1;
-            continue;
-        };
-        let cell_text = if cell.text.is_empty() {
-            b" ".as_slice()
-        } else {
-            cell.text.as_bytes()
-        };
-        if !bytes[offset..].starts_with(cell_text) {
-            out.push(bytes[offset]);
-            offset += 1;
-            continue;
-        }
-
-        let next = cell.hyperlink.as_ref().map(|uri| Hyperlink {
-            id: cell.hyperlink_id.clone().unwrap_or_default(),
-            uri: uri.clone(),
-        });
-        write_capture_hyperlink(&mut out, current.as_ref(), next.as_ref());
-        current = next;
-        out.extend_from_slice(cell_text);
-        offset += cell_text.len();
-        cell_index += 1;
-    }
-    write_capture_hyperlink(&mut out, current.as_ref(), None);
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-fn capture_escape_sequence_end(bytes: &[u8], start: usize) -> usize {
-    if bytes.get(start + 1) == Some(&b'[') {
-        let mut index = start + 2;
-        while index < bytes.len() {
-            index += 1;
-            if (0x40..=0x7e).contains(&bytes[index - 1]) {
-                break;
-            }
-        }
-        return index;
-    }
-    if bytes.get(start + 1) == Some(&b']') {
-        let mut index = start + 2;
-        while index < bytes.len() {
-            if bytes[index] == 0x07 {
-                return index + 1;
-            }
-            if bytes[index] == 0x1b && bytes.get(index + 1) == Some(&b'\\') {
-                return index + 2;
-            }
-            index += 1;
-        }
-        return bytes.len();
-    }
-    (start + 2).min(bytes.len())
 }
 
 fn capture_plain_row(row: &ghostty_sys::GridRowSnapshot, args: &[String]) -> String {

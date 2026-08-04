@@ -3611,6 +3611,30 @@ mod tests {
         );
     }
 
+    // Regression: an OSC 8 hyperlink printed into a pane must reach the
+    // attached client's frame, or the link renders as plain styled text that
+    // cannot be clicked (it survived only in capture-pane output before).
+    #[test]
+    fn compose_frame_carries_pane_osc8_hyperlinks() {
+        let state = fresh_state();
+        let mut st = state.lock().unwrap();
+        let status_h = status::height(&st, "0");
+        let _client = st
+            .attach_test_client("0", 80, 24)
+            .expect("attach sizing client");
+        st.active_pane("0")
+            .unwrap()
+            .feed(b"\x1b]8;;https://example.test\x1b\\link\x1b]8;;\x1b\\ after");
+
+        let frame = compose_frame(&st, "0", 80, 24, status_h, 0).expect("compose");
+        let text = String::from_utf8_lossy(&frame);
+        assert!(
+            text.contains("\x1b]8;;https://example.test\x1b\\link\x1b]8;;\x1b\\"),
+            "the client frame must open and close the OSC 8 hyperlink around \
+             the linked cells, got:\n{text:?}"
+        );
+    }
+
     // ---- compositor: copy-mode scrollback view -----------------------------
     //
     // Regression for the "cannot scroll up with C-b PgUp" bug (see report.md).
