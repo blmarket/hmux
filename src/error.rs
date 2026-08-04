@@ -23,10 +23,6 @@ pub enum Error {
     #[error("codec: {0}")]
     Codec(String),
 
-    /// Failure managing the backing tmux process.
-    #[error("backing tmux: {0}")]
-    Backing(String),
-
     /// A control-plane protocol violation surfaced by a peer.
     #[error("protocol: {0}")]
     Protocol(String),
@@ -35,9 +31,5 @@ pub enum Error {
 impl Error {
     pub fn codec(msg: impl Into<String>) -> Self {
         Error::Codec(msg.into())
-    }
-
-    pub fn backing(msg: impl Into<String>) -> Self {
-        Error::Backing(msg.into())
     }
 }
