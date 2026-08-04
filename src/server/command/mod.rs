@@ -52,15 +52,9 @@ use super::state::{
     WindowSizePolicy,
 };
 use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
-#[cfg(test)]
-use super::task::drive_blocking;
 use super::task::{
-    run_blocking, Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest,
-    WaitToken,
+    Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest, WaitToken,
 };
-#[cfg(test)]
-use suspend::IfShellJob;
-use suspend::{RunShellJob, SuspensionJob};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.
@@ -408,91 +402,16 @@ pub(crate) fn command_prompt_template(
 #[cfg(test)]
 pub fn run(args: &[String], state: &SharedState, agents: &PaneAgents) -> CommandResult {
     let context = ClientContext::default();
+    let mut driver =
+        crate::event_loop::test_driver::LoopCommandDriver::new().expect("command test loop");
     let mut result = match start_resumable_command(args, state, agents, &context) {
-        Ok(queue) => BlockingCommandRuntime::run(queue, state),
+        Ok(queue) => driver.run_queue(queue, state),
         Err(result) => result,
     };
     for request in result.background_commands.drain(..) {
-        BlockingCommandRuntime::run_background(request, state, agents);
+        driver.run_background(request, state, agents);
     }
     result
-}
-
-/// Blocking/threaded driver for shared command coroutines. Unit-test
-/// scaffolding behind [`run`]; the server runtime drives the same coroutines
-/// through the event loop.
-#[cfg(test)]
-#[derive(Clone, Default)]
-pub(crate) struct BlockingCommandRuntime;
-
-#[cfg(test)]
-impl BlockingCommandRuntime {
-    pub(crate) fn run(
-        queue: ResumableCommandQueue,
-        state: &SharedState,
-    ) -> CommandResult {
-        let mut task = TaskState::new(CommandCoroutine::new(
-            queue,
-            Rc::clone(state),
-            Arc::new(Self),
-            64,
-        ));
-        drive_blocking(&mut task);
-        match task.take_output() {
-            Some(Ok(result)) => result,
-            Some(Err(error)) => CommandResult::err(format!("{error}\n")),
-            None => CommandResult::err("command stopped without a result\n"),
-        }
-    }
-
-    /// Run one detached (`-b`) command to completion on the calling thread.
-    ///
-    /// The loop owns detached queues outright; this driver has no loop to hand
-    /// them to, so it runs them where it stands.
-    pub(crate) fn run_background(
-        request: BackgroundCommandRequest,
-        state: &SharedState,
-        agents: &PaneAgents,
-    ) {
-        let (command, context) = request.resolve();
-        let queue = match command {
-            BackgroundCommand::Line(command) => {
-                let Some(command) = command.filter(|line| !line.trim().is_empty()) else {
-                    return;
-                };
-                start_resumable_command_string(&command, state, agents, &context)
-            }
-            BackgroundCommand::Args(args) => {
-                if args.is_empty() {
-                    return;
-                }
-                start_resumable_command(&args, state, agents, &context)
-            }
-            BackgroundCommand::RunShell { args, jobs } => {
-                run_blocking(suspend::BackgroundShellJob::new(&args, &context, jobs));
-                return;
-            }
-        };
-        let Ok(queue) = queue else { return };
-        let mut result = Self::run(queue, state);
-        for request in result.background_commands.drain(..) {
-            Self::run_background(request, state, agents);
-        }
-    }
-}
-
-#[cfg(test)]
-impl CommandRuntime for BlockingCommandRuntime {
-    fn submit(
-        &self,
-        suspension: CommandSuspension,
-    ) -> io::Result<Completion<CommandSuspensionResult>> {
-        // No loop to hand the job to: resolve it here and hand back an
-        // already-signalled completion.
-        let (completion, sender) = super::task::completion_pair()?;
-        sender.complete(run_blocking(SuspensionJob::new(suspension)));
-        Ok(completion)
-    }
 }
 
 /// Parse and normalize every command before client-side file operations begin.
@@ -565,7 +484,9 @@ pub fn run_with_context(
         Ok(queue) => queue,
         Err(error) => return error,
     };
-    run_resumable_command(queue, state)
+    crate::event_loop::test_driver::LoopCommandDriver::new()
+        .expect("command test loop")
+        .run_queue(queue, state)
 }
 
 pub(crate) fn start_resumable_command(
@@ -891,22 +812,6 @@ impl BackgroundCommandRequest {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn resolve(self) -> (BackgroundCommand, ClientContext) {
-        match self.into_pending() {
-            PendingBackground::Ready(command, context) => (command, context),
-            PendingBackground::Condition {
-                condition,
-                then_command,
-                else_command,
-                context,
-            } => {
-                let matched = run_blocking(IfShellJob::new(&condition, &context));
-                let command = if matched { then_command } else { else_command };
-                (BackgroundCommand::Line(command), context)
-            }
-        }
-    }
 }
 
 pub(crate) enum BackgroundCommand {
@@ -1708,9 +1613,6 @@ impl ResumableCommandQueue {
             let command = &inflight.command;
 
             let mut execution = match command.spec.name {
-                "run-shell" if !has_flag(&command.args, "-b") => SharedCommandExecution::completed(
-                    run_shell_shared(&command.args, state, &self.agents, &self.context),
-                ),
                 "load-buffer" => SharedCommandExecution::completed(run_load_buffer_shared(
                     &command,
                     state,
@@ -2192,31 +2094,6 @@ impl ResumableCommandQueue {
 /// Execute a command list containing a blocking command without holding the
 /// server state mutex while it waits. Other commands still run one at a time
 /// with the same client/session context and hook behavior.
-fn run_shared_command_groups(
-    parsed: Vec<ParsedCommand>,
-    state: &SharedState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    run_resumable_command(ResumableCommandQueue::new(parsed, agents, context), state)
-}
-
-fn run_resumable_command(
-    mut queue: ResumableCommandQueue,
-    state: &SharedState,
-) -> CommandResult {
-    loop {
-        match queue.drive(state, usize::MAX) {
-            ResumableCommandTurn::Pending => continue,
-            ResumableCommandTurn::Suspended(suspension) => {
-                let result = run_blocking(SuspensionJob::new(suspension));
-                queue.resume(result, state);
-            }
-            ResumableCommandTurn::Complete(result) => return result,
-        }
-    }
-}
-
 fn client_interaction_waits(name: &str, args: &[String]) -> bool {
     match name {
         "confirm-before" | "display-panes" => !has_flag(args, "-b"),
@@ -2269,76 +2146,6 @@ fn run_single_shared(
     );
     state.record_control_checkpoint();
     restore_command_target_context(&mut state, previous);
-    result
-}
-
-fn run_shell_shared(
-    args: &[String],
-    state: &SharedState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    if has_flag(args, "-C") {
-        let Some(command) = positionals(args, &["-t", "-c", "-d"]).first().copied() else {
-            return CommandResult::ok("");
-        };
-        return run_inserted_command_string(command, state, agents, context);
-    }
-    let context = {
-        let state = state.borrow_mut();
-        context.with_job_environment(&state)
-    };
-    let completion = run_blocking(RunShellJob::new(args, &context));
-    let mut state = {
-        let state = state.borrow_mut();
-        state
-    };
-    let previous = install_command_target_context(&mut state, &context);
-    let result = finish_run_shell(completion, &mut state);
-    state.record_control_checkpoint();
-    restore_command_target_context(&mut state, previous);
-    result
-}
-
-/// Execute a command list inserted by a deferred queue item. Inserted commands
-/// have their own queue group: their failure sets the client status but does
-/// not discard the original group's tail.
-fn run_inserted_command_string(
-    line: &str,
-    state: &SharedState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    let tokens = tokenize_line(line);
-    let owned_groups = tokenized_command_groups(&tokens);
-    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    let aliases = {
-        let state = state.borrow_mut();
-        state.command_aliases()
-    };
-    let parsed = match parse_command_groups_with_aliases(groups, &aliases) {
-        Ok(parsed) => parsed,
-        Err(mut error) => {
-            error.continue_queue = true;
-            return error;
-        }
-    };
-
-    let mut result = CommandResult::ok("");
-    let mut inserted_context = context.clone();
-    inserted_context.preserve_queue_insertions = true;
-    for command in parsed {
-        let mut inserted =
-            run_shared_command_groups(vec![command], state, agents, &inserted_context);
-        let exit = inserted.exit;
-        let continue_queue = inserted.continue_queue;
-        let nested = std::mem::take(&mut inserted.inserted_results);
-        result.inserted_results.push(inserted);
-        result.inserted_results.extend(nested);
-        if exit != 0 && !continue_queue {
-            break;
-        }
-    }
     result
 }
 

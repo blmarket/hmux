@@ -136,7 +136,6 @@ impl ActiveOverlay {
         reply: Option<super::super::state::PromptReply>,
         cols: u16,
         rows: u16,
-        pane_io_mode: PaneIoMode,
     ) -> io::Result<Option<Self>> {
         Ok(match request {
             OverlayRequest::Clear => None,
@@ -188,12 +187,11 @@ impl ActiveOverlay {
                     wrapped
                 };
                 let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
-                let mut pane = Pane::spawn_in_mode(
+                let mut pane = Pane::spawn(
                     &refs,
                     request.cwd.as_deref(),
                     inner_width.max(1),
                     inner_height.max(1),
-                    pane_io_mode,
                 )?;
                 let io = pane.take_event_io().map(Box::new);
                 Some(Self {

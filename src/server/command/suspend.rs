@@ -1225,7 +1225,8 @@ mod tests {
     use super::{FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob, WaitForJob};
     use crate::server::command::{ClientContext, ClientFileWrite};
     use crate::server::state::WaitRegistry;
-    use crate::server::task::{drive_blocking, run_blocking, ReadySet, TaskState};
+    use crate::event_loop::test_driver::{finish_on_loop, run_on_loop};
+    use crate::server::task::{ReadySet, TaskState};
     use std::fs;
     use std::io;
     use std::path::{Path, PathBuf};
@@ -1254,7 +1255,7 @@ mod tests {
 
     #[test]
     fn run_shell_job_reports_stdout_and_the_exit_status() {
-        let completion = run_blocking(RunShellJob::new(
+        let completion = run_on_loop(RunShellJob::new(
             &args(&["echo hello; exit 3"]),
             &ClientContext::default(),
         ));
@@ -1271,7 +1272,7 @@ mod tests {
         // The writer holds stdout open past the stderr burst, so a driver that
         // read the pipes in order would deadlock on a full stderr buffer.
         let command = "sh -c 'yes error >&2 & sleep 0.2; kill %1' 2>&1 >/dev/null | head -c 200000 >&2; echo done";
-        let completion = run_blocking(RunShellJob::new(
+        let completion = run_on_loop(RunShellJob::new(
             &args(&["-E", command]),
             &context_with_path(),
         ));
@@ -1284,7 +1285,7 @@ mod tests {
     #[test]
     fn run_shell_job_waits_out_the_requested_delay() {
         let started = Instant::now();
-        let completion = run_blocking(RunShellJob::new(
+        let completion = run_on_loop(RunShellJob::new(
             &args(&["-d", "0.2", "echo late"]),
             &ClientContext::default(),
         ));
@@ -1295,7 +1296,7 @@ mod tests {
 
     #[test]
     fn run_shell_job_rejects_an_invalid_delay_without_a_child() {
-        let completion = run_blocking(RunShellJob::new(
+        let completion = run_on_loop(RunShellJob::new(
             &args(&["-d", "soon", "echo never"]),
             &ClientContext::default(),
         ));
@@ -1306,8 +1307,8 @@ mod tests {
     #[test]
     fn if_shell_job_reports_the_condition_status() {
         let context = ClientContext::default();
-        assert!(run_blocking(IfShellJob::new("true", &context)));
-        assert!(!run_blocking(IfShellJob::new("exit 7", &context)));
+        assert!(run_on_loop(IfShellJob::new("true", &context)));
+        assert!(!run_on_loop(IfShellJob::new("exit 7", &context)));
     }
 
     fn temporary_directory(name: &str) -> PathBuf {
@@ -1335,7 +1336,7 @@ mod tests {
         let second = directory.join("missing.conf");
         fs::write(&first, "set-buffer -b one yes\n").expect("write config");
 
-        let reads = run_blocking(SourceFileJob::new(vec![
+        let reads = run_on_loop(SourceFileJob::new(vec![
             first.display().to_string(),
             second.display().to_string(),
         ]));
@@ -1363,7 +1364,7 @@ mod tests {
             }
         });
 
-        let reads = run_blocking(SourceFileJob::new(vec![fifo.display().to_string()]));
+        let reads = run_on_loop(SourceFileJob::new(vec![fifo.display().to_string()]));
 
         writer.join().expect("writer");
         assert_eq!(
@@ -1390,7 +1391,7 @@ mod tests {
             }
         });
 
-        let contents = run_blocking(LoadBufferJob::new(fifo.clone()));
+        let contents = run_on_loop(LoadBufferJob::new(fifo.clone()));
 
         writer.join().expect("writer");
         assert_eq!(contents.expect("FIFO contents"), b"first second".to_vec());
@@ -1401,7 +1402,7 @@ mod tests {
     fn load_buffer_job_reports_the_errno_of_a_missing_path() {
         let directory = temporary_directory("load-missing");
 
-        let contents = run_blocking(LoadBufferJob::new(directory.join("absent")));
+        let contents = run_on_loop(LoadBufferJob::new(directory.join("absent")));
 
         assert_eq!(contents, Err(libc::ENOENT));
         let _ = fs::remove_dir_all(&directory);
@@ -1422,10 +1423,10 @@ mod tests {
         let path = directory.join("buffer");
 
         let truncating = libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC;
-        let result = run_blocking(FileWriteJob::new(file_write(&path, truncating, b"first\n")));
+        let result = run_on_loop(FileWriteJob::new(file_write(&path, truncating, b"first\n")));
         assert_eq!(result.exit, 0, "{}", result.stderr);
         let appending = libc::O_WRONLY | libc::O_CREAT | libc::O_APPEND;
-        let result = run_blocking(FileWriteJob::new(file_write(&path, appending, b"second\n")));
+        let result = run_on_loop(FileWriteJob::new(file_write(&path, appending, b"second\n")));
         assert_eq!(result.exit, 0, "{}", result.stderr);
 
         assert_eq!(fs::read(&path).expect("saved file"), b"first\nsecond\n");
@@ -1447,7 +1448,7 @@ mod tests {
             }
         });
 
-        let result = run_blocking(FileWriteJob::new(file_write(
+        let result = run_on_loop(FileWriteJob::new(file_write(
             &fifo,
             libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
             &payload,
@@ -1462,7 +1463,7 @@ mod tests {
     fn file_write_job_reports_an_unwritable_path_and_continues_the_queue() {
         let directory = temporary_directory("save-unwritable");
 
-        let result = run_blocking(FileWriteJob::new(file_write(
+        let result = run_on_loop(FileWriteJob::new(file_write(
             &directory,
             libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
             b"buffer",
@@ -1491,9 +1492,9 @@ mod tests {
     fn wait_for_job_consumes_a_signal_that_already_arrived() {
         let registry = WaitRegistry::default();
 
-        run_blocking(WaitForJob::new(&wait_for_args(&["-S", "ready"]), &registry));
+        run_on_loop(WaitForJob::new(&wait_for_args(&["-S", "ready"]), &registry));
         let started = Instant::now();
-        let result = run_blocking(WaitForJob::new(&wait_for_args(&["ready"]), &registry));
+        let result = run_on_loop(WaitForJob::new(&wait_for_args(&["ready"]), &registry));
 
         assert_eq!(result.exit, 0, "{}", result.stderr);
         assert!(started.elapsed() < Duration::from_millis(50));
@@ -1518,7 +1519,7 @@ mod tests {
 
         registry.signal("later");
 
-        drive_blocking(&mut waiter);
+        finish_on_loop(&mut waiter);
         let result = waiter.take_output().expect("signalled wait-for");
         assert_eq!(result.exit, 0, "{}", result.stderr);
     }
@@ -1528,13 +1529,13 @@ mod tests {
         let registry = WaitRegistry::default();
 
         // The first `-L` takes the lock outright.
-        let result = run_blocking(WaitForJob::new(&wait_for_args(&["-L", "gate"]), &registry));
+        let result = run_on_loop(WaitForJob::new(&wait_for_args(&["-L", "gate"]), &registry));
         assert_eq!(result.exit, 0, "{}", result.stderr);
 
         let mut waiter = pending_wait_for(&["-L", "gate"], &registry);
         assert!(registry.unlock("gate"), "first unlock");
 
-        drive_blocking(&mut waiter);
+        finish_on_loop(&mut waiter);
         let result = waiter.take_output().expect("handed-off wait-for");
         assert_eq!(result.exit, 0, "{}", result.stderr);
         // The handoff kept the channel locked, so the second holder can release
@@ -1547,7 +1548,7 @@ mod tests {
     fn wait_for_job_reports_an_unlock_of_a_free_channel() {
         let registry = WaitRegistry::default();
 
-        let result = run_blocking(WaitForJob::new(&wait_for_args(&["-U", "free"]), &registry));
+        let result = run_on_loop(WaitForJob::new(&wait_for_args(&["-U", "free"]), &registry));
 
         assert_ne!(result.exit, 0);
         assert_eq!(result.stderr, "channel free not locked\n");

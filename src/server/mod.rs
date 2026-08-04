@@ -45,7 +45,7 @@ use std::sync::Arc;
 use crate::integration::status::StatusHub;
 use crate::observability::v1::{PaneId as PublicPaneId, PaneObservability, ServerObservability};
 
-use pane::{PaneIo, PaneIoMode};
+use pane::PaneIo;
 use state::ServerState;
 use crate::server::state::SharedState;
 
@@ -112,7 +112,6 @@ impl Server {
     /// creates session 0 through the ordinary new-session path.
     pub fn new() -> io::Result<Server> {
         let mut state = ServerState::empty();
-        state.set_pane_io_mode(PaneIoMode::EventLoop);
         state.seed_global_environment();
         Self::from_state(state, Rc::new(NoopObservationHook))
     }
@@ -149,13 +148,6 @@ impl Server {
     /// [`AgentObserver`]: crate::integration::AgentObserver
     pub fn status_hub(&self) -> StatusHub {
         self.status.clone()
-    }
-
-    pub(crate) fn enable_event_loop_pane_io(&self) -> io::Result<()> {
-        self.state
-            .borrow_mut()
-            .set_pane_io_mode(PaneIoMode::EventLoop);
-        Ok(())
     }
 
     pub(crate) fn reconcile_event_observations(&self) -> io::Result<()> {

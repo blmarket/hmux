@@ -2051,13 +2051,19 @@ mod tests {
             "-t".to_string(),
             "work".to_string(),
         ];
+        // The control client submits its command work to a loop, the same as
+        // it does in the daemon; this test never suspends, so the loop only
+        // has to exist.
+        let event_loop = crate::event_loop::driver::EventLoop::new()?;
         let mut control = EventControlClient::new(
             &args,
             tty,
             state,
             hub.clone(),
             &command::ClientContext::default(),
-            Arc::new(command::BlockingCommandRuntime),
+            Arc::new(crate::event_loop::suspend::EventCommandRuntime::new(
+                event_loop.executor_handle(),
+            )),
         )?;
 
         command_input.write_all(b"refresh-client -B 'agent:%*:#{pane_agent_state}'\n")?;

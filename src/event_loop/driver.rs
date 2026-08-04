@@ -625,7 +625,7 @@ where
     }
 
     #[cfg(test)]
-    fn executor_handle(&self) -> SuspensionExecutorHandle {
+    pub(crate) fn executor_handle(&self) -> SuspensionExecutorHandle {
         self.executor_handle.clone()
     }
 

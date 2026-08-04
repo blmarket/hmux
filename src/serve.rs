@@ -33,7 +33,6 @@ pub fn run_event_loop(
     const DISPATCH_BUDGET: usize = 256;
 
     let mut event_loop = EventLoop::new()?;
-    server.enable_event_loop_pane_io()?;
     let child_signal = event_loop.add_child_signal(server.clone())?;
     event_loop.add_term_signal()?;
     let listener = event_loop.add_listener(bind_listener(listen_path)?, ACCEPT_BUDGET)?;

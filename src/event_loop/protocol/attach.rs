@@ -17,7 +17,6 @@ use crate::server::attach::{
     AttachStartFailure, AttachWaitReady, AttachWaitSources, ClientTty,
 };
 use crate::server::command::{self, ClientContext};
-use crate::server::pane::PaneIoMode;
 use crate::server::state::SharedState;
 use crate::server::task::{ReadySet, TaskState};
 use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
@@ -216,7 +215,6 @@ impl EventAttachClient {
             &hub,
             context,
             &mut output,
-            PaneIoMode::EventLoop,
         )
         .map_err(AttachStartError::from_failure)?;
         let mut attach = Self {

@@ -69,14 +69,6 @@ pub struct Pane {
     rows: u16,
 }
 
-/// How a new pane's PTY is drained. The server runtime owns pane I/O through
-/// the event loop; this stays an enum because the spawn paths thread it from
-/// the state that decides it.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum PaneIoMode {
-    EventLoop,
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct PaneSpawnSpec {
     pub(crate) argv: Vec<String>,
@@ -1344,12 +1336,11 @@ impl Pane {
         })
     }
 
-    pub(crate) fn spawn_in_mode(
+    pub(crate) fn spawn(
         argv: &[&str],
         cwd: Option<&Path>,
         cols: u16,
         rows: u16,
-        io_mode: PaneIoMode,
     ) -> io::Result<Pane> {
         assert!(!argv.is_empty(), "argv must have at least the program");
 
@@ -1435,9 +1426,7 @@ impl Pane {
             Rc::clone(&pipe_output_active),
             Rc::clone(&alive),
         )?;
-        let event_io = match io_mode {
-            PaneIoMode::EventLoop => Some(pane_io),
-        };
+        let event_io = Some(pane_io);
 
         Ok(Pane {
             observation,
@@ -1471,14 +1460,13 @@ impl Pane {
         self.spawn_spec.clone()
     }
 
-    pub(crate) fn spawn_from_spec_mode(
+    pub(crate) fn spawn_from_spec(
         spec: &PaneSpawnSpec,
         cols: u16,
         rows: u16,
-        io_mode: PaneIoMode,
     ) -> io::Result<Pane> {
         let argv = spec.argv.iter().map(String::as_str).collect::<Vec<_>>();
-        Self::spawn_in_mode(&argv, spec.cwd.as_deref(), cols, rows, io_mode)
+        Self::spawn(&argv, spec.cwd.as_deref(), cols, rows)
     }
 
     pub(crate) fn runtime_id(&self) -> u64 {
@@ -2062,7 +2050,7 @@ impl Pane {
         Some(code)
     }
 
-    pub(crate) fn collect_exited_child(&mut self, terminate_if_running: bool) -> bool {
+    pub(crate) fn collect_exited_child(&mut self) -> bool {
         if !self.has_exited() {
             return false;
         }
@@ -2072,7 +2060,7 @@ impl Pane {
         let Some(child) = self.child.as_mut() else {
             return true;
         };
-        if terminate_if_running && !child.termination_requested {
+        if !child.termination_requested {
             unsafe {
                 libc::kill(child.pid, libc::SIGKILL);
             }

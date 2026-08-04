@@ -35,7 +35,6 @@ impl AttachSession {
         hub: &StatusHub,
         context: &command::ClientContext,
         writer: &mut W,
-        pane_io_mode: PaneIoMode,
     ) -> Result<Self, AttachStartFailure>
     where
         W: FrameWriter + ?Sized,
@@ -212,7 +211,6 @@ impl AttachSession {
                 status_cache,
             },
             pane_io: AttachPaneIo {
-                mode: pane_io_mode,
                 latmon,
             },
             commands: AttachCommands {
@@ -918,8 +916,7 @@ impl AttachSession {
                                 reply,
                                 self.viewport.cols,
                                 self.viewport.rows,
-                                self.pane_io.mode,
-                            )
+                                    )
                             .ok()
                             .flatten();
                         }

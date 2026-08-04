@@ -56,7 +56,7 @@ use super::mouse::{
 };
 #[cfg(test)]
 use super::mouse::MouseButton;
-use super::pane::{OutputSubscription, Pane, PaneInputStats, PaneIo, PaneIoMode};
+use super::pane::{OutputSubscription, Pane, PaneInputStats, PaneIo};
 use super::state::{SharedState, 
     ClientAction, ClientKey, MenuRequest, ModeKind, ModeView, ModeViewKeyResult, OverlayRequest,
     PopupRequest, ServerState,
@@ -357,7 +357,6 @@ struct AttachStatus {
 }
 
 struct AttachPaneIo {
-    mode: PaneIoMode,
     latmon: LatMon,
 }
 
@@ -1576,7 +1575,6 @@ pub(crate) fn start_attach_session<W>(
     hub: &StatusHub,
     context: &command::ClientContext,
     writer: &mut W,
-    pane_io_mode: PaneIoMode,
 ) -> Result<AttachSession, AttachStartFailure>
 where
     W: FrameWriter + ?Sized,
@@ -1622,7 +1620,6 @@ where
         hub,
         context,
         writer,
-        pane_io_mode,
     )
 }
 

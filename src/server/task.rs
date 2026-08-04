@@ -1,7 +1,7 @@
 //! Runtime-neutral resumable tasks and any-of wait descriptions.
 
 use std::io::{self, Read, Write};
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
+use std::os::fd::{AsFd, BorrowedFd};
 use std::os::unix::net::UnixStream;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -265,93 +265,37 @@ impl<T: Coroutine> TaskState<T> {
         self.poll(&ready)
     }
 
+    /// Offer every descriptor the task waits on as ready, plus its deadline if
+    /// it has passed.
+    ///
+    /// Test scaffolding. A job's own I/O is nonblocking, so a source that is
+    /// not in fact ready costs one `EWOULDBLOCK` and leaves the job pending —
+    /// which lets a test driver step a multi-source job without reproducing
+    /// the reactor's readiness bookkeeping.
+    #[cfg(test)]
+    pub(crate) fn poll_optimistically(&mut self, now: Instant) -> bool {
+        let ready = {
+            let Some(wait) = self.wait() else {
+                return true;
+            };
+            ReadySet::from_sources(
+                wait.sources().iter().map(|source| source.token()).collect(),
+                wait.deadline().is_some_and(|deadline| now >= deadline),
+            )
+        };
+        self.poll(&ready)
+    }
+
     pub(crate) fn take_output(&mut self) -> Option<T::Output> {
         self.output.take()
-    }
-}
-
-/// Drive a coroutine to completion on the calling thread using `poll(2)`.
-///
-/// This is the blocking counterpart of the server loop's reactor: worker
-/// threads and unit-test drivers run the very same coroutines the loop polls,
-/// so a job only ever has one implementation.
-pub(crate) fn drive_blocking<T: Coroutine>(state: &mut TaskState<T>) {
-    state.poll(&ReadySet::default());
-    loop {
-        let ready = {
-            let Some(request) = state.wait() else { break };
-            poll_wait_request(&request)
-        };
-        state.poll(&ready);
-    }
-}
-
-/// Run one coroutine to completion on the calling thread and take its output.
-pub(crate) fn run_blocking<T: Coroutine>(task: T) -> T::Output {
-    let mut state = TaskState::new(task);
-    drive_blocking(&mut state);
-    state
-        .take_output()
-        .expect("completed coroutine has a result")
-}
-
-/// Block until one of `request`'s sources is ready or its deadline elapses,
-/// reporting the exact tokens that woke the wait.
-fn poll_wait_request(request: &WaitRequest<'_>) -> ReadySet {
-    let mut descriptors: Vec<libc::pollfd> = request
-        .sources()
-        .iter()
-        .map(|source| libc::pollfd {
-            fd: source.fd().as_raw_fd(),
-            events: match source.direction() {
-                FdDirection::Read => libc::POLLIN,
-                FdDirection::Write => libc::POLLOUT,
-            },
-            revents: 0,
-        })
-        .collect();
-    let count = libc::nfds_t::try_from(descriptors.len()).expect("wait request fits in nfds_t");
-    let (pointer, count) = if descriptors.is_empty() {
-        (std::ptr::null_mut(), 0)
-    } else {
-        (descriptors.as_mut_ptr(), count)
-    };
-    loop {
-        let timeout = request.deadline().map_or(-1, |deadline| {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            let millis = remaining.as_nanos().saturating_add(999_999) / 1_000_000;
-            i32::try_from(millis).unwrap_or(i32::MAX)
-        });
-        let woken = unsafe { libc::poll(pointer, count, timeout) };
-        if woken < 0 && io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
-            continue;
-        }
-        let sources = if woken > 0 {
-            descriptors
-                .iter()
-                .zip(request.sources())
-                .filter(|(descriptor, _)| descriptor.revents != 0)
-                .map(|(_, source)| source.token())
-                .collect()
-        } else {
-            Vec::new()
-        };
-        return ReadySet::from_sources(
-            sources,
-            request
-                .deadline()
-                .is_some_and(|deadline| Instant::now() >= deadline),
-        );
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        completion_pair, poll_wait_request, Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest,
-        WaitToken,
+        completion_pair, Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken,
     };
-    use std::io::Write;
     use std::os::fd::AsFd;
     use std::os::unix::net::UnixStream;
     use std::time::{Duration, Instant};
@@ -383,40 +327,6 @@ mod tests {
         let readable = ReadySet::after_single_source_wakeup(&future, true, Instant::now());
         assert!(!readable.timed_out());
         assert!(readable.contains(token));
-    }
-
-    #[test]
-    fn multi_source_wait_reports_only_the_ready_descriptor() {
-        let (idle, _idle_writer) = UnixStream::pair().expect("socket pair");
-        let (ready, mut ready_writer) = UnixStream::pair().expect("socket pair");
-        ready_writer.write_all(b"x").expect("write");
-        let idle_token = WaitToken::new(1);
-        let ready_token = WaitToken::new(2);
-        let request = WaitRequest::new(
-            vec![
-                FdInterest::readable(idle_token, idle.as_fd()),
-                FdInterest::readable(ready_token, ready.as_fd()),
-            ],
-            None,
-        );
-
-        let woken = poll_wait_request(&request);
-        assert!(woken.contains(ready_token));
-        assert!(!woken.contains(idle_token));
-        assert!(!woken.timed_out());
-    }
-
-    #[test]
-    fn multi_source_wait_reports_a_timeout_with_no_ready_descriptor() {
-        let (idle, _idle_writer) = UnixStream::pair().expect("socket pair");
-        let request = WaitRequest::new(
-            vec![FdInterest::readable(WaitToken::new(1), idle.as_fd())],
-            Some(Instant::now() + Duration::from_millis(5)),
-        );
-
-        let woken = poll_wait_request(&request);
-        assert!(woken.timed_out());
-        assert!(!woken.contains(WaitToken::new(1)));
     }
 
     #[test]

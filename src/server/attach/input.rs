@@ -813,8 +813,7 @@ impl AttachSession {
                                 None,
                                 self.viewport.cols,
                                 self.viewport.rows,
-                                self.pane_io.mode,
-                            ) {
+                                    ) {
                                 self.compositor.ui.active_overlay = overlay;
                             }
                         }

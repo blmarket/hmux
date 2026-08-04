@@ -23,16 +23,12 @@ use super::input_keys::{
 use super::key::{parse_key_name, KeyCode};
 use super::options::{GlobalOptions, OptionSet, OptionsView};
 use super::pane::{
-    NativePaneObservation, Pane, PaneClipboardEvent, PaneIo, PaneIoMode, PaneKeyState,
+    NativePaneObservation, Pane, PaneClipboardEvent, PaneIo, PaneKeyState,
     PaneOutputPolicy, PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
 };
 use super::task::{completion_pair, Completion, CompletionSender};
 use super::term::ResolvedTerm;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
-
-fn default_pane_io_mode() -> PaneIoMode {
-    PaneIoMode::EventLoop
-}
 
 /// The server state, shared by everything running on the loop.
 ///
@@ -3994,7 +3990,6 @@ pub struct ServerState {
     /// as `TMUX` names it in a spawned process. Empty in the unit tests and in
     /// any embedding that never binds a socket.
     socket_path: PathBuf,
-    pane_io_mode: PaneIoMode,
     /// Pipe jobs that belong to no pane, waiting for the loop to adopt them.
     new_pipes: Vec<super::pane::PanePipeIo>,
     sessions: Vec<Session>,
@@ -4143,7 +4138,6 @@ impl ServerState {
         let mut state = ServerState {
             initial_attach_pending: true,
             socket_path: PathBuf::new(),
-            pane_io_mode: default_pane_io_mode(),
             new_pipes: Vec::new(),
             sessions: Vec::new(),
             windows: BTreeMap::new(),
@@ -4240,10 +4234,6 @@ impl ServerState {
 
     pub(crate) fn initial_attach_pending(&self) -> bool {
         self.initial_attach_pending
-    }
-
-    pub(crate) fn set_pane_io_mode(&mut self, mode: PaneIoMode) {
-        self.pane_io_mode = mode;
     }
 
     /// Hand a pipe job the loop owns from here. `copy-pipe` uses this for the
@@ -6105,11 +6095,10 @@ impl ServerState {
     pub fn reap_exited_panes(&mut self) -> bool {
         let had_sessions = !self.sessions.is_empty();
         let mut removed = false;
-        let event_loop_io = matches!(self.pane_io_mode, PaneIoMode::EventLoop);
         for window in self.windows.values_mut() {
             for pane in &mut window.panes {
                 if pane.pane.has_exited() {
-                    pane.pane.collect_exited_child(event_loop_io);
+                    pane.pane.collect_exited_child();
                 }
             }
         }
@@ -6160,7 +6149,7 @@ impl ServerState {
                 .iter()
                 .filter(|pane| {
                     pane.pane.has_exited()
-                        && (!event_loop_io || pane.pane.child_reaped())
+                        && pane.pane.child_reaped()
                         && !retained.contains(&pane.id)
                 })
                 .map(|pane| pane.id)
@@ -6168,7 +6157,7 @@ impl ServerState {
             let before = window.panes.len();
             window.panes.retain(|pane| {
                 !pane.pane.has_exited()
-                    || (event_loop_io && !pane.pane.child_reaped())
+                    || !pane.pane.child_reaped()
                     || retained.contains(&pane.id)
             });
             let panes_removed = window.panes.len() != before;
@@ -6287,11 +6276,11 @@ impl ServerState {
             PaneSpec::Inert => Pane::inert(cols, rows)?,
             PaneSpec::Command(argv) => {
                 let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-                Pane::spawn_in_mode(&refs, None, cols, rows, self.pane_io_mode)?
+                Pane::spawn(&refs, None, cols, rows)?
             }
             PaneSpec::CommandIn(argv, cwd) => {
                 let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-                Pane::spawn_in_mode(&refs, Some(&cwd), cols, rows, self.pane_io_mode)?
+                Pane::spawn(&refs, Some(&cwd), cols, rows)?
             }
         };
 
@@ -6667,7 +6656,7 @@ impl ServerState {
         // Spawn the pane before mutating counters so a spawn failure leaves state
         // untouched.
         let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-        let pane = Pane::spawn_in_mode(&refs, cwd, cols, rows, self.pane_io_mode)?;
+        let pane = Pane::spawn(&refs, cwd, cols, rows)?;
 
         let window_id = self.next_window_id;
         self.next_window_id += 1;
@@ -6817,7 +6806,7 @@ impl ServerState {
         // mutating counters so a failure leaves state untouched.
         let (cols, rows) = self.default_window_size(session_pos, None, None);
         let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-        let pane = Pane::spawn_in_mode(&refs, cwd, cols, rows, self.pane_io_mode)?;
+        let pane = Pane::spawn(&refs, cwd, cols, rows)?;
 
         let window_id = self.next_window_id;
         self.next_window_id += 1;
@@ -8300,11 +8289,11 @@ impl ServerState {
             PaneSpec::Inert => Pane::inert(cols, rows)?,
             PaneSpec::Command(argv) => {
                 let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
-                Pane::spawn_in_mode(&refs, None, cols, rows, self.pane_io_mode)?
+                Pane::spawn(&refs, None, cols, rows)?
             }
             PaneSpec::CommandIn(argv, cwd) => {
                 let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
-                Pane::spawn_in_mode(&refs, Some(&cwd), cols, rows, self.pane_io_mode)?
+                Pane::spawn(&refs, Some(&cwd), cols, rows)?
             }
         };
         let pane_id = self.next_pane_id;
@@ -8398,7 +8387,7 @@ impl ServerState {
             .unwrap_or(rows / 4)
             .clamp(1, rows.saturating_sub(1).max(1));
         let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
-        let pane = Pane::spawn_in_mode(&refs, cwd, width, height, self.pane_io_mode)?;
+        let pane = Pane::spawn(&refs, cwd, width, height)?;
         let pane_id = self.next_pane_id;
         self.next_pane_id += 1;
         let window = self.window_mut(target.session, target.window);
@@ -13614,7 +13603,7 @@ impl ServerState {
                 None => return Ok(()),
             },
         };
-        let pane = Pane::spawn_from_spec_mode(&spec, cols, rows, self.pane_io_mode)?;
+        let pane = Pane::spawn_from_spec(&spec, cols, rows)?;
         let node = &mut self.window_mut(resolved.session, resolved.window).panes[resolved.pane];
         node.pane = pane;
         node.mode = None;
@@ -13647,7 +13636,6 @@ impl ServerState {
             .map(|session| session.id)
             .collect::<Vec<_>>();
         if argv.as_ref().is_none_or(Vec::is_empty) {
-            let io_mode = self.pane_io_mode;
             let replacements = self
                 .window(resolved.session, resolved.window)
                 .panes
@@ -13657,7 +13645,7 @@ impl ServerState {
                         return Ok(None);
                     };
                     let (cols, rows) = node.pane.size();
-                    Pane::spawn_from_spec_mode(&spec, cols, rows, io_mode).map(Some)
+                    Pane::spawn_from_spec(&spec, cols, rows).map(Some)
                 })
                 .collect::<io::Result<Vec<_>>>()?;
             let window = self.window_mut(resolved.session, resolved.window);
@@ -13684,7 +13672,7 @@ impl ServerState {
             let window = self.window(resolved.session, resolved.window);
             let (cols, rows) = (window.cols, window.rows);
             let spec = PaneSpawnSpec { argv, cwd };
-            Pane::spawn_from_spec_mode(&spec, cols, rows, self.pane_io_mode)?
+            Pane::spawn_from_spec(&spec, cols, rows)?
         };
         let window = self.window_mut(resolved.session, resolved.window);
         let id = window.panes[resolved.pane].id;
@@ -15557,7 +15545,7 @@ fn session_not_found(part: &str) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::task::run_blocking;
+    use crate::event_loop::test_driver::run_on_loop;
 
     #[test]
     fn copy_vt_rows_exclude_crlf_and_trailing_cursor() {
@@ -15675,7 +15663,7 @@ mod tests {
             inserted: true,
         });
 
-        let answered = run_blocking(answer).expect("answer").expect("completion");
+        let answered = run_on_loop(answer).expect("answer").expect("completion");
         assert_eq!(answered.stdout, "Up");
         assert_eq!(answered.exit, 0);
     }
@@ -15698,7 +15686,7 @@ mod tests {
         drop(client);
 
         // A detached client answers nothing; the queue continues on its own.
-        assert!(run_blocking(answer).expect("answer").is_none());
+        assert!(run_on_loop(answer).expect("answer").is_none());
     }
 
     #[test]
