@@ -24,57 +24,15 @@ control. See ./agentmon/ to see an example agent integration.
   - Hard to co-exist with tmux and limited flexibility on agent control UX. hmux
     can be a good alternative if you prefer to define your own agent control.
 
-## Known behavior differences from tmux
+## Intentional behavior differences from tmux
 
-The server runs everything on one loop, which shows through in a few file
-operations. These are deliberate and characterized here rather than described as
-exact conformance.
-
-- `source-file`, `load-buffer` and `save-buffer` read and write **regular files
-  inline**, the way tmux 3.7b reads its own configuration on its loop.
-- Those same commands treat a **FIFO** as something to wait for instead of
-  blocking the server on `open`. A writer that opens the FIFO and closes it
-  without writing anything is indistinguishable from no writer at all, so
-  `source-file`/`load-buffer` keep waiting where tmux's blocking open would have
-  returned empty.
-- `pipe-pane` output is buffered for a pipe command that stops reading, up to a
-  few megabytes; past that the **oldest** pane output is dropped rather than
-  stalling the pane. tmux queues without bound.
-- `exit-empty` takes a third value, `after-session`, and defaults to it. As
-  hmux start with empty session, we keep it alive until the first session being
-  created.
-
-The compositor repaints from the terminal engine's own VT dump, which shows
-through in how OSC 8 hyperlinks reach a client:
-
-- **Hyperlinks are sent to every client.** tmux emits OSC 8 only when the
-  client's terminal advertises the `hyperlinks` feature; hmux's pane repaint is
-  capability-agnostic (like its colours), so terminals without OSC 8 support
-  receive and ignore the sequences.
-- **Anonymous hyperlinks may split per row.** Every repainted row is
-  self-contained, so a link is closed and reopened at row boundaries. Links
-  written with an explicit `id=` stay grouped across rows; anonymous links are
-  reopened without an id, where tmux synthesizes a `tmux<n>` id to keep a
-  multi-row link hoverable as one.
-
-One divergence is deliberate rather than structural:
-
-- **customize-mode lists each user option once.** tmux 3.7b repeats the first
-  user option of the global session table in the session section and leaves
-  the session-scoped one out; hmux lists each once, in the scope that owns it.
-
-The daemon is started on its own rather than forked from the first client, which
-shows through in two places:
-
-- The global environment is seeded from the **daemon's** own, as tmux seeds
-  `global_environ` from the environment its server was forked with. Because that
-  daemon was not forked from a client, a spawned **pane** then takes the
-  environment of the client that asked for it on top of that seed — tmux's panes
-  never see the client's environment at all, only what `update-environment`
-  copies into the session. Everything else matches: the `set-environment`
-  layers, global then session, minus the hidden and removed names, and the
-  `TERM`/`TMUX` variables tmux always writes. A **job** — `#()`, `run-shell`,
-  `copy-pipe` — gets tmux's environment exactly, with no client layer.
+- **Some options carry different defaults, or extra values.** Where an agent
+  workflow wants a different starting point than tmux's, hmux ships its own
+  default; the option itself stays settable the usual way. For example
+  `exit-empty` takes a third value, `after-session`, and defaults to it — hmux
+  starts with no session, so we keep it alive until the first one is created.
+- `hmux` does not have client, so launching it will create daemon and
+  immediately exit. You may want to run `tmux attach` to start using it.
 
 ## Usage
 

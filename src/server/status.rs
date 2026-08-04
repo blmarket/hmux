@@ -28,8 +28,13 @@ use std::time::{Duration, Instant};
 const DEFAULT_STATUS_LEFT: &str = "[#{session_name}] ";
 const DEFAULT_STATUS_RIGHT: &str =
     "#{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}\"#{=21:pane_title}\" %H:%M %d-%b-%y";
+/// The agent emoji carries the model on its background: a fable model reads
+/// red, a luna model bright blue, and every other model keeps the surrounding
+/// window style. Only the matching branch emits a directive — `bg=default`
+/// would punch a terminal-background hole in the status bar instead of leaving
+/// it whatever `status-style` painted.
 const DEFAULT_WINDOW_FORMAT: &str =
-    "#I:#{?pane_agent_state_emoji,#{pane_agent_state_emoji} #{b:pane_current_path},#W}#{?window_flags,#{window_flags}, }";
+    "#I:#{?pane_agent_state_emoji,#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_agent_state_emoji}#[default] #{b:pane_current_path},#W}#{?window_flags,#{window_flags}, }";
 const DEFAULT_PANE_FORMAT: &str = "#P:[#T]#{?pane_flags,#{pane_flags}, }";
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -2813,6 +2818,56 @@ mod tests {
                 "{row:?}"
             );
             assert!(!row.contains(&format!("0:{window_name}")), "{row:?}");
+        }
+    }
+
+    #[test]
+    fn default_window_label_paints_the_agent_emoji_by_model() {
+        use crate::integration::status::{AgentStatus, StatusSnapshot};
+        use crate::integration::AgentState;
+        use crate::observability::v1::PaneId;
+
+        let mut state = ServerState::with_test_session().expect("state");
+        let session = state.find("0").expect("session");
+        let window = state.window_for_link(&session.windows[session.active]);
+        let pane_id = PaneId(window.panes[window.active].id);
+        let mut renderer = RenderCache::default();
+
+        // The status bar's own background, which every unmatched model keeps.
+        let status_bg = Colour::Palette(2);
+        for (revision, model, expected_bg) in [
+            (2, Some("claude-fable-5"), Colour::Palette(1)),
+            (3, Some("gpt-5.6-luna"), Colour::Palette(12)),
+            (4, Some("claude-opus-5"), status_bg),
+            (5, None, status_bg),
+        ] {
+            let mut panes = PaneAgents::new();
+            panes.insert(
+                pane_id,
+                AgentStatus {
+                    agent: "claude",
+                    pid: Some(42),
+                    session_id: None,
+                    model: model.map(str::to_string),
+                    state: AgentState::Working,
+                },
+            );
+            assert!(renderer.update_agents(StatusSnapshot { revision, panes }));
+            let rendered = renderer.render(&state, "0", 80, 24);
+            let emoji = rendered.screen().rows[0]
+                .cells
+                .iter()
+                .find(|cell| cell.text == "🔄")
+                .unwrap_or_else(|| panic!("emoji cell for {model:?}"));
+            assert_eq!(emoji.style.bg, expected_bg, "{model:?}");
+            // The label after the emoji stays on the status bar's background.
+            let path = rendered.screen().rows[0]
+                .cells
+                .iter()
+                .skip_while(|cell| cell.text != "🔄")
+                .nth(1)
+                .expect("cell after emoji");
+            assert_eq!(path.style.bg, status_bg, "{model:?}");
         }
     }
 
