@@ -660,27 +660,17 @@ impl AttachSession {
                         force_render = true;
                         break;
                     }
-                    let result = if let Some(command) =
-                        selected_command.filter(|command| !command.is_empty())
-                    {
-                        let agents = hub.snapshot().panes;
-                        Some(command::run_with_context(
-                            &command,
-                            state,
-                            &agents,
-                            &self.compositor.target.context,
-                        ))
-                    } else if close {
-                        Some(if close_exit == 0 {
+                    // A selected command was queued above, so only the
+                    // overlay's own exit is left to report.
+                    let result = close.then(|| {
+                        if close_exit == 0 {
                             command::CommandResult::ok("")
                         } else {
                             let mut result = command::CommandResult::err("");
                             result.exit = close_exit;
                             result
-                        })
-                    } else {
-                        None
-                    };
+                        }
+                    });
                     if close {
                         if let Some(mut overlay) = self.compositor.ui.active_overlay.take() {
                             overlay.complete(

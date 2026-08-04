@@ -111,7 +111,7 @@ pub(crate) fn exec(
                 return result;
             }
         }
-        return run_mode_bindings(state, agents, context, &target, mode_bindings);
+        return run_mode_bindings(&target, mode_bindings);
     }
 
     let literal = has_flag(args, "-l");
@@ -137,7 +137,7 @@ pub(crate) fn exec(
             return result;
         }
     }
-    run_mode_bindings(state, agents, context, &target, mode_bindings)
+    run_mode_bindings(&target, mode_bindings)
 }
 
 fn send_client_keys(
@@ -625,13 +625,7 @@ fn route_mode_key(
     }
 }
 
-fn run_mode_bindings(
-    state: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-    target: &str,
-    bindings: Vec<KeyBinding>,
-) -> CommandResult {
+fn run_mode_bindings(target: &str, bindings: Vec<KeyBinding>) -> CommandResult {
     let mut output = CommandResult::ok("");
     for binding in bindings {
         let mut command = binding.command;
@@ -642,19 +636,12 @@ fn run_mode_bindings(
         {
             command.splice(1..1, ["-t".to_string(), target.to_string()]);
         }
-        if context.defer_queue_commands {
-            output
-                .deferred_commands
-                .push(super::command::DeferredCommand::Args(command));
-            continue;
-        }
-        let result = super::command::run_locked(&command, state, agents, context);
-        output.append_stdout(&result);
-        output.stderr.push_str(&result.stderr);
-        output.exit = result.exit;
-        if result.exit != 0 {
-            break;
-        }
+        // Handed back to the queue that owns this command rather than run
+        // here: a mode binding is an ordinary command line, and running one
+        // under the caller's state borrow is what forced the blocking paths.
+        output
+            .deferred_commands
+            .push(super::command::DeferredCommand::Args(command));
     }
     output
 }

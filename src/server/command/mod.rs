@@ -552,6 +552,9 @@ pub(crate) fn uses_client_file_protocol(args: &[String]) -> bool {
     }
 }
 
+/// Run a command line to completion on the calling thread. Test scaffolding;
+/// the server drives the same queue through the loop.
+#[cfg(test)]
 pub fn run_with_context(
     args: &[String],
     state: &SharedState,
@@ -2524,37 +2527,6 @@ fn run_save_buffer_shared(
     context: &ClientContext,
 ) -> CommandResult {
     run_single_shared(command, state, agents, context)
-}
-
-/// Parse and execute a command line against already-locked state. Split out from
-/// [`run`] so commands that run other commands (`if-shell`) can drive the
-/// interpreter without re-locking the mutex (which would deadlock).
-fn run_line(
-    args: &[String],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    // A real tmux client preserves the historical shell spelling `start\;`
-    // as one argv word (`"start;"`) in MSG_COMMAND. The server-side parser
-    // still treats the trailing semicolon as a command separator. The same
-    // applies when it follows an attached flag value (`"-dsfoo;"`).
-    let expanded_args = expand_attached_separators(args);
-
-    // Split the line into `;`-separated command groups.
-    let groups: Vec<&[String]> = split_commands(&expanded_args);
-    run_command_groups(groups, st, agents, context)
-}
-
-/// Run a nested command list while the caller already owns the server-state
-/// lock. Mode key bindings use this path to avoid re-locking the state.
-pub(crate) fn run_locked(
-    args: &[String],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    run_line(args, st, agents, context)
 }
 
 /// Execute a line that was lexed from a tmux command string. Separator tokens
