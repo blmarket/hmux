@@ -1305,29 +1305,43 @@ impl Pane {
     }
 
     /// The program occupying the pane's foreground process group.
+    ///
+    /// This mirrors tmux's `format_cb_current_command`, which tries the
+    /// foreground group's `argv[0]` and then falls back to the pane's own
+    /// command line. The fallback is what answers for a *leaderless* group: a
+    /// process group id is only a pid while the group's leader lives, so a
+    /// pipeline whose first member exits ahead of the others leaves the
+    /// terminal owned by a group that names no process at all.
     pub fn current_command(&self) -> Option<String> {
         let child = self.child.as_ref()?;
         // SAFETY: querying the foreground group of an owned pty master fd.
         let pid = unsafe { libc::tcgetpgrp(child.master.as_raw_fd()) };
-        if pid <= 0 {
-            return None;
-        }
         // tmux's Linux osdep_get_name reads argv[0] from /proc/PID/cmdline.
         // Keep the executable-name candidates as a fallback for platforms or
         // processes where the argument vector is unavailable.
-        CurrentPlatform::process_arguments(pid as u32)
-            .into_iter()
-            .next()
-            .or_else(|| {
-                CurrentPlatform::process_programs(pid as u32)
+        let foreground = (pid > 0)
+            .then(|| {
+                CurrentPlatform::process_arguments(pid as u32)
                     .into_iter()
                     .next()
+                    .or_else(|| {
+                        CurrentPlatform::process_programs(pid as u32)
+                            .into_iter()
+                            .next()
+                    })
             })
-            .and_then(|program| {
-                Path::new(&program)
-                    .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
+            .flatten()
+            .map(|program| program.to_string_lossy().into_owned());
+
+        foreground
+            .filter(|program| !program.is_empty())
+            .or_else(|| {
+                self.spawn_spec
+                    .as_ref()
+                    .map(|spec| stringify_argv(&spec.argv))
             })
+            .map(|command| parse_window_name(&command))
+            .filter(|name| !name.is_empty())
     }
 
     /// Drain terminal queries emitted by the child since the previous call.
@@ -2974,6 +2988,49 @@ fn ghostty_err(e: crate::ghostty::Error) -> io::Error {
     io::Error::other(format!("ghostty: {e}"))
 }
 
+/// Render a pane's argument vector the way tmux's `cmd_stringify_argv` does,
+/// for the callers that reduce the result with [`parse_window_name`].
+///
+/// tmux escapes each argument; that step is skipped because it cannot change
+/// what the caller sees. `parse_window_name` cuts at the first space, and it
+/// does so after resolving quotes, so both a quoted and an unquoted argument
+/// reduce to the same leading word either way.
+fn stringify_argv(argv: &[String]) -> String {
+    argv.join(" ")
+}
+
+/// Reduce a command line to the program name tmux displays for it, following
+/// tmux's `parse_window_name`: take the first quoted or whitespace-delimited
+/// word, drop an `exec` prefix and any leading dashes (a login shell's `-bash`
+/// is reported as `bash`), and keep only the last component of an absolute
+/// path.
+///
+/// tmux additionally runs the result through `clean_name`, which escapes
+/// non-printable bytes for display. That step is not reproduced: every name
+/// reaching this function is a program name, and the trailing-byte trim below
+/// already removes the control characters `clean_name` would have escaped.
+fn parse_window_name(input: &str) -> String {
+    let mut name = input.strip_prefix('"').unwrap_or(input);
+    if let Some(quote) = name.find('"') {
+        name = &name[..quote];
+    }
+    name = name.strip_prefix("exec ").unwrap_or(name);
+    name = name.trim_start_matches([' ', '-']);
+    if let Some(space) = name.find(' ') {
+        name = &name[..space];
+    }
+    // tmux keeps trailing bytes only while they are alphanumeric or
+    // punctuation, which together are exactly the printable ASCII characters.
+    let trimmed = name.trim_end_matches(|ch: char| !ch.is_ascii_graphic());
+    if trimmed.starts_with('/') {
+        return Path::new(trimmed).file_name().map_or_else(
+            || trimmed.to_string(),
+            |base| base.to_string_lossy().into_owned(),
+        );
+    }
+    trimmed.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3286,6 +3343,37 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
+    }
+
+    #[test]
+    fn parse_window_name_reduces_a_command_line_to_its_program() {
+        // The plain cases: a bare name survives, an absolute path loses its
+        // directories, and arguments are dropped.
+        assert_eq!(parse_window_name("bash"), "bash");
+        assert_eq!(parse_window_name("/usr/bin/sleep"), "sleep");
+        assert_eq!(parse_window_name("sleep 30"), "sleep");
+        // A relative path keeps its directories; tmux only takes the basename
+        // of a name that starts at the root.
+        assert_eq!(parse_window_name("bin/sleep"), "bin/sleep");
+        // A login shell announces itself with a leading dash.
+        assert_eq!(parse_window_name("-zsh"), "zsh");
+        assert_eq!(parse_window_name("exec vim file"), "vim");
+        // The stringified argv of the leaderless-pipeline fixture.
+        assert_eq!(parse_window_name(r#"bash -mc "echo x | sleep 30""#), "bash");
+        // Quotes are resolved before the cut at the first space, so a quoted
+        // argv[0] containing one is still cut there.
+        assert_eq!(parse_window_name(r#""my program" -x"#), "my");
+        assert_eq!(parse_window_name("sleep\r\n"), "sleep");
+        assert_eq!(parse_window_name(""), "");
+    }
+
+    #[test]
+    fn stringify_argv_reduces_to_the_program_the_pane_was_given() {
+        let argv = ["bash", "-mc", "echo x | sleep 30"].map(String::from);
+        assert_eq!(parse_window_name(&stringify_argv(&argv)), "bash");
+        // A pane spawned with no command carries just the shell.
+        let shell = ["/bin/zsh"].map(String::from);
+        assert_eq!(parse_window_name(&stringify_argv(&shell)), "zsh");
     }
 
     #[test]
