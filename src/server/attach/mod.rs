@@ -22,11 +22,10 @@
 //!   the server's semantic key tables. The full copy-mode selection/search
 //!   command set remains out of scope.
 //!
-//! The native compatibility path uses pane reader threads and polls attach
-//! sources directly. The event-loop adapter drives pane PTYs and delivers attach
-//! sources as readiness turns from its central reactor. Grid changes are
-//! detected by diffing the last rendered VT. The compositor itself remains
-//! single-threaded and both tty fds are non-blocking.
+//! The event-loop adapter drives pane PTYs and delivers attach sources as
+//! readiness turns from its central reactor. Grid changes are detected by
+//! diffing the last rendered VT. The compositor is single-threaded and both tty
+//! fds are non-blocking.
 
 mod actions;
 mod copy_mode;

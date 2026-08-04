@@ -2229,7 +2229,7 @@ impl Drop for Child {
         if self.reaped && !draining {
             return;
         }
-        // Kill the child so its pty slave closes, unblocking the reader's read().
+        // Kill the child so its pty slave closes, ending the drain.
         // SAFETY: sending a signal to our own child pid.
         if !self.reaped {
             unsafe {
@@ -2237,30 +2237,28 @@ impl Drop for Child {
             }
         }
 
-        // Reap the child and join the reader thread OFF the caller's thread.
+        // Reap the child off the caller's turn.
         //
-        // Both steps can block for an unbounded time. `waitpid(pid, 0)` waits for
-        // the signalled child to actually die (usually instant, but a child stuck
-        // in an uninterruptible syscall delays it). The reader thread sits in
-        // `poll(master, -1)` until the pty master hangs up, which only happens
-        // once *every* slave fd is closed — a killed shell's still-running
-        // subprocess (a background agent) keeps the slave open, so the master
-        // never hangs up and `join()` waits for as long as that grandchild lives.
+        // `waitpid(pid, 0)` waits for the signalled child to actually die —
+        // usually instant, but a child stuck in an uninterruptible syscall
+        // delays it for an unbounded time.
         //
         // Crucially, `Child::drop` runs inside `kill-window` / `kill-pane`, which
-        // the attach loop invokes while holding the global server-state mutex.
-        // Blocking here froze the whole compositor: answering the `confirm-before`
-        // `(y/n)` prompt cleared it instantly (client-local state) but the
-        // post-kill redraw was stuck behind this teardown, so pressing `y`
-        // appeared to lag by a second or more — intermittently, depending on
-        // whether the pane's process tree still held the pty. Handing the pid to
-        // the orphan list lets the kill return at once so the compositor redraws
-        // immediately; the child is still reaped (no zombie) on the `SIGCHLD`
-        // the kill itself delivers.
+        // the attach loop invokes while it holds the server state. Blocking here
+        // froze the whole compositor: answering the `confirm-before` `(y/n)`
+        // prompt cleared it instantly (client-local state) but the post-kill
+        // redraw was stuck behind this teardown, so pressing `y` appeared to lag
+        // by a second or more — intermittently, depending on whether the pane's
+        // process tree still held the pty. Handing the pid to the orphan list
+        // lets the kill return at once so the compositor redraws immediately;
+        // the child is still reaped (no zombie) on the `SIGCHLD` the kill itself
+        // delivers.
         //
-        // The `master` OwnedFd field is dropped as this `Child` drops, closing the
-        // parent's handle; a threaded reader owns a separate dup, so its lifetime
-        // is unaffected by that close.
+        // The `master` OwnedFd field is dropped as this `Child` drops, closing
+        // the parent's handle; the test-only reader owns a separate dup, so its
+        // lifetime is unaffected by that close. Joining it can block for as long
+        // as a surviving grandchild keeps the pty slave open, so that join also
+        // moves off this thread.
         if !self.reaped {
             register_orphan(self.pid);
         }
@@ -2313,8 +2311,8 @@ pub(crate) struct PaneIoReadResult {
     pub(crate) closed: bool,
 }
 
-/// Owned nonblocking PTY state. A compatibility thread or the central reactor
-/// may drive the same parser one readiness turn at a time.
+/// Owned nonblocking PTY state, driven by the central reactor one readiness
+/// turn at a time.
 pub(crate) struct PaneIo {
     fd: OwnedFd,
     observation: Arc<NativePaneObservation>,

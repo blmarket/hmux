@@ -266,12 +266,12 @@ impl Server {
         Ok(Some((runtimes, active)))
     }
 
-    /// Nonblocking lifecycle check for the readiness-loop thread.
+    /// Nonblocking lifecycle check for the readiness loop.
     ///
-    /// Protocol workers may hold the state mutex while awaiting a client
-    /// response. The event loop must keep forwarding that response instead of
-    /// waiting for the same mutex; a busy state therefore defers the shutdown
-    /// decision to a later turn.
+    /// A command already running on the loop may hold the state guard while it
+    /// awaits a client response. That response is delivered by this same loop,
+    /// so re-entering the guard here would wedge it; a busy state therefore
+    /// defers the shutdown decision to a later turn.
     pub(crate) fn event_loop_shutdown_requested(&self) -> bool {
         match self.state.try_lock() {
             Ok(mut state) => {
