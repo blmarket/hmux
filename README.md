@@ -40,6 +40,9 @@ exact conformance.
 - `pipe-pane` output is buffered for a pipe command that stops reading, up to a
   few megabytes; past that the **oldest** pane output is dropped rather than
   stalling the pane. tmux queues without bound.
+- `exit-empty` takes a third value, `after-session`, and defaults to it. As
+  hmux start with empty session, we keep it alive until the first session being
+  created.
 
 One divergence is deliberate rather than structural:
 
@@ -48,7 +51,7 @@ One divergence is deliberate rather than structural:
   the session-scoped one out; hmux lists each once, in the scope that owns it.
 
 The daemon is started on its own rather than forked from the first client, which
-shows through in one place:
+shows through in two places:
 
 - The global environment is seeded from the **daemon's** own, as tmux seeds
   `global_environ` from the environment its server was forked with. Because that

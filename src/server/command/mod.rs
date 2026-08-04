@@ -6241,16 +6241,19 @@ fn set_option(args: &[String], st: &mut ServerState, window_command: bool) -> Co
                 return CommandResult::err(format!("unknown value: {value}\n"));
             }
         } else if options::option_is_flag(name) {
+            let extension = options::flag_extension_value(name);
             value = match value.as_str() {
                 "on" | "yes" | "1" => "on".to_string(),
                 "off" | "no" | "0" => "off".to_string(),
-                "" => {
-                    if target.view(st).get(name) == Some("on") {
-                        "off".to_string()
-                    } else {
-                        "on".to_string()
-                    }
-                }
+                "" => match target.view(st).get(name) {
+                    // No value toggles the flag, except from an extension
+                    // value, which is kept the way tmux keeps a choice past
+                    // the first two (options_from_string_choice).
+                    Some(current) if Some(current) == extension => current.to_string(),
+                    Some("on") => "off".to_string(),
+                    _ => "on".to_string(),
+                },
+                other if Some(other) == extension => other.to_string(),
                 _ => return CommandResult::err(format!("bad value: {value}\n")),
             };
         }
@@ -12265,6 +12268,42 @@ mod tests {
         assert_eq!(user.exit, 0);
         assert_eq!(user.stdout, "");
         assert_eq!(user.stderr, "");
+    }
+
+    #[test]
+    fn exit_empty_takes_hmux_after_session_beside_tmux_flag_values() {
+        let st = state();
+        let show = |st: &Arc<Mutex<ServerState>>| {
+            run_str(st, &["show-options", "-s", "-v", "exit-empty"]).stdout
+        };
+        assert_eq!(show(&st), "after-session\n");
+
+        // tmux's flag spellings still parse, and a valueless set still toggles
+        // between them.
+        assert_eq!(
+            run_str(&st, &["set-option", "-s", "exit-empty", "yes"]).exit,
+            0
+        );
+        assert_eq!(show(&st), "on\n");
+        run_str(&st, &["set-option", "-s", "exit-empty"]);
+        assert_eq!(show(&st), "off\n");
+
+        // The extension value is kept by a valueless set, the way tmux keeps a
+        // choice value past the first two.
+        assert_eq!(
+            run_str(&st, &["set-option", "-s", "exit-empty", "after-session"]).exit,
+            0
+        );
+        run_str(&st, &["set-option", "-s", "exit-empty"]);
+        assert_eq!(show(&st), "after-session\n");
+
+        // Every other value is still tmux's flag error, and unsetting restores
+        // the default rather than tmux's.
+        let bad = run_str(&st, &["set-option", "-s", "exit-empty", "after-attach"]);
+        assert_eq!(bad.exit, 1);
+        assert_eq!(bad.stderr, "bad value: after-attach\n");
+        run_str(&st, &["set-option", "-su", "exit-empty"]);
+        assert_eq!(show(&st), "after-session\n");
     }
 
     #[test]

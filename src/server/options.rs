@@ -309,7 +309,11 @@ const OPTION_DEFAULTS: &[(&str, &str)] = &[
     ("display-panes-time", "1000"),
     ("display-time", "750"),
     ("escape-time", "10"),
-    ("exit-empty", "on"),
+    // tmux defaults this to `on`, which would shut an hmux daemon down before
+    // its first client arrives: hmux's server is not forked by the client that
+    // creates the first session, so it starts empty. See
+    // `EXIT_EMPTY_AFTER_SESSION`.
+    ("exit-empty", EXIT_EMPTY_AFTER_SESSION),
     ("exit-unattached", "off"),
     ("extended-keys", "off"),
     ("extended-keys-format", "xterm"),
@@ -685,6 +689,21 @@ const OPTION_FLAGS: &[&str] = &[
     "wrap-search",
     "xterm-keys",
 ];
+
+/// `exit-empty` value hmux accepts on top of tmux's flag, and defaults to:
+/// exit once the server is empty, but only after it has held a session. tmux
+/// 3.7b rejects the value with `bad value:`, since its server is forked by the
+/// client that creates the first session and so never sits empty at startup
+/// the way a daemon does; tmux instead forces `exit-empty` off at startup for
+/// the one server of its own that nobody forked (`tmux -D`).
+pub(crate) const EXIT_EMPTY_AFTER_SESSION: &str = "after-session";
+
+/// The extra value a flag option accepts beyond tmux's `on`/`off` spellings.
+/// Flags keep their tmux parsing — including the `yes`/`no`/`1`/`0` aliases a
+/// choice option would not take — and gain only this one value.
+pub(crate) fn flag_extension_value(name: &str) -> Option<&'static str> {
+    (name == "exit-empty").then_some(EXIT_EMPTY_AFTER_SESSION)
+}
 
 pub(crate) const SESSION_HOOKS: &[&str] = &[
     "after-bind-key",

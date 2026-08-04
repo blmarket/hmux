@@ -4076,7 +4076,7 @@ pub struct ServerState {
     /// Group names outlive the session they were originally named after, and a
     /// one-member group remains grouped until its final session is destroyed.
     session_groups: BTreeMap<u32, String>,
-    /// Set once a non-empty server becomes empty while `exit-empty` is on.
+    /// Set once an empty server is one `exit-empty` asks to shut down.
     shutdown_requested: bool,
     /// Client-registry generation the unattached sweep last ran against.
     lifecycle_generation: u64,
@@ -4194,9 +4194,22 @@ pub struct ServerState {
     format_jobs: Arc<super::status::FormatJobRegistry>,
 }
 
+/// When an empty server shuts itself down.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ExitEmpty {
+    /// `off`: an empty server keeps running.
+    Off,
+    /// `on`: tmux's setting — an empty server exits, including one that has
+    /// never held a session, which for a daemon means at startup.
+    On,
+    /// `after-session`: an empty server exits once it has held a session.
+    AfterSession,
+}
+
 impl ServerState {
-    /// Build an empty server. It remains available for the first client;
-    /// `exit-empty=on` applies only after a non-empty server becomes empty.
+    /// Build an empty server. Under the default `exit-empty=after-session` it
+    /// remains available for the first client, and the policy starts applying
+    /// once a session has existed.
     pub fn empty() -> ServerState {
         let client_renders = Arc::new(ClientRenderRegistry::new());
         let mut state = ServerState {
@@ -6266,8 +6279,7 @@ impl ServerState {
         self.sessions.retain(|session| !session.windows.is_empty());
         self.remove_unlinked_windows();
 
-        if had_sessions && self.sessions.is_empty() && self.server_option_is_on("exit-empty", true)
-        {
+        if had_sessions && self.sessions.is_empty() && self.exit_empty_policy() != ExitEmpty::Off {
             self.shutdown_requested = true;
         }
         if removed {
@@ -6283,10 +6295,20 @@ impl ServerState {
         }
     }
 
+    /// The `exit-empty` setting, including hmux's `after-session` extension.
+    fn exit_empty_policy(&self) -> ExitEmpty {
+        match self.server_options().get("exit-empty") {
+            Some("off" | "no" | "false" | "0") => ExitEmpty::Off,
+            Some(super::options::EXIT_EMPTY_AFTER_SESSION) => ExitEmpty::AfterSession,
+            Some(_) | None => ExitEmpty::On,
+        }
+    }
+
     /// Apply tmux's `exit-empty` policy after an explicit tree mutation.
     fn request_shutdown_if_became_empty(&mut self, had_sessions: bool) {
-        if had_sessions && self.sessions.is_empty() && self.server_option_is_on("exit-empty", true)
-        {
+        // A server that just lost its last session has held one, so
+        // `after-session` and `on` agree here.
+        if had_sessions && self.sessions.is_empty() && self.exit_empty_policy() != ExitEmpty::Off {
             self.shutdown_requested = true;
         }
     }
@@ -11695,15 +11717,14 @@ impl ServerState {
     /// exits once nothing holds it — no sessions (or `exit-unattached` on) and
     /// no client still attached to one.
     pub(crate) fn enforce_exit_options(&mut self) {
-        // An hmux daemon is launched before any client exists, so the policy
-        // only starts applying once the server has held a session at least
-        // once; tmux never sees this window because its server is forked by
-        // the client that creates the first session.
-        if self.initial_attach_pending {
-            return;
-        }
-        if !self.server_option_is_on("exit-empty", true) {
-            return;
+        match self.exit_empty_policy() {
+            ExitEmpty::Off => return,
+            // An hmux daemon is launched before any client exists, so
+            // `after-session` holds the policy back until the server has held
+            // a session at least once; tmux never sees this window because its
+            // server is forked by the client that creates the first session.
+            ExitEmpty::AfterSession if self.initial_attach_pending => return,
+            ExitEmpty::AfterSession | ExitEmpty::On => {}
         }
         if !self.server_option_is_on("exit-unattached", false) && !self.sessions.is_empty() {
             return;
@@ -15835,6 +15856,43 @@ mod tests {
         let mut state = ServerState::with_test_session().expect("state");
         assert!(state.kill_session("0"));
         assert!(state.shutdown_requested());
+    }
+
+    #[test]
+    fn exit_empty_after_session_spares_a_server_that_never_held_one() {
+        // The default: a daemon starts empty and waits for its first client,
+        // then becomes ordinary `exit-empty` once a session has existed.
+        let mut state = ServerState::empty();
+        state.enforce_exit_options();
+        assert!(!state.shutdown_requested());
+
+        state.create_session("0", PaneSpec::Inert).expect("create");
+        assert!(state.kill_session("0"));
+        assert!(state.shutdown_requested());
+    }
+
+    #[test]
+    fn exit_empty_on_shuts_down_a_server_that_never_held_a_session() {
+        // tmux's own setting, applied to a server tmux would never have
+        // started: with no session to hold it, it exits where it stands.
+        let mut state = ServerState::empty();
+        state
+            .global_options_mut()
+            .for_scope_mut(super::super::options::OptionScope::Server)
+            .set("exit-empty", "on");
+        state.enforce_exit_options();
+        assert!(state.shutdown_requested());
+    }
+
+    #[test]
+    fn exit_empty_off_spares_a_server_that_lost_its_last_session() {
+        let mut state = ServerState::with_test_session().expect("state");
+        state
+            .global_options_mut()
+            .for_scope_mut(super::super::options::OptionScope::Server)
+            .set("exit-empty", "off");
+        assert!(state.kill_session("0"));
+        assert!(!state.shutdown_requested());
     }
 
     #[test]
