@@ -12,9 +12,8 @@
 //! The observation hook below is crate-private: the server emits unclassified
 //! pane lifecycle/output events to first-party consumers, while those consumers
 //! own process-tree walking, agent detection, classification, and status
-//! publication. The worker calls hooks without holding the server or terminal
-//! locks; pane handles retain shared terminal state and remain readable after
-//! removal.
+//! publication. Hooks are called without holding the server or terminal locks;
+//! pane handles retain shared terminal state and remain readable after removal.
 
 pub mod attach;
 #[path = "cmd-send-keys.rs"]
@@ -151,6 +150,22 @@ impl Server {
         self.observation.reconcile_once(&self.state)
     }
 
+    /// Every `pipe-pane` child opened since the last call.
+    pub(crate) fn take_new_pane_pipes(&self) -> Vec<crate::server::pane::PanePipeIo> {
+        match self.state.try_lock() {
+            Ok(mut state) => state.take_new_pane_pipes(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// Every `#()` job a format expansion has launched since the last call.
+    pub(crate) fn take_pending_format_jobs(&self) -> Vec<crate::server::status::FormatJob> {
+        self.state
+            .lock()
+            .map(|state| state.take_pending_format_jobs())
+            .unwrap_or_default()
+    }
+
     /// Recheck monitored windows for bell, activity, and silence alerts.
     ///
     /// tmux runs this check in its server event loop (`alerts_callback`), so a
@@ -239,6 +254,7 @@ impl Server {
     }
 
     pub(crate) fn try_reap_event_children(&self) -> bool {
+        crate::server::pane::reap_orphans();
         match self.state.try_lock() {
             Ok(mut state) => {
                 state.reap_exited_panes();

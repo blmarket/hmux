@@ -8,11 +8,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
+use std::time::Instant;
 
 use tracing::{info, warn};
 
 use crate::event_loop::driver::{EventLoop, ListenerHandle, PaneHandle, ProtocolHandle};
 use crate::event_loop::protocol::ProtocolCloseReason;
+use crate::integration::AgentObserver;
 use crate::server::Server;
 use crate::tmux::codec::{split_nonblocking_stream_with_queue_limit, MAX_IMSGSIZE};
 
@@ -22,16 +24,22 @@ const PROTOCOL_WRITE_QUEUE_LIMIT: usize = MAX_IMSGSIZE;
 
 /// Bind `listen_path` and serve a concrete [`Server`] through the
 /// nonblocking event-loop protocol engine.
-pub fn run_event_loop(listen_path: &Path, server: Server) -> io::Result<()> {
+pub fn run_event_loop(
+    listen_path: &Path,
+    server: Server,
+    mut observer: AgentObserver,
+) -> io::Result<()> {
     const ACCEPT_BUDGET: usize = 64;
     const DISPATCH_BUDGET: usize = 256;
 
     let mut event_loop = EventLoop::new()?;
     server.enable_event_loop_pane_io()?;
     let child_signal = event_loop.add_child_signal(server.clone())?;
+    event_loop.add_term_signal()?;
     let listener = event_loop.add_listener(bind_listener(listen_path)?, ACCEPT_BUDGET)?;
     let mut clients = Vec::new();
     let mut panes = BTreeMap::new();
+    let mut next_observer_tick = Instant::now();
 
     loop {
         if server.event_loop_shutdown_requested() {
@@ -45,8 +53,18 @@ pub fn run_event_loop(listen_path: &Path, server: Server) -> io::Result<()> {
             DISPATCH_BUDGET,
         )?;
         server.reconcile_event_observations()?;
-        let timeout = earliest_timeout(server.refresh_alerts()?, server.refresh_lock_timers()?);
+        let now = Instant::now();
+        if now >= next_observer_tick {
+            observer.tick(&server);
+            next_observer_tick = now + AgentObserver::INTERVAL;
+        }
+        let timeout = earliest_timeout(
+            earliest_timeout(server.refresh_alerts()?, server.refresh_lock_timers()?),
+            Some(next_observer_tick.saturating_duration_since(Instant::now())),
+        );
         sync_event_loop_panes(&server, &mut event_loop, &mut panes)?;
+        event_loop.adopt_format_jobs(server.take_pending_format_jobs())?;
+        event_loop.adopt_pane_pipes(server.take_new_pane_pipes())?;
         reap_protocol_clients(&mut clients);
         server.enforce_lifecycle_policies()?;
         if event_loop.pending_events() == 0 {

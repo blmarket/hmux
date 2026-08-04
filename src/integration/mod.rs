@@ -11,11 +11,8 @@
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
-use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use tracing::{info, warn};
@@ -215,59 +212,54 @@ pub(crate) fn title_working_spinner(title: &str) -> bool {
     matches!(chars.next(), Some(first) if is_braille(first)) && chars.next() == Some(' ')
 }
 
-/// Background observer which logs agent state transitions for native panes.
+/// Observer which logs agent state transitions for native panes.
+///
+/// The server loop owns this and calls [`tick`](Self::tick) on the observation
+/// cadence, so classification happens between the loop's other work rather than
+/// on a thread of its own holding the server state lock.
 pub struct AgentObserver {
-    stop: Arc<AtomicBool>,
-    worker: Option<JoinHandle<()>>,
+    detectors: Vec<Box<dyn AgentDetector>>,
+    source: Arc<dyn ProcessSource>,
+    hub: Option<StatusHub>,
+    panes: HashMap<PaneId, TrackedPane>,
 }
 
 impl AgentObserver {
-    /// Start polling an observable server with the built-in detector registry,
-    /// attributing panes to agents via the real OS process table and
-    /// publishing every classified state to `hub` for format renderers.
-    pub fn start<O>(observability: O, hub: StatusHub) -> io::Result<Self>
-    where
-        O: ServerObservability + 'static,
-    {
-        Self::start_with(
-            observability,
-            default_detectors(),
-            Arc::new(SystemProcesses),
-            Some(hub),
-        )
+    /// How often the loop should tick the observer.
+    pub const INTERVAL: Duration = POLL_INTERVAL;
+
+    /// Observe with the built-in detector registry, attributing panes to agents
+    /// via the real OS process table and publishing every classified state to
+    /// `hub` for format renderers.
+    pub fn new(hub: StatusHub) -> Self {
+        Self::with(default_detectors(), Arc::new(SystemProcesses), Some(hub))
     }
 
-    /// Start polling with an explicit detector registry, process source, and
-    /// optional status hub (test seam). A `None` hub logs state transitions but
-    /// publishes nowhere.
-    pub(crate) fn start_with<O>(
-        observability: O,
+    /// Observe with an explicit detector registry, process source, and optional
+    /// status hub (test seam). A `None` hub logs state transitions but publishes
+    /// nowhere.
+    pub(crate) fn with(
         detectors: Vec<Box<dyn AgentDetector>>,
         source: Arc<dyn ProcessSource>,
         hub: Option<StatusHub>,
-    ) -> io::Result<Self>
-    where
-        O: ServerObservability + 'static,
-    {
-        let stop = Arc::new(AtomicBool::new(false));
-        let worker_stop = Arc::clone(&stop);
-        let worker = thread::Builder::new()
-            .name("hmux-agent-observer".to_string())
-            .spawn(move || run(observability, detectors, source, hub, worker_stop))?;
-        Ok(Self {
-            stop,
-            worker: Some(worker),
-        })
-    }
-}
-
-impl Drop for AgentObserver {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::Release);
-        if let Some(worker) = self.worker.take() {
-            worker.thread().unpark();
-            let _ = worker.join();
+    ) -> Self {
+        Self {
+            detectors,
+            source,
+            hub,
+            panes: HashMap::new(),
         }
+    }
+
+    /// Classify every observable pane once.
+    pub fn tick<O: ServerObservability>(&mut self, observability: &O) {
+        poll(
+            observability,
+            &self.detectors,
+            self.source.as_ref(),
+            self.hub.as_ref(),
+            &mut self.panes,
+        );
     }
 }
 
@@ -304,26 +296,6 @@ struct TrackedPane {
     /// The model the session file most recently named, as published on the
     /// pane's status.
     agent_model: Option<String>,
-}
-
-fn run<O: ServerObservability>(
-    observability: O,
-    detectors: Vec<Box<dyn AgentDetector>>,
-    source: Arc<dyn ProcessSource>,
-    hub: Option<StatusHub>,
-    stop: Arc<AtomicBool>,
-) {
-    let mut panes = HashMap::<PaneId, TrackedPane>::new();
-    while !stop.load(Ordering::Acquire) {
-        poll(
-            &observability,
-            &detectors,
-            source.as_ref(),
-            hub.as_ref(),
-            &mut panes,
-        );
-        thread::park_timeout(POLL_INTERVAL);
-    }
 }
 
 fn poll<O: ServerObservability>(
@@ -820,7 +792,7 @@ impl ProcessSource for SystemProcesses {
     }
 
     fn read_span(&self, path: &Path, offset: u64, max_len: usize) -> Option<Vec<u8>> {
-        use std::io::{Read, Seek, SeekFrom};
+        use std::io::{ErrorKind, Read, Seek, SeekFrom};
         let mut file = std::fs::File::open(path).ok()?;
         file.seek(SeekFrom::Start(offset)).ok()?;
         let mut buffer = vec![0; max_len];
@@ -829,7 +801,7 @@ impl ProcessSource for SystemProcesses {
             match file.read(&mut buffer[filled..]) {
                 Ok(0) => break,
                 Ok(read) => filled += read,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) if error.kind() == ErrorKind::Interrupted => continue,
                 Err(_) => return None,
             }
         }

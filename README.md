@@ -24,6 +24,23 @@ control. See ./agentmon/ to see an example agent integration.
   - Hard to co-exist with tmux and limited flexibility on agent control UX. hmux
     can be a good alternative if you prefer to define your own agent control.
 
+## Known behavior differences from tmux
+
+The server runs everything on one loop, which shows through in a few file
+operations. These are deliberate and characterized here rather than described as
+exact conformance.
+
+- `source-file`, `load-buffer` and `save-buffer` read and write **regular files
+  inline**, the way tmux 3.7b reads its own configuration on its loop.
+- Those same commands treat a **FIFO** as something to wait for instead of
+  blocking the server on `open`. A writer that opens the FIFO and closes it
+  without writing anything is indistinguishable from no writer at all, so
+  `source-file`/`load-buffer` keep waiting where tmux's blocking open would have
+  returned empty.
+- `pipe-pane` output is buffered for a pipe command that stops reading, up to a
+  few megabytes; past that the **oldest** pane output is dropped rather than
+  stalling the pane. tmux queues without bound.
+
 ## Usage
 
 `nix run` to start hmux server, then `tmux attach`.

@@ -30,15 +30,12 @@ pub(in crate::server) use identity::Command;
 
 use std::collections::BTreeMap;
 use std::io;
-use std::os::fd::AsRawFd;
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::integration::status::PaneAgents;
 use crate::observability::v1::PaneId;
-use crate::platform::{CurrentPlatform, Platform};
 
 use super::format::{self, Vars};
 use super::key::{format_key_name, parse_key_name};
@@ -47,9 +44,10 @@ use super::options::{self, OptionScope, OptionSet, OptionsView};
 use super::registry::{self, CommandSpec, Resolution, SpecResolution};
 use super::state::{
     BackgroundJobRegistry, ClientActionResult, ClientMessage, ClientMessageResult,
-    CommandPromptRequestResult, MenuItem, MenuRequest, ModeEdit, ModeItem, ModeKind, ModeView,
-    OverlayRequest, PaneSpec, PopupRequest, PromptCompletion, ServerState, Session, SplitDirection,
-    Target, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
+    MenuItem, MenuRequest, ModeEdit, ModeItem, ModeKind, ModeView,
+    OverlayRequest, PaneSpec, PopupRequest, PromptCompletion, PromptReply, ServerState, Session,
+    SplitDirection, Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest,
+    WindowSizePolicy,
 };
 use super::style::{
     write_capture_hyperlink, CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder,
@@ -60,7 +58,9 @@ use super::task::{
     run_blocking, Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest,
     WaitToken,
 };
-use suspend::{FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob};
+#[cfg(test)]
+use suspend::IfShellJob;
+use suspend::{RunShellJob, SuspensionJob};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.
@@ -110,7 +110,7 @@ pub struct ClientContext {
     pub(crate) active_panes: Option<Arc<Mutex<BTreeMap<u32, u32>>>>,
     pub(crate) key_event: Option<super::key::KeyCode>,
     pub(crate) mouse: Option<MouseEvent>,
-    pub(crate) interaction_reply: Option<mpsc::Sender<PromptCompletion>>,
+    pub(crate) interaction_reply: Option<PromptReply>,
     pub(crate) wait_for_interactions: bool,
     pub(crate) preserve_queue_insertions: bool,
     /// Set for commands run from a hook body. tmux's `CMDQ_STATE_NOHOOKS`
@@ -485,7 +485,7 @@ impl BlockingCommandRuntime {
                         start_resumable_command(&args, &state, &agents, &context)
                     }
                     BackgroundCommand::RunShell { args, jobs } => {
-                        run_background_shell(&args, &context, jobs);
+                        run_blocking(suspend::BackgroundShellJob::new(&args, &context, jobs));
                         return;
                     }
                 };
@@ -508,7 +508,7 @@ impl CommandRuntime for BlockingCommandRuntime {
         let (completion, sender) = super::task::completion_pair()?;
         std::thread::Builder::new()
             .name("hmux-blocking-command".to_string())
-            .spawn(move || sender.complete(suspension.resolve_blocking()))?;
+            .spawn(move || sender.complete(run_blocking(SuspensionJob::new(suspension))))?;
         Ok(completion)
     }
 }
@@ -824,46 +824,61 @@ pub(crate) enum BackgroundCommandRequest {
     },
 }
 
+/// What a background request runs, once it is known.
+pub(crate) enum PendingBackground {
+    Ready(BackgroundCommand, ClientContext),
+    /// `if-shell -b`: the condition has to run before either branch is picked.
+    Condition {
+        condition: String,
+        then_command: Option<String>,
+        else_command: Option<String>,
+        context: ClientContext,
+    },
+}
+
 impl BackgroundCommandRequest {
-    pub(crate) fn resolve(self) -> (BackgroundCommand, ClientContext) {
+    pub(crate) fn into_pending(self) -> PendingBackground {
         match self {
-            Self::Ready { command, context } => (BackgroundCommand::Line(command), context),
-            Self::ReadyArgs { args, context } => (BackgroundCommand::Args(args), context),
+            Self::Ready { command, context } => {
+                PendingBackground::Ready(BackgroundCommand::Line(command), context)
+            }
+            Self::ReadyArgs { args, context } => {
+                PendingBackground::Ready(BackgroundCommand::Args(args), context)
+            }
             Self::IfShell {
                 condition,
                 then_command,
                 else_command,
                 context,
-            } => {
-                let matched = if condition
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .ends_with(&["run", "\"true\""])
-                {
-                    true
-                } else {
-                    let mut shell = shell_command(&condition, &context);
-                    shell
-                        .status()
-                        .map(|status| status.success())
-                        .unwrap_or(false)
-                };
-                let command = if matched { then_command } else { else_command };
-                (BackgroundCommand::Line(command), context)
-            }
+            } => PendingBackground::Condition {
+                condition,
+                then_command,
+                else_command,
+                context,
+            },
             Self::RunShell {
                 args,
                 context,
                 jobs,
-            } => (BackgroundCommand::RunShell { args, jobs }, context),
+            } => PendingBackground::Ready(BackgroundCommand::RunShell { args, jobs }, context),
         }
     }
 
-    pub(crate) fn is_ready(&self) -> bool {
-        matches!(
-            self,
-            Self::Ready { .. } | Self::ReadyArgs { .. } | Self::RunShell { .. }
-        )
+    #[cfg(test)]
+    pub(crate) fn resolve(self) -> (BackgroundCommand, ClientContext) {
+        match self.into_pending() {
+            PendingBackground::Ready(command, context) => (command, context),
+            PendingBackground::Condition {
+                condition,
+                then_command,
+                else_command,
+                context,
+            } => {
+                let matched = run_blocking(IfShellJob::new(&condition, &context));
+                let command = if matched { then_command } else { else_command };
+                (BackgroundCommand::Line(command), context)
+            }
+        }
     }
 }
 
@@ -927,7 +942,7 @@ pub(crate) enum CommandSuspension {
         wait: bool,
     },
     ClientInteraction {
-        completed: mpsc::Receiver<PromptCompletion>,
+        completed: Completion<Option<PromptCompletion>>,
     },
     PaneOutput(PaneOutputSuspension),
 }
@@ -993,10 +1008,6 @@ impl PaneOutputSuspension {
                 .expect("pane-output suspension completed twice"),
         )
     }
-
-    fn resolve_blocking(self) -> CommandSuspensionResult {
-        run_blocking(self)
-    }
 }
 
 impl Coroutine for PaneOutputSuspension {
@@ -1030,8 +1041,8 @@ impl Coroutine for PaneOutputSuspension {
 /// Runtime operation used only for work that cannot be polled directly.
 ///
 /// Implementations must return promptly. The returned completion descriptor
-/// becomes readable after the runtime worker has finished the suspension.
-pub(crate) trait CommandRuntime: Send + Sync {
+/// becomes readable once the runtime has resolved the suspension.
+pub(crate) trait CommandRuntime {
     fn submit(
         &self,
         suspension: CommandSuspension,
@@ -1204,69 +1215,6 @@ impl CommandSuspension {
         )
     }
 
-    pub(crate) fn resolve_blocking(self) -> CommandSuspensionResult {
-        match self {
-            Self::RunShell { args, context } => {
-                CommandSuspensionResult::RunShell(run_blocking(RunShellJob::new(&args, &context)))
-            }
-            Self::IfShell { condition, context } => CommandSuspensionResult::IfShell(run_blocking(
-                IfShellJob::new(&condition, &context),
-            )),
-            Self::SourceFile { paths } => {
-                CommandSuspensionResult::SourceFile(run_blocking(SourceFileJob::new(paths)))
-            }
-            Self::LoadBuffer { path } => {
-                CommandSuspensionResult::LoadBuffer(run_blocking(LoadBufferJob::new(path)))
-            }
-            Self::SaveBuffer { request } => {
-                CommandSuspensionResult::SaveBuffer(run_blocking(FileWriteJob::new(request)))
-            }
-            Self::WaitFor { args, registry } => {
-                CommandSuspensionResult::Completed(execution::wait_for(&args, &registry))
-            }
-            Self::CommandPrompt {
-                args,
-                registry,
-                target,
-                tty_name,
-                wait,
-            } => {
-                let result = match registry.request_command(
-                    target.as_deref(),
-                    tty_name.as_deref(),
-                    args,
-                    wait,
-                ) {
-                    CommandPromptRequestResult::Completed(completion) => {
-                        interaction_completion_result(completion)
-                    }
-                    CommandPromptRequestResult::Queued | CommandPromptRequestResult::Busy => {
-                        CommandResult::ok("")
-                    }
-                    CommandPromptRequestResult::NoCurrentClient => {
-                        CommandResult::err("no current client\n")
-                    }
-                    CommandPromptRequestResult::TargetNotFound => CommandResult::err(format!(
-                        "can't find client: {}\n",
-                        target.unwrap_or_default()
-                    )),
-                };
-                CommandSuspensionResult::Completed(result)
-            }
-            Self::ClientInteraction { completed } => {
-                let result = match completed.recv() {
-                    Ok(completion) => interaction_completion_result(completion),
-                    Err(_) => {
-                        let mut result = CommandResult::ok("");
-                        result.continue_queue = true;
-                        result
-                    }
-                };
-                CommandSuspensionResult::Completed(result)
-            }
-            Self::PaneOutput(wait) => wait.resolve_blocking(),
-        }
-    }
 }
 
 impl ResumableCommandQueue {
@@ -1691,7 +1639,19 @@ impl ResumableCommandQueue {
             if self.context.wait_for_interactions
                 && client_interaction_waits(inflight.command.spec.name, &inflight.command.args)
             {
-                let (reply, completed) = mpsc::channel();
+                let (reply, completed) = match PromptReply::new() {
+                    Ok(reply) => reply,
+                    Err(error) => {
+                        self.finish_execution(
+                            inflight,
+                            SharedCommandExecution::completed(CommandResult::err(format!(
+                                "{error}\n"
+                            ))),
+                            state,
+                        );
+                        continue;
+                    }
+                };
                 let mut interaction_context = self.context.clone();
                 interaction_context.interaction_reply = Some(reply);
                 let initial =
@@ -2248,7 +2208,7 @@ fn run_resumable_command(
         match queue.drive(state, usize::MAX) {
             ResumableCommandTurn::Pending => continue,
             ResumableCommandTurn::Suspended(suspension) => {
-                let result = suspension.resolve_blocking();
+                let result = run_blocking(SuspensionJob::new(suspension));
                 queue.resume(result, state);
             }
             ResumableCommandTurn::Complete(result) => return result,
@@ -8161,27 +8121,6 @@ fn shell_command(command: &str, context: &ClientContext) -> std::process::Comman
     shell
 }
 
-fn spawn_background_shell(
-    command: &str,
-    context: &ClientContext,
-) -> std::io::Result<std::process::Child> {
-    let mut shell = shell_command(command, context);
-    shell
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    // Identified client streams are open in the daemon as descriptors above
-    // stderr. A background job retaining one would make the command client
-    // wait for EOF until the job exits, defeating `-b`.
-    unsafe {
-        shell.pre_exec(|| {
-            CurrentPlatform::close_fds_from(3);
-            Ok(())
-        });
-    }
-    shell.spawn()
-}
-
 fn job_delay(args: &[String]) -> Result<std::time::Duration, CommandResult> {
     let Some(value) = flag_value(args, "-d") else {
         return Ok(std::time::Duration::ZERO);
@@ -8192,51 +8131,6 @@ fn job_delay(args: &[String]) -> Result<std::time::Duration, CommandResult> {
         .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
         .ok_or_else(|| CommandResult::err(format!("invalid delay time: {value}\n")))?;
     Ok(std::time::Duration::from_secs_f64(seconds))
-}
-
-fn wait_job_delay(delay: Duration) {
-    let deadline = Instant::now() + delay;
-    while Instant::now() < deadline {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let millis = remaining.as_nanos().saturating_add(999_999) / 1_000_000;
-        let result = unsafe {
-            libc::poll(
-                std::ptr::null_mut(),
-                0,
-                i32::try_from(millis).unwrap_or(i32::MAX),
-            )
-        };
-        if result >= 0 || io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
-            break;
-        }
-    }
-}
-
-pub(crate) fn run_background_shell(
-    args: &[String],
-    context: &ClientContext,
-    jobs: Arc<BackgroundJobRegistry>,
-) {
-    let Some(command) = positionals(args, &["-t", "-c", "-d"])
-        .into_iter()
-        .next()
-        .map(str::to_string)
-    else {
-        return;
-    };
-    let Ok(delay) = job_delay(args) else {
-        return;
-    };
-    if !delay.is_zero() {
-        wait_job_delay(delay);
-    }
-    let Ok(child) = spawn_background_shell(&command, context) else {
-        return;
-    };
-    let fd = child.stdout.as_ref().map(AsRawFd::as_raw_fd).unwrap_or(-1);
-    let id = jobs.register(command, fd, child.id());
-    let _ = child.wait_with_output();
-    jobs.remove(id);
 }
 
 /// `run-shell command`. Runs the command with `sh -c` and forwards its stdout to

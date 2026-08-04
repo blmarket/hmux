@@ -2,9 +2,8 @@
 //!
 //! In native mode there is no network between the client and the server: the
 //! tmux client hands its tty fds to the daemon (`SCM_RIGHTS`) and the daemon
-//! reads keystrokes from / writes frames to that tty *directly* from a single
-//! thread (`attach::run_attach`). Any lag a user perceives while typing is
-//! therefore one of two things:
+//! reads keystrokes from / writes frames to that tty *directly* on its server
+//! loop. Any lag a user perceives while typing is therefore one of two things:
 //!
 //!   1. the network between their terminal and the host running hmux (e.g. the
 //!      SSH hop) — invisible to hmux, and
@@ -12,10 +11,10 @@
 //!
 //! This probe measures (2) so the user can tell the two apart: if the logged
 //! in-daemon latency is small but typing still feels laggy, the delay is the
-//! network. The whole measurement lives in the attach-loop thread — it stamps
-//! the moment input is offered to the pane, the moment subsequent pane output
-//! is parsed, the moment that output wakes the attach loop, and the moment the
-//! resulting frame is written back to the tty.
+//! network. The whole measurement lives on the server loop — it stamps the
+//! moment input is offered to the pane, the moment subsequent pane output is
+//! parsed, the moment that output wakes the loop, and the moment the resulting
+//! frame is written back to the tty.
 //!
 //! Disabled by default (zero overhead). Enable by setting the `HMUX_LATENCY`
 //! environment variable **for the daemon process**:

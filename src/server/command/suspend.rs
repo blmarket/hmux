@@ -18,16 +18,225 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
-
-use super::{
-    flag_value, has_flag, io_error_message, job_delay, positionals, shell_command, ClientContext,
-    ClientFileWrite, CommandResult, RunShellCompletion, SourceFileRead,
+use crate::platform::{CurrentPlatform, Platform};
+use crate::server::state::{
+    BackgroundJobRegistry, ClientPromptRegistry, CommandPromptRequestResult, PromptCompletion,
+    WaitRegistry,
 };
+use crate::server::task::{
+    Completion, Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken,
+};
+
+use super::execution::{self, WaitForOutcome};
+use super::{
+    flag_value, has_flag, interaction_completion_result, io_error_message, job_delay, positionals,
+    shell_command, ClientContext, ClientFileWrite, CommandResult, CommandSuspension,
+    CommandSuspensionResult, PaneOutputSuspension, RunShellCompletion, SourceFileRead,
+};
+
+/// One suspension expressed as the coroutine that resolves it.
+///
+/// Both drivers build this from the same [`CommandSuspension`]: the server
+/// loop's executor registers its descriptors and deadlines with the reactor,
+/// and the blocking test driver runs it on the calling thread. There is only
+/// ever one implementation of what a suspension does.
+pub(crate) enum SuspensionJob {
+    BackgroundShell(BackgroundShellJob),
+    RunShell(RunShellJob),
+    IfShell(IfShellJob),
+    SourceFile(SourceFileJob),
+    LoadBuffer(LoadBufferJob),
+    SaveBuffer(FileWriteJob),
+    WaitFor(WaitForJob),
+    ClientPrompt(ClientPromptJob),
+    PaneOutput(PaneOutputSuspension),
+}
+
+impl SuspensionJob {
+    /// An `if-shell -b` condition, whose branch the caller picks.
+    pub(crate) fn if_shell(condition: &str, context: &ClientContext) -> Self {
+        Self::IfShell(IfShellJob::new(condition, context))
+    }
+
+    /// A `run-shell -b` job, which reports nothing but has to be reaped.
+    pub(crate) fn background_shell(
+        args: &[String],
+        context: &ClientContext,
+        jobs: Arc<BackgroundJobRegistry>,
+    ) -> Self {
+        Self::BackgroundShell(BackgroundShellJob::new(args, context, jobs))
+    }
+
+    pub(crate) fn new(suspension: CommandSuspension) -> Self {
+        match suspension {
+            CommandSuspension::RunShell { args, context } => {
+                Self::RunShell(RunShellJob::new(&args, &context))
+            }
+            CommandSuspension::IfShell { condition, context } => {
+                Self::IfShell(IfShellJob::new(&condition, &context))
+            }
+            CommandSuspension::SourceFile { paths } => Self::SourceFile(SourceFileJob::new(paths)),
+            CommandSuspension::LoadBuffer { path } => Self::LoadBuffer(LoadBufferJob::new(path)),
+            CommandSuspension::SaveBuffer { request } => {
+                Self::SaveBuffer(FileWriteJob::new(request))
+            }
+            CommandSuspension::WaitFor { args, registry } => {
+                Self::WaitFor(WaitForJob::new(&args, &registry))
+            }
+            CommandSuspension::CommandPrompt {
+                args,
+                registry,
+                target,
+                tty_name,
+                wait,
+            } => Self::ClientPrompt(ClientPromptJob::prompt(
+                args, &registry, target, tty_name, wait,
+            )),
+            CommandSuspension::ClientInteraction { completed } => {
+                Self::ClientPrompt(ClientPromptJob::interaction(completed))
+            }
+            CommandSuspension::PaneOutput(wait) => Self::PaneOutput(wait),
+        }
+    }
+}
+
+impl Coroutine for SuspensionJob {
+    type Output = CommandSuspensionResult;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match self {
+            Self::BackgroundShell(job) => job.wait(),
+            Self::RunShell(job) => job.wait(),
+            Self::IfShell(job) => job.wait(),
+            Self::SourceFile(job) => job.wait(),
+            Self::LoadBuffer(job) => job.wait(),
+            Self::SaveBuffer(job) => job.wait(),
+            Self::WaitFor(job) => job.wait(),
+            Self::ClientPrompt(job) => job.wait(),
+            Self::PaneOutput(job) => job.wait(),
+        }
+    }
+
+    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
+        match self {
+            Self::BackgroundShell(job) => {
+                job.resume(ready).map(CommandSuspensionResult::Completed)
+            }
+            Self::RunShell(job) => job
+                .resume(ready)
+                .map(CommandSuspensionResult::RunShell),
+            Self::IfShell(job) => job.resume(ready).map(CommandSuspensionResult::IfShell),
+            Self::SourceFile(job) => job.resume(ready).map(CommandSuspensionResult::SourceFile),
+            Self::LoadBuffer(job) => job.resume(ready).map(CommandSuspensionResult::LoadBuffer),
+            Self::SaveBuffer(job) => job.resume(ready).map(CommandSuspensionResult::SaveBuffer),
+            Self::WaitFor(job) => job.resume(ready).map(CommandSuspensionResult::Completed),
+            Self::ClientPrompt(job) => job.resume(ready).map(CommandSuspensionResult::Completed),
+            Self::PaneOutput(job) => job.resume(ready),
+        }
+    }
+}
+
+/// `run-shell -b command`: a detached job, whose output goes nowhere but whose
+/// child has to appear in `list-jobs` for as long as it runs.
+///
+/// The shape is [`RunShellJob`]'s, minus the reporting: wait out `-d`, run the
+/// command, and hold the registry entry until the child is reaped.
+pub(crate) struct BackgroundShellJob {
+    process: Option<ShellProcess>,
+    /// `(registry, command)` until the child exists to register.
+    pending: Option<(Arc<BackgroundJobRegistry>, String)>,
+    registered: Option<(Arc<BackgroundJobRegistry>, u64)>,
+}
+
+impl BackgroundShellJob {
+    pub(crate) fn new(
+        args: &[String],
+        context: &ClientContext,
+        jobs: Arc<BackgroundJobRegistry>,
+    ) -> Self {
+        let done = Self {
+            process: None,
+            pending: None,
+            registered: None,
+        };
+        let Some(command) = positionals(args, &["-t", "-c", "-d"])
+            .into_iter()
+            .next()
+            .map(str::to_string)
+        else {
+            return done;
+        };
+        let Ok(delay) = job_delay(args) else {
+            return done;
+        };
+        let mut shell = shell_command(&command, context);
+        if let Some(cwd) = flag_value(args, "-c") {
+            shell.current_dir(cwd);
+        }
+        // Identified client streams are open in the daemon as descriptors above
+        // stderr. A background job retaining one would make the command client
+        // wait for EOF until the job exits, defeating `-b`.
+        unsafe {
+            shell.pre_exec(|| {
+                CurrentPlatform::close_fds_from(3);
+                Ok(())
+            });
+        }
+        Self {
+            process: Some(ShellProcess::new(shell, delay)),
+            pending: Some((jobs, command)),
+            registered: None,
+        }
+    }
+}
+
+impl Coroutine for BackgroundShellJob {
+    type Output = CommandResult;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match &self.process {
+            Some(process) => process.wait(),
+            None => WaitRequest::new(Vec::new(), Some(Instant::now())),
+        }
+    }
+
+    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
+        let Some(process) = self.process.as_mut() else {
+            return TaskPoll::Ready(CommandResult::ok(""));
+        };
+        let poll = process.resume(ready);
+        // The child exists from the first resume that gets past `-d`, and
+        // `list-jobs` has to see it for as long as it runs.
+        if self.registered.is_none() {
+            if let Some((jobs, command)) = self
+                .pending
+                .take_if(|_| process.child_stdout().is_some())
+            {
+                let fd = process.child_stdout().map_or(-1, AsRawFd::as_raw_fd);
+                let pid = process.child_pid().unwrap_or(0);
+                let id = jobs.register(command, fd, pid);
+                self.registered = Some((jobs, id));
+            }
+        }
+        match poll {
+            TaskPoll::Ready(_) => {
+                self.process = None;
+                self.pending = None;
+                if let Some((jobs, id)) = self.registered.take() {
+                    jobs.remove(id);
+                }
+                TaskPoll::Ready(CommandResult::ok(""))
+            }
+            TaskPoll::Pending => TaskPoll::Pending,
+        }
+    }
+}
 
 /// A finished `sh -c` child.
 struct ShellOutput {
@@ -238,6 +447,21 @@ impl ShellProcess {
                 deadline: Instant::now() + delay,
                 spawn,
             },
+        }
+    }
+
+    /// The running child's stdout, while it is still open.
+    fn child_stdout(&self) -> Option<&ChildStdout> {
+        match &self.stage {
+            Stage::Running(running) => running.stdout.as_ref(),
+            _ => None,
+        }
+    }
+
+    fn child_pid(&self) -> Option<u32> {
+        match &self.stage {
+            Stage::Running(running) => Some(running.child.id()),
+            _ => None,
         }
     }
 }
@@ -581,6 +805,146 @@ impl Coroutine for FileWriteJob {
     }
 }
 
+/// `wait-for`, in whichever of its four forms.
+///
+/// `-S`, `-U` and an uncontended `-L` finish the moment the registry is
+/// touched; the forms that have to wait for another client hold the completion
+/// the registry signals, so the waiting queue is resumed by its own driver
+/// rather than by parking a thread inside the registry.
+pub(crate) enum WaitForJob {
+    Done(Option<CommandResult>),
+    Waiting(Completion<()>),
+}
+
+impl WaitForJob {
+    pub(crate) fn new(args: &[String], registry: &WaitRegistry) -> Self {
+        match execution::wait_for(args, registry) {
+            WaitForOutcome::Done(result) => Self::Done(Some(result)),
+            WaitForOutcome::Pending(completion) => Self::Waiting(completion),
+        }
+    }
+}
+
+impl Coroutine for WaitForJob {
+    type Output = CommandResult;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match self {
+            // Already resolved: `resume` reports it before anyone waits.
+            Self::Done(_) => WaitRequest::new(Vec::new(), Some(Instant::now())),
+            Self::Waiting(completion) => completion.wait(),
+        }
+    }
+
+    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
+        match self {
+            Self::Done(result) => TaskPoll::Ready(
+                result
+                    .take()
+                    .expect("resolved wait-for reported its result twice"),
+            ),
+            Self::Waiting(completion) => match completion.resume(ready) {
+                // The registry drops a sender only when the server is going
+                // away, which the stock client sees as the wait being over.
+                TaskPoll::Ready(_) => TaskPoll::Ready(CommandResult::ok("")),
+                TaskPoll::Pending => TaskPoll::Pending,
+            },
+        }
+    }
+}
+
+/// A command queue waiting for a client to answer something.
+///
+/// `command-prompt -w` waits for the prompt it put up on one client;
+/// `confirm-before`, `display-menu` and `display-popup` wait for the overlay
+/// they opened. Both hold the completion the answering side signals, so the
+/// queue is resumed by its own driver instead of blocking on a receive.
+pub(crate) enum ClientPromptJob {
+    /// Nothing to wait for: no client took the request, or `-w` was absent.
+    Done(Option<CommandResult>),
+    /// An unanswered `command-prompt` reports the empty completion, which is
+    /// what the stock client's queue continues with.
+    Prompt(Completion<Option<PromptCompletion>>),
+    /// A client that goes away mid-overlay leaves the queue running.
+    Interaction(Completion<Option<PromptCompletion>>),
+}
+
+impl ClientPromptJob {
+    pub(crate) fn prompt(
+        args: Vec<String>,
+        registry: &ClientPromptRegistry,
+        target: Option<String>,
+        tty_name: Option<String>,
+        wait: bool,
+    ) -> Self {
+        let result = match registry.request_command(
+            target.as_deref(),
+            tty_name.as_deref(),
+            args,
+            wait,
+        ) {
+            CommandPromptRequestResult::Waiting(completion) => return Self::Prompt(completion),
+            CommandPromptRequestResult::Queued | CommandPromptRequestResult::Busy => {
+                CommandResult::ok("")
+            }
+            CommandPromptRequestResult::NoCurrentClient => CommandResult::err("no current client\n"),
+            CommandPromptRequestResult::TargetNotFound => CommandResult::err(format!(
+                "can't find client: {}\n",
+                target.unwrap_or_default()
+            )),
+        };
+        Self::Done(Some(result))
+    }
+
+    pub(crate) fn interaction(completed: Completion<Option<PromptCompletion>>) -> Self {
+        Self::Interaction(completed)
+    }
+}
+
+impl Coroutine for ClientPromptJob {
+    type Output = CommandResult;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match self {
+            // Already resolved: `resume` reports it before anyone waits.
+            Self::Done(_) => WaitRequest::new(Vec::new(), Some(Instant::now())),
+            Self::Prompt(completion) | Self::Interaction(completion) => completion.wait(),
+        }
+    }
+
+    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
+        let answered = match self {
+            Self::Done(result) => {
+                return TaskPoll::Ready(
+                    result
+                        .take()
+                        .expect("resolved client prompt reported its result twice"),
+                )
+            }
+            Self::Prompt(completion) | Self::Interaction(completion) => {
+                match completion.resume(ready) {
+                    TaskPoll::Ready(answered) => answered.ok().flatten(),
+                    TaskPoll::Pending => return TaskPoll::Pending,
+                }
+            }
+        };
+        TaskPoll::Ready(match (&self, answered) {
+            (_, Some(completion)) => interaction_completion_result(completion),
+            (Self::Prompt(_), None) => interaction_completion_result(PromptCompletion {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit: 0,
+                inserted: false,
+            }),
+            (_, None) => {
+                let mut result = CommandResult::ok("");
+                result.continue_queue = true;
+                result
+            }
+        })
+    }
+}
+
 /// How a path is written: everything but a FIFO is written on the spot.
 enum WriteOpen {
     Inline(io::Result<()>),
@@ -858,13 +1222,15 @@ fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob};
+    use super::{FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob, WaitForJob};
     use crate::server::command::{ClientContext, ClientFileWrite};
+    use crate::server::state::WaitRegistry;
     use crate::server::task::run_blocking;
     use std::fs;
     use std::io;
     use std::path::{Path, PathBuf};
     use std::process;
+    use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -1101,5 +1467,80 @@ mod tests {
         );
         assert!(result.continue_queue);
         let _ = fs::remove_dir_all(&directory);
+    }
+
+    fn wait_for_args(values: &[&str]) -> Vec<String> {
+        std::iter::once("wait-for")
+            .chain(values.iter().copied())
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn wait_for_job_consumes_a_signal_that_already_arrived() {
+        let registry = WaitRegistry::default();
+
+        run_blocking(WaitForJob::new(&wait_for_args(&["-S", "ready"]), &registry));
+        let started = Instant::now();
+        let result = run_blocking(WaitForJob::new(&wait_for_args(&["ready"]), &registry));
+
+        assert_eq!(result.exit, 0, "{}", result.stderr);
+        assert!(started.elapsed() < Duration::from_millis(50));
+    }
+
+    #[test]
+    fn wait_for_job_resumes_when_the_signal_arrives() {
+        let registry = Arc::new(WaitRegistry::default());
+        let signaller = thread::spawn({
+            let registry = Arc::clone(&registry);
+            move || {
+                thread::sleep(Duration::from_millis(100));
+                registry.signal("later");
+            }
+        });
+
+        let started = Instant::now();
+        let result = run_blocking(WaitForJob::new(&wait_for_args(&["later"]), &registry));
+
+        assert_eq!(result.exit, 0, "{}", result.stderr);
+        assert!(started.elapsed() >= Duration::from_millis(50));
+        signaller.join().expect("signaller");
+    }
+
+    #[test]
+    fn wait_for_job_hands_the_lock_to_the_next_waiter_in_order() {
+        let registry = Arc::new(WaitRegistry::default());
+
+        // The first `-L` takes the lock outright.
+        let result = run_blocking(WaitForJob::new(&wait_for_args(&["-L", "gate"]), &registry));
+        assert_eq!(result.exit, 0, "{}", result.stderr);
+
+        let unlocker = thread::spawn({
+            let registry = Arc::clone(&registry);
+            move || {
+                thread::sleep(Duration::from_millis(100));
+                assert!(registry.unlock("gate"), "first unlock");
+            }
+        });
+        let started = Instant::now();
+        let result = run_blocking(WaitForJob::new(&wait_for_args(&["-L", "gate"]), &registry));
+
+        assert_eq!(result.exit, 0, "{}", result.stderr);
+        assert!(started.elapsed() >= Duration::from_millis(50));
+        unlocker.join().expect("unlocker");
+        // The handoff kept the channel locked, so the second holder can release
+        // it and nobody else can.
+        assert!(registry.unlock("gate"), "second unlock");
+        assert!(!registry.unlock("gate"), "third unlock");
+    }
+
+    #[test]
+    fn wait_for_job_reports_an_unlock_of_a_free_channel() {
+        let registry = WaitRegistry::default();
+
+        let result = run_blocking(WaitForJob::new(&wait_for_args(&["-U", "free"]), &registry));
+
+        assert_ne!(result.exit, 0);
+        assert_eq!(result.stderr, "channel free not locked\n");
     }
 }

@@ -396,7 +396,7 @@ pub(crate) enum AttachCommandContinuation {
         inserted: bool,
     },
     Confirm {
-        reply: Option<std::sync::mpsc::Sender<super::state::PromptCompletion>>,
+        reply: Option<super::state::PromptReply>,
         inserted: bool,
     },
     Prompt {

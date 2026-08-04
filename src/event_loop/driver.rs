@@ -15,6 +15,9 @@ use super::job::{BackgroundCommands, JobEvent};
 use super::listener::{AcceptedClients, Listener, ListenerEvent};
 use super::pane::{EventPane, PaneEvent, PaneInterest};
 use super::process::{ChildSignal, ChildSignalEvent};
+use crate::server::pane::PanePipeIo;
+use crate::server::status::FormatJob;
+use super::term_signal::{TermSignal, TermSignalEvent};
 use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
 };
@@ -37,6 +40,10 @@ pub(crate) enum Envelope {
     ChildSignal {
         target: ActorRef<ChildSignal>,
         event: ChildSignalEvent,
+    },
+    TermSignal {
+        target: ActorRef<TermSignal>,
+        event: TermSignalEvent,
     },
     Protocol {
         target: ActorRef<ProtocolClient>,
@@ -67,6 +74,10 @@ impl Envelope {
                 let dispatch_target = target.clone();
                 target.with_mut(|signal| signal.handle(&dispatch_target, event, outbox));
             }
+            Envelope::TermSignal { target, event } => {
+                let dispatch_target = target.clone();
+                target.with_mut(|signal| signal.handle(&dispatch_target, event, outbox));
+            }
             Envelope::Protocol { target, event } => {
                 let dispatch_target = target.clone();
                 target.with_mut(|client| client.handle(&dispatch_target, event, outbox));
@@ -75,11 +86,11 @@ impl Envelope {
                 let dispatch_target = target.clone();
                 target.with_mut(|jobs| jobs.handle(&dispatch_target, event, outbox));
             }
-            // The executor answers only to its own jobs: it neither addresses
-            // other actors nor changes its registrations itself, so the loop
-            // reconciles those once per dispatch instead.
+            // The executor never changes its own registrations; the loop
+            // reconciles those once per dispatch instead. It does address the
+            // background-command actor, which owns the queues it finishes.
             Envelope::Executor { target, event } => {
-                target.with_mut(|executor| executor.handle(event));
+                target.with_mut(|executor| executor.handle(event, outbox));
             }
         }
     }
@@ -97,6 +108,10 @@ enum Effect {
     },
     SetChildSignalInterest {
         target: ActorRef<ChildSignal>,
+        enabled: bool,
+    },
+    SetTermSignalInterest {
+        target: ActorRef<TermSignal>,
         enabled: bool,
     },
     SetProtocolInterest {
@@ -180,6 +195,11 @@ impl Outbox {
             .push(Effect::SetPaneInterest { target, interest });
     }
 
+    pub(crate) fn set_term_signal_interest(&mut self, target: ActorRef<TermSignal>, enabled: bool) {
+        self.effects
+            .push(Effect::SetTermSignalInterest { target, enabled });
+    }
+
     pub(crate) fn set_child_signal_interest(
         &mut self,
         target: ActorRef<ChildSignal>,
@@ -251,6 +271,9 @@ enum IoTarget {
     },
     ChildSignal {
         target: WeakActorRef<ChildSignal>,
+    },
+    TermSignal {
+        target: WeakActorRef<TermSignal>,
     },
     Protocol {
         target: WeakActorRef<ProtocolClient>,
@@ -379,6 +402,7 @@ where
     background_commands: Option<ActorRef<BackgroundCommands>>,
     executor: ActorRef<SuspensionExecutor>,
     executor_handle: SuspensionExecutorHandle,
+    term_signal: Option<ActorRef<TermSignal>>,
 }
 
 impl EventLoop<MioReactor<IoRecipient>> {
@@ -392,7 +416,7 @@ where
     R: Reactor<IoRecipient>,
 {
     fn with_reactor(reactor: R) -> Self {
-        let (executor, executor_handle) = SuspensionExecutor::new(reactor.wake_handle());
+        let (executor, executor_handle) = SuspensionExecutor::new();
         Self {
             reactor,
             events: VecDeque::new(),
@@ -402,6 +426,7 @@ where
             background_commands: None,
             executor: ActorRef::new(executor),
             executor_handle,
+            term_signal: None,
         }
     }
 
@@ -418,7 +443,7 @@ where
                 ActorRef::new(BackgroundCommands::new(
                     server.state(),
                     server.status_hub(),
-                    self.reactor.wake_handle(),
+                    self.executor.clone(),
                     executor_handle.clone(),
                 ))
             })
@@ -457,6 +482,18 @@ where
         PaneHandle { pane, runtime_id }
     }
 
+    /// Watch for `SIGINT`/`SIGTERM` on the loop. The source lives as long as
+    /// the loop does; the first signal ends the process.
+    pub(crate) fn add_term_signal(&mut self) -> io::Result<()> {
+        let signal = ActorRef::new(TermSignal::new()?);
+        self.events.push_back(Envelope::TermSignal {
+            target: signal.clone(),
+            event: TermSignalEvent::Start,
+        });
+        self.term_signal = Some(signal);
+        Ok(())
+    }
+
     pub(crate) fn add_child_signal(&mut self, server: Server) -> io::Result<ChildSignalHandle> {
         let signal = ActorRef::new(ChildSignal::new(server)?);
         self.events.push_back(Envelope::ChildSignal {
@@ -464,6 +501,44 @@ where
             event: ChildSignalEvent::Start,
         });
         Ok(ChildSignalHandle { signal })
+    }
+
+    /// Adopt every `#()` job launched since the last pass. Format expansion
+    /// runs deep inside rendering, so the jobs are collected there and handed
+    /// to the loop here.
+    pub(crate) fn adopt_format_jobs(&mut self, jobs: Vec<FormatJob>) -> io::Result<()> {
+        if jobs.is_empty() {
+            return Ok(());
+        }
+        let executor = self.executor.clone();
+        let mut outbox = Outbox::new();
+        executor.with_mut(|executor| {
+            for job in jobs {
+                executor.adopt_format_job(job, &mut outbox);
+            }
+        });
+        for effect in outbox.effects {
+            self.apply(effect)?;
+        }
+        Ok(())
+    }
+
+    /// Adopt every `pipe-pane` child opened since the last pass.
+    pub(crate) fn adopt_pane_pipes(&mut self, pipes: Vec<PanePipeIo>) -> io::Result<()> {
+        if pipes.is_empty() {
+            return Ok(());
+        }
+        let executor = self.executor.clone();
+        let mut outbox = Outbox::new();
+        executor.with_mut(|executor| {
+            for pipe in pipes {
+                executor.adopt_pane_pipe(pipe, &mut outbox);
+            }
+        });
+        for effect in outbox.effects {
+            self.apply(effect)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn sync_pane(&mut self, target: &PaneHandle) -> io::Result<()> {
@@ -533,7 +608,6 @@ where
     }
 
     pub(crate) fn dispatch_one(&mut self) -> io::Result<bool> {
-        self.enqueue_background_completions();
         self.sync_executor()?;
         let Some(envelope) = self.events.pop_front() else {
             return Ok(false);
@@ -573,7 +647,6 @@ where
             .drain_expired(Instant::now(), &mut self.expired_timers);
         self.events
             .extend(self.expired_timers.drain(..).map(ExpiredTimer::into_value));
-        self.enqueue_background_completions();
         Ok(result)
     }
 
@@ -581,9 +654,13 @@ where
     /// timer queue describe exactly what every live job is waiting for.
     fn sync_executor(&mut self) -> io::Result<()> {
         let executor = self.executor.clone();
-        executor
+        // A job adopted here can finish on its very first turn and address the
+        // background-command actor, so collect effects and apply them once the
+        // executor's borrow is released.
+        let mut outbox = Outbox::new();
+        let result = executor
             .with_mut(|executor| -> io::Result<()> {
-                executor.adopt_submitted();
+                executor.adopt_submitted(&mut outbox);
                 for id in executor.job_ids() {
                     let Some(state) = executor.job_mut(id) else {
                         continue;
@@ -660,21 +737,11 @@ where
                 }
                 Ok(())
             })
-            .unwrap_or(Ok(()))
-    }
-
-    fn enqueue_background_completions(&mut self) {
-        let Some(target) = self.background_commands.as_ref() else {
-            return;
-        };
-        let events = target
-            .with(BackgroundCommands::take_completions)
-            .unwrap_or_default();
-        self.events
-            .extend(events.into_iter().map(|event| Envelope::Background {
-                target: target.clone(),
-                event,
-            }));
+            .unwrap_or(Ok(()));
+        for effect in outbox.effects {
+            self.apply(effect)?;
+        }
+        result
     }
 
     pub(crate) fn run_turn(
@@ -724,6 +791,20 @@ where
                     self.events.push_back(Envelope::Pane {
                         target,
                         event: PaneEvent::Ready(notification.readiness()),
+                    });
+                }
+            }
+            IoTarget::TermSignal { target: recipient } => {
+                let Some(target) = recipient.upgrade() else {
+                    return;
+                };
+                let should_enqueue = target
+                    .with_mut(TermSignal::mark_work_queued)
+                    .unwrap_or(false);
+                if should_enqueue {
+                    self.events.push_back(Envelope::TermSignal {
+                        target,
+                        event: TermSignalEvent::Readable,
                     });
                 }
             }
@@ -793,6 +874,9 @@ where
             }
             Effect::SetChildSignalInterest { target, enabled } => {
                 self.set_child_signal_interest(&target, enabled)?;
+            }
+            Effect::SetTermSignalInterest { target, enabled } => {
+                self.set_term_signal_interest(&target, enabled)?;
             }
             Effect::SetProtocolInterest {
                 target,
@@ -905,6 +989,38 @@ where
             Some(token) => {
                 self.reactor.reregister(token, reactor_interest)?;
             }
+        }
+        Ok(())
+    }
+
+    fn set_term_signal_interest(
+        &mut self,
+        target: &ActorRef<TermSignal>,
+        enabled: bool,
+    ) -> io::Result<()> {
+        let token = target.with(TermSignal::token).flatten();
+        match (enabled, token) {
+            (true, None) => {
+                let recipient = IoRecipient {
+                    target: IoTarget::TermSignal {
+                        target: target.downgrade(),
+                    },
+                };
+                if let Some(result) = target.with_mut(|signal| {
+                    let token =
+                        self.reactor
+                            .register(signal.fd(), Interest::READABLE, recipient)?;
+                    signal.set_token(Some(token));
+                    Ok::<(), io::Error>(())
+                }) {
+                    result?;
+                }
+            }
+            (false, Some(token)) => {
+                self.reactor.deregister(token)?;
+                target.with_mut(|signal| signal.set_token(None));
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -1138,7 +1254,6 @@ mod tests {
         let completion = loop_
             .executor_handle()
             .submit(suspension)
-            .unwrap_or_else(|_| panic!("executor owns this suspension"))
             .expect("completion pair");
         let mut task = TaskState::new(completion);
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -1259,6 +1374,55 @@ mod tests {
         };
         assert_eq!(result.exit, 0, "{}", result.stderr);
         assert_eq!(reader.join().unwrap(), payload);
+    }
+
+    #[test]
+    fn executor_writes_a_fifo_save_buffer_a_reader_drains_late() {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut loop_ = EventLoop::new().unwrap();
+        let path = ListenerPath::new();
+        let raw = std::ffi::CString::new(path.0.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(raw.as_ptr(), 0o600) }, 0);
+        // Many pipe buffers' worth, with the reader attached from the start but
+        // idle: the job's very first write fills the pipe, so everything after
+        // it depends on the loop rearming writable interest.
+        let payload = vec![b'x'; 8 * 1024 * 1024];
+        let reader = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(&path.0)
+            .unwrap();
+        let drained = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            let flags = unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_GETFL) };
+            assert_eq!(
+                unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_SETFL, flags & !libc::O_NONBLOCK) },
+                0
+            );
+            let mut contents = Vec::new();
+            let mut reader = reader;
+            std::io::Read::read_to_end(&mut reader, &mut contents).unwrap();
+            contents
+        });
+
+        let result = resolve_on_loop(
+            &mut loop_,
+            CommandSuspension::SaveBuffer {
+                request: ClientFileWrite {
+                    path: path.0.clone(),
+                    display_path: path.0.display().to_string(),
+                    flags: libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
+                    data: payload.clone(),
+                },
+            },
+        );
+
+        let CommandSuspensionResult::SaveBuffer(result) = result else {
+            panic!("save-buffer suspension resolved as another variant");
+        };
+        assert_eq!(result.exit, 0, "{}", result.stderr);
+        assert_eq!(drained.join().unwrap(), payload);
     }
 
     #[test]

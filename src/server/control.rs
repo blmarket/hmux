@@ -528,12 +528,12 @@ impl EventControlClient {
             }
             Some(ClientAction::Overlay { reply, .. } | ClientAction::Confirm { reply, .. }) => {
                 if let Some(reply) = reply {
-                    let _ = reply.send(super::state::PromptCompletion {
+                    reply.send(Some(super::state::PromptCompletion {
                         stdout: String::new(),
                         stderr: String::new(),
                         exit: 0,
                         inserted: false,
-                    });
+                    }));
                 }
                 None
             }
@@ -2093,7 +2093,7 @@ mod tests {
             state,
             hub.clone(),
             &command::ClientContext::default(),
-            Arc::new(crate::event_loop::task::EventCommandRuntime::detached()),
+            Arc::new(command::BlockingCommandRuntime),
         )?;
 
         command_input.write_all(b"refresh-client -B 'agent:%*:#{pane_agent_state}'\n")?;

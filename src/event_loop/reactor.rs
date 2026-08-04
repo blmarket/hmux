@@ -5,13 +5,11 @@ use std::fmt;
 use std::io;
 use std::ops::{BitOr, BitOrAssign};
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
-use std::sync::Arc;
 use std::time::Duration;
 
 use mio::unix::SourceFd;
-use mio::{Events, Poll, Waker};
+use mio::{Events, Poll};
 
-const WAKE_TOKEN: mio::Token = mio::Token(0);
 const FIRST_SOURCE_TOKEN: usize = 1;
 const DEFAULT_EVENT_CAPACITY: usize = 1024;
 
@@ -135,35 +133,12 @@ impl<R> Ready<R> {
 /// Result metadata for one poll operation.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct PollResult {
-    woken: bool,
     ready_count: usize,
 }
 
 impl PollResult {
-    pub(crate) fn was_woken(self) -> bool {
-        self.woken
-    }
-
     pub(crate) fn ready_count(self) -> usize {
         self.ready_count
-    }
-}
-
-/// Cross-thread handle that interrupts a blocked reactor poll.
-#[derive(Clone)]
-pub(crate) struct WakeHandle {
-    inner: Arc<Waker>,
-}
-
-impl fmt::Debug for WakeHandle {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("WakeHandle").finish_non_exhaustive()
-    }
-}
-
-impl WakeHandle {
-    pub(crate) fn wake(&self) -> io::Result<()> {
-        self.inner.wake()
     }
 }
 
@@ -192,8 +167,6 @@ where
         timeout: Option<Duration>,
         output: &mut Vec<Ready<R>>,
     ) -> io::Result<PollResult>;
-
-    fn wake_handle(&self) -> WakeHandle;
 }
 
 struct Registration<R> {
@@ -206,7 +179,6 @@ struct Registration<R> {
 pub(crate) struct MioReactor<R> {
     poll: Poll,
     events: Events,
-    wake_handle: WakeHandle,
     registrations: HashMap<Token, Registration<R>>,
     next_token: usize,
 }
@@ -228,11 +200,9 @@ impl<R> MioReactor<R> {
 
     fn with_event_capacity(event_capacity: usize) -> io::Result<Self> {
         let poll = Poll::new()?;
-        let waker = Arc::new(Waker::new(poll.registry(), WAKE_TOKEN)?);
         Ok(Self {
             poll,
             events: Events::with_capacity(event_capacity),
-            wake_handle: WakeHandle { inner: waker },
             registrations: HashMap::new(),
             next_token: FIRST_SOURCE_TOKEN,
         })
@@ -330,13 +300,7 @@ where
         }
 
         let output_start = output.len();
-        let mut woken = false;
         for event in &self.events {
-            if event.token() == WAKE_TOKEN {
-                woken = true;
-                continue;
-            }
-
             let token = Token(event.token().0);
             let Some(registration) = self.registrations.get(&token) else {
                 // Readiness may already have been queued when its source was
@@ -351,13 +315,8 @@ where
         }
 
         Ok(PollResult {
-            woken,
             ready_count: output.len() - output_start,
         })
-    }
-
-    fn wake_handle(&self) -> WakeHandle {
-        self.wake_handle.clone()
     }
 }
 
@@ -368,8 +327,7 @@ mod tests {
     use std::io::Write as _;
     use std::os::fd::AsFd as _;
     use std::os::unix::net::UnixStream;
-    use std::thread;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     use super::*;
 
@@ -403,7 +361,6 @@ mod tests {
             .expect("poll");
 
         assert_eq!(result.ready_count(), 1);
-        assert!(!result.was_woken());
         assert_eq!(ready.len(), 1);
         assert_eq!(ready[0].token(), token);
         assert_eq!(ready[0].recipient(), &recipient);
@@ -522,31 +479,6 @@ mod tests {
             .deregister(token)
             .expect_err("token is still removed");
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
-    }
-
-    #[test]
-    fn wake_handle_interrupts_a_blocked_poll() {
-        let mut reactor = MioReactor::<Recipient>::new().expect("reactor");
-        let wake_handle = reactor.wake_handle();
-        // The wake is latched, not edge-triggered on an already-blocked poll, so
-        // the worker does not have to be raced into the window where `poll` is
-        // sleeping: a wake that lands first still returns the next `poll`
-        // immediately. That keeps the check free of a timing delay.
-        let wake_thread = thread::spawn(move || {
-            wake_handle.wake().expect("wake reactor");
-        });
-
-        let started = Instant::now();
-        let mut ready = Vec::new();
-        let result = reactor
-            .poll(Some(Duration::from_secs(1)), &mut ready)
-            .expect("poll");
-        wake_thread.join().expect("wake thread");
-
-        assert!(result.was_woken());
-        assert_eq!(result.ready_count(), 0);
-        assert!(ready.is_empty());
-        assert!(started.elapsed() < Duration::from_millis(500));
     }
 
     #[test]

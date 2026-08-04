@@ -21,10 +21,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
-use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex, Weak};
-use std::thread::{self, JoinHandle};
-use std::time::Instant;
+#[cfg(test)]
+use std::thread;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use libc::pid_t;
 
@@ -32,6 +33,7 @@ use crate::ghostty::Terminal;
 use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, ScreenTail};
 use crate::server::input_keys::ExtendedKeys;
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
+use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
 
 
 /// A single pane. Holds the emulated screen and, if live, the child on its pty.
@@ -57,10 +59,12 @@ pub struct Pane {
     pending_input: Arc<Mutex<VecDeque<u8>>>,
     /// Original process specification retained for command-less respawns.
     spawn_spec: Option<PaneSpawnSpec>,
-    /// Sender observed by the PTY reader when `pipe-pane -O` is active.
-    pipe_output: Arc<Mutex<Option<Sender<Vec<u8>>>>>,
+    /// Buffer the PTY reader appends to when `pipe-pane -O` is active.
+    pipe_output: Arc<Mutex<PanePipeOutbound>>,
     pipe_output_active: Arc<AtomicBool>,
     pipe: Option<PanePipe>,
+    /// Pipe children the loop has not adopted yet.
+    new_pipes: Vec<PanePipeIo>,
     event_io: Option<PaneIo>,
     runtime_id: u64,
     cols: u16,
@@ -122,13 +126,51 @@ pub(crate) struct PaneSpawnSpec {
     pub(crate) cwd: Option<PathBuf>,
 }
 
+/// How much pane output may wait for a `pipe-pane` child that is not reading.
+///
+/// The old writer thread queued without bound, so a wedged pipe command grew
+/// the server's memory for as long as the pane produced output. The loop keeps
+/// the newest bytes instead: a pipe is a diagnostic tap, and stalling the pane
+/// to preserve one would be worse than dropping from a tap nobody is draining.
+const PANE_PIPE_OUTBOUND_CAP: usize = 4 * 1024 * 1024;
+
+/// Pane output waiting to be written to an open `pipe-pane` child.
+#[derive(Default)]
+pub(crate) struct PanePipeOutbound {
+    queue: VecDeque<u8>,
+    /// Set when the pane stops piping, so the job closes the child's stdin.
+    closed: bool,
+}
+
+impl PanePipeOutbound {
+    fn push(&mut self, bytes: &[u8]) {
+        self.queue.extend(bytes);
+        let overflow = self.queue.len().saturating_sub(PANE_PIPE_OUTBOUND_CAP);
+        if overflow != 0 {
+            self.queue.drain(..overflow);
+        }
+    }
+}
+
 struct PanePipe {
     pid: u32,
     alive: Arc<AtomicBool>,
+    outbound: Arc<Mutex<PanePipeOutbound>>,
+}
+
+impl PanePipe {
+    /// Tell the job to close the child's stdin, which is what a `pipe-pane`
+    /// command sees as end of input.
+    fn close_outbound(&self) {
+        if let Ok(mut outbound) = self.outbound.lock() {
+            outbound.closed = true;
+        }
+    }
 }
 
 impl Drop for PanePipe {
     fn drop(&mut self) {
+        self.close_outbound();
         if self.alive.load(Ordering::Acquire) {
             // Closing a pipe is asynchronous. SIGHUP mirrors the lifetime of a
             // tmux job without making the command path wait for the child.
@@ -138,6 +180,126 @@ impl Drop for PanePipe {
         }
     }
 }
+
+/// The loop-owned half of an open `pipe-pane` child.
+///
+/// Both directions and the child's exit are driven as one job: the pane's
+/// buffered output is written to the child's stdin as it accepts it, and the
+/// child's stdout is fed back into the pane's input queue.
+pub(crate) struct PanePipeIo {
+    child: std::process::Child,
+    stdin: Option<std::process::ChildStdin>,
+    stdout: Option<std::process::ChildStdout>,
+    /// The pty master pipe input is written to, when the pipe reads back.
+    master: Option<OwnedFd>,
+    pending_input: Arc<Mutex<VecDeque<u8>>>,
+    outbound: Arc<Mutex<PanePipeOutbound>>,
+    alive: Arc<AtomicBool>,
+}
+
+impl PanePipeIo {
+    const STDIN: WaitToken = WaitToken::new(0);
+    const STDOUT: WaitToken = WaitToken::new(1);
+
+    /// Write what the child will take without blocking. The buffer keeps what
+    /// it will not.
+    fn write_outbound(&mut self) {
+        let Some(stdin) = self.stdin.as_mut() else {
+            return;
+        };
+        let Ok(mut outbound) = self.outbound.lock() else {
+            return;
+        };
+        while !outbound.queue.is_empty() {
+            let (front, _) = outbound.queue.as_slices();
+            match stdin.write(front) {
+                Ok(0) => break,
+                Ok(count) => {
+                    outbound.queue.drain(..count);
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => return,
+                Err(_) => {
+                    // The child stopped reading; nothing more will reach it.
+                    outbound.queue.clear();
+                    outbound.closed = true;
+                    break;
+                }
+            }
+        }
+        if outbound.closed && outbound.queue.is_empty() {
+            // Dropping the write end reports end of input to the child.
+            self.stdin = None;
+        }
+    }
+
+    /// Feed whatever the child has written back into the pane.
+    fn read_inbound(&mut self) {
+        let Some(stdout) = self.stdout.as_mut() else {
+            return;
+        };
+        let Some(master) = self.master.as_ref() else {
+            self.stdout = None;
+            return;
+        };
+        let mut bytes = [0u8; 4096];
+        loop {
+            match stdout.read(&mut bytes) {
+                Ok(0) => break,
+                Ok(count) => {
+                    enqueue_pane_input(master.as_raw_fd(), &self.pending_input, &bytes[..count]);
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => return,
+                Err(_) => break,
+            }
+        }
+        self.stdout = None;
+    }
+}
+
+impl Coroutine for PanePipeIo {
+    type Output = ();
+
+    fn wait(&self) -> WaitRequest<'_> {
+        let mut sources = Vec::new();
+        // Writable interest only while there is something to write; an idle
+        // pipe would otherwise report ready on every poll.
+        let has_outbound = self
+            .outbound
+            .lock()
+            .is_ok_and(|outbound| !outbound.queue.is_empty() || outbound.closed);
+        if let Some(stdin) = self.stdin.as_ref().filter(|_| has_outbound) {
+            sources.push(FdInterest::writable(Self::STDIN, stdin.as_fd()));
+        }
+        if let Some(stdout) = self.stdout.as_ref() {
+            sources.push(FdInterest::readable(Self::STDOUT, stdout.as_fd()));
+        }
+        // With neither end left the job is only waiting for the child to exit,
+        // which nothing portable makes readable.
+        let deadline = (sources.is_empty()).then(|| Instant::now() + PIPE_REAP_RETRY);
+        WaitRequest::new(sources, deadline)
+    }
+
+    fn resume(&mut self, _ready: &ReadySet) -> TaskPoll<Self::Output> {
+        self.write_outbound();
+        self.read_inbound();
+        if self.stdin.is_some() || self.stdout.is_some() {
+            return TaskPoll::Pending;
+        }
+        match self.child.try_wait() {
+            Ok(None) => TaskPoll::Pending,
+            Ok(Some(_)) | Err(_) => {
+                self.alive.store(false, Ordering::Release);
+                TaskPoll::Ready(())
+            }
+        }
+    }
+}
+
+/// How often a pipe job that has closed both ends asks whether its child has
+/// exited. Nothing portable makes a child's exit readable.
+const PIPE_REAP_RETRY: Duration = Duration::from_millis(50);
 
 static NEXT_PANE_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -1069,9 +1231,10 @@ impl Pane {
             child: None,
             pending_input: Arc::new(Mutex::new(VecDeque::new())),
             spawn_spec: None,
-            pipe_output: Arc::new(Mutex::new(None)),
+            pipe_output: Arc::new(Mutex::new(PanePipeOutbound::default())),
             pipe_output_active: Arc::new(AtomicBool::new(false)),
             pipe: None,
+            new_pipes: Vec::new(),
             event_io: None,
             runtime_id: NEXT_PANE_RUNTIME_ID.fetch_add(1, Ordering::Relaxed),
             cols,
@@ -1150,7 +1313,7 @@ impl Pane {
         set_nonblocking(master.as_raw_fd())?;
         let alive = Arc::new(AtomicBool::new(true));
         let pending_input = Arc::new(Mutex::new(VecDeque::new()));
-        let pipe_output = Arc::new(Mutex::new(None));
+        let pipe_output = Arc::new(Mutex::new(PanePipeOutbound::default()));
         let pipe_output_active = Arc::new(AtomicBool::new(false));
         let observation = Arc::new(NativePaneObservation::new(
             term,
@@ -1196,6 +1359,7 @@ impl Pane {
             pipe_output,
             pipe_output_active,
             pipe: None,
+            new_pipes: Vec::new(),
             event_io,
             runtime_id: NEXT_PANE_RUNTIME_ID.fetch_add(1, Ordering::Relaxed),
             cols,
@@ -1233,14 +1397,25 @@ impl Pane {
 
     pub(crate) fn close_pipe(&mut self) {
         self.pipe_output_active.store(false, Ordering::Release);
-        if let Ok(mut output) = self.pipe_output.lock() {
-            *output = None;
+        // The job owns the child's stdin; marking the buffer closed is what
+        // makes it drop that end, and `PanePipe`'s own drop hangs up the child.
+        if let Some(pipe) = self.pipe.take() {
+            pipe.close_outbound();
         }
-        self.pipe = None;
+    }
+
+    /// Pipe children opened since the last call, for the loop to drive.
+    pub(crate) fn take_new_pipes(&mut self) -> Vec<PanePipeIo> {
+        std::mem::take(&mut self.new_pipes)
     }
 
     /// Start a shell command connected to pane output (`output`) and/or pane
-    /// input (`input`). Worker threads own all blocking pipe I/O.
+    /// input (`input`).
+    ///
+    /// Only the spawn happens here; the pipe I/O itself is handed to the server
+    /// loop, which reads the child's stdout straight into the same pane-input
+    /// queue the loop's own PTY writer drains — so pipe input and client
+    /// keystrokes can no longer interleave mid-write.
     pub(crate) fn open_pipe(&mut self, command: &str, input: bool, output: bool) -> io::Result<()> {
         self.close_pipe();
         let mut process = Command::new("/bin/sh");
@@ -1266,60 +1441,54 @@ impl Pane {
         let pid = process.id();
         let alive = Arc::new(AtomicBool::new(true));
 
-        if output {
-            let mut stdin = process
+        let stdin = if output {
+            let stdin = process
                 .stdin
                 .take()
                 .ok_or_else(|| io::Error::other("pipe child has no stdin"))?;
-            let (sender, receiver) = channel::<Vec<u8>>();
-            *self
-                .pipe_output
-                .lock()
-                .map_err(|_| io::Error::other("pane pipe mutex poisoned"))? = Some(sender);
+            set_nonblocking(stdin.as_raw_fd())?;
+            if let Ok(mut outbound) = self.pipe_output.lock() {
+                *outbound = PanePipeOutbound::default();
+            }
             self.pipe_output_active.store(true, Ordering::Release);
-            thread::spawn(move || {
-                while let Ok(bytes) = receiver.recv() {
-                    if stdin.write_all(&bytes).is_err() {
-                        break;
-                    }
-                }
-            });
-        }
+            Some(stdin)
+        } else {
+            None
+        };
 
-        if input {
-            let child = self
-                .child
-                .as_ref()
-                .ok_or_else(|| io::Error::other("pane has no child"))?;
-            let mut stdout = process
+        let stdout = if input {
+            let stdout = process
                 .stdout
                 .take()
                 .ok_or_else(|| io::Error::other("pipe child has no stdout"))?;
-            let master = child.master.as_fd().try_clone_to_owned()?;
-            let pending_input = Arc::clone(&self.pending_input);
-            thread::spawn(move || {
-                let mut bytes = [0u8; 4096];
-                loop {
-                    match stdout.read(&mut bytes) {
-                        Ok(0) | Err(_) => break,
-                        Ok(count) => {
-                            enqueue_pane_input(
-                                master.as_raw_fd(),
-                                &pending_input,
-                                &bytes[..count],
-                            );
-                        }
-                    }
-                }
-            });
-        }
+            set_nonblocking(stdout.as_raw_fd())?;
+            Some(stdout)
+        } else {
+            None
+        };
 
-        let reaper_alive = Arc::clone(&alive);
-        thread::spawn(move || {
-            let _ = process.wait();
-            reaper_alive.store(false, Ordering::Release);
+        let master = match self.child.as_ref() {
+            Some(child) => Some(child.master.as_fd().try_clone_to_owned()?),
+            None if stdout.is_some() => {
+                return Err(io::Error::other("pane has no child"));
+            }
+            None => None,
+        };
+
+        self.new_pipes.push(PanePipeIo {
+            child: process,
+            stdin,
+            stdout,
+            master,
+            pending_input: Arc::clone(&self.pending_input),
+            outbound: Arc::clone(&self.pipe_output),
+            alive: Arc::clone(&alive),
         });
-        self.pipe = Some(PanePipe { pid, alive });
+        self.pipe = Some(PanePipe {
+            pid,
+            alive,
+            outbound: Arc::clone(&self.pipe_output),
+        });
         Ok(())
     }
 
@@ -1365,10 +1534,10 @@ impl Pane {
     ///
     /// This never blocks, even when the child has stopped reading its stdin: the
     /// master is non-blocking, so bytes that the child cannot yet accept are held
-    /// in the bounded `pending_input` buffer and flushed by the reader thread on
-    /// writability. This is what keeps a stalled full-screen app from wedging the
-    /// server lock held by the caller (`forward_input` holds the state mutex; a
-    /// blocking write here used to hang every command — see `report.md`).
+    /// in the bounded `pending_input` buffer and flushed by the loop when the
+    /// master reports writable. This is what keeps a stalled full-screen app from
+    /// wedging the server lock held by the caller: `forward_input` holds the
+    /// state mutex, and a blocking write here would hang every command.
     pub fn input(&self, bytes: &[u8]) -> io::Result<()> {
         self.input_with_stats(bytes).map(|_| ())
     }
@@ -1890,30 +2059,53 @@ impl Drop for Child {
         // `(y/n)` prompt cleared it instantly (client-local state) but the
         // post-kill redraw was stuck behind this teardown, so pressing `y`
         // appeared to lag by a second or more — intermittently, depending on
-        // whether the pane's process tree still held the pty. Handing the
-        // teardown to a detached thread lets the kill return at once so the
-        // compositor redraws immediately; the child is still reaped (no zombie)
-        // and the reader thread still exits once the pty finally closes.
+        // whether the pane's process tree still held the pty. Handing the pid to
+        // the orphan list lets the kill return at once so the compositor redraws
+        // immediately; the child is still reaped (no zombie) on the `SIGCHLD`
+        // the kill itself delivers.
         //
         // The `master` OwnedFd field is dropped as this `Child` drops, closing the
-        // parent's handle; the reader thread owns a separate dup, so its lifetime
+        // parent's handle; a threaded reader owns a separate dup, so its lifetime
         // is unaffected by that close.
-        let pid = (!self.reaped).then_some(self.pid);
-        let reader = self.reader.take();
-        thread::spawn(move || {
-            // SAFETY: reaping our own child pid. No other code waits on it, so
-            // there is no competing consumer and PID reuse is not a hazard.
-            if let Some(pid) = pid {
-                unsafe {
-                    let mut status = 0;
-                    libc::waitpid(pid, &mut status, 0);
-                }
-            }
-            if let Some(handle) = reader {
-                let _ = handle.join();
-            }
-        });
+        if !self.reaped {
+            register_orphan(self.pid);
+        }
+        #[cfg(test)]
+        if let Some(reader) = self.reader.take() {
+            thread::spawn(move || {
+                let _ = reader.join();
+            });
+        }
     }
+}
+
+/// Children killed by a pane teardown, waiting to be reaped.
+///
+/// `waitpid` on a signalled child can block for an unbounded time — long enough
+/// to stall the loop that asked for the kill — so the pid is parked here and
+/// collected without waiting on the next `SIGCHLD`.
+static ORPHANED_CHILDREN: Mutex<Vec<pid_t>> = Mutex::new(Vec::new());
+
+fn register_orphan(pid: pid_t) {
+    if let Ok(mut orphans) = ORPHANED_CHILDREN.lock() {
+        orphans.push(pid);
+    }
+}
+
+/// Reap every orphan that has exited, keeping the ones still running.
+pub(crate) fn reap_orphans() {
+    let Ok(mut orphans) = ORPHANED_CHILDREN.lock() else {
+        return;
+    };
+    orphans.retain(|pid| {
+        let mut status = 0;
+        // SAFETY: reaping our own child pid. No other code waits on it, so
+        // there is no competing consumer and PID reuse is not a hazard.
+        let reaped = unsafe { libc::waitpid(*pid, &mut status, libc::WNOHANG) };
+        // Still running (0) is the only reason to ask again; an error means the
+        // pid is not ours to wait for any more.
+        reaped == 0
+    });
 }
 
 /// Upper bound on how much currently-readable pane output is applied in one grid
@@ -1934,7 +2126,7 @@ pub(crate) struct PaneIo {
     observation: Arc<NativePaneObservation>,
     terminal_queries: Arc<Mutex<VecDeque<Vec<u8>>>>,
     pending_input: Arc<Mutex<VecDeque<u8>>>,
-    pipe_output: Arc<Mutex<Option<Sender<Vec<u8>>>>>,
+    pipe_output: Arc<Mutex<PanePipeOutbound>>,
     pipe_output_active: Arc<AtomicBool>,
     alive: Arc<AtomicBool>,
     query_detector: BackgroundColorQueryDetector,
@@ -1959,7 +2151,7 @@ impl PaneIo {
         observation: Arc<NativePaneObservation>,
         terminal_queries: Arc<Mutex<VecDeque<Vec<u8>>>>,
         pending_input: Arc<Mutex<VecDeque<u8>>>,
-        pipe_output: Arc<Mutex<Option<Sender<Vec<u8>>>>>,
+        pipe_output: Arc<Mutex<PanePipeOutbound>>,
         pipe_output_active: Arc<AtomicBool>,
         alive: Arc<AtomicBool>,
     ) -> io::Result<Self> {
@@ -2061,18 +2253,10 @@ impl PaneIo {
 
     fn process_output(&mut self, pending: Vec<u8>) {
         if self.pipe_output_active.load(Ordering::Acquire) {
-            let pipe_sender = self
-                .pipe_output
-                .lock()
-                .ok()
-                .and_then(|sender| sender.clone());
-            if let Some(sender) = pipe_sender {
-                if sender.send(pending.clone()).is_err() {
-                    self.pipe_output_active.store(false, Ordering::Release);
-                    if let Ok(mut current) = self.pipe_output.lock() {
-                        *current = None;
-                    }
-                }
+            match self.pipe_output.lock() {
+                Ok(mut outbound) if !outbound.closed => outbound.push(&pending),
+                Ok(_) => self.pipe_output_active.store(false, Ordering::Release),
+                Err(_) => self.pipe_output_active.store(false, Ordering::Release),
             }
         }
 

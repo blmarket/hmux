@@ -9,5 +9,5 @@ pub(crate) mod process;
 pub(crate) mod protocol;
 pub(crate) mod reactor;
 pub(crate) mod suspend;
-pub(crate) mod task;
+pub(crate) mod term_signal;
 pub(crate) mod timer;

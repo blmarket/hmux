@@ -292,12 +292,12 @@ impl AttachSession {
             }
             AttachCommandContinuation::Confirm { reply, inserted } => {
                 if let Some(reply) = reply {
-                    let _ = reply.send(super::super::state::PromptCompletion {
+                    reply.send(Some(super::super::state::PromptCompletion {
                         stdout: result.stdout,
                         stderr: result.stderr,
                         exit: result.exit,
                         inserted,
-                    });
+                    }));
                 }
                 self.compositor.render.force_clear = true;
             }
@@ -881,21 +881,21 @@ impl AttachSession {
                                 overlay.complete(command::CommandResult::ok(""), false);
                             }
                             if let Some(reply) = reply {
-                                let _ = reply.send(super::super::state::PromptCompletion {
+                                reply.send(Some(super::super::state::PromptCompletion {
                                     stdout: String::new(),
                                     stderr: String::new(),
                                     exit: 0,
                                     inserted: false,
-                                });
+                                }));
                             }
                         } else if self.compositor.ui.active_overlay.is_some() {
                             if let Some(reply) = reply {
-                                let _ = reply.send(super::super::state::PromptCompletion {
+                                reply.send(Some(super::super::state::PromptCompletion {
                                     stdout: String::new(),
                                     stderr: String::new(),
                                     exit: 0,
                                     inserted: false,
-                                });
+                                }));
                             }
                         } else {
                             self.compositor.ui.active_overlay = ActiveOverlay::from_request(

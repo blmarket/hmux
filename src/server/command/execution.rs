@@ -31,21 +31,35 @@ pub(super) const ALL: &[Command] = &[
     Command::WaitFor,
 ];
 
-pub(super) fn wait_for(args: &[String], registry: &WaitRegistry) -> CommandResult {
+/// What a `wait-for` did: either it finished, or it is queued behind another
+/// client and resumes when the returned completion fires.
+pub(super) enum WaitForOutcome {
+    Done(CommandResult),
+    Pending(Completion<()>),
+}
+
+pub(super) fn wait_for(args: &[String], registry: &WaitRegistry) -> WaitForOutcome {
     let channel = positionals(args, &[])
         .into_iter()
         .next()
         .unwrap_or_default();
-    if has_flag(args, "-S") {
+    let outcome = if has_flag(args, "-S") {
         registry.signal(channel);
+        WaitOutcome::Ready
     } else if has_flag(args, "-L") {
-        registry.lock(channel);
+        registry.lock(channel)
     } else if has_flag(args, "-U") {
         if !registry.unlock(channel) {
-            return CommandResult::err(format!("channel {channel} not locked\n"));
+            return WaitForOutcome::Done(CommandResult::err(format!(
+                "channel {channel} not locked\n"
+            )));
         }
+        WaitOutcome::Ready
     } else {
-        registry.wait(channel);
+        registry.wait(channel)
+    };
+    match outcome {
+        WaitOutcome::Ready => WaitForOutcome::Done(CommandResult::ok("")),
+        WaitOutcome::Pending(completion) => WaitForOutcome::Pending(completion),
     }
-    CommandResult::ok("")
 }

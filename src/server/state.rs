@@ -12,7 +12,7 @@ use std::io;
 use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
-use std::sync::{mpsc, Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::format::glob_match;
@@ -25,6 +25,7 @@ use super::pane::{
     NativePaneObservation, Pane, PaneClipboardEvent, PaneIo, PaneIoMode, PaneKeyState,
     PaneSpawnSpec,
 };
+use super::task::{completion_pair, Completion, CompletionSender};
 use super::term::ResolvedTerm;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
 
@@ -386,14 +387,14 @@ pub(crate) enum ClientAction {
     SetSelection(Option<Vec<u8>>),
     Overlay {
         request: OverlayRequest,
-        reply: Option<mpsc::Sender<PromptCompletion>>,
+        reply: Option<PromptReply>,
     },
     Confirm {
         prompt: String,
         command: Vec<String>,
         confirm_key: u8,
         default_yes: bool,
-        reply: Option<mpsc::Sender<PromptCompletion>>,
+        reply: Option<PromptReply>,
     },
 }
 
@@ -431,13 +432,26 @@ pub(crate) enum ClientMessageResult {
 struct WaitChannel {
     locked: bool,
     woken: bool,
-    waiters: usize,
+    /// `wait-for channel` callers still waiting for a `-S`.
+    waiters: Vec<CompletionSender<()>>,
+    /// `wait-for -L` callers still waiting for the lock, in request order.
+    lock_queue: VecDeque<CompletionSender<()>>,
+}
+
+/// Whether a `wait-for` channel operation finished at once, or has to wait for
+/// another client.
+///
+/// The pending arm hands back the completion the registry will signal, so the
+/// waiting command queue is resumed by whichever driver owns it rather than
+/// parking a thread inside the registry.
+pub(crate) enum WaitOutcome {
+    Ready,
+    Pending(Completion<()>),
 }
 
 #[derive(Default)]
 pub(crate) struct WaitRegistry {
     channels: Mutex<BTreeMap<String, WaitChannel>>,
-    changed: Condvar,
 }
 
 impl WaitRegistry {
@@ -445,61 +459,58 @@ impl WaitRegistry {
         let Ok(mut channels) = self.channels.lock() else {
             return;
         };
-        channels.entry(name.to_string()).or_default().woken = true;
-        self.changed.notify_all();
+        let channel = channels.entry(name.to_string()).or_default();
+        channel.woken = true;
+        // Every waiter is released together, as the condvar broadcast this
+        // replaces did; the wake is consumed as the last of them leaves.
+        let waiters = std::mem::take(&mut channel.waiters);
+        if !waiters.is_empty() {
+            if channel.locked {
+                channel.woken = false;
+            } else {
+                channels.remove(name);
+            }
+        }
+        drop(channels);
+        for waiter in waiters {
+            waiter.complete(());
+        }
     }
 
-    pub(crate) fn wait(&self, name: &str) {
+    pub(crate) fn wait(&self, name: &str) -> WaitOutcome {
         let Ok(mut channels) = self.channels.lock() else {
-            return;
+            return WaitOutcome::Ready;
         };
         let channel = channels.entry(name.to_string()).or_default();
         if channel.woken {
-            if !channel.locked {
-                channels.remove(name);
-            } else {
+            if channel.locked {
                 channel.woken = false;
+            } else {
+                channels.remove(name);
             }
-            return;
+            return WaitOutcome::Ready;
         }
-        channel.waiters += 1;
-        loop {
-            channels = match self.changed.wait(channels) {
-                Ok(channels) => channels,
-                Err(_) => return,
-            };
-            let Some(channel) = channels.get_mut(name) else {
-                return;
-            };
-            if channel.woken {
-                channel.waiters = channel.waiters.saturating_sub(1);
-                if channel.waiters == 0 {
-                    if channel.locked {
-                        channel.woken = false;
-                    } else {
-                        channels.remove(name);
-                    }
-                }
-                return;
-            }
-        }
+        let Ok((completion, sender)) = completion_pair() else {
+            return WaitOutcome::Ready;
+        };
+        channel.waiters.push(sender);
+        WaitOutcome::Pending(completion)
     }
 
-    pub(crate) fn lock(&self, name: &str) {
+    pub(crate) fn lock(&self, name: &str) -> WaitOutcome {
         let Ok(mut channels) = self.channels.lock() else {
-            return;
+            return WaitOutcome::Ready;
         };
-        loop {
-            let channel = channels.entry(name.to_string()).or_default();
-            if !channel.locked {
-                channel.locked = true;
-                return;
-            }
-            channels = match self.changed.wait(channels) {
-                Ok(channels) => channels,
-                Err(_) => return,
-            };
+        let channel = channels.entry(name.to_string()).or_default();
+        if !channel.locked {
+            channel.locked = true;
+            return WaitOutcome::Ready;
         }
+        let Ok((completion, sender)) = completion_pair() else {
+            return WaitOutcome::Ready;
+        };
+        channel.lock_queue.push_back(sender);
+        WaitOutcome::Pending(completion)
     }
 
     pub(crate) fn unlock(&self, name: &str) -> bool {
@@ -512,11 +523,19 @@ impl WaitRegistry {
         if !channel.locked {
             return false;
         }
-        channel.locked = false;
-        if channel.woken && channel.waiters == 0 {
-            channels.remove(name);
+        // Hand the lock straight to the next waiter instead of dropping it and
+        // letting every blocked caller race for it.
+        let next = channel.lock_queue.pop_front();
+        if next.is_none() {
+            channel.locked = false;
+            if channel.woken && channel.waiters.is_empty() {
+                channels.remove(name);
+            }
         }
-        self.changed.notify_all();
+        drop(channels);
+        if let Some(next) = next {
+            next.complete(());
+        }
         true
     }
 }
@@ -1954,7 +1973,7 @@ struct ClientPromptSlotState {
 
 struct QueuedCommandPrompt {
     args: Vec<String>,
-    reply: mpsc::Sender<Option<PromptCompletion>>,
+    reply: PromptReply,
 }
 
 /// Registration owned by one interactive attach loop.
@@ -1968,7 +1987,7 @@ pub(crate) struct ClientPromptAttachment {
 pub(crate) struct ActiveCommandPrompt {
     slot: Arc<ClientPromptSlot>,
     args: Vec<String>,
-    reply: Option<mpsc::Sender<Option<PromptCompletion>>>,
+    reply: Option<PromptReply>,
 }
 
 #[derive(Clone, Debug)]
@@ -1979,8 +1998,62 @@ pub(crate) struct PromptCompletion {
     pub(crate) inserted: bool,
 }
 
+/// The answering end of an interactive prompt, menu, popup or confirmation.
+///
+/// One command queue waits for one answer, so the reply is a one-shot: only the
+/// first [`send`](Self::send) is delivered. It is clonable because the client
+/// context carrying it is cloned into every nested command that might answer,
+/// and dropping the last clone unanswered reports `None` — the disconnect the
+/// blocking receive this replaces saw when its sender went away.
+#[derive(Clone)]
+pub(crate) struct PromptReply {
+    sender: Arc<Mutex<Option<CompletionSender<Option<PromptCompletion>>>>>,
+}
+
+impl PromptReply {
+    pub(crate) fn new() -> io::Result<(Self, Completion<Option<PromptCompletion>>)> {
+        let (completion, sender) = completion_pair()?;
+        Ok((
+            Self {
+                sender: Arc::new(Mutex::new(Some(sender))),
+            },
+            completion,
+        ))
+    }
+
+    pub(crate) fn send(&self, completion: Option<PromptCompletion>) {
+        let Ok(mut sender) = self.sender.lock() else {
+            return;
+        };
+        if let Some(sender) = sender.take() {
+            sender.complete(completion);
+        }
+    }
+}
+
+impl std::fmt::Debug for PromptReply {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PromptReply")
+            .field(
+                "answered",
+                &self.sender.lock().is_ok_and(|sender| sender.is_none()),
+            )
+            .finish()
+    }
+}
+
+impl Drop for PromptReply {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.sender) == 1 {
+            self.send(None);
+        }
+    }
+}
+
 pub(crate) enum CommandPromptRequestResult {
-    Completed(PromptCompletion),
+    /// The prompt is up and `-w` asked to wait for the answer.
+    Waiting(Completion<Option<PromptCompletion>>),
     Queued,
     NoCurrentClient,
     TargetNotFound,
@@ -2501,7 +2574,7 @@ impl ClientRenderRegistry {
             .map(|entry| (Arc::clone(&entry.format_jobs), entry.session_id))
     }
 
-    fn all_format_jobs(&self) -> Vec<Arc<super::status::FormatJobRegistry>> {
+    pub(crate) fn all_format_jobs(&self) -> Vec<Arc<super::status::FormatJobRegistry>> {
         let Ok(inner) = self.inner.lock() else {
             return Vec::new();
         };
@@ -3020,7 +3093,7 @@ impl ClientRenderRegistry {
         command: Vec<String>,
         confirm_key: u8,
         default_yes: bool,
-        reply: Option<mpsc::Sender<PromptCompletion>>,
+        reply: Option<PromptReply>,
     ) -> ClientActionResult {
         let Ok(inner) = self.inner.lock() else {
             return ClientActionResult::NoCurrentClient;
@@ -3138,7 +3211,7 @@ impl ClientRenderRegistry {
         target: Option<&str>,
         invoking_tty: Option<&str>,
         request: OverlayRequest,
-        reply: Option<mpsc::Sender<PromptCompletion>>,
+        reply: Option<PromptReply>,
     ) -> ClientActionResult {
         let Ok(inner) = self.inner.lock() else {
             return ClientActionResult::NoCurrentClient;
@@ -3375,7 +3448,9 @@ impl ClientPromptRegistry {
                 };
             };
             let slot = Arc::clone(&entry.slot);
-            let (reply, completed) = mpsc::channel();
+            let Ok((reply, completed)) = PromptReply::new() else {
+                return CommandPromptRequestResult::NoCurrentClient;
+            };
             let Ok(mut state) = slot.inner.lock() else {
                 return CommandPromptRequestResult::NoCurrentClient;
             };
@@ -3392,15 +3467,7 @@ impl ClientPromptRegistry {
         if !wait {
             return CommandPromptRequestResult::Queued;
         }
-        match completed.recv() {
-            Ok(Some(result)) => CommandPromptRequestResult::Completed(result),
-            Ok(None) | Err(_) => CommandPromptRequestResult::Completed(PromptCompletion {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit: 0,
-                inserted: false,
-            }),
-        }
+        CommandPromptRequestResult::Waiting(completed)
     }
 }
 
@@ -3434,7 +3501,7 @@ impl Drop for ClientPromptAttachment {
         }
         if let Ok(mut state) = self.slot.inner.lock() {
             if let Some(queued) = state.queued_command.take() {
-                let _ = queued.reply.send(None);
+                queued.reply.send(None);
             }
         }
     }
@@ -3450,7 +3517,7 @@ impl ActiveCommandPrompt {
             state.active = false;
         }
         if let Some(reply) = self.reply.take() {
-            let _ = reply.send(Some(result));
+            reply.send(Some(result));
         }
     }
 
@@ -3459,7 +3526,7 @@ impl ActiveCommandPrompt {
             state.active = false;
         }
         if let Some(reply) = self.reply.take() {
-            let _ = reply.send(None);
+            reply.send(None);
         }
     }
 }
@@ -3984,6 +4051,15 @@ impl ServerState {
 
     pub(crate) fn set_pane_io_mode(&mut self, mode: PaneIoMode) {
         self.pane_io_mode = mode;
+    }
+
+    /// Pipe children opened since the last call, across every pane.
+    pub(crate) fn take_new_pane_pipes(&mut self) -> Vec<super::pane::PanePipeIo> {
+        self.windows
+            .values_mut()
+            .flat_map(|window| window.panes.iter_mut())
+            .flat_map(|node| node.pane.take_new_pipes())
+            .collect()
     }
 
     pub(crate) fn take_event_pane_ios(&mut self) -> Vec<(u64, PaneIo)> {
@@ -5381,7 +5457,7 @@ impl ServerState {
         target: Option<&str>,
         invoking_tty: Option<&str>,
         request: OverlayRequest,
-        reply: Option<mpsc::Sender<PromptCompletion>>,
+        reply: Option<PromptReply>,
     ) -> ClientActionResult {
         self.client_renders
             .overlay_client(target, invoking_tty, request, reply)
@@ -5395,7 +5471,7 @@ impl ServerState {
         command: Vec<String>,
         confirm_key: u8,
         default_yes: bool,
-        reply: Option<mpsc::Sender<PromptCompletion>>,
+        reply: Option<PromptReply>,
     ) -> ClientActionResult {
         self.client_renders.confirm_client(
             target,
@@ -5415,6 +5491,16 @@ impl ServerState {
     #[allow(dead_code)]
     pub(crate) fn format_job_registry(&self) -> Arc<super::status::FormatJobRegistry> {
         Arc::clone(&self.format_jobs)
+    }
+
+    /// Every `#()` job launched since the last call, across the per-client
+    /// trees and the clientless one, for the loop to drive.
+    pub(crate) fn take_pending_format_jobs(&self) -> Vec<super::status::FormatJob> {
+        let mut pending = self.format_jobs.take_pending();
+        for jobs in self.client_renders.all_format_jobs() {
+            pending.extend(jobs.take_pending());
+        }
+        pending
     }
 
     pub(crate) fn add_message(&mut self, text: String) {
@@ -14300,6 +14386,7 @@ fn session_not_found(part: &str) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::server::task::run_blocking;
 
     #[test]
     fn copy_vt_rows_exclude_crlf_and_trailing_cursor() {
@@ -14398,21 +14485,15 @@ mod tests {
             .attach("/dev/pts/8".to_string(), Some(800), 8)
             .expect("attach client B");
 
-        let requester = Arc::clone(&registry);
-        let request = std::thread::spawn(move || {
-            requester.request_command(
-                Some("/dev/pts/7"),
-                None,
-                vec!["command-prompt".to_string()],
-                true,
-            )
-        });
-        let mut prompt_fd = libc::pollfd {
-            fd: client_a.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
+        let request = registry.request_command(
+            Some("/dev/pts/7"),
+            None,
+            vec!["command-prompt".to_string()],
+            true,
+        );
+        let CommandPromptRequestResult::Waiting(answer) = request else {
+            panic!("waiting request");
         };
-        assert_eq!(unsafe { libc::poll(&mut prompt_fd, 1, 1_000) }, 1);
         assert!(client_b.take_command_prompt().is_none());
         let prompt = client_a.take_command_prompt().expect("client A prompt");
         assert_eq!(prompt.args(), &["command-prompt".to_string()]);
@@ -14422,11 +14503,10 @@ mod tests {
             exit: 0,
             inserted: true,
         });
-        assert!(matches!(
-            request.join().expect("request thread"),
-            CommandPromptRequestResult::Completed(result)
-                if result.stdout == "Up" && result.exit == 0
-        ));
+
+        let answered = run_blocking(answer).expect("answer").expect("completion");
+        assert_eq!(answered.stdout, "Up");
+        assert_eq!(answered.exit, 0);
     }
 
     #[test]
@@ -14435,31 +14515,19 @@ mod tests {
         let client = registry
             .attach("/dev/pts/7".to_string(), Some(700), 7)
             .expect("attach client");
-        let requester = Arc::clone(&registry);
-        let request = std::thread::spawn(move || {
-            requester.request_command(
-                Some("/dev/pts/7"),
-                None,
-                vec!["command-prompt".to_string()],
-                true,
-            )
-        });
-        let mut prompt_fd = libc::pollfd {
-            fd: client.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
+        let request = registry.request_command(
+            Some("/dev/pts/7"),
+            None,
+            vec!["command-prompt".to_string()],
+            true,
+        );
+        let CommandPromptRequestResult::Waiting(answer) = request else {
+            panic!("waiting request");
         };
-        assert_eq!(unsafe { libc::poll(&mut prompt_fd, 1, 1_000) }, 1);
         drop(client);
-        assert!(matches!(
-            request.join().expect("request thread"),
-            CommandPromptRequestResult::Completed(PromptCompletion {
-                stdout,
-                stderr,
-                exit: 0,
-                ..
-            }) if stdout.is_empty() && stderr.is_empty()
-        ));
+
+        // A detached client answers nothing; the queue continues on its own.
+        assert!(run_blocking(answer).expect("answer").is_none());
     }
 
     #[test]
