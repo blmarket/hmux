@@ -35,6 +35,7 @@ pub mod status;
 pub(crate) mod style;
 pub(crate) mod task;
 pub(crate) mod term;
+pub(crate) mod x11_colour;
 
 use std::collections::HashMap;
 use std::io;
