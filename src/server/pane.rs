@@ -1299,29 +1299,43 @@ impl Pane {
     }
 
     /// The program occupying the pane's foreground process group.
+    ///
+    /// This mirrors tmux's `format_cb_current_command`, which tries the
+    /// foreground group's `argv[0]` and then falls back to the pane's own
+    /// command line. The fallback is what answers for a *leaderless* group: a
+    /// process group id is only a pid while the group's leader lives, so a
+    /// pipeline whose first member exits ahead of the others leaves the
+    /// terminal owned by a group that names no process at all.
     pub fn current_command(&self) -> Option<String> {
         let child = self.child.as_ref()?;
         // SAFETY: querying the foreground group of an owned pty master fd.
         let pid = unsafe { libc::tcgetpgrp(child.master.as_raw_fd()) };
-        if pid <= 0 {
-            return None;
-        }
         // tmux's Linux osdep_get_name reads argv[0] from /proc/PID/cmdline.
         // Keep the executable-name candidates as a fallback for platforms or
         // processes where the argument vector is unavailable.
-        CurrentPlatform::process_arguments(pid as u32)
-            .into_iter()
-            .next()
-            .or_else(|| {
-                CurrentPlatform::process_programs(pid as u32)
+        let foreground = (pid > 0)
+            .then(|| {
+                CurrentPlatform::process_arguments(pid as u32)
                     .into_iter()
                     .next()
+                    .or_else(|| {
+                        CurrentPlatform::process_programs(pid as u32)
+                            .into_iter()
+                            .next()
+                    })
             })
-            .and_then(|program| {
-                Path::new(&program)
-                    .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
+            .flatten()
+            .map(|program| program.to_string_lossy().into_owned());
+
+        foreground
+            .filter(|program| !program.is_empty())
+            .or_else(|| {
+                self.spawn_spec
+                    .as_ref()
+                    .map(|spec| stringify_argv(&spec.argv))
             })
+            .map(|command| parse_window_name(&command))
+            .filter(|name| !name.is_empty())
     }
 
     /// Drain terminal queries emitted by the child since the previous call.
@@ -2968,6 +2982,49 @@ fn ghostty_err(e: crate::ghostty::Error) -> io::Error {
     io::Error::other(format!("ghostty: {e}"))
 }
 
+/// Render a pane's argument vector the way tmux's `cmd_stringify_argv` does,
+/// for the callers that reduce the result with [`parse_window_name`].
+///
+/// tmux escapes each argument; that step is skipped because it cannot change
+/// what the caller sees. `parse_window_name` cuts at the first space, and it
+/// does so after resolving quotes, so both a quoted and an unquoted argument
+/// reduce to the same leading word either way.
+fn stringify_argv(argv: &[String]) -> String {
+    argv.join(" ")
+}
+
+/// Reduce a command line to the program name tmux displays for it, following
+/// tmux's `parse_window_name`: take the first quoted or whitespace-delimited
+/// word, drop an `exec` prefix and any leading dashes (a login shell's `-bash`
+/// is reported as `bash`), and keep only the last component of an absolute
+/// path.
+///
+/// tmux additionally runs the result through `clean_name`, which escapes
+/// non-printable bytes for display. That step is not reproduced: every name
+/// reaching this function is a program name, and the trailing-byte trim below
+/// already removes the control characters `clean_name` would have escaped.
+fn parse_window_name(input: &str) -> String {
+    let mut name = input.strip_prefix('"').unwrap_or(input);
+    if let Some(quote) = name.find('"') {
+        name = &name[..quote];
+    }
+    name = name.strip_prefix("exec ").unwrap_or(name);
+    name = name.trim_start_matches([' ', '-']);
+    if let Some(space) = name.find(' ') {
+        name = &name[..space];
+    }
+    // tmux keeps trailing bytes only while they are alphanumeric or
+    // punctuation, which together are exactly the printable ASCII characters.
+    let trimmed = name.trim_end_matches(|ch: char| !ch.is_ascii_graphic());
+    if trimmed.starts_with('/') {
+        return Path::new(trimmed).file_name().map_or_else(
+            || trimmed.to_string(),
+            |base| base.to_string_lossy().into_owned(),
+        );
+    }
+    trimmed.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3100,6 +3157,172 @@ mod tests {
         // format layer falls back to the server cwd for these.
         let pane = Pane::inert(20, 4).expect("inert pane");
         assert_eq!(pane.current_path(), None);
+    }
+
+    #[test]
+    fn dropping_killed_pane_does_not_block_on_lingering_grandchild() {
+        // Repro for the intermittent `C-b x` / `C-b &` kill lag. Answering the
+        // confirm prompt with `y` calls kill-pane / kill-window, which removes
+        // the window and drops its `Pane`. `Child::drop` used to `waitpid(pid,
+        // 0)` and then `join()` the reader thread *synchronously*, and the
+        // reader sits in `poll(master, -1)` until the pty master hangs up — which
+        // only happens once *every* slave fd is closed. A killed shell's still
+        // running subprocess (exactly the "3-4 agents" workload in note.md) keeps
+        // the slave open, so the join blocked for as long as that grandchild
+        // lived. Because the kill runs on the attach loop's thread while it holds
+        // the global server-state mutex, that block froze the whole compositor:
+        // the prompt cleared instantly (client-local state) but the post-kill
+        // redraw was stuck behind the teardown, so pressing `y` appeared to lag by
+        // a second or more. The drop must hand the blocking teardown off and
+        // return promptly on the caller's thread.
+        //
+        // `sh -c 'setsid sleep 10 & wait'` leaves a `setsid` grandchild in its own
+        // session: it survives the SIGKILL delivered to the tracked shell (it is
+        // not in the shell's process group, so it gets no SIGHUP) yet keeps the
+        // pty slave open via its inherited stdout/stderr. The master therefore
+        // never hangs up until the grandchild exits, reproducing a `poll(master,
+        // -1)` in the reader thread that the old blocking `join()` waited on.
+        let pane = Pane::spawn(&["/bin/sh", "-c", "setsid sleep 10 & wait"], 40, 5).expect("spawn");
+        // Let the shell background the grandchild so it holds the pty slave open
+        // before we tear the pane down.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let start = Instant::now();
+            drop(pane);
+            let _ = tx.send(start.elapsed());
+        });
+
+        match rx.recv_timeout(std::time::Duration::from_secs(4)) {
+            Ok(elapsed) => assert!(
+                elapsed < std::time::Duration::from_secs(2),
+                "dropping a killed pane must return promptly, took {elapsed:?}"
+            ),
+            Err(_) => panic!(
+                "dropping a killed pane blocked >4s waiting for a lingering \
+                 grandchild to release the pty — the kill path stalls the \
+                 compositor (this is the `C-b x`/`y` redraw lag)"
+            ),
+        }
+    }
+
+    #[test]
+    fn spawned_pane_reports_inherited_cwd() {
+        // A freshly spawned pane inherits the server's cwd (no chdir), so its
+        // live current path is exactly that directory — read from the child, not
+        // assumed.
+        let cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        let pane = Pane::spawn(&["/bin/sh", "-c", "sleep 30"], 40, 5).expect("spawn");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            if pane.current_path().as_deref() == Some(cwd.as_str()) {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "pane_current_path should report the inherited cwd {cwd:?}, got {:?}",
+                pane.current_path()
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn current_path_tracks_child_directory_change() {
+        // The reported bug, in miniature: after the pane's shell `cd`s,
+        // #{pane_current_path} (Pane::current_path) must reflect the new
+        // directory, not the hmux server's launch directory. Real tmux reads the
+        // child's live cwd; the native engine must too. Before the fix
+        // this returned std::env::current_dir() (the server cwd) forever, so this
+        // test would hang until the deadline and fail.
+        //
+        // The process temporary directory is available both in ordinary test
+        // runs and in pure build sandboxes. The platform lookup returns a
+        // canonical path, so compare against the canonicalized target.
+        let target = std::fs::canonicalize(std::env::temp_dir())
+            .expect("temporary directory")
+            .to_string_lossy()
+            .into_owned();
+        let pane = Pane::spawn(&["/bin/sh"], 40, 5).expect("spawn sh");
+        pane.input(b"cd \"${TMPDIR:-/tmp}\"\n").expect("send cd");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if pane.current_path().as_deref() == Some(target.as_str()) {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "pane_current_path never followed the cd to {target:?}; got {:?}",
+                pane.current_path()
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn parse_window_name_reduces_a_command_line_to_its_program() {
+        // The plain cases: a bare name survives, an absolute path loses its
+        // directories, and arguments are dropped.
+        assert_eq!(parse_window_name("bash"), "bash");
+        assert_eq!(parse_window_name("/usr/bin/sleep"), "sleep");
+        assert_eq!(parse_window_name("sleep 30"), "sleep");
+        // A relative path keeps its directories; tmux only takes the basename
+        // of a name that starts at the root.
+        assert_eq!(parse_window_name("bin/sleep"), "bin/sleep");
+        // A login shell announces itself with a leading dash.
+        assert_eq!(parse_window_name("-zsh"), "zsh");
+        assert_eq!(parse_window_name("exec vim file"), "vim");
+        // The stringified argv of the leaderless-pipeline fixture.
+        assert_eq!(parse_window_name(r#"bash -mc "echo x | sleep 30""#), "bash");
+        // Quotes are resolved before the cut at the first space, so a quoted
+        // argv[0] containing one is still cut there.
+        assert_eq!(parse_window_name(r#""my program" -x"#), "my");
+        assert_eq!(parse_window_name("sleep\r\n"), "sleep");
+        assert_eq!(parse_window_name(""), "");
+    }
+
+    #[test]
+    fn stringify_argv_reduces_to_the_program_the_pane_was_given() {
+        let argv = ["bash", "-mc", "echo x | sleep 30"].map(String::from);
+        assert_eq!(parse_window_name(&stringify_argv(&argv)), "bash");
+        // A pane spawned with no command carries just the shell.
+        let shell = ["/bin/zsh"].map(String::from);
+        assert_eq!(parse_window_name(&stringify_argv(&shell)), "zsh");
+    }
+
+    #[test]
+    fn current_command_tracks_foreground_program() {
+        let pane = Pane::spawn(&["/bin/sh"], 40, 5).expect("spawn sh");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            if pane.current_command().as_deref() == Some("sh") {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "pane_current_command should report sh, got {:?}",
+                pane.current_command()
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        pane.input(b"sleep 30\n").expect("start foreground app");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            if pane.current_command().as_deref() == Some("sleep") {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "pane_current_command should follow the foreground app, got {:?}",
+                pane.current_command()
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
     }
 
     #[test]

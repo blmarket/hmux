@@ -120,10 +120,19 @@ impl Platform for Linux {
     }
 
     fn pane_cwd(pty: BorrowedFd<'_>) -> Option<PathBuf> {
+        // Mirrors tmux's osdep_get_cwd: prefer the foreground process group,
+        // then fall back to the session leader. The group id is only a pid
+        // while the group leader lives; a job whose leader has exited (a shell
+        // pipeline, or a wrapper that exec'd away) leaves a group whose id
+        // names no process, and /proc/<pgrp>/cwd is then unreadable. The
+        // session leader is the pane's own shell, so it still answers.
+        let read_cwd = |pid: libc::pid_t| {
+            (pid > 0)
+                .then(|| PathBuf::from(format!("/proc/{pid}/cwd")))
+                .and_then(|path| fs::read_link(path).ok())
+        };
         let foreground_pgrp = unsafe { libc::tcgetpgrp(pty.as_raw_fd()) };
-        (foreground_pgrp > 0)
-            .then(|| PathBuf::from(format!("/proc/{foreground_pgrp}/cwd")))
-            .and_then(|path| fs::read_link(path).ok())
+        read_cwd(foreground_pgrp).or_else(|| read_cwd(unsafe { libc::tcgetsid(pty.as_raw_fd()) }))
     }
 
     fn process_open_files(pid: u32) -> Vec<PathBuf> {
@@ -244,5 +253,116 @@ mod tests {
 
         drop(file);
         fs::remove_file(path).expect("remove temporary file");
+    }
+
+    /// A foreground process group outlives its leader whenever the leader exits
+    /// while another member keeps running, and the group id then names no
+    /// process at all. `/proc/<pgid>/cwd` is unreadable in that state, so the
+    /// pane must fall back to its session leader the way tmux does.
+    #[test]
+    fn pane_cwd_falls_back_to_session_leader_for_a_leaderless_group() {
+        use std::ffi::CString;
+
+        // The session leader parks here; /proc is always present and is not the
+        // directory the test process itself runs in.
+        let parked_cwd = CString::new("/proc").expect("nul-free path");
+
+        let (mut master, mut slave) = (-1, -1);
+        let opened = unsafe {
+            libc::openpty(
+                &mut master,
+                &mut slave,
+                ptr::null_mut(),
+                ptr::null(),
+                ptr::null(),
+            )
+        };
+        assert_eq!(opened, 0, "openpty: {}", io::Error::last_os_error());
+
+        let mut report = [-1; 2];
+        assert_eq!(
+            unsafe { libc::pipe(report.as_mut_ptr()) },
+            0,
+            "pipe: {}",
+            io::Error::last_os_error()
+        );
+        let (report_read, report_write) = (report[0], report[1]);
+
+        // SAFETY: every branch below the fork terminates in `_exit` or blocks
+        // forever in `pause`, and touches only async-signal-safe libc calls.
+        let leader = unsafe { libc::fork() };
+        assert!(leader >= 0, "fork: {}", io::Error::last_os_error());
+        if leader == 0 {
+            unsafe {
+                libc::close(report_read);
+                // tcsetpgrp from a background group would otherwise stop us.
+                libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+                libc::setsid();
+                libc::ioctl(slave, libc::TIOCSCTTY, 0);
+                libc::chdir(parked_cwd.as_ptr());
+
+                let group_leader = libc::fork();
+                if group_leader == 0 {
+                    libc::setpgid(0, 0);
+                    let pgid = libc::getpid();
+                    // The member inherits the new group, so the group survives
+                    // its leader without any handshake.
+                    if libc::fork() == 0 {
+                        loop {
+                            libc::pause();
+                        }
+                    }
+                    libc::tcsetpgrp(slave, pgid);
+                    libc::_exit(0);
+                }
+
+                let mut status = 0;
+                libc::waitpid(group_leader, &mut status, 0);
+                // Reported only once the group is provably leaderless.
+                libc::write(
+                    report_write,
+                    (&group_leader as *const libc::pid_t).cast(),
+                    std::mem::size_of::<libc::pid_t>(),
+                );
+                loop {
+                    libc::pause();
+                }
+            }
+        }
+
+        unsafe { libc::close(report_write) };
+        let mut pgid: libc::pid_t = -1;
+        let read = unsafe {
+            libc::read(
+                report_read,
+                (&mut pgid as *mut libc::pid_t).cast(),
+                std::mem::size_of::<libc::pid_t>(),
+            )
+        };
+        let cwd = (read == std::mem::size_of::<libc::pid_t>() as isize).then(|| {
+            let foreground = unsafe { libc::tcgetpgrp(master) };
+            let cwd = Linux::pane_cwd(unsafe { BorrowedFd::borrow_raw(master) });
+            (foreground, cwd)
+        });
+
+        unsafe {
+            if pgid > 0 {
+                libc::kill(-pgid, libc::SIGKILL);
+            }
+            libc::kill(leader, libc::SIGKILL);
+            let mut status = 0;
+            libc::waitpid(leader, &mut status, 0);
+            libc::close(report_read);
+            libc::close(slave);
+            libc::close(master);
+        }
+
+        let (foreground, cwd) = cwd.expect("session leader reported the leaderless group");
+        assert_eq!(foreground, pgid, "the leaderless group holds the terminal");
+        assert!(
+            !PathBuf::from(format!("/proc/{pgid}")).exists(),
+            "the group id must name no process for this test to mean anything"
+        );
+        assert_eq!(cwd, Some(PathBuf::from("/proc")));
     }
 }
