@@ -18,7 +18,8 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::os::fd::RawFd;
-use std::sync::{Arc, Mutex};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::Instant;
 
 use crate::server::command::suspend::SuspensionJob;
@@ -190,7 +191,7 @@ impl ExecutorJobState {
 /// Submission side of the executor, held by the command runtimes.
 #[derive(Clone)]
 pub(crate) struct SuspensionExecutorHandle {
-    submitted: Arc<Mutex<Vec<SubmittedJob>>>,
+    submitted: Rc<RefCell<Vec<SubmittedJob>>>,
 }
 
 impl SuspensionExecutorHandle {
@@ -205,8 +206,7 @@ impl SuspensionExecutorHandle {
     fn enqueue(&self, job: SuspensionJob) -> io::Result<Completion<CommandSuspensionResult>> {
         let (completion, sender) = completion_pair()?;
         self.submitted
-            .lock()
-            .map_err(|_| io::Error::other("suspension executor inbox poisoned"))?
+            .borrow_mut()
             .push(SubmittedJob { job, sender });
         // Every submitter runs on the loop, inside a dispatch the executor may
         // itself be driving, so the job is handed over through this inbox and
@@ -217,17 +217,17 @@ impl SuspensionExecutorHandle {
 
 /// Loop-owned driver for every adopted suspension job.
 pub(crate) struct SuspensionExecutor {
-    submitted: Arc<Mutex<Vec<SubmittedJob>>>,
+    submitted: Rc<RefCell<Vec<SubmittedJob>>>,
     jobs: BTreeMap<u64, ExecutorJobState>,
     next_id: u64,
 }
 
 impl SuspensionExecutor {
     pub(crate) fn new() -> (Self, SuspensionExecutorHandle) {
-        let submitted = Arc::new(Mutex::new(Vec::new()));
+        let submitted = Rc::new(RefCell::new(Vec::new()));
         (
             Self {
-                submitted: Arc::clone(&submitted),
+                submitted: Rc::clone(&submitted),
                 jobs: BTreeMap::new(),
                 next_id: 1,
             },
@@ -254,10 +254,9 @@ impl SuspensionExecutor {
     /// Take ownership of everything submitted since the last sync and give each
     /// new job its first turn.
     pub(super) fn adopt_submitted(&mut self, outbox: &mut Outbox) {
-        let submitted = match self.submitted.lock() {
-            Ok(mut submitted) => std::mem::take(&mut *submitted),
-            Err(_) => return,
-        };
+        // The borrow ends before any adopted job runs, so a job that submits
+        // another one during adoption does not re-enter this borrow.
+        let submitted = std::mem::take(&mut *self.submitted.borrow_mut());
         for SubmittedJob { job, sender } in submitted {
             self.adopt(
                 ExecutorJob::Suspension(job),
