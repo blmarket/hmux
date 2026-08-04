@@ -1225,12 +1225,11 @@ mod tests {
     use super::{FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob, WaitForJob};
     use crate::server::command::{ClientContext, ClientFileWrite};
     use crate::server::state::WaitRegistry;
-    use crate::server::task::run_blocking;
+    use crate::server::task::{drive_blocking, run_blocking, ReadySet, TaskState};
     use std::fs;
     use std::io;
     use std::path::{Path, PathBuf};
     use std::process;
-    use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -1500,46 +1499,44 @@ mod tests {
         assert!(started.elapsed() < Duration::from_millis(50));
     }
 
+    /// Start a `wait-for` job and check it has not resolved yet. The registry
+    /// and the waiter share a thread, so the job is driven one poll at a time
+    /// instead of parked on a helper thread.
+    fn pending_wait_for(args: &[&str], registry: &WaitRegistry) -> TaskState<WaitForJob> {
+        let mut task = TaskState::new(WaitForJob::new(&wait_for_args(args), registry));
+        assert!(
+            !task.poll(&ReadySet::default()),
+            "wait-for resolved before the channel was touched"
+        );
+        task
+    }
+
     #[test]
     fn wait_for_job_resumes_when_the_signal_arrives() {
-        let registry = Arc::new(WaitRegistry::default());
-        let signaller = thread::spawn({
-            let registry = Arc::clone(&registry);
-            move || {
-                thread::sleep(Duration::from_millis(100));
-                registry.signal("later");
-            }
-        });
+        let registry = WaitRegistry::default();
+        let mut waiter = pending_wait_for(&["later"], &registry);
 
-        let started = Instant::now();
-        let result = run_blocking(WaitForJob::new(&wait_for_args(&["later"]), &registry));
+        registry.signal("later");
 
+        drive_blocking(&mut waiter);
+        let result = waiter.take_output().expect("signalled wait-for");
         assert_eq!(result.exit, 0, "{}", result.stderr);
-        assert!(started.elapsed() >= Duration::from_millis(50));
-        signaller.join().expect("signaller");
     }
 
     #[test]
     fn wait_for_job_hands_the_lock_to_the_next_waiter_in_order() {
-        let registry = Arc::new(WaitRegistry::default());
+        let registry = WaitRegistry::default();
 
         // The first `-L` takes the lock outright.
         let result = run_blocking(WaitForJob::new(&wait_for_args(&["-L", "gate"]), &registry));
         assert_eq!(result.exit, 0, "{}", result.stderr);
 
-        let unlocker = thread::spawn({
-            let registry = Arc::clone(&registry);
-            move || {
-                thread::sleep(Duration::from_millis(100));
-                assert!(registry.unlock("gate"), "first unlock");
-            }
-        });
-        let started = Instant::now();
-        let result = run_blocking(WaitForJob::new(&wait_for_args(&["-L", "gate"]), &registry));
+        let mut waiter = pending_wait_for(&["-L", "gate"], &registry);
+        assert!(registry.unlock("gate"), "first unlock");
 
+        drive_blocking(&mut waiter);
+        let result = waiter.take_output().expect("handed-off wait-for");
         assert_eq!(result.exit, 0, "{}", result.stderr);
-        assert!(started.elapsed() >= Duration::from_millis(50));
-        unlocker.join().expect("unlocker");
         // The handoff kept the channel locked, so the second holder can release
         // it and nobody else can.
         assert!(registry.unlock("gate"), "second unlock");

@@ -441,8 +441,7 @@ pub fn run(args: &[String], state: &Arc<Mutex<ServerState>>, agents: &PaneAgents
         Err(result) => result,
     };
     for request in result.background_commands.drain(..) {
-        let _ =
-            BlockingCommandRuntime::spawn_background(request, Arc::clone(state), agents.clone());
+        BlockingCommandRuntime::run_background(request, state, agents);
     }
     result
 }
@@ -474,40 +473,39 @@ impl BlockingCommandRuntime {
         }
     }
 
-    pub(crate) fn spawn_background(
+    /// Run one detached (`-b`) command to completion on the calling thread.
+    ///
+    /// The loop owns detached queues outright; this driver has no loop to hand
+    /// them to, so it runs them where it stands.
+    pub(crate) fn run_background(
         request: BackgroundCommandRequest,
-        state: Arc<Mutex<ServerState>>,
-        agents: PaneAgents,
-    ) -> io::Result<()> {
-        std::thread::Builder::new()
-            .name("hmux-blocking-background".to_string())
-            .spawn(move || {
-                let (command, context) = request.resolve();
-                let queue = match command {
-                    BackgroundCommand::Line(command) => {
-                        let Some(command) = command.filter(|line| !line.trim().is_empty()) else {
-                            return;
-                        };
-                        start_resumable_command_string(&command, &state, &agents, &context)
-                    }
-                    BackgroundCommand::Args(args) => {
-                        if args.is_empty() {
-                            return;
-                        }
-                        start_resumable_command(&args, &state, &agents, &context)
-                    }
-                    BackgroundCommand::RunShell { args, jobs } => {
-                        run_blocking(suspend::BackgroundShellJob::new(&args, &context, jobs));
-                        return;
-                    }
+        state: &Arc<Mutex<ServerState>>,
+        agents: &PaneAgents,
+    ) {
+        let (command, context) = request.resolve();
+        let queue = match command {
+            BackgroundCommand::Line(command) => {
+                let Some(command) = command.filter(|line| !line.trim().is_empty()) else {
+                    return;
                 };
-                let Ok(queue) = queue else { return };
-                let mut result = Self::run(queue, &state);
-                for request in result.background_commands.drain(..) {
-                    let _ = Self::spawn_background(request, Arc::clone(&state), agents.clone());
+                start_resumable_command_string(&command, state, agents, &context)
+            }
+            BackgroundCommand::Args(args) => {
+                if args.is_empty() {
+                    return;
                 }
-            })?;
-        Ok(())
+                start_resumable_command(&args, state, agents, &context)
+            }
+            BackgroundCommand::RunShell { args, jobs } => {
+                run_blocking(suspend::BackgroundShellJob::new(&args, &context, jobs));
+                return;
+            }
+        };
+        let Ok(queue) = queue else { return };
+        let mut result = Self::run(queue, state);
+        for request in result.background_commands.drain(..) {
+            Self::run_background(request, state, agents);
+        }
     }
 }
 
@@ -517,10 +515,10 @@ impl CommandRuntime for BlockingCommandRuntime {
         &self,
         suspension: CommandSuspension,
     ) -> io::Result<Completion<CommandSuspensionResult>> {
+        // No loop to hand the job to: resolve it here and hand back an
+        // already-signalled completion.
         let (completion, sender) = super::task::completion_pair()?;
-        std::thread::Builder::new()
-            .name("hmux-blocking-command".to_string())
-            .spawn(move || sender.complete(run_blocking(SuspensionJob::new(suspension))))?;
+        sender.complete(run_blocking(SuspensionJob::new(suspension)));
         Ok(completion)
     }
 }

@@ -3,7 +3,8 @@
 use std::io::{self, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::os::unix::net::UnixStream;
-use std::sync::{Arc, Mutex};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::Instant;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -128,27 +129,30 @@ impl ReadySet {
     }
 }
 
-/// Readable completion descriptor returned by a runtime-owned worker.
+/// Readable completion descriptor returned by a job the loop owns.
+///
+/// The descriptor is what makes the result pollable; the slot beside it only
+/// carries the value between the two ends, both of which live on the loop.
 pub(crate) struct Completion<T> {
     reader: UnixStream,
-    result: Arc<Mutex<Option<T>>>,
+    result: Rc<RefCell<Option<T>>>,
 }
 
-/// The worker side of a [`Completion`].
+/// The producing side of a [`Completion`].
 pub(crate) struct CompletionSender<T> {
     writer: UnixStream,
-    result: Arc<Mutex<Option<T>>>,
+    result: Rc<RefCell<Option<T>>>,
 }
 
 pub(crate) fn completion_pair<T>() -> io::Result<(Completion<T>, CompletionSender<T>)> {
     let (reader, writer) = UnixStream::pair()?;
     reader.set_nonblocking(true)?;
     writer.set_nonblocking(true)?;
-    let result = Arc::new(Mutex::new(None));
+    let result = Rc::new(RefCell::new(None));
     Ok((
         Completion {
             reader,
-            result: Arc::clone(&result),
+            result: Rc::clone(&result),
         },
         CompletionSender { writer, result },
     ))
@@ -156,9 +160,7 @@ pub(crate) fn completion_pair<T>() -> io::Result<(Completion<T>, CompletionSende
 
 impl<T> CompletionSender<T> {
     pub(crate) fn complete(mut self, value: T) {
-        if let Ok(mut result) = self.result.lock() {
-            *result = Some(value);
-        }
+        *self.result.borrow_mut() = Some(value);
         let _ = self.writer.write_all(&[1]);
     }
 }
@@ -187,14 +189,12 @@ impl<T> Coroutine for Completion<T> {
                 io::ErrorKind::UnexpectedEof,
                 "task worker stopped without a result",
             ))),
-            Ok(_) => match self.result.lock() {
-                Ok(mut result) => TaskPoll::Ready(
-                    result
-                        .take()
-                        .ok_or_else(|| io::Error::other("task completed without a result")),
-                ),
-                Err(_) => TaskPoll::Ready(Err(io::Error::other("task result poisoned"))),
-            },
+            Ok(_) => TaskPoll::Ready(
+                self.result
+                    .borrow_mut()
+                    .take()
+                    .ok_or_else(|| io::Error::other("task completed without a result")),
+            ),
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => TaskPoll::Pending,
             Err(error) => TaskPoll::Ready(Err(error)),
         }
