@@ -30,14 +30,8 @@ use super::task::{completion_pair, Completion, CompletionSender};
 use super::term::ResolvedTerm;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
 
-#[cfg(not(test))]
 fn default_pane_io_mode() -> PaneIoMode {
     PaneIoMode::EventLoop
-}
-
-#[cfg(test)]
-fn default_pane_io_mode() -> PaneIoMode {
-    PaneIoMode::Threaded(super::pane::spawn_reader)
 }
 
 /// How to back a new pane's screen.

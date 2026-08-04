@@ -4,8 +4,7 @@
 //! This is where the "clone" earns its name — instead of proxying to a backing
 //! tmux, hmux owns the pty/child and maintains the screen itself. tmux keeps this
 //! state in `window_pane` + `screen`/`input.c`; here the grid lives in libghostty
-//! and the master fd is drained by the central event loop (or a dedicated
-//! reader thread in unit tests).
+//! and the master fd is drained by the central event loop.
 //!
 //! Only a text-emulation slice is implemented: spawn, feed output → grid, send
 //! input, resize, dump. Compositing multiple panes onto an attached client's tty
@@ -22,10 +21,6 @@ use std::process::{Command, Stdio};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
-#[cfg(test)]
-use std::thread;
-#[cfg(test)]
-use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
 use libc::pid_t;
@@ -72,53 +67,12 @@ pub struct Pane {
     rows: u16,
 }
 
-#[cfg(test)]
-pub(crate) type PaneReaderSpawner = fn(PaneIo) -> JoinHandle<()>;
-
+/// How a new pane's PTY is drained. The server runtime owns pane I/O through
+/// the event loop; this stays an enum because the spawn paths thread it from
+/// the state that decides it.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum PaneIoMode {
-    /// Drain the pane on a dedicated thread. Unit-test scaffolding only; the
-    /// server runtime owns pane I/O through the event loop.
-    #[cfg(test)]
-    Threaded(PaneReaderSpawner),
     EventLoop,
-}
-
-/// Threaded driver for shared nonblocking pane I/O. Unit-test scaffolding for
-/// exercising panes without an event loop.
-#[cfg(test)]
-pub(crate) fn spawn_reader(mut pane_io: PaneIo) -> JoinHandle<()> {
-    thread::spawn(move || loop {
-        let mut wait = libc::pollfd {
-            fd: pane_io.as_fd().as_raw_fd(),
-            events: libc::POLLIN
-                | if pane_io.wants_write() {
-                    libc::POLLOUT
-                } else {
-                    0
-                },
-            revents: 0,
-        };
-        let result = unsafe { libc::poll(&mut wait, 1, -1) };
-        if result < 0 {
-            if io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
-                continue;
-            }
-            break;
-        }
-        if wait.revents & libc::POLLOUT != 0 {
-            pane_io.drive_writable();
-        }
-        if wait.revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) == 0 {
-            continue;
-        }
-        match pane_io.drive_readable() {
-            Ok(result) if result.closed => break,
-            Ok(result) if result.continuation => continue,
-            Ok(_) => {}
-            Err(_) => break,
-        }
-    })
 }
 
 #[derive(Clone, Debug)]
@@ -308,10 +262,6 @@ static NEXT_PANE_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 struct Child {
     pid: pid_t,
     master: OwnedFd,
-    /// The unit-test drain thread. The server runtime drains panes through the
-    /// event loop, so this is always absent outside tests.
-    #[cfg(test)]
-    reader: Option<JoinHandle<()>>,
     alive: Arc<AtomicBool>,
     reaped: bool,
     termination_requested: bool,
@@ -1499,12 +1449,6 @@ impl Pane {
             Arc::clone(&pipe_output_active),
             Arc::clone(&alive),
         )?;
-        #[cfg(test)]
-        let (reader, event_io) = match io_mode {
-            PaneIoMode::Threaded(spawn) => (Some(spawn(pane_io)), None),
-            PaneIoMode::EventLoop => (None, Some(pane_io)),
-        };
-        #[cfg(not(test))]
         let event_io = match io_mode {
             PaneIoMode::EventLoop => Some(pane_io),
         };
@@ -1515,8 +1459,6 @@ impl Pane {
             child: Some(Child {
                 pid,
                 master,
-                #[cfg(test)]
-                reader,
                 alive,
                 reaped: false,
                 termination_requested: false,
@@ -2222,11 +2164,7 @@ fn latest_screen_title(bytes: impl Iterator<Item = u8>) -> Option<String> {
 
 impl Drop for Child {
     fn drop(&mut self) {
-        #[cfg(test)]
-        let draining = self.reader.is_some();
-        #[cfg(not(test))]
-        let draining = false;
-        if self.reaped && !draining {
+        if self.reaped {
             return;
         }
         // Kill the child so its pty slave closes, ending the drain.
@@ -2255,18 +2193,9 @@ impl Drop for Child {
         // delivers.
         //
         // The `master` OwnedFd field is dropped as this `Child` drops, closing
-        // the parent's handle; the test-only reader owns a separate dup, so its
-        // lifetime is unaffected by that close. Joining it can block for as long
-        // as a surviving grandchild keeps the pty slave open, so that join also
-        // moves off this thread.
+        // the parent's handle.
         if !self.reaped {
             register_orphan(self.pid);
-        }
-        #[cfg(test)]
-        if let Some(reader) = self.reader.take() {
-            thread::spawn(move || {
-                let _ = reader.join();
-            });
         }
     }
 }
