@@ -75,11 +75,11 @@ impl Envelope {
                 let dispatch_target = target.clone();
                 target.with_mut(|jobs| jobs.handle(&dispatch_target, event, outbox));
             }
-            // The executor answers only to its own jobs: it neither addresses
-            // other actors nor changes its registrations itself, so the loop
-            // reconciles those once per dispatch instead.
+            // The executor never changes its own registrations; the loop
+            // reconciles those once per dispatch instead. It does address the
+            // background-command actor, which owns the queues it finishes.
             Envelope::Executor { target, event } => {
-                target.with_mut(|executor| executor.handle(event));
+                target.with_mut(|executor| executor.handle(event, outbox));
             }
         }
     }
@@ -392,7 +392,7 @@ where
     R: Reactor<IoRecipient>,
 {
     fn with_reactor(reactor: R) -> Self {
-        let (executor, executor_handle) = SuspensionExecutor::new(reactor.wake_handle());
+        let (executor, executor_handle) = SuspensionExecutor::new();
         Self {
             reactor,
             events: VecDeque::new(),
@@ -418,7 +418,7 @@ where
                 ActorRef::new(BackgroundCommands::new(
                     server.state(),
                     server.status_hub(),
-                    self.reactor.wake_handle(),
+                    self.executor.clone(),
                     executor_handle.clone(),
                 ))
             })
@@ -533,7 +533,6 @@ where
     }
 
     pub(crate) fn dispatch_one(&mut self) -> io::Result<bool> {
-        self.enqueue_background_completions();
         self.sync_executor()?;
         let Some(envelope) = self.events.pop_front() else {
             return Ok(false);
@@ -573,7 +572,6 @@ where
             .drain_expired(Instant::now(), &mut self.expired_timers);
         self.events
             .extend(self.expired_timers.drain(..).map(ExpiredTimer::into_value));
-        self.enqueue_background_completions();
         Ok(result)
     }
 
@@ -581,9 +579,13 @@ where
     /// timer queue describe exactly what every live job is waiting for.
     fn sync_executor(&mut self) -> io::Result<()> {
         let executor = self.executor.clone();
-        executor
+        // A job adopted here can finish on its very first turn and address the
+        // background-command actor, so collect effects and apply them once the
+        // executor's borrow is released.
+        let mut outbox = Outbox::new();
+        let result = executor
             .with_mut(|executor| -> io::Result<()> {
-                executor.adopt_submitted();
+                executor.adopt_submitted(&mut outbox);
                 for id in executor.job_ids() {
                     let Some(state) = executor.job_mut(id) else {
                         continue;
@@ -660,21 +662,11 @@ where
                 }
                 Ok(())
             })
-            .unwrap_or(Ok(()))
-    }
-
-    fn enqueue_background_completions(&mut self) {
-        let Some(target) = self.background_commands.as_ref() else {
-            return;
-        };
-        let events = target
-            .with(BackgroundCommands::take_completions)
-            .unwrap_or_default();
-        self.events
-            .extend(events.into_iter().map(|event| Envelope::Background {
-                target: target.clone(),
-                event,
-            }));
+            .unwrap_or(Ok(()));
+        for effect in outbox.effects {
+            self.apply(effect)?;
+        }
+        result
     }
 
     pub(crate) fn run_turn(

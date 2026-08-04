@@ -1,75 +1,51 @@
 //! Event-loop-owned detached command queues.
+//!
+//! A `-b` command has no client waiting on it, so nothing outside the loop
+//! needs to observe its progress: the queue is handed to the suspension
+//! executor as a job of its own and reports back here when it finishes.
 
-use std::collections::{BTreeMap, VecDeque};
-use std::io;
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use crate::integration::status::StatusHub;
 use crate::server::command::{
-    self, BackgroundCommand, BackgroundCommandRequest, ClientContext, CommandResult,
+    self, BackgroundCommand, BackgroundCommandRequest, ClientContext, PendingBackground,
 };
 use crate::server::state::ServerState;
-use crate::server::task::TaskState;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;
-use super::reactor::WakeHandle;
-use super::suspend::SuspensionExecutorHandle;
-use super::task::EventCommandRuntime;
+use super::suspend::{
+    EventCommandRuntime, ExecutorJobOutput, SuspensionExecutor, SuspensionExecutorHandle,
+};
 
 const COMMAND_QUEUE_BUDGET: usize = 64;
 
 pub(crate) enum JobEvent {
     Start(BackgroundCommandRequest),
-    ConditionResolved {
+    /// One of this actor's executor jobs reported its result.
+    JobFinished {
         id: u64,
-        command: Option<String>,
-        context: ClientContext,
+        output: Option<ExecutorJobOutput>,
     },
-    CommandCompleted {
-        id: u64,
-        result: io::Result<CommandResult>,
-    },
-}
-
-enum WorkerCompletion {
-    Condition {
-        id: u64,
-        command: Option<String>,
-        context: ClientContext,
-    },
-    Command {
-        id: u64,
-        result: io::Result<CommandResult>,
-    },
-}
-
-#[derive(Clone)]
-struct CompletionSender {
-    pending: Arc<Mutex<VecDeque<WorkerCompletion>>>,
-    wake: WakeHandle,
-}
-
-impl CompletionSender {
-    fn send(&self, completion: WorkerCompletion) {
-        if let Ok(mut pending) = self.pending.lock() {
-            pending.push_back(completion);
-        }
-        let _ = self.wake.wake();
-    }
 }
 
 pub(crate) struct BackgroundCommands {
     state: Arc<Mutex<ServerState>>,
     hub: StatusHub,
     runtime: Arc<EventCommandRuntime>,
-    completions: CompletionSender,
+    executor: ActorRef<SuspensionExecutor>,
     next_id: u64,
     jobs: BTreeMap<u64, JobState>,
 }
 
 enum JobState {
-    ResolvingCondition,
+    /// An `if-shell -b` condition is running; its branches wait on the answer.
+    ResolvingCondition {
+        then_command: Option<String>,
+        else_command: Option<String>,
+        context: ClientContext,
+    },
     Running,
 }
 
@@ -77,101 +53,94 @@ impl BackgroundCommands {
     pub(crate) fn new(
         state: Arc<Mutex<ServerState>>,
         hub: StatusHub,
-        wake: WakeHandle,
-        executor: SuspensionExecutorHandle,
+        executor: ActorRef<SuspensionExecutor>,
+        executor_handle: SuspensionExecutorHandle,
     ) -> Self {
         Self {
             state,
             hub,
-            runtime: Arc::new(EventCommandRuntime::new(executor)),
-            completions: CompletionSender {
-                pending: Arc::new(Mutex::new(VecDeque::new())),
-                wake,
-            },
+            runtime: Arc::new(EventCommandRuntime::new(executor_handle)),
+            executor,
             next_id: 1,
             jobs: BTreeMap::new(),
         }
     }
 
-    pub(crate) fn take_completions(&self) -> Vec<JobEvent> {
-        let Ok(mut pending) = self.completions.pending.lock() else {
-            return Vec::new();
-        };
-        pending
-            .drain(..)
-            .map(|completion| match completion {
-                WorkerCompletion::Condition {
-                    id,
-                    command,
-                    context,
-                } => JobEvent::ConditionResolved {
-                    id,
-                    command,
-                    context,
-                },
-                WorkerCompletion::Command { id, result } => {
-                    JobEvent::CommandCompleted { id, result }
-                }
-            })
-            .collect()
-    }
-
     pub(crate) fn handle(&mut self, target: &ActorRef<Self>, event: JobEvent, outbox: &mut Outbox) {
         match event {
-            JobEvent::Start(request) if request.is_ready() => {
-                let (command, context) = request.resolve();
-                self.start_command(None, command, context);
-            }
-            JobEvent::Start(request) => {
-                let id = self.allocate_id();
-                self.jobs.insert(id, JobState::ResolvingCondition);
-                let completed = self.completions.clone();
-                if EventCommandRuntime::spawn_blocking(
-                    move || request.resolve(),
-                    move |(command, context)| {
-                        let BackgroundCommand::Line(command) = command else {
-                            unreachable!("argv background requests are ready immediately")
-                        };
-                        completed.send(WorkerCompletion::Condition {
-                            id,
-                            command,
-                            context,
-                        });
-                    },
-                )
-                .is_err()
-                {
-                    self.jobs.remove(&id);
+            JobEvent::Start(request) => self.start(target, request, outbox),
+            JobEvent::JobFinished { id, output } => match self.jobs.remove(&id) {
+                Some(JobState::ResolvingCondition {
+                    then_command,
+                    else_command,
+                    context,
+                }) => {
+                    let matched = matches!(
+                        output,
+                        Some(ExecutorJobOutput::Suspension(
+                            command::CommandSuspensionResult::IfShell(true)
+                        ))
+                    );
+                    let command = if matched { then_command } else { else_command };
+                    self.start_command(
+                        target,
+                        BackgroundCommand::Line(command),
+                        context,
+                        outbox,
+                    );
                 }
-            }
-            JobEvent::ConditionResolved {
-                id,
-                command,
-                context,
-            } => {
-                if matches!(self.jobs.get(&id), Some(JobState::ResolvingCondition)) {
-                    self.jobs.remove(&id);
-                    self.start_command(Some(id), BackgroundCommand::Line(command), context);
-                }
-            }
-            JobEvent::CommandCompleted { id, result } => {
-                if !matches!(self.jobs.remove(&id), Some(JobState::Running)) {
-                    return;
-                }
-                if let Ok(mut result) = result {
+                Some(JobState::Running) => {
+                    let Some(ExecutorJobOutput::Queue(Ok(mut result))) = output else {
+                        return;
+                    };
                     for request in result.background_commands.drain(..) {
-                        outbox.enqueue_background(target.clone(), JobEvent::Start(request));
+                        self.start(target, request, outbox);
                     }
                 }
+                None => {}
+            },
+        }
+    }
+
+    fn start(
+        &mut self,
+        target: &ActorRef<Self>,
+        request: BackgroundCommandRequest,
+        outbox: &mut Outbox,
+    ) {
+        match request.into_pending() {
+            PendingBackground::Ready(command, context) => {
+                self.start_command(target, command, context, outbox)
+            }
+            PendingBackground::Condition {
+                condition,
+                then_command,
+                else_command,
+                context,
+            } => {
+                let id = self.allocate_id();
+                let job = command::suspend::SuspensionJob::if_shell(&condition, &context);
+                self.jobs.insert(
+                    id,
+                    JobState::ResolvingCondition {
+                        then_command,
+                        else_command,
+                        context,
+                    },
+                );
+                self.executor.with_mut(|executor| {
+                    executor.adopt_background_suspension(job, target.clone(), id, outbox);
+                });
             }
         }
     }
 
     fn start_command(
         &mut self,
-        id: Option<u64>,
+        target: &ActorRef<Self>,
         command: BackgroundCommand,
         context: ClientContext,
+        outbox: &mut Outbox,
     ) {
         let agents = self.hub.snapshot().panes;
         let queue = match command {
@@ -188,42 +157,27 @@ impl BackgroundCommands {
                 command::start_resumable_command(&args, &self.state, &agents, &context)
             }
             BackgroundCommand::RunShell { args, jobs } => {
-                let id = id.unwrap_or_else(|| self.allocate_id());
+                let id = self.allocate_id();
+                let job = command::suspend::SuspensionJob::background_shell(&args, &context, jobs);
                 self.jobs.insert(id, JobState::Running);
-                let completed = self.completions.clone();
-                if EventCommandRuntime::spawn_blocking(
-                    move || command::run_background_shell(&args, &context, jobs),
-                    move |()| {
-                        completed.send(WorkerCompletion::Command {
-                            id,
-                            result: Ok(CommandResult::ok("")),
-                        });
-                    },
-                )
-                .is_err()
-                {
-                    self.jobs.remove(&id);
-                }
+                self.executor.with_mut(|executor| {
+                    executor.adopt_background_suspension(job, target.clone(), id, outbox);
+                });
                 return;
             }
         };
         let Ok(queue) = queue else { return };
-        let id = id.unwrap_or_else(|| self.allocate_id());
-        self.jobs.insert(id, JobState::Running);
-        let task = TaskState::new(command::CommandCoroutine::new(
+        let id = self.allocate_id();
+        let coroutine = command::CommandCoroutine::new(
             queue,
             Arc::clone(&self.state),
             Arc::clone(&self.runtime) as Arc<dyn command::CommandRuntime>,
             COMMAND_QUEUE_BUDGET,
-        ));
-        let completed = self.completions.clone();
-        if EventCommandRuntime::spawn_coroutine(task, move |result| {
-            completed.send(WorkerCompletion::Command { id, result });
-        })
-        .is_err()
-        {
-            self.jobs.remove(&id);
-        }
+        );
+        self.jobs.insert(id, JobState::Running);
+        self.executor.with_mut(|executor| {
+            executor.adopt_background_queue(coroutine, target.clone(), id, outbox);
+        });
     }
 
     fn allocate_id(&mut self) -> u64 {

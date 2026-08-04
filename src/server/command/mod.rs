@@ -30,15 +30,12 @@ pub(in crate::server) use identity::Command;
 
 use std::collections::BTreeMap;
 use std::io;
-use std::os::fd::AsRawFd;
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::integration::status::PaneAgents;
 use crate::observability::v1::PaneId;
-use crate::platform::{CurrentPlatform, Platform};
 
 use super::format::{self, Vars};
 use super::key::{format_key_name, parse_key_name};
@@ -61,6 +58,8 @@ use super::task::{
     run_blocking, Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest,
     WaitToken,
 };
+#[cfg(test)]
+use suspend::IfShellJob;
 use suspend::{RunShellJob, SuspensionJob};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
@@ -486,7 +485,7 @@ impl BlockingCommandRuntime {
                         start_resumable_command(&args, &state, &agents, &context)
                     }
                     BackgroundCommand::RunShell { args, jobs } => {
-                        run_background_shell(&args, &context, jobs);
+                        run_blocking(suspend::BackgroundShellJob::new(&args, &context, jobs));
                         return;
                     }
                 };
@@ -825,46 +824,61 @@ pub(crate) enum BackgroundCommandRequest {
     },
 }
 
+/// What a background request runs, once it is known.
+pub(crate) enum PendingBackground {
+    Ready(BackgroundCommand, ClientContext),
+    /// `if-shell -b`: the condition has to run before either branch is picked.
+    Condition {
+        condition: String,
+        then_command: Option<String>,
+        else_command: Option<String>,
+        context: ClientContext,
+    },
+}
+
 impl BackgroundCommandRequest {
-    pub(crate) fn resolve(self) -> (BackgroundCommand, ClientContext) {
+    pub(crate) fn into_pending(self) -> PendingBackground {
         match self {
-            Self::Ready { command, context } => (BackgroundCommand::Line(command), context),
-            Self::ReadyArgs { args, context } => (BackgroundCommand::Args(args), context),
+            Self::Ready { command, context } => {
+                PendingBackground::Ready(BackgroundCommand::Line(command), context)
+            }
+            Self::ReadyArgs { args, context } => {
+                PendingBackground::Ready(BackgroundCommand::Args(args), context)
+            }
             Self::IfShell {
                 condition,
                 then_command,
                 else_command,
                 context,
-            } => {
-                let matched = if condition
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .ends_with(&["run", "\"true\""])
-                {
-                    true
-                } else {
-                    let mut shell = shell_command(&condition, &context);
-                    shell
-                        .status()
-                        .map(|status| status.success())
-                        .unwrap_or(false)
-                };
-                let command = if matched { then_command } else { else_command };
-                (BackgroundCommand::Line(command), context)
-            }
+            } => PendingBackground::Condition {
+                condition,
+                then_command,
+                else_command,
+                context,
+            },
             Self::RunShell {
                 args,
                 context,
                 jobs,
-            } => (BackgroundCommand::RunShell { args, jobs }, context),
+            } => PendingBackground::Ready(BackgroundCommand::RunShell { args, jobs }, context),
         }
     }
 
-    pub(crate) fn is_ready(&self) -> bool {
-        matches!(
-            self,
-            Self::Ready { .. } | Self::ReadyArgs { .. } | Self::RunShell { .. }
-        )
+    #[cfg(test)]
+    pub(crate) fn resolve(self) -> (BackgroundCommand, ClientContext) {
+        match self.into_pending() {
+            PendingBackground::Ready(command, context) => (command, context),
+            PendingBackground::Condition {
+                condition,
+                then_command,
+                else_command,
+                context,
+            } => {
+                let matched = run_blocking(IfShellJob::new(&condition, &context));
+                let command = if matched { then_command } else { else_command };
+                (BackgroundCommand::Line(command), context)
+            }
+        }
     }
 }
 
@@ -8077,27 +8091,6 @@ fn shell_command(command: &str, context: &ClientContext) -> std::process::Comman
     shell
 }
 
-fn spawn_background_shell(
-    command: &str,
-    context: &ClientContext,
-) -> std::io::Result<std::process::Child> {
-    let mut shell = shell_command(command, context);
-    shell
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    // Identified client streams are open in the daemon as descriptors above
-    // stderr. A background job retaining one would make the command client
-    // wait for EOF until the job exits, defeating `-b`.
-    unsafe {
-        shell.pre_exec(|| {
-            CurrentPlatform::close_fds_from(3);
-            Ok(())
-        });
-    }
-    shell.spawn()
-}
-
 fn job_delay(args: &[String]) -> Result<std::time::Duration, CommandResult> {
     let Some(value) = flag_value(args, "-d") else {
         return Ok(std::time::Duration::ZERO);
@@ -8108,51 +8101,6 @@ fn job_delay(args: &[String]) -> Result<std::time::Duration, CommandResult> {
         .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
         .ok_or_else(|| CommandResult::err(format!("invalid delay time: {value}\n")))?;
     Ok(std::time::Duration::from_secs_f64(seconds))
-}
-
-fn wait_job_delay(delay: Duration) {
-    let deadline = Instant::now() + delay;
-    while Instant::now() < deadline {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let millis = remaining.as_nanos().saturating_add(999_999) / 1_000_000;
-        let result = unsafe {
-            libc::poll(
-                std::ptr::null_mut(),
-                0,
-                i32::try_from(millis).unwrap_or(i32::MAX),
-            )
-        };
-        if result >= 0 || io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
-            break;
-        }
-    }
-}
-
-pub(crate) fn run_background_shell(
-    args: &[String],
-    context: &ClientContext,
-    jobs: Arc<BackgroundJobRegistry>,
-) {
-    let Some(command) = positionals(args, &["-t", "-c", "-d"])
-        .into_iter()
-        .next()
-        .map(str::to_string)
-    else {
-        return;
-    };
-    let Ok(delay) = job_delay(args) else {
-        return;
-    };
-    if !delay.is_zero() {
-        wait_job_delay(delay);
-    }
-    let Ok(child) = spawn_background_shell(&command, context) else {
-        return;
-    };
-    let fd = child.stdout.as_ref().map(AsRawFd::as_raw_fd).unwrap_or(-1);
-    let id = jobs.register(command, fd, child.id());
-    let _ = child.wait_with_output();
-    jobs.remove(id);
 }
 
 /// `run-shell command`. Runs the command with `sh -c` and forwards its stdout to

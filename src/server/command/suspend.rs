@@ -18,12 +18,16 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::platform::{CurrentPlatform, Platform};
 use crate::server::state::{
-    ClientPromptRegistry, CommandPromptRequestResult, PromptCompletion, WaitRegistry,
+    BackgroundJobRegistry, ClientPromptRegistry, CommandPromptRequestResult, PromptCompletion,
+    WaitRegistry,
 };
 use crate::server::task::{
     Completion, Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken,
@@ -43,6 +47,7 @@ use super::{
 /// and the blocking test driver runs it on the calling thread. There is only
 /// ever one implementation of what a suspension does.
 pub(crate) enum SuspensionJob {
+    BackgroundShell(BackgroundShellJob),
     RunShell(RunShellJob),
     IfShell(IfShellJob),
     SourceFile(SourceFileJob),
@@ -54,6 +59,20 @@ pub(crate) enum SuspensionJob {
 }
 
 impl SuspensionJob {
+    /// An `if-shell -b` condition, whose branch the caller picks.
+    pub(crate) fn if_shell(condition: &str, context: &ClientContext) -> Self {
+        Self::IfShell(IfShellJob::new(condition, context))
+    }
+
+    /// A `run-shell -b` job, which reports nothing but has to be reaped.
+    pub(crate) fn background_shell(
+        args: &[String],
+        context: &ClientContext,
+        jobs: Arc<BackgroundJobRegistry>,
+    ) -> Self {
+        Self::BackgroundShell(BackgroundShellJob::new(args, context, jobs))
+    }
+
     pub(crate) fn new(suspension: CommandSuspension) -> Self {
         match suspension {
             CommandSuspension::RunShell { args, context } => {
@@ -92,6 +111,7 @@ impl Coroutine for SuspensionJob {
 
     fn wait(&self) -> WaitRequest<'_> {
         match self {
+            Self::BackgroundShell(job) => job.wait(),
             Self::RunShell(job) => job.wait(),
             Self::IfShell(job) => job.wait(),
             Self::SourceFile(job) => job.wait(),
@@ -105,6 +125,9 @@ impl Coroutine for SuspensionJob {
 
     fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
         match self {
+            Self::BackgroundShell(job) => {
+                job.resume(ready).map(CommandSuspensionResult::Completed)
+            }
             Self::RunShell(job) => job
                 .resume(ready)
                 .map(CommandSuspensionResult::RunShell),
@@ -115,6 +138,102 @@ impl Coroutine for SuspensionJob {
             Self::WaitFor(job) => job.resume(ready).map(CommandSuspensionResult::Completed),
             Self::ClientPrompt(job) => job.resume(ready).map(CommandSuspensionResult::Completed),
             Self::PaneOutput(job) => job.resume(ready),
+        }
+    }
+}
+
+/// `run-shell -b command`: a detached job, whose output goes nowhere but whose
+/// child has to appear in `list-jobs` for as long as it runs.
+///
+/// The shape is [`RunShellJob`]'s, minus the reporting: wait out `-d`, run the
+/// command, and hold the registry entry until the child is reaped.
+pub(crate) struct BackgroundShellJob {
+    process: Option<ShellProcess>,
+    /// `(registry, command)` until the child exists to register.
+    pending: Option<(Arc<BackgroundJobRegistry>, String)>,
+    registered: Option<(Arc<BackgroundJobRegistry>, u64)>,
+}
+
+impl BackgroundShellJob {
+    pub(crate) fn new(
+        args: &[String],
+        context: &ClientContext,
+        jobs: Arc<BackgroundJobRegistry>,
+    ) -> Self {
+        let done = Self {
+            process: None,
+            pending: None,
+            registered: None,
+        };
+        let Some(command) = positionals(args, &["-t", "-c", "-d"])
+            .into_iter()
+            .next()
+            .map(str::to_string)
+        else {
+            return done;
+        };
+        let Ok(delay) = job_delay(args) else {
+            return done;
+        };
+        let mut shell = shell_command(&command, context);
+        if let Some(cwd) = flag_value(args, "-c") {
+            shell.current_dir(cwd);
+        }
+        // Identified client streams are open in the daemon as descriptors above
+        // stderr. A background job retaining one would make the command client
+        // wait for EOF until the job exits, defeating `-b`.
+        unsafe {
+            shell.pre_exec(|| {
+                CurrentPlatform::close_fds_from(3);
+                Ok(())
+            });
+        }
+        Self {
+            process: Some(ShellProcess::new(shell, delay)),
+            pending: Some((jobs, command)),
+            registered: None,
+        }
+    }
+}
+
+impl Coroutine for BackgroundShellJob {
+    type Output = CommandResult;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match &self.process {
+            Some(process) => process.wait(),
+            None => WaitRequest::new(Vec::new(), Some(Instant::now())),
+        }
+    }
+
+    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
+        let Some(process) = self.process.as_mut() else {
+            return TaskPoll::Ready(CommandResult::ok(""));
+        };
+        let poll = process.resume(ready);
+        // The child exists from the first resume that gets past `-d`, and
+        // `list-jobs` has to see it for as long as it runs.
+        if self.registered.is_none() {
+            if let Some((jobs, command)) = self
+                .pending
+                .take_if(|_| process.child_stdout().is_some())
+            {
+                let fd = process.child_stdout().map_or(-1, AsRawFd::as_raw_fd);
+                let pid = process.child_pid().unwrap_or(0);
+                let id = jobs.register(command, fd, pid);
+                self.registered = Some((jobs, id));
+            }
+        }
+        match poll {
+            TaskPoll::Ready(_) => {
+                self.process = None;
+                self.pending = None;
+                if let Some((jobs, id)) = self.registered.take() {
+                    jobs.remove(id);
+                }
+                TaskPoll::Ready(CommandResult::ok(""))
+            }
+            TaskPoll::Pending => TaskPoll::Pending,
         }
     }
 }
@@ -328,6 +447,21 @@ impl ShellProcess {
                 deadline: Instant::now() + delay,
                 spawn,
             },
+        }
+    }
+
+    /// The running child's stdout, while it is still open.
+    fn child_stdout(&self) -> Option<&ChildStdout> {
+        match &self.stage {
+            Stage::Running(running) => running.stdout.as_ref(),
+            _ => None,
+        }
+    }
+
+    fn child_pid(&self) -> Option<u32> {
+        match &self.stage {
+            Stage::Running(running) => Some(running.child.id()),
+            _ => None,
         }
     }
 }
