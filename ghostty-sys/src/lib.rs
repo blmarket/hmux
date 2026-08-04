@@ -1159,6 +1159,31 @@ mod tests {
     }
 
     #[test]
+    fn vt_dump_carries_osc8_hyperlinks() {
+        let mut term = Terminal::new(40, 3).expect("new terminal");
+        term.write(b"\x1b]8;;https://example.test\x1b\\link\x1b]8;;\x1b\\ after");
+        let vt = term.dump_vt().expect("vt dump");
+        let s = String::from_utf8_lossy(&vt);
+        assert!(
+            s.contains("\x1b]8;;https://example.test\x1b\\link\x1b]8;;\x1b\\"),
+            "vt dump must re-open and close the OSC 8 hyperlink around the \
+             linked cells, got {s:?}"
+        );
+    }
+
+    #[test]
+    fn vt_dump_carries_osc8_explicit_id() {
+        let mut term = Terminal::new(40, 3).expect("new terminal");
+        term.write(b"\x1b]8;id=x1;https://example.test\x1b\\link\x1b]8;;\x1b\\");
+        let vt = term.dump_vt().expect("vt dump");
+        let s = String::from_utf8_lossy(&vt);
+        assert!(
+            s.contains("\x1b]8;id=x1;https://example.test\x1b\\link"),
+            "vt dump must preserve the explicit OSC 8 id, got {s:?}"
+        );
+    }
+
+    #[test]
     fn cursor_visible_tracks_dectcem() {
         let mut term = Terminal::new(20, 3).expect("new terminal");
         // Default: the cursor is visible.

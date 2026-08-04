@@ -41,6 +41,19 @@ exact conformance.
   few megabytes; past that the **oldest** pane output is dropped rather than
   stalling the pane. tmux queues without bound.
 
+The compositor repaints from the terminal engine's own VT dump, which shows
+through in how OSC 8 hyperlinks reach a client:
+
+- **Hyperlinks are sent to every client.** tmux emits OSC 8 only when the
+  client's terminal advertises the `hyperlinks` feature; hmux's pane repaint is
+  capability-agnostic (like its colours), so terminals without OSC 8 support
+  receive and ignore the sequences.
+- **Anonymous hyperlinks may split per row.** Every repainted row is
+  self-contained, so a link is closed and reopened at row boundaries. Links
+  written with an explicit `id=` stay grouped across rows; anonymous links are
+  reopened without an id, where tmux synthesizes a `tmux<n>` id to keep a
+  multi-row link hoverable as one.
+
 One divergence is deliberate rather than structural:
 
 - **customize-mode lists each user option once.** tmux 3.7b repeats the first

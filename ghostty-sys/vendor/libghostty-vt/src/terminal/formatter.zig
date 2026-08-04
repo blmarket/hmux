@@ -1054,6 +1054,14 @@ pub const PageFormatter = struct {
                     style = .{};
                 }
 
+                // Close any open hyperlink before emitting newlines so each
+                // VT row is self-contained; the next linked cell re-opens it.
+                // HTML keeps a single <a> tag across newlines.
+                if (self.opts.emit == .vt and current_hyperlink_id != null) {
+                    try self.formatHyperlinkClose(writer);
+                    current_hyperlink_id = null;
+                }
+
                 const sequence: []const u8 = switch (self.opts.emit) {
                     // Plaintext just uses standard newlines because newlines
                     // on their own usually move the cursor back in anywhere
@@ -1242,10 +1250,9 @@ pub const PageFormatter = struct {
 
                 // Hyperlink state
                 hyperlink: {
-                    // We currently only emit hyperlinks for HTML. In the
-                    // future we can support emitting OSC 8 hyperlinks for
-                    // VT output as well.
-                    if (self.opts.emit != .html) break :hyperlink;
+                    // Only styled formats carry hyperlinks: HTML emits
+                    // <a> tags and VT emits OSC 8 sequences.
+                    if (!formatStyled(self.opts.emit)) break :hyperlink;
 
                     // Get the hyperlink ID. This ID is our internal ID,
                     // not necessarily the OSC8 ID.
@@ -1270,15 +1277,18 @@ pub const PageFormatter = struct {
                     current_hyperlink_id = link_id;
 
                     // Emit the opening hyperlink tag
-                    const uri = uri: {
-                        const link = self.page.hyperlink_set.get(
-                            self.page.memory,
-                            link_id,
-                        );
-                        break :uri link.uri.offset.ptr(self.page.memory)[0..link.uri.len];
+                    const link = self.page.hyperlink_set.get(
+                        self.page.memory,
+                        link_id,
+                    );
+                    const uri = link.uri.offset.ptr(self.page.memory)[0..link.uri.len];
+                    const explicit_id: ?[]const u8 = switch (link.id) {
+                        .explicit => |slice| slice.offset.ptr(self.page.memory)[0..slice.len],
+                        .implicit => null,
                     };
                     try self.formatHyperlinkOpen(
                         writer,
+                        explicit_id,
                         uri,
                     );
 
@@ -1288,6 +1298,7 @@ pub const PageFormatter = struct {
                         var discarding: std.Io.Writer.Discarding = .init(&.{});
                         try self.formatHyperlinkOpen(
                             &discarding.writer,
+                            explicit_id,
                             uri,
                         );
                         for (0..std.math.cast(
@@ -1545,10 +1556,22 @@ pub const PageFormatter = struct {
     fn formatHyperlinkOpen(
         self: PageFormatter,
         writer: *std.Io.Writer,
+        id: ?[]const u8,
         uri: []const u8,
     ) std.Io.Writer.Error!void {
         switch (self.opts.emit) {
-            .plain, .vt => unreachable,
+            .plain => unreachable,
+
+            .vt => {
+                try writer.writeAll("\x1b]8;");
+                if (id) |v| {
+                    try writer.writeAll("id=");
+                    try writer.writeAll(v);
+                }
+                try writer.writeAll(";");
+                try writer.writeAll(uri);
+                try writer.writeAll("\x1b\\");
+            },
 
             // layout since we're primarily using it as a CSS wrapper.
             .html => {
@@ -1568,7 +1591,8 @@ pub const PageFormatter = struct {
     ) std.Io.Writer.Error!void {
         const str: []const u8 = switch (self.opts.emit) {
             .html => "</a>",
-            .plain, .vt => return,
+            .vt => "\x1b]8;;\x1b\\",
+            .plain => return,
         };
 
         try writer.writeAll(str);
@@ -3607,6 +3631,111 @@ test "Page VT duplicate style not emitted twice" {
 
     // Verify point map matches output length
     try testing.expectEqual(output.len, point_map.items.len);
+}
+
+test "Page VT hyperlink" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const io = testing.io;
+
+    var builder: std.Io.Writer.Allocating = .init(alloc);
+    defer builder.deinit();
+
+    var t = try Terminal.init(io, alloc, .{
+        .cols = 80,
+        .rows = 24,
+    });
+    defer t.deinit(alloc);
+
+    var s = t.vtStream();
+    defer s.deinit();
+
+    s.nextSlice("\x1b]8;;https://example.com\x1b\\ab\x1b]8;;\x1b\\cd");
+
+    const pages = &t.screens.active.pages;
+    const page = pages.pages.last.?.page();
+
+    var formatter: PageFormatter = .init(page, .vt);
+
+    var point_map: std.ArrayList(Coordinate) = .empty;
+    defer point_map.deinit(alloc);
+    formatter.point_map = .{ .alloc = alloc, .map = &point_map };
+
+    try formatter.format(&builder.writer);
+    const output = builder.writer.buffered();
+    try testing.expectEqualStrings(
+        "\x1b]8;;https://example.com\x1b\\ab\x1b]8;;\x1b\\cd",
+        output,
+    );
+
+    // Verify point map matches output length
+    try testing.expectEqual(output.len, point_map.items.len);
+}
+
+test "Page VT hyperlink explicit id" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const io = testing.io;
+
+    var builder: std.Io.Writer.Allocating = .init(alloc);
+    defer builder.deinit();
+
+    var t = try Terminal.init(io, alloc, .{
+        .cols = 80,
+        .rows = 24,
+    });
+    defer t.deinit(alloc);
+
+    var s = t.vtStream();
+    defer s.deinit();
+
+    s.nextSlice("\x1b]8;id=foo;https://example.com\x1b\\x\x1b]8;;\x1b\\");
+
+    const pages = &t.screens.active.pages;
+    const page = pages.pages.last.?.page();
+
+    var formatter: PageFormatter = .init(page, .vt);
+    try formatter.format(&builder.writer);
+    const output = builder.writer.buffered();
+    try testing.expectEqualStrings(
+        "\x1b]8;id=foo;https://example.com\x1b\\x\x1b]8;;\x1b\\",
+        output,
+    );
+}
+
+test "Page VT hyperlink closed at end of row" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const io = testing.io;
+
+    var builder: std.Io.Writer.Allocating = .init(alloc);
+    defer builder.deinit();
+
+    var t = try Terminal.init(io, alloc, .{
+        .cols = 80,
+        .rows = 24,
+    });
+    defer t.deinit(alloc);
+
+    var s = t.vtStream();
+    defer s.deinit();
+
+    s.nextSlice("\x1b]8;;http://e/\x1b\\ab\r\ncd\x1b]8;;\x1b\\");
+
+    const pages = &t.screens.active.pages;
+    const page = pages.pages.last.?.page();
+
+    var formatter: PageFormatter = .init(page, .vt);
+    try formatter.format(&builder.writer);
+    const output = builder.writer.buffered();
+
+    // Each row is self-contained: the link closes before the newline and
+    // reopens on the next row's linked cells.
+    try testing.expectEqualStrings(
+        "\x1b]8;;http://e/\x1b\\ab\x1b]8;;\x1b\\\r\n" ++
+            "\x1b]8;;http://e/\x1b\\cd\x1b]8;;\x1b\\",
+        output,
+    );
 }
 
 test "PageList plain single line" {
