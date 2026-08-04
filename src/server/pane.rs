@@ -1412,10 +1412,10 @@ impl Pane {
     ///
     /// This never blocks, even when the child has stopped reading its stdin: the
     /// master is non-blocking, so bytes that the child cannot yet accept are held
-    /// in the bounded `pending_input` buffer and flushed by the reader thread on
-    /// writability. This is what keeps a stalled full-screen app from wedging the
-    /// server lock held by the caller (`forward_input` holds the state mutex; a
-    /// blocking write here used to hang every command — see `report.md`).
+    /// in the bounded `pending_input` buffer and flushed by the loop when the
+    /// master reports writable. This is what keeps a stalled full-screen app from
+    /// wedging the server lock held by the caller: `forward_input` holds the
+    /// state mutex, and a blocking write here would hang every command.
     pub fn input(&self, bytes: &[u8]) -> io::Result<()> {
         self.input_with_stats(bytes).map(|_| ())
     }
