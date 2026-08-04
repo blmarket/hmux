@@ -2071,7 +2071,7 @@ mod tests {
     fn control_subscription_observes_agent_status_changes() -> io::Result<()> {
         let mut server = ServerState::empty();
         server.create_session("work", PaneSpec::Inert)?;
-        let state = Arc::new(Mutex::new(server));
+        let state = crate::server::state::shared_state(server);
         let hub = StatusHub::new();
 
         let (client_input, mut command_input) = UnixStream::pair()?;

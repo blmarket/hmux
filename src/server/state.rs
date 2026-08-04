@@ -42,6 +42,11 @@ fn default_pane_io_mode() -> PaneIoMode {
 /// ownership, not concurrency.
 pub(crate) type SharedState = Arc<Mutex<ServerState>>;
 
+/// Wrap a fresh [`ServerState`] in the handle everything on the loop shares.
+pub(crate) fn shared_state(state: ServerState) -> SharedState {
+    Arc::new(Mutex::new(state))
+}
+
 /// How to back a new pane's screen.
 pub enum PaneSpec {
     /// A screen with no child process (deterministic; used for the default

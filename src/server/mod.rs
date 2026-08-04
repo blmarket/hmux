@@ -40,7 +40,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::integration::status::StatusHub;
 use crate::observability::v1::{PaneId as PublicPaneId, PaneObservability, ServerObservability};
@@ -106,7 +106,7 @@ impl ServerObservability for Server {
 
 impl Server {
     fn from_state(state: ServerState, hook: Rc<dyn ObservationHook>) -> io::Result<Server> {
-        let state = Arc::new(Mutex::new(state));
+        let state = state::shared_state(state);
         Ok(Server {
             state,
             status: StatusHub::new(),

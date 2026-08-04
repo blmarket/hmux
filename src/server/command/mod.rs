@@ -9328,7 +9328,7 @@ mod tests {
     use super::*;
 
     fn state() -> SharedState {
-        Arc::new(Mutex::new(ServerState::with_test_session().unwrap()))
+        crate::server::state::shared_state(ServerState::with_test_session().unwrap())
     }
 
     fn run_str(st: &SharedState, args: &[&str]) -> CommandResult {
