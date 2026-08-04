@@ -6,6 +6,7 @@
 //! state. Panes hold a libghostty-backed [`Pane`], so a created session is a
 //! genuinely running terminal, not a stub.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io;
@@ -4126,7 +4127,7 @@ pub struct ServerState {
     /// and generation it was built for. A command builds its job runner whether
     /// or not it expands a `#()`, and rebuilding the whole environment each
     /// time is not free.
-    job_environment_cache: Mutex<Option<(u64, Option<u32>, Arc<Vec<String>>)>>,
+    job_environment_cache: RefCell<Option<(u64, Option<u32>, Arc<Vec<String>>)>>,
     /// Independent server, global-session, and global-window option tables.
     global_options: GlobalOptions,
     /// The paste-buffer stack, newest first (tmux's `#{buffer_name}` order in
@@ -4239,7 +4240,7 @@ impl ServerState {
             hidden_environment: BTreeSet::new(),
             seeded_environment: BTreeSet::new(),
             environment_generation: 0,
-            job_environment_cache: Mutex::new(None),
+            job_environment_cache: RefCell::new(None),
             global_options: GlobalOptions::new(),
             buffers: Vec::new(),
             buffer_created: BTreeMap::new(),
@@ -10117,17 +10118,19 @@ impl ServerState {
             .and_then(|target| self.resolve_session(target))
             .map(|session| session.id);
         let generation = self.environment_generation;
-        if let Ok(mut cache) = self.job_environment_cache.lock() {
-            if let Some((cached_generation, cached_session, environment)) = cache.as_ref() {
-                if *cached_generation == generation && *cached_session == session_id {
-                    return Arc::clone(environment);
-                }
+        if let Some((cached_generation, cached_session, environment)) =
+            self.job_environment_cache.borrow().as_ref()
+        {
+            if *cached_generation == generation && *cached_session == session_id {
+                return Arc::clone(environment);
             }
-            let environment = Arc::new(self.spawn_environment(session, &[], &[]));
-            *cache = Some((generation, session_id, Arc::clone(&environment)));
-            return environment;
         }
-        Arc::new(self.spawn_environment(session, &[], &[]))
+        // Built outside the borrow: `spawn_environment` walks the rest of the
+        // state and must not run with the cache borrowed.
+        let environment = Arc::new(self.spawn_environment(session, &[], &[]));
+        *self.job_environment_cache.borrow_mut() =
+            Some((generation, session_id, Arc::clone(&environment)));
+        environment
     }
 
     /// tmux's `environ_update`: copy the variables `update-environment` names
