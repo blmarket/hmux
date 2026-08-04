@@ -43,6 +43,10 @@ exact conformance.
 - `exit-empty` takes a third value, `after-session`, and defaults to it. As
   hmux start with empty session, we keep it alive until the first session being
   created.
+- The agent-status poll walks `/proc` for the pane process trees it attributes,
+  on the loop, every 200 ms. Measured at 1.6 ms per pass over 573 processes,
+  so it is left inline; the table is built only on a pass that actually needs
+  it. On a host with a far larger process table the pass grows with it.
 
 The compositor repaints from the terminal engine's own VT dump, which shows
 through in how OSC 8 hyperlinks reach a client:

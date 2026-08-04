@@ -9,6 +9,7 @@
 //! per agent — avoids two observers fighting over the same pane, and matches how
 //! Herdr identifies a pane's agent once and then reads only that agent's UI.
 
+use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -825,32 +826,45 @@ pub(crate) struct ProcessSnapshot<'a> {
     source: &'a dyn ProcessSource,
     /// `ppid -> child pids`, reconstructed from the parent-pid edges, or `None`
     /// when the process table was unavailable this tick.
-    children: Option<HashMap<u32, Vec<u32>>>,
+    ///
+    /// Built on first use rather than at capture: reading every visible process
+    /// dominates the poll, and a tick where no pane needs attribution — no
+    /// panes, or every pane's child already gone — should not pay for it.
+    children: OnceCell<Option<HashMap<u32, Vec<u32>>>>,
 }
 
 impl<'a> ProcessSnapshot<'a> {
-    /// Scan the process table once and index it by parent pid; all per-pane
-    /// attribution reads from the returned snapshot.
+    /// Take the process table for one poll; every pane inspected this tick
+    /// reads from the same index.
     pub(crate) fn capture(source: &'a dyn ProcessSource) -> Self {
-        let children = source.process_table().map(|table| {
-            let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
-            for (pid, ppid) in table {
-                children.entry(ppid).or_default().push(pid);
-            }
-            children
-        });
-        Self { source, children }
+        Self {
+            source,
+            children: OnceCell::new(),
+        }
     }
 
-    /// Whether the process table was available when this snapshot was captured.
+    fn children(&self) -> Option<&HashMap<u32, Vec<u32>>> {
+        self.children
+            .get_or_init(|| {
+                self.source.process_table().map(|table| {
+                    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+                    for (pid, ppid) in table {
+                        children.entry(ppid).or_default().push(pid);
+                    }
+                    children
+                })
+            })
+            .as_ref()
+    }
+
+    /// Whether the process table is available to this snapshot.
     fn has_process_table(&self) -> bool {
-        self.children.is_some()
+        self.children().is_some()
     }
 
     /// The direct children of `pid` in the captured table.
     fn children_of(&self, pid: u32) -> &[u32] {
-        self.children
-            .as_ref()
+        self.children()
             .and_then(|children| children.get(&pid))
             .map_or(&[][..], Vec::as_slice)
     }
