@@ -1,4 +1,4 @@
-//! Runtime-neutral coroutines for the shell-backed command suspensions.
+//! Runtime-neutral coroutines for the command suspensions the loop can drive.
 //!
 //! `run-shell` and `if-shell` both run `sh -c` and need the child's output and
 //! exit status before the command queue can continue. Expressing them as
@@ -7,9 +7,17 @@
 //! child's stdout and stderr pipes — so the server loop can drive the job
 //! between its other work, and a blocking test driver can run the very same
 //! job on the calling thread.
+//!
+//! `source-file` and `load-buffer` read a path. Regular files are read inline
+//! (tmux 3.7b reads its configuration on its own loop, so nothing is gained by
+//! deferring them), but a FIFO makes the read wait for a writer that may be
+//! another client of this very server — so those become [`FifoRead`] jobs.
 
+use std::fs::File;
 use std::io::{self, Read};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
+use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -17,7 +25,7 @@ use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest
 
 use super::{
     flag_value, has_flag, job_delay, positionals, shell_command, ClientContext, CommandResult,
-    RunShellCompletion,
+    RunShellCompletion, SourceFileRead,
 };
 
 /// A finished `sh -c` child.
@@ -392,6 +400,238 @@ fn drain_pipe<T: Read>(pipe: &mut Option<T>, captured: &mut Vec<u8>) {
     *pipe = None;
 }
 
+/// `source-file paths`: read every path in order, reporting what each one
+/// held so the caller can queue the commands it parsed.
+pub(crate) struct SourceFileJob {
+    remaining: std::vec::IntoIter<String>,
+    reads: Vec<SourceFileRead>,
+    current: Option<(String, FifoRead)>,
+}
+
+impl SourceFileJob {
+    pub(crate) fn new(paths: Vec<String>) -> Self {
+        Self {
+            remaining: paths.into_iter(),
+            reads: Vec::new(),
+            current: None,
+        }
+    }
+
+    fn record(&mut self, path: String, contents: io::Result<Vec<u8>>) {
+        let existed = Path::new(&path).exists();
+        self.reads.push(SourceFileRead {
+            path,
+            contents: contents.and_then(|bytes| {
+                String::from_utf8(bytes).map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "stream did not contain valid UTF-8",
+                    )
+                })
+            }),
+            existed,
+        });
+    }
+}
+
+impl Coroutine for SourceFileJob {
+    type Output = Vec<SourceFileRead>;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match &self.current {
+            Some((_, read)) => read.wait(),
+            None => WaitRequest::new(Vec::new(), Some(Instant::now())),
+        }
+    }
+
+    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
+        loop {
+            if let Some((_, read)) = self.current.as_mut() {
+                let TaskPoll::Ready(contents) = read.resume(ready) else {
+                    return TaskPoll::Pending;
+                };
+                let (path, _) = self.current.take().expect("the read was just observed");
+                self.record(path, contents);
+            }
+            let Some(path) = self.remaining.next() else {
+                return TaskPoll::Ready(std::mem::take(&mut self.reads));
+            };
+            match open_path(Path::new(&path)) {
+                PathOpen::Inline(contents) => self.record(path, contents),
+                PathOpen::Fifo(read) => self.current = Some((path, read)),
+            }
+        }
+    }
+}
+
+/// `load-buffer path`, without `-` (the client's stdin): read the file into a
+/// paste buffer, or report the `errno` the stock client would have seen.
+pub(crate) struct LoadBufferJob {
+    open: Option<PathBuf>,
+    read: Option<FifoRead>,
+}
+
+impl LoadBufferJob {
+    pub(crate) fn new(path: PathBuf) -> Self {
+        Self {
+            open: Some(path),
+            read: None,
+        }
+    }
+
+    fn finish(contents: io::Result<Vec<u8>>) -> Result<Vec<u8>, i32> {
+        contents.map_err(|error| error.raw_os_error().unwrap_or(libc::EIO))
+    }
+}
+
+impl Coroutine for LoadBufferJob {
+    type Output = Result<Vec<u8>, i32>;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match &self.read {
+            Some(read) => read.wait(),
+            None => WaitRequest::new(Vec::new(), Some(Instant::now())),
+        }
+    }
+
+    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
+        if let Some(path) = self.open.take() {
+            match open_path(&path) {
+                PathOpen::Inline(contents) => return TaskPoll::Ready(Self::finish(contents)),
+                PathOpen::Fifo(read) => self.read = Some(read),
+            }
+        }
+        let Some(read) = self.read.as_mut() else {
+            return TaskPoll::Pending;
+        };
+        match read.resume(ready) {
+            TaskPoll::Ready(contents) => {
+                self.read = None;
+                TaskPoll::Ready(Self::finish(contents))
+            }
+            TaskPoll::Pending => TaskPoll::Pending,
+        }
+    }
+}
+
+/// How a path is read: everything but a FIFO is read on the spot.
+enum PathOpen {
+    Inline(io::Result<Vec<u8>>),
+    Fifo(FifoRead),
+}
+
+fn open_path(path: &Path) -> PathOpen {
+    let is_fifo = std::fs::metadata(path).is_ok_and(|metadata| metadata.file_type().is_fifo());
+    if !is_fifo {
+        return PathOpen::Inline(std::fs::read(path));
+    }
+    // A blocking open would wait here for a writer that is very often another
+    // client of this server, so open the read end without blocking and let the
+    // job wait for the data instead.
+    match std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+    {
+        Ok(file) => PathOpen::Fifo(FifoRead::new(file)),
+        Err(error) => PathOpen::Inline(Err(error)),
+    }
+}
+
+/// How long to wait before looking again for a writer on a FIFO nobody has
+/// opened yet. A read end with no writer reports end of file rather than
+/// blocking, and an absent writer is not a readiness event, so this stage
+/// cannot be described to a poller.
+const FIFO_WRITER_RETRY_MIN: Duration = Duration::from_millis(1);
+const FIFO_WRITER_RETRY_MAX: Duration = Duration::from_millis(50);
+
+enum FifoStage {
+    /// No writer has appeared yet; retrying the read on a backing-off deadline.
+    Waiting { retry: Instant, backoff: Duration },
+    /// A writer is attached: end of file now means the writer is done.
+    Reading,
+    /// The contents were reported.
+    Done,
+}
+
+/// The read end of a FIFO, drained until the writer closes it.
+struct FifoRead {
+    file: File,
+    data: Vec<u8>,
+    stage: FifoStage,
+}
+
+impl FifoRead {
+    const READABLE: WaitToken = WaitToken::new(0);
+
+    fn new(file: File) -> Self {
+        Self {
+            file,
+            data: Vec::new(),
+            stage: FifoStage::Waiting {
+                retry: Instant::now(),
+                backoff: FIFO_WRITER_RETRY_MIN,
+            },
+        }
+    }
+}
+
+impl Coroutine for FifoRead {
+    type Output = io::Result<Vec<u8>>;
+
+    fn wait(&self) -> WaitRequest<'_> {
+        match &self.stage {
+            FifoStage::Waiting { retry, .. } => WaitRequest::new(Vec::new(), Some(*retry)),
+            FifoStage::Reading => WaitRequest::new(
+                vec![FdInterest::readable(Self::READABLE, self.file.as_fd())],
+                None,
+            ),
+            FifoStage::Done => WaitRequest::new(Vec::new(), Some(Instant::now())),
+        }
+    }
+
+    fn resume(&mut self, _ready: &ReadySet) -> TaskPoll<Self::Output> {
+        // Every stage only ever attempts a non-blocking read, so a spurious
+        // wakeup costs one syscall and no driver has to describe which source
+        // woke it.
+        let mut chunk = [0u8; 8192];
+        loop {
+            let read = match self.file.read(&mut chunk) {
+                Ok(read) => read,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    // Only an attached writer leaves the pipe empty without
+                    // reporting end of file.
+                    self.stage = FifoStage::Reading;
+                    return TaskPoll::Pending;
+                }
+                Err(error) => {
+                    self.stage = FifoStage::Done;
+                    return TaskPoll::Ready(Err(error));
+                }
+            };
+            if read > 0 {
+                self.data.extend_from_slice(&chunk[..read]);
+                self.stage = FifoStage::Reading;
+                continue;
+            }
+            return match &mut self.stage {
+                // End of file before any writer appeared says nothing about the
+                // writer that `source-file` is waiting for; ask again shortly.
+                FifoStage::Waiting { retry, backoff } => {
+                    *retry = Instant::now() + *backoff;
+                    *backoff = (*backoff * 2).min(FIFO_WRITER_RETRY_MAX);
+                    TaskPoll::Pending
+                }
+                _ => {
+                    self.stage = FifoStage::Done;
+                    TaskPoll::Ready(Ok(std::mem::take(&mut self.data)))
+                }
+            };
+        }
+    }
+}
+
 fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
     let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) };
     if flags < 0 {
@@ -405,9 +645,14 @@ fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{IfShellJob, RunShellJob};
+    use super::{IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob};
     use crate::server::command::ClientContext;
     use crate::server::task::run_blocking;
+    use std::fs;
+    use std::io;
+    use std::path::{Path, PathBuf};
+    use std::process;
+    use std::thread;
     use std::time::{Duration, Instant};
 
     fn args(values: &[&str]) -> Vec<String> {
@@ -473,5 +718,102 @@ mod tests {
         let context = ClientContext::default();
         assert!(run_blocking(IfShellJob::new("true", &context)));
         assert!(!run_blocking(IfShellJob::new("exit 7", &context)));
+    }
+
+    fn temporary_directory(name: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!("hmux-suspend-{name}-{}", process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).expect("temporary directory");
+        directory
+    }
+
+    fn mkfifo(path: &Path) -> PathBuf {
+        let raw = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).expect("FIFO path");
+        assert_eq!(
+            unsafe { libc::mkfifo(raw.as_ptr(), 0o600) },
+            0,
+            "mkfifo: {}",
+            io::Error::last_os_error()
+        );
+        path.to_path_buf()
+    }
+
+    #[test]
+    fn source_file_job_reads_regular_files_without_waiting() {
+        let directory = temporary_directory("source-regular");
+        let first = directory.join("first.conf");
+        let second = directory.join("missing.conf");
+        fs::write(&first, "set-buffer -b one yes\n").expect("write config");
+
+        let reads = run_blocking(SourceFileJob::new(vec![
+            first.display().to_string(),
+            second.display().to_string(),
+        ]));
+
+        assert_eq!(reads.len(), 2);
+        assert_eq!(
+            reads[0].contents.as_deref().expect("first file"),
+            "set-buffer -b one yes\n"
+        );
+        assert!(reads[0].existed);
+        assert!(reads[1].contents.is_err());
+        assert!(!reads[1].existed);
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn source_file_job_waits_for_the_fifo_writer() {
+        let directory = temporary_directory("source-fifo");
+        let fifo = mkfifo(&directory.join("commands"));
+        let writer = thread::spawn({
+            let fifo = fifo.clone();
+            move || {
+                thread::sleep(Duration::from_millis(100));
+                fs::write(&fifo, b"set-buffer -b sourced yes\n").expect("write FIFO");
+            }
+        });
+
+        let reads = run_blocking(SourceFileJob::new(vec![fifo.display().to_string()]));
+
+        writer.join().expect("writer");
+        assert_eq!(
+            reads[0].contents.as_deref().expect("FIFO contents"),
+            "set-buffer -b sourced yes\n"
+        );
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn load_buffer_job_reads_a_fifo_written_in_pieces() {
+        let directory = temporary_directory("load-fifo");
+        let fifo = mkfifo(&directory.join("buffer"));
+        let writer = thread::spawn({
+            let fifo = fifo.clone();
+            move || {
+                let mut file = fs::OpenOptions::new()
+                    .write(true)
+                    .open(&fifo)
+                    .expect("open FIFO");
+                std::io::Write::write_all(&mut file, b"first ").expect("first write");
+                thread::sleep(Duration::from_millis(50));
+                std::io::Write::write_all(&mut file, b"second").expect("second write");
+            }
+        });
+
+        let contents = run_blocking(LoadBufferJob::new(fifo.clone()));
+
+        writer.join().expect("writer");
+        assert_eq!(contents.expect("FIFO contents"), b"first second".to_vec());
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn load_buffer_job_reports_the_errno_of_a_missing_path() {
+        let directory = temporary_directory("load-missing");
+
+        let contents = run_blocking(LoadBufferJob::new(directory.join("absent")));
+
+        assert_eq!(contents, Err(libc::ENOENT));
+        let _ = fs::remove_dir_all(&directory);
     }
 }

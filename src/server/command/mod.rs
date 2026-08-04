@@ -60,7 +60,7 @@ use super::task::{
     run_blocking, Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest,
     WaitToken,
 };
-use suspend::{IfShellJob, RunShellJob};
+use suspend::{IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.
@@ -947,6 +947,14 @@ pub(crate) struct SourceFileRead {
     existed: bool,
 }
 
+impl SourceFileRead {
+    /// What the suspended `source-file` will parse for this path.
+    #[cfg(test)]
+    pub(crate) fn contents(&self) -> Option<&str> {
+        self.contents.as_deref().ok()
+    }
+}
+
 pub(crate) struct PaneOutputSuspension {
     observation: Arc<super::pane::NativePaneObservation>,
     before: u64,
@@ -1204,23 +1212,12 @@ impl CommandSuspension {
             Self::IfShell { condition, context } => CommandSuspensionResult::IfShell(run_blocking(
                 IfShellJob::new(&condition, &context),
             )),
-            Self::SourceFile { paths } => CommandSuspensionResult::SourceFile(
-                paths
-                    .into_iter()
-                    .map(|path| {
-                        let contents = std::fs::read_to_string(&path);
-                        let existed = Path::new(&path).exists();
-                        SourceFileRead {
-                            path,
-                            contents,
-                            existed,
-                        }
-                    })
-                    .collect(),
-            ),
-            Self::LoadBuffer { path } => CommandSuspensionResult::LoadBuffer(
-                std::fs::read(path).map_err(|error| error.raw_os_error().unwrap_or(libc::EIO)),
-            ),
+            Self::SourceFile { paths } => {
+                CommandSuspensionResult::SourceFile(run_blocking(SourceFileJob::new(paths)))
+            }
+            Self::LoadBuffer { path } => {
+                CommandSuspensionResult::LoadBuffer(run_blocking(LoadBufferJob::new(path)))
+            }
             Self::SaveBuffer { request } => {
                 CommandSuspensionResult::SaveBuffer(write_client_file_request(request))
             }
