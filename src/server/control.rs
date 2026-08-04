@@ -1169,7 +1169,7 @@ impl ControlCommandId {
 struct ControlPaneStream {
     runtime_id: u64,
     offset: u64,
-    observation: Arc<NativePaneObservation>,
+    observation: Rc<NativePaneObservation>,
     subscription: OutputSubscription,
     enabled: bool,
     paused: bool,
@@ -1360,7 +1360,7 @@ fn control_pane_streams(
             ControlPaneStream {
                 runtime_id: pane.runtime_id,
                 offset,
-                observation: Arc::clone(&pane.observation),
+                observation: Rc::clone(&pane.observation),
                 subscription,
                 enabled: true,
                 paused: false,
@@ -1395,7 +1395,7 @@ fn sync_control_pane_streams(
             ControlPaneStream {
                 runtime_id: pane.runtime_id,
                 offset: 0,
-                observation: Arc::clone(&pane.observation),
+                observation: Rc::clone(&pane.observation),
                 subscription: pane.observation.subscribe_output()?,
                 enabled: true,
                 paused: false,

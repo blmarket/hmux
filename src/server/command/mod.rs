@@ -77,7 +77,7 @@ pub struct CommandResult {
     pub stdout_bytes: Vec<u8>,
     pub stderr: String,
     pub exit: i32,
-    pub(crate) pane_output_wait: Option<(Arc<super::pane::NativePaneObservation>, u64)>,
+    pub(crate) pane_output_wait: Option<(Rc<super::pane::NativePaneObservation>, u64)>,
     pub(crate) deferred_commands: Vec<DeferredCommand>,
     pub(crate) background_commands: Vec<BackgroundCommandRequest>,
     /// Continue the containing command list despite a nonzero client status.
@@ -903,7 +903,7 @@ impl SourceFileRead {
 }
 
 pub(crate) struct PaneOutputSuspension {
-    observation: Arc<super::pane::NativePaneObservation>,
+    observation: Rc<super::pane::NativePaneObservation>,
     before: u64,
     subscription: super::pane::OutputSubscription,
     deadline: Instant,
@@ -914,7 +914,7 @@ impl PaneOutputSuspension {
     const OUTPUT_READY: WaitToken = WaitToken::new(0);
 
     fn new(
-        observation: Arc<super::pane::NativePaneObservation>,
+        observation: Rc<super::pane::NativePaneObservation>,
         before: u64,
         result: CommandResult,
     ) -> Result<Self, CommandResult> {

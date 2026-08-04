@@ -10,7 +10,7 @@
 /// the public traits defined here.
 pub mod v1 {
     use std::io;
-    use std::sync::Arc;
+    use std::rc::Rc;
 
     /// Stable server-local identity of a pane.
     #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -71,7 +71,7 @@ pub mod v1 {
         /// Resolve a current pane identifier to its observation handle.
         ///
         /// Returns `None` if the pane disappeared before it could be resolved.
-        fn resolve_pane(&self, id: PaneId) -> io::Result<Option<Arc<dyn PaneObservability>>>;
+        fn resolve_pane(&self, id: PaneId) -> io::Result<Option<Rc<dyn PaneObservability>>>;
     }
 
     /// Read-only observability for one resolved pane.

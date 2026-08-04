@@ -2339,7 +2339,7 @@ pub(crate) struct AttachedClient {
 pub(crate) struct ControlPaneSnapshot {
     pub(crate) id: u32,
     pub(crate) runtime_id: u64,
-    pub(crate) observation: Arc<NativePaneObservation>,
+    pub(crate) observation: Rc<NativePaneObservation>,
 }
 
 #[derive(Clone)]
@@ -12197,7 +12197,7 @@ impl ServerState {
     pub(crate) fn pane_observation_state(
         &self,
         target: &str,
-    ) -> io::Result<Arc<super::pane::NativePaneObservation>> {
+    ) -> io::Result<Rc<super::pane::NativePaneObservation>> {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         Ok(
             self.window(resolved.session, resolved.window).panes[resolved.pane]

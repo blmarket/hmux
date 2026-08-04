@@ -40,7 +40,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use crate::integration::status::StatusHub;
 use crate::observability::v1::{PaneId as PublicPaneId, PaneObservability, ServerObservability};
@@ -87,7 +86,7 @@ impl ServerObservability for Server {
         Ok(ids)
     }
 
-    fn resolve_pane(&self, id: PublicPaneId) -> io::Result<Option<Arc<dyn PaneObservability>>> {
+    fn resolve_pane(&self, id: PublicPaneId) -> io::Result<Option<Rc<dyn PaneObservability>>> {
         let state = self.state.borrow_mut();
         let pane = state
             .all_windows()
@@ -306,7 +305,7 @@ impl ObservationHook for NoopObservationHook {
 #[derive(Clone)]
 pub(crate) struct PaneHandle {
     id: PaneId,
-    observation: Arc<pane::NativePaneObservation>,
+    observation: Rc<pane::NativePaneObservation>,
 }
 
 #[allow(dead_code)]

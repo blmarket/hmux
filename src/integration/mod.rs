@@ -14,7 +14,6 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::Arc;
 use std::time::Duration;
 
 use tracing::{info, warn};
@@ -275,7 +274,7 @@ struct ReportedStatus {
 }
 
 struct TrackedPane {
-    pane: Arc<dyn PaneObservability>,
+    pane: Rc<dyn PaneObservability>,
     revision: Option<u64>,
     /// Last `(agent label, state, pid, session id)` tuple reported for this pane.
     /// Dedup keys on the whole tuple — not just the state — so that identifying

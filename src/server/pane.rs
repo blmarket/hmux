@@ -22,7 +22,6 @@ use std::process::{Command, Stdio};
 use std::ptr;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use libc::pid_t;
@@ -39,7 +38,7 @@ pub struct Pane {
     /// Read-only state shared with observation handles. Keeping this separate
     /// from the PTY owner lets consumers inspect a resolved pane without
     /// retaining the native server's global state lock.
-    observation: Arc<NativePaneObservation>,
+    observation: Rc<NativePaneObservation>,
     /// Terminal queries emitted by the child which must be relayed to an
     /// attached outer terminal. Ghostty consumes OSC sequences while updating
     /// the grid, so they need a separate side channel to reach the compositor.
@@ -1315,7 +1314,7 @@ impl Pane {
     pub fn inert(cols: u16, rows: u16) -> io::Result<Pane> {
         let term = Terminal::new(cols, rows).map_err(ghostty_err)?;
         Ok(Pane {
-            observation: Arc::new(NativePaneObservation::new(
+            observation: Rc::new(NativePaneObservation::new(
                 Rc::new(RefCell::new(term)),
                 None,
                 cols,
@@ -1408,7 +1407,7 @@ impl Pane {
         let pending_input = Rc::new(RefCell::new(VecDeque::new()));
         let pipe_output = Rc::new(RefCell::new(PanePipeOutbound::default()));
         let pipe_output_active = Rc::new(Cell::new(false));
-        let observation = Arc::new(NativePaneObservation::new(
+        let observation = Rc::new(NativePaneObservation::new(
             term,
             Some(ObservedChild {
                 pid: pid as u32,
@@ -1419,7 +1418,7 @@ impl Pane {
         ));
         let pane_io = PaneIo::new(
             &master,
-            Arc::clone(&observation),
+            Rc::clone(&observation),
             Rc::clone(&terminal_queries),
             Rc::clone(&pending_input),
             Rc::clone(&pipe_output),
@@ -1603,14 +1602,14 @@ impl Pane {
     }
 
     /// Return the stable read-only handle associated with this pane.
-    pub(crate) fn observation(&self) -> Arc<dyn PaneObservability> {
-        Arc::clone(&self.observation) as Arc<dyn PaneObservability>
+    pub(crate) fn observation(&self) -> Rc<dyn PaneObservability> {
+        Rc::clone(&self.observation) as Rc<dyn PaneObservability>
     }
 
     /// Concrete shared state used by the crate-private native observation
     /// handle. Public consumers continue to use `PaneObservability`.
-    pub(crate) fn observation_state(&self) -> Arc<NativePaneObservation> {
-        Arc::clone(&self.observation)
+    pub(crate) fn observation_state(&self) -> Rc<NativePaneObservation> {
+        Rc::clone(&self.observation)
     }
 
 
@@ -2198,7 +2197,7 @@ pub(crate) struct PaneIoReadResult {
 /// turn at a time.
 pub(crate) struct PaneIo {
     fd: OwnedFd,
-    observation: Arc<NativePaneObservation>,
+    observation: Rc<NativePaneObservation>,
     terminal_queries: Rc<RefCell<VecDeque<Vec<u8>>>>,
     pending_input: Rc<RefCell<VecDeque<u8>>>,
     pipe_output: Rc<RefCell<PanePipeOutbound>>,
@@ -2226,7 +2225,7 @@ pub(crate) struct PaneIo {
 impl PaneIo {
     pub(crate) fn new(
         master: &OwnedFd,
-        observation: Arc<NativePaneObservation>,
+        observation: Rc<NativePaneObservation>,
         terminal_queries: Rc<RefCell<VecDeque<Vec<u8>>>>,
         pending_input: Rc<RefCell<VecDeque<u8>>>,
         pipe_output: Rc<RefCell<PanePipeOutbound>>,
