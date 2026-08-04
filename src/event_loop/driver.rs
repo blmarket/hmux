@@ -1261,28 +1261,33 @@ mod tests {
     }
 
     #[test]
-    fn scratch_executor_writes_a_large_fifo_save_buffer_to_a_late_reader() {
+    fn executor_writes_a_fifo_save_buffer_a_reader_drains_late() {
         use std::os::unix::fs::OpenOptionsExt;
+
         let mut loop_ = EventLoop::new().unwrap();
         let path = ListenerPath::new();
         let raw = std::ffi::CString::new(path.0.as_os_str().as_encoded_bytes()).unwrap();
         assert_eq!(unsafe { libc::mkfifo(raw.as_ptr(), 0o600) }, 0);
+        // Many pipe buffers' worth, with the reader attached from the start but
+        // idle: the job's very first write fills the pipe, so everything after
+        // it depends on the loop rearming writable interest.
         let payload = vec![b'x'; 8 * 1024 * 1024];
         let reader = std::fs::OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_NONBLOCK)
             .open(&path.0)
             .unwrap();
-        let joiner = std::thread::spawn({
-            move || {
-                std::thread::sleep(Duration::from_millis(100));
-                let flags = unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_GETFL) };
-                unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_SETFL, flags & !libc::O_NONBLOCK) };
-                let mut out = Vec::new();
-                let mut reader = reader;
-                std::io::Read::read_to_end(&mut reader, &mut out).unwrap();
-                out
-            }
+        let drained = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            let flags = unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_GETFL) };
+            assert_eq!(
+                unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_SETFL, flags & !libc::O_NONBLOCK) },
+                0
+            );
+            let mut contents = Vec::new();
+            let mut reader = reader;
+            std::io::Read::read_to_end(&mut reader, &mut contents).unwrap();
+            contents
         });
 
         let result = resolve_on_loop(
@@ -1301,7 +1306,7 @@ mod tests {
             panic!("save-buffer suspension resolved as another variant");
         };
         assert_eq!(result.exit, 0, "{}", result.stderr);
-        assert_eq!(joiner.join().unwrap().len(), payload.len());
+        assert_eq!(drained.join().unwrap(), payload);
     }
 
     #[test]
