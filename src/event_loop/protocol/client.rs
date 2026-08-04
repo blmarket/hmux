@@ -100,6 +100,12 @@ pub(super) enum ProtocolState {
     Control(ControlClientState),
     Attach(AttachClientState),
     Draining,
+    /// The response is fully queued and the client has been told to exit.
+    ///
+    /// tmux leaves the socket open here and lets the client disconnect, which
+    /// is what gives a client still flushing a `save-buffer` of its own the
+    /// chance to finish; closing first would discard whatever it has buffered.
+    AwaitingClientClose,
     Closed,
 }
 
@@ -307,6 +313,7 @@ impl ProtocolClient {
                 | ProtocolState::Control(_)
                 | ProtocolState::Attach(_)
                 | ProtocolState::Draining
+                | ProtocolState::AwaitingClientClose
         )
     }
 
@@ -328,6 +335,8 @@ impl ProtocolClient {
         match &self.protocol_state {
             ProtocolState::Identifying(_) | ProtocolState::Command(_) => true,
             ProtocolState::Attach(attach) => !attach.input_paused,
+            // Reading on is how the departing client's close is noticed.
+            ProtocolState::AwaitingClientClose => true,
             ProtocolState::Control(_) | ProtocolState::Draining | ProtocolState::Closed => false,
         }
     }
@@ -460,6 +469,9 @@ impl ProtocolClient {
                 ProtocolState::Attach(_) => {
                     self.handle_attach_protocol_frame(target, frame, outbox)
                 }
+                // Whatever a client says after being told to exit is moot; the
+                // read is only here to see the socket close.
+                ProtocolState::AwaitingClientClose => {}
                 ProtocolState::Draining | ProtocolState::Closed => return,
             }
             if self.reads_paused || !self.accepts_protocol_input() {
@@ -711,8 +723,8 @@ impl ProtocolClient {
                     self.start_command_work(target, CommandWork::Advance(transaction), outbox);
                 }
                 GeneratedFrame::ResponseComplete => {
-                    self.protocol_state = ProtocolState::Draining;
-                    outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, false);
+                    self.protocol_state = ProtocolState::AwaitingClientClose;
+                    outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, true);
                     break;
                 }
                 GeneratedFrame::Blocked => break,

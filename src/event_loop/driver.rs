@@ -1262,6 +1262,50 @@ mod tests {
     }
 
     #[test]
+    fn scratch_executor_writes_a_large_fifo_save_buffer_to_a_late_reader() {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut loop_ = EventLoop::new().unwrap();
+        let path = ListenerPath::new();
+        let raw = std::ffi::CString::new(path.0.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(raw.as_ptr(), 0o600) }, 0);
+        let payload = vec![b'x'; 8 * 1024 * 1024];
+        let reader = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(&path.0)
+            .unwrap();
+        let joiner = std::thread::spawn({
+            move || {
+                std::thread::sleep(Duration::from_millis(100));
+                let flags = unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_GETFL) };
+                unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_SETFL, flags & !libc::O_NONBLOCK) };
+                let mut out = Vec::new();
+                let mut reader = reader;
+                std::io::Read::read_to_end(&mut reader, &mut out).unwrap();
+                out
+            }
+        });
+
+        let result = resolve_on_loop(
+            &mut loop_,
+            CommandSuspension::SaveBuffer {
+                request: ClientFileWrite {
+                    path: path.0.clone(),
+                    display_path: path.0.display().to_string(),
+                    flags: libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
+                    data: payload.clone(),
+                },
+            },
+        );
+
+        let CommandSuspensionResult::SaveBuffer(result) = result else {
+            panic!("save-buffer suspension resolved as another variant");
+        };
+        assert_eq!(result.exit, 0, "{}", result.stderr);
+        assert_eq!(joiner.join().unwrap().len(), payload.len());
+    }
+
+    #[test]
     fn executor_releases_every_registration_once_a_job_finishes() {
         let mut loop_ = EventLoop::new().unwrap();
 
