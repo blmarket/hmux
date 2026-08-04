@@ -127,9 +127,10 @@ fn run_server(args: Args) -> hmux::Result<()> {
     // commit the first session to the 80x24 fallback geometry.
     let server = Server::new()?;
     // The observer publishes into the server's status hub; format rendering
-    // reads the same hub for `#{pane_agent*}` and control subscriptions.
-    let _agent_observer = AgentObserver::start(server.clone(), server.status_hub())?;
-    let result = serve::run_event_loop(listen_socket, server);
+    // reads the same hub for `#{pane_agent*}` and control subscriptions. The
+    // loop ticks it, so it never holds server state while the loop wants it.
+    let observer = AgentObserver::new(server.status_hub());
+    let result = serve::run_event_loop(listen_socket, server, observer);
     // The socket pathname is deliberately left behind, as tmux leaves its own:
     // it only ever unlinks a stale path when binding. A client that finds the
     // residue then reports "no server running on <path>" (ECONNREFUSED) rather
