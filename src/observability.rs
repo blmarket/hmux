@@ -60,7 +60,11 @@ pub mod v1 {
     ///
     /// Resolving a pane returns a cheap, cacheable handle. Implementations must
     /// not retain a global server-state lock through calls on that handle.
-    pub trait ServerObservability: Send + Sync {
+    ///
+    /// Observability is a single-threaded contract: implementations and the
+    /// handles they return are owned by the server's thread, and consumers run
+    /// on that thread (the server loop ticks them between its other work).
+    pub trait ServerObservability {
         /// List the panes currently known to the server.
         fn pane_ids(&self) -> io::Result<Vec<PaneId>>;
 
@@ -75,7 +79,10 @@ pub mod v1 {
     /// `process` and `output_revision` are intended to be cheap. Consumers can
     /// inspect the foreground process and compare revisions before requesting
     /// the more expensive terminal formatting performed by `last_lines`.
-    pub trait PaneObservability: Send + Sync {
+    ///
+    /// Like [`ServerObservability`], this contract is single-threaded: a
+    /// resolved handle stays on the server's thread.
+    pub trait PaneObservability {
         /// Return the pane's child-process lifecycle information.
         fn process(&self) -> io::Result<PaneProcess>;
 

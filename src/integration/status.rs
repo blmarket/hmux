@@ -7,13 +7,15 @@
 //!
 //! This hub is a **sibling** of the native server's `ServerState`, not a part of
 //! it, so neither `ServerState`'s shape nor the `observability::v1` traits change.
-//! It is engine-agnostic state that the native runtime happens to own.
+//! It is engine-agnostic state that the native runtime happens to own. Like the
+//! rest of observability it lives on the server's single thread: the observer
+//! writes and the renderers read between turns of the same loop.
 
+use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
-use std::sync::Weak;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::rc::{Rc, Weak};
 
 use crate::observability::v1::PaneId;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
@@ -58,12 +60,12 @@ pub struct StatusSnapshot {
 /// The shared registry. Cloneable; every clone refers to the same underlying
 /// state (observer and connection handlers all hold clones).
 #[derive(Clone)]
-pub struct StatusHub(Arc<Inner>);
+pub struct StatusHub(Rc<Inner>);
 
 struct Inner {
-    snapshot: Mutex<StatusSnapshot>,
+    snapshot: RefCell<StatusSnapshot>,
     /// Per-consumer pollable wakeups for attached status renderers.
-    subscribers: Mutex<Vec<Weak<StatusEvent>>>,
+    subscribers: RefCell<Vec<Weak<StatusEvent>>>,
 }
 
 struct StatusEvent {
@@ -74,7 +76,7 @@ struct StatusEvent {
 /// Each attached client owns one so draining cannot consume another client's
 /// wakeup.
 pub(crate) struct StatusSubscription {
-    event: Arc<StatusEvent>,
+    event: Rc<StatusEvent>,
 }
 
 impl StatusSubscription {
@@ -94,12 +96,12 @@ impl StatusSubscription {
 impl StatusHub {
     /// Build an empty hub at revision 1.
     pub fn new() -> Self {
-        StatusHub(Arc::new(Inner {
-            snapshot: Mutex::new(StatusSnapshot {
+        StatusHub(Rc::new(Inner {
+            snapshot: RefCell::new(StatusSnapshot {
                 revision: 1,
                 panes: PaneAgents::new(),
             }),
-            subscribers: Mutex::new(Vec::new()),
+            subscribers: RefCell::new(Vec::new()),
         }))
     }
 
@@ -138,28 +140,19 @@ impl StatusHub {
     /// descriptor. Initial readiness closes the race between registration and
     /// the subscriber's first snapshot.
     pub(crate) fn subscribe(&self) -> io::Result<StatusSubscription> {
-        let event = Arc::new(StatusEvent {
+        let event = Rc::new(StatusEvent {
             wakeup: CurrentPlatform::new_output_wakeup()?,
         });
-        self.0
-            .subscribers
-            .lock()
-            .map_err(|_| io::Error::other("agent status subscribers mutex poisoned"))?
-            .push(Arc::downgrade(&event));
+        self.0.subscribers.borrow_mut().push(Rc::downgrade(&event));
         Ok(StatusSubscription { event })
     }
 
-    /// Lock the snapshot, recovering from a poisoned mutex rather than panicking
-    /// the observer or a connection thread.
-    fn lock(&self) -> MutexGuard<'_, StatusSnapshot> {
-        self.0.snapshot.lock().unwrap_or_else(|p| p.into_inner())
+    fn lock(&self) -> RefMut<'_, StatusSnapshot> {
+        self.0.snapshot.borrow_mut()
     }
 
     fn notify_changed(&self) {
-        let Ok(mut subscribers) = self.0.subscribers.lock() else {
-            return;
-        };
-        subscribers.retain(|subscriber| {
+        self.0.subscribers.borrow_mut().retain(|subscriber| {
             let Some(event) = subscriber.upgrade() else {
                 return false;
             };

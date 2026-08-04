@@ -12,6 +12,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -125,7 +126,7 @@ pub(crate) fn is_uuid(text: &str) -> bool {
 /// A per-agent recognizer: how to spot the agent's process and how to read its
 /// terminal UI. Implementors are stateless — the harness owns all per-pane
 /// state — so a single shared instance serves every pane.
-pub(crate) trait AgentDetector: Send + Sync {
+pub(crate) trait AgentDetector {
     /// Stable label used in logs and reports (e.g. `"codex"`, `"claude"`,
     /// `"pi"`).
     fn label(&self) -> &'static str;
@@ -219,7 +220,7 @@ pub(crate) fn title_working_spinner(title: &str) -> bool {
 /// on a thread of its own holding the server state lock.
 pub struct AgentObserver {
     detectors: Vec<Box<dyn AgentDetector>>,
-    source: Arc<dyn ProcessSource>,
+    source: Rc<dyn ProcessSource>,
     hub: Option<StatusHub>,
     panes: HashMap<PaneId, TrackedPane>,
 }
@@ -232,7 +233,7 @@ impl AgentObserver {
     /// via the real OS process table and publishing every classified state to
     /// `hub` for format renderers.
     pub fn new(hub: StatusHub) -> Self {
-        Self::with(default_detectors(), Arc::new(SystemProcesses), Some(hub))
+        Self::with(default_detectors(), Rc::new(SystemProcesses), Some(hub))
     }
 
     /// Observe with an explicit detector registry, process source, and optional
@@ -240,7 +241,7 @@ impl AgentObserver {
     /// nowhere.
     pub(crate) fn with(
         detectors: Vec<Box<dyn AgentDetector>>,
-        source: Arc<dyn ProcessSource>,
+        source: Rc<dyn ProcessSource>,
         hub: Option<StatusHub>,
     ) -> Self {
         Self {
@@ -707,7 +708,7 @@ fn publish(
 /// single OS interface. In particular the real implementation reconstructs the
 /// tree from each process's parent pid rather than relying on a kernel-provided
 /// children list.
-pub(crate) trait ProcessSource: Send + Sync {
+pub(crate) trait ProcessSource {
     /// A snapshot of `(pid, ppid)` for every visible process, or `None` when the
     /// process table is unavailable on this platform.
     fn process_table(&self) -> Option<Vec<(u32, u32)>>;

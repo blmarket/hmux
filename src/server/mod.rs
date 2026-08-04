@@ -36,8 +36,10 @@ pub(crate) mod task;
 pub(crate) mod term;
 pub(crate) mod x11_colour;
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::integration::status::StatusHub;
@@ -63,7 +65,7 @@ pub struct Server {
     ///
     /// [`AgentObserver`]: crate::integration::AgentObserver
     status: StatusHub,
-    observation: Arc<ObservationState>,
+    observation: Rc<ObservationState>,
 }
 
 impl ServerObservability for Server {
@@ -96,12 +98,12 @@ impl ServerObservability for Server {
 }
 
 impl Server {
-    fn from_state(state: ServerState, hook: Arc<dyn ObservationHook>) -> io::Result<Server> {
+    fn from_state(state: ServerState, hook: Rc<dyn ObservationHook>) -> io::Result<Server> {
         let state = Arc::new(Mutex::new(state));
         Ok(Server {
             state,
             status: StatusHub::new(),
-            observation: Arc::new(ObservationState::new(hook)),
+            observation: Rc::new(ObservationState::new(hook)),
         })
     }
 
@@ -110,7 +112,7 @@ impl Server {
     pub fn new() -> io::Result<Server> {
         let mut state = ServerState::empty();
         state.set_pane_io_mode(PaneIoMode::EventLoop);
-        Self::from_state(state, Arc::new(NoopObservationHook))
+        Self::from_state(state, Rc::new(NoopObservationHook))
     }
 
     /// Construct a server with a first-party, unclassified observation
@@ -119,7 +121,7 @@ impl Server {
     #[allow(dead_code)]
     pub(crate) fn with_observation_hook(
         state: ServerState,
-        hook: Arc<dyn ObservationHook>,
+        hook: Rc<dyn ObservationHook>,
     ) -> io::Result<Server> {
         Self::from_state(state, hook)
     }
@@ -289,8 +291,9 @@ pub(crate) enum PaneEvent {
     Removed(PaneId),
 }
 
-/// First-party sink for the server engine's ordered pane events.
-pub(crate) trait ObservationHook: Send + Sync {
+/// First-party sink for the server engine's ordered pane events. Delivered on
+/// the server's thread; observation is a single-threaded concern.
+pub(crate) trait ObservationHook {
     fn on_event(&self, event: PaneEvent) -> io::Result<()>;
 }
 
@@ -363,24 +366,21 @@ pub(crate) struct TerminalTail {
 }
 
 struct ObservationState {
-    hook: Arc<dyn ObservationHook>,
-    previous: Mutex<HashMap<PaneId, ObservedPane>>,
+    hook: Rc<dyn ObservationHook>,
+    previous: RefCell<HashMap<PaneId, ObservedPane>>,
 }
 
 impl ObservationState {
-    fn new(hook: Arc<dyn ObservationHook>) -> Self {
+    fn new(hook: Rc<dyn ObservationHook>) -> Self {
         Self {
             hook,
-            previous: Mutex::new(HashMap::new()),
+            previous: RefCell::new(HashMap::new()),
         }
     }
 
     fn reconcile_once(&self, state: &Arc<Mutex<ServerState>>) -> io::Result<()> {
         let current = pane_snapshot(state)?;
-        let mut previous = self
-            .previous
-            .lock()
-            .map_err(|_| io::Error::other("pane observation state mutex poisoned"))?;
+        let mut previous = self.previous.borrow_mut();
         reconcile(&mut previous, current, self.hook.as_ref());
         Ok(())
     }
@@ -464,8 +464,9 @@ fn deliver(hook: &dyn ObservationHook, event: PaneEvent) {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use std::io;
-    use std::sync::Mutex as StdMutex;
+    use std::rc::Rc;
 
     use crate::observability::v1::{PaneId, ServerObservability};
 
@@ -474,24 +475,24 @@ mod tests {
     fn server_with_test_session() -> Server {
         Server::from_state(
             ServerState::with_test_session().expect("test state"),
-            std::sync::Arc::new(NoopObservationHook),
+            Rc::new(NoopObservationHook),
         )
         .expect("native server")
     }
 
     #[derive(Default)]
-    struct RecordingHook(StdMutex<Vec<PaneEvent>>);
+    struct RecordingHook(RefCell<Vec<PaneEvent>>);
 
     impl ObservationHook for RecordingHook {
         fn on_event(&self, event: PaneEvent) -> io::Result<()> {
-            self.0.lock().unwrap().push(event);
+            self.0.borrow_mut().push(event);
             Ok(())
         }
     }
 
     #[test]
     fn private_observation_boundary_orders_events_and_keeps_handle_readable() {
-        let hook = std::sync::Arc::new(RecordingHook::default());
+        let hook = Rc::new(RecordingHook::default());
         let server = Server::with_observation_hook(
             ServerState::with_test_session().expect("default state"),
             hook.clone(),
@@ -502,8 +503,7 @@ mod tests {
 
         let handle = hook
             .0
-            .lock()
-            .unwrap()
+            .borrow()
             .iter()
             .find_map(|event| match event {
                 PaneEvent::Added(handle) => Some(handle.clone()),
@@ -526,7 +526,7 @@ mod tests {
         assert!(server.state().lock().unwrap().kill_session("0"));
         server.reconcile_event_observations().unwrap();
 
-        let events = hook.0.lock().unwrap();
+        let events = hook.0.borrow();
         let positions = events
             .iter()
             .enumerate()
