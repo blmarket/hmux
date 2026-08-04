@@ -24,6 +24,7 @@ use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, AtomicU8, O
 use std::sync::{Arc, Mutex, Weak};
 #[cfg(test)]
 use std::thread;
+#[cfg(test)]
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -303,10 +304,13 @@ const PIPE_REAP_RETRY: Duration = Duration::from_millis(50);
 
 static NEXT_PANE_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 
-/// The live half of a pane: the child pid, the pty master, and the drain thread.
+/// The live half of a pane: the child pid and the pty master.
 struct Child {
     pid: pid_t,
     master: OwnedFd,
+    /// The unit-test drain thread. The server runtime drains panes through the
+    /// event loop, so this is always absent outside tests.
+    #[cfg(test)]
     reader: Option<JoinHandle<()>>,
     alive: Arc<AtomicBool>,
     reaped: bool,
@@ -1495,10 +1499,14 @@ impl Pane {
             Arc::clone(&pipe_output_active),
             Arc::clone(&alive),
         )?;
+        #[cfg(test)]
         let (reader, event_io) = match io_mode {
-            #[cfg(test)]
             PaneIoMode::Threaded(spawn) => (Some(spawn(pane_io)), None),
             PaneIoMode::EventLoop => (None, Some(pane_io)),
+        };
+        #[cfg(not(test))]
+        let event_io = match io_mode {
+            PaneIoMode::EventLoop => Some(pane_io),
         };
 
         Ok(Pane {
@@ -1507,6 +1515,7 @@ impl Pane {
             child: Some(Child {
                 pid,
                 master,
+                #[cfg(test)]
                 reader,
                 alive,
                 reaped: false,
@@ -2178,15 +2187,6 @@ impl Pane {
         self.child.as_ref().is_none_or(|child| child.reaped)
     }
 
-    /// Block until the child exits and all its output has been drained into the
-    /// screen (the reader thread reaches EOF and finishes). Test helper.
-    pub fn wait_drained(&mut self) {
-        if let Some(child) = &mut self.child {
-            if let Some(handle) = child.reader.take() {
-                let _ = handle.join();
-            }
-        }
-    }
 }
 
 fn latest_screen_title(bytes: impl Iterator<Item = u8>) -> Option<String> {
@@ -2222,7 +2222,11 @@ fn latest_screen_title(bytes: impl Iterator<Item = u8>) -> Option<String> {
 
 impl Drop for Child {
     fn drop(&mut self) {
-        if self.reaped && self.reader.is_none() {
+        #[cfg(test)]
+        let draining = self.reader.is_some();
+        #[cfg(not(test))]
+        let draining = false;
+        if self.reaped && !draining {
             return;
         }
         // Kill the child so its pty slave closes, unblocking the reader's read().
