@@ -989,7 +989,7 @@ pub(crate) enum CommandSuspension {
     },
     CommandPrompt {
         args: Vec<String>,
-        registry: Arc<super::state::ClientPromptRegistry>,
+        registry: Rc<super::state::ClientPromptRegistry>,
         target: Option<String>,
         tty_name: Option<String>,
         wait: bool,
@@ -4208,7 +4208,7 @@ struct TreeLoops<'a> {
 /// expansion — `display-message`, `if-shell -F`, a status redraw — caching each
 /// in the tree of the client the format belongs to.
 pub(crate) struct CommandJobs {
-    registry: Arc<super::status::FormatJobRegistry>,
+    registry: Rc<super::status::FormatJobRegistry>,
     session_id: u32,
     cwd: Option<PathBuf>,
     environment: Arc<Vec<String>>,
