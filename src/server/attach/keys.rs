@@ -12,7 +12,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use super::super::key::KeyCode;
+use super::super::key::{KeyBase, KeyCode, SpecialKey};
 use super::super::state::{ServerState, DEFAULT_KEY_TABLE};
 use super::copy_mode;
 
@@ -54,6 +54,10 @@ pub(super) trait KeyTableSource {
     fn repeat_time(&self) -> u64;
     /// `initial-repeat-time` in milliseconds; 0 means "use `repeat-time`".
     fn initial_repeat_time(&self) -> u64;
+    /// `assume-paste-time` in milliseconds; 0 disables the heuristic.
+    fn assume_paste_time(&self) -> u64 {
+        0
+    }
 }
 
 /// One attached client's key table and repeat chain.
@@ -69,6 +73,15 @@ pub(super) struct ClientKeyState {
     last_key: Option<KeyCode>,
     /// When the repeat chain lapses on its own, with no further input.
     repeat_deadline: Option<Instant>,
+    /// tmux's `c->last_activity_time`: when the previous key arrived, which is
+    /// what the `assume-paste-time` gap is measured against.
+    last_key_at: Option<Instant>,
+    /// tmux's `CLIENT_ASSUMEPASTING`: the previous gap was short enough that
+    /// the next key is taken as pasted text rather than a command key.
+    assume_pasting: bool,
+    /// tmux's `CLIENT_BRACKETPASTING`: the client's terminal said a paste is
+    /// in progress, so there is nothing to guess about.
+    bracket_pasting: bool,
 }
 
 impl ClientKeyState {
@@ -79,7 +92,59 @@ impl ClientKeyState {
             repeat: false,
             last_key: None,
             repeat_deadline: None,
+            last_key_at: None,
+            assume_pasting: false,
+            bracket_pasting: false,
         }
+    }
+
+    /// tmux's `server_client_is_bracket_paste`: the markers themselves are
+    /// ordinary keys — they go on to the tables, and reach a pane that asked
+    /// for them — but everything between goes straight to the pane.
+    pub(super) fn is_bracket_paste(&mut self, key: KeyCode) -> bool {
+        match key.base {
+            KeyBase::Special(SpecialKey::PasteStart) => {
+                self.bracket_pasting = true;
+                false
+            }
+            KeyBase::Special(SpecialKey::PasteEnd) => {
+                self.bracket_pasting = false;
+                false
+            }
+            _ => self.bracket_pasting,
+        }
+    }
+
+    /// tmux's `server_client_is_assume_paste`: whether this key arrived fast
+    /// enough after the last one to be pasted text rather than typing.
+    ///
+    /// The first fast key only arms the heuristic; the one after it — and every
+    /// one that keeps up the pace — goes to the pane. A gap longer than the
+    /// option disarms it again. `assume_paste_time` of 0 disables it, and so
+    /// does a terminal that can bracket its own pastes: there is no need to
+    /// guess when the terminal will say so.
+    pub(super) fn is_assume_paste(
+        &mut self,
+        now: Instant,
+        assume_paste_time: u64,
+        terminal_brackets_pastes: bool,
+    ) -> bool {
+        let previous = self.last_key_at.replace(now);
+        if self.bracket_pasting || assume_paste_time == 0 || terminal_brackets_pastes {
+            self.assume_pasting = false;
+            return false;
+        }
+        let fast = previous
+            .is_some_and(|previous| now.duration_since(previous) < Duration::from_millis(assume_paste_time));
+        if fast {
+            if self.assume_pasting {
+                return true;
+            }
+            self.assume_pasting = true;
+            return false;
+        }
+        self.assume_pasting = false;
+        false
     }
 
     pub(super) fn table(&self) -> &str {
@@ -289,6 +354,10 @@ impl KeyTableSource for ServerKeyTables<'_> {
 
     fn initial_repeat_time(&self) -> u64 {
         self.option_number("initial-repeat-time")
+    }
+
+    fn assume_paste_time(&self) -> u64 {
+        self.option_number("assume-paste-time")
     }
 }
 

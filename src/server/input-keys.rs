@@ -97,6 +97,9 @@ pub(crate) struct PaneKeyModes {
     /// The effective `modifyOtherKeys` state, after the `extended-keys` option
     /// has been applied to what the pane asked for.
     pub(crate) extended: ExtendedKeys,
+    /// DECSET 2004, tmux's `MODE_BRACKETPASTE`: whether the pane wants the
+    /// paste markers at all.
+    pub(crate) bracketed_paste: bool,
 }
 
 /// How much of the keyboard a pane asked to receive in extended form.
@@ -199,6 +202,21 @@ pub(crate) fn encode(
         KeyBase::Mouse(_) | KeyBase::Any | KeyBase::None | KeyBase::User(_)
     ) {
         return PaneKeyEncoding::handled();
+    }
+
+    // tmux's `input_key` answers the paste markers before anything else, and
+    // writes them only to a pane that asked for bracketed paste.
+    if let KeyBase::Special(marker @ (SpecialKey::PasteStart | SpecialKey::PasteEnd)) = code.base {
+        if !modes.bracketed_paste {
+            return PaneKeyEncoding::handled();
+        }
+        return PaneKeyEncoding::encoded(
+            match marker {
+                SpecialKey::PasteStart => b"\x1b[200~",
+                _ => b"\x1b[201~",
+            }
+            .to_vec(),
+        );
     }
 
     // Backspace is whatever the `backspace` option says it is, which is how
@@ -375,6 +393,8 @@ fn modifier_parameter(modifiers: Modifiers) -> Option<u8> {
 
 fn plain_entry(special: SpecialKey, cursor: bool, keypad: bool) -> Option<&'static [u8]> {
     let entry: &'static [u8] = match special {
+        // Answered before this table, and never through the plain forms.
+        SpecialKey::PasteStart | SpecialKey::PasteEnd => return None,
         SpecialKey::F(1) => b"\x1bOP",
         SpecialKey::F(2) => b"\x1bOQ",
         SpecialKey::F(3) => b"\x1bOR",

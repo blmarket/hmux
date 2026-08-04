@@ -72,7 +72,7 @@ use actions::{
     dispatch_key_binding, ActiveConfirm, ConfirmAction, ConfirmResolution, PrefixOutcome,
 };
 use copy_mode::CopyModeView;
-use keys::{ClientKeyState, KeyResolution, ServerKeyTables};
+use keys::{ClientKeyState, KeyResolution, KeyTableSource, ServerKeyTables};
 pub(crate) use overlay::ActiveOverlay;
 use prompt::{
     clip_prompt_display, render_prompt_completion, take_deferred_attach_command, CommandPrompt,
@@ -1603,6 +1603,12 @@ where
                     "can't find session: {target}\n"
                 )));
             }
+            // tmux's `cmd_attach_session` runs the `update-environment` copy-in
+            // again on every attach, so a session picks up the new client's
+            // `DISPLAY` and agent sockets rather than the creating client's.
+            if !command::has_bool_flag(args, 'E') {
+                st.update_session_environment(&target, &context.environment);
+            }
             target
         }
         command::Intent::NewAttach => {
@@ -1750,20 +1756,47 @@ fn append_terminal_style_reset(out: &mut Vec<u8>, terminal: &dyn TerminalCapabil
     }
 }
 
-fn render_mode_rows(view: &ModeView, width: usize, height: usize) -> Vec<Vec<u8>> {
+fn render_mode_rows(
+    view: &ModeView,
+    width: usize,
+    height: usize,
+    selected_style: &[u8],
+    preview: &[Vec<u8>],
+    clock: impl FnOnce() -> Vec<Vec<u8>>,
+) -> Vec<Vec<u8>> {
     if view.kind == ModeKind::Clock {
-        return render_clock_rows(width, height);
+        return clock();
     }
+    // tmux's `mode_tree_draw` gives the preview the bottom of the pane and
+    // separates it from the list with a rule.
+    let list_height = if preview.is_empty() {
+        height
+    } else {
+        height.saturating_sub(preview.len() + 1).max(1)
+    };
     let mut rows = Vec::with_capacity(height);
     rows.push(clip_mode_line(&format!("[{}]", view.title), width).into_bytes());
-    for index in view.scroll..view.items.len() {
-        if rows.len() >= height {
+    let visible = view.visible();
+    for index in view.scroll..visible.len() {
+        if rows.len() >= list_height {
             break;
         }
-        let label = clip_mode_line(&view.items[index].label, width.saturating_sub(2));
+        // tmux's `mode_tree_draw` indents a row by its depth and marks a
+        // tagged one with a trailing `*`.
+        let item = visible[index];
+        let label = clip_mode_line(
+            &format!(
+                "{}{}{}",
+                "  ".repeat(usize::from(item.depth)),
+                item.label,
+                if item.tagged { "*" } else { "" }
+            ),
+            width.saturating_sub(2),
+        );
         let mut row = Vec::new();
         if index == view.selected {
-            row.extend_from_slice(b"\x1b[7m> ");
+            row.extend_from_slice(selected_style);
+            row.extend_from_slice(b"> ");
             row.extend_from_slice(label.as_bytes());
             row.extend_from_slice(b"\x1b[0m");
         } else {
@@ -1771,6 +1804,225 @@ fn render_mode_rows(view: &ModeView, width: usize, height: usize) -> Vec<Vec<u8>
             row.extend_from_slice(label.as_bytes());
         }
         rows.push(row);
+    }
+    if preview.is_empty() {
+        return rows;
+    }
+    while rows.len() < list_height {
+        rows.push(Vec::new());
+    }
+    rows.push("─".repeat(width).into_bytes());
+    rows.extend(preview.iter().cloned());
+    rows
+}
+
+/// The scrollbar for the target's pane, drawn beside it in the columns it gave
+/// up — tmux's `screen_redraw_draw_scrollbar`, whose cells are blanks carrying
+/// `pane-scrollbars-style` for the track and its two colours exchanged for the
+/// slider. The padding columns keep the default cell.
+fn pane_scrollbar_frame(
+    st: &ServerState,
+    target: &str,
+    pane_top: u16,
+    terminal: &dyn TerminalCapabilities,
+) -> Vec<u8> {
+    let Some(bar) = st.active_pane_scrollbar(target) else {
+        return Vec::new();
+    };
+    let style = st
+        .option_for_target(target, "pane-scrollbars-style")
+        .unwrap_or("bg=black,fg=white,width=1,pad=0");
+    let track = status::option_style_escape_variant(
+        st,
+        target,
+        "pane-scrollbars-style",
+        style,
+        terminal,
+        status::StyleVariant::Plain,
+    );
+    let slider = status::option_style_escape_variant(
+        st,
+        target,
+        "pane-scrollbars-style",
+        style,
+        terminal,
+        status::StyleVariant::Reversed,
+    );
+    // The pad is drawn as ordinary blank cells, on whichever side of the bar
+    // the position puts it.
+    let width = scrollbar_style_field(style, "width", 1).max(1);
+    let pad = bar.columns.saturating_sub(width);
+    let mut out = Vec::new();
+    for row in 0..bar.height {
+        out.extend_from_slice(
+            format!("\x1b[{};{}H", pane_top + bar.top + row + 1, bar.left + 1).as_bytes(),
+        );
+        let in_slider = row >= bar.slider_top && row < bar.slider_top + bar.slider_height;
+        let (first, second) = if bar.on_left {
+            (width, pad)
+        } else {
+            (pad, width)
+        };
+        if first != 0 {
+            append_terminal_style_reset(&mut out, terminal);
+            if bar.on_left {
+                out.extend_from_slice(if in_slider { &slider } else { &track });
+            }
+            out.extend(std::iter::repeat_n(b' ', usize::from(first)));
+        }
+        if second != 0 {
+            if bar.on_left {
+                append_terminal_style_reset(&mut out, terminal);
+            } else {
+                out.extend_from_slice(if in_slider { &slider } else { &track });
+            }
+            out.extend(std::iter::repeat_n(b' ', usize::from(second)));
+        }
+        append_terminal_style_reset(&mut out, terminal);
+    }
+    out
+}
+
+/// One numeric field of `pane-scrollbars-style`, which carries its `width` and
+/// `pad` alongside the colours.
+fn scrollbar_style_field(style: &str, name: &str, default: u16) -> u16 {
+    style
+        .split(',')
+        .filter_map(|entry| entry.trim().strip_prefix(name))
+        .filter_map(|value| value.strip_prefix('='))
+        .filter_map(|value| value.parse().ok())
+        .next_back()
+        .unwrap_or(default)
+}
+
+/// The horizontal border glyph `pane-border-lines` asks for, as
+/// `tty_acs_*_borders` spells it. `number` and `simple` fall back to the ASCII
+/// forms tmux uses where the terminal has no line drawing.
+fn pane_border_glyph(lines: &str) -> &'static str {
+    match lines {
+        "double" => "═",
+        "heavy" => "━",
+        "simple" | "number" => "-",
+        "spaces" => " ",
+        _ => "─",
+    }
+}
+
+/// The `pane-border-status` row for the active pane, when it has one: two
+/// border glyphs, the expanded `pane-border-format`, then glyphs to the end of
+/// the row — `screen_redraw_draw_pane_status` writing over the border it
+/// already drew.
+fn pane_border_status_row(
+    st: &ServerState,
+    status_cache: &mut status::RenderCache,
+    target: &str,
+    cols: u16,
+    rows: u16,
+    terminal: &dyn TerminalCapabilities,
+) -> Option<(super::state::PaneBorderStatus, Vec<u8>)> {
+    let side = st.active_pane_border_status(target)?;
+    let glyph = pane_border_glyph(
+        st.option_for_target(target, "pane-border-lines")
+            .unwrap_or("single"),
+    );
+    let template = st
+        .option_for_target(target, "pane-border-format")
+        .unwrap_or_default()
+        .to_owned();
+    let text = status_cache
+        .expand_format_for_target(st, target, None, None, &template, cols, rows)
+        .unwrap_or_default();
+    // tmux's `style_apply` runs the option through the format tree first: the
+    // default `pane-active-border-style` is itself a conditional format.
+    let style = st
+        .option_for_target(target, "pane-active-border-style")
+        .unwrap_or("fg=green")
+        .to_owned();
+    let style = status_cache
+        .expand_format_for_target(st, target, None, None, &style, cols, rows)
+        .unwrap_or(style);
+    let mut row = status::style_escape_value(&style, terminal);
+    row.extend_from_slice(glyph.repeat(2).as_bytes());
+    let text = clip_mode_line(&text, usize::from(cols).saturating_sub(2));
+    let used = 2 + format::display_width(&text);
+    row.extend_from_slice(text.as_bytes());
+    row.extend_from_slice(
+        glyph
+            .repeat(usize::from(cols).saturating_sub(used))
+            .as_bytes(),
+    );
+    Some((side, row))
+}
+
+/// The rows the mode's preview shows: the top of whatever pane the selected
+/// row names, in the bottom third of the pane. Empty when the mode has no
+/// preview, the row names nothing, or there is no room.
+fn mode_preview_rows(
+    st: &ServerState,
+    status_cache: &mut status::RenderCache,
+    view: &ModeView,
+    cols: u16,
+    pane_height: u16,
+    terminal: &dyn TerminalCapabilities,
+) -> Vec<Vec<u8>> {
+    if !view.preview {
+        return Vec::new();
+    }
+    let Some(preview_target) = view
+        .items
+        .get(view.selected)
+        .and_then(|item| item.preview_target.clone())
+    else {
+        return Vec::new();
+    };
+    let height = usize::from(pane_height) / 3;
+    if height == 0 {
+        return Vec::new();
+    }
+    let Ok(text) = st.pane_preview_text(&preview_target, height) else {
+        return Vec::new();
+    };
+    let mut rows = text
+        .lines()
+        .take(height)
+        .map(|line| clip_mode_line(line, usize::from(cols)).into_bytes())
+        .collect::<Vec<_>>();
+    // tmux's `window_tree_draw_label`: the preview carries a label naming what
+    // it shows, centred, in `tree-mode-preview-style`.
+    let template = st
+        .option_for_target(&preview_target, "tree-mode-preview-format")
+        .unwrap_or_default()
+        .to_owned();
+    let label = status_cache
+        .expand_format_for_target(
+            st,
+            &preview_target,
+            None,
+            None,
+            &template,
+            cols,
+            pane_height,
+        )
+        .unwrap_or_default();
+    let label = clip_mode_line(&label, usize::from(cols).saturating_sub(4));
+    if !label.is_empty() && height >= 1 {
+        let style = st
+            .option_for_target(&preview_target, "tree-mode-preview-style")
+            .unwrap_or("default")
+            .to_owned();
+        let style = status_cache
+            .expand_format_for_target(st, &preview_target, None, None, &style, cols, pane_height)
+            .unwrap_or(style);
+        let width = format::display_width(&label);
+        let left = (usize::from(cols).saturating_sub(width)) / 2;
+        let mut row = vec![b' '; left];
+        row.extend_from_slice(&status::style_escape_value(&style, terminal));
+        row.extend_from_slice(label.as_bytes());
+        let index = (height.saturating_sub(1) + 1) / 2;
+        while rows.len() <= index {
+            rows.push(Vec::new());
+        }
+        rows[index] = row;
     }
     rows
 }
@@ -1788,66 +2040,254 @@ fn clip_mode_line(value: &str, width: usize) -> String {
     output
 }
 
-fn render_clock_rows(width: usize, height: usize) -> Vec<Vec<u8>> {
-    let mut time = [0 as libc::c_char; 16];
+/// The clock as the target's own `clock-mode-style` and `clock-mode-colour`
+/// draw it.
+fn clock_rows(
+    st: &ServerState,
+    target: &str,
+    width: usize,
+    height: usize,
+    terminal: &dyn TerminalCapabilities,
+) -> Vec<Vec<u8>> {
+    render_clock_rows(
+        width,
+        height,
+        st.option_for_target(target, "clock-mode-style")
+            .unwrap_or("24"),
+        st.option_for_target(target, "clock-mode-colour")
+            .unwrap_or("blue"),
+        terminal,
+    )
+}
+
+/// tmux's `window_clock_table`: one 5x5 bitmap per glyph the clock can draw —
+/// the ten digits, the colon, and the `A`, `P` and `M` the 12-hour style adds.
+const CLOCK_GLYPHS: [[[u8; 5]; 5]; 14] = [
+    [[1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1]],
+    [[0, 0, 0, 0, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1]],
+    [[1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [1, 1, 1, 1, 1], [1, 0, 0, 0, 0], [1, 1, 1, 1, 1]],
+    [[1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [1, 1, 1, 1, 1]],
+    [[1, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1]],
+    [[1, 1, 1, 1, 1], [1, 0, 0, 0, 0], [1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [1, 1, 1, 1, 1]],
+    [[1, 1, 1, 1, 1], [1, 0, 0, 0, 0], [1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1]],
+    [[1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1]],
+    [[1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1]],
+    [[1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [1, 1, 1, 1, 1]],
+    [[0, 0, 0, 0, 0], [0, 0, 1, 0, 0], [0, 0, 0, 0, 0], [0, 0, 1, 0, 0], [0, 0, 0, 0, 0]],
+    [[1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1]],
+    [[1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1], [1, 0, 0, 0, 0], [1, 0, 0, 0, 0]],
+    [[1, 0, 0, 0, 1], [1, 1, 0, 1, 1], [1, 0, 1, 0, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1]],
+];
+
+/// Which bitmap a character of the clock's time string draws, or `None` for one
+/// that only advances the cursor.
+pub(super) fn clock_glyph(character: char) -> Option<&'static [[u8; 5]; 5]> {
+    let index = match character {
+        '0'..='9' => character as usize - '0' as usize,
+        ':' => 10,
+        'A' => 11,
+        'P' => 12,
+        'M' => 13,
+        _ => return None,
+    };
+    Some(&CLOCK_GLYPHS[index])
+}
+
+/// The time the clock shows, per `clock-mode-style`: 24-hour, or the 12-hour
+/// form with the `AM`/`PM` tmux appends to it.
+fn clock_text(style: &str) -> String {
+    let mut buffer = [0 as libc::c_char; 32];
     let now = unsafe { libc::time(std::ptr::null_mut()) };
+    let twelve = style == "12";
+    let format = if twelve { c"%l:%M " } else { c"%H:%M" };
     // SAFETY: localtime returns a process-owned tm pointer valid until the next
     // libc time conversion on this thread; strftime copies it immediately.
-    let length = unsafe {
+    let (length, hour) = unsafe {
         let local = libc::localtime(&now);
         if local.is_null() {
-            0
+            (0, 0)
         } else {
-            libc::strftime(time.as_mut_ptr(), time.len(), c"%H:%M".as_ptr(), local)
+            (
+                libc::strftime(buffer.as_mut_ptr(), buffer.len(), format.as_ptr(), local),
+                (*local).tm_hour,
+            )
         }
     };
-    let text = if length == 0 {
-        "00:00".to_string()
-    } else {
-        String::from_utf8_lossy(
-            &time[..length]
-                .iter()
-                .map(|value| *value as u8)
-                .collect::<Vec<_>>(),
-        )
-        .into_owned()
-    };
-    const DIGITS: [[&str; 5]; 10] = [
-        ["###", "# #", "# #", "# #", "###"],
-        ["  #", "  #", "  #", "  #", "  #"],
-        ["###", "  #", "###", "#  ", "###"],
-        ["###", "  #", "###", "  #", "###"],
-        ["# #", "# #", "###", "  #", "  #"],
-        ["###", "#  ", "###", "  #", "###"],
-        ["###", "#  ", "###", "# #", "###"],
-        ["###", "  #", "  #", "  #", "  #"],
-        ["###", "# #", "###", "# #", "###"],
-        ["###", "# #", "###", "  #", "###"],
-    ];
-    let mut clock = vec![String::new(); 5];
-    for character in text.chars() {
-        for row in 0..5 {
-            if !clock[row].is_empty() {
-                clock[row].push(' ');
-            }
-            if let Some(digit) = character.to_digit(10) {
-                clock[row].push_str(DIGITS[digit as usize][row]);
-            } else {
-                clock[row].push_str(if matches!(row, 1 | 3) { " # " } else { "   " });
-            }
-        }
+    if length == 0 {
+        return "00:00".to_string();
     }
-    let clock_width = clock.first().map_or(0, String::len);
-    let top = height.saturating_sub(5) / 2;
-    let left = width.saturating_sub(clock_width) / 2;
+    let mut text = String::from_utf8_lossy(
+        &buffer[..length]
+            .iter()
+            .map(|value| *value as u8)
+            .collect::<Vec<_>>(),
+    )
+    .into_owned();
+    if twelve {
+        text.push_str(if hour >= 12 { "PM" } else { "AM" });
+    }
+    text
+}
+
+/// tmux's `window_clock_draw_screen`: the time in 5x5 glyphs, six columns
+/// apart, centred, in `clock-mode-colour`. A pane too small for that shows the
+/// plain string on one line instead.
+fn render_clock_rows(
+    width: usize,
+    height: usize,
+    style: &str,
+    colour: &str,
+    terminal: &dyn TerminalCapabilities,
+) -> Vec<Vec<u8>> {
+    let text = clock_text(style);
     let mut rows = vec![Vec::new(); height];
-    for (offset, line) in clock.into_iter().enumerate() {
-        if let Some(row) = rows.get_mut(top + offset) {
-            row.extend(std::iter::repeat_n(b' ', left));
-            row.extend_from_slice(line.as_bytes());
+    if width < 6 * text.len() || height < 6 {
+        if width >= text.len() && height != 0 {
+            let left = width / 2 - text.len() / 2;
+            if let Some(row) = rows.get_mut(height / 2) {
+                row.extend(std::iter::repeat_n(b' ', left));
+                row.extend_from_slice(&status::style_escape_value(
+                    &format!("fg={colour}"),
+                    terminal,
+                ));
+                row.extend_from_slice(text.as_bytes());
+            }
         }
+        return rows;
+    }
+    // A lit cell carries the colour as both foreground and background, which is
+    // what makes the glyph a solid block.
+    let lit = status::style_escape_value(&format!("fg={colour},bg={colour}"), terminal);
+    let unlit = status::style_escape_value("default", terminal);
+    let left = width / 2 - 3 * text.len();
+    let top = height / 2 - 3;
+    let mut grid = vec![vec![None; width]; 5];
+    let mut x = left;
+    for character in text.chars() {
+        if let Some(glyph) = clock_glyph(character) {
+            for (row, line) in glyph.iter().enumerate() {
+                for (column, cell) in line.iter().enumerate() {
+                    if *cell == 1 {
+                        if let Some(slot) = grid[row].get_mut(x + column) {
+                            *slot = Some(b'#');
+                        }
+                    }
+                }
+            }
+        }
+        x += 6;
+    }
+    for (offset, line) in grid.into_iter().enumerate() {
+        let Some(row) = rows.get_mut(top + offset) else {
+            continue;
+        };
+        let mut painted = false;
+        for cell in line {
+            match cell {
+                Some(byte) => {
+                    if !painted {
+                        row.extend_from_slice(&lit);
+                        painted = true;
+                    }
+                    row.push(byte);
+                }
+                None => {
+                    if painted {
+                        row.extend_from_slice(&unlit);
+                        painted = false;
+                    }
+                    row.push(b' ');
+                }
+            }
+        }
+        row.extend_from_slice(&unlit);
     }
     rows
+}
+
+/// Move a cursor-position escape from window coordinates into the coordinates
+/// of a viewport whose top-left corner is at `(ox, oy)`.
+fn shift_cup(cursor: &[u8], ox: u16, oy: u16) -> Vec<u8> {
+    parse_cup(cursor)
+        .map(|(row, column)| {
+            format!(
+                "\x1b[{};{}H",
+                row.saturating_sub(oy).max(1),
+                column.saturating_sub(ox).max(1)
+            )
+            .into_bytes()
+        })
+        .unwrap_or_else(|| cursor.to_vec())
+}
+
+/// Take the `width` cells starting at column `ox` out of one rendered row.
+///
+/// The row is a VT byte string, so the printable cells have to be counted past
+/// the escape sequences that colour them. Every sequence is copied through
+/// verbatim wherever it lands — dropping the ones that fall outside the slice
+/// would lose the attributes the cells inside it inherit.
+fn clip_vt_row(row: &[u8], ox: usize, width: usize) -> Vec<u8> {
+    let mut out = Vec::with_capacity(row.len());
+    let mut column = 0usize;
+    let mut i = 0usize;
+    while i < row.len() {
+        if row[i] == 0x1b {
+            let end = escape_sequence_end(row, i);
+            out.extend_from_slice(&row[i..end]);
+            i = end;
+            continue;
+        }
+        let cell_end = utf8_cell_end(row, i);
+        let cell = &row[i..cell_end];
+        let cell_width = str::from_utf8(cell)
+            .map(super::format::display_width)
+            .unwrap_or(1)
+            .max(1);
+        if column >= ox && column + cell_width <= ox + width {
+            out.extend_from_slice(cell);
+        }
+        column += cell_width;
+        i = cell_end;
+    }
+    out
+}
+
+/// Where the escape sequence starting at `start` ends: CSI and OSC run to their
+/// own terminators, anything else is a two-byte sequence.
+fn escape_sequence_end(row: &[u8], start: usize) -> usize {
+    match row.get(start + 1) {
+        Some(b'[') => {
+            let mut i = start + 2;
+            while i < row.len() && !(0x40..=0x7e).contains(&row[i]) {
+                i += 1;
+            }
+            (i + 1).min(row.len())
+        }
+        Some(b']') => {
+            let mut i = start + 2;
+            while i < row.len() && row[i] != 0x07 {
+                if row[i] == 0x1b && row.get(i + 1) == Some(&b'\\') {
+                    return i + 2;
+                }
+                i += 1;
+            }
+            (i + 1).min(row.len())
+        }
+        Some(_) => start + 2,
+        None => row.len(),
+    }
+}
+
+/// The end of the UTF-8 sequence starting at `start`.
+fn utf8_cell_end(row: &[u8], start: usize) -> usize {
+    let len = match row[start] {
+        byte if byte < 0x80 => 1,
+        byte if byte >> 5 == 0b110 => 2,
+        byte if byte >> 4 == 0b1110 => 3,
+        byte if byte >> 3 == 0b11110 => 4,
+        _ => 1,
+    };
+    (start + len).min(row.len())
 }
 
 #[cfg(test)]
@@ -1880,6 +2320,7 @@ fn compose_frame(
     compose_frame_cached(
         st,
         target,
+        None,
         cols,
         rows,
         status_h,
@@ -1892,6 +2333,7 @@ fn compose_frame(
 fn compose_frame_cached(
     st: &ServerState,
     target: &str,
+    client_name: Option<&str>,
     cols: u16,
     rows: u16,
     status_h: u16,
@@ -1920,8 +2362,24 @@ fn compose_frame_cached(
     let copy_view = active_copy.map(|copy| CopyModeView::new(st, target, copy, cols, terminal));
     let (all_rows, cursor, cursor_visible, restore_cursor, frame_capacity) =
         if let Some(view) = active_mode {
+            let selected_style = status::option_style_escape_for(
+                st,
+                target,
+                "mode-style",
+                "bg=yellow,fg=black",
+                terminal,
+            );
+            let preview =
+                mode_preview_rows(st, status_cache, view, cols, pane_height, terminal);
             (
-                render_mode_rows(view, cols as usize, pane_height as usize),
+                render_mode_rows(
+                    view,
+                    cols as usize,
+                    pane_height as usize,
+                    &selected_style,
+                    &preview,
+                    || clock_rows(st, target, cols as usize, pane_height as usize, terminal),
+                ),
                 Vec::new(),
                 false,
                 false,
@@ -1936,23 +2394,40 @@ fn compose_frame_cached(
                 copy_view.serialized_len() + 256,
             )
         } else {
+            // A window bigger than the client is painted through the client's
+            // own viewport: the pane is dumped at the window's height and then
+            // both the rows and the cursor are moved into the viewport's
+            // coordinates. Mode and copy-mode views are already composed at the
+            // client's width, so they are shown whole.
+            let view = client_name.and_then(|name| st.client_viewport(name));
+            let view = view.filter(|view| view.bigger);
+            let dump_rows = view.map_or(pane_height, |view| view.oy.saturating_add(view.sy));
             let (vt, scroll) =
-                st.dump_active_pane_viewport_vt(target, scroll_offset, pane_height as usize)?;
+                st.dump_active_pane_viewport_vt(target, scroll_offset, dump_rows as usize)?;
             let (pane_rows, cursor) = split_pane_vt(&vt);
+            let pane_rows = pane_rows
+                .into_iter()
+                .map(<[u8]>::to_vec)
+                .collect::<Vec<_>>();
+            let (pane_rows, cursor) = match view {
+                Some(view) => (
+                    pane_rows
+                        .into_iter()
+                        .skip(usize::from(view.oy))
+                        .map(|row| clip_vt_row(&row, usize::from(view.ox), usize::from(view.sx)))
+                        .collect(),
+                    shift_cup(cursor, view.ox, view.oy),
+                ),
+                None => (pane_rows, cursor.to_vec()),
+            };
             (
-                pane_rows
-                    .into_iter()
-                    .map(<[u8]>::to_vec)
-                    .collect::<Vec<_>>(),
-                cursor.to_vec(),
+                pane_rows,
+                cursor,
                 scroll == 0 && st.active_pane_cursor_visible(target).unwrap_or(true),
                 scroll == 0,
                 vt.len() + 256,
             )
         };
-    // The terminal formatter receives a selection containing only this
-    // viewport. Hidden history is never serialized or scanned here.
-    let pane_rows = &all_rows[..];
     // The pane's DECTCEM state. The VT dump carries the cursor *position* but not
     // its *visibility*, so we query it and mirror it below. A TUI that hides the
     // cursor and paints its own (e.g. claude-code) must not leave the client's
@@ -1960,6 +2435,7 @@ fn compose_frame_cached(
     // scrolled back into history the pane's cursor belongs to the live viewport,
     // not to what we are painting, so keep it hidden and don't reposition it.
     let cursor_shape = st.active_pane_cursor_shape(target).unwrap_or(0);
+    let cursor_colour = st.active_pane_cursor_colour(target);
     let mut out = Vec::with_capacity(frame_capacity);
     let line_number_width = copy_view
         .as_ref()
@@ -1982,9 +2458,46 @@ fn compose_frame_cached(
     // column, so an erase-to-EOL afterwards would wipe the character just
     // written there. The split-pane path avoids the same hazard by erasing
     // (`ECH`) before it paints.
+    // The border-status row is drawn where the pane gave up a row for it.
+    let border_status = pane_border_status_row(st, status_cache, target, cols, rows, terminal);
+    let mut all_rows = all_rows;
+    if let Some((side, row)) = border_status {
+        match side {
+            super::state::PaneBorderStatus::Top => all_rows.insert(0, row),
+            super::state::PaneBorderStatus::Bottom => all_rows.push(row),
+        }
+    }
+    let pane_rows = &all_rows[..];
+
+    // tmux paints `fill-character` over every cell of the client's screen the
+    // window does not reach (`CELL_OUTSIDE` in `screen_redraw_border_set`), so
+    // a window smaller than its client is framed rather than left blank.
+    let fill = st.window_fill(target);
     for i in 0..pane_height as usize {
         out.extend_from_slice(format!("\x1b[{};1H", usize::from(pane_top) + i + 1).as_bytes());
-        out.extend_from_slice(b"\x1b[K");
+        if let Some(((window_cols, window_rows), fill)) = fill.as_ref() {
+            let filled = if i < usize::from(*window_rows) {
+                usize::from(cols.saturating_sub(*window_cols))
+            } else {
+                usize::from(cols)
+            };
+            if filled != 0 {
+                out.extend_from_slice(
+                    format!(
+                        "\x1b[{};{}H{}",
+                        usize::from(pane_top) + i + 1,
+                        usize::from(cols) - filled + 1,
+                        fill.repeat(filled)
+                    )
+                    .as_bytes(),
+                );
+                out.extend_from_slice(
+                    format!("\x1b[{};1H", usize::from(pane_top) + i + 1).as_bytes(),
+                );
+            }
+        } else {
+            out.extend_from_slice(b"\x1b[K");
+        }
         if let Some(copy_view) = copy_view.as_ref() {
             copy_view.render_line_number(&mut out, i);
         }
@@ -2002,6 +2515,7 @@ fn compose_frame_cached(
     if let Some(copy_view) = copy_view.as_ref() {
         copy_view.render_overlays(&mut out, pane_top, 0, pane_height, cols);
     }
+    out.extend_from_slice(&pane_scrollbar_frame(st, target, pane_top, terminal));
     // Erase any pane rows the previous, taller frame left behind. Clear them one
     // at a time (not `\x1b[J`) so the status region below is never touched.
     if status_h > 0 {
@@ -2044,6 +2558,9 @@ fn compose_frame_cached(
     if restore_cursor {
         out.extend_from_slice(&offset_cup_row(&cursor, pane_top));
         out.extend_from_slice(format!("\x1b[{cursor_shape} q").as_bytes());
+        if let Some(colour) = cursor_colour.as_deref() {
+            out.extend_from_slice(format!("\x1b]12;{colour}\x07").as_bytes());
+        }
     }
     // Mirror the pane's cursor visibility. Only re-show it when the pane's app
     // wants it shown; a TUI that hid it (painting its own) keeps the client's
@@ -2350,8 +2867,24 @@ fn compose_split_frame(
             .as_ref()
             .map(|copy| CopyModeView::new(st, target, copy, width, terminal));
         let (pane_rows, cursor, row_start) = if let Some(view) = node.mode_view.as_ref() {
+            let selected_style = status::option_style_escape_for(
+                st,
+                target,
+                "mode-style",
+                "bg=yellow,fg=black",
+                terminal,
+            );
+            let preview =
+                mode_preview_rows(st, status_cache, view, width, height, terminal);
             (
-                render_mode_rows(view, width as usize, height as usize),
+                render_mode_rows(
+                    view,
+                    width as usize,
+                    height as usize,
+                    &selected_style,
+                    &preview,
+                    || clock_rows(st, target, width as usize, height as usize, terminal),
+                ),
                 Vec::new(),
                 0,
             )

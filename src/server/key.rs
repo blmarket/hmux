@@ -67,6 +67,11 @@ pub(crate) enum SpecialKey {
     Right,
     Keypad(char),
     KeypadEnter,
+    /// The client terminal's bracketed-paste markers, `CSI 200~`/`CSI 201~`.
+    /// tmux carries them as keys so the paste state is part of the ordinary
+    /// key walk, and only writes them to a pane that asked for them.
+    PasteStart,
+    PasteEnd,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -306,6 +311,8 @@ fn parse_named_key(name: &str) -> Option<KeyBase> {
         "kp8" => KeyBase::Special(SpecialKey::Keypad('8')),
         "kp9" => KeyBase::Special(SpecialKey::Keypad('9')),
         "kpenter" => KeyBase::Special(SpecialKey::KeypadEnter),
+        "pastestart" => KeyBase::Special(SpecialKey::PasteStart),
+        "pasteend" => KeyBase::Special(SpecialKey::PasteEnd),
         _ => {
             if let Some(user) = parse_user_key(&lower) {
                 KeyBase::User(user)
@@ -476,6 +483,8 @@ fn special_name(key: SpecialKey) -> &'static str {
         SpecialKey::Keypad('9') => "KP9",
         SpecialKey::Keypad(_) => "Unknown",
         SpecialKey::KeypadEnter => "KPEnter",
+        SpecialKey::PasteStart => "PasteStart",
+        SpecialKey::PasteEnd => "PasteEnd",
     }
 }
 

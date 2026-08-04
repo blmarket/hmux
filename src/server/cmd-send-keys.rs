@@ -296,7 +296,15 @@ fn send_copy_mode_command(
         }
         if command == "scroll-to-mouse"
             && state
-                .scroll_copy_to_mouse(target, position.y, vi, copy_args.contains(&"-e"))
+                .scroll_copy_to_mouse(
+                    target,
+                    // The slider drag works in screen rows, since the grab
+                    // offset it holds on to is measured against the pane.
+                    mouse.position.y,
+                    mouse.target.as_ref().and_then(|target| target.slider_offset),
+                    vi,
+                    copy_args.contains(&"-e"),
+                )
                 .unwrap_or(false)
         {
             return CommandResult::ok("");
@@ -304,6 +312,7 @@ fn send_copy_mode_command(
     }
 
     let mut client_output = String::new();
+    let pipe_environment = context.with_job_environment(state).environment;
     match state.copy_mode_command_with_prefix(
         target,
         command,
@@ -322,14 +331,22 @@ fn send_copy_mode_command(
                     .or_else(|| state.server_options().get("copy-command"))
                     .unwrap_or("");
                 if !pipe_command.is_empty() {
-                    if let Ok(mut child) = Command::new("sh")
+                    // tmux's `cmd_copy_pipe` runs the command as a job, so it
+                    // sees the same environment a pane would.
+                    let mut shell = Command::new("sh");
+                    shell
                         .arg("-c")
                         .arg(pipe_command)
                         .stdin(Stdio::piped())
                         .stdout(Stdio::null())
                         .stderr(Stdio::null())
-                        .spawn()
-                    {
+                        .env_clear();
+                    for entry in &pipe_environment {
+                        if let Some((name, value)) = entry.split_once('=') {
+                            shell.env(name, value);
+                        }
+                    }
+                    if let Ok(mut child) = shell.spawn() {
                         if let Some(stdin) = child.stdin.as_mut() {
                             let _ = stdin.write_all(selection.as_bytes());
                         }
@@ -780,6 +797,9 @@ fn with_ghostty_key_event<T>(
         KeyBase::Special(SpecialKey::Keypad('.')) => (ghostty_sys::Key::NUMPAD_DECIMAL, None, None),
         KeyBase::Special(SpecialKey::Keypad(_)) => return None,
         KeyBase::Special(SpecialKey::KeypadEnter) => (ghostty_sys::Key::NUMPAD_ENTER, None, None),
+        // The paste markers are bracketing, not characters: nothing in a copy
+        // mode or a mode tree has a key for them.
+        KeyBase::Special(SpecialKey::PasteStart | SpecialKey::PasteEnd) => return None,
         KeyBase::User(_) | KeyBase::Mouse(_) | KeyBase::Any | KeyBase::None => return None,
     };
     Some(encode(ghostty_sys::KeyEvent {

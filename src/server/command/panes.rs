@@ -95,8 +95,52 @@ impl Command {
                             .and_then(|view| view.get("word-separators"))
                             .unwrap_or(" !\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~")
                             .to_string();
+                        // `-M` starts a drag: the selection opens where the
+                        // button went down, not where the pointer has already
+                        // reached (tmux's `window_copy_start_drag`).
+                        if has_flag(args, "-M") {
+                            if let Some(position) =
+                                st.command_mouse().and_then(|mouse| mouse.pane_last_position())
+                            {
+                                let _ = st.position_copy_cursor_from_mouse(
+                                    &target, position.x, position.y, vi,
+                                );
+                                let _ = st.copy_mode_command(
+                                    &target,
+                                    "begin-selection",
+                                    vi,
+                                    &separators,
+                                );
+                                // tmux ends `window_copy_start_drag` with one
+                                // drag update, so the pointer's current
+                                // position is already selected.
+                                if let Some(now) =
+                                    st.command_mouse().map(|mouse| mouse.pane_position())
+                                {
+                                    st.drag_copy_selection_to_mouse(&target, now.x, now.y, vi);
+                                }
+                            }
+                        }
                         if has_flag(args, "-u") {
                             let _ = st.copy_mode_command(&target, "page-up", vi, &separators);
+                        }
+                        // `-S` drags the scrollbar's slider, which carries its
+                        // own grab offset from where the drag took hold.
+                        if has_flag(args, "-S") {
+                            if let Some((row, grab)) = st.command_mouse().map(|mouse| {
+                                (
+                                    mouse.position.y,
+                                    mouse.target.as_ref().and_then(|t| t.slider_offset),
+                                )
+                            }) {
+                                let _ = st.scroll_copy_to_mouse(
+                                    &target,
+                                    row,
+                                    grab,
+                                    vi,
+                                    has_flag(args, "-e"),
+                                );
+                            }
                         }
                         if has_flag(args, "-d") {
                             let _ = st.copy_mode_command(&target, "page-down", vi, &separators);

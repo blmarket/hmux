@@ -133,6 +133,30 @@ impl<'a> OptionsView<'a> {
             .any(|layer| layer.contains_array(name))
     }
 
+    /// The entries of an array option with the indexes they are stored at, for
+    /// the options whose index *is* the meaning — a palette entry, a user key.
+    pub(crate) fn array_entries(&self, base: &str) -> Vec<(u32, &'a str)> {
+        let mut entries = self
+            .iter_effective()
+            .filter_map(|(name, value)| {
+                let (name, index) = parse_option_name(name)?;
+                (name == base && !value.is_empty()).then_some((index.unwrap_or(0), value))
+            })
+            .collect::<Vec<_>>();
+        entries.sort_unstable_by_key(|(index, _)| *index);
+        entries
+    }
+
+    /// The entries of an array option in index order, as
+    /// `options_array_first`/`_next` walk them: gaps are skipped, and an array
+    /// with no entries yields nothing.
+    pub(crate) fn array_values(&self, base: &str) -> Vec<&'a str> {
+        self.array_entries(base)
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect()
+    }
+
     pub(crate) fn iter_effective(&self) -> impl Iterator<Item = (&'a str, &'a str)> {
         let mut entries: BTreeMap<&'a str, &'a str> = BTreeMap::new();
         for layer in self.layers.into_iter().rev().flatten() {
@@ -487,6 +511,12 @@ const STATUS_FORMAT_DEFAULTS: &[&str] = &[
     r###"#[align=left]#{R: ,#{n:#{session_name}}}P: #[norange default]#[list=on align=#{status-justify}]#[list=left-marker]<#[list=right-marker]>#[list=on]#{P:#[range=pane|#{pane_id} #{E:pane-status-style}]#[push-default]#{T:window-pane-status-format}#[pop-default]#[norange list=on default]  ,#[range=pane|#{pane_id} list=focus #{?#{!=:#{E:pane-status-current-style},default},#{E:pane-status-current-style},#{E:pane-status-style}}]#[push-default]#{T:window-pane-current-status-format}#[pop-default]#[norange list=on default] }"###,
     r###"#[align=left]#{R: ,#{n:#{session_name}}}S: #[norange default]#[list=on align=#{status-justify}]#[list=left-marker]<#[list=right-marker]>#[list=on]#{S:#[range=session|#{session_id} #{E:session-status-style}]#[push-default]#S#{session_alert}#[pop-default]#[norange list=on default]  ,#[range=session|#{session_id} list=focus #{?#{!=:#{E:session-status-current-style},default},#{E:session-status-current-style},#{E:session-status-style}}]#[push-default]#S*#{session_alert}#[pop-default]#[norange list=on default] }"###,
 ];
+
+/// Whether an option name — indexed or not — belongs to an array option.
+pub(crate) fn is_array_option(name: &str) -> bool {
+    let (base, _) = parse_option_name(name).unwrap_or((name, None));
+    option_kind(base) == Some(OptionKind::Array)
+}
 
 fn option_array_default(name: &str) -> Option<&'static [&'static str]> {
     match name {

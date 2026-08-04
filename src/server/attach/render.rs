@@ -59,11 +59,13 @@ impl AttachSession {
                 .and_then(|prompt| prompt.frozen_frame().map(<[u8]>::to_vec))
                 .map(Ok)
                 .unwrap_or_else(|| {
+                    let client = self.attachments.render_attachment.client_name();
                     let st = state.lock();
                     match st {
                         Ok(g) => compose_frame_cached(
                             &g,
                             target,
+                            Some(client.as_str()),
                             self.viewport.cols,
                             self.viewport.rows,
                             self.viewport.status_height,
@@ -171,6 +173,16 @@ impl AttachSession {
                         fill,
                         &self.tty.terminal,
                     ));
+                    // tmux's `status_prompt_redraw` puts the prompt's own
+                    // cursor colour and shape on the client's terminal, with a
+                    // separate shape for the vi command mode.
+                    if let Ok(st) = state.lock() {
+                        frame.extend_from_slice(&prompt_cursor_sequence(
+                            &st,
+                            target,
+                            prompt.is_vi_command(),
+                        ));
+                    }
                 } else if let Some(active) = &self.compositor.ui.confirm {
                     let prompt = &active.prompt;
                     let (row, style, fill) = state
@@ -361,4 +373,39 @@ impl AttachSession {
         }
         Ok(())
     }
+}
+
+/// The cursor a command prompt puts on the client's terminal: the colour from
+/// `prompt-cursor-colour` and the shape from `prompt-cursor-style` — or
+/// `prompt-command-cursor-style` while the prompt is in vi command mode.
+///
+/// tmux writes these as an ordinary OSC 12 and DECSCUSR, which is what returns
+/// the terminal to its own cursor when the prompt goes away and the frame that
+/// carried them is redrawn without them.
+fn prompt_cursor_sequence(st: &ServerState, target: &str, vi_command: bool) -> Vec<u8> {
+    let mut out = Vec::new();
+    if let Some(colour) = st
+        .option_for_target(target, "prompt-cursor-colour")
+        .filter(|value| !value.is_empty() && *value != "default")
+    {
+        out.extend_from_slice(format!("\x1b]12;{colour}\x07").as_bytes());
+    }
+    let option = if vi_command {
+        "prompt-command-cursor-style"
+    } else {
+        "prompt-cursor-style"
+    };
+    let style = st.option_for_target(target, option).unwrap_or("default");
+    // tmux's `screen_set_cursor_style` numbering, which DECSCUSR takes.
+    let parameter = match style {
+        "blinking-block" => 1,
+        "block" => 2,
+        "blinking-underline" => 3,
+        "underline" => 4,
+        "blinking-bar" => 5,
+        "bar" => 6,
+        _ => 0,
+    };
+    out.extend_from_slice(format!("\x1b[{parameter} q").as_bytes());
+    out
 }

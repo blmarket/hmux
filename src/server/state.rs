@@ -23,7 +23,7 @@ use super::key::{parse_key_name, KeyCode};
 use super::options::{GlobalOptions, OptionSet, OptionsView};
 use super::pane::{
     NativePaneObservation, Pane, PaneClipboardEvent, PaneIo, PaneIoMode, PaneKeyState,
-    PaneSpawnSpec,
+    PaneOutputPolicy, PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
 };
 use super::task::{completion_pair, Completion, CompletionSender};
 use super::term::ResolvedTerm;
@@ -102,6 +102,15 @@ pub struct PaneNode {
     pub(crate) search_regex: bool,
     /// Geometry outside the tiled layout tree for a `new-pane` floating pane.
     pub(crate) floating: Option<PaneRect>,
+    /// Columns a visible scrollbar takes from this pane — tmux's
+    /// `layout_fix_panes` subtracting `sb_w + sb_pad` when
+    /// `window_pane_show_scrollbar` accepts the pane.
+    pub(crate) scrollbar_columns: u16,
+    /// Whether `pane-border-status` puts its row on this pane, and on which
+    /// side — tmux's `layout_add_horizontal_border`, which only asks the pane
+    /// at the very top (or bottom) of the window for the row, since every other
+    /// pane already has a border there to write on.
+    pub(crate) border_status: Option<PaneBorderStatus>,
     options: OptionSet,
 }
 
@@ -120,6 +129,43 @@ pub(crate) struct ModeItem {
     pub(crate) command: Vec<String>,
     pub(crate) prompt_target: Option<String>,
     pub(crate) edit: Option<ModeEdit>,
+    /// tmux's `mode_tree_item.tagged`, toggled by `t` and drawn as a `*`.
+    pub(crate) tagged: bool,
+    /// The pane the preview shows while this row is selected, when the mode
+    /// has one to show.
+    pub(crate) preview_target: Option<String>,
+    /// How deep this row sits in the tree — tmux's `mode_tree_item.depth`.
+    pub(crate) depth: u16,
+    /// Whether this row has children, and whether they are currently shown.
+    /// `None` for a leaf.
+    pub(crate) expanded: Option<bool>,
+}
+
+/// One option row in customize mode, with the scope text its table prints.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CustomizeOption {
+    pub(crate) name: String,
+    pub(crate) value: String,
+    pub(crate) scope: String,
+}
+
+/// Where a pane's scrollbar is drawn and how much of it the slider fills.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PaneScrollbar {
+    pub(crate) columns: u16,
+    pub(crate) on_left: bool,
+    pub(crate) left: u16,
+    pub(crate) top: u16,
+    pub(crate) height: u16,
+    pub(crate) slider_top: u16,
+    pub(crate) slider_height: u16,
+}
+
+/// Which edge of a pane `pane-border-status` writes on.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PaneBorderStatus {
+    Top,
+    Bottom,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -236,11 +282,16 @@ pub(crate) enum ModeViewKeyResult {
     None,
     Command(Vec<String>),
     Prompt(ModePrompt),
+    /// An overlay the mode itself asks for — buffer mode's editor.
+    Popup(Box<PopupRequest>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ModeView {
     pub(crate) kind: ModeKind,
+    /// tmux's `-N`, inverted: whether the bottom of the mode shows a preview of
+    /// whatever the selected row names.
+    pub(crate) preview: bool,
     pub(crate) title: String,
     pub(crate) items: Vec<ModeItem>,
     pub(crate) all_items: Vec<ModeItem>,
@@ -251,9 +302,37 @@ pub(crate) struct ModeView {
 }
 
 impl ModeView {
+    /// The rows actually on screen: a row whose parent is collapsed is not.
+    /// tmux keeps the whole tree and draws the part `mode_tree_build` walked.
+    pub(crate) fn visible(&self) -> Vec<&ModeItem> {
+        let mut visible = Vec::with_capacity(self.items.len());
+        let mut hidden_below: Option<u16> = None;
+        for item in &self.items {
+            if hidden_below.is_some_and(|depth| item.depth > depth) {
+                continue;
+            }
+            hidden_below = None;
+            visible.push(item);
+            if item.expanded == Some(false) {
+                hidden_below = Some(item.depth);
+            }
+        }
+        visible
+    }
+
+    /// Set every row's expansion, as `M-+` and `M--` do.
+    pub(crate) fn expand_all(&mut self, expanded: bool) {
+        for item in &mut self.items {
+            if item.expanded.is_some() {
+                item.expanded = Some(expanded);
+            }
+        }
+    }
+
     pub(crate) fn list(kind: ModeKind, title: impl Into<String>, items: Vec<ModeItem>) -> Self {
         Self {
             kind,
+            preview: false,
             title: title.into(),
             all_items: items.clone(),
             items,
@@ -289,6 +368,9 @@ pub(crate) struct MenuRequest {
 pub(crate) struct PopupRequest {
     pub(crate) title: String,
     pub(crate) argv: Vec<String>,
+    /// The environment the popup's command runs with: `environ_for_session`
+    /// with the `-e` overrides tmux's `cmd_display_popup_exec` puts on top.
+    pub(crate) environment: Vec<String>,
     pub(crate) cwd: Option<PathBuf>,
     pub(crate) width: Option<String>,
     pub(crate) height: Option<String>,
@@ -298,6 +380,10 @@ pub(crate) struct PopupRequest {
     pub(crate) close_on_success: bool,
     pub(crate) close_on_key: bool,
     pub(crate) border: bool,
+    /// A command to run once the popup closes, and a file to remove with it —
+    /// how tmux's `popup_editor` reads an edited buffer back in.
+    pub(crate) on_close: Vec<String>,
+    pub(crate) on_close_remove: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1621,6 +1707,50 @@ fn parse_size_pair(value: &str) -> Option<(u16, u16)> {
     Some((cols.parse().ok()?, rows.parse().ok()?))
 }
 
+/// The columns `pane-scrollbars-style` asks for: its `width` plus its `pad`,
+/// with tmux's floors of one and zero.
+/// Where a pane's scrollbar slider sits and how tall it is, in rows from the
+/// top of a `height`-row bar — tmux's `screen_redraw_draw_pane_scrollbar`.
+///
+/// Out of a mode the slider rests at the bottom, sized by how much of the
+/// pane's whole history the viewport covers; in one it tracks the offset the
+/// mode is showing.
+pub(crate) fn pane_slider(pane: &PaneNode, height: u16) -> (u16, u16) {
+    let bar = f64::from(height.max(1));
+    let size = match pane.copy.as_ref() {
+        Some(copy) => copy.grid.scrollback_rows,
+        None => pane.pane.scrollback_rows().unwrap_or(0),
+    } as f64;
+    let total = size + bar;
+    let slider_height = (bar * (bar / total)) as u16;
+    let slider_top = match pane.copy.as_ref() {
+        // The offset the mode is showing, counted from the top of history.
+        Some(copy) => {
+            let offset = size - copy.scroll.min(copy.grid.scrollback_rows) as f64;
+            ((bar + 1.0) * (offset / total)) as u16
+        }
+        None => height.saturating_sub(slider_height),
+    };
+    (
+        slider_top.min(height.saturating_sub(1)),
+        slider_height.max(1),
+    )
+}
+
+fn scrollbar_style_columns(style: Option<&str>) -> u16 {
+    let field = |name: &str, default: u16| {
+        style
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|entry| entry.trim().strip_prefix(name))
+            .filter_map(|value| value.strip_prefix('='))
+            .filter_map(|value| value.parse::<u16>().ok())
+            .next_back()
+            .unwrap_or(default)
+    };
+    field("width", 1).max(1) + field("pad", 0)
+}
+
 fn resize_panes_to_layout(window: &mut Window) -> io::Result<()> {
     for pane in &mut window.panes {
         if let Some(rect) = pane.floating.or_else(|| window.layout.pane_rect(pane.id)) {
@@ -1814,6 +1944,12 @@ pub struct Window {
     /// Whether the active pane is zoomed (`resize-pane -Z`), tmux's
     /// `#{window_zoomed_flag}`. Toggled by `resize-pane -Z`.
     pub zoomed: bool,
+    /// tmux's `w->activity_time`, which `#{window_activity}` reports. Written
+    /// once, by `window_create`, so it is the window's creation time.
+    pub(crate) activity_epoch: i64,
+    /// Which side `pane-scrollbars-position` puts a scrollbar on, cached
+    /// alongside the per-pane reservation it applies to.
+    pub(crate) scrollbars_on_left: bool,
     /// The window's own size — tmux's `w->sx`/`w->sy`, published as
     /// `#{window_width}`/`#{window_height}`. A window has one size no matter how
     /// many sessions link it; [`ServerState::recalculate_sizes`] derives it from
@@ -2392,6 +2528,10 @@ struct ClientRenderSlot {
     pending: AtomicU8,
     action: Mutex<Option<ClientAction>>,
     messages: Mutex<VecDeque<ClientMessage>>,
+    /// Bytes an application asked to have written to this client's terminal
+    /// verbatim. Kept out of `action` for the same reason as `flag_updates`,
+    /// and ordered because a payload is meaningless out of sequence.
+    client_output: Mutex<VecDeque<Vec<u8>>>,
     /// `refresh-client -f` values aimed at this client by *another* client.
     /// Kept out of `action` because flag updates must not displace a queued
     /// switch or detach, and several may arrive before the client next runs.
@@ -2464,6 +2604,7 @@ impl ClientRenderRegistry {
             pending: AtomicU8::new(0),
             action: Mutex::new(None),
             messages: Mutex::new(VecDeque::new()),
+            client_output: Mutex::new(VecDeque::new()),
             flag_updates: Mutex::new(Vec::new()),
             wakeup,
         });
@@ -2616,6 +2757,26 @@ impl ClientRenderRegistry {
                 duration_ms,
                 bell,
             });
+            let _ = entry.slot.wakeup.wake();
+        }
+    }
+
+    /// Queue bytes an application wrote for the terminals of every non-control
+    /// client of `sessions`. tmux's `tty_client_ready` skips a client with no
+    /// terminal of its own, which is what leaves control clients out.
+    fn write_client_output(&self, sessions: &BTreeSet<u32>, bytes: &[u8]) {
+        let Ok(inner) = self.inner.lock() else {
+            return;
+        };
+        for entry in inner
+            .clients
+            .values()
+            .filter(|entry| sessions.contains(&entry.session_id) && !entry.control_mode)
+        {
+            let Ok(mut queued) = entry.slot.client_output.lock() else {
+                continue;
+            };
+            queued.push_back(bytes.to_vec());
             let _ = entry.slot.wakeup.wake();
         }
     }
@@ -3309,6 +3470,15 @@ impl ClientRenderAttachment {
             .unwrap_or_default()
     }
 
+    /// Bytes an application asked to have written to this client's terminal.
+    pub(crate) fn take_client_output(&self) -> Vec<Vec<u8>> {
+        self.slot
+            .client_output
+            .lock()
+            .map(|mut queued| queued.drain(..).collect())
+            .unwrap_or_default()
+    }
+
     /// `refresh-client -f` values another client aimed at this one.
     pub(crate) fn take_flag_updates(&self) -> Vec<String> {
         self.slot
@@ -3585,11 +3755,25 @@ impl Window {
     }
 
     pub(crate) fn pane_rect(&self, pane_id: u32) -> Option<PaneRect> {
-        self.panes
-            .iter()
-            .find(|pane| pane.id == pane_id)
-            .and_then(|pane| pane.floating)
-            .or_else(|| self.layout.pane_rect(pane_id))
+        let node = self.panes.iter().find(|pane| pane.id == pane_id)?;
+        let mut rect = node.floating.or_else(|| self.layout.pane_rect(pane_id))?;
+        // A visible scrollbar is drawn beside the pane, not over it, so the
+        // pane is that many columns narrower — and starts that many columns
+        // further right when the bar is on the left.
+        if node.scrollbar_columns != 0 && rect.width > node.scrollbar_columns {
+            rect.width -= node.scrollbar_columns;
+            if self.scrollbars_on_left {
+                rect.left += node.scrollbar_columns;
+            }
+        }
+        // The border-status row comes out of the pane the same way.
+        if let Some(side) = node.border_status.filter(|_| rect.height > 1) {
+            rect.height -= 1;
+            if side == PaneBorderStatus::Top {
+                rect.top += 1;
+            }
+        }
+        Some(rect)
     }
 }
 
@@ -3842,6 +4026,19 @@ fn theme_report(theme: &str) -> &'static [u8] {
 }
 
 /// Current Unix time in seconds (tmux's `#{session_created}` unit).
+/// tmux's `screen_set_cursor_style` numbering, which DECSCUSR takes.
+pub(crate) fn cursor_style_parameter(style: &str) -> u8 {
+    match style {
+        "blinking-block" => 1,
+        "block" => 2,
+        "blinking-underline" => 3,
+        "underline" => 4,
+        "blinking-bar" => 5,
+        "bar" => 6,
+        _ => 0,
+    }
+}
+
 pub fn now_epoch() -> i64 {
     // SAFETY: `time(NULL)` returns the current time and touches no memory.
     unsafe { libc::time(std::ptr::null_mut()) as i64 }
@@ -3867,6 +4064,10 @@ pub struct ServerState {
     /// first session. An untargeted attach may consume this state by creating
     /// session 0; becoming empty later must not repeat that bootstrap behavior.
     initial_attach_pending: bool,
+    /// The pathname this server listens on, as `#{socket_path}` reports it and
+    /// as `TMUX` names it in a spawned process. Empty in the unit tests and in
+    /// any embedding that never binds a socket.
+    socket_path: PathBuf,
     pane_io_mode: PaneIoMode,
     sessions: Vec<Session>,
     /// Windows are owned once by the server and referenced through [`Winlink`].
@@ -3913,6 +4114,19 @@ pub struct ServerState {
     /// Names hidden by `set-environment -h`; omitted unless queried with
     /// `show-environment -h`.
     hidden_environment: BTreeSet<String>,
+    /// Which global names came from the daemon's own environment rather than a
+    /// `set-environment`. They are the base a spawn starts from, so the
+    /// requesting client's environment overrides them; an explicit assignment
+    /// overrides the client in turn.
+    seeded_environment: BTreeSet<String>,
+    /// Bumped whenever anything a spawned process's environment is built from
+    /// changes, so [`ServerState::job_environment`] can cache its answer.
+    environment_generation: u64,
+    /// The last answer [`ServerState::job_environment`] gave, with the session
+    /// and generation it was built for. A command builds its job runner whether
+    /// or not it expands a `#()`, and rebuilding the whole environment each
+    /// time is not free.
+    job_environment_cache: Mutex<Option<(u64, Option<u32>, Arc<Vec<String>>)>>,
     /// Independent server, global-session, and global-window option tables.
     global_options: GlobalOptions,
     /// The paste-buffer stack, newest first (tmux's `#{buffer_name}` order in
@@ -3938,6 +4152,9 @@ pub struct ServerState {
     /// Prompt history by tmux prompt type (`command`, `search`, `target`,
     /// `window-target`), oldest first.
     prompt_history: BTreeMap<String, Vec<String>>,
+    /// The `history-file` the prompt history was last loaded from, so it is
+    /// read once rather than on every option change.
+    prompt_history_file_loaded: Option<PathBuf>,
     message_log: Vec<MessageLogEntry>,
     background_jobs: Arc<BackgroundJobRegistry>,
     running_hooks: BTreeSet<String>,
@@ -3984,6 +4201,7 @@ impl ServerState {
         let client_renders = Arc::new(ClientRenderRegistry::new());
         let mut state = ServerState {
             initial_attach_pending: true,
+            socket_path: PathBuf::new(),
             pane_io_mode: default_pane_io_mode(),
             sessions: Vec::new(),
             windows: BTreeMap::new(),
@@ -4006,6 +4224,9 @@ impl ServerState {
             environment: BTreeMap::new(),
             removed_environment: BTreeSet::new(),
             hidden_environment: BTreeSet::new(),
+            seeded_environment: BTreeSet::new(),
+            environment_generation: 0,
+            job_environment_cache: Mutex::new(None),
             global_options: GlobalOptions::new(),
             buffers: Vec::new(),
             buffer_created: BTreeMap::new(),
@@ -4015,6 +4236,7 @@ impl ServerState {
             key_tables: BTreeMap::new(),
             pending_config_errors: Vec::new(),
             prompt_history: BTreeMap::new(),
+            prompt_history_file_loaded: None,
             message_log: Vec::new(),
             background_jobs: Arc::new(BackgroundJobRegistry::default()),
             running_hooks: BTreeSet::new(),
@@ -5565,6 +5787,14 @@ impl ServerState {
     ) -> (Arc<super::status::FormatJobRegistry>, Option<u32>) {
         match client.and_then(|name| self.client_renders.client_format_jobs(name)) {
             Some((jobs, session_id)) => (jobs, Some(session_id)),
+            // A command client has a job tree of its own that dies with it, so
+            // a job it starts is never picked up by the next command — tmux
+            // keeps `#()` output in `c->jobs`, and that client is already gone.
+            // Only a format with no client at all reaches the server's tree.
+            None if client.is_some() => (
+                Arc::new(super::status::FormatJobRegistry::new(&self.client_renders)),
+                None,
+            ),
             None => (self.format_job_registry(), None),
         }
     }
@@ -5819,6 +6049,70 @@ impl ServerState {
             .unwrap_or(&[])
     }
 
+    /// The prompt types tmux keeps a history for, in the order it writes them
+    /// to the history file.
+    const PROMPT_TYPES: [&'static str; 4] = ["command", "search", "target", "window-target"];
+
+    /// The file `history-file` names, or `None` when the option is empty or
+    /// names something tmux's `status_prompt_find_history_file` refuses: only
+    /// an absolute path or one under `~/` is accepted.
+    fn prompt_history_file(&self) -> Option<PathBuf> {
+        let value = self.server_options().get("history-file")?;
+        if value.is_empty() {
+            return None;
+        }
+        if value.starts_with('/') {
+            return Some(PathBuf::from(value));
+        }
+        let rest = value.strip_prefix("~/")?;
+        Some(PathBuf::from(std::env::var_os("HOME")?).join(rest))
+    }
+
+    /// tmux's `status_prompt_load_history`, run once per history file.
+    ///
+    /// tmux loads it when the configuration has been read; the hmux daemon has
+    /// no configuration interface, so the load happens when the option first
+    /// names a file instead.
+    pub(crate) fn load_prompt_history(&mut self) {
+        let Some(path) = self.prompt_history_file() else {
+            return;
+        };
+        if self.prompt_history_file_loaded.as_ref() == Some(&path) {
+            return;
+        }
+        self.prompt_history_file_loaded = Some(path.clone());
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            return;
+        };
+        for line in contents.lines().filter(|line| !line.is_empty()) {
+            // An unknown type is an old-format file, whose lines are all
+            // command history.
+            match line.split_once(':') {
+                Some((prompt_type, value)) if Self::PROMPT_TYPES.contains(&prompt_type) => {
+                    self.add_prompt_history(prompt_type, value)
+                }
+                _ => self.add_prompt_history("command", line),
+            }
+        }
+    }
+
+    /// tmux's `status_prompt_save_history`, run as the server exits.
+    pub(crate) fn save_prompt_history(&self) {
+        let Some(path) = self.prompt_history_file() else {
+            return;
+        };
+        let mut contents = String::new();
+        for prompt_type in Self::PROMPT_TYPES {
+            for value in self.prompt_history(prompt_type) {
+                contents.push_str(prompt_type);
+                contents.push(':');
+                contents.push_str(value);
+                contents.push('\n');
+            }
+        }
+        let _ = std::fs::write(&path, contents);
+    }
+
     pub(crate) fn clear_prompt_history(&mut self, prompt_type: Option<&str>) {
         if let Some(prompt_type) = prompt_type {
             self.prompt_history.remove(prompt_type);
@@ -5838,6 +6132,12 @@ impl ServerState {
     pub(crate) fn option_changed(&self, name: &str) {
         if option_affects_render(name) {
             self.invalidate_all_clients(option_invalidation(name));
+        }
+        if matches!(
+            name,
+            "alternate-screen" | "allow-set-title" | "allow-passthrough" | "input-buffer-size"
+        ) {
+            self.refresh_pane_output_policies();
         }
     }
 
@@ -6064,11 +6364,15 @@ impl ServerState {
                     search_string: None,
                     search_regex: false,
                     floating: None,
+                scrollbar_columns: 0,
+                border_status: None,
                     options: OptionSet::default(),
                 }],
                 active: 0,
                 last_pane: None,
                 zoomed: false,
+                activity_epoch: now_epoch(),
+                scrollbars_on_left: false,
                 cols,
                 rows,
                 manual_size: (cols, rows),
@@ -6449,11 +6753,15 @@ impl ServerState {
                     search_string: None,
                     search_regex: false,
                     floating: None,
+                scrollbar_columns: 0,
+                border_status: None,
                     options: OptionSet::default(),
                 }],
                 active: 0,
                 last_pane: None,
                 zoomed: false,
+                activity_epoch: now_epoch(),
+                scrollbars_on_left: false,
                 cols,
                 rows,
                 manual_size: (cols, rows),
@@ -6593,11 +6901,15 @@ impl ServerState {
                     search_string: None,
                     search_regex: false,
                     floating: None,
+                scrollbar_columns: 0,
+                border_status: None,
                     options: OptionSet::default(),
                 }],
                 active: 0,
                 last_pane: None,
                 zoomed: false,
+                activity_epoch: now_epoch(),
+                scrollbars_on_left: false,
                 cols,
                 rows,
                 manual_size: (cols, rows),
@@ -6956,6 +7268,33 @@ impl ServerState {
 
     /// Resolve just the session named by a target (its part before any `:`),
     /// accepting a name or a `$id`. Used by `has-session`.
+    /// Seed the global environment from the daemon's own, as tmux fills
+    /// `global_environ` from the environment its server was started with. The
+    /// unit tests build a state without this, so they stay hermetic.
+    pub fn seed_global_environment(&mut self) {
+        self.environment_generation += 1;
+        for (name, value) in std::env::vars() {
+            self.seeded_environment.insert(name.clone());
+            self.environment.insert(name, value);
+        }
+        if let Ok(cwd) = std::env::current_dir() {
+            self.seeded_environment.insert("PWD".to_owned());
+            self.environment
+                .insert("PWD".to_owned(), cwd.to_string_lossy().into_owned());
+        }
+    }
+
+    /// Record the pathname the server is listening on.
+    pub fn set_socket_path(&mut self, path: impl Into<PathBuf>) {
+        self.environment_generation += 1;
+        self.socket_path = path.into();
+    }
+
+    /// The pathname the server is listening on (`#{socket_path}`).
+    pub fn socket_path(&self) -> &Path {
+        &self.socket_path
+    }
+
     pub fn resolve_session(&self, target: &str) -> Option<&Session> {
         let spec = target.split_once(':').map(|(s, _)| s).unwrap_or(target);
         self.session_index(spec).map(|i| &self.sessions[i])
@@ -7458,6 +7797,182 @@ impl ServerState {
         changed
     }
 
+    /// Recompute how many columns each pane gives up to a scrollbar, resizing
+    /// the panes of any window whose answer moved.
+    ///
+    /// tmux's `window_pane_show_scrollbar`: `on` shows one for every pane,
+    /// `modal` only for a pane in a mode, and neither shows one for a pane on
+    /// its alternate screen. `layout_fix_panes` then takes the style's width
+    /// and padding off the pane.
+    pub(crate) fn refresh_pane_scrollbars(&mut self) -> io::Result<()> {
+        let mut changed = Vec::new();
+        for (window_id, window) in &mut self.windows {
+            let (mode, reserved, on_left) = {
+                let options = window.options(&self.global_options);
+                let mode = options.get("pane-scrollbars").unwrap_or("off").to_owned();
+                let reserved = if mode == "off" {
+                    0
+                } else {
+                    scrollbar_style_columns(options.get("pane-scrollbars-style"))
+                };
+                let on_left = options.get("pane-scrollbars-position") == Some("left");
+                (mode, reserved, on_left)
+            };
+            window.scrollbars_on_left = on_left;
+            let modal = mode == "modal";
+            let border_status = match window
+                .options(&self.global_options)
+                .get("pane-border-status")
+                .unwrap_or("off")
+            {
+                "top" => Some(PaneBorderStatus::Top),
+                "bottom" => Some(PaneBorderStatus::Bottom),
+                _ => None,
+            };
+            let window_rows = window.rows;
+            let rects = window
+                .panes
+                .iter()
+                .map(|node| window.layout.pane_rect(node.id))
+                .collect::<Vec<_>>();
+            let mut moved = false;
+            for (node, rect) in window.panes.iter_mut().zip(rects) {
+                let shown = reserved != 0
+                    && (!modal || node.mode.is_some())
+                    && !node.pane.alternate_screen().0;
+                let columns = if shown { reserved } else { 0 };
+                moved |= node.scrollbar_columns != columns;
+                node.scrollbar_columns = columns;
+                // Only the pane against the window's own top (or bottom) edge
+                // gives up a row; the rest write on a border they already have.
+                let side = rect.and_then(|rect| match border_status {
+                    Some(PaneBorderStatus::Top) if rect.top == 0 => Some(PaneBorderStatus::Top),
+                    Some(PaneBorderStatus::Bottom) if rect.top + rect.height >= window_rows => {
+                        Some(PaneBorderStatus::Bottom)
+                    }
+                    _ => None,
+                });
+                moved |= node.border_status != side;
+                node.border_status = side;
+            }
+            if moved {
+                changed.push(*window_id);
+            }
+        }
+        for window_id in changed {
+            if let Some(window) = self.windows.get_mut(&window_id) {
+                resize_panes_to_layout(window)?;
+            }
+            let sessions = self
+                .sessions
+                .iter()
+                .filter(|session| session.windows.iter().any(|link| link.id == window_id))
+                .map(|session| session.id)
+                .collect::<Vec<_>>();
+            for session_id in sessions {
+                self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
+            }
+        }
+        Ok(())
+    }
+
+    /// Push each pane the options its own output has to be parsed against.
+    ///
+    /// tmux reads them from `wp->options` at the moment the sequence is parsed.
+    /// hmux parses a pane's bytes off the state lock, so the resolved values are
+    /// pushed to the pane instead — once per server loop, and again as soon as a
+    /// `set-option` touches one of them.
+    pub(crate) fn refresh_pane_output_policies(&self) {
+        for window in self.windows.values() {
+            for node in &window.panes {
+                let options = node.options(window, &self.global_options);
+                node.pane.set_output_policy(PaneOutputPolicy {
+                    alternate_screen: options.get("alternate-screen") != Some("off"),
+                    allow_set_title: options.get("allow-set-title") != Some("off"),
+                    passthrough: match options.get("allow-passthrough") {
+                        Some("on") => PassthroughPolicy::Visible,
+                        Some("all") => PassthroughPolicy::Always,
+                        _ => PassthroughPolicy::Off,
+                    },
+                    // Server-scoped, so the window view never sees it.
+                    input_buffer_size: self
+                        .server_options()
+                        .get("input-buffer-size")
+                        .and_then(|value| value.parse().ok())
+                        .unwrap_or(1_048_576),
+                    // The index an entry is stored at *is* the palette slot it
+                    // fills, so the array is read with its indexes rather than
+                    // as a list.
+                    palette: {
+                        let entries = OptionsView::three(
+                            node.option_overrides(),
+                            window.option_overrides(),
+                            self.global_options.window(),
+                        )
+                        .array_entries("pane-colours");
+                        let mut palette =
+                            vec![None; entries.last().map_or(0, |(index, _)| *index as usize + 1)];
+                        for (index, value) in entries {
+                            palette[index as usize] = super::pane::parse_packed_colour(value);
+                        }
+                        palette
+                    },
+                });
+            }
+        }
+    }
+
+    /// Put the `DCS tmux;` payloads panes emitted since the last pass onto the
+    /// client ttys they are allowed to reach, mirroring tmux's
+    /// `screen_write_rawstring` and the client walk in `tty_write`.
+    ///
+    /// `allow-passthrough on` reaches the clients whose *current* window holds
+    /// the pane; `all` also reaches those that merely have the window linked.
+    /// Which of the two applied was decided when the sequence completed, since
+    /// that is when tmux reads the option.
+    pub(crate) fn process_pane_passthrough(&mut self) {
+        let panes = self
+            .windows
+            .iter()
+            .map(|(window_id, window)| {
+                (
+                    *window_id,
+                    window
+                        .panes
+                        .iter()
+                        .map(|node| node.pane.observation_state())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+        for (window_id, observations) in panes {
+            for observation in observations {
+                for PanePassthrough {
+                    data,
+                    invisible_panes,
+                } in observation.take_passthrough()
+                {
+                    let sessions = self
+                        .sessions
+                        .iter()
+                        .filter(|session| {
+                            if invisible_panes {
+                                session.windows.iter().any(|link| link.id == window_id)
+                            } else {
+                                session
+                                    .windows
+                                    .get(session.active)
+                                    .is_some_and(|link| link.id == window_id)
+                            }
+                        })
+                        .map(|session| session.id)
+                        .collect::<BTreeSet<_>>();
+                    self.client_renders.write_client_output(&sessions, &data);
+                }
+            }
+        }
+    }
+
     /// Apply the clipboard policy to the OSC 52 sequences panes emitted since
     /// the last pass, mirroring tmux's `input_osc_52`.
     ///
@@ -7474,7 +7989,9 @@ impl ServerState {
             .map(|node| (node.id, node.pane.observation_state()))
             .collect::<Vec<_>>();
         let allow_applications = self.server_options().get("set-clipboard") == Some("on");
-        let answer_from_buffer = self.server_options().get("get-clipboard") == Some("buffer");
+        let get_clipboard = self.server_options().get("get-clipboard").unwrap_or("buffer");
+        let answer_from_buffer = get_clipboard == "buffer";
+        let forward_to_terminal = matches!(get_clipboard, "request" | "both");
         for (pane_id, observation) in panes {
             for event in observation.take_clipboard_events() {
                 if !allow_applications {
@@ -7492,6 +8009,16 @@ impl ServerState {
                         selection,
                         string_terminator,
                     } => {
+                        if forward_to_terminal {
+                            // tmux's `input_add_request`: ask the client's own
+                            // terminal instead, with the `Ms` capability the
+                            // clipboard writes already use. Turning its answer
+                            // back into a paste buffer needs the reply path,
+                            // which is still missing, so the pane goes
+                            // unanswered exactly as it does with no client.
+                            self.set_client_selection(None, None, None);
+                            continue;
+                        }
                         if !answer_from_buffer {
                             continue;
                         }
@@ -7854,6 +8381,8 @@ impl ServerState {
                 search_string: None,
                 search_regex: false,
                 floating: None,
+                scrollbar_columns: 0,
+                border_status: None,
                 options: OptionSet::default(),
             },
         );
@@ -7952,6 +8481,8 @@ impl ServerState {
                     height,
                     width,
                 }),
+                scrollbar_columns: 0,
+                border_status: None,
                 options: OptionSet::default(),
             },
         );
@@ -9233,6 +9764,8 @@ impl ServerState {
                 active: 0,
                 last_pane: None,
                 zoomed: false,
+                activity_epoch: now_epoch(),
+                scrollbars_on_left: false,
                 cols: source_size.0,
                 rows: source_size.1,
                 manual_size: source_size,
@@ -9424,12 +9957,14 @@ impl ServerState {
 
     /// Set a global environment variable (`set-environment -g VAR VALUE`).
     pub fn set_env(&mut self, key: &str, value: &str) {
+        self.environment_generation += 1;
         let changed = self.environment.get(key).is_none_or(|old| old != value)
             || self.hidden_environment.contains(key)
             || self.removed_environment.contains(key);
         self.environment.insert(key.to_string(), value.to_string());
         self.hidden_environment.remove(key);
         self.removed_environment.remove(key);
+        self.seeded_environment.remove(key);
         if changed {
             self.invalidate_all_clients(RenderInvalidation::STATUS);
         }
@@ -9442,6 +9977,7 @@ impl ServerState {
         value: &str,
         hidden: bool,
     ) -> io::Result<()> {
+        self.environment_generation += 1;
         let session = self
             .find_mut(target)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "can't find session"))?;
@@ -9457,12 +9993,162 @@ impl ServerState {
         Ok(())
     }
 
+    /// The environment a process spawned for `session` runs with, as
+    /// `KEY=VALUE` entries.
+    ///
+    /// tmux's `environ_for_session` layers the session's environment over the
+    /// global one and pushes the result with `environ_push`, which skips a
+    /// hidden entry and drops one marked removed. hmux's daemon is not forked
+    /// from a client, so where tmux's global environment starts out as the
+    /// first client's, hmux uses the environment of the client that asked for
+    /// the spawn; the two `set-environment` layers then apply over it exactly as
+    /// tmux's do. That difference is characterized in README.md.
+    pub(crate) fn spawn_environment(
+        &self,
+        session: Option<&str>,
+        client_environment: &[String],
+        extra: &[&str],
+    ) -> Vec<String> {
+        // The daemon's own environment is the base, as tmux's `global_environ`
+        // is; the requesting client's overrides it, and an explicit
+        // `set-environment -g` overrides that in turn.
+        let (seeded, assigned): (BTreeMap<_, _>, BTreeMap<_, _>) = self
+            .environment
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .partition(|(name, _)| self.seeded_environment.contains(name));
+        let mut environment = seeded;
+        environment.extend(
+            client_environment
+                .iter()
+                .filter_map(|entry| entry.split_once('='))
+                .map(|(name, value)| (name.to_owned(), value.to_owned())),
+        );
+        let session = session.and_then(|target| self.resolve_session(target));
+        let mut layer = |values: &BTreeMap<String, String>,
+                         removed: &BTreeSet<String>,
+                         hidden: &BTreeSet<String>| {
+            for (name, value) in values {
+                environment.insert(name.clone(), value.clone());
+            }
+            for name in removed.iter().chain(hidden.iter()) {
+                environment.remove(name);
+            }
+        };
+        layer(
+            &assigned,
+            &self.removed_environment,
+            &self.hidden_environment,
+        );
+        if let Some(session) = session {
+            layer(
+                &session.environment,
+                &session.removed_environment,
+                &session.hidden_environment,
+            );
+        }
+        // The variables `environ_for_session` always writes. `TMUX` is what
+        // lets a process tell it is inside a server, and which one.
+        environment.insert(
+            "TERM".to_owned(),
+            self.server_options()
+                .get("default-terminal")
+                .or_else(|| super::options::option_default("default-terminal"))
+                .unwrap_or("tmux-256color")
+                .to_owned(),
+        );
+        environment.insert("TERM_PROGRAM".to_owned(), "tmux".to_owned());
+        environment.insert(
+            "TERM_PROGRAM_VERSION".to_owned(),
+            super::TMUX_VERSION.to_owned(),
+        );
+        environment.insert("COLORTERM".to_owned(), "truecolor".to_owned());
+        environment.insert(
+            "TMUX".to_owned(),
+            format!(
+                "{},{},{}",
+                self.socket_path.display(),
+                std::process::id(),
+                session.map_or(-1, |session| session.id as i64),
+            ),
+        );
+        for entry in extra {
+            if let Some((name, value)) = entry.split_once('=') {
+                environment.insert(name.to_owned(), value.to_owned());
+            }
+        }
+        environment
+            .into_iter()
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect()
+    }
+
+    /// The environment a process started by the server — a `#()` job, a
+    /// `run-shell`, a `copy-pipe` — runs with: `environ_for_session` and
+    /// nothing else, since none of those spawns is a pane and tmux gives a job
+    /// no view of the requesting client.
+    ///
+    /// Cached against [`ServerState::environment_generation`], because a
+    /// command builds its job runner whether or not it expands a `#()`.
+    pub(crate) fn job_environment(&self, session: Option<&str>) -> Arc<Vec<String>> {
+        let session_id = session
+            .and_then(|target| self.resolve_session(target))
+            .map(|session| session.id);
+        let generation = self.environment_generation;
+        if let Ok(mut cache) = self.job_environment_cache.lock() {
+            if let Some((cached_generation, cached_session, environment)) = cache.as_ref() {
+                if *cached_generation == generation && *cached_session == session_id {
+                    return Arc::clone(environment);
+                }
+            }
+            let environment = Arc::new(self.spawn_environment(session, &[], &[]));
+            *cache = Some((generation, session_id, Arc::clone(&environment)));
+            return environment;
+        }
+        Arc::new(self.spawn_environment(session, &[], &[]))
+    }
+
+    /// tmux's `environ_update`: copy the variables `update-environment` names
+    /// from a client's environment into a session's.
+    ///
+    /// Each entry is an fnmatch pattern. A pattern that matches nothing is
+    /// *removed* for the session rather than left to fall through to the global
+    /// environment, which is what `show-environment` reports as `-NAME`.
+    pub(crate) fn update_session_environment(&mut self, target: &str, client_env: &[String]) {
+        let patterns = self
+            .resolve_session(target)
+            .map(|session| session.options(&self.global_options))
+            .unwrap_or_else(|| OptionsView::one(self.global_options.session()))
+            .array_values("update-environment")
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        for pattern in patterns {
+            let matched = client_env
+                .iter()
+                .filter_map(|entry| entry.split_once('='))
+                .filter(|(name, _)| {
+                    super::format::glob_match(pattern.as_bytes(), name.as_bytes())
+                })
+                .map(|(name, value)| (name.to_owned(), value.to_owned()))
+                .collect::<Vec<_>>();
+            if matched.is_empty() {
+                let _ = self.unset_session_env(target, &pattern, true);
+                continue;
+            }
+            for (name, value) in matched {
+                let _ = self.set_session_env(target, &name, &value, false);
+            }
+        }
+    }
+
     pub(crate) fn unset_session_env(
         &mut self,
         target: &str,
         key: &str,
         remove: bool,
     ) -> io::Result<()> {
+        self.environment_generation += 1;
         let session = self
             .find_mut(target)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "can't find session"))?;
@@ -9496,12 +10182,14 @@ impl ServerState {
 
     /// Set a hidden global environment variable (`set-environment -g -h`).
     pub fn set_hidden_env(&mut self, key: &str, value: &str) {
+        self.environment_generation += 1;
         let changed = self.environment.get(key).is_none_or(|old| old != value)
             || !self.hidden_environment.contains(key)
             || self.removed_environment.contains(key);
         self.environment.insert(key.to_string(), value.to_string());
         self.hidden_environment.insert(key.to_string());
         self.removed_environment.remove(key);
+        self.seeded_environment.remove(key);
         if changed {
             self.invalidate_all_clients(RenderInvalidation::STATUS);
         }
@@ -9509,6 +10197,7 @@ impl ServerState {
 
     /// Mark a global environment variable for removal from child processes.
     pub fn remove_env(&mut self, key: &str) {
+        self.environment_generation += 1;
         let had_value = self.environment.remove(key).is_some();
         let was_hidden = self.hidden_environment.remove(key);
         let newly_removed = self.removed_environment.insert(key.to_string());
@@ -9520,6 +10209,7 @@ impl ServerState {
 
     /// Unset a global environment variable (`set-environment -g -u VAR`).
     pub fn unset_env(&mut self, key: &str) {
+        self.environment_generation += 1;
         let had_value = self.environment.remove(key).is_some();
         let was_hidden = self.hidden_environment.remove(key);
         let was_removed = self.removed_environment.remove(key);
@@ -9632,6 +10322,64 @@ impl ServerState {
             entries.insert(name, value);
         }
         Ok(entries.into_iter())
+    }
+
+    /// The option rows customize mode shows, grouped under the headings tmux's
+    /// `window_customize_build` uses — one per option table, each entry
+    /// carrying the scope text `window_customize_scope_text` prints for it
+    /// (empty for a global one).
+    pub(crate) fn customize_option_sections(
+        &self,
+        target: &str,
+    ) -> io::Result<Vec<(&'static str, Vec<CustomizeOption>)>> {
+        let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
+        let session = &self.sessions[resolved.session];
+        let window = self.window(resolved.session, resolved.window);
+        let pane = &window.panes[resolved.pane];
+        let collect = |view: OptionsView<'_>, scope: String| {
+            let mut entries = view
+                .iter_effective()
+                // An array is one expandable node in tmux, not a row per index,
+                // and its own row carries no value to edit — so neither the
+                // indexed entries nor the base name join the list hmux offers.
+                .filter(|(name, _)| !super::options::is_array_option(name))
+                .map(|(name, value)| CustomizeOption {
+                    name: name.to_owned(),
+                    value: value.to_owned(),
+                    scope: scope.clone(),
+                })
+                .collect::<Vec<_>>();
+            entries.sort_by(|left, right| left.name.cmp(&right.name));
+            entries
+        };
+        let mut sections = Vec::new();
+        sections.push((
+            "Server Options",
+            collect(OptionsView::one(self.global_options.server()), String::new()),
+        ));
+        let mut session_options = collect(
+            OptionsView::one(self.global_options.session()),
+            String::new(),
+        );
+        session_options.extend(collect(
+            OptionsView::one(session.option_overrides()),
+            format!("session {}", session.name),
+        ));
+        sections.push(("Session Options", session_options));
+        let mut window_options = collect(
+            OptionsView::one(self.global_options.window()),
+            String::new(),
+        );
+        window_options.extend(collect(
+            OptionsView::one(window.option_overrides()),
+            format!("window {}", session.windows[resolved.window].index),
+        ));
+        window_options.extend(collect(
+            OptionsView::one(pane.option_overrides()),
+            format!("pane {}", resolved.pane),
+        ));
+        sections.push(("Window & Pane Options", window_options));
+        Ok(sections)
     }
 
     /// Set a built-in option in its global table. Command execution uses the
@@ -10182,6 +10930,158 @@ impl ServerState {
     /// viewport at `(ox, oy)` — an explicit `refresh-client` pan if one is live
     /// for this window, otherwise a window that follows the cursor so the
     /// active pane's cursor stays on screen.
+    /// The `user-keys` array for a target, by index: entry *n* is the sequence
+    /// tmux's `tty_keys_user` reads as the key `Usern`.
+    pub(crate) fn user_key_sequences(&self, target: &str) -> Vec<String> {
+        let Some(resolved) = self.resolve(target) else {
+            return Vec::new();
+        };
+        OptionsView::two(
+            self.sessions[resolved.session].option_overrides(),
+            self.global_options.server(),
+        )
+        .array_values("user-keys")
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+    }
+
+    /// Move or resize a floating pane by the border the pointer grabbed —
+    /// tmux's `cmd_resize_pane_mouse_update_floating`.
+    ///
+    /// `grabbed` is where the button went down, which names the border, and
+    /// `now` is where the pointer has reached. The top border moves the pane
+    /// whole; every other one resizes it from the edge that stayed put.
+    pub(crate) fn drag_floating_pane(
+        &mut self,
+        target: &str,
+        grabbed: (u16, u16),
+        now: (u16, u16),
+    ) -> bool {
+        const MINIMUM: i32 = 1;
+        let Some(resolved) = self.resolve(target) else {
+            return false;
+        };
+        let window = self.window_mut(resolved.session, resolved.window);
+        let Some(rect) = window.panes[resolved.pane].floating else {
+            return false;
+        };
+        let (sx, sy) = (i32::from(rect.width), i32::from(rect.height));
+        let (xoff, yoff) = (i32::from(rect.left), i32::from(rect.top));
+        let (left, right) = (xoff - 1, xoff + sx);
+        let (lx, ly) = (i32::from(grabbed.0), i32::from(grabbed.1));
+        let (x, y) = (i32::from(now.0), i32::from(now.1));
+
+        let on_left = lx == left || lx == left + 1;
+        let on_right = lx == right || lx == right + 1;
+        let (mut width, mut height) = (sx, sy);
+        let (mut new_left, mut new_top) = (xoff, yoff);
+        if ly == yoff - 1 && on_left {
+            width = (sx + (lx - x)).max(MINIMUM);
+            height = (sy + (ly - y)).max(MINIMUM);
+            new_left = x + 1;
+            new_top = y + 1;
+        } else if ly == yoff - 1 && on_right {
+            width = (x - xoff).max(MINIMUM);
+            height = (sy + (ly - y)).max(MINIMUM);
+            new_top = y + 1;
+        } else if ly == yoff + sy && on_left {
+            width = (sx + (lx - x)).max(MINIMUM);
+            height = y - yoff;
+            if height < MINIMUM {
+                return false;
+            }
+            new_left = x + 1;
+        } else if ly == yoff + sy && on_right {
+            width = (x - xoff).max(MINIMUM);
+            height = (y - yoff).max(MINIMUM);
+        } else if lx == right {
+            width = x - xoff;
+            if width < MINIMUM {
+                return false;
+            }
+        } else if lx == left {
+            width = sx + (lx - x);
+            if width < MINIMUM {
+                return false;
+            }
+            new_left = x + 1;
+        } else if ly == yoff + sy {
+            height = y - yoff;
+            if height < MINIMUM {
+                return false;
+            }
+        } else if ly == yoff - 1 {
+            // The top border moves the pane instead of resizing it.
+            new_left = xoff + (x - lx);
+            new_top = y + 1;
+        } else {
+            return false;
+        }
+
+        let node = &mut window.panes[resolved.pane];
+        node.floating = Some(PaneRect {
+            left: new_left.max(0) as u16,
+            top: new_top.max(0) as u16,
+            width: width.max(MINIMUM) as u16,
+            height: height.max(MINIMUM) as u16,
+        });
+        let _ = resize_panes_to_layout(window);
+        let session_id = self.sessions[resolved.session].id;
+        self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
+        true
+    }
+
+    /// The scrollbar the target's pane shows: the columns it occupies, whether
+    /// they sit to the left of the pane, and the slider's row range within the
+    /// pane — tmux's `screen_redraw_draw_pane_scrollbar`.
+    pub(crate) fn active_pane_scrollbar(&self, target: &str) -> Option<PaneScrollbar> {
+        let resolved = self.resolve(target)?;
+        let window = self.window(resolved.session, resolved.window);
+        let node = &window.panes[resolved.pane];
+        if node.scrollbar_columns == 0 {
+            return None;
+        }
+        let rect = window.pane_rect(node.id)?;
+        if rect.height == 0 {
+            return None;
+        }
+        let (slider_top, slider_height) = pane_slider(node, rect.height);
+        Some(PaneScrollbar {
+            columns: node.scrollbar_columns,
+            on_left: window.scrollbars_on_left,
+            left: if window.scrollbars_on_left {
+                rect.left.saturating_sub(node.scrollbar_columns)
+            } else {
+                rect.left + rect.width
+            },
+            top: rect.top,
+            height: rect.height,
+            slider_top,
+            slider_height,
+        })
+    }
+
+    /// Which side `pane-border-status` puts its row on for the target's pane,
+    /// when that pane is the one that gave up a row for it.
+    pub(crate) fn active_pane_border_status(&self, target: &str) -> Option<PaneBorderStatus> {
+        let resolved = self.resolve(target)?;
+        self.window(resolved.session, resolved.window).panes[resolved.pane].border_status
+    }
+
+    /// The size of the window a target is showing, and the character
+    /// `fill-character` asks for the client area outside it — tmux's
+    /// `w->fill_character`, which it paints over every `CELL_OUTSIDE` cell.
+    /// `None` for an unset, empty, or wider-than-one-column value, all of
+    /// which `window_set_fill_character` refuses.
+    pub(crate) fn window_fill(&self, target: &str) -> Option<((u16, u16), String)> {
+        let resolved = self.resolve(target)?;
+        let window = self.window(resolved.session, resolved.window);
+        let fill = window.options(&self.global_options).get("fill-character")?;
+        (super::format::display_width(fill) == 1)
+            .then(|| ((window.cols, window.rows), fill.to_owned()))
+    }
+
     pub(crate) fn client_window_offset(&self, client: &AttachedClient) -> Option<ClientViewport> {
         let window_id = self.current_window_of_session(client.session_id)?;
         let window = self.windows.get(&window_id)?;
@@ -10255,6 +11155,14 @@ impl ServerState {
             sx,
             sy,
         })
+    }
+
+    /// The viewport of the client with this name, for the render path — which
+    /// knows the client it is painting for by name, not by handle.
+    pub(crate) fn client_viewport(&self, client_name: &str) -> Option<ClientViewport> {
+        let clients = self.attached_clients();
+        let client = clients.iter().find(|client| client.name == client_name)?;
+        self.client_window_offset(client)
     }
 
     /// `refresh-client -L/-R/-U/-D`, and `-c` to drop the pan.
@@ -11133,6 +12041,63 @@ impl ServerState {
         self.recalculate_sizes()
     }
 
+    /// The first `rows` lines of a target's pane, as a mode tree's preview
+    /// shows them.
+    pub(crate) fn pane_preview_text(&self, target: &str, rows: usize) -> io::Result<String> {
+        let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
+        let node = &self.window(resolved.session, resolved.window).panes[resolved.pane];
+        let text = node.pane.visible_screen()?;
+        Ok(text
+            .lines()
+            .take(rows)
+            .collect::<Vec<_>>()
+            .join("\n"))
+    }
+
+    /// tmux's `window_pane_search`: the 1-based row of a pane's visible screen
+    /// whose trailing-space-trimmed text matches `term`, or 0 when none does.
+    pub(crate) fn search_pane_screen(
+        &self,
+        pane_id: u32,
+        term: &str,
+        regex: bool,
+        ignore_case: bool,
+    ) -> u32 {
+        let Some(node) = self
+            .windows
+            .values()
+            .flat_map(|window| window.panes.iter())
+            .find(|node| node.id == pane_id)
+        else {
+            return 0;
+        };
+        let Ok(screen) = node.pane.visible_screen() else {
+            return 0;
+        };
+        let needle = if ignore_case {
+            term.to_lowercase()
+        } else {
+            term.to_owned()
+        };
+        for (index, line) in screen.lines().enumerate() {
+            let line = line.trim_end();
+            let line = if ignore_case {
+                line.to_lowercase()
+            } else {
+                line.to_owned()
+            };
+            // tmux wraps a plain term in `*…*` and fnmatches it; a regular
+            // expression is matched unanchored. hmux has no regex engine here,
+            // so `r` falls back to the same containment test — which agrees for
+            // every pattern that is a literal.
+            let _ = regex;
+            if line.contains(&needle) {
+                return index as u32 + 1;
+            }
+        }
+        0
+    }
+
     /// Send input bytes to the active pane of a session.
     pub fn input_to_active_pane(&self, session_name: &str, bytes: &[u8]) -> io::Result<()> {
         if let Some(pane) = self.active_pane(session_name) {
@@ -11157,10 +12122,14 @@ impl ServerState {
             .get("synchronize-panes")
             .is_some_and(|value| value == "on" || value == "1");
         if synchronized {
-            for pane in &window.panes {
-                if !pane.input_off {
-                    pane.pane.input(bytes)?;
+            // tmux's `window_pane_copy_key` fans out only to panes
+            // `window_pane_visible` accepts, and a zoomed window shows only its
+            // active pane.
+            for (index, pane) in window.panes.iter().enumerate() {
+                if pane.input_off || (window.zoomed && index != window.active) {
+                    continue;
                 }
+                pane.pane.input(bytes)?;
             }
             Ok(())
         } else {
@@ -11228,6 +12197,7 @@ impl ServerState {
         PaneKeyModes {
             cursor_keys: state.cursor_keys,
             application_keypad: state.application_keypad,
+            bracketed_paste: state.bracketed_paste,
             extended,
         }
     }
@@ -11465,6 +12435,58 @@ impl ServerState {
 
     /// Handle one key in a generic window mode. A returned argv is the selected
     /// item's command and is executed by the attached-client command context.
+    /// The popup tmux's `popup_editor` opens for a buffer: the buffer's bytes
+    /// in a temporary file, the `editor` option run on it, and the load that
+    /// reads it back once the editor exits.
+    fn buffer_editor_popup(&self, name: &str) -> Option<PopupRequest> {
+        let editor = self.server_options().get("editor").unwrap_or("vi").to_owned();
+        if editor.is_empty() {
+            return None;
+        }
+        let data = self
+            .buffers()
+            .iter()
+            .find(|(buffer, _)| buffer == name)
+            .map(|(_, data)| data.clone())?;
+        // One file per buffer: a second edit of the same buffer rewrites it
+        // with the buffer's current bytes.
+        let safe = name
+            .chars()
+            .map(|glyph| if glyph.is_alphanumeric() { glyph } else { '_' })
+            .collect::<String>();
+        let path =
+            std::env::temp_dir().join(format!("hmux-editor-{}-{safe}", std::process::id()));
+        std::fs::write(&path, &data).ok()?;
+        // tmux hands `editor path` to the shell, so a configured editor with
+        // its own arguments works.
+        let argv = vec![
+            "/bin/sh".to_owned(),
+            "-c".to_owned(),
+            format!("{editor} {}", path.to_string_lossy()),
+        ];
+        Some(PopupRequest {
+            title: String::new(),
+            argv,
+            environment: self.job_environment(None).as_ref().clone(),
+            cwd: None,
+            width: Some("90%".to_owned()),
+            height: Some("90%".to_owned()),
+            x: None,
+            y: None,
+            close_on_exit: true,
+            close_on_success: false,
+            close_on_key: false,
+            border: true,
+            on_close: vec![
+                "load-buffer".to_owned(),
+                "-b".to_owned(),
+                name.to_owned(),
+                path.to_string_lossy().into_owned(),
+            ],
+            on_close_remove: Some(path),
+        })
+    }
+
     pub(crate) fn mode_view_key(
         &mut self,
         target: &str,
@@ -11513,6 +12535,49 @@ impl ServerState {
             }
             "Up" | "k" | "C-p" => view.selected = view.selected.saturating_sub(1),
             "Down" | "j" | "C-n" => view.selected = (view.selected + 1).min(last),
+            // tmux's mode-tree expansion: `+` and `-` on this row, `M-+` and
+            // `M--` on every row.
+            "+" | "-" => {
+                let expand = key == "+";
+                if let Some(item) = view.items.get_mut(view.selected) {
+                    if item.expanded.is_some() {
+                        item.expanded = Some(expand);
+                    }
+                }
+            }
+            "M-+" => view.expand_all(true),
+            "M--" => view.expand_all(false),
+            // tmux's mode-tree tagging: `t` toggles this row, `T` clears
+            // every tag and `C-t` sets them all.
+            "t" if view.kind != ModeKind::Customize => {
+                if let Some(item) = view.items.get_mut(view.selected) {
+                    item.tagged = !item.tagged;
+                }
+            }
+            "T" => {
+                for item in &mut view.items {
+                    item.tagged = false;
+                }
+            }
+            "C-t" => {
+                for item in &mut view.items {
+                    item.tagged = true;
+                }
+            }
+            // tmux's buffer mode edits the selected buffer in a popup running
+            // the `editor` option, and loads the file back when it closes.
+            "e" if view.kind == ModeKind::Buffer => {
+                let name = view
+                    .items
+                    .get(view.selected)
+                    .and_then(|item| item.prompt_target.clone());
+                if let Some(name) = name {
+                    if let Some(request) = self.buffer_editor_popup(&name) {
+                        return Ok(ModeViewKeyResult::Popup(Box::new(request)));
+                    }
+                }
+                return Ok(ModeViewKeyResult::None);
+            }
             "Home" | "g" => view.selected = 0,
             "End" | "G" => view.selected = last,
             "PageUp" | "C-b" => view.selected = view.selected.saturating_sub(visible_rows.max(1)),
@@ -11773,6 +12838,42 @@ impl ServerState {
         Ok(())
     }
 
+    /// Drag the active selection's far end to the pointer — tmux's
+    /// `window_copy_drag_update`. `false` when the pane has no drag to
+    /// continue, which leaves the report to the ordinary key tables.
+    pub(crate) fn drag_copy_selection_to_mouse(
+        &mut self,
+        target: &str,
+        x: u16,
+        y: u16,
+        vi: bool,
+    ) -> bool {
+        let Some(resolved) = self.resolve(target) else {
+            return false;
+        };
+        let dragging = self.window(resolved.session, resolved.window).panes[resolved.pane]
+            .copy
+            .as_ref()
+            .and_then(|copy| copy.selection.as_ref())
+            .is_some_and(|selection| selection.active);
+        if !dragging {
+            return false;
+        }
+        if self
+            .position_copy_cursor_from_mouse(target, x, y, vi)
+            .is_err()
+        {
+            return false;
+        }
+        let state = self.window_mut(resolved.session, resolved.window).panes[resolved.pane]
+            .copy
+            .as_mut();
+        if let Some(state) = state {
+            synchronize_copy_selection(state);
+        }
+        true
+    }
+
     pub(crate) fn set_copy_scroll_from_mouse(
         &mut self,
         target: &str,
@@ -11798,10 +12899,54 @@ impl ServerState {
         Ok(())
     }
 
+    /// Drag a scrollbar's slider — tmux's `window_copy_scroll1`.
+    ///
+    /// `screen_row` is where the pointer is now and `grab` where inside the
+    /// slider it took hold, so the grabbed row stays under the pointer; the
+    /// view then moves by the inverse of the formula that drew the slider.
+    fn slide_copy_scroll(
+        &mut self,
+        target: &str,
+        screen_row: u16,
+        grab: u16,
+    ) -> io::Result<()> {
+        let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
+        let window = self.window(resolved.session, resolved.window);
+        let node = &window.panes[resolved.pane];
+        let rect = window
+            .pane_rect(node.id)
+            .ok_or_else(|| io::Error::other("no pane rect"))?;
+        let (_, slider_height) = pane_slider(node, rect.height);
+        let bar = rect.height.max(1);
+        let travel = bar.saturating_sub(slider_height);
+        let row = i32::from(screen_row) - i32::from(rect.top) - i32::from(grab);
+        let slider_top = u16::try_from(row.clamp(0, i32::from(travel))).unwrap_or(0);
+
+        let copy = self.window_mut(resolved.session, resolved.window).panes[resolved.pane]
+            .copy
+            .as_mut()
+            .ok_or_else(|| io::Error::other("not in a mode"))?;
+        let size = copy.grid.scrollback_rows;
+        let new_offset =
+            (f64::from(slider_top) * ((size as f64 + f64::from(bar)) / f64::from(bar))) as usize;
+        let offset = size - copy.scroll.min(size);
+        let scrolled = copy.scroll as i64 + offset as i64 - new_offset as i64;
+        let scroll = scrolled.clamp(0, size as i64) as usize;
+        // The cursor keeps its row on screen, so its place in the grid moves
+        // with the view.
+        let moved = scroll as i64 - copy.scroll as i64;
+        copy.scroll = scroll;
+        copy.cursor.row = (copy.cursor.row as i64 - moved)
+            .clamp(0, copy.grid.rows.len().saturating_sub(1) as i64)
+            as usize;
+        Ok(())
+    }
+
     pub(crate) fn scroll_copy_to_mouse(
         &mut self,
         target: &str,
         y: u16,
+        grab: Option<u16>,
         vi: bool,
         scroll_exit: bool,
     ) -> io::Result<bool> {
@@ -11813,7 +12958,10 @@ impl ServerState {
             .ok_or_else(|| io::Error::other("not in a mode"))?
             .grid
             .viewport_rows;
-        self.set_copy_scroll_from_mouse(target, y, height, vi)?;
+        match grab {
+            Some(grab) => self.slide_copy_scroll(target, y, grab)?,
+            None => self.set_copy_scroll_from_mouse(target, y, height, vi)?,
+        }
         let exited = scroll_exit
             && self.window(resolved.session, resolved.window).panes[resolved.pane]
                 .copy
@@ -12374,7 +13522,7 @@ impl ServerState {
                         | "append-selection-and-cancel" => {
                             let data = copy_selection(state, vi);
                             if !command.ends_with("no-clear") {
-                                state.selection = None;
+                                clear_copy_selection(state);
                             }
                             end_mode = command.ends_with("and-cancel");
                             Some(data)
@@ -12384,7 +13532,7 @@ impl ServerState {
                         | "copy-pipe-end-of-line"
                         | "copy-pipe-end-of-line-and-cancel" => {
                             let data = copy_from_cursor_to_line_end(state, vi);
-                            state.selection = None;
+                            clear_copy_selection(state);
                             end_mode = command.ends_with("and-cancel");
                             Some(data)
                         }
@@ -12393,7 +13541,7 @@ impl ServerState {
                         | "copy-pipe-line"
                         | "copy-pipe-line-and-cancel" => {
                             let data = copy_current_line(state, vi);
-                            state.selection = None;
+                            clear_copy_selection(state);
                             end_mode = command.ends_with("and-cancel");
                             Some(data)
                         }
@@ -12592,6 +13740,8 @@ impl ServerState {
             search_string: None,
             search_regex: false,
             floating: None,
+            scrollbar_columns: 0,
+            border_status: None,
             options: OptionSet::default(),
         });
         window.layout.keep_only(id);
@@ -12690,7 +13840,29 @@ impl ServerState {
         let pane = self
             .active_pane(session_name)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no active pane"))?;
-        Ok(pane.cursor_shape())
+        let shape = pane.cursor_shape();
+        if shape != 0 {
+            return Ok(shape);
+        }
+        // tmux's `screen_set_default_cursor`: a pane that has applied no
+        // DECSCUSR of its own shows whatever `cursor-style` asks for.
+        Ok(cursor_style_parameter(
+            self.option_for_target(session_name, "cursor-style")
+                .unwrap_or("default"),
+        ))
+    }
+
+    /// The colour a pane's cursor is drawn in: its own `OSC 12` when it set
+    /// one, else the `cursor-colour` option — tmux's `s->default_ccolour`.
+    pub(crate) fn active_pane_cursor_colour(&self, session_name: &str) -> Option<String> {
+        let pane = self.active_pane(session_name)?;
+        let own = pane.osc_state().cursor_colour;
+        if !own.is_empty() && own != "none" {
+            return Some(own);
+        }
+        self.option_for_target(session_name, "cursor-colour")
+            .filter(|value| !value.is_empty() && *value != "none")
+            .map(str::to_owned)
     }
 
     /// How many leading scrollback (history) rows the active pane's VT dump
@@ -12943,6 +14115,14 @@ fn clamp_copy_state(state: &mut CopyState, vi: bool) {
 
 fn copy_view_top(state: &CopyState) -> usize {
     state.grid.scrollback_rows.saturating_sub(state.scroll)
+}
+
+/// tmux's `window_copy_clear_selection`: dropping a selection also puts the
+/// selection mode back to characters, which is what `#{selection_mode}`
+/// reports once a copy has consumed a line or word selection.
+fn clear_copy_selection(state: &mut CopyState) {
+    state.selection = None;
+    state.selection_mode = CopySelectionMode::Character;
 }
 
 fn ensure_copy_cursor_visible(state: &mut CopyState) {

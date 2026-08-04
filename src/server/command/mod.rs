@@ -32,7 +32,7 @@ use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::integration::status::PaneAgents;
 use crate::observability::v1::PaneId;
@@ -134,6 +134,20 @@ pub struct ClientContext {
 }
 
 impl ClientContext {
+    /// A copy whose environment is what a process this client starts should
+    /// see: tmux's `environ_for_session` against the client's own session,
+    /// which is what `job_run` builds for `run-shell`, `if-shell` and
+    /// `copy-pipe`.
+    pub(crate) fn with_job_environment(&self, st: &ServerState) -> ClientContext {
+        let session = self
+            .current_session_id
+            .and_then(|id| st.session_by_id(id))
+            .map(|session| session.name.clone());
+        let mut context = self.clone();
+        context.environment = st.job_environment(session.as_deref()).as_ref().clone();
+        context
+    }
+
     pub(crate) fn env(&self, name: &str) -> Option<&str> {
         self.environment
             .iter()
@@ -734,12 +748,54 @@ fn expand_command_format(
     vars: &Vars,
     loops: Option<&dyn format::LoopSource>,
 ) -> String {
-    format::expand_with_jobs(template, vars, loops, command_jobs(st))
+    format::expand_with_jobs(
+        template,
+        vars,
+        loops,
+        command_jobs(st),
+        Some(&ServerFormatTree(st)),
+    )
 }
 
 fn command_jobs(st: &ServerState) -> Option<&dyn format::FormatJobs> {
     st.command_format_jobs()
         .map(|jobs| jobs.as_ref() as &dyn format::FormatJobs)
+}
+
+/// The server as a format's `#{C:…}` and `#{N:…}` see it: the pane and session
+/// a format tree is being expanded for come from its own variables, so one
+/// implementation serves every expansion point.
+pub(crate) struct ServerFormatTree<'a>(pub(crate) &'a ServerState);
+
+impl format::FormatTree for ServerFormatTree<'_> {
+    fn search_pane(&self, vars: &Vars, term: &str, regex: bool, ignore_case: bool) -> u32 {
+        let Some(pane_id) = vars
+            .lookup("pane_id")
+            .and_then(|id| id.strip_prefix('%'))
+            .and_then(|id| id.parse::<u32>().ok())
+        else {
+            return 0;
+        };
+        self.0.search_pane_screen(pane_id, term, regex, ignore_case)
+    }
+
+    fn name_exists(&self, vars: &Vars, scope: format::NameScope, name: &str) -> bool {
+        match scope {
+            format::NameScope::Session => {
+                self.0.sessions().iter().any(|session| session.name == name)
+            }
+            // tmux looks only in the session the format belongs to.
+            format::NameScope::Window => vars
+                .lookup("session_name")
+                .and_then(|session| self.0.resolve_session(session))
+                .is_some_and(|session| {
+                    session
+                        .windows
+                        .iter()
+                        .any(|link| self.0.window_for_link(link).name == name)
+                }),
+        }
+    }
 }
 
 struct SourceLocation {
@@ -1394,7 +1450,10 @@ impl ResumableCommandQueue {
             {
                 let suspension = CommandSuspension::RunShell {
                     args: inflight.command.args.clone(),
-                    context: self.context.clone(),
+                    context: match state.lock() {
+                        Ok(state) => self.context.with_job_environment(&state),
+                        Err(_) => self.context.clone(),
+                    },
                 };
                 self.suspended = Some(inflight);
                 return ResumableCommandTurn::Suspended(suspension);
@@ -1515,7 +1574,10 @@ impl ResumableCommandQueue {
                 }
                 let suspension = CommandSuspension::IfShell {
                     condition: condition.to_string(),
-                    context: self.context.clone(),
+                    context: match state.lock() {
+                        Ok(state) => self.context.with_job_environment(&state),
+                        Err(_) => self.context.clone(),
+                    },
                 };
                 self.suspended = Some(inflight);
                 return ResumableCommandTurn::Suspended(suspension);
@@ -2283,12 +2345,16 @@ fn run_shell_shared(
         };
         return run_inserted_command_string(command, state, agents, context);
     }
-    let completion = run_blocking(RunShellJob::new(args, context));
+    let context = match state.lock() {
+        Ok(state) => context.with_job_environment(&state),
+        Err(_) => return CommandResult::err("server state poisoned\n"),
+    };
+    let completion = run_blocking(RunShellJob::new(args, &context));
     let mut state = match state.lock() {
         Ok(state) => state,
         Err(_) => return CommandResult::err("server state poisoned\n"),
     };
-    let previous = install_command_target_context(&mut state, context);
+    let previous = install_command_target_context(&mut state, &context);
     let result = finish_run_shell(completion, &mut state);
     state.record_control_checkpoint();
     restore_command_target_context(&mut state, previous);
@@ -3266,14 +3332,46 @@ fn bind_key(args: &[String], st: &mut ServerState) -> CommandResult {
         return CommandResult::err(format!("unknown key: {key_name}\n"));
     };
     let command_start = key_index + 1;
+    // tmux parses the binding's command when the binding is made, so a
+    // `command-alias` is resolved here and the binding keeps what it expanded
+    // to — redefining the alias afterwards leaves it alone.
+    let command = expand_command_aliases(&args[command_start..], st);
     st.bind_key(
         &table,
         key,
-        args[command_start..].to_vec(),
+        command,
         has_flag(args, "-r"),
         flag_value(args, "-N").map(str::to_string),
     );
     CommandResult::ok("")
+}
+
+/// One command line with its leading `command-alias` resolved, as tmux's
+/// `cmd_parse` does before anything stores it. Only the first word can be an
+/// alias, and its replacement keeps the arguments that followed.
+fn expand_command_aliases(command: &[String], st: &ServerState) -> Vec<String> {
+    let Some(name) = command.first() else {
+        return command.to_vec();
+    };
+    let aliases = st.command_aliases();
+    let Some((_, replacement)) = aliases.iter().find(|(alias, _)| alias == name) else {
+        return command.to_vec();
+    };
+    // Only the first of the alias's own commands can take the arguments; a
+    // multi-command alias in a binding is out of reach of this shape, so the
+    // groups are flattened back with their separators.
+    let mut expanded = Vec::new();
+    for (index, group) in tokenized_command_groups(&tokenize_line(replacement))
+        .into_iter()
+        .enumerate()
+    {
+        if index != 0 {
+            expanded.push(";".to_string());
+        }
+        expanded.extend(group);
+    }
+    expanded.extend(command.iter().skip(1).cloned());
+    expanded
 }
 
 /// unbind-key [-anq] [-T table] key.
@@ -3408,7 +3506,14 @@ fn apply_new_session_opts(
             }
         }
     }
-    // `-e VAR=value` seeds environment variables (repeatable).
+    // The `update-environment` copy-in, which `-E` skips. tmux reads the
+    // option from the *global* session table here, since the session being
+    // created has no options of its own yet.
+    if !has_bool_flag(args, 'E') {
+        st.update_session_environment(name, &context.environment);
+    }
+    // `-e VAR=value` seeds environment variables (repeatable), after the
+    // copy-in so an explicit assignment wins.
     for kv in flag_values(args, "-e") {
         if let Some((k, v)) = kv.split_once('=') {
             let _ = st.set_session_env(name, k, v, false);
@@ -3630,13 +3735,8 @@ pub fn new_session_for_attach(
 fn new_session_pane_spec(args: &[String], st: &ServerState, context: &ClientContext) -> PaneSpec {
     let command = trailing_command(args, NEW_SESSION_VALUE_FLAGS);
     let argv = pane_command_argv(command.as_slice(), st, None);
-    let terminal = st
-        .server_options()
-        .get("default-terminal")
-        .or_else(|| options::option_default("default-terminal"))
-        .unwrap_or("tmux-256color");
     let spawn_environment = flag_values(args, "-e");
-    let argv = pane_argv(argv, context, terminal, &spawn_environment);
+    let argv = pane_argv(argv, context, &spawn_environment, st, None);
     match command_option_value(args, "-c", NEW_SESSION_VALUE_FLAGS)
         .map(PathBuf::from)
         .or_else(|| context.cwd.clone())
@@ -3712,14 +3812,8 @@ fn new_window(args: &[String], st: &mut ServerState, context: &ClientContext) ->
     let cwd = explicit_cwd.as_deref().or(context.cwd.as_deref());
     let command = trailing_command(args, VALUE_FLAGS);
     let argv = pane_command_argv(command.as_slice(), st, Some(&session));
-    let terminal = st
-        .server_options()
-        .get("default-terminal")
-        .or_else(|| options::option_default("default-terminal"))
-        .unwrap_or("tmux-256color")
-        .to_string();
     let spawn_environment = flag_values(args, "-e");
-    let argv = pane_argv(argv, context, &terminal, &spawn_environment);
+    let argv = pane_argv(argv, context, &spawn_environment, st, Some(&session));
     let result = if relative {
         match anchor_window_index(&session, explicit, st) {
             Some(anchor) => st.new_window_relative_with_spawn(
@@ -4049,6 +4143,7 @@ fn display_message(
             &vars,
             loops.as_ref().map(|loops| loops as &dyn format::LoopSource),
             command_jobs(st),
+            Some(&ServerFormatTree(st)),
         )
     };
     let mut out = String::new();
@@ -4119,7 +4214,7 @@ pub(crate) struct CommandJobs {
     registry: Arc<super::status::FormatJobRegistry>,
     session_id: u32,
     cwd: Option<PathBuf>,
-    environment: Vec<String>,
+    environment: Arc<Vec<String>>,
 }
 
 impl CommandJobs {
@@ -4132,11 +4227,14 @@ impl CommandJobs {
             Some(session) => super::status::job_cwd(Some(session), context.cwd.as_deref()),
             None => context.cwd.clone(),
         };
+        let session = client_session_id
+            .and_then(|id| st.session_by_id(id))
+            .map(|session| session.name.clone());
         Self {
             registry,
             session_id: client_session_id.unwrap_or_default(),
             cwd,
-            environment: context.environment.clone(),
+            environment: st.job_environment(session.as_deref()),
         }
     }
 }
@@ -4149,7 +4247,7 @@ impl format::FormatJobs for CommandJobs {
             vars,
             self.session_id,
             self.cwd.clone(),
-            self.environment.clone(),
+            Arc::clone(&self.environment),
             // Not a status redraw, so finishing must not invalidate one.
             false,
         )
@@ -4308,7 +4406,9 @@ pub(super) fn vars_full(
     // value — same machine as the tmux reference — and `pid` only by truthiness.
     v.set("host", hostname())
         .set("host_short", hostname_short())
-        .set("pid", server_pid().to_string());
+        .set("pid", server_pid().to_string())
+        .set("socket_path", st.socket_path().to_string_lossy())
+        .set("version", super::TMUX_VERSION);
     v.set("session_name", sess.name.clone())
         .set("session_id", format!("${}", sess.id))
         .set("session_windows", sess.windows.len().to_string())
@@ -4468,6 +4568,7 @@ pub(super) fn vars_full(
                     "0"
                 },
             )
+            .set("window_activity", win.activity_epoch.to_string())
             .set(
                 "window_activity_flag",
                 if link.alert_flags & super::state::ALERT_ACTIVITY != 0 {
@@ -4520,6 +4621,14 @@ pub(super) fn vars_full(
                 .and_then(|value| value.parse::<usize>().ok())
                 .unwrap_or(0);
             let pane_title = st.pane_title(p).unwrap_or_else(hostname);
+            let death = p.pane.death();
+            // A session option, so it is read through the session view rather
+            // than the window's.
+            let history_limit = sess
+                .options(st.global_options())
+                .get("history-limit")
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(2000);
             v.set("pane_index", (pane_base_index + pane_idx).to_string())
                 .set("pane_id", format!("%{}", p.id))
                 .set("pane_start_command", p.start_command.clone())
@@ -4537,9 +4646,33 @@ pub(super) fn vars_full(
                     "pane_active",
                     if pane_idx == win.active { "1" } else { "0" },
                 )
-                // State flags not derived from the terminal grid.
-                .set("pane_dead", "0")
+                // State flags not derived from the terminal grid. A pane is
+                // dead once its child has been waited for and the pane is
+                // still here — tmux's `wp->fd == -1 && PANE_STATUSREADY`,
+                // which only `remain-on-exit` leaves observable.
+                .set("pane_dead", if death.is_some() { "1" } else { "0" })
+                .set(
+                    "pane_dead_status",
+                    death
+                        .and_then(|death| death.status)
+                        .map(|status| status.to_string())
+                        .unwrap_or_default(),
+                )
+                .set(
+                    "pane_dead_signal",
+                    death
+                        .and_then(|death| death.signal)
+                        .map(|signal| signal.to_string())
+                        .unwrap_or_default(),
+                )
+                .set(
+                    "pane_dead_time",
+                    death
+                        .map(|death| unix_seconds(death.at).to_string())
+                        .unwrap_or_default(),
+                )
                 .set("pane_in_mode", if p.mode.is_some() { "1" } else { "0" })
+                .set("pane_input_off", if p.input_off { "1" } else { "0" })
                 .set("pane_mode", p.mode.clone().unwrap_or_default())
                 .set(
                     "pane_search_string",
@@ -4581,11 +4714,19 @@ pub(super) fn vars_full(
                         .to_string(),
                 )
                 .set("cursor_character", pane_cursor_character(&p.pane))
+                // tmux drops history rows past `history-limit` as they scroll
+                // off, so the size saturates there. Ghostty measures its own
+                // scrollback in bytes rather than rows, so hmux applies the
+                // limit where the rows are counted and read back instead.
                 .set(
                     "history_size",
-                    p.pane.scrollback_rows().unwrap_or(0).to_string(),
+                    p.pane
+                        .scrollback_rows()
+                        .unwrap_or(0)
+                        .min(history_limit)
+                        .to_string(),
                 )
-                .set("history_limit", "2000")
+                .set("history_limit", history_limit.to_string())
                 // `pane_format` marks a pane-level format context (always 1 here,
                 // since this table is built per pane).
                 .set("pane_format", "1")
@@ -4966,6 +5107,12 @@ fn layout_checksum(s: &str) -> u16 {
     csum
 }
 
+/// A wall-clock instant as the seconds since the epoch a `FORMAT_TABLE_TIME`
+/// variable reports.
+fn unix_seconds(at: SystemTime) -> u64 {
+    at.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+}
+
 /// The full hostname (`#{host}`), via `gethostname(3)` — the same source real
 /// tmux uses, so it matches on the same machine. Empty on failure.
 fn hostname() -> String {
@@ -5161,14 +5308,8 @@ fn split_window(args: &[String], st: &mut ServerState, context: &ClientContext) 
         return CommandResult::err("command cannot be given for empty pane\n");
     }
     let argv = pane_command_argv(command.as_slice(), st, Some(&target));
-    let terminal = st
-        .server_options()
-        .get("default-terminal")
-        .or_else(|| options::option_default("default-terminal"))
-        .unwrap_or("tmux-256color")
-        .to_string();
     let spawn_environment = flag_values(args, "-e");
-    let argv = pane_argv(argv, context, &terminal, &spawn_environment);
+    let argv = pane_argv(argv, context, &spawn_environment, st, Some(&target));
     let created = if empty {
         st.split_window_direction_with_spec(&target, select, before, direction, PaneSpec::Inert)
     } else {
@@ -5285,14 +5426,8 @@ fn new_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -> C
             .map(|argument| (*argument).to_string())
             .collect(),
     };
-    let terminal = st
-        .server_options()
-        .get("default-terminal")
-        .or_else(|| options::option_default("default-terminal"))
-        .unwrap_or("tmux-256color")
-        .to_string();
     let spawn_environment = flag_values(args, "-e");
-    let argv = pane_argv(argv, context, &terminal, &spawn_environment);
+    let argv = pane_argv(argv, context, &spawn_environment, st, Some(&target));
     let select = !has_flag(args, "-d");
     let created = if has_flag(args, "-L") {
         let direction = if has_flag(args, "-h") {
@@ -5542,8 +5677,10 @@ fn respawn_pane(args: &[String], st: &mut ServerState) -> CommandResult {
         ));
     }
     let command = trailing_command(args, &["-c", "-e", "-t"]);
-    let argv =
-        (!command.is_empty()).then(|| command.into_iter().map(str::to_string).collect::<Vec<_>>());
+    // A respawn spells its command the way a spawn does: one argument is a
+    // shell command line, several are an argv (tmux's `spawn_pane`).
+    let argv = (!command.is_empty())
+        .then(|| pane_command_argv(command.as_slice(), st, Some(&target)));
     let cwd = command_option_value(args, "-c", &["-c", "-e", "-t"]).map(PathBuf::from);
     match st.respawn_pane_process(&target, argv, cwd) {
         Ok(()) => CommandResult::ok(""),
@@ -5583,8 +5720,8 @@ fn respawn_window(args: &[String], st: &mut ServerState) -> CommandResult {
         ));
     }
     let command = trailing_command(args, &["-c", "-e", "-t"]);
-    let argv =
-        (!command.is_empty()).then(|| command.into_iter().map(str::to_string).collect::<Vec<_>>());
+    let argv = (!command.is_empty())
+        .then(|| pane_command_argv(command.as_slice(), st, Some(&target)));
     let cwd = command_option_value(args, "-c", &["-c", "-e", "-t"]).map(PathBuf::from);
     match st.respawn_window_process(&target, argv, cwd) {
         Ok(()) => CommandResult::ok(""),
@@ -6194,6 +6331,9 @@ fn set_option(args: &[String], st: &mut ServerState, window_command: bool) -> Co
         target.local_mut(st).set(&storage_name, &value);
     }
     st.option_changed(name);
+    if name == "history-file" {
+        st.load_prompt_history();
+    }
     st.enforce_unattached_options();
     CommandResult::ok("")
 }
@@ -6834,7 +6974,11 @@ fn capture_pane(args: &[String], st: &mut ServerState, agents: &PaneAgents) -> C
     if grid.rows.is_empty() {
         return finish_capture(args, st, String::new());
     }
-    let range = capture_range(args, &grid, &vars);
+    let history_limit = st
+        .option_for_target(&target, "history-limit")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(2000);
+    let range = capture_range(args, &grid, &vars, history_limit);
     let rows = range.bottom - range.top + 1;
 
     let styled_rows = if has_flag(args, "-e") && !has_flag(args, "-H") {
@@ -6874,16 +7018,23 @@ fn capture_range(
     args: &[String],
     grid: &ghostty_sys::GridSnapshot,
     vars: &format::Vars,
+    history_limit: usize,
 ) -> CaptureRange {
     let last = grid.rows.len().saturating_sub(1);
     let history = grid.scrollback_rows.min(last);
+    // History past `history-limit` is gone in tmux, so it must not be readable
+    // here either; Ghostty keeps its scrollback by bytes rather than rows, so
+    // the limit is applied where the rows are read back.
+    let floor = history.saturating_sub(history_limit);
     let default_top = history;
     let default_bottom = history
         .saturating_add(grid.viewport_rows.saturating_sub(1) as usize)
         .min(last);
 
-    let mut top = capture_endpoint(flag_value(args, "-S"), default_top, history, last, vars);
-    let mut bottom = capture_endpoint(flag_value(args, "-E"), default_bottom, history, last, vars);
+    let mut top = capture_endpoint(flag_value(args, "-S"), default_top, history, last, vars)
+        .max(floor);
+    let mut bottom = capture_endpoint(flag_value(args, "-E"), default_bottom, history, last, vars)
+        .max(floor);
     if bottom < top {
         std::mem::swap(&mut top, &mut bottom);
     }
@@ -7378,10 +7529,16 @@ fn resize_pane_to_mouse(st: &mut ServerState) -> CommandResult {
         return CommandResult::ok("");
     };
     let position = mouse.position;
+    let grabbed = mouse.last_position.unwrap_or(position);
     let target = format!("%{pane_id}");
     let Some(resolved) = st.resolve(&target) else {
         return CommandResult::ok("");
     };
+    // A floating pane is not in the layout, so it is moved and resized
+    // directly by whichever of its own borders the pointer grabbed.
+    if st.drag_floating_pane(&target, (grabbed.x, grabbed.y), (position.x, position.y)) {
+        return CommandResult::ok("");
+    }
     let status_offset = if super::status::at_top(st, &target) {
         super::status::height(st, &target)
     } else {
@@ -8064,6 +8221,22 @@ fn io_error_message(e: &std::io::Error) -> String {
     }
 }
 
+/// The format variables one paste buffer answers to, shared by `list-buffers`
+/// and `choose-buffer`.
+pub(super) fn buffer_vars(st: &ServerState, name: &str, data: &[u8]) -> Vars {
+    let mut vars = Vars::new();
+    vars.set("buffer_name", name.to_owned())
+        .set("buffer_size", data.len().to_string())
+        .set("buffer_sample", String::from_utf8_lossy(data).into_owned())
+        .set(
+            "buffer_created",
+            st.buffer_created(name)
+                .map(|created| created.to_string())
+                .unwrap_or_default(),
+        );
+    vars
+}
+
 /// `list-buffers [-f filter] [-F format]`. Lists paste buffers, newest first.
 fn list_buffers(args: &[String], st: &ServerState) -> CommandResult {
     let template = flag_value(args, "-F");
@@ -8071,17 +8244,7 @@ fn list_buffers(args: &[String], st: &ServerState) -> CommandResult {
     let default_line = "#{buffer_name}: #{buffer_size} bytes: \"#{buffer_sample}\"";
     let mut out = String::new();
     for (name, data) in st.buffers() {
-        let mut v = Vars::new();
-        let sample = String::from_utf8_lossy(data).into_owned();
-        v.set("buffer_name", name.clone())
-            .set("buffer_size", data.len().to_string())
-            .set("buffer_sample", sample)
-            .set(
-                "buffer_created",
-                st.buffer_created(name)
-                    .map(|created| created.to_string())
-                    .unwrap_or_default(),
-            );
+        let v = buffer_vars(st, name, data);
         if let Some(f) = filter {
             if !format::is_true(&expand_command_format(st, f, &v, None)) {
                 continue;
@@ -8113,6 +8276,10 @@ fn delete_buffer(args: &[String], st: &mut ServerState) -> CommandResult {
 fn shell_command(command: &str, context: &ClientContext) -> std::process::Command {
     let mut shell = std::process::Command::new("sh");
     shell.arg("-c").arg(command);
+    // tmux's `environ_push` replaces the child's environment outright rather
+    // than adding to the server's own, so the context's environment is the
+    // whole of it.
+    shell.env_clear();
     for entry in &context.environment {
         if let Some((name, value)) = entry.split_once('=') {
             shell.env(name, value);
@@ -8147,7 +8314,7 @@ fn run_shell(
         };
         return run_tokenized_line(&tokenize_line(command), st, agents, context);
     }
-    let completion = run_blocking(RunShellJob::new(args, context));
+    let completion = run_blocking(RunShellJob::new(args, &context.with_job_environment(st)));
     finish_run_shell(completion, st)
 }
 
@@ -8202,7 +8369,7 @@ fn if_shell(
         {
             true
         } else {
-            let mut shell = shell_command(&cond, context);
+            let mut shell = shell_command(&cond, &context.with_job_environment(st));
             shell.status().map(|s| s.success()).unwrap_or(false)
         }
     };
@@ -9125,7 +9292,7 @@ fn unknown_bind_key_flag(args: &[String], spec: &str) -> Option<char> {
 /// combined short-flag cluster (tmux's getopt merges `-g -a` into `-ga`). Only
 /// pure-letter clusters count, so a value like `-3` or a positional isn't
 /// mistaken for a flag group.
-fn has_bool_flag(args: &[String], ch: char) -> bool {
+pub(crate) fn has_bool_flag(args: &[String], ch: char) -> bool {
     args.iter().any(|a| {
         let bytes = a.as_bytes();
         bytes.first() == Some(&b'-')
@@ -9140,20 +9307,28 @@ fn has_bool_flag(args: &[String], ch: char) -> bool {
 /// `-flag value` pairs whose flag is listed in `value_flags`. Boolean flags like
 /// `-d` are dropped without consuming a following argument.
 fn positionals<'a>(args: &'a [String], value_flags: &[&str]) -> Vec<&'a str> {
-    let mut out = Vec::new();
     let mut i = 1; // skip the command name
+    // tmux's `args_parse` stops looking for flags at the first operand, so a
+    // later word that starts with `-` — a menu item named `-disabled`, say —
+    // is an operand too rather than an unknown flag.
     while i < args.len() {
-        let a = args[i].as_str();
-        if a.starts_with('-') && a != "-" {
-            if value_flags.contains(&a) {
-                i += 1; // also skip this flag's value
-            }
-        } else {
-            out.push(a);
+        let arg = args[i].as_str();
+        if arg == "--" {
+            i += 1;
+            break;
+        }
+        if !arg.starts_with('-') || arg == "-" {
+            break;
+        }
+        if value_flags.contains(&arg) {
+            i += 1; // also skip this flag's value
         }
         i += 1;
     }
-    out
+    args[i.min(args.len())..]
+        .iter()
+        .map(String::as_str)
+        .collect()
 }
 
 /// Return a command and all of its arguments after the tmux options. Unlike
@@ -9216,25 +9391,18 @@ fn command_option_value<'a>(
 fn pane_argv(
     argv: Vec<String>,
     context: &ClientContext,
-    terminal: &str,
     extra_environment: &[&str],
+    st: &ServerState,
+    session: Option<&str>,
 ) -> Vec<String> {
     if context.environment.is_empty() && extra_environment.is_empty() {
         return argv;
     }
-    let mut wrapped =
-        Vec::with_capacity(argv.len() + context.environment.len() + extra_environment.len() + 3);
+    let environment = st.spawn_environment(session, &context.environment, extra_environment);
+    let mut wrapped = Vec::with_capacity(argv.len() + environment.len() + 2);
     wrapped.push("/usr/bin/env".to_string());
     wrapped.push("-i".to_string());
-    wrapped.extend(
-        context
-            .environment
-            .iter()
-            .filter(|entry| !entry.starts_with("TERM="))
-            .cloned(),
-    );
-    wrapped.push(format!("TERM={terminal}"));
-    wrapped.extend(extra_environment.iter().map(|entry| (*entry).to_string()));
+    wrapped.extend(environment);
     wrapped.extend(argv);
     wrapped
 }

@@ -156,6 +156,14 @@ pub(super) trait FormatContext {
     fn preserve_double_hash(&self) -> bool {
         false
     }
+
+    fn search_pane(&self, _vars: &Vars, _term: &str, _regex: bool, _ignore_case: bool) -> u32 {
+        0
+    }
+
+    fn name_exists(&self, _vars: &Vars, _scope: NameScope, _name: &str) -> bool {
+        false
+    }
 }
 
 /// Runs a `#()` command substitution and returns its cached output. tmux starts
@@ -165,12 +173,43 @@ pub(super) trait FormatJobs {
     fn run(&self, command: &str, expanded: String, vars: &Vars) -> String;
 }
 
+/// Which tree `#{N:…}` asks about.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum NameScope {
+    Window,
+    Session,
+}
+
+/// The parts of the server a format reaches outside its own variables: tmux's
+/// `format_search` over the target pane's screen, and the
+/// `format_window_name`/`format_session_name` existence checks.
+pub(super) trait FormatTree {
+    /// The 1-based row of the target pane's visible screen matching `term`, or
+    /// 0 — `window_pane_search`.
+    fn search_pane(&self, vars: &Vars, term: &str, regex: bool, ignore_case: bool) -> u32;
+
+    /// Whether a window of that name exists in the format's session, or a
+    /// session of that name exists at all.
+    fn name_exists(&self, vars: &Vars, scope: NameScope, name: &str) -> bool;
+}
+
 struct BasicContext<'a> {
     loops: Option<&'a dyn LoopSource>,
     jobs: Option<&'a dyn FormatJobs>,
+    tree: Option<&'a dyn FormatTree>,
 }
 
 impl FormatContext for BasicContext<'_> {
+    fn search_pane(&self, vars: &Vars, term: &str, regex: bool, ignore_case: bool) -> u32 {
+        self.tree
+            .map_or(0, |tree| tree.search_pane(vars, term, regex, ignore_case))
+    }
+
+    fn name_exists(&self, vars: &Vars, scope: NameScope, name: &str) -> bool {
+        self.tree
+            .is_some_and(|tree| tree.name_exists(vars, scope, name))
+    }
+
     fn job(&self, command: &str, expanded: String, vars: &Vars) -> String {
         match self.jobs {
             Some(jobs) => jobs.run(command, expanded, vars),
@@ -217,6 +256,22 @@ impl FormatContext for BasicContext<'_> {
                     .unwrap_or("")
                     .cmp(right.vars.lookup(name_key).unwrap_or(""))
             });
+        }
+        if flags.contains('t') {
+            // Newest first, as tmux's `SORT_ACTIVITY` orders a collection.
+            let activity_key = match kind {
+                FormatLoopKind::Session => "session_activity",
+                FormatLoopKind::Window => "window_activity",
+                FormatLoopKind::Pane => "pane_index",
+                FormatLoopKind::Client => unreachable!(),
+            };
+            let stamp = |item: &FormatLoopItem| {
+                item.vars
+                    .lookup(activity_key)
+                    .and_then(|value| value.parse::<i64>().ok())
+                    .unwrap_or(0)
+            };
+            items.sort_by_key(|item| std::cmp::Reverse(stamp(item)));
         }
         if flags.contains('r') {
             items.reverse();
@@ -273,6 +328,7 @@ pub fn expand_with(template: &str, vars: &Vars, ls: Option<&dyn LoopSource>) -> 
         &BasicContext {
             loops: ls,
             jobs: None,
+            tree: None,
         },
     )
 }
@@ -283,8 +339,9 @@ pub(super) fn expand_with_jobs(
     vars: &Vars,
     ls: Option<&dyn LoopSource>,
     jobs: Option<&dyn FormatJobs>,
+    tree: Option<&dyn FormatTree>,
 ) -> String {
-    expand_with_context(template, vars, &BasicContext { loops: ls, jobs })
+    expand_with_context(template, vars, &BasicContext { loops: ls, jobs, tree })
 }
 
 /// [`expand_with_jobs`], but applying current-time directives first.
@@ -296,8 +353,9 @@ pub(super) fn expand_time_with_jobs(
     vars: &Vars,
     ls: Option<&dyn LoopSource>,
     jobs: Option<&dyn FormatJobs>,
+    tree: Option<&dyn FormatTree>,
 ) -> String {
-    expand_time_with_context(template, vars, &BasicContext { loops: ls, jobs })
+    expand_time_with_context(template, vars, &BasicContext { loops: ls, jobs, tree })
 }
 
 pub(super) fn expand_with_context(
@@ -521,6 +579,28 @@ impl Expander<'_> {
                 .chars()
                 .count()
                 .to_string();
+        }
+        // `C[/flags]:TERM` — the 1-based row of the target pane's visible screen
+        // matching the expanded term, or 0. `i` folds case, `r` reads the term
+        // as an extended regular expression.
+        if let Some((flags, term)) = parse_flagged_modifier(content, b'C') {
+            let term = self.expand(term, vars, depth);
+            return self
+                .context
+                .search_pane(vars, &term, flags.contains('r'), flags.contains('i'))
+                .to_string();
+        }
+        // `N[/w|/s]:NAME` — whether a window of that name exists in the
+        // format's session, or a session of that name exists. tmux defaults to
+        // the window scope.
+        if let Some((flags, name)) = parse_flagged_modifier(content, b'N') {
+            let name = self.expand(name, vars, depth);
+            let scope = if flags.contains('s') && !flags.contains('w') {
+                NameScope::Session
+            } else {
+                NameScope::Window
+            };
+            return bool01(self.context.name_exists(vars, scope, &name));
         }
         // `w:BODY` — the display width of the resolved body, using the same
         // libghostty-vt codepoint-width table as the native terminal grid.
@@ -1073,12 +1153,40 @@ fn pad(s: &str, n: isize) -> String {
 /// pad). Returns the signed count and the body after the `:`. `None` if the
 /// content doesn't match this shape (so a variable that merely starts with the
 /// prefix letter, like `pane_index`, falls through to a plain lookup).
+/// Parse a `X[<sep>flags]:BODY` modifier: the leading letter, an optional
+/// argument introduced by a punctuation separator, and the body after the
+/// colon. tmux's `format_build_modifiers` shape, for the modifiers whose one
+/// argument is a set of flag letters.
+fn parse_flagged_modifier(content: &str, prefix: u8) -> Option<(&str, &str)> {
+    let bytes = content.as_bytes();
+    if bytes.first() != Some(&prefix) {
+        return None;
+    }
+    if bytes.get(1) == Some(&b':') {
+        return Some(("", &content[2..]));
+    }
+    if !bytes.get(1)?.is_ascii_punctuation() {
+        return None;
+    }
+    let colon = content[2..].find(':')? + 2;
+    Some((&content[2..colon], &content[colon + 1..]))
+}
+
 fn parse_count_mod(content: &str, prefix: u8) -> Option<(isize, &str)> {
     let bytes = content.as_bytes();
     if bytes.first() != Some(&prefix) {
         return None;
     }
     let mut i = 1;
+    // tmux's `format_build_modifiers` lets a modifier's arguments follow a
+    // separator of their own — any punctuation, which is what spells the
+    // documented `=/N` beside the bare `=N`.
+    if bytes
+        .get(i)
+        .is_some_and(|byte| byte.is_ascii_punctuation() && !matches!(byte, b'-' | b':'))
+    {
+        i += 1;
+    }
     let negative = bytes.get(i) == Some(&b'-');
     if negative {
         i += 1;
@@ -1356,10 +1464,20 @@ pub(super) fn glob_match(pat: &[u8], text: &[u8]) -> bool {
     let (mut p, mut t) = (0, 0);
     let (mut star, mut mark): (Option<usize>, usize) = (None, 0);
     while t < text.len() {
-        if p < pat.len() && (pat[p] == b'?' || pat[p] == text[t]) {
-            p += 1;
+        let single = match pat.get(p) {
+            Some(b'?') => Some(p + 1),
+            Some(b'[') => match_bracket(pat, p, text[t]).and_then(|(matched, next)| {
+                // An unmatched bracket is a failed single character, not a
+                // literal one, so it must fall through to the star below.
+                matched.then_some(next)
+            }),
+            Some(&byte) if byte == text[t] => Some(p + 1),
+            _ => None,
+        };
+        if let Some(next) = single {
+            p = next;
             t += 1;
-        } else if p < pat.len() && pat[p] == b'*' {
+        } else if pat.get(p) == Some(&b'*') {
             star = Some(p);
             mark = t;
             p += 1;
@@ -1375,6 +1493,72 @@ pub(super) fn glob_match(pat: &[u8], text: &[u8]) -> bool {
         p += 1;
     }
     p == pat.len()
+}
+
+/// Match one character against the fnmatch bracket expression starting at
+/// `start`. Returns whether it matched and the index just past the closing
+/// `]`, or `None` when the brackets are unterminated — in which case fnmatch
+/// treats the `[` as an ordinary character, which the caller's byte compare
+/// has already ruled out.
+fn match_bracket(pat: &[u8], start: usize, character: u8) -> Option<(bool, usize)> {
+    let mut index = start + 1;
+    let negated = matches!(pat.get(index), Some(b'!' | b'^'));
+    if negated {
+        index += 1;
+    }
+    let mut matched = false;
+    let mut first = true;
+    loop {
+        match pat.get(index) {
+            None => return None,
+            // A `]` right after the bracket (or its negation) is a literal.
+            Some(b']') if !first => break,
+            Some(b'[') if pat.get(index + 1) == Some(&b':') => {
+                let rest = &pat[index + 2..];
+                let end = rest
+                    .windows(2)
+                    .position(|pair| pair == b":]")
+                    .map(|offset| index + 2 + offset)?;
+                let name = std::str::from_utf8(&pat[index + 2..end]).ok()?;
+                matched |= character_class_matches(name, character);
+                index = end + 2;
+            }
+            Some(&low) => {
+                // `a-z`, unless the `-` is the last character before the `]`.
+                if pat.get(index + 1) == Some(&b'-')
+                    && pat.get(index + 2).is_some_and(|byte| *byte != b']')
+                {
+                    let high = pat[index + 2];
+                    matched |= (low..=high).contains(&character);
+                    index += 3;
+                } else {
+                    matched |= low == character;
+                    index += 1;
+                }
+            }
+        }
+        first = false;
+    }
+    Some((matched != negated, index + 1))
+}
+
+/// The POSIX character classes fnmatch accepts inside a bracket expression.
+fn character_class_matches(name: &str, character: u8) -> bool {
+    match name {
+        "alnum" => character.is_ascii_alphanumeric(),
+        "alpha" => character.is_ascii_alphabetic(),
+        "blank" => matches!(character, b' ' | b'\t'),
+        "cntrl" => character.is_ascii_control(),
+        "digit" => character.is_ascii_digit(),
+        "graph" => character.is_ascii_graphic(),
+        "lower" => character.is_ascii_lowercase(),
+        "print" => character.is_ascii_graphic() || character == b' ',
+        "punct" => character.is_ascii_punctuation(),
+        "space" => character.is_ascii_whitespace(),
+        "upper" => character.is_ascii_uppercase(),
+        "xdigit" => character.is_ascii_hexdigit(),
+        _ => false,
+    }
 }
 
 /// Expand a loop body once per item of `kind`, concatenating the results. Each
@@ -1460,14 +1644,27 @@ fn split_top_level(s: &str, sep: u8) -> Vec<String> {
     parts
 }
 
+/// Split a loop directive into its sort flags and its body.
+///
+/// tmux writes the flags straight after the letter — `#{Wr:…}` — as the
+/// "single argument with no wrapper character" case of its modifier parser;
+/// the wrapped `#{W/r/:…}` form is accepted too.
 fn parse_loop(content: &str, kind: char) -> Option<(&str, &str)> {
     let rest = content.strip_prefix(kind)?;
     if let Some(body) = rest.strip_prefix(':') {
         return Some(("", body));
     }
-    let rest = rest.strip_prefix('/')?;
+    if let Some(rest) = rest.strip_prefix('/') {
+        let (flags, body) = rest.split_once(':')?;
+        return Some((flags.trim_end_matches('/'), body));
+    }
     let (flags, body) = rest.split_once(':')?;
-    Some((flags, body))
+    // Only a run of sort letters can precede the colon; anything else is some
+    // other directive that happens to start with the same letter.
+    flags
+        .chars()
+        .all(|flag| matches!(flag, 'i' | 'n' | 't' | 'r'))
+        .then_some((flags, body))
 }
 
 fn split_modifier_key(content: &str) -> Option<(Vec<&str>, &str)> {

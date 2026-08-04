@@ -41,6 +41,25 @@ exact conformance.
   few megabytes; past that the **oldest** pane output is dropped rather than
   stalling the pane. tmux queues without bound.
 
+One divergence is deliberate rather than structural:
+
+- **customize-mode lists each user option once.** tmux 3.7b repeats the first
+  user option of the global session table in the session section and leaves
+  the session-scoped one out; hmux lists each once, in the scope that owns it.
+
+The daemon is started on its own rather than forked from the first client, which
+shows through in one place:
+
+- The global environment is seeded from the **daemon's** own, as tmux seeds
+  `global_environ` from the environment its server was forked with. Because that
+  daemon was not forked from a client, a spawned **pane** then takes the
+  environment of the client that asked for it on top of that seed — tmux's panes
+  never see the client's environment at all, only what `update-environment`
+  copies into the session. Everything else matches: the `set-environment`
+  layers, global then session, minus the hidden and removed names, and the
+  `TERM`/`TMUX` variables tmux always writes. A **job** — `#()`, `run-shell`,
+  `copy-pipe` — gets tmux's environment exactly, with no client layer.
+
 ## Usage
 
 `nix run` to start hmux server, then `tmux attach`.

@@ -14,6 +14,9 @@ pub(super) struct CopyModeAction {
     slider: bool,
     mouse: Option<MouseEvent>,
     begin_selection: bool,
+    /// `copy-mode -e`: leave the mode again once a scroll reaches the bottom,
+    /// which is how a wheel-entered mode gets out of the way.
+    scroll_exit: bool,
 }
 
 impl CopyModeAction {
@@ -23,6 +26,7 @@ impl CopyModeAction {
         slider: bool,
         mouse: Option<MouseEvent>,
         begin_selection: bool,
+        scroll_exit: bool,
     ) -> Self {
         Self {
             page_up,
@@ -30,23 +34,45 @@ impl CopyModeAction {
             slider,
             mouse,
             begin_selection,
+            scroll_exit,
         }
     }
 
-    pub(super) fn apply(self, state: &Arc<Mutex<ServerState>>, target: &str, pane_rows: u16) {
-        enter(state, target, self.page_up);
+    pub(super) fn apply(self, state: &Arc<Mutex<ServerState>>, target: &str) {
+        enter(state, target, self.page_up, self.scroll_exit);
         let Ok(mut state) = state.lock() else {
             return;
         };
         let vi = uses_vi_keys(&state, target);
         if let Some(mouse) = self.mouse {
             let position = mouse.pane_position();
-            let _ = state.position_copy_cursor_from_mouse(target, position.x, position.y, vi);
+            // `-M` opens a drag: the selection starts where the button went
+            // down, not where the pointer has already reached.
+            let start = if self.begin_selection {
+                mouse.pane_last_position().unwrap_or(position)
+            } else {
+                position
+            };
+            let _ = state.position_copy_cursor_from_mouse(target, start.x, start.y, vi);
             if self.slider {
-                let _ = state.set_copy_scroll_from_mouse(target, position.y, pane_rows, vi);
+                let grab = mouse.target.as_ref().and_then(|target| target.slider_offset);
+                let _ = state.scroll_copy_to_mouse(
+                    target,
+                    if grab.is_some() {
+                        mouse.position.y
+                    } else {
+                        position.y
+                    },
+                    grab,
+                    vi,
+                    self.scroll_exit,
+                );
             }
             if self.begin_selection {
                 run_command(&mut state, target, "begin-selection", vi, "");
+                // tmux ends `window_copy_start_drag` with one drag update, so
+                // the pointer's current position is already selected.
+                state.drag_copy_selection_to_mouse(target, position.x, position.y, vi);
             }
         }
         if self.page_down {
@@ -56,7 +82,7 @@ impl CopyModeAction {
 
     /// Re-entering copy mode from its own key table only honors `-u`.
     pub(super) fn reactivate(self, state: &Arc<Mutex<ServerState>>, target: &str) {
-        enter(state, target, self.page_up);
+        enter(state, target, self.page_up, self.scroll_exit);
     }
 }
 
@@ -87,9 +113,9 @@ pub(super) fn uses_vi_keys(state: &ServerState, target: &str) -> bool {
     }
 }
 
-fn enter(state: &Arc<Mutex<ServerState>>, target: &str, page_up: bool) {
+fn enter(state: &Arc<Mutex<ServerState>>, target: &str, page_up: bool, scroll_exit: bool) {
     if let Ok(mut state) = state.lock() {
-        let _ = state.set_pane_mode(target, Some("copy-mode"));
+        let _ = state.set_pane_mode_with_scroll_exit(target, Some("copy-mode"), scroll_exit);
         if page_up {
             let vi = uses_vi_keys(&state, target);
             run_command(
@@ -338,7 +364,7 @@ fn render_mark_and_position(
     let copy = view.copy;
     let terminal = view.terminal;
     let view_top = copy.grid.scrollback_rows.saturating_sub(copy.scroll);
-    if let Some((row, _)) = copy.mark {
+    if let Some((row, mark_column)) = copy.mark {
         if row >= view_top && row < view_top.saturating_add(height as usize) {
             let style = style_escape(
                 state,
@@ -355,17 +381,51 @@ fn render_mark_and_position(
                 )
                 .as_bytes(),
             );
+            // tmux styles the whole marked row, exchanges the two colours on
+            // the marked cell itself (`window_copy_update_style`), and clears
+            // the blank tail of the row — which carries the background alone.
+            let variant = |variant| {
+                status::option_style_escape_variant(
+                    state,
+                    target,
+                    "copy-mode-mark-style",
+                    "bg=red,fg=black",
+                    terminal,
+                    variant,
+                )
+            };
+            let reversed = variant(status::StyleVariant::Reversed);
+            let background_only = variant(status::StyleVariant::BackgroundOnly);
+            let cells = &copy.grid.rows[row].cells;
+            let used = cells
+                .iter()
+                .rposition(|cell| !cell.text.is_empty())
+                .map_or(0, |last| last + 1);
             out.extend_from_slice(&style);
-            for cell in copy.grid.rows[row].cells.iter().take(width as usize) {
-                if !matches!(
+            for (column, cell) in cells.iter().take(width as usize).enumerate() {
+                if matches!(
                     cell.width,
                     ghostty_sys::GridCellWidth::SpacerTail | ghostty_sys::GridCellWidth::SpacerHead
                 ) {
-                    if cell.text.is_empty() {
-                        out.push(b' ');
+                    continue;
+                }
+                if column == used {
+                    out.extend_from_slice(&background_only);
+                }
+                if column == mark_column {
+                    out.extend_from_slice(&reversed);
+                }
+                if cell.text.is_empty() {
+                    out.push(b' ');
+                } else {
+                    out.extend_from_slice(cell.text.as_bytes());
+                }
+                if column == mark_column {
+                    out.extend_from_slice(if column >= used {
+                        &background_only
                     } else {
-                        out.extend_from_slice(cell.text.as_bytes());
-                    }
+                        &style
+                    });
                 }
             }
             append_terminal_style_reset(out, terminal);

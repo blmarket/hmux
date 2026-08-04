@@ -119,7 +119,10 @@ impl BackgroundCommands {
                 context,
             } => {
                 let id = self.allocate_id();
-                let job = command::suspend::SuspensionJob::if_shell(&condition, &context);
+                let job = command::suspend::SuspensionJob::if_shell(
+                    &condition,
+                    &self.job_context(&context),
+                );
                 self.jobs.insert(
                     id,
                     JobState::ResolvingCondition {
@@ -132,6 +135,15 @@ impl BackgroundCommands {
                     executor.adopt_background_suspension(job, target.clone(), id, outbox);
                 });
             }
+        }
+    }
+
+    /// The client context a shell job runs with: the caller's, with the
+    /// environment tmux's `environ_for_session` would have built for it.
+    fn job_context(&self, context: &ClientContext) -> ClientContext {
+        match self.state.lock() {
+            Ok(state) => context.with_job_environment(&state),
+            Err(_) => context.clone(),
         }
     }
 
@@ -158,7 +170,11 @@ impl BackgroundCommands {
             }
             BackgroundCommand::RunShell { args, jobs } => {
                 let id = self.allocate_id();
-                let job = command::suspend::SuspensionJob::background_shell(&args, &context, jobs);
+                let job = command::suspend::SuspensionJob::background_shell(
+                    &args,
+                    &self.job_context(&context),
+                    jobs,
+                );
                 self.jobs.insert(id, JobState::Running);
                 self.executor.with_mut(|executor| {
                     executor.adopt_background_suspension(job, target.clone(), id, outbox);

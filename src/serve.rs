@@ -72,6 +72,9 @@ pub fn run_event_loop(
         }
     }
 
+    // tmux saves the command-prompt history as its server loop exits.
+    server.save_prompt_history();
+
     // Match the compatibility listener's shutdown behavior: stop accepting,
     // then allow already accepted clients to finish their final handshake.
     event_loop.shutdown_listener(&listener);

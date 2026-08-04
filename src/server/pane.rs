@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex, Weak};
 #[cfg(test)]
 use std::thread;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use libc::pid_t;
 
@@ -312,6 +312,22 @@ struct Child {
     reaped: bool,
     termination_requested: bool,
     exit_code: Option<i32>,
+    /// How the child ended, once it has been waited for: tmux's `wp->status`
+    /// and `wp->dead_time`, which is what `#{pane_dead_*}` reports.
+    death: Option<PaneDeath>,
+}
+
+/// How a pane's child ended.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PaneDeath {
+    /// The exit status, for a child that exited on its own.
+    pub(crate) status: Option<i32>,
+    /// The signal number, for a child that was killed. tmux prints the name
+    /// where the platform has `sys_signame` and the number otherwise; the
+    /// pinned build prints the number.
+    pub(crate) signal: Option<i32>,
+    /// When it was reaped, as `#{pane_dead_time}` reports it.
+    pub(crate) at: SystemTime,
 }
 
 struct ObservedChild {
@@ -391,6 +407,126 @@ pub(crate) struct NativePaneObservation {
     /// OSC 52 sequences the pane emitted, waiting for the server to apply the
     /// `set-clipboard`/`get-clipboard` policy to them.
     clipboard_events: Mutex<VecDeque<PaneClipboardEvent>>,
+    /// `DCS tmux;` payloads the pane emitted, waiting for the server to put them
+    /// on the client ttys they are allowed to reach.
+    passthrough: Mutex<VecDeque<PanePassthrough>>,
+    /// The title the pane last set for itself, tmux's `screen->title`. Tracked
+    /// here rather than read back from Ghostty because tmux's limit on it is
+    /// `input-buffer-size`, and Ghostty's is its own.
+    announced_title: Mutex<Option<String>>,
+    /// The options that decide what the pane's own output is allowed to do.
+    output_policy: PaneOutputPolicyCell,
+}
+
+/// The options a pane's *own output* has to be parsed against.
+///
+/// tmux reads these from `wp->options` inside `input_parse`, which runs with the
+/// whole server in reach. hmux parses a pane's bytes away from the server state,
+/// so the resolved values are pushed to the pane instead and re-pushed whenever
+/// they can have changed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PaneOutputPolicy {
+    /// `alternate-screen`: whether smcup and rmcup switch screens at all.
+    pub(crate) alternate_screen: bool,
+    /// `allow-set-title`: whether the pane may retitle itself.
+    pub(crate) allow_set_title: bool,
+    /// `allow-passthrough`: how far a `DCS tmux;` payload reaches.
+    pub(crate) passthrough: PassthroughPolicy,
+    /// `input-buffer-size`: how long a terminal string may grow before the
+    /// parser abandons it.
+    pub(crate) input_buffer_size: u32,
+    /// `pane-colours`, packed as `0xrrggbb` by index — the palette a query
+    /// falls back to when the pane has set nothing itself.
+    pub(crate) palette: Vec<Option<u32>>,
+}
+
+/// `allow-passthrough`: whether a pane may write to a client's terminal
+/// directly, and whether it has to be the pane on screen to do so.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum PassthroughPolicy {
+    #[default]
+    Off,
+    /// `on`: only clients whose current window holds the pane.
+    Visible,
+    /// `all`: also clients that merely have the window linked, which is tmux's
+    /// `TTY_CTX_INVISIBLE_PANES`.
+    Always,
+}
+
+/// [`PaneOutputPolicy`] as the pane's parser reads it: shared with the server,
+/// so each field is an atomic rather than behind the state lock.
+struct PaneOutputPolicyCell {
+    alternate_screen: AtomicBool,
+    allow_set_title: AtomicBool,
+    passthrough: AtomicU8,
+    input_buffer_size: AtomicU32,
+    /// Read only where a pane's bytes are parsed, so a plain mutex is enough.
+    palette: Mutex<Vec<Option<u32>>>,
+}
+
+impl PaneOutputPolicyCell {
+    fn load(&self) -> PaneOutputPolicy {
+        PaneOutputPolicy {
+            alternate_screen: self.alternate_screen.load(Ordering::Acquire),
+            allow_set_title: self.allow_set_title.load(Ordering::Acquire),
+            passthrough: match self.passthrough.load(Ordering::Acquire) {
+                1 => PassthroughPolicy::Visible,
+                2 => PassthroughPolicy::Always,
+                _ => PassthroughPolicy::Off,
+            },
+            input_buffer_size: self.input_buffer_size.load(Ordering::Acquire),
+            palette: self
+                .palette
+                .lock()
+                .map(|palette| palette.clone())
+                .unwrap_or_default(),
+        }
+    }
+
+    fn store(&self, policy: PaneOutputPolicy) {
+        self.alternate_screen
+            .store(policy.alternate_screen, Ordering::Release);
+        self.allow_set_title
+            .store(policy.allow_set_title, Ordering::Release);
+        self.passthrough.store(
+            match policy.passthrough {
+                PassthroughPolicy::Off => 0,
+                PassthroughPolicy::Visible => 1,
+                PassthroughPolicy::Always => 2,
+            },
+            Ordering::Release,
+        );
+        self.input_buffer_size
+            .store(policy.input_buffer_size, Ordering::Release);
+        if let Ok(mut palette) = self.palette.lock() {
+            *palette = policy.palette;
+        }
+    }
+}
+
+/// The options' own defaults, which a pane parses against until the server's
+/// first refresh reaches it.
+impl Default for PaneOutputPolicyCell {
+    fn default() -> Self {
+        Self {
+            alternate_screen: AtomicBool::new(true),
+            allow_set_title: AtomicBool::new(true),
+            passthrough: AtomicU8::new(0),
+            input_buffer_size: AtomicU32::new(INPUT_BUFFER_DEFAULT_SIZE),
+            palette: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+/// One `DCS tmux; … ST` payload seen in a pane's output, already stripped of
+/// its prefix and terminator, as `screen_write_rawstring` receives it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PanePassthrough {
+    pub(crate) data: Vec<u8>,
+    /// `allow-passthrough` was `all` when the sequence completed, so a client
+    /// that merely has the window linked gets the payload too — tmux's
+    /// `TTY_CTX_INVISIBLE_PANES`.
+    pub(crate) invisible_panes: bool,
 }
 
 /// One OSC 52 sequence seen in a pane's output.
@@ -868,7 +1004,15 @@ impl NativePaneObservation {
             last_output_at: Mutex::new(None),
             bell_count: AtomicU64::new(0),
             clipboard_events: Mutex::new(VecDeque::new()),
+            passthrough: Mutex::new(VecDeque::new()),
+            announced_title: Mutex::new(None),
+            output_policy: PaneOutputPolicyCell::default(),
         }
+    }
+
+    /// The options the pane's own output is currently parsed against.
+    fn output_policy(&self) -> PaneOutputPolicy {
+        self.output_policy.load()
     }
 
     /// The pane's own key-output modes. The `extended-keys` option still has to
@@ -878,6 +1022,7 @@ impl NativePaneObservation {
         PaneKeyState {
             cursor_keys: self.cursor_keys.load(Ordering::Acquire),
             application_keypad: self.application_keypad.load(Ordering::Acquire),
+            bracketed_paste: self.bracketed_paste.load(Ordering::Acquire),
             extended_request: match self.extended_keys_request.load(Ordering::Acquire) {
                 1 => ExtendedKeys::Standard,
                 2 => ExtendedKeys::All,
@@ -975,6 +1120,31 @@ impl NativePaneObservation {
                 events.push_back(event);
             }
         }
+    }
+
+    fn note_passthrough(&self, event: PanePassthrough) {
+        if let Ok(mut queued) = self.passthrough.lock() {
+            // As with the clipboard queue, an application that outruns the
+            // server loop loses the excess rather than growing the server.
+            if queued.len() < 16 {
+                queued.push_back(event);
+            }
+        }
+    }
+
+    /// The title the pane last set for itself.
+    fn announced_title(&self) -> Option<String> {
+        self.announced_title
+            .lock()
+            .ok()
+            .and_then(|title| title.clone())
+    }
+
+    pub(crate) fn take_passthrough(&self) -> Vec<PanePassthrough> {
+        self.passthrough
+            .lock()
+            .map(|mut queued| queued.drain(..).collect())
+            .unwrap_or_default()
     }
 
     pub(crate) fn take_clipboard_events(&self) -> Vec<PaneClipboardEvent> {
@@ -1124,11 +1294,7 @@ impl NativePaneObservation {
 
     #[allow(dead_code)]
     pub(crate) fn contract_title(&self) -> io::Result<Option<String>> {
-        self.term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?
-            .title()
-            .map_err(ghostty_err)
+        Ok(self.announced_title())
     }
 
     /// Return the terminal facts needed by the native observation boundary in
@@ -1207,11 +1373,7 @@ impl PaneObservability for NativePaneObservation {
     }
 
     fn title(&self) -> io::Result<Option<String>> {
-        self.term
-            .lock()
-            .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?
-            .title()
-            .map_err(ghostty_err)
+        Ok(self.announced_title())
     }
 }
 
@@ -1350,6 +1512,7 @@ impl Pane {
                 reaped: false,
                 termination_requested: false,
                 exit_code: None,
+                death: None,
             }),
             pending_input,
             spawn_spec: Some(PaneSpawnSpec {
@@ -1641,6 +1804,13 @@ impl Pane {
             .unwrap_or_default()
     }
 
+    /// Publish the options the pane's output is parsed against. The server
+    /// re-pushes these whenever they can have changed, since the parse itself
+    /// has no view of the option tables.
+    pub(crate) fn set_output_policy(&self, policy: PaneOutputPolicy) {
+        self.observation.output_policy.store(policy);
+    }
+
     /// The pane's current column count (`#{pane_width}`).
     pub fn cols(&self) -> u16 {
         self.cols
@@ -1693,6 +1863,16 @@ impl Pane {
             .map_err(|_| io::Error::other("pane terminal mutex poisoned"))?
             .dump_plain()
             .map_err(ghostty_err)
+    }
+
+    /// The visible screen as plain text, without scrollback — what tmux's
+    /// `window_pane_search` walks.
+    pub(crate) fn visible_screen(&self) -> io::Result<String> {
+        Ok(self
+            .observation
+            .screen(ScreenSource::Visible, usize::from(self.rows))
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .text)
     }
 
     pub(crate) fn cursor_position(&self) -> io::Result<(u16, u16)> {
@@ -1748,13 +1928,7 @@ impl Pane {
             .lock()
             .ok()
             .and_then(|output| latest_screen_title(output.bytes.iter().copied()));
-        legacy.or_else(|| {
-            self.observation
-                .term
-                .lock()
-                .ok()
-                .and_then(|terminal| terminal.title().ok().flatten())
-        })
+        legacy.or_else(|| self.observation.announced_title())
     }
 
     /// The current screen as VT escape sequences, suitable for writing to a
@@ -1955,8 +2129,18 @@ impl Pane {
         }
         child.reaped = true;
         let code = if libc::WIFEXITED(status) {
+            child.death = Some(PaneDeath {
+                status: Some(libc::WEXITSTATUS(status)),
+                signal: None,
+                at: SystemTime::now(),
+            });
             libc::WEXITSTATUS(status)
         } else if libc::WIFSIGNALED(status) {
+            child.death = Some(PaneDeath {
+                status: None,
+                signal: Some(libc::WTERMSIG(status)),
+                at: SystemTime::now(),
+            });
             128 + libc::WTERMSIG(status)
         } else {
             return None;
@@ -1982,6 +2166,12 @@ impl Pane {
             child.termination_requested = true;
         }
         child.reaped
+    }
+
+    /// How this pane's child ended, or `None` while it is still running or has
+    /// not been waited for yet — tmux's `PANE_STATUSREADY`.
+    pub(crate) fn death(&self) -> Option<PaneDeath> {
+        self.child.as_ref().and_then(|child| child.death)
     }
 
     pub(crate) fn child_reaped(&self) -> bool {
@@ -2138,6 +2328,9 @@ pub(crate) struct PaneIo {
     decrqss_detector: DecrqssDetector,
     tab_stop_detector: TabStopDetector,
     alternate_detector: AlternateScreenDetector,
+    alternate_stripper: AlternateScreenStripper,
+    title_filter: SetTitleFilter,
+    passthrough_detector: PassthroughDetector,
     clipboard_detector: Osc52Detector,
     utf8_sanitizer: Utf8Sanitizer,
     title_stripper: ScreenTitleStripper,
@@ -2172,6 +2365,9 @@ impl PaneIo {
             decrqss_detector: DecrqssDetector::default(),
             tab_stop_detector: TabStopDetector::default(),
             alternate_detector: AlternateScreenDetector::default(),
+            alternate_stripper: AlternateScreenStripper::default(),
+            title_filter: SetTitleFilter::default(),
+            passthrough_detector: PassthroughDetector::default(),
             clipboard_detector: Osc52Detector::default(),
             utf8_sanitizer: Utf8Sanitizer::default(),
             title_stripper: ScreenTitleStripper::default(),
@@ -2261,8 +2457,26 @@ impl PaneIo {
         }
 
         self.observation.append_control_output(&pending);
+        let policy = self.observation.output_policy();
+        for (index, colour) in policy.palette.iter().enumerate().take(256) {
+            self.osc_detector.option_palette[index] = *colour;
+        }
         let sanitized = self.utf8_sanitizer.filter(&pending);
         let filtered = self.title_stripper.filter(&sanitized);
+        let filtered = self
+            .alternate_stripper
+            .filter(&filtered, policy.alternate_screen);
+        let filtered = self.title_filter.filter(
+            &filtered,
+            policy.allow_set_title,
+            input_buffer_capacity(policy.input_buffer_size),
+        );
+        if let Some(title) = self.title_filter.accepted.pop() {
+            self.title_filter.accepted.clear();
+            if let Ok(mut announced) = self.observation.announced_title.lock() {
+                *announced = Some(title);
+            }
+        }
         let bytes = &filtered[..];
         self.observation.note_bells(
             bytes
@@ -2357,6 +2571,17 @@ impl PaneIo {
             }
             if let Some(event) = self.clipboard_detector.feed_byte(byte) {
                 self.observation.note_clipboard_event(event);
+            }
+            // tmux reads `allow-passthrough` when the string terminator
+            // arrives and drops the payload where it is off.
+            if let Some(data) = self.passthrough_detector.feed_byte(byte) {
+                match policy.passthrough {
+                    PassthroughPolicy::Off => {}
+                    reach => self.observation.note_passthrough(PanePassthrough {
+                        data,
+                        invisible_panes: reach == PassthroughPolicy::Always,
+                    }),
+                }
             }
         }
         self.observation
@@ -2609,6 +2834,10 @@ struct OscStateDetector {
     /// The pane's `OSC 4` palette, as packed `0xrrggbb`. tmux keeps one per
     /// pane so a query is answered from what that pane set, not the client's.
     palette: Box<[Option<u32>; 256]>,
+    /// The palette `pane-colours` seeds, which a query falls back to — tmux's
+    /// `colour_palette_from_option`. Pushed by the server, since the option is
+    /// out of reach where a pane's bytes are parsed.
+    option_palette: Box<[Option<u32>; 256]>,
 }
 
 impl Default for OscStateDetector {
@@ -2618,6 +2847,7 @@ impl Default for OscStateDetector {
             in_osc: false,
             escaped: false,
             palette: Box::new([None; 256]),
+            option_palette: Box::new([None; 256]),
         }
     }
 }
@@ -2746,7 +2976,9 @@ impl OscStateDetector {
                 None => (tail, ""),
             };
             if value == "?" {
-                if let Some(colour) = self.palette[usize::from(index)] {
+                if let Some(colour) = self.palette[usize::from(index)]
+                    .or(self.option_palette[usize::from(index)])
+                {
                     let (r, g, b) = (
                         (colour >> 16) as u8,
                         (colour >> 8) as u8,
@@ -2804,7 +3036,7 @@ fn default_tab_stops(columns: u16) -> BTreeSet<u16> {
 }
 
 /// An X11 colour payload as a packed `0xrrggbb`, for the palette store.
-fn parse_packed_colour(value: &str) -> Option<u32> {
+pub(crate) fn parse_packed_colour(value: &str) -> Option<u32> {
     let text = parse_background_color(value)?;
     u32::from_str_radix(text.strip_prefix('#')?, 16).ok()
 }
@@ -3129,6 +3361,64 @@ impl AlternateScreenDetector {
     }
 }
 
+/// The DEC modes that switch a pane between its primary and alternate screens.
+const ALTERNATE_SCREEN_SWITCHES: [&[u8]; 6] = [
+    b"\x1b[?47h",
+    b"\x1b[?47l",
+    b"\x1b[?1047h",
+    b"\x1b[?1047l",
+    b"\x1b[?1049h",
+    b"\x1b[?1049l",
+];
+
+/// Drops those switches from a pane's output while `alternate-screen` is off.
+///
+/// tmux parses the sequence and then returns early from
+/// `screen_write_alternateon`/`_alternateoff`, so the switch has no effect at
+/// all — including on the cursor 1049 would have saved. Removing the bytes
+/// before anything sees them is the same observable, and keeps the option out of
+/// every detector downstream.
+#[derive(Default)]
+struct AlternateScreenStripper {
+    /// Bytes held back because they are a prefix of one of the switches. A
+    /// partial sequence at the end of a read is no more applied than it would be
+    /// inside a terminal parser, so holding it until the rest arrives is safe.
+    pending: Vec<u8>,
+}
+
+impl AlternateScreenStripper {
+    fn filter(&mut self, input: &[u8], allowed: bool) -> Vec<u8> {
+        // Whatever is held was never a complete switch, so re-enabling the
+        // option releases it unchanged.
+        if allowed {
+            let mut out = std::mem::take(&mut self.pending);
+            out.extend_from_slice(input);
+            return out;
+        }
+        let mut out = Vec::with_capacity(self.pending.len() + input.len());
+        for &byte in input {
+            self.pending.push(byte);
+            if ALTERNATE_SCREEN_SWITCHES
+                .iter()
+                .any(|switch| self.pending == *switch)
+            {
+                self.pending.clear();
+                continue;
+            }
+            // Not a switch: give back the longest head that cannot start one,
+            // which leaves any genuine prefix still pending.
+            while !self.pending.is_empty()
+                && !ALTERNATE_SCREEN_SWITCHES
+                    .iter()
+                    .any(|switch| switch.starts_with(&self.pending))
+            {
+                out.push(self.pending.remove(0));
+            }
+        }
+        out
+    }
+}
+
 /// Recognizes HTS (`ESC H`) and TBC (`CSI Ps g`), which together decide what
 /// `#{pane_tabs}` reports.
 #[derive(Default)]
@@ -3254,6 +3544,8 @@ struct ModeQueryDetector {
 pub(crate) struct PaneKeyState {
     pub(crate) cursor_keys: bool,
     pub(crate) application_keypad: bool,
+    /// DECSET 2004: whether the pane wants the paste markers.
+    pub(crate) bracketed_paste: bool,
     pub(crate) extended_request: ExtendedKeys,
 }
 
@@ -3645,7 +3937,7 @@ fn decrqss_reply(request: &[u8], shape: PaneCursorShape, blinking: bool) -> Vec<
 /// The version XTVERSION reports. hmux presents a tmux-compatible surface, and
 /// an application that special-cases a terminal by name has to see the same
 /// answer the daemon's command language claims to implement.
-const XTVERSION_NAME: &str = "tmux 3.7b";
+const XTVERSION_NAME: &str = "tmux";
 
 /// The device queries tmux answers out of its own state rather than the grid.
 ///
@@ -3662,7 +3954,13 @@ fn device_attributes_reply(tail: &[u8]) -> Option<Vec<u8>> {
         return Some(b"\x1b[>84;0;0c".to_vec());
     }
     if tail.ends_with(b"\x1b[>q") || tail.ends_with(b"\x1b[>0q") {
-        return Some(format!("\x1bP>|{XTVERSION_NAME}\x1b\\").into_bytes());
+        return Some(
+            format!(
+                "\x1bP>|{XTVERSION_NAME} {}\x1b\\",
+                crate::server::TMUX_VERSION
+            )
+            .into_bytes(),
+        );
     }
     // DSR 5n: the terminal is operating with no malfunction.
     if tail.ends_with(b"\x1b[5n") {
@@ -3852,6 +4150,317 @@ impl ScreenTitleStripper {
             }
         }
         out
+    }
+}
+
+/// tmux's `INPUT_BUF_DEFAULT_SIZE`, the `input-buffer-size` default.
+const INPUT_BUFFER_DEFAULT_SIZE: u32 = 1_048_576;
+
+/// tmux's `INPUT_BUF_START`: the parser's string buffer starts here and doubles.
+const INPUT_BUFFER_START: usize = 32;
+
+/// How long a terminal string may actually grow under `input-buffer-size`.
+///
+/// tmux's `input_input` doubles the buffer from [`INPUT_BUFFER_START`] and
+/// abandons the string once the next doubling would pass the option, so the
+/// usable capacity is the largest such power of two that fits — and a string
+/// is discarded as soon as it would fill it.
+fn input_buffer_capacity(limit: u32) -> usize {
+    let limit = limit as usize;
+    let mut capacity = INPUT_BUFFER_START;
+    while capacity.saturating_mul(2) <= limit {
+        capacity *= 2;
+    }
+    capacity
+}
+
+/// The only DCS tmux forwards: everything after this prefix and before the
+/// string terminator is what `allow-passthrough` puts on a client's tty.
+const PASSTHROUGH_INTRO: &[u8] = b"\x1bPtmux;";
+
+/// How much of one payload is kept. tmux abandons an input string that outgrows
+/// `INPUT_BUF_LIMIT`; the cap here is smaller because a payload is held in the
+/// server until the loop comes round rather than written straight out.
+const PASSTHROUGH_LIMIT: usize = 64 * 1024;
+
+/// Collects the payloads of `DCS tmux; … ST` out of a pane's output.
+///
+/// Ghostty already consumes the sequence, so nothing here has to remove it —
+/// only to read it, as tmux's `input_dcs_dispatch` does. Inside the string an
+/// `ESC` that is not the terminator is dropped and the byte after it kept,
+/// which is why applications double the escapes in a passthrough payload.
+#[derive(Default)]
+struct PassthroughDetector {
+    state: PassthroughState,
+    /// How much of [`PASSTHROUGH_INTRO`] has matched so far.
+    matched: usize,
+    payload: Vec<u8>,
+    overflowed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum PassthroughState {
+    #[default]
+    Ground,
+    /// Part-way through the introducer.
+    Intro,
+    /// Inside the payload.
+    Payload,
+    /// Saw an `ESC` inside the payload; a following `\` ends it (ST).
+    PayloadEsc,
+}
+
+impl PassthroughDetector {
+    /// The completed payload, once the string terminator arrives.
+    fn feed_byte(&mut self, byte: u8) -> Option<Vec<u8>> {
+        use PassthroughState::{Ground, Intro, Payload, PayloadEsc};
+        match self.state {
+            Ground | Intro => {
+                if byte == PASSTHROUGH_INTRO[self.matched] {
+                    self.matched += 1;
+                    if self.matched == PASSTHROUGH_INTRO.len() {
+                        self.matched = 0;
+                        self.payload.clear();
+                        self.overflowed = false;
+                        self.state = Payload;
+                    } else {
+                        self.state = Intro;
+                    }
+                } else {
+                    // A mismatch can itself be the start of the next attempt.
+                    self.matched = usize::from(byte == PASSTHROUGH_INTRO[0]);
+                    self.state = if self.matched == 0 { Ground } else { Intro };
+                }
+                None
+            }
+            Payload => {
+                if byte == 0x1b {
+                    self.state = PayloadEsc;
+                } else {
+                    self.push(byte);
+                }
+                None
+            }
+            PayloadEsc => {
+                self.state = Payload;
+                if byte != b'\\' {
+                    self.push(byte);
+                    return None;
+                }
+                self.state = Ground;
+                let payload = std::mem::take(&mut self.payload);
+                (!std::mem::take(&mut self.overflowed)).then_some(payload)
+            }
+        }
+    }
+
+    fn push(&mut self, byte: u8) {
+        if self.payload.len() == PASSTHROUGH_LIMIT {
+            self.overflowed = true;
+            return;
+        }
+        self.payload.push(byte);
+    }
+}
+
+/// Applies `allow-set-title` to the sequences that retitle a pane, and rewrites
+/// an APC title as the OSC 2 that means the same thing.
+///
+/// tmux gates OSC 0, OSC 2 and APC on the one option and hands all three to the
+/// same `screen_set_title`. Ghostty owns the title here and does not recognize
+/// APC, so an allowed OSC passes through untouched, an allowed APC passes
+/// through as its OSC 2 equivalent — which keeps the two in stream order, since
+/// the last one to arrive is the one that wins — and a refused sequence is
+/// removed before the emulator can apply it.
+///
+/// Like [`ScreenTitleStripper`], state is retained across calls so a sequence
+/// split across PTY reads is still recognized.
+#[derive(Default)]
+struct SetTitleFilter {
+    /// The titles accepted since the last drain, in stream order.
+    accepted: Vec<String>,
+    state: SetTitleState,
+    /// The escape bytes seen so far: the prefix of a sequence that may yet turn
+    /// out not to be a title, or an APC payload waiting for its terminator.
+    held: Vec<u8>,
+    /// Set when the string outgrew the `input-buffer-size` capacity.
+    overflowed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum SetTitleState {
+    #[default]
+    Ground,
+    /// Saw an `ESC` in ground state; it is held pending the next byte.
+    Esc,
+    /// Inside `ESC ]`, reading the OSC number.
+    OscNumber,
+    /// Inside an allowed OSC 0/2, collecting the title so its length can be
+    /// held against `input-buffer-size` before the emulator sees it.
+    OscTitle,
+    /// Saw an `ESC` while collecting; a following `\` ends it (ST).
+    OscTitleEsc,
+    /// Inside a refused OSC 0/2, dropping the rest of the string.
+    OscDrop,
+    /// Saw an `ESC` while dropping; a following `\` ends the string (ST).
+    OscDropEsc,
+    /// Inside `ESC _`, collecting the APC payload.
+    Apc,
+    /// Saw an `ESC` inside the payload; a following `\` ends it (ST).
+    ApcEsc,
+}
+
+impl SetTitleFilter {
+    fn filter(&mut self, input: &[u8], allowed: bool, capacity: usize) -> Vec<u8> {
+        use SetTitleState::{
+            Apc, ApcEsc, Esc, Ground, OscDrop, OscDropEsc, OscNumber, OscTitle, OscTitleEsc,
+        };
+        let mut out = Vec::with_capacity(input.len());
+        for &byte in input {
+            match self.state {
+                Ground => {
+                    if byte == 0x1b {
+                        self.held.clear();
+                        self.held.push(byte);
+                        self.state = Esc;
+                    } else {
+                        out.push(byte);
+                    }
+                }
+                Esc => match byte {
+                    b']' => {
+                        self.held.push(byte);
+                        self.state = OscNumber;
+                    }
+                    b'_' => {
+                        self.held.clear();
+                        self.overflowed = false;
+                        self.state = Apc;
+                    }
+                    0x1b => out.push(0x1b), // ESC ESC → emit one, hold the new
+                    _ => {
+                        out.append(&mut self.held);
+                        out.push(byte);
+                        self.state = Ground;
+                    }
+                },
+                // Only `0` and `2` are titles; every other OSC — including the
+                // ones with a digit in common, like 04 or 52 — is released as
+                // soon as it can no longer be one.
+                OscNumber => match byte {
+                    b'0' | b'2' if self.held.len() == 2 => self.held.push(byte),
+                    b';' if self.held.len() == 3 => {
+                        if allowed {
+                            self.held.push(byte);
+                            self.overflowed = false;
+                            self.state = OscTitle;
+                        } else {
+                            self.held.clear();
+                            self.state = OscDrop;
+                        }
+                    }
+                    _ => {
+                        out.append(&mut self.held);
+                        out.push(byte);
+                        self.state = Ground;
+                    }
+                },
+                OscTitle => match byte {
+                    0x07 => {
+                        out.extend_from_slice(&self.finish_osc_title(&[0x07], capacity));
+                        self.state = Ground;
+                    }
+                    0x1b => self.state = OscTitleEsc,
+                    _ => self.push(byte, capacity),
+                },
+                OscTitleEsc => {
+                    if byte == b'\\' {
+                        out.extend_from_slice(&self.finish_osc_title(b"\x1b\\", capacity));
+                        self.state = Ground;
+                    } else {
+                        self.push(0x1b, capacity);
+                        self.push(byte, capacity);
+                        self.state = OscTitle;
+                    }
+                }
+                OscDrop => match byte {
+                    0x07 => self.state = Ground, // BEL terminator
+                    0x1b => self.state = OscDropEsc,
+                    _ => {} // title text: drop
+                },
+                OscDropEsc => match byte {
+                    b'\\' => self.state = Ground, // ST terminator
+                    0x1b => {}                    // another ESC: stay pending
+                    _ => self.state = OscDrop,
+                },
+                Apc => match byte {
+                    0x07 => {
+                        out.extend_from_slice(&self.finish_apc(allowed));
+                        self.state = Ground;
+                    }
+                    0x1b => self.state = ApcEsc,
+                    _ => self.push(byte, capacity),
+                },
+                ApcEsc => match byte {
+                    b'\\' => {
+                        out.extend_from_slice(&self.finish_apc(allowed));
+                        self.state = Ground;
+                    }
+                    _ => {
+                        // Not a terminator, so the ESC was payload after all.
+                        self.push(0x1b, capacity);
+                        self.push(byte, capacity);
+                        self.state = Apc;
+                    }
+                },
+            }
+        }
+        out
+    }
+
+    /// Collect one byte of the string, abandoning it once it would fill the
+    /// parser's buffer — tmux's `input_input`.
+    fn push(&mut self, byte: u8, capacity: usize) {
+        if self.held.len() + 1 >= capacity {
+            self.overflowed = true;
+            return;
+        }
+        self.held.push(byte);
+    }
+
+    /// The OSC title as the emulator should see it: the whole sequence, or
+    /// nothing when it outgrew the parser's buffer.
+    fn finish_osc_title(&mut self, terminator: &[u8], capacity: usize) -> Vec<u8> {
+        let mut sequence = std::mem::take(&mut self.held);
+        // The four introducer bytes are not part of tmux's string buffer.
+        let overflowed = std::mem::take(&mut self.overflowed)
+            || sequence.len().saturating_sub(4) + 1 >= capacity;
+        if overflowed {
+            return Vec::new();
+        }
+        self.note_title(&sequence[4..]);
+        sequence.extend_from_slice(terminator);
+        sequence
+    }
+
+    /// Record an accepted title, as tmux's `screen_set_title` does.
+    fn note_title(&mut self, title: &[u8]) {
+        self.accepted
+            .push(String::from_utf8_lossy(title).into_owned());
+    }
+
+    /// The bytes an APC title leaves behind: the OSC 2 it is equivalent to, or
+    /// nothing when the option refuses it or the payload ran away.
+    fn finish_apc(&mut self, allowed: bool) -> Vec<u8> {
+        let payload = std::mem::take(&mut self.held);
+        if !allowed || std::mem::take(&mut self.overflowed) {
+            return Vec::new();
+        }
+        self.note_title(&payload);
+        let mut osc = b"\x1b]2;".to_vec();
+        osc.extend_from_slice(&payload);
+        osc.extend_from_slice(b"\x1b\\");
+        osc
     }
 }
 

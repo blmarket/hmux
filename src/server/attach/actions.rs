@@ -213,6 +213,7 @@ pub(super) fn dispatch_key_binding(
                 binding.command.iter().any(|word| word == "-S"),
                 mouse,
                 binding.command.iter().any(|word| word == "-M"),
+                binding.command.iter().any(|word| word == "-e"),
             ));
         }
         "command-prompt" => {
@@ -386,7 +387,7 @@ pub(in crate::server) fn dispatch_control_client_keys(
                         let _ = state.input_to_active_pane(target, &bytes);
                     }
                 }
-                PrefixOutcome::CopyMode(action) => action.apply(state, target, 24),
+                PrefixOutcome::CopyMode(action) => action.apply(state, target),
                 PrefixOutcome::DeferredCommand { args, context }
                 | PrefixOutcome::DeferredMessage { args, context, .. } => {
                     deferred.push(command::BackgroundCommandRequest::ReadyArgs { args, context });

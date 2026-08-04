@@ -55,6 +55,24 @@ fn forward_mouse_to_pane(state: &Arc<Mutex<ServerState>>, event: &MouseEvent) {
 
 /// Send the plain bytes buffered so far to the active pane, keeping them ahead
 /// of whatever the caller is about to do.
+/// Continue a copy-mode drag: the pointer moves the selection's far end in the
+/// pane the drag started in. `false` when that pane has no drag under way, so
+/// the report falls through to the key tables.
+fn drag_copy_selection(state: &Arc<Mutex<ServerState>>, event: &MouseEvent) -> bool {
+    let Some(target) = event.target.as_ref() else {
+        return false;
+    };
+    let (Some(pane_id), Some(position)) = (target.pane_id, target.local_position) else {
+        return false;
+    };
+    let Ok(mut state) = state.lock() else {
+        return false;
+    };
+    let pane_target = format!("%{pane_id}");
+    let vi = super::copy_mode::uses_vi_keys(&state, &pane_target);
+    state.drag_copy_selection_to_mouse(&pane_target, position.x, position.y, vi)
+}
+
 fn flush_forward_buf(
     state: &Arc<Mutex<ServerState>>,
     target: &str,
@@ -214,7 +232,7 @@ impl AttachSession {
                 if copy_mode::is_active(state, target) {
                     action.reactivate(state, target);
                 } else {
-                    action.apply(state, target, self.viewport.pane_rows);
+                    action.apply(state, target);
                 }
                 *force_render = true;
             }
@@ -629,7 +647,15 @@ impl AttachSession {
                         .active_overlay
                         .as_mut()
                         .expect("overlay checked")
-                        .handle_key(&decoded.name, &data[start..i], state, target);
+                        .handle_key(
+                            &decoded.name,
+                            &data[start..i],
+                            decoded.mouse.as_ref(),
+                            self.viewport.cols,
+                            self.viewport.rows,
+                            state,
+                            target,
+                        );
                     let close = outcome.close;
                     let close_exit = outcome.exit;
                     let selected_command = outcome.command;
@@ -838,6 +864,17 @@ impl AttachSession {
                                 self.compositor.ui.command_prompt = Some(prompt);
                             }
                         }
+                        ModeViewKeyResult::Popup(request) => {
+                            if let Ok(overlay) = ActiveOverlay::from_request(
+                                super::super::state::OverlayRequest::Popup(*request),
+                                None,
+                                self.viewport.cols,
+                                self.viewport.rows,
+                                self.pane_io.mode,
+                            ) {
+                                self.compositor.ui.active_overlay = overlay;
+                            }
+                        }
                         ModeViewKeyResult::None | ModeViewKeyResult::Command(_) => {}
                     }
                     force_render = true;
@@ -849,8 +886,26 @@ impl AttachSession {
                 // the pane's. The command key can be a multi-byte escape (e.g.
                 // PgUp), so parse a logical key rather than one raw byte.
                 let start = i;
-                let (key, mouse, consumed, flags) = match decode_tty_key(&data[i..]) {
+                // tmux's `tty_keys_user` and `tty_default_code_keys`: a
+                // sequence `user-keys` names, or one the client's terminfo
+                // spells, is that key whatever the fixed tables would have made
+                // of it. Both are resolved here so an unbound one still reaches
+                // the pane through the ordinary path below.
+                // A report that continues a drag belongs to the drag the
+                // opening report started, not to a key table (tmux's
+                // `KEYC_DRAGGING`).
+                let mut continuing_drag = false;
+                let named = user_key_at(state, target, &data[i..])
+                    .map(|(key, consumed)| (key, consumed, TtyKeyFlags::default()))
+                    .or_else(|| terminfo_key_at(&self.tty.terminal, &data[i..]));
+                let (key, mouse, consumed, flags) = match named {
+                    Some((key, consumed, flags)) => (Some(key), None, consumed, Some(flags)),
+                    None => match decode_tty_key(&data[i..]) {
                     Some((mut decoded, consumed)) => {
+                        continuing_drag = decoded
+                            .mouse
+                            .as_ref()
+                            .is_some_and(|event| self.compositor.input.mouse.continuing_drag(event));
                         resolve_mouse_key(
                             &mut decoded,
                             &mut self.compositor.input.mouse,
@@ -862,10 +917,12 @@ impl AttachSession {
                         );
                         (decoded.code, decoded.mouse, consumed, Some(decoded.flags))
                     }
-                    // Bytes that decode to nothing — a truncated escape, or a
-                    // byte that is not valid UTF-8 — have no key identity to
-                    // re-encode from, so they reach the pane as they arrived.
-                    None => (Some(key_from_byte(data[i])), None, 1, None),
+                        // Bytes that decode to nothing — a truncated escape, or
+                        // a byte that is not valid UTF-8 — have no key identity
+                        // to re-encode from, so they reach the pane as they
+                        // arrived.
+                        None => (Some(key_from_byte(data[i])), None, 1, None),
+                    },
                 };
                 i += consumed;
                 let Some(key) = key else {
@@ -888,12 +945,36 @@ impl AttachSession {
                         continue;
                     }
                 }
+                if continuing_drag {
+                    if let Some(event) = mouse.as_ref() {
+                        if drag_copy_selection(state, event) {
+                            force_render = true;
+                            continue;
+                        }
+                    }
+                }
                 let tables = ServerKeyTables::new(state, target);
-                let resolution = self
-                    .compositor
-                    .input
-                    .keys
-                    .resolve(key, Instant::now(), &tables);
+                let now = Instant::now();
+                // tmux's `server_client_is_assume_paste`, checked before the
+                // key tables: keys arriving faster than a person types are
+                // pasted text, so they reach the pane instead of running a
+                // binding. A mouse report is exempt, as are focus reports,
+                // which never come from typing at all.
+                // The client's terminal bracketing a paste is the same answer
+                // without the guessing.
+                let bracketed = mouse.is_none() && self.compositor.input.keys.is_bracket_paste(key);
+                let pasted = bracketed
+                    || mouse.is_none()
+                        && self.compositor.input.keys.is_assume_paste(
+                            now,
+                            tables.assume_paste_time(),
+                            self.tty.terminal.capability("Enbp").is_some(),
+                        );
+                let resolution = if pasted {
+                    KeyResolution::Forward
+                } else {
+                    self.compositor.input.keys.resolve(key, now, &tables)
+                };
                 // The walk can move the client between tables even when the key
                 // ends up in the pane — an expired prefix, a chain that just
                 // ended — so republish before acting on the outcome.
@@ -1041,4 +1122,217 @@ impl AttachSession {
 
         Ok(None)
     }
+}
+
+/// The `user-keys` entry `data` starts with, as a key and the bytes it took.
+///
+/// tmux's `tty_keys_user` matches the option's array by index: entry *n* is the
+/// key `Usern`.
+fn user_key_at(
+    state: &Arc<Mutex<ServerState>>,
+    target: &str,
+    data: &[u8],
+) -> Option<(super::super::key::KeyCode, usize)> {
+    let state = state.lock().ok()?;
+    let sequences = state.user_key_sequences(target);
+    sequences
+        .iter()
+        .enumerate()
+        .filter(|(_, sequence)| !sequence.is_empty() && data.starts_with(sequence.as_bytes()))
+        // The longest match wins, so a prefix of another user key cannot
+        // swallow it.
+        .max_by_key(|(_, sequence)| sequence.len())
+        .map(|(index, sequence)| {
+            (
+                super::super::key::KeyCode::new(super::super::key::KeyBase::User(index as u16), super::super::key::Modifiers::default()),
+                sequence.len(),
+            )
+        })
+}
+
+/// The key capabilities tmux's `tty_default_code_keys` reads from the client's
+/// terminfo, paired with the key name each one spells.
+///
+/// Only the capabilities whose spelling actually varies between terminals are
+/// listed: everything the fixed CSI/SS3 tables already agree on is left to
+/// them, so this is a fallback for a terminal that disagrees rather than a
+/// second decoder.
+const TERMINFO_KEYS: &[(&str, &str)] = &[
+    ("kf1", "F1"),
+    ("kf2", "F2"),
+    ("kf3", "F3"),
+    ("kf4", "F4"),
+    ("kf5", "F5"),
+    ("kf6", "F6"),
+    ("kf7", "F7"),
+    ("kf8", "F8"),
+    ("kf9", "F9"),
+    ("kf10", "F10"),
+    ("kf11", "F11"),
+    ("kf12", "F12"),
+    ("kf13", "S-F1"),
+    ("kf14", "S-F2"),
+    ("kf15", "S-F3"),
+    ("kf16", "S-F4"),
+    ("kf17", "S-F5"),
+    ("kf18", "S-F6"),
+    ("kf19", "S-F7"),
+    ("kf20", "S-F8"),
+    ("kf21", "S-F9"),
+    ("kf22", "S-F10"),
+    ("kf23", "S-F11"),
+    ("kf24", "S-F12"),
+    ("kich1", "IC"),
+    ("kdch1", "DC"),
+    ("khome", "Home"),
+    ("kend", "End"),
+    ("knp", "NPage"),
+    ("kpp", "PPage"),
+    ("kcbt", "BTab"),
+    ("kcuu1", "Up"),
+    ("kcud1", "Down"),
+    ("kcub1", "Left"),
+    ("kcuf1", "Right"),
+    // The modifier capabilities: a terminal that spells `C-Left` its own way is
+    // taken at its word rather than left to the fixed CSI tables.
+    ("kf25", "C-F1"),
+    ("kf26", "C-F2"),
+    ("kf27", "C-F3"),
+    ("kf28", "C-F4"),
+    ("kf29", "C-F5"),
+    ("kf30", "C-F6"),
+    ("kf31", "C-F7"),
+    ("kf32", "C-F8"),
+    ("kf33", "C-F9"),
+    ("kf34", "C-F10"),
+    ("kf35", "C-F11"),
+    ("kf36", "C-F12"),
+    ("kf37", "C-S-F1"),
+    ("kf38", "C-S-F2"),
+    ("kf39", "C-S-F3"),
+    ("kf40", "C-S-F4"),
+    ("kf41", "C-S-F5"),
+    ("kf42", "C-S-F6"),
+    ("kf43", "C-S-F7"),
+    ("kf44", "C-S-F8"),
+    ("kf45", "C-S-F9"),
+    ("kf46", "C-S-F10"),
+    ("kf47", "C-S-F11"),
+    ("kf48", "C-S-F12"),
+    ("kf49", "M-F1"),
+    ("kf50", "M-F2"),
+    ("kf51", "M-F3"),
+    ("kf52", "M-F4"),
+    ("kf53", "M-F5"),
+    ("kf54", "M-F6"),
+    ("kf55", "M-F7"),
+    ("kf56", "M-F8"),
+    ("kf57", "M-F9"),
+    ("kf58", "M-F10"),
+    ("kf59", "M-F11"),
+    ("kf60", "M-F12"),
+    ("kf61", "M-S-F1"),
+    ("kf62", "M-S-F2"),
+    ("kf63", "M-S-F3"),
+    ("kind", "S-Down"),
+    ("kri", "S-Up"),
+    ("kDC", "S-DC"),
+    ("kDC3", "M-DC"),
+    ("kDC4", "S-M-DC"),
+    ("kDC5", "C-DC"),
+    ("kDC6", "S-C-DC"),
+    ("kDC7", "M-C-DC"),
+    ("kDN", "S-Down"),
+    ("kDN3", "M-Down"),
+    ("kDN4", "S-M-Down"),
+    ("kDN5", "C-Down"),
+    ("kDN6", "S-C-Down"),
+    ("kDN7", "M-C-Down"),
+    ("kEND", "S-End"),
+    ("kEND3", "M-End"),
+    ("kEND4", "S-M-End"),
+    ("kEND5", "C-End"),
+    ("kEND6", "S-C-End"),
+    ("kEND7", "M-C-End"),
+    ("kHOM", "S-Home"),
+    ("kHOM3", "M-Home"),
+    ("kHOM4", "S-M-Home"),
+    ("kHOM5", "C-Home"),
+    ("kHOM6", "S-C-Home"),
+    ("kHOM7", "M-C-Home"),
+    ("kIC", "S-IC"),
+    ("kIC3", "M-IC"),
+    ("kIC4", "S-M-IC"),
+    ("kIC5", "C-IC"),
+    ("kIC6", "S-C-IC"),
+    ("kIC7", "M-C-IC"),
+    ("kLFT", "S-Left"),
+    ("kLFT3", "M-Left"),
+    ("kLFT4", "S-M-Left"),
+    ("kLFT5", "C-Left"),
+    ("kLFT6", "S-C-Left"),
+    ("kLFT7", "M-C-Left"),
+    ("kNXT", "S-NPage"),
+    ("kNXT3", "M-NPage"),
+    ("kNXT4", "S-M-NPage"),
+    ("kNXT5", "C-NPage"),
+    ("kNXT6", "S-C-NPage"),
+    ("kNXT7", "M-C-NPage"),
+    ("kPRV", "S-PPage"),
+    ("kPRV3", "M-PPage"),
+    ("kPRV4", "S-M-PPage"),
+    ("kPRV5", "C-PPage"),
+    ("kPRV6", "S-C-PPage"),
+    ("kPRV7", "M-C-PPage"),
+    ("kRIT", "S-Right"),
+    ("kRIT3", "M-Right"),
+    ("kRIT4", "S-M-Right"),
+    ("kRIT5", "C-Right"),
+    ("kRIT6", "S-C-Right"),
+    ("kRIT7", "M-C-Right"),
+    ("kUP", "S-Up"),
+    ("kUP3", "M-Up"),
+    ("kUP4", "S-M-Up"),
+    ("kUP5", "C-Up"),
+    ("kUP6", "S-C-Up"),
+    ("kUP7", "M-C-Up"),
+];
+
+/// The key the client's terminfo spells with the bytes `data` starts with.
+///
+/// The fixed tables are tried first by the caller; this catches a terminal
+/// whose capability disagrees with them — `TERM=linux`, whose `kf1` is
+/// `CSI [ A` rather than `SS3 P`.
+fn terminfo_key_at(
+    terminal: &dyn TerminalCapabilities,
+    data: &[u8],
+) -> Option<(super::super::key::KeyCode, usize, TtyKeyFlags)> {
+    // A capability that is a prefix of another must not swallow it, so the
+    // longest match wins.
+    TERMINFO_KEYS
+        .iter()
+        .filter_map(|(capability, name)| {
+            let super::super::term::CapabilityValue::String(value) =
+                terminal.capability(capability)?
+            else {
+                return None;
+            };
+            if value.len() <= 1 || !data.starts_with(value) {
+                return None;
+            }
+            Some((
+                parse_key_name(name)?,
+                value.len(),
+                TtyKeyFlags {
+                    // tmux marks the arrows `KEYC_CURSOR`, so a pane in DECCKM
+                    // is told the application form whichever one arrived.
+                    cursor: matches!(*capability, "kcuu1" | "kcud1" | "kcub1" | "kcuf1"),
+                    // Every meta capability is `KEYC_IMPLIED_META`: the escape
+                    // is part of what the terminal sent, not something to add.
+                    implied_meta: name.contains("M-"),
+                    ..TtyKeyFlags::default()
+                },
+            ))
+        })
+        .max_by_key(|(_, length, _)| *length)
 }

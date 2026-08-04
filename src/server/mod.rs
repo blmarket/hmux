@@ -50,6 +50,12 @@ use state::ServerState;
 
 type EventPaneSnapshot = (Vec<(u64, PaneIo)>, Vec<u64>);
 
+/// The tmux release whose behavior this server implements, as `#{version}`
+/// reports it and as XTVERSION answers a pane. Conformance is pinned to this
+/// version, so an application that special-cases a terminal by version has to
+/// see the same answer the command language claims to implement.
+pub(crate) const TMUX_VERSION: &str = "3.7b";
+
 /// Runtime-independent tmux server state and behavior.
 ///
 /// State is shared across runtime adapters behind a mutex. A runtime chooses
@@ -112,6 +118,7 @@ impl Server {
     pub fn new() -> io::Result<Server> {
         let mut state = ServerState::empty();
         state.set_pane_io_mode(PaneIoMode::EventLoop);
+        state.seed_global_environment();
         Self::from_state(state, Rc::new(NoopObservationHook))
     }
 
@@ -124,6 +131,16 @@ impl Server {
         hook: Rc<dyn ObservationHook>,
     ) -> io::Result<Server> {
         Self::from_state(state, hook)
+    }
+
+    /// Record the pathname this server listens on, which `#{socket_path}` and
+    /// the `TMUX` variable of a spawned process both name.
+    pub fn set_socket_path(&self, path: impl Into<std::path::PathBuf>) -> io::Result<()> {
+        self.state
+            .lock()
+            .map_err(|_| io::Error::other("server state mutex poisoned"))?
+            .set_socket_path(path);
+        Ok(())
     }
 
     /// Shared state handle (for embedding hmux in a larger app, e.g. querying
@@ -208,6 +225,13 @@ impl Server {
 
     /// tmux's per-loop `server_check_unattached` plus the `server_loop` exit
     /// test, run once the current batch of client events has been applied.
+    /// tmux's `status_prompt_save_history`, run as the server exits.
+    pub(crate) fn save_prompt_history(&self) {
+        if let Ok(state) = self.state.lock() {
+            state.save_prompt_history();
+        }
+    }
+
     pub(crate) fn enforce_lifecycle_policies(&self) -> io::Result<()> {
         let mut state = self
             .state
@@ -218,6 +242,10 @@ impl Server {
         // whichever path caused them, but a client going away has no such path
         // — the window it sized has to be re-derived from the clients left.
         let _ = state.recalculate_sizes();
+        // A pane created since the last pass has never been told its options.
+        state.refresh_pane_output_policies();
+        let _ = state.refresh_pane_scrollbars();
+        state.process_pane_passthrough();
         state.process_pane_clipboard();
         state.process_pane_themes();
         command::run_deferred_notification_hooks(&mut state);

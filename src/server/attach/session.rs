@@ -241,6 +241,11 @@ impl AttachSession {
         })
     }
 
+    /// Whether a key binding has deferred a command that has not started yet.
+    pub(crate) fn has_pending_command(&self) -> bool {
+        !self.commands.pending.is_empty() || !self.commands.deferred_prompts.is_empty()
+    }
+
     pub(crate) fn take_command_request(&mut self) -> Option<AttachCommandRequest> {
         self.commands
             .pending
@@ -776,6 +781,22 @@ impl AttachSession {
             if let Some(mut overlay) = self.compositor.ui.active_overlay.take() {
                 let mut result = command::CommandResult::ok("");
                 result.exit = overlay_exit;
+                // A popup that was opened to edit something reads the result
+                // back before it is forgotten; the file goes with it.
+                if let Some((command, remove)) = overlay.take_on_close() {
+                    if overlay_exit == 0 {
+                        let agents = hub.snapshot().panes;
+                        let _ = command::run_with_context(
+                            &command,
+                            state,
+                            &agents,
+                            &self.compositor.target.context,
+                        );
+                    }
+                    if let Some(path) = remove {
+                        let _ = std::fs::remove_file(path);
+                    }
+                }
                 overlay.complete(result, false);
             }
             self.compositor.render.last_render.clear();
@@ -814,6 +835,16 @@ impl AttachSession {
                 self.compositor.ui.confirm = None;
                 self.compositor.render.last_render.clear();
                 self.compositor.render.force_clear = true;
+            }
+            for payload in self.attachments.render_attachment.take_client_output() {
+                let _ = self
+                    .tty
+                    .output
+                    .queue(self.tty.render_fd.as_raw_fd(), &payload);
+                // tmux's `tty_invalidate`: once an application has written to
+                // the terminal itself, nothing cached about its state holds, so
+                // the next frame is painted in full rather than as a delta.
+                self.compositor.render.last_render.clear();
             }
             if let Some(action) = self.attachments.render_attachment.take_action() {
                 match action {

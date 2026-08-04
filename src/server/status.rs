@@ -145,7 +145,7 @@ impl FormatJobRegistry {
         vars: &Vars,
         session_id: u32,
         cwd: Option<PathBuf>,
-        environment: Vec<String>,
+        environment: Arc<Vec<String>>,
         status: bool,
     ) -> String {
         let scope = format!(
@@ -216,7 +216,7 @@ impl FormatJobRegistry {
         expanded_command: String,
         session_id: u32,
         cwd: Option<PathBuf>,
-        environment: Vec<String>,
+        environment: Arc<Vec<String>>,
         status: bool,
     ) -> String {
         let now = Instant::now();
@@ -450,6 +450,9 @@ impl FormatJob {
         if let Some(cwd) = cwd {
             shell.current_dir(cwd);
         }
+        // tmux's `environ_push` replaces the child's environment outright
+        // rather than adding to the server's own.
+        shell.env_clear();
         for entry in environment {
             if let Some((name, value)) = entry.split_once('=') {
                 shell.env(name, value);
@@ -998,12 +1001,64 @@ pub(crate) fn at_top(state: &ServerState, target: &str) -> bool {
 /// Serialize a configured style for compositor overlays such as prompts and
 /// copy-mode marks. Their lifecycle remains in the attach loop, but their
 /// colours and attributes use the same state machine as status rows.
+/// The SGR bytes for a style already resolved to a literal value, for the
+/// callers that have expanded a style option's own format first — tmux's
+/// `style_apply` runs the option through the format tree before parsing it.
+pub(crate) fn style_escape_value(value: &str, terminal: &dyn TerminalCapabilities) -> Vec<u8> {
+    let style = parse_status_cell_style(value, &CellStyle::default(), &CellStyle::default());
+    let mut out = Vec::new();
+    let mut writer = TerminalStyleWriter::new(terminal);
+    writer.reset(&mut out);
+    writer.transition(
+        &mut out,
+        &CellPresentation {
+            style,
+            ..CellPresentation::default()
+        },
+    );
+    out
+}
+
 pub(crate) fn option_style_escape_for(
     state: &ServerState,
     target: &str,
     option: &str,
     fallback: &str,
     terminal: &dyn TerminalCapabilities,
+) -> Vec<u8> {
+    option_style_escape_inner(state, target, option, fallback, terminal, StyleVariant::Plain)
+}
+
+/// How a style option is rendered when it is not applied as written.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StyleVariant {
+    Plain,
+    /// The two colours exchanged, which is how tmux's
+    /// `window_copy_update_style` draws the marked cell itself.
+    Reversed,
+    /// The background alone, which is what reaches the blank tail of a row
+    /// tmux clears to the end of the line.
+    BackgroundOnly,
+}
+
+pub(crate) fn option_style_escape_variant(
+    state: &ServerState,
+    target: &str,
+    option: &str,
+    fallback: &str,
+    terminal: &dyn TerminalCapabilities,
+    variant: StyleVariant,
+) -> Vec<u8> {
+    option_style_escape_inner(state, target, option, fallback, terminal, variant)
+}
+
+fn option_style_escape_inner(
+    state: &ServerState,
+    target: &str,
+    option: &str,
+    fallback: &str,
+    terminal: &dyn TerminalCapabilities,
+    variant: StyleVariant,
 ) -> Vec<u8> {
     let mut value = state.option_for_target(target, option).unwrap_or(fallback);
     if let Some(name) = value
@@ -1012,7 +1067,12 @@ pub(crate) fn option_style_escape_for(
     {
         value = state.option_for_target(target, name).unwrap_or(fallback);
     }
-    let style = parse_status_cell_style(value, &CellStyle::default(), &CellStyle::default());
+    let mut style = parse_status_cell_style(value, &CellStyle::default(), &CellStyle::default());
+    match variant {
+        StyleVariant::Plain => {}
+        StyleVariant::Reversed => std::mem::swap(&mut style.fg, &mut style.bg),
+        StyleVariant::BackgroundOnly => style.fg = CellStyle::default().fg,
+    }
     let mut out = Vec::new();
     let mut writer = TerminalStyleWriter::new(terminal);
     writer.reset(&mut out);
@@ -1078,6 +1138,10 @@ struct StatusRow {
     cells: Vec<StatusCell>,
     ranges: Vec<StatusRange>,
     used: usize,
+    /// The row's width in columns. A wide cell takes two columns out of one
+    /// slot, so the number of cells stops being the number of columns as soon
+    /// as one is placed — every bound here is a column count.
+    columns: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1314,6 +1378,7 @@ fn blank_row(cols: usize, base: &CellStyle) -> StatusRow {
             .collect(),
         ranges: Vec::new(),
         used: 0,
+        columns: cols,
     }
 }
 
@@ -1703,6 +1768,25 @@ impl format::FormatContext for StatusContext<'_> {
         Some(items)
     }
 
+    fn search_pane(&self, vars: &Vars, term: &str, regex: bool, ignore_case: bool) -> u32 {
+        format::FormatTree::search_pane(
+            &super::command::ServerFormatTree(self.state),
+            vars,
+            term,
+            regex,
+            ignore_case,
+        )
+    }
+
+    fn name_exists(&self, vars: &Vars, scope: format::NameScope, name: &str) -> bool {
+        format::FormatTree::name_exists(
+            &super::command::ServerFormatTree(self.state),
+            vars,
+            scope,
+            name,
+        )
+    }
+
     fn job(&self, command: &str, expanded: String, vars: &Vars) -> String {
         let Some(jobs) = self.jobs else {
             return String::new();
@@ -1713,7 +1797,9 @@ impl format::FormatContext for StatusContext<'_> {
             vars,
             self.session.id,
             job_cwd(Some(self.session), self.client.cwd.as_deref()),
-            self.client.environment.clone(),
+            // tmux's `job_run` builds the job's environment with
+            // `environ_for_session`, which gives a job no view of the client.
+            self.state.job_environment(Some(&self.session.name)),
             self.job_status,
         )
     }
@@ -2034,7 +2120,7 @@ fn parse_range(value: &str) -> Option<StatusRangeKind> {
 }
 
 fn layout_sections(sections: &Sections, state: &DrawState, row: &mut StatusRow) {
-    let available = row.cells.len();
+    let available = row.columns;
     let mut left = sections.width(Section::Left);
     let mut centre = sections.width(Section::Centre);
     let mut right = sections.width(Section::Right);
@@ -2242,13 +2328,13 @@ fn put_section(
     source: usize,
     width: usize,
 ) {
-    if width == 0 || target >= row.cells.len() {
+    if width == 0 || target >= row.columns {
         return;
     }
     let selected = slice_cells(sections.cells(section), source, width);
     let mut column = target;
     for cell in selected {
-        if column + usize::from(cell.width) > row.cells.len() {
+        if column + usize::from(cell.width) > row.columns {
             break;
         }
         replace_cell_at(&mut row.cells, column, cell.clone());

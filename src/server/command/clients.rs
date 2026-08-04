@@ -37,15 +37,15 @@ impl Command {
             Self::Suspend => suspend_client(args, context.state, context.client),
             Self::Prompt => CommandResult::err("no current client\n"),
             Self::ConfirmBefore => confirm_before(args, context.state, context.client),
-            Self::DisplayMenu => display_menu(args, context.state, context.client),
+            Self::DisplayMenu => display_menu(args, context.state, context.agents, context.client),
             Self::DisplayPopup => display_popup(args, context.state, context.client),
             Self::DisplayPanes => display_panes(args, context.state, context.client),
             Self::Lock => lock_client(args, context.state, context.client),
             Self::DisplayMessage => {
                 display_message(args, context.state, context.agents, context.client)
             }
-            Self::ChooseTree => choose_tree(args, context.state),
-            Self::ChooseClient => choose_client(args, context.state),
+            Self::ChooseTree => choose_tree(args, context.state, context.agents),
+            Self::ChooseClient => choose_client(args, context.state, context.agents),
             Self::ChooseBuffer => choose_buffer(args, context.state),
             Self::ClockMode => clock_mode(args, context.state),
             Self::CustomizeMode => customize_mode(args, context.state),
@@ -154,51 +154,187 @@ fn template_command(template: &str, value: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn choose_tree(args: &[String], state: &mut ServerState) -> CommandResult {
+/// The `-F`, `-f` and `-O` every `choose-*` command shares, as tmux's
+/// `mode_tree_start` takes them.
+struct ChooseOptions<'a> {
+    format: Option<&'a str>,
+    filter: Option<&'a str>,
+    order: Option<&'a str>,
+    /// `-r`: reverse whatever the sort order produced.
+    reversed: bool,
+}
+
+impl<'a> ChooseOptions<'a> {
+    fn parse(args: &'a [String]) -> Self {
+        Self {
+            format: flag_value(args, "-F"),
+            filter: flag_value(args, "-f"),
+            order: flag_value(args, "-O"),
+            reversed: has_flag(args, "-r"),
+        }
+    }
+
+    /// Whether this row survives `-f`.
+    fn keep(&self, state: &ServerState, vars: &format::Vars) -> bool {
+        self.filter.is_none_or(|filter| {
+            format::is_true(&super::expand_command_format(state, filter, vars, None))
+        })
+    }
+
+    /// The row's text: `-F` when one was given, else the command's own.
+    fn label(&self, state: &ServerState, vars: &format::Vars, default: String) -> String {
+        match self.format {
+            Some(format) => super::expand_command_format(state, format, vars, None),
+            None => default,
+        }
+    }
+
+    /// Sort `rows` by `-O`, reversing for `-r`. `keys` names the variable each
+    /// order sorts on; an order the command does not know leaves the rows in
+    /// the order they were built, as tmux's default does.
+    fn sort(&self, rows: &mut [ChooseRow], keys: &[(&str, ChooseSortKey)]) {
+        if let Some(order) = self.order {
+            if let Some((_, key)) = keys.iter().find(|(name, _)| *name == order) {
+                match key {
+                    ChooseSortKey::Text(name) => rows.sort_by(|left, right| {
+                        left.sort_text(name).cmp(&right.sort_text(name))
+                    }),
+                    ChooseSortKey::Number(name) => rows.sort_by(|left, right| {
+                        left.sort_number(name).cmp(&right.sort_number(name))
+                    }),
+                }
+            }
+        }
+        if self.reversed {
+            rows.reverse();
+        }
+    }
+}
+
+/// Which variable an `-O` order compares, and how.
+enum ChooseSortKey {
+    Text(&'static str),
+    Number(&'static str),
+}
+
+/// One row on its way into a mode tree, with the variables its format, filter
+/// and sort order are all resolved against.
+struct ChooseRow {
+    vars: format::Vars,
+    item: ModeItem,
+}
+
+impl ChooseRow {
+    fn sort_text(&self, name: &str) -> String {
+        self.vars.lookup(name).unwrap_or_default().to_owned()
+    }
+
+    fn sort_number(&self, name: &str) -> i64 {
+        self.vars
+            .lookup(name)
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0)
+    }
+}
+
+fn choose_tree(args: &[String], state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
     let template = positionals(args, &["-F", "-f", "-K", "-O", "-t"])
         .first()
         .copied();
-    let mut items = Vec::new();
+    let options = ChooseOptions::parse(args);
+    // `-s` lists only sessions and `-w` only windows; without either, a session
+    // is followed by its own windows.
+    let sessions_only = has_flag(args, "-s");
+    let windows_only = has_flag(args, "-w");
+    let marked = state.marked_pane();
+    let mut rows = Vec::new();
     for session in state.sessions() {
-        items.push(ModeItem {
-            label: format!("{} ({} windows)", session.name, session.windows.len()),
-            command: template_command(template.unwrap_or("switch-client -Zt '%%'"), &session.name),
-            prompt_target: Some(format!("={}:", session.name)),
-            edit: None,
-        });
+        let session_vars = super::vars_for(state, session, session.active, agents, marked);
+        if !windows_only && options.keep(state, &session_vars) {
+            rows.push(ChooseRow {
+                item: ModeItem {
+                    label: options.label(
+                        state,
+                        &session_vars,
+                        format!("{} ({} windows)", session.name, session.windows.len()),
+                    ),
+                    command: template_command(
+                        template.unwrap_or("switch-client -Zt '%%'"),
+                        &session.name,
+                    ),
+                    prompt_target: Some(format!("={}:", session.name)),
+                    edit: None,
+                    tagged: false,
+                    preview_target: Some(format!("={}:", session.name)),
+                    depth: 0,
+                    expanded: None,
+                },
+                vars: session_vars,
+            });
+        }
+        if sessions_only {
+            continue;
+        }
         for (position, link) in session.windows.iter().enumerate() {
             let window = state.session_window(session, position);
             let target = format!("{}:{}", session.name, link.index);
-            items.push(ModeItem {
-                label: format!(
-                    "  {}: {} ({} panes)",
-                    link.index,
-                    window.name,
-                    window.panes.len()
-                ),
-                command: template.map_or_else(
-                    || {
-                        vec![
-                            "select-window".to_string(),
-                            "-t".to_string(),
-                            target.clone(),
-                            ";".to_string(),
-                            "switch-client".to_string(),
-                            "-t".to_string(),
-                            session.name.clone(),
-                        ]
-                    },
-                    |template| template_command(template, &target),
-                ),
-                prompt_target: Some(format!("={}:{}.", session.name, link.index)),
-                edit: None,
+            let window_vars = super::vars_for(state, session, position, agents, marked);
+            if !options.keep(state, &window_vars) {
+                continue;
+            }
+            rows.push(ChooseRow {
+                item: ModeItem {
+                    label: options.label(
+                        state,
+                        &window_vars,
+                        format!(
+                            "  {}: {} ({} panes)",
+                            link.index,
+                            window.name,
+                            window.panes.len()
+                        ),
+                    ),
+                    command: template.map_or_else(
+                        || {
+                            vec![
+                                "select-window".to_string(),
+                                "-t".to_string(),
+                                target.clone(),
+                                ";".to_string(),
+                                "switch-client".to_string(),
+                                "-t".to_string(),
+                                session.name.clone(),
+                            ]
+                        },
+                        |template| template_command(template, &target),
+                    ),
+                    prompt_target: Some(format!("={}:{}.", session.name, link.index)),
+                    edit: None,
+                    tagged: false,
+                    preview_target: Some(format!("={}:{}.", session.name, link.index)),
+                    depth: 0,
+                    expanded: None,
+                },
+                vars: window_vars,
             });
         }
     }
-    enter_mode(args, state, ModeView::list(ModeKind::Tree, "Tree", items))
+    options.sort(
+        &mut rows,
+        &[
+            ("name", ChooseSortKey::Text("session_name")),
+            ("index", ChooseSortKey::Number("window_index")),
+            ("time", ChooseSortKey::Number("session_activity")),
+        ],
+    );
+    let items = rows.into_iter().map(|row| row.item).collect();
+    let mut view = ModeView::list(ModeKind::Tree, "Tree", items);
+    // tmux shows the preview unless `-N` asks it not to.
+    view.preview = !has_flag(args, "-N");
+    enter_mode(args, state, view)
 }
 
-fn choose_client(args: &[String], state: &mut ServerState) -> CommandResult {
+fn choose_client(args: &[String], state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
     if let Err(error) = validate_mode_target(args, state) {
         return error;
     }
@@ -206,19 +342,46 @@ fn choose_client(args: &[String], state: &mut ServerState) -> CommandResult {
         .first()
         .copied()
         .unwrap_or("detach-client -t '%%'");
-    let items = state
-        .attached_clients()
-        .into_iter()
-        .map(|client| ModeItem {
-            label: format!(
-                "{}: {}x{} {}",
-                client.name, client.cols, client.rows, client.term
-            ),
-            command: template_command(template, &client.name),
-            prompt_target: None,
-            edit: None,
-        })
-        .collect::<Vec<_>>();
+    let options = ChooseOptions::parse(args);
+    let mut rows = Vec::new();
+    for client in state.attached_clients() {
+        let Some(vars) = client_vars(state, agents, &client) else {
+            continue;
+        };
+        if !options.keep(state, &vars) {
+            continue;
+        }
+        rows.push(ChooseRow {
+            item: ModeItem {
+                label: options.label(
+                    state,
+                    &vars,
+                    format!(
+                        "{}: {}x{} {}",
+                        client.name, client.cols, client.rows, client.term
+                    ),
+                ),
+                command: template_command(template, &client.name),
+                prompt_target: None,
+                edit: None,
+                tagged: false,
+            preview_target: None,
+            depth: 0,
+            expanded: None,
+            },
+            vars,
+        });
+    }
+    options.sort(
+        &mut rows,
+        &[
+            ("name", ChooseSortKey::Text("client_name")),
+            ("size", ChooseSortKey::Number("client_width")),
+            ("creation", ChooseSortKey::Number("client_created")),
+            ("activity", ChooseSortKey::Number("client_activity")),
+        ],
+    );
+    let items = rows.into_iter().map(|row| row.item).collect::<Vec<_>>();
     if items.is_empty() {
         return CommandResult::ok("");
     }
@@ -237,19 +400,42 @@ fn choose_buffer(args: &[String], state: &mut ServerState) -> CommandResult {
         .first()
         .copied()
         .unwrap_or("paste-buffer -p -b '%%'");
-    let items = state
-        .buffers()
-        .iter()
-        .map(|(name, data)| {
-            let preview = String::from_utf8_lossy(data).replace(['\n', '\r'], " ");
-            ModeItem {
-                label: format!("{name}: {} bytes: {}", data.len(), preview),
+    let options = ChooseOptions::parse(args);
+    let mut rows = Vec::new();
+    for (name, data) in state.buffers() {
+        let vars = super::buffer_vars(state, name, data);
+        if !options.keep(state, &vars) {
+            continue;
+        }
+        let preview = String::from_utf8_lossy(data).replace(['\n', '\r'], " ");
+        rows.push(ChooseRow {
+            item: ModeItem {
+                label: options.label(
+                    state,
+                    &vars,
+                    format!("{name}: {} bytes: {}", data.len(), preview),
+                ),
                 command: template_command(template, name),
-                prompt_target: None,
+                // Buffer mode's `e` key edits the buffer this row names.
+                prompt_target: Some(name.clone()),
                 edit: None,
-            }
-        })
-        .collect::<Vec<_>>();
+                tagged: false,
+            preview_target: None,
+            depth: 0,
+            expanded: None,
+            },
+            vars,
+        });
+    }
+    options.sort(
+        &mut rows,
+        &[
+            ("name", ChooseSortKey::Text("buffer_name")),
+            ("size", ChooseSortKey::Number("buffer_size")),
+            ("time", ChooseSortKey::Number("buffer_created")),
+        ],
+    );
+    let items = rows.into_iter().map(|row| row.item).collect::<Vec<_>>();
     if items.is_empty() {
         return CommandResult::ok("");
     }
@@ -264,20 +450,60 @@ fn customize_mode(args: &[String], state: &mut ServerState) -> CommandResult {
     let Some(target) = mode_target(args, state) else {
         return CommandResult::err("no current session\n");
     };
-    let mut items = match state.format_option_entries(&target) {
-        Ok(entries) => entries
-            .map(|(name, value)| ModeItem {
-                label: format!("{name} {value}"),
+    let options = ChooseOptions::parse(args);
+    // tmux's `window_customize_build` groups the options by the table they
+    // belong to, each under a heading of its own, and the keys after them.
+    let mut items = Vec::new();
+    let sections = match state.customize_option_sections(&target) {
+        Ok(sections) => sections,
+        Err(_) => return CommandResult::err(format!("{}\n", state.pane_target_error(&target))),
+    };
+    for (title, entries) in sections {
+        items.push(ModeItem {
+            label: title.to_string(),
+            command: Vec::new(),
+            prompt_target: None,
+            edit: None,
+            tagged: false,
+            preview_target: None,
+            depth: 0,
+            expanded: Some(true),
+        });
+        for entry in entries {
+            let mut vars = format::Vars::new();
+            vars.set("option_name", entry.name.clone())
+                .set("option_value", entry.value.clone())
+                .set("option_scope", entry.scope.clone())
+                .set("option_unit", String::new())
+                .set(
+                    "option_is_global",
+                    if entry.scope.is_empty() { "1" } else { "0" },
+                )
+                .set("option_is_array", "0")
+                .set("is_option", "1")
+                .set("is_key", "0");
+            if !options.keep(state, &vars) {
+                continue;
+            }
+            items.push(ModeItem {
+                label: options.label(
+                    state,
+                    &vars,
+                    format!("{} {}", entry.name, entry.value),
+                ),
                 command: Vec::new(),
                 prompt_target: None,
                 edit: Some(ModeEdit::Option {
-                    name: name.to_string(),
-                    value: value.to_string(),
+                    name: entry.name,
+                    value: entry.value,
                 }),
-            })
-            .collect::<Vec<_>>(),
-        Err(_) => return CommandResult::err(format!("{}\n", state.pane_target_error(&target))),
-    };
+                tagged: false,
+                preview_target: None,
+                depth: 1,
+                expanded: None,
+            });
+        }
+    }
     let bindings = state
         .key_bindings(None)
         .into_iter()
@@ -304,6 +530,10 @@ fn customize_mode(args: &[String], state: &mut ServerState) -> CommandResult {
                 note: note.clone(),
                 repeat,
             }),
+            tagged: false,
+            preview_target: None,
+            depth: 1,
+            expanded: None,
         });
         let note_value = note.unwrap_or_default();
         items.push(ModeItem {
@@ -317,13 +547,15 @@ fn customize_mode(args: &[String], state: &mut ServerState) -> CommandResult {
                 command,
                 repeat,
             }),
+            tagged: false,
+            preview_target: None,
+            depth: 1,
+            expanded: None,
         });
     }
-    enter_mode(
-        args,
-        state,
-        ModeView::list(ModeKind::Customize, "Customize", items),
-    )
+    let mut view = ModeView::list(ModeKind::Customize, "Customize", items);
+    view.preview = !has_flag(args, "-N");
+    enter_mode(args, state, view)
 }
 
 fn clock_mode(args: &[String], state: &mut ServerState) -> CommandResult {
@@ -341,11 +573,35 @@ fn overlay_result(result: ClientActionResult, target: Option<&str>) -> CommandRe
     }
 }
 
-fn display_menu(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {
+fn display_menu(
+    args: &[String],
+    state: &ServerState,
+    agents: &PaneAgents,
+    client: &ClientContext,
+) -> CommandResult {
     let values = positionals(
         args,
         &["-b", "-c", "-C", "-H", "-s", "-S", "-t", "-T", "-x", "-y"],
     );
+    // Both halves of an item are formats — tmux expands them when the menu is
+    // built, against the target the menu was asked for.
+    let vars = flag_value(args, "-t")
+        .map(str::to_string)
+        .or_else(|| current_target(state))
+        .as_deref()
+        .and_then(|target| state.resolve_or_residual(target))
+        .map(|resolved| {
+            vars_full(
+                state,
+                &state.sessions()[resolved.session],
+                resolved.window,
+                resolved.pane,
+                agents,
+                state.marked_pane(),
+            )
+        })
+        .unwrap_or_default();
+    let expand = |value: &str| format::expand(value, &vars);
     // tmux walks the operands rather than chunking them: an empty name is a
     // separator line on its own and consumes no key or command, which is how
     // the default `MouseDown3*` menus group their entries.
@@ -368,10 +624,26 @@ fn display_menu(args: &[String], state: &ServerState, client: &ClientContext) ->
         let key = values[index];
         let command = values[index + 1];
         index += 2;
+        // An item whose name expands to nothing is not an item at all, and one
+        // whose name starts with `-` is disabled: it shows neither its key nor
+        // the dash, and cannot be chosen.
+        let label = expand(label);
+        if label.is_empty() {
+            continue;
+        }
+        let disabled = label.starts_with('-');
         items.push(MenuItem {
-            label: label.to_string(),
-            key: key.to_string(),
-            command: template_command(command, ""),
+            label,
+            key: if disabled {
+                String::new()
+            } else {
+                key.to_string()
+            },
+            command: if disabled {
+                Vec::new()
+            } else {
+                template_command(&expand(command), "")
+            },
         });
     }
     let selected = flag_value(args, "-C")
@@ -419,9 +691,17 @@ fn display_popup(args: &[String], state: &ServerState, client: &ClientContext) -
     .map(str::to_string)
     .collect();
     let exit_flags = args.iter().filter(|word| word.as_str() == "-E").count();
+    let overrides = flag_values(args, "-e");
     let request = OverlayRequest::Popup(PopupRequest {
+        on_close: Vec::new(),
+        on_close_remove: None,
         title: flag_value(args, "-T").unwrap_or("").to_string(),
         argv,
+        environment: state.spawn_environment(
+            current_target(state).as_deref(),
+            &client.environment,
+            &overrides,
+        ),
         cwd: flag_value(args, "-d")
             .map(PathBuf::from)
             .or_else(|| client.cwd.clone()),
@@ -523,26 +803,9 @@ fn list_clients(args: &[String], state: &ServerState, agents: &PaneAgents) -> Co
         if target_session.is_some_and(|target| target.id != session.id) {
             continue;
         }
-        let client_utf8 = client.flags.split(',').any(|flag| flag == "UTF-8");
-        let mut vars = super::vars_for(state, session, session.active, agents, state.marked_pane());
-        vars.set("client_name", client.name.clone())
-            .set("client_tty", client.name)
-            .set("client_termname", client.term)
-            .set(
-                "client_pid",
-                client.pid.map(|pid| pid.to_string()).unwrap_or_default(),
-            )
-            .set("client_width", client.cols.to_string())
-            .set("client_height", client.rows.to_string())
-            .set("client_session", session.name.clone())
-            .set("client_flags", client.flags)
-            .set("client_readonly", if client.read_only { "1" } else { "0" })
-            .set(
-                "client_control_mode",
-                if client.control_mode { "1" } else { "0" },
-            )
-            .set("client_utf8", if client_utf8 { "1" } else { "0" })
-            .set("client_theme", client.theme);
+        let Some(vars) = client_vars(state, agents, &client) else {
+            continue;
+        };
         if filter.is_some_and(|filter| !format::is_true(&format::expand(filter, &vars))) {
             continue;
         }
@@ -550,6 +813,41 @@ fn list_clients(args: &[String], state: &ServerState, agents: &PaneAgents) -> Co
         output.push('\n');
     }
     CommandResult::ok(output)
+}
+
+/// The format variables one attached client answers to, shared by
+/// `list-clients` and `choose-client`. `None` when the client's session has
+/// gone away underneath it.
+fn client_vars(
+    state: &ServerState,
+    agents: &PaneAgents,
+    client: &super::super::state::AttachedClient,
+) -> Option<format::Vars> {
+    let session = state
+        .sessions()
+        .iter()
+        .find(|session| session.id == client.session_id)?;
+    let client_utf8 = client.flags.split(',').any(|flag| flag == "UTF-8");
+    let mut vars = super::vars_for(state, session, session.active, agents, state.marked_pane());
+    vars.set("client_name", client.name.clone())
+        .set("client_tty", client.name.clone())
+        .set("client_termname", client.term.clone())
+        .set(
+            "client_pid",
+            client.pid.map(|pid| pid.to_string()).unwrap_or_default(),
+        )
+        .set("client_width", client.cols.to_string())
+        .set("client_height", client.rows.to_string())
+        .set("client_session", session.name.clone())
+        .set("client_flags", client.flags.clone())
+        .set("client_readonly", if client.read_only { "1" } else { "0" })
+        .set(
+            "client_control_mode",
+            if client.control_mode { "1" } else { "0" },
+        )
+        .set("client_utf8", if client_utf8 { "1" } else { "0" })
+        .set("client_theme", client.theme.clone());
+    Some(vars)
 }
 
 fn detach_client(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {

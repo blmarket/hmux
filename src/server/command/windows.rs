@@ -84,6 +84,10 @@ fn find_window(args: &[String], state: &mut ServerState) -> CommandResult {
                 continue;
             }
             items.push(ModeItem {
+                tagged: false,
+            preview_target: None,
+            depth: 0,
+            expanded: None,
                 label: format!("{}:{} {}", session.name, link.index, window.name),
                 command: vec![
                     "select-window".to_string(),

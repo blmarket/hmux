@@ -126,6 +126,7 @@ fn run_server(args: Args) -> hmux::Result<()> {
     // session 0, so launching hmux does not speculatively spawn a shell or
     // commit the first session to the 80x24 fallback geometry.
     let server = Server::new()?;
+    server.set_socket_path(listen_socket)?;
     // The observer publishes into the server's status hub; format rendering
     // reads the same hub for `#{pane_agent*}` and control subscriptions. The
     // loop ticks it, so it never holds server state while the loop wants it.

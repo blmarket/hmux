@@ -383,11 +383,21 @@ impl EventAttachClient {
         if matches!(self.phase, AttachPhase::Finished) {
             return Ok(());
         }
-        if matches!(self.phase, AttachPhase::Session) {
-            self.start_session_command()?;
-        }
-        if matches!(self.phase, AttachPhase::Running(_)) {
-            self.drive_active_command()?;
+        // A command's own turn can defer the next one — a burst of mouse
+        // reports in one read defers one command per report — so keep starting
+        // and draining until the queue is dry. Stopping after one would leave
+        // the rest waiting behind a `prepare_wait` that blocks on the tty while
+        // a command is pending, so the tail of the burst never ran.
+        for _ in 0..IMMEDIATE_TURN_BUDGET {
+            if matches!(self.phase, AttachPhase::Session) {
+                self.start_session_command()?;
+            }
+            if matches!(self.phase, AttachPhase::Running(_)) {
+                self.drive_active_command()?;
+            }
+            if !matches!(self.phase, AttachPhase::Session) || !self.session.has_pending_command() {
+                break;
+            }
         }
         match &self.phase {
             AttachPhase::Waiting(active) if active.allows_attach_io => {

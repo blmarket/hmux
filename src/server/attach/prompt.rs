@@ -1740,7 +1740,9 @@ pub(super) fn render_prompt_completion(
             items,
             selected: completion.selected,
             x: Some(left.to_string()),
-            y: Some(top.to_string()),
+            // A menu's `-y` names the row below its last line, so the top row
+            // this menu wants is written as the row past its bottom.
+            y: Some(top.saturating_add(height).to_string()),
         },
         completion.selected,
     );

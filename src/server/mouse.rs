@@ -109,6 +109,10 @@ pub(crate) struct MouseTarget {
     pub(crate) status_line: Option<u16>,
     pub(crate) status_range: Option<MouseStatusRange>,
     pub(crate) border_side: Option<BorderSide>,
+    /// Where inside the slider a scrollbar grab landed — tmux's
+    /// `mouse_slider_mpos`, which holds the grabbed row of the slider under
+    /// the pointer for as long as the drag lasts.
+    pub(crate) slider_offset: Option<u16>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -215,6 +219,19 @@ impl MouseEvent {
             .as_ref()
             .and_then(|target| target.local_position)
             .unwrap_or(self.position)
+    }
+
+    /// Where the button went down, in the target pane's coordinates — tmux's
+    /// `cmd_mouse_at(..., last)`, which is where a drag's selection starts.
+    /// The press and the motion are in the same pane, so the pane's origin can
+    /// be read off the position this event already resolved.
+    pub(crate) fn pane_last_position(&self) -> Option<MousePosition> {
+        let last = self.last_position?;
+        let local = self.target.as_ref()?.local_position?;
+        Some(MousePosition {
+            x: last.x.saturating_sub(self.position.x.saturating_sub(local.x)),
+            y: last.y.saturating_sub(self.position.y.saturating_sub(local.y)),
+        })
     }
 
     pub(crate) fn pane_input_event(&self) -> Option<(u32, ghostty_sys::MouseEvent)> {
@@ -390,6 +407,7 @@ impl MouseInputState {
                             target.location = origin.location;
                             target.window_id = origin.window_id;
                             target.pane_id = origin.pane_id;
+                            target.slider_offset = origin.slider_offset;
                         } else {
                             event.target = Some(origin.clone());
                         }
@@ -457,6 +475,13 @@ impl MouseInputState {
         (event.kind == MouseEventKind::Drag && self.drag_button.is_none())
             .then_some(self.last_position)
             .flatten()
+    }
+
+    /// Whether this report continues a drag already under way, rather than
+    /// opening one. tmux routes those to the drag callback the opening report
+    /// registered instead of looking the key up in a table again.
+    pub(crate) fn continuing_drag(&self, event: &MouseEvent) -> bool {
+        event.kind == MouseEventKind::Drag && self.drag_button.is_some()
     }
 
     /// When the client next has to wake up for the repeat-click timer.
@@ -561,6 +586,7 @@ fn resolve_status_target(
         status_line: Some(line),
         status_range: None,
         border_side: None,
+        slider_offset: None,
     };
     match range {
         None => {}
@@ -626,22 +652,59 @@ fn resolve_pane_target(
     for index in order.iter().copied() {
         let pane = &window.panes[index];
         let rect = window.pane_rect(pane.id)?;
-        if contains(rect, point) {
-            let local = MousePosition {
-                x: point.x - rect.left,
-                y: point.y - rect.top,
-            };
-            let location = scrollbar_location(state, session_name, pane, rect, local)
-                .unwrap_or(MouseLocation::Pane);
+        // The scrollbar is drawn beside the pane, in columns the pane's own
+        // rect no longer covers, so it is hit-tested on its own.
+        if let Some((location, slider_offset)) =
+            scrollbar_location(state, session_name, window, pane, rect, point)
+        {
             return Some(MouseTarget {
                 session_id,
                 window_id: Some(window.id),
                 pane_id: Some(pane.id),
                 location,
+                local_position: Some(MousePosition {
+                    x: point.x.saturating_sub(rect.left),
+                    y: point.y.saturating_sub(rect.top),
+                }),
+                status_line: None,
+                status_range: None,
+                border_side: None,
+                slider_offset,
+            });
+        }
+        // A floating pane sits above the layout and claims its own borders, so
+        // they beat the interior of whatever pane is underneath (tmux's
+        // `window_get_active_at` takes floating panes "including all borders").
+        if pane.floating.is_some() {
+            if let Some(side) = on_border(rect, point) {
+                return Some(MouseTarget {
+                    session_id,
+                    window_id: Some(window.id),
+                    pane_id: Some(pane.id),
+                    location: MouseLocation::Border,
+                    local_position: None,
+                    status_line: None,
+                    status_range: None,
+                    border_side: Some(side),
+                    slider_offset: None,
+                });
+            }
+        }
+        if contains(rect, point) {
+            let local = MousePosition {
+                x: point.x - rect.left,
+                y: point.y - rect.top,
+            };
+            return Some(MouseTarget {
+                session_id,
+                window_id: Some(window.id),
+                pane_id: Some(pane.id),
+                location: MouseLocation::Pane,
                 local_position: Some(local),
                 status_line: None,
                 status_range: None,
                 border_side: None,
+                slider_offset: None,
             });
         }
     }
@@ -658,6 +721,7 @@ fn resolve_pane_target(
                 status_line: None,
                 status_range: None,
                 border_side: Some(side),
+                slider_offset: None,
             });
         }
     }
@@ -693,13 +757,21 @@ fn on_border(rect: PaneRect, point: MousePosition) -> Option<BorderSide> {
     None
 }
 
+/// Where in a pane's scrollbar a point falls, with the grabbed row's offset
+/// inside the slider — `None` when the point is not on the bar at all. tmux
+/// draws the bar outside the pane's own columns, pad first and then the bar,
+/// so this is tested in screen coordinates rather than pane-local ones.
 fn scrollbar_location(
     state: &ServerState,
     session_name: &str,
+    window: &Window,
     pane: &PaneNode,
     rect: PaneRect,
-    local: MousePosition,
-) -> Option<MouseLocation> {
+    point: MousePosition,
+) -> Option<(MouseLocation, Option<u16>)> {
+    if pane.scrollbar_columns == 0 {
+        return None;
+    }
     let pane_target = format!("%{}", pane.id);
     match state
         .option_for_target(&pane_target, "pane-scrollbars")
@@ -714,53 +786,51 @@ fn scrollbar_location(
         .option_for_target(&pane_target, "pane-scrollbars-style")
         .or_else(|| state.option_for_target(session_name, "pane-scrollbars-style"))
         .unwrap_or("bg=black,fg=white,width=1,pad=0");
-    let width = style
-        .split(',')
-        .find_map(|part| part.strip_prefix("width=")?.parse::<u16>().ok())
-        .unwrap_or(1)
-        .clamp(1, rect.width.max(1));
-    let left = state
-        .option_for_target(&pane_target, "pane-scrollbars-position")
-        .or_else(|| state.option_for_target(session_name, "pane-scrollbars-position"))
-        == Some("left");
-    let in_bar = if left {
-        local.x < width
-    } else {
-        local.x >= rect.width.saturating_sub(width)
+    let field = |name: &str, default: u16| {
+        style
+            .split(',')
+            .filter_map(|part| {
+                part.trim()
+                    .strip_prefix(name)?
+                    .strip_prefix('=')?
+                    .parse::<u16>()
+                    .ok()
+            })
+            .next_back()
+            .unwrap_or(default)
     };
-    if !in_bar {
+    let width = field("width", 1).max(1);
+    let pad = field("pad", 0);
+    let bar_left = if window.scrollbars_on_left {
+        rect.left.saturating_sub(pad).saturating_sub(width)
+    } else {
+        rect.left.saturating_add(rect.width).saturating_add(pad)
+    };
+    if point.x < bar_left
+        || point.x >= bar_left.saturating_add(width)
+        || point.y < rect.top
+        || point.y >= rect.top.saturating_add(rect.height)
+    {
         return None;
     }
 
     let height = usize::from(rect.height.max(1));
-    let (history, viewport, scroll) = if let Some(copy) = pane.copy.as_ref() {
-        (
-            copy.grid.scrollback_rows,
-            usize::from(copy.grid.viewport_rows),
-            copy.scroll,
-        )
-    } else {
-        (
-            pane.pane.scrollback_rows().unwrap_or(0),
-            usize::from(rect.height.max(1)),
-            0,
-        )
+    let (slider_top, slider_height) = super::state::pane_slider(pane, rect.height);
+    let (slider_top, slider_height) = (usize::from(slider_top), usize::from(slider_height));
+    let local = MousePosition {
+        x: point.x.saturating_sub(bar_left),
+        y: point.y.saturating_sub(rect.top),
     };
-    let total = history.saturating_add(viewport).max(1);
-    let slider_height = (height.saturating_mul(viewport) / total).clamp(1, height);
-    let available = height.saturating_sub(slider_height);
-    let slider_top = history
-        .saturating_sub(scroll.min(history))
-        .saturating_mul(available)
-        .checked_div(history)
-        .unwrap_or(0);
     let row = usize::from(local.y).min(height - 1);
     if row < slider_top {
-        Some(MouseLocation::ScrollbarUp)
+        Some((MouseLocation::ScrollbarUp, None))
     } else if row < slider_top.saturating_add(slider_height) {
-        Some(MouseLocation::ScrollbarSlider)
+        Some((
+            MouseLocation::ScrollbarSlider,
+            u16::try_from(row - slider_top).ok(),
+        ))
     } else {
-        Some(MouseLocation::ScrollbarDown)
+        Some((MouseLocation::ScrollbarDown, None))
     }
 }
 
@@ -820,6 +890,7 @@ mod tests {
             status_line: None,
             status_range: None,
             border_side: None,
+            slider_offset: None,
         });
 
         let (pane_id, event) = mouse.pane_input_event().expect("pane input event");
@@ -996,6 +1067,7 @@ mod tests {
             status_line: None,
             status_range: None,
             border_side: None,
+            slider_offset: None,
         }
     }
 }
