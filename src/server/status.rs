@@ -423,6 +423,24 @@ impl FormatJob {
             stage: FormatJobStage::Done,
             output: String::new(),
         };
+        // A child that was spawned but cannot be read from still has to be
+        // collected. `wait(2)` here would stall the loop for as long as the
+        // child lives, so hand it to the same nonblocking reap the ordinary
+        // path ends with — which also reports the job as finished.
+        let reap = |process, child| Self {
+            registry: registry.clone(),
+            key: key.clone(),
+            generation,
+            session_id,
+            status,
+            _process: process,
+            stage: FormatJobStage::Reaping {
+                child,
+                retry: Instant::now(),
+                backoff: FORMAT_REAP_RETRY_MIN,
+            },
+            output: String::new(),
+        };
         if process.cancelled.get() {
             return done(process);
         }
@@ -449,19 +467,16 @@ impl FormatJob {
             return done(process);
         };
         if !process.register(child.id() as i32) {
-            let _ = child.wait();
-            return done(process);
+            return reap(process, child);
         }
         let Some(stdout) = child.stdout.take() else {
-            let _ = child.wait();
-            return done(process);
+            return reap(process, child);
         };
         process.fd.set(stdout.as_raw_fd());
         // The loop reads this pipe between its other work, so the read may
         // never block once the child stalls mid-line.
         if set_nonblocking(stdout.as_fd()).is_err() {
-            let _ = child.wait();
-            return done(process);
+            return reap(process, child);
         }
         Self {
             registry,
