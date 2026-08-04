@@ -4045,6 +4045,35 @@ impl ServerState {
         Ok(state)
     }
 
+    /// Register a sizing client on `session_name`, as the attach loop does, and
+    /// fold it into the window sizes.
+    ///
+    /// Window sizes come from the clients that can see the window, so a test
+    /// that wants panes at a given geometry has to supply a client rather than
+    /// set a size directly. `rows` is the client's terminal height with its
+    /// status line included, so the resulting window is `rows` minus the
+    /// session's status lines tall. The returned attachment must stay alive:
+    /// dropping it detaches the client.
+    #[cfg(test)]
+    pub(crate) fn attach_test_client(
+        &mut self,
+        session_name: &str,
+        cols: u16,
+        rows: u16,
+    ) -> io::Result<ClientRenderAttachment> {
+        let session_id = self.session_id(session_name).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("can't find session: {session_name}"),
+            )
+        })?;
+        let attachment = Arc::clone(&self.client_renders)
+            .attach(session_id, format!("test-client-{session_id}"))?;
+        attachment.update_size(cols, rows);
+        self.recalculate_sizes()?;
+        Ok(attachment)
+    }
+
     pub(crate) fn initial_attach_pending(&self) -> bool {
         self.initial_attach_pending
     }
@@ -14539,25 +14568,28 @@ mod tests {
     }
 
     #[test]
-    fn selecting_window_applies_the_sessions_current_size() {
+    fn selecting_window_applies_its_deferred_client_size() {
         let mut state = ServerState::with_test_session().expect("state");
         state
             .new_window("0", None, false)
             .expect("create inactive window");
-        state.resize_session("0", 20, 4).expect("resize session");
+        // 20x5 of terminal, one row of which the status line takes.
+        let _client = state
+            .attach_test_client("0", 20, 5)
+            .expect("attach sizing client");
 
         assert_eq!(state.window(0, 0).panes[0].pane.size(), (20, 4));
         assert_eq!(
             state.window(0, 1).panes[0].pane.size(),
             (80, 24),
-            "inactive window retains its previous size"
+            "a window no session is showing defers the size instead of resizing"
         );
 
         state.select_window("0:1").expect("select inactive window");
         assert_eq!(
             state.window(0, 1).panes[0].pane.size(),
             (20, 4),
-            "selected window inherits the stored session viewport"
+            "the deferred size lands once the window becomes current"
         );
     }
 

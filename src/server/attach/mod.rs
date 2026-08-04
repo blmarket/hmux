@@ -3047,9 +3047,12 @@ mod tests {
     fn compose_frame_renders_visible_tail_after_scroll_not_oldest_history() {
         let state = fresh_state();
         let mut st = state.lock().unwrap();
-        // Size the pane exactly as run_attach does: client rows minus status.
+        // Size the pane exactly as run_attach does: a client of the frame's own
+        // size, whose status line the window sizing then pays for.
         let status_h = status::height(&st, "0");
-        let _ = st.resize_session("0", 80, 24 - status_h);
+        let _client = st
+            .attach_test_client("0", 80, 24)
+            .expect("attach sizing client");
         // Feed far more lines than the viewport holds so the pane scrolls;
         // unique sentinels mark the oldest (scrolled-off) and newest (visible) rows.
         let mut feed = b"HEAD_OLDEST\r\n".to_vec();
@@ -3089,7 +3092,9 @@ mod tests {
         let state = fresh_state();
         let mut st = state.lock().unwrap();
         let status_h = status::height(&st, "0");
-        let _ = st.resize_session("0", 80, 24 - status_h);
+        let _client = st
+            .attach_test_client("0", 80, 24)
+            .expect("attach sizing client");
         let mut feed = b"HEAD_OLDEST\r\n".to_vec();
         for i in 1..=60 {
             feed.extend_from_slice(format!("filler{i}\r\n").as_bytes());
@@ -3488,6 +3493,11 @@ mod tests {
     #[test]
     fn prefix_new_window_is_active_and_sized() {
         let state = fresh_state();
+        let _client = state
+            .lock()
+            .unwrap()
+            .attach_test_client("0", 100, 41)
+            .expect("attach sizing client");
         dispatch_prefix_key(b'c', &state, "0", 100, 40);
         let st = state.lock().unwrap();
         let s = st.find("0").unwrap();
@@ -3548,6 +3558,11 @@ mod tests {
     #[test]
     fn mixed_splits_compose_a_t_junction() {
         let state = fresh_state();
+        let _client = state
+            .lock()
+            .unwrap()
+            .attach_test_client("0", 20, 9)
+            .expect("attach sizing client");
         dispatch_prefix_key(b'%', &state, "0", 20, 8);
         dispatch_prefix_key(b'"', &state, "0", 20, 8);
 
@@ -3563,6 +3578,11 @@ mod tests {
     #[test]
     fn split_compositor_restores_active_pane_relative_cursor() {
         let state = fresh_state();
+        let _client = state
+            .lock()
+            .unwrap()
+            .attach_test_client("0", 80, 24)
+            .expect("attach sizing client");
         dispatch_prefix_key(b'"', &state, "0", 80, 23);
         let mut st = state.lock().unwrap();
         replace_active_pane_with_inert(&mut st);
@@ -3577,6 +3597,11 @@ mod tests {
     #[test]
     fn split_compositor_renders_the_active_panes_copy_snapshot() {
         let state = fresh_state();
+        let _client = state
+            .lock()
+            .unwrap()
+            .attach_test_client("0", 40, 13)
+            .expect("attach sizing client");
         dispatch_prefix_key(b'"', &state, "0", 40, 12);
         let mut st = state.lock().unwrap();
         replace_active_pane_with_inert(&mut st);
