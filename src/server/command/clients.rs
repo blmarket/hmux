@@ -196,9 +196,9 @@ impl<'a> ChooseOptions<'a> {
         if let Some(order) = self.order {
             if let Some((_, key)) = keys.iter().find(|(name, _)| *name == order) {
                 match key {
-                    ChooseSortKey::Text(name) => rows.sort_by(|left, right| {
-                        left.sort_text(name).cmp(&right.sort_text(name))
-                    }),
+                    ChooseSortKey::Text(name) => {
+                        rows.sort_by(|left, right| left.sort_text(name).cmp(&right.sort_text(name)))
+                    }
                     ChooseSortKey::Number(name) => rows.sort_by(|left, right| {
                         left.sort_number(name).cmp(&right.sort_number(name))
                     }),
@@ -365,9 +365,9 @@ fn choose_client(args: &[String], state: &mut ServerState, agents: &PaneAgents) 
                 prompt_target: None,
                 edit: None,
                 tagged: false,
-            preview_target: None,
-            depth: 0,
-            expanded: None,
+                preview_target: None,
+                depth: 0,
+                expanded: None,
             },
             vars,
         });
@@ -420,9 +420,9 @@ fn choose_buffer(args: &[String], state: &mut ServerState) -> CommandResult {
                 prompt_target: Some(name.clone()),
                 edit: None,
                 tagged: false,
-            preview_target: None,
-            depth: 0,
-            expanded: None,
+                preview_target: None,
+                depth: 0,
+                expanded: None,
             },
             vars,
         });
@@ -486,11 +486,7 @@ fn customize_mode(args: &[String], state: &mut ServerState) -> CommandResult {
                 continue;
             }
             items.push(ModeItem {
-                label: options.label(
-                    state,
-                    &vars,
-                    format!("{} {}", entry.name, entry.value),
-                ),
+                label: options.label(state, &vars, format!("{} {}", entry.name, entry.value)),
                 command: Vec::new(),
                 prompt_target: None,
                 edit: Some(ModeEdit::Option {
@@ -866,7 +862,11 @@ fn suspend_client(args: &[String], state: &ServerState, client: &ClientContext) 
     )
 }
 
-fn refresh_client(args: &[String], state: &mut ServerState, client: &ClientContext) -> CommandResult {
+fn refresh_client(
+    args: &[String],
+    state: &mut ServerState,
+    client: &ClientContext,
+) -> CommandResult {
     let target = flag_value(args, "-t");
     // `-c` and the four pan directions are handled first and alone, as tmux's
     // `cmd_refresh_client_exec` returns straight after them.
@@ -926,7 +926,11 @@ fn refresh_client(args: &[String], state: &mut ServerState, client: &ClientConte
     )
 }
 
-fn switch_client(args: &[String], state: &mut ServerState, client: &ClientContext) -> CommandResult {
+fn switch_client(
+    args: &[String],
+    state: &mut ServerState,
+    client: &ClientContext,
+) -> CommandResult {
     let Some(target_session) = flag_value(args, "-t") else {
         return CommandResult::err("no current client\n");
     };
@@ -938,7 +942,10 @@ fn switch_client(args: &[String], state: &mut ServerState, client: &ClientContex
         if let Some(resolved) = state.resolve(target_session) {
             let session = &state.sessions()[resolved.session];
             let session_id = session.id;
-            let window_target = format!("{}:{}", session.name, session.windows[resolved.window].index);
+            let window_target = format!(
+                "{}:{}",
+                session.name, session.windows[resolved.window].index
+            );
             let pane_id = state.window(resolved.session, resolved.window).panes[resolved.pane].id;
             let _ = state.select_pane(&format!("%{pane_id}"));
             let _ = state.select_window(&window_target);

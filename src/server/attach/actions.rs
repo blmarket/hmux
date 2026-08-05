@@ -1,6 +1,5 @@
 //! Attach-client actions and key-binding resolution.
 
-
 use crate::integration::status::StatusHub;
 
 use super::super::command;
@@ -232,7 +231,10 @@ pub(super) fn dispatch_key_binding(
                 .last()
                 .is_some_and(|word| word == "kill-window") =>
         {
-            let name = state.borrow_mut().active_window_name(target).unwrap_or_default();
+            let name = state
+                .borrow_mut()
+                .active_window_name(target)
+                .unwrap_or_default();
             return PrefixOutcome::Confirm {
                 prompt: format!("kill-window {name}? (y/n)"),
                 action: ConfirmAction::KillWindow,
@@ -310,10 +312,8 @@ pub(in crate::server) fn dispatch_control_client_keys(
             match dispatch_key_binding(&table, key, state, target, hub, context, None) {
                 PrefixOutcome::Detach => return true,
                 PrefixOutcome::SendPrefix(bytes) => {
-                    {
-                        let state = state.borrow_mut();
-                        let _ = state.input_to_active_pane(target, &bytes);
-                    }
+                    let state = state.borrow_mut();
+                    let _ = state.input_to_active_pane(target, &bytes);
                 }
                 PrefixOutcome::CopyMode(action) => action.apply(state, target),
                 PrefixOutcome::DeferredCommand { args, context }

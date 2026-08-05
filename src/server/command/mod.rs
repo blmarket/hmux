@@ -29,10 +29,10 @@ pub(in crate::server) use identity::all as all_commands;
 pub(in crate::server) use identity::Command;
 
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::integration::status::PaneAgents;
@@ -441,7 +441,8 @@ pub(crate) fn command_prompt_template(
         .unwrap_or("%1")
         .to_string();
     if has_flag(&normalized, "-F") {
-        template = expand_command_prompt_format(&template, &mut state.borrow_mut(), agents, context);
+        template =
+            expand_command_prompt_format(&template, &mut state.borrow_mut(), agents, context);
     }
     for (index, value) in values.iter().enumerate() {
         template = replace_prompt_template(&template, value, (index + 1) as u8);
@@ -849,7 +850,6 @@ impl BackgroundCommandRequest {
             } => PendingBackground::Ready(BackgroundCommand::RunShell { args, jobs }, context),
         }
     }
-
 }
 
 pub(crate) enum BackgroundCommand {
@@ -1184,7 +1184,6 @@ impl CommandSuspension {
             Self::CommandPrompt { .. } | Self::ClientInteraction { .. }
         )
     }
-
 }
 
 impl ResumableCommandQueue {
@@ -1206,11 +1205,7 @@ impl ResumableCommandQueue {
         }
     }
 
-    pub(crate) fn drive(
-        &mut self,
-        state: &SharedState,
-        budget: usize,
-    ) -> ResumableCommandTurn {
+    pub(crate) fn drive(&mut self, state: &SharedState, budget: usize) -> ResumableCommandTurn {
         for _ in 0..budget {
             if let Some(nested) = self.nested.as_mut() {
                 match nested.queue.drive(state, 1) {
@@ -1382,16 +1377,11 @@ impl ResumableCommandQueue {
                 let request = if has_flag(&inflight.command.args, "-F") {
                     let matched = {
                         let mut state = state.borrow_mut();
-                            let previous =
-                                install_command_target_context(&mut state, &self.context);
-                            let expanded = expand_if_cond(
-                                condition,
-                                &inflight.command.args,
-                                &state,
-                                &self.agents,
-                            );
-                            restore_command_target_context(&mut state, previous);
-                            !expanded.is_empty() && expanded != "0"
+                        let previous = install_command_target_context(&mut state, &self.context);
+                        let expanded =
+                            expand_if_cond(condition, &inflight.command.args, &state, &self.agents);
+                        restore_command_target_context(&mut state, previous);
+                        !expanded.is_empty() && expanded != "0"
                     };
                     BackgroundCommandRequest::Ready {
                         command: if matched { then_command } else { else_command },
@@ -1459,16 +1449,11 @@ impl ResumableCommandQueue {
                 if has_flag(&inflight.command.args, "-F") {
                     let matched = {
                         let mut state = state.borrow_mut();
-                            let previous =
-                                install_command_target_context(&mut state, &self.context);
-                            let expanded = expand_if_cond(
-                                condition,
-                                &inflight.command.args,
-                                &state,
-                                &self.agents,
-                            );
-                            restore_command_target_context(&mut state, previous);
-                            !expanded.is_empty() && expanded != "0"
+                        let previous = install_command_target_context(&mut state, &self.context);
+                        let expanded =
+                            expand_if_cond(condition, &inflight.command.args, &state, &self.agents);
+                        restore_command_target_context(&mut state, previous);
+                        !expanded.is_empty() && expanded != "0"
                     };
                     let execution =
                         self.plan_if_shell_branch(&inflight.command.args, matched, state);
@@ -1524,7 +1509,7 @@ impl ResumableCommandQueue {
             if inflight.command.spec.name == "save-buffer" {
                 let request = {
                     let state = state.borrow_mut();
-                        save_buffer_client_request(&inflight.command.args, &state, &self.context)
+                    save_buffer_client_request(&inflight.command.args, &state, &self.context)
                 };
                 if let Some(request) = request {
                     match request {
@@ -1820,11 +1805,7 @@ impl ResumableCommandQueue {
         Ok(planned)
     }
 
-    pub(crate) fn resume(
-        &mut self,
-        result: CommandSuspensionResult,
-        state: &SharedState,
-    ) {
+    pub(crate) fn resume(&mut self, result: CommandSuspensionResult, state: &SharedState) {
         if let Some(nested) = self.nested.as_mut() {
             nested.queue.resume(result, state);
             return;
@@ -1837,11 +1818,11 @@ impl ResumableCommandQueue {
             CommandSuspensionResult::RunShell(completion) => {
                 let result = {
                     let mut state = state.borrow_mut();
-                        let previous = install_command_target_context(&mut state, &self.context);
-                        let result = finish_run_shell(completion, &mut state);
-                        state.record_control_checkpoint();
-                        restore_command_target_context(&mut state, previous);
-                        result
+                    let previous = install_command_target_context(&mut state, &self.context);
+                    let result = finish_run_shell(completion, &mut state);
+                    state.record_control_checkpoint();
+                    restore_command_target_context(&mut state, previous);
+                    result
                 };
                 SharedCommandExecution::completed(result)
             }
@@ -1967,10 +1948,7 @@ impl ResumableCommandQueue {
 
     /// Turn every notification raised while the last command ran into hook
     /// bodies, in the order the mutations happened.
-    fn plan_notifications(
-        &self,
-        state: &SharedState,
-    ) -> Vec<Vec<SharedQueueItem>> {
+    fn plan_notifications(&self, state: &SharedState) -> Vec<Vec<SharedQueueItem>> {
         if self.context.suppress_notifications {
             return Vec::new();
         }
@@ -2461,7 +2439,10 @@ fn hook_command_vars(hook: &str, command: &str, args: &[String]) -> Vec<(String,
             }
             None => {
                 in_flags = false;
-                vars.push((format!("hook_argument_{argument_index}"), argument.to_string()));
+                vars.push((
+                    format!("hook_argument_{argument_index}"),
+                    argument.to_string(),
+                ));
                 argument_index += 1;
                 i += 1;
             }
@@ -4461,8 +4442,7 @@ pub(super) fn vars_full(
                 // where the window's own value would not.
                 .set(
                     "pane_synchronized",
-                    if p
-                        .options(win, st.global_options())
+                    if p.options(win, st.global_options())
                         .get("synchronize-panes")
                         .is_some_and(|value| value == "on" || value == "1")
                     {
@@ -4763,10 +4743,7 @@ fn set_terminal_mode_vars(pane: &super::pane::Pane, v: &mut Vars) {
         .set("cursor_very_visible", "0")
         .set("keypad_flag", flag(modes.keypad))
         .set("keypad_cursor_flag", flag(modes.cursor_keys))
-        .set(
-            "synchronized_output_flag",
-            flag(modes.synchronized_output),
-        )
+        .set("synchronized_output_flag", flag(modes.synchronized_output))
         .set("bracket_paste_flag", flag(modes.bracketed_paste))
         .set("cursor_shape", modes.cursor_shape.name());
 }
@@ -4795,13 +4772,7 @@ fn status_mouse_pane(st: &ServerState, target: &super::mouse::MouseTarget) -> Op
 /// The `*_flag` variables describe the *pane* (tmux reads `ft->wp->base.mode`),
 /// so they are available with no mouse event in scope; everything else needs
 /// the event the running command was dispatched from.
-fn set_mouse_vars(
-    st: &ServerState,
-    sess: &Session,
-    win_idx: usize,
-    pane_idx: usize,
-    v: &mut Vars,
-) {
+fn set_mouse_vars(st: &ServerState, sess: &Session, win_idx: usize, pane_idx: usize, v: &mut Vars) {
     let modes = sess
         .windows
         .get(win_idx)
@@ -5493,8 +5464,8 @@ fn respawn_pane(args: &[String], st: &mut ServerState) -> CommandResult {
     let command = trailing_command(args, &["-c", "-e", "-t"]);
     // A respawn spells its command the way a spawn does: one argument is a
     // shell command line, several are an argv (tmux's `spawn_pane`).
-    let argv = (!command.is_empty())
-        .then(|| pane_command_argv(command.as_slice(), st, Some(&target)));
+    let argv =
+        (!command.is_empty()).then(|| pane_command_argv(command.as_slice(), st, Some(&target)));
     let cwd = command_option_value(args, "-c", &["-c", "-e", "-t"]).map(PathBuf::from);
     match st.respawn_pane_process(&target, argv, cwd) {
         Ok(()) => CommandResult::ok(""),
@@ -5534,8 +5505,8 @@ fn respawn_window(args: &[String], st: &mut ServerState) -> CommandResult {
         ));
     }
     let command = trailing_command(args, &["-c", "-e", "-t"]);
-    let argv = (!command.is_empty())
-        .then(|| pane_command_argv(command.as_slice(), st, Some(&target)));
+    let argv =
+        (!command.is_empty()).then(|| pane_command_argv(command.as_slice(), st, Some(&target)));
     let cwd = command_option_value(args, "-c", &["-c", "-e", "-t"]).map(PathBuf::from);
     match st.respawn_window_process(&target, argv, cwd) {
         Ok(()) => CommandResult::ok(""),
@@ -6459,10 +6430,7 @@ fn show_messages(args: &[String], st: &ServerState) -> CommandResult {
             for (name, term, terminal) in st.client_terminals() {
                 if target.is_some_and(|target| {
                     let target = target.strip_suffix(':').unwrap_or(target);
-                    name != target
-                        && name
-                            .strip_prefix("/dev/")
-                            .is_none_or(|name| name != target)
+                    name != target && name.strip_prefix("/dev/").is_none_or(|name| name != target)
                 }) {
                     continue;
                 }
@@ -6861,10 +6829,10 @@ fn capture_range(
         .saturating_add(viewport_rows.saturating_sub(1) as usize)
         .min(last);
 
-    let mut top = capture_endpoint(flag_value(args, "-S"), default_top, history, last, vars)
-        .max(floor);
-    let mut bottom = capture_endpoint(flag_value(args, "-E"), default_bottom, history, last, vars)
-        .max(floor);
+    let mut top =
+        capture_endpoint(flag_value(args, "-S"), default_top, history, last, vars).max(floor);
+    let mut bottom =
+        capture_endpoint(flag_value(args, "-E"), default_bottom, history, last, vars).max(floor);
     if bottom < top {
         std::mem::swap(&mut top, &mut bottom);
     }
@@ -7306,7 +7274,9 @@ fn resize_pane_to_mouse(st: &mut ServerState) -> CommandResult {
     // size is the distance from the edge that stayed put to the pointer.
     let pane_y = position.y.saturating_sub(status_offset);
     let (direction, size) = match side {
-        super::mouse::BorderSide::Bottom => (SplitDirection::TopBottom, pane_y.saturating_sub(rect.top)),
+        super::mouse::BorderSide::Bottom => {
+            (SplitDirection::TopBottom, pane_y.saturating_sub(rect.top))
+        }
         super::mouse::BorderSide::Top => (
             SplitDirection::TopBottom,
             rect.top
@@ -7672,12 +7642,11 @@ fn set_buffer(args: &[String], st: &mut ServerState, context: &ClientContext) ->
             }
             if has_flag(args, "-w") {
                 if let Some(data) = st.buffer(name).map(<[u8]>::to_vec) {
-                    let _ =
-                        st.set_client_selection(
-                            client_target,
-                            context.tty_name.as_deref(),
-                            Some(data),
-                        );
+                    let _ = st.set_client_selection(
+                        client_target,
+                        context.tty_name.as_deref(),
+                        Some(data),
+                    );
                 }
             }
             CommandResult::ok("")
@@ -8299,8 +8268,7 @@ fn source_lines(
             }
             *depth = new_depth;
             if *depth == 0 {
-                let (line, mut prefix, body, _) =
-                    brace_block.take().expect("active brace block");
+                let (line, mut prefix, body, _) = brace_block.take().expect("active brace block");
                 prefix.push(LineToken::Word(body));
                 lines.push((line, prefix));
             }
@@ -8316,8 +8284,7 @@ fn source_lines(
             continue;
         }
 
-        let argv =
-            tokenize_line_checked(&expanded).map_err(|message| (logical_start, message))?;
+        let argv = tokenize_line_checked(&expanded).map_err(|message| (logical_start, message))?;
         if !argv.is_empty() {
             lines.push((logical_start, argv));
         }
@@ -8503,9 +8470,7 @@ fn push_token_escape(
         'u' | 'U' => {
             let digits = if first == 'u' { 4 } else { 8 };
             let mut consumed = String::new();
-            while consumed.len() < digits
-                && chars.peek().is_some_and(char::is_ascii_hexdigit)
-            {
+            while consumed.len() < digits && chars.peek().is_some_and(char::is_ascii_hexdigit) {
                 consumed.push(chars.next().expect("peeked hex digit"));
             }
             let decoded = (consumed.len() == digits)
@@ -8906,9 +8871,9 @@ pub(crate) fn has_bool_flag(args: &[String], ch: char) -> bool {
 /// `-d` are dropped without consuming a following argument.
 fn positionals<'a>(args: &'a [String], value_flags: &[&str]) -> Vec<&'a str> {
     let mut i = 1; // skip the command name
-    // tmux's `args_parse` stops looking for flags at the first operand, so a
-    // later word that starts with `-` — a menu item named `-disabled`, say —
-    // is an operand too rather than an unknown flag.
+                   // tmux's `args_parse` stops looking for flags at the first operand, so a
+                   // later word that starts with `-` — a menu item named `-disabled`, say —
+                   // is an operand too rather than an unknown flag.
     while i < args.len() {
         let arg = args[i].as_str();
         if arg == "--" {
@@ -9018,12 +8983,7 @@ mod tests {
         run(&owned, st, &PaneAgents::new())
     }
 
-
-    fn run_str_agents(
-        st: &SharedState,
-        agents: &PaneAgents,
-        args: &[&str],
-    ) -> CommandResult {
+    fn run_str_agents(st: &SharedState, agents: &PaneAgents, args: &[&str]) -> CommandResult {
         let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
         run(&owned, st, agents)
     }
@@ -10939,8 +10899,7 @@ mod tests {
             "brk\n"
         );
         assert_eq!(
-            st.borrow_mut()
-                .option_for_target("0:1", "automatic-rename"),
+            st.borrow_mut().option_for_target("0:1", "automatic-rename"),
             Some("off")
         );
     }
@@ -11868,9 +11827,8 @@ mod tests {
     #[test]
     fn exit_empty_takes_hmux_after_session_beside_tmux_flag_values() {
         let st = state();
-        let show = |st: &SharedState| {
-            run_str(st, &["show-options", "-s", "-v", "exit-empty"]).stdout
-        };
+        let show =
+            |st: &SharedState| run_str(st, &["show-options", "-s", "-v", "exit-empty"]).stdout;
         assert_eq!(show(&st), "after-session\n");
 
         // tmux's flag spellings still parse, and a valueless set still toggles

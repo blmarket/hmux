@@ -83,12 +83,7 @@ impl AttachSession {
     /// tmux decodes these in `tty-keys.c` as `KEYC_FOCUS_IN`/`KEYC_FOCUS_OUT`
     /// and `KEYC_REPORT_*_THEME`, which never reach a pane as keystrokes; a
     /// pane that asked for mode 1004 is sent its own copy instead.
-    fn take_terminal_reports(
-        &mut self,
-        data: &[u8],
-        state: &SharedState,
-        target: &str,
-    ) -> Vec<u8> {
+    fn take_terminal_reports(&mut self, data: &[u8], state: &SharedState, target: &str) -> Vec<u8> {
         const REPORTS: [&[u8]; 4] = [
             FOCUS_IN_REPORT,
             FOCUS_OUT_REPORT,
@@ -121,12 +116,7 @@ impl AttachSession {
         kept
     }
 
-    fn apply_terminal_report(
-        &mut self,
-        report: &[u8],
-        state: &SharedState,
-        target: &str,
-    ) {
+    fn apply_terminal_report(&mut self, report: &[u8], state: &SharedState, target: &str) {
         let client = self.attachments.render_attachment.client_name();
         let mut st = state.borrow_mut();
         match report {
@@ -167,12 +157,7 @@ impl AttachSession {
 
     /// tmux's `server_client_repeat_timer`: a `bind -r` chain lapses on its own
     /// once `repeat-time` passes, with no further input.
-    pub(super) fn expire_repeat_chain(
-        &mut self,
-        state: &SharedState,
-        target: &str,
-        now: Instant,
-    ) {
+    pub(super) fn expire_repeat_chain(&mut self, state: &SharedState, target: &str, now: Instant) {
         let default_table = client_key_table(&state.borrow_mut(), target);
         if !self
             .compositor
@@ -439,10 +424,9 @@ impl AttachSession {
                                 Some(b'[' | b'O')
                             );
                         if could_be_terminal_key {
-                            let deadline =
-                                self.compositor.input.key_prompt.deadline_or_insert(
-                                    Instant::now() + prompt_escape_delay(&state.borrow_mut()),
-                                );
+                            let deadline = self.compositor.input.key_prompt.deadline_or_insert(
+                                Instant::now() + prompt_escape_delay(&state.borrow_mut()),
+                            );
                             if Instant::now() < deadline {
                                 break;
                             }
@@ -576,10 +560,9 @@ impl AttachSession {
                     )
                     && self.compositor.input.key_prompt.deadline().is_none()
                 {
-                    self.compositor
-                        .input
-                        .key_prompt
-                        .set_deadline_if_none(Instant::now() + prompt_escape_delay(&state.borrow_mut()));
+                    self.compositor.input.key_prompt.set_deadline_if_none(
+                        Instant::now() + prompt_escape_delay(&state.borrow_mut()),
+                    );
                 }
                 if prompt_tail.as_ref().is_none_or(Vec::is_empty) {
                     continue;
@@ -806,7 +789,7 @@ impl AttachSession {
                                 None,
                                 self.viewport.cols,
                                 self.viewport.rows,
-                                    ) {
+                            ) {
                                 self.compositor.ui.active_overlay = overlay;
                             }
                         }
@@ -836,22 +819,21 @@ impl AttachSession {
                 let (key, mouse, consumed, flags) = match named {
                     Some((key, consumed, flags)) => (Some(key), None, consumed, Some(flags)),
                     None => match decode_tty_key(&data[i..]) {
-                    Some((mut decoded, consumed)) => {
-                        continuing_drag = decoded
-                            .mouse
-                            .as_ref()
-                            .is_some_and(|event| self.compositor.input.mouse.continuing_drag(event));
-                        resolve_mouse_key(
-                            &mut decoded,
-                            &mut self.compositor.input.mouse,
-                            state,
-                            target,
-                            self.viewport.cols,
-                            self.viewport.rows,
-                            &mut self.status.status_cache,
-                        );
-                        (decoded.code, decoded.mouse, consumed, Some(decoded.flags))
-                    }
+                        Some((mut decoded, consumed)) => {
+                            continuing_drag = decoded.mouse.as_ref().is_some_and(|event| {
+                                self.compositor.input.mouse.continuing_drag(event)
+                            });
+                            resolve_mouse_key(
+                                &mut decoded,
+                                &mut self.compositor.input.mouse,
+                                state,
+                                target,
+                                self.viewport.cols,
+                                self.viewport.rows,
+                                &mut self.status.status_cache,
+                            );
+                            (decoded.code, decoded.mouse, consumed, Some(decoded.flags))
+                        }
                         // Bytes that decode to nothing — a truncated escape, or
                         // a byte that is not valid UTF-8 — have no key identity
                         // to re-encode from, so they reach the pane as they
@@ -936,9 +918,11 @@ impl AttachSession {
                         // `CSI 105;5u` forms a modern client terminal reports.
                         match flags {
                             Some(flags) => {
-                                if let Some(bytes) =
-                                    encode_key_for_pane(&state.borrow_mut(), target, flags.pane_key(key))
-                                {
+                                if let Some(bytes) = encode_key_for_pane(
+                                    &state.borrow_mut(),
+                                    target,
+                                    flags.pane_key(key),
+                                ) {
                                     forward_buf.extend_from_slice(&bytes);
                                 }
                             }
@@ -1075,7 +1059,10 @@ fn user_key_at(
         .max_by_key(|(_, sequence)| sequence.len())
         .map(|(index, sequence)| {
             (
-                super::super::key::KeyCode::new(super::super::key::KeyBase::User(index as u16), super::super::key::Modifiers::default()),
+                super::super::key::KeyCode::new(
+                    super::super::key::KeyBase::User(index as u16),
+                    super::super::key::Modifiers::default(),
+                ),
                 sequence.len(),
             )
         })

@@ -133,8 +133,9 @@ impl ClientKeyState {
             self.assume_pasting = false;
             return false;
         }
-        let fast = previous
-            .is_some_and(|previous| now.duration_since(previous) < Duration::from_millis(assume_paste_time));
+        let fast = previous.is_some_and(|previous| {
+            now.duration_since(previous) < Duration::from_millis(assume_paste_time)
+        });
         if fast {
             if self.assume_pasting {
                 return true;
@@ -595,9 +596,10 @@ mod tests {
         let prefix = key_from_byte(0x02);
         let f1 = key_from_byte(b'q');
         let c = key_from_byte(b'c');
-        let mut tables = FakeTables::new()
-            .bind(PREFIX_TABLE, f1, true)
-            .bind(PREFIX_TABLE, c, false);
+        let mut tables =
+            FakeTables::new()
+                .bind(PREFIX_TABLE, f1, true)
+                .bind(PREFIX_TABLE, c, false);
         tables.repeat_time = 3000;
         let mut keys = ClientKeyState::new(start);
 

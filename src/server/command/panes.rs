@@ -99,8 +99,9 @@ impl Command {
                         // button went down, not where the pointer has already
                         // reached (tmux's `window_copy_start_drag`).
                         if has_flag(args, "-M") {
-                            if let Some(position) =
-                                st.command_mouse().and_then(|mouse| mouse.pane_last_position())
+                            if let Some(position) = st
+                                .command_mouse()
+                                .and_then(|mouse| mouse.pane_last_position())
                             {
                                 let _ = st.position_copy_cursor_from_mouse(
                                     &target, position.x, position.y, vi,

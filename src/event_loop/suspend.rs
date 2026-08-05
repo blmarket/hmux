@@ -15,10 +15,10 @@
 //! ([`SuspensionJob`](crate::server::command::suspend::SuspensionJob)) so the
 //! blocking test driver resolves a suspension exactly the way the loop does.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::io;
 use std::os::fd::RawFd;
-use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 

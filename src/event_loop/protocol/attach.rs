@@ -11,6 +11,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use crate::integration::status::StatusHub;
+use crate::server::attach::FrameSink;
 use crate::server::attach::{
     self, AttachCommandContinuation, AttachDrive, AttachPrepared, AttachSession,
     AttachStartFailure, AttachWaitReady, AttachWaitSources, ClientTty,
@@ -20,7 +21,6 @@ use crate::server::state::SharedState;
 use crate::server::task::{ReadySet, TaskState};
 use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::Frame;
-use crate::server::attach::FrameSink;
 use crate::tmux::traits::NonblockingFrameReader;
 
 use super::super::actor::ActorRef;
@@ -208,15 +208,9 @@ impl EventAttachClient {
         command_runtime: Rc<dyn command::CommandRuntime>,
     ) -> Result<Self, AttachStartError> {
         let mut output = AttachOutput::new();
-        let session = attach::start_attach_session(
-            args,
-            client_tty,
-            &state,
-            &hub,
-            context,
-            &mut output,
-        )
-        .map_err(AttachStartError::from_failure)?;
+        let session =
+            attach::start_attach_session(args, client_tty, &state, &hub, context, &mut output)
+                .map_err(AttachStartError::from_failure)?;
         let mut attach = Self {
             session,
             state,

@@ -82,12 +82,7 @@ impl BackgroundCommands {
                         ))
                     );
                     let command = if matched { then_command } else { else_command };
-                    self.start_command(
-                        target,
-                        BackgroundCommand::Line(command),
-                        context,
-                        outbox,
-                    );
+                    self.start_command(target, BackgroundCommand::Line(command), context, outbox);
                 }
                 Some(JobState::Running) => {
                     let Some(ExecutorJobOutput::Queue(Ok(mut result))) = output else {

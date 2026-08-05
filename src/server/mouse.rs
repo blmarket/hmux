@@ -227,8 +227,12 @@ impl MouseEvent {
         let last = self.last_position?;
         let local = self.target.as_ref()?.local_position?;
         Some(MousePosition {
-            x: last.x.saturating_sub(self.position.x.saturating_sub(local.x)),
-            y: last.y.saturating_sub(self.position.y.saturating_sub(local.y)),
+            x: last
+                .x
+                .saturating_sub(self.position.x.saturating_sub(local.x)),
+            y: last
+                .y
+                .saturating_sub(self.position.y.saturating_sub(local.y)),
         })
     }
 
@@ -441,9 +445,10 @@ impl MouseInputState {
             // A repeat click that moved, changed button, or landed somewhere
             // else is not a repeat at all: the sequence restarts here.
             if event.kind != MouseEventKind::Down
-                && self.click.as_ref().is_none_or(|click| {
-                    click.button != event.button || click.identity != identity
-                })
+                && self
+                    .click
+                    .as_ref()
+                    .is_none_or(|click| click.button != event.button || click.identity != identity)
             {
                 event.kind = MouseEventKind::Down;
                 self.expect_third = false;

@@ -66,7 +66,8 @@ impl Vars {
         };
         // The daemon's uid cannot change, and resolving the name walks NSS
         // (sockets to nscd, /etc/passwd) — worth doing exactly once.
-        static USER: std::sync::OnceLock<(libc::uid_t, Option<String>)> = std::sync::OnceLock::new();
+        static USER: std::sync::OnceLock<(libc::uid_t, Option<String>)> =
+            std::sync::OnceLock::new();
         let (uid, user) = USER.get_or_init(|| {
             let uid = unsafe { libc::getuid() };
             (uid, username(uid))
@@ -426,7 +427,15 @@ pub(super) fn expand_with_jobs(
     jobs: Option<&dyn FormatJobs>,
     tree: Option<&dyn FormatTree>,
 ) -> String {
-    expand_with_context(template, vars, &BasicContext { loops: ls, jobs, tree })
+    expand_with_context(
+        template,
+        vars,
+        &BasicContext {
+            loops: ls,
+            jobs,
+            tree,
+        },
+    )
 }
 
 /// [`expand_with_jobs`], but applying current-time directives first.
@@ -440,7 +449,15 @@ pub(super) fn expand_time_with_jobs(
     jobs: Option<&dyn FormatJobs>,
     tree: Option<&dyn FormatTree>,
 ) -> String {
-    expand_time_with_context(template, vars, &BasicContext { loops: ls, jobs, tree })
+    expand_time_with_context(
+        template,
+        vars,
+        &BasicContext {
+            loops: ls,
+            jobs,
+            tree,
+        },
+    )
 }
 
 pub(super) fn expand_with_context(

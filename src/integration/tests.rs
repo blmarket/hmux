@@ -12,11 +12,11 @@
 //! agent running below the pane's shell, so the observer reported `Unknown` /
 //! `agent=None` forever and logged nothing after startup.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::cell::Cell;
 use std::sync::{Arc, Mutex};
 
 use tracing_subscriber::fmt::MakeWriter;

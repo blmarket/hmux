@@ -868,12 +868,7 @@ impl PopupOverlay {
 }
 
 impl DisplayPanesOverlay {
-    fn handle_key(
-        &self,
-        key: &str,
-        state: &SharedState,
-        target: &str,
-    ) -> OverlayInputOutcome {
+    fn handle_key(&self, key: &str, state: &SharedState, target: &str) -> OverlayInputOutcome {
         if !self.accept_input || matches!(key, "Escape" | "q" | "C-c") {
             return OverlayInputOutcome::close(0, None);
         }

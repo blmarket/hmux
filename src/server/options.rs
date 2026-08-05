@@ -629,7 +629,10 @@ const OPTION_CHOICES: &[(&str, &[&str])] = &[
         &["off", "default", "absolute", "relative", "hybrid"],
     ),
     ("cursor-style", CURSOR_STYLE_CHOICES),
-    ("destroy-unattached", &["off", "on", "keep-last", "keep-group"]),
+    (
+        "destroy-unattached",
+        &["off", "on", "keep-last", "keep-group"],
+    ),
     (
         "detach-on-destroy",
         &["off", "on", "no-detached", "previous", "next"],
@@ -640,7 +643,10 @@ const OPTION_CHOICES: &[(&str, &[&str])] = &[
     ("menu-border-lines", BORDER_LINES_CHOICES),
     ("message-line", &["0", "1", "2", "3", "4"]),
     ("mode-keys", &["emacs", "vi"]),
-    ("pane-border-indicators", &["off", "colour", "arrows", "both"]),
+    (
+        "pane-border-indicators",
+        &["off", "colour", "arrows", "both"],
+    ),
     (
         "pane-border-lines",
         &["single", "double", "heavy", "simple", "number"],

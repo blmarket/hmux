@@ -1,6 +1,5 @@
 //! Copy-mode input actions and viewport rendering for attached clients.
 
-
 use super::super::mouse::MouseEvent;
 use super::super::state::{
     copy_search_segments, copy_selection_segments, CopyState, ServerState, SharedState,
@@ -54,7 +53,10 @@ impl CopyModeAction {
             };
             let _ = state.position_copy_cursor_from_mouse(target, start.x, start.y, vi);
             if self.slider {
-                let grab = mouse.target.as_ref().and_then(|target| target.slider_offset);
+                let grab = mouse
+                    .target
+                    .as_ref()
+                    .and_then(|target| target.slider_offset);
                 let _ = state.scroll_copy_to_mouse(
                     target,
                     if grab.is_some() {

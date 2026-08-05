@@ -28,9 +28,7 @@ use std::os::unix::net::UnixStream;
 use libc::{c_int, c_void};
 
 use super::message::{Frame, Message};
-use super::traits::{
-    NonblockingFrameReader, NonblockingFrameWriter, WriteQueueFull,
-};
+use super::traits::{NonblockingFrameReader, NonblockingFrameWriter, WriteQueueFull};
 
 /// `IMSG_HEADER_SIZE` — `sizeof(struct imsg_hdr)`.
 pub const HEADER_SIZE: usize = 16;

@@ -22,8 +22,8 @@ use super::input_keys::{
 use super::key::{parse_key_name, KeyCode};
 use super::options::{GlobalOptions, OptionSet, OptionsView};
 use super::pane::{
-    NativePaneObservation, Pane, PaneClipboardEvent, PaneIo, PaneKeyState,
-    PaneOutputPolicy, PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
+    NativePaneObservation, Pane, PaneClipboardEvent, PaneIo, PaneKeyState, PaneOutputPolicy,
+    PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
 };
 use super::task::{completion_pair, Completion, CompletionSender};
 use super::term::ResolvedTerm;
@@ -432,10 +432,7 @@ impl BackgroundJobRegistry {
         let mut inner = self.inner.borrow_mut();
         let id = inner.next_id;
         inner.next_id = inner.next_id.wrapping_add(1);
-        inner.jobs.insert(
-            id,
-            BackgroundJob { command, fd, pid },
-        );
+        inner.jobs.insert(id, BackgroundJob { command, fd, pid });
         id
     }
 
@@ -2293,9 +2290,9 @@ impl ClientRenderEntry {
         self.flag_state.apply_flags(value);
         self.ignore_size = self.flag_state.ignore_size;
         self.read_only = self.flag_state.read_only;
-        self.flags = self
-            .flag_state
-            .display_flags_full(self.identified, self.control_mode, self.focused);
+        self.flags =
+            self.flag_state
+                .display_flags_full(self.identified, self.control_mode, self.focused);
     }
 
     /// Whether this client's terminal size constrains window sizing: a
@@ -2936,16 +2933,13 @@ impl ClientRenderRegistry {
                         .is_some_and(|tty| tty == target)
             })
         } else {
-            invoking_tty
-                .and_then(|tty| inner.clients.iter().find(|(_, entry)| entry.name == tty))
+            invoking_tty.and_then(|tty| inner.clients.iter().find(|(_, entry)| entry.name == tty))
         };
-        selected
-            .map(|(id, _)| *id)
-            .ok_or(if explicit.is_some() {
-                ClientActionResult::TargetNotFound
-            } else {
-                ClientActionResult::NoCurrentClient
-            })
+        selected.map(|(id, _)| *id).ok_or(if explicit.is_some() {
+            ClientActionResult::TargetNotFound
+        } else {
+            ClientActionResult::NoCurrentClient
+        })
     }
 
     /// Queue `refresh-client -f` values for a client other than the one running
@@ -3165,9 +3159,11 @@ impl ClientRenderRegistry {
             return false;
         }
         entry.focused = focused;
-        entry.flags = entry
-            .flag_state
-            .display_flags_full(entry.identified, entry.control_mode, entry.focused);
+        entry.flags = entry.flag_state.display_flags_full(
+            entry.identified,
+            entry.control_mode,
+            entry.focused,
+        );
         true
     }
 
@@ -3192,7 +3188,11 @@ impl ClientRenderRegistry {
     /// Stamp a client's activity time, tmux's `c->activity_time`.
     fn touch_client_activity(&self, client: &str, at: i64) {
         let mut inner = self.inner.borrow_mut();
-        if let Some(entry) = inner.clients.values_mut().find(|entry| entry.name == client) {
+        if let Some(entry) = inner
+            .clients
+            .values_mut()
+            .find(|entry| entry.name == client)
+        {
             entry.activity_micros = at;
         }
     }
@@ -3200,7 +3200,11 @@ impl ClientRenderRegistry {
     /// Record the key table a client moved into.
     fn set_client_key_table(&self, client: &str, table: &str) {
         let mut inner = self.inner.borrow_mut();
-        let Some(entry) = inner.clients.values_mut().find(|entry| entry.name == client) else {
+        let Some(entry) = inner
+            .clients
+            .values_mut()
+            .find(|entry| entry.name == client)
+        else {
             return;
         };
         if entry.key_table != table {
@@ -3317,12 +3321,7 @@ impl ClientRenderRegistry {
     /// `from_session_id` moves to `to`, except that a client carrying
     /// `no-detach-on-destroy` falls back to `no_detach_to` when `to` is `None`.
     /// A client with no destination is left alone and exits on its own.
-    fn reassign_session(
-        &self,
-        from_session_id: u32,
-        to: Option<u32>,
-        no_detach_to: Option<u32>,
-    ) {
+    fn reassign_session(&self, from_session_id: u32, to: Option<u32>, no_detach_to: Option<u32>) {
         let mut inner = self.inner.borrow_mut();
         for entry in inner
             .clients
@@ -3641,8 +3640,7 @@ impl ClientPromptAttachment {
     }
 
     pub(crate) fn note_activity(&self) {
-        self.activity
-            .set(self.registry.next_activity());
+        self.activity.set(self.registry.next_activity());
     }
 }
 
@@ -4402,7 +4400,6 @@ impl ServerState {
             .collect()
     }
 
-
     /// tmux 3.7b's `root` mouse table, in the same order and shape as
     /// `key_bindings_init`.
     ///
@@ -4542,8 +4539,11 @@ impl ServerState {
                  'display-menu -t = -x M -y M \
                  -T \"#[align=centre]#{pane_index} (#{pane_id})\" {PANE_MENU}'",
             ),
-            ("M-MouseDown3Pane", "display-menu -t = -x M -y M \
-                 -T '#[align=centre]#{pane_index} (#{pane_id})' {PANE_MENU}"),
+            (
+                "M-MouseDown3Pane",
+                "display-menu -t = -x M -y M \
+                 -T '#[align=centre]#{pane_index} (#{pane_id})' {PANE_MENU}",
+            ),
             (
                 "MouseDown3Status",
                 "display-menu -t = -x W -y W \
@@ -5596,8 +5596,7 @@ impl ServerState {
             .collect::<BTreeSet<_>>();
         self.session_groups
             .retain(|link_set_id, _| live_link_sets.contains(link_set_id));
-        if self.windows.len() != window_count {
-        }
+        if self.windows.len() != window_count {}
     }
 
     pub(crate) fn client_prompt_registry(&self) -> Rc<ClientPromptRegistry> {
@@ -6319,9 +6318,7 @@ impl ServerState {
                 .collect::<Vec<_>>();
             let before = window.panes.len();
             window.panes.retain(|pane| {
-                !pane.pane.has_exited()
-                    || !pane.pane.child_reaped()
-                    || retained.contains(&pane.id)
+                !pane.pane.has_exited() || !pane.pane.child_reaped() || retained.contains(&pane.id)
             });
             let panes_removed = window.panes.len() != before;
             removed |= panes_removed;
@@ -6373,8 +6370,7 @@ impl ServerState {
         if had_sessions && self.sessions.is_empty() && self.exit_empty_policy() != ExitEmpty::Off {
             self.shutdown_requested = true;
         }
-        if removed {
-        }
+        if removed {}
         removed
     }
 
@@ -6477,9 +6473,9 @@ impl ServerState {
                     search_string: None,
                     search_regex: false,
                     floating: None,
-                scrollbar_columns: 0,
-                border_status: None,
-                unseen_changes: false,
+                    scrollbar_columns: 0,
+                    border_status: None,
+                    unseen_changes: false,
                     options: OptionSet::default(),
                 }],
                 active: 0,
@@ -6867,9 +6863,9 @@ impl ServerState {
                     search_string: None,
                     search_regex: false,
                     floating: None,
-                scrollbar_columns: 0,
-                border_status: None,
-                unseen_changes: false,
+                    scrollbar_columns: 0,
+                    border_status: None,
+                    unseen_changes: false,
                     options: OptionSet::default(),
                 }],
                 active: 0,
@@ -7016,9 +7012,9 @@ impl ServerState {
                     search_string: None,
                     search_regex: false,
                     floating: None,
-                scrollbar_columns: 0,
-                border_status: None,
-                unseen_changes: false,
+                    scrollbar_columns: 0,
+                    border_status: None,
+                    unseen_changes: false,
                     options: OptionSet::default(),
                 }],
                 active: 0,
@@ -7848,8 +7844,8 @@ impl ServerState {
         // Leaving the last mode drops the flag, exactly as tmux's
         // `window_pane_reset_mode` does.
         for pane in self.windows.values_mut().flat_map(|w| &mut w.panes) {
-            pane.unseen_changes = pane.mode.is_some()
-                && (pane.unseen_changes || unseen_changes.contains(&pane.id));
+            pane.unseen_changes =
+                pane.mode.is_some() && (pane.unseen_changes || unseen_changes.contains(&pane.id));
         }
 
         // Windows whose whole condition set is re-examined this pass because a
@@ -8120,7 +8116,10 @@ impl ServerState {
             .map(|node| (node.id, node.pane.observation_state()))
             .collect::<Vec<_>>();
         let allow_applications = self.server_options().get("set-clipboard") == Some("on");
-        let get_clipboard = self.server_options().get("get-clipboard").unwrap_or("buffer");
+        let get_clipboard = self
+            .server_options()
+            .get("get-clipboard")
+            .unwrap_or("buffer");
         let answer_from_buffer = get_clipboard == "buffer";
         let forward_to_terminal = matches!(get_clipboard, "request" | "both");
         for (pane_id, observation) in panes {
@@ -8258,7 +8257,12 @@ impl ServerState {
                 "visual-activity",
                 "alert-activity",
             ),
-            _ => ("Silence", "silence-action", "visual-silence", "alert-silence"),
+            _ => (
+                "Silence",
+                "silence-action",
+                "visual-silence",
+                "alert-silence",
+            ),
         };
         let attached = self.attached_session_ids();
         let links = self
@@ -10250,9 +10254,7 @@ impl ServerState {
             let matched = client_env
                 .iter()
                 .filter_map(|entry| entry.split_once('='))
-                .filter(|(name, _)| {
-                    super::format::glob_match(pattern.as_bytes(), name.as_bytes())
-                })
+                .filter(|(name, _)| super::format::glob_match(pattern.as_bytes(), name.as_bytes()))
                 .map(|(name, value)| (name.to_owned(), value.to_owned()))
                 .collect::<Vec<_>>();
             if matched.is_empty() {
@@ -10478,7 +10480,10 @@ impl ServerState {
         let mut sections = Vec::new();
         sections.push((
             "Server Options",
-            collect(OptionsView::one(self.global_options.server()), String::new()),
+            collect(
+                OptionsView::one(self.global_options.server()),
+                String::new(),
+            ),
         ));
         let mut session_options = collect(
             OptionsView::one(self.global_options.session()),
@@ -10747,11 +10752,7 @@ impl ServerState {
     /// finally switches the window's own `window-size` option to `manual` so the
     /// pinned size survives later client resizes. A shrink wider than the
     /// current size is a no-op rather than a clamp.
-    pub fn resize_window(
-        &mut self,
-        target: &str,
-        request: WindowResizeRequest,
-    ) -> io::Result<()> {
+    pub fn resize_window(&mut self, target: &str, request: WindowResizeRequest) -> io::Result<()> {
         let t = self.resolve_window_target(target)?;
         let window_id = self.sessions[t.session].windows[t.window].id;
         let window = self.window(t.session, t.window);
@@ -11557,7 +11558,12 @@ impl ServerState {
     fn sync_client_notifications(&mut self) {
         let current = self.client_renders.with_entries(|entries| {
             entries
-                .map(|entry| (entry.name.clone(), (entry.session_id, entry.cols, entry.rows)))
+                .map(|entry| {
+                    (
+                        entry.name.clone(),
+                        (entry.session_id, entry.cols, entry.rows),
+                    )
+                })
                 .collect::<BTreeMap<_, _>>()
         });
         let previous = std::mem::replace(&mut self.known_clients, current.clone());
@@ -11619,7 +11625,8 @@ impl ServerState {
     /// arrives; it is what orders `cmd_find_best_client`.
     pub(crate) fn touch_client_activity(&mut self, client: &str, session_id: u32) {
         self.touch_session_activity(session_id, false);
-        self.client_renders.touch_client_activity(client, now_micros());
+        self.client_renders
+            .touch_client_activity(client, now_micros());
     }
 
     /// tmux's `session_lock_timer`: lock every client of a session whose
@@ -11728,7 +11735,11 @@ impl ServerState {
     /// about to disappear, according to that session's `detach-on-destroy`.
     /// Clients with no destination are left in place and exit themselves.
     fn apply_detach_on_destroy(&mut self, session_id: u32) {
-        let Some(session) = self.sessions.iter().find(|session| session.id == session_id) else {
+        let Some(session) = self
+            .sessions
+            .iter()
+            .find(|session| session.id == session_id)
+        else {
             return;
         };
         let policy = session
@@ -12170,11 +12181,7 @@ impl ServerState {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let node = &self.window(resolved.session, resolved.window).panes[resolved.pane];
         let text = node.pane.visible_screen()?;
-        Ok(text
-            .lines()
-            .take(rows)
-            .collect::<Vec<_>>()
-            .join("\n"))
+        Ok(text.lines().take(rows).collect::<Vec<_>>().join("\n"))
     }
 
     /// tmux's `window_pane_search`: the 1-based row of a pane's visible screen
@@ -12285,7 +12292,11 @@ impl ServerState {
 
     /// Spell one key the way the pane's own terminal type and modes describe
     /// it, per [`super::input_keys`].
-    pub(crate) fn encode_pane_key(&self, target: &str, key: PaneKey) -> io::Result<PaneKeyEncoding> {
+    pub(crate) fn encode_pane_key(
+        &self,
+        target: &str,
+        key: PaneKey,
+    ) -> io::Result<PaneKeyEncoding> {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let state = self.window(resolved.session, resolved.window).panes[resolved.pane]
             .pane
@@ -12573,7 +12584,11 @@ impl ServerState {
     /// in a temporary file, the `editor` option run on it, and the load that
     /// reads it back once the editor exits.
     fn buffer_editor_popup(&self, name: &str) -> Option<PopupRequest> {
-        let editor = self.server_options().get("editor").unwrap_or("vi").to_owned();
+        let editor = self
+            .server_options()
+            .get("editor")
+            .unwrap_or("vi")
+            .to_owned();
         if editor.is_empty() {
             return None;
         }
@@ -12588,8 +12603,7 @@ impl ServerState {
             .chars()
             .map(|glyph| if glyph.is_alphanumeric() { glyph } else { '_' })
             .collect::<String>();
-        let path =
-            std::env::temp_dir().join(format!("hmux-editor-{}-{safe}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("hmux-editor-{}-{safe}", std::process::id()));
         std::fs::write(&path, &data).ok()?;
         // tmux hands `editor path` to the shell, so a configured editor with
         // its own arguments works.
@@ -13037,12 +13051,7 @@ impl ServerState {
     /// `screen_row` is where the pointer is now and `grab` where inside the
     /// slider it took hold, so the grabbed row stays under the pointer; the
     /// view then moves by the inverse of the formula that drew the slider.
-    fn slide_copy_scroll(
-        &mut self,
-        target: &str,
-        screen_row: u16,
-        grab: u16,
-    ) -> io::Result<()> {
+    fn slide_copy_scroll(&mut self, target: &str, screen_row: u16, grab: u16) -> io::Result<()> {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let window = self.window(resolved.session, resolved.window);
         let node = &window.panes[resolved.pane];

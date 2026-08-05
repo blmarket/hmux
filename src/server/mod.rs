@@ -44,9 +44,9 @@ use std::rc::Rc;
 use crate::integration::status::StatusHub;
 use crate::observability::v1::{PaneId as PublicPaneId, PaneObservability, ServerObservability};
 
+use crate::server::state::SharedState;
 use pane::PaneIo;
 use state::ServerState;
-use crate::server::state::SharedState;
 
 type EventPaneSnapshot = (Vec<(u64, PaneIo)>, Vec<u64>);
 
@@ -129,9 +129,7 @@ impl Server {
     /// Record the pathname this server listens on, which `#{socket_path}` and
     /// the `TMUX` variable of a spawned process both name.
     pub fn set_socket_path(&self, path: impl Into<std::path::PathBuf>) -> io::Result<()> {
-        self.state
-            .borrow_mut()
-            .set_socket_path(path);
+        self.state.borrow_mut().set_socket_path(path);
         Ok(())
     }
 
@@ -223,7 +221,6 @@ impl Server {
         state.process_pane_themes();
         Ok(command::take_deferred_notification_hooks(&mut state))
     }
-
 
     pub(crate) fn try_event_pane_snapshot(&self) -> io::Result<Option<EventPaneSnapshot>> {
         let Ok(mut state) = self.state.try_borrow_mut() else {
@@ -525,10 +522,7 @@ mod tests {
             PaneEvent::Removed(_)
         ));
         assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
-        assert_eq!(
-            handle.terminal_tail(1).expect("retained tail"),
-            "second"
-        );
+        assert_eq!(handle.terminal_tail(1).expect("retained tail"), "second");
     }
 
     #[test]

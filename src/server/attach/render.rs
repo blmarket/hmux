@@ -108,43 +108,40 @@ impl AttachSession {
                     }
                     let (display, cursor, row, style, fill) = {
                         let st = state.borrow_mut();
-                            let (display, cursor) = prompt.formatted_display(
-                                &st,
-                                target,
-                                usize::from(self.viewport.cols),
-                            );
-                            let line = st
-                                .option_for_target(target, "message-line")
-                                .and_then(|value| value.parse::<u16>().ok())
-                                .unwrap_or(0)
-                                .min(self.viewport.status_height.saturating_sub(1));
-                            let row =
-                                if st.option_for_target(target, "status-position") == Some("top") {
-                                    line + 1
-                                } else {
-                                    self.viewport
-                                        .rows
-                                        .saturating_sub(self.viewport.status_height)
-                                        .saturating_add(line)
-                                        + 1
-                                };
-                            let (style_option, style_fallback) = if prompt.is_vi_command() {
-                                ("message-command-style", "bg=black,fg=yellow,fill=black")
-                            } else {
-                                ("message-style", "bg=yellow,fg=black,fill=yellow")
-                            };
-                            let style_value = st
-                                .option_for_target(target, style_option)
-                                .unwrap_or(style_fallback);
-                            (
-                                display,
-                                cursor,
-                                row,
-                                style_value.to_string(),
-                                style_value
-                                    .split(',')
-                                    .any(|part| part.trim().starts_with("fill=")),
-                            )
+                        let (display, cursor) =
+                            prompt.formatted_display(&st, target, usize::from(self.viewport.cols));
+                        let line = st
+                            .option_for_target(target, "message-line")
+                            .and_then(|value| value.parse::<u16>().ok())
+                            .unwrap_or(0)
+                            .min(self.viewport.status_height.saturating_sub(1));
+                        let row = if st.option_for_target(target, "status-position") == Some("top")
+                        {
+                            line + 1
+                        } else {
+                            self.viewport
+                                .rows
+                                .saturating_sub(self.viewport.status_height)
+                                .saturating_add(line)
+                                + 1
+                        };
+                        let (style_option, style_fallback) = if prompt.is_vi_command() {
+                            ("message-command-style", "bg=black,fg=yellow,fill=black")
+                        } else {
+                            ("message-style", "bg=yellow,fg=black,fill=yellow")
+                        };
+                        let style_value = st
+                            .option_for_target(target, style_option)
+                            .unwrap_or(style_fallback);
+                        (
+                            display,
+                            cursor,
+                            row,
+                            style_value.to_string(),
+                            style_value
+                                .split(',')
+                                .any(|part| part.trim().starts_with("fill=")),
+                        )
                     };
                     let writable_cols = term::writable_width(
                         &self.tty.terminal,
@@ -177,33 +174,33 @@ impl AttachSession {
                     let prompt = &active.prompt;
                     let (row, style, fill) = {
                         let st = state.borrow_mut();
-                            let visible_lines = self.viewport.status_height.max(1);
-                            let line = st
-                                .option_for_target(target, "message-line")
-                                .and_then(|value| value.parse::<u16>().ok())
-                                .unwrap_or(0)
-                                .min(visible_lines.saturating_sub(1));
-                            let row = if self.viewport.status_height == 0 {
-                                self.viewport.rows
-                            } else if status::at_top(&st, target) {
-                                line + 1
-                            } else {
-                                self.viewport
-                                    .rows
-                                    .saturating_sub(self.viewport.status_height)
-                                    .saturating_add(line)
-                                    + 1
-                            };
-                            let value = st
-                                .option_for_target(target, "message-style")
-                                .unwrap_or("bg=yellow,fg=black,fill=yellow");
-                            (
-                                row,
-                                value.to_string(),
-                                value
-                                    .split(',')
-                                    .any(|part| part.trim().starts_with("fill=")),
-                            )
+                        let visible_lines = self.viewport.status_height.max(1);
+                        let line = st
+                            .option_for_target(target, "message-line")
+                            .and_then(|value| value.parse::<u16>().ok())
+                            .unwrap_or(0)
+                            .min(visible_lines.saturating_sub(1));
+                        let row = if self.viewport.status_height == 0 {
+                            self.viewport.rows
+                        } else if status::at_top(&st, target) {
+                            line + 1
+                        } else {
+                            self.viewport
+                                .rows
+                                .saturating_sub(self.viewport.status_height)
+                                .saturating_add(line)
+                                + 1
+                        };
+                        let value = st
+                            .option_for_target(target, "message-style")
+                            .unwrap_or("bg=yellow,fg=black,fill=yellow");
+                        (
+                            row,
+                            value.to_string(),
+                            value
+                                .split(',')
+                                .any(|part| part.trim().starts_with("fill=")),
+                        )
                     };
                     let writable_cols = term::writable_width(
                         &self.tty.terminal,
@@ -224,41 +221,41 @@ impl AttachSession {
                 } else if let Some(message) = self.compositor.ui.status_message.as_ref() {
                     let (row, rendered) = {
                         let st = state.borrow_mut();
-                            let visible_lines = self.viewport.status_height.max(1);
-                            let line = st
-                                .option_for_target(target, "message-line")
-                                .and_then(|value| value.parse::<u16>().ok())
-                                .unwrap_or(0)
-                                .min(visible_lines.saturating_sub(1));
-                            let row = if self.viewport.status_height == 0 {
-                                self.viewport.rows
-                            } else if status::at_top(&st, target) {
-                                line + 1
-                            } else {
-                                self.viewport
-                                    .rows
-                                    .saturating_sub(self.viewport.status_height)
-                                    .saturating_add(line)
-                                    + 1
-                            };
-                            let writable = term::writable_width(
-                                &self.tty.terminal,
-                                row,
+                        let visible_lines = self.viewport.status_height.max(1);
+                        let line = st
+                            .option_for_target(target, "message-line")
+                            .and_then(|value| value.parse::<u16>().ok())
+                            .unwrap_or(0)
+                            .min(visible_lines.saturating_sub(1));
+                        let row = if self.viewport.status_height == 0 {
+                            self.viewport.rows
+                        } else if status::at_top(&st, target) {
+                            line + 1
+                        } else {
+                            self.viewport
+                                .rows
+                                .saturating_sub(self.viewport.status_height)
+                                .saturating_add(line)
+                                + 1
+                        };
+                        let writable = term::writable_width(
+                            &self.tty.terminal,
+                            row,
+                            self.viewport.cols,
+                            self.viewport.rows,
+                        );
+                        (
+                            row,
+                            self.status.status_cache.message_row(
+                                &st,
+                                target,
+                                &message.text,
                                 self.viewport.cols,
                                 self.viewport.rows,
-                            );
-                            (
-                                row,
-                                self.status.status_cache.message_row(
-                                    &st,
-                                    target,
-                                    &message.text,
-                                    self.viewport.cols,
-                                    self.viewport.rows,
-                                    writable,
-                                    &self.tty.terminal,
-                                ),
-                            )
+                                writable,
+                                &self.tty.terminal,
+                            ),
+                        )
                     };
                     frame.extend_from_slice(&render_status_message_row_at(
                         row,

@@ -300,7 +300,10 @@ fn send_copy_mode_command(
                     // The slider drag works in screen rows, since the grab
                     // offset it holds on to is measured against the pane.
                     mouse.position.y,
-                    mouse.target.as_ref().and_then(|target| target.slider_offset),
+                    mouse
+                        .target
+                        .as_ref()
+                        .and_then(|target| target.slider_offset),
                     vi,
                     copy_args.contains(&"-e"),
                 )

@@ -673,11 +673,7 @@ impl CommandPrompt {
         self.editor.buffer.cursor = start + replacement.chars().count();
     }
 
-    fn complete_word(
-        &mut self,
-        state: &SharedState,
-        context: &command::ClientContext,
-    ) -> bool {
+    fn complete_word(&mut self, state: &SharedState, context: &command::ClientContext) -> bool {
         let Some((start, end)) =
             prompt_word_range(&self.editor.buffer.chars, self.editor.buffer.cursor)
         else {

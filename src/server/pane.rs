@@ -28,10 +28,9 @@ use libc::pid_t;
 
 use crate::ghostty::Terminal;
 use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, ScreenTail};
-use crate::server::input_keys::ExtendedKeys;
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
+use crate::server::input_keys::ExtendedKeys;
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
-
 
 /// A single pane. Holds the emulated screen and, if live, the child on its pty.
 pub struct Pane {
@@ -435,17 +434,14 @@ impl PaneOutputPolicyCell {
     }
 
     fn store(&self, policy: PaneOutputPolicy) {
-        self.alternate_screen
-            .set(policy.alternate_screen);
-        self.allow_set_title
-            .set(policy.allow_set_title);
+        self.alternate_screen.set(policy.alternate_screen);
+        self.allow_set_title.set(policy.allow_set_title);
         self.passthrough.set(match policy.passthrough {
-                PassthroughPolicy::Off => 0,
-                PassthroughPolicy::Visible => 1,
-                PassthroughPolicy::Always => 2,
-            });
-        self.input_buffer_size
-            .set(policy.input_buffer_size);
+            PassthroughPolicy::Off => 0,
+            PassthroughPolicy::Visible => 1,
+            PassthroughPolicy::Always => 2,
+        });
+        self.input_buffer_size.set(policy.input_buffer_size);
         {
             let mut palette = self.palette.borrow_mut();
             *palette = policy.palette;
@@ -992,11 +988,7 @@ impl NativePaneObservation {
             .borrow()
             .as_ref()
             .map(|stops| stops.iter().copied().collect())
-            .unwrap_or_else(|| {
-                default_tab_stops(self.columns.get())
-                    .into_iter()
-                    .collect()
-            })
+            .unwrap_or_else(|| default_tab_stops(self.columns.get()).into_iter().collect())
     }
 
     /// The pane's scroll region, as `#{scroll_region_upper}`/`#{lower}` report
@@ -1075,7 +1067,8 @@ impl NativePaneObservation {
 
     fn note_bells(&self, count: u64) {
         if count != 0 {
-            self.bell_count.set(self.bell_count.get().wrapping_add(count));
+            self.bell_count
+                .set(self.bell_count.get().wrapping_add(count));
         }
     }
 
@@ -1102,8 +1095,7 @@ impl NativePaneObservation {
         let revision = self.revision.get().wrapping_add(1);
         self.revision.set(revision);
         if large_scroll {
-            self.large_scroll_revision
-                .set(revision);
+            self.large_scroll_revision.set(revision);
         }
         self.notify_output();
     }
@@ -1426,11 +1418,7 @@ impl Pane {
         self.spawn_spec.as_ref()?.cwd.as_deref()
     }
 
-    pub(crate) fn spawn_from_spec(
-        spec: &PaneSpawnSpec,
-        cols: u16,
-        rows: u16,
-    ) -> io::Result<Pane> {
+    pub(crate) fn spawn_from_spec(spec: &PaneSpawnSpec, cols: u16, rows: u16) -> io::Result<Pane> {
         let argv = spec.argv.iter().map(String::as_str).collect::<Vec<_>>();
         Self::spawn(&argv, spec.cwd.as_deref(), cols, rows)
     }
@@ -1444,9 +1432,7 @@ impl Pane {
     }
 
     pub(crate) fn pipe_active(&self) -> bool {
-        self.pipe
-            .as_ref()
-            .is_some_and(|pipe| pipe.alive.get())
+        self.pipe.as_ref().is_some_and(|pipe| pipe.alive.get())
     }
 
     /// The pid of the process the pane forked for its pty (`#{pane_pid}`).
@@ -1572,9 +1558,7 @@ impl Pane {
             let mut detector = CursorShapeDetector::default();
             for &byte in bytes {
                 if let Some(shape) = detector.feed_byte(byte) {
-                    self.observation
-                        .cursor_shape
-                        .set(shape);
+                    self.observation.cursor_shape.set(shape);
                 }
             }
             self.observation.record_output(bytes, large_scroll);
@@ -1591,7 +1575,6 @@ impl Pane {
     pub(crate) fn observation_state(&self) -> Rc<NativePaneObservation> {
         Rc::clone(&self.observation)
     }
-
 
     #[cfg(test)]
     pub(crate) fn subscribe_output(&self) -> io::Result<OutputSubscription> {
@@ -1634,8 +1617,7 @@ impl Pane {
             return Ok(PaneInputStats::default());
         };
         let stats = enqueue_pane_input(child.master.as_raw_fd(), &self.pending_input, bytes);
-        if stats.queued != 0 {
-        }
+        if stats.queued != 0 {}
         Ok(stats)
     }
 
@@ -1727,9 +1709,7 @@ impl Pane {
         }
         // tmux's screen_resize lays the default tab stops out afresh, dropping
         // whatever the pane had set.
-        self.observation
-            .columns
-            .set(cols);
+        self.observation.columns.set(cols);
         {
             let mut stops = self.observation.tab_stops.borrow_mut();
             *stops = None;
@@ -1991,9 +1971,7 @@ impl Pane {
     }
 
     pub fn is_live(&self) -> bool {
-        self.child
-            .as_ref()
-            .is_some_and(|child| child.alive.get())
+        self.child.as_ref().is_some_and(|child| child.alive.get())
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -2007,9 +1985,7 @@ impl Pane {
     /// lifecycle without deleting deterministic panes used by conformance
     /// fixtures.
     pub fn has_exited(&self) -> bool {
-        self.child
-            .as_ref()
-            .is_some_and(|child| !child.alive.get())
+        self.child.as_ref().is_some_and(|child| !child.alive.get())
     }
 
     /// Reap an exited child without blocking and return its shell-style status.
@@ -2073,7 +2049,6 @@ impl Pane {
     pub(crate) fn child_reaped(&self) -> bool {
         self.child.as_ref().is_none_or(|child| child.reaped)
     }
-
 }
 
 fn latest_screen_title(bytes: impl Iterator<Item = u8>) -> Option<String> {
@@ -2382,7 +2357,9 @@ impl PaneIo {
                 cursor_events.push((index + 1, event));
             }
             if let Some(change) = self.alternate_detector.feed_byte(byte) {
-                self.observation.alternate_on.set(!matches!(change, AlternateScreenChange::Leave));
+                self.observation
+                    .alternate_on
+                    .set(!matches!(change, AlternateScreenChange::Leave));
                 if let AlternateScreenChange::EnterSavingCursor { sequence_len } = change {
                     // The save has to happen before the sequence runs, since
                     // switching screens is what moves the cursor away. A
@@ -2395,9 +2372,7 @@ impl PaneIo {
                 }
             }
             if let Some(shape) = self.cursor_shape_detector.feed_byte(byte) {
-                self.observation
-                    .cursor_shape
-                    .set(shape);
+                self.observation.cursor_shape.set(shape);
                 // tmux's screen_set_cursor_style: every style but the default
                 // one also decides whether the cursor blinks, odd styles
                 // blinking and even ones steady.
@@ -2411,9 +2386,7 @@ impl PaneIo {
             if let Some(request) = self.decrqss_detector.feed_byte(byte) {
                 mode_replies.push(decrqss_reply(
                     &request,
-                    PaneCursorShape::from_parameter(
-                        self.observation.cursor_shape.get(),
-                    ),
+                    PaneCursorShape::from_parameter(self.observation.cursor_shape.get()),
                     self.mode_query_detector.modes.cursor_blinking,
                 ));
             }
@@ -2430,13 +2403,9 @@ impl PaneIo {
                         None
                     }
                     PaneOscUpdate::ProgressBar { state, progress } => {
-                        self.observation
-                            .progress_state
-                            .set(state);
+                        self.observation.progress_state.set(state);
                         if let Some(progress) = progress {
-                            self.observation
-                                .progress_value
-                                .set(progress);
+                            self.observation.progress_value.set(progress);
                         }
                         None
                     }
@@ -2502,12 +2471,8 @@ impl PaneIo {
                     }
                     PaneCursorEvent::SaveCursor => {
                         if let Ok((x, y)) = terminal.cursor_position() {
-                            self.observation
-                                .alternate_saved_x
-                                .set(u32::from(x));
-                            self.observation
-                                .alternate_saved_y
-                                .set(u32::from(y));
+                            self.observation.alternate_saved_x.set(u32::from(x));
+                            self.observation.alternate_saved_y.set(u32::from(y));
                         }
                     }
                     PaneCursorEvent::SetTabStop => {
@@ -2804,19 +2769,17 @@ impl OscStateDetector {
                 None => (tail, ""),
             };
             if value == "?" {
-                if let Some(colour) = self.palette[usize::from(index)]
-                    .or(self.option_palette[usize::from(index)])
+                if let Some(colour) =
+                    self.palette[usize::from(index)].or(self.option_palette[usize::from(index)])
                 {
-                    let (r, g, b) = (
-                        (colour >> 16) as u8,
-                        (colour >> 8) as u8,
-                        colour as u8,
-                    );
+                    let (r, g, b) = ((colour >> 16) as u8, (colour >> 8) as u8, colour as u8);
                     let end = if string_terminator { "\x1b\\" } else { "\x07" };
                     // tmux answers in 16-bit components, each byte doubled.
                     reply.extend_from_slice(
-                        format!("\x1b]4;{index};rgb:{r:02x}{r:02x}/{g:02x}{g:02x}/{b:02x}{b:02x}{end}")
-                            .as_bytes(),
+                        format!(
+                            "\x1b]4;{index};rgb:{r:02x}{r:02x}/{g:02x}{g:02x}/{b:02x}{b:02x}{end}"
+                        )
+                        .as_bytes(),
                     );
                 }
             } else if let Some(packed) = parse_packed_colour(value) {
@@ -2841,12 +2804,10 @@ fn progress_bar_report(body: &str) -> Option<PaneOscUpdate> {
     let state = state.parse::<u8>().ok().filter(|state| *state <= 4)?;
     let Some(progress) = rest.strip_prefix(';').filter(|rest| !rest.is_empty()) else {
         // Anything other than a clean end here is malformed, not a bare state.
-        return rest
-            .is_empty()
-            .then_some(PaneOscUpdate::ProgressBar {
-                state,
-                progress: None,
-            });
+        return rest.is_empty().then_some(PaneOscUpdate::ProgressBar {
+            state,
+            progress: None,
+        });
     };
     let progress = progress.parse::<u8>().ok().filter(|value| *value <= 100)?;
     Some(PaneOscUpdate::ProgressBar {
@@ -2957,8 +2918,7 @@ fn osc52_reply_selection(selection: &str) -> String {
 /// Decode standard base64, rejecting anything that is not fully padded — which
 /// is what makes tmux drop `aGk` where it accepts `aGk=`.
 fn base64_decode_strict(text: &str) -> Option<Vec<u8>> {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let bytes = text.as_bytes();
     if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
         return None;
@@ -3043,11 +3003,7 @@ fn parse_background_color(value: &str) -> Option<String> {
         // Anything left is a name, which tmux resolves against X11's table
         // rather than the terminal palette — so `red` is #ff0000, not colour 1.
         let packed = super::x11_colour::colour_by_name(value)?;
-        (
-            (packed >> 16) as u8,
-            (packed >> 8) as u8,
-            packed as u8,
-        )
+        ((packed >> 16) as u8, (packed >> 8) as u8, packed as u8)
     };
     Some(format!("#{:02x}{:02x}{:02x}", rgb.0, rgb.1, rgb.2))
 }
