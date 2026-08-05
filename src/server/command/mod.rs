@@ -4347,6 +4347,15 @@ pub(super) fn vars_full(
                     "pane_active",
                     if pane_idx == win.active { "1" } else { "0" },
                 )
+                .set(
+                    "pane_last",
+                    if Some(pane_idx) == win.last_pane {
+                        "1"
+                    } else {
+                        "0"
+                    },
+                )
+                .set("pane_flags", win.printable_pane_flags(pane_idx))
                 // Zooming a pane makes it active first, so the flag rides the
                 // window's zoom state and its active pane together.
                 .set(

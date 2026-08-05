@@ -3775,6 +3775,30 @@ impl Window {
         depth
     }
 
+    /// `#{pane_flags}`: tmux's `window_pane_printable_flags`, the same marker
+    /// letters `#{window_flags}` uses for a window — active, last-active,
+    /// zoomed, floating, in that order.
+    pub(crate) fn printable_pane_flags(&self, index: usize) -> String {
+        let Some(pane) = self.panes.get(index) else {
+            return String::new();
+        };
+        let mut flags = String::new();
+        if index == self.active {
+            flags.push('*');
+        }
+        if Some(index) == self.last_pane {
+            flags.push('-');
+        }
+        // Zooming makes a pane active, so the window's zoom belongs to it.
+        if self.zoomed && index == self.active {
+            flags.push('Z');
+        }
+        if pane.floating.is_some() {
+            flags.push('F');
+        }
+        flags
+    }
+
     pub(crate) fn pane_rect(&self, pane_id: u32) -> Option<PaneRect> {
         let node = self.panes.iter().find(|pane| pane.id == pane_id)?;
         let mut rect = node.floating.or_else(|| self.layout.pane_rect(pane_id))?;
