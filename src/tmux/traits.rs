@@ -63,7 +63,9 @@ impl<F> error::Error for WriteQueueFull<F> {}
 /// it themselves.
 pub trait NonblockingTmuxServer {
     type Reader: NonblockingFrameReader;
-    type Writer: NonblockingFrameWriter;
+    /// The writer's frame type is fixed: a tmux server's connection carries
+    /// tmux [`Frame`]s, whatever private queueing the writer does behind them.
+    type Writer: NonblockingFrameWriter<Frame = Frame>;
 
     /// Open a fresh client connection, returning its read and write halves.
     ///
