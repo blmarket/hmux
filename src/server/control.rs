@@ -208,7 +208,6 @@ impl EventControlClient {
                 tty: client_tty.tty_name.clone(),
                 pid: client_tty.client_pid,
                 cwd: context.cwd.clone(),
-                environment: context.environment.clone(),
                 control_mode: true,
                 read_only: options.read_only,
                 flags: options.display_flags(client_tty.flags),

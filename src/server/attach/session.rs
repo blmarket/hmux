@@ -150,7 +150,6 @@ impl AttachSession {
                 tty: client_tty.tty_name.clone(),
                 pid: client_tty.client_pid,
                 cwd: context.cwd.clone(),
-                environment: context.environment.clone(),
                 ..status::RenderClientContext::default()
             },
             render_attachment.format_jobs(),
