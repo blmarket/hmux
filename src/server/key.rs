@@ -234,7 +234,8 @@ pub(crate) fn parse_key_name(input: &str) -> Option<KeyCode> {
         let ch = rest.chars().nth(1)?.to_ascii_lowercase();
         return Some(KeyCode::new(KeyBase::Char(ch), modifiers));
     }
-    if rest.starts_with('^') {
+    // A lone "^" is the literal key, not an empty Ctrl prefix.
+    if rest.starts_with('^') && rest.len() > 1 {
         modifiers.insert(Modifiers::CTRL);
         rest = &rest[1..];
     }
@@ -534,6 +535,23 @@ mod tests {
         assert_eq!(parse_key_name("PageUp"), Some(canonical));
         assert_eq!(parse_key_name("PgUp"), Some(canonical));
         assert_eq!(format_key_name(canonical), "PPage");
+    }
+
+    #[test]
+    fn bare_caret_is_a_literal_key() {
+        let caret = KeyCode::new(KeyBase::Char('^'), Modifiers::default());
+        assert_eq!(parse_key_name("^"), Some(caret));
+        assert_eq!(key_from_byte(b'^'), caret);
+
+        // The prefix form still applies Ctrl when a key follows it.
+        let mut ctrl = Modifiers::default();
+        ctrl.insert(Modifiers::CTRL);
+        assert_eq!(
+            parse_key_name("^^"),
+            Some(KeyCode::new(KeyBase::Char('^'), ctrl))
+        );
+        assert_eq!(parse_key_name("^a"), parse_key_name("C-a"));
+        assert_eq!(parse_key_name("^M-Left"), parse_key_name("C-M-Left"));
     }
 
     #[test]
