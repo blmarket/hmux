@@ -407,7 +407,6 @@ pub(crate) struct MessageLogEntry {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct BackgroundJob {
-    pub(crate) id: u64,
     pub(crate) command: String,
     pub(crate) fd: RawFd,
     pub(crate) pid: u32,
@@ -431,12 +430,7 @@ impl BackgroundJobRegistry {
         inner.next_id = inner.next_id.wrapping_add(1);
         inner.jobs.insert(
             id,
-            BackgroundJob {
-                id,
-                command,
-                fd,
-                pid,
-            },
+            BackgroundJob { command, fd, pid },
         );
         id
     }
