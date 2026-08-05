@@ -1771,14 +1771,26 @@ impl Pane {
         Ok((grid, vt, cursor))
     }
 
-    /// Snapshot the active Ghostty grid for row-oriented consumers such as
-    /// `capture-pane`. This deliberately exposes Ghostty's physical rows and
-    /// soft-wrap metadata rather than reconstructing them from a text dump.
-    pub(crate) fn grid_snapshot(&self) -> io::Result<ghostty_sys::GridSnapshot> {
+    /// Row geometry of the grid without the per-cell snapshot walk.
+    pub(crate) fn grid_dims(&self) -> io::Result<ghostty_sys::GridDims> {
         self.observation
             .term
             .borrow_mut()
-            .grid_snapshot()
+            .grid_dims()
+            .map_err(ghostty_err)
+    }
+
+    /// Snapshot only physical rows `[start, start + count)`; see
+    /// [`ghostty_sys::Terminal::grid_snapshot_range`].
+    pub(crate) fn grid_snapshot_range(
+        &self,
+        start: usize,
+        count: usize,
+    ) -> io::Result<ghostty_sys::GridSnapshot> {
+        self.observation
+            .term
+            .borrow_mut()
+            .grid_snapshot_range(start, count)
             .map_err(ghostty_err)
     }
 

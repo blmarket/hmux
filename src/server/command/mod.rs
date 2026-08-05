@@ -6583,49 +6583,71 @@ fn capture_pane(args: &[String], st: &mut ServerState, agents: &PaneAgents) -> C
         }
     }
     let use_mode = has_flag(args, "-M");
-    let (grid, mode_vt) = {
-        let node = &st.window(resolved.session, resolved.window).panes[resolved.pane];
-        if use_mode {
-            if let Some(copy) = node.copy.as_ref() {
-                (copy.grid.clone(), Some(copy.vt.clone()))
-            } else {
-                match node.pane.grid_snapshot() {
-                    Ok(grid) => (grid, None),
-                    Err(error) => return CommandResult::err(format!("{error}\n")),
-                }
-            }
-        } else {
-            match node.pane.grid_snapshot() {
-                Ok(grid) => (grid, None),
-                Err(error) => return CommandResult::err(format!("{error}\n")),
-            }
-        }
-    };
-    if grid.rows.is_empty() {
-        return finish_capture(args, st, String::new());
-    }
     let history_limit = st
         .option_for_target(&target, "history-limit")
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(2000);
-    let range = capture_range(args, &grid, &vars, history_limit);
-    let rows = range.bottom - range.top + 1;
-
-    let styled_rows = if has_flag(args, "-e") && !has_flag(args, "-H") {
-        if let Some(vt) = mode_vt {
-            let all = capture_vt_normalize_rows(&vt, grid.rows.len());
-            Some(all[range.top..=range.bottom].to_vec())
+    let styled = has_flag(args, "-e") && !has_flag(args, "-H");
+    // The snapshot walk is priced per cell, so the range is decided first —
+    // from the frozen copy-mode grid when `-M` selects one, otherwise from the
+    // grid's row geometry alone — and only the rows inside it are snapshotted.
+    let text = {
+        let node = &st.window(resolved.session, resolved.window).panes[resolved.pane];
+        let frozen = if use_mode { node.copy.as_ref() } else { None };
+        if let Some(copy) = frozen {
+            if copy.grid.rows.is_empty() {
+                String::new()
+            } else {
+                let range = capture_range(
+                    args,
+                    copy.grid.rows.len(),
+                    copy.grid.scrollback_rows,
+                    copy.grid.viewport_rows,
+                    &vars,
+                    history_limit,
+                );
+                let styled_rows = if styled {
+                    let all = capture_vt_normalize_rows(&copy.vt, copy.grid.rows.len());
+                    Some(all[range.top..=range.bottom].to_vec())
+                } else {
+                    None
+                };
+                serialize_capture(args, &copy.grid, 0, range, styled_rows.as_deref())
+            }
         } else {
-            let bytes = match st.dump_pane_vt_rows(&target, range.top, rows) {
-                Ok(bytes) => bytes,
+            let dims = match node.pane.grid_dims() {
+                Ok(dims) => dims,
                 Err(error) => return CommandResult::err(format!("{error}\n")),
             };
-            Some(capture_vt_normalize_rows(&bytes, rows))
+            if dims.total_rows == 0 {
+                String::new()
+            } else {
+                let range = capture_range(
+                    args,
+                    dims.total_rows,
+                    dims.scrollback_rows,
+                    dims.viewport_rows,
+                    &vars,
+                    history_limit,
+                );
+                let rows = range.bottom - range.top + 1;
+                let grid = match node.pane.grid_snapshot_range(range.top, rows) {
+                    Ok(grid) => grid,
+                    Err(error) => return CommandResult::err(format!("{error}\n")),
+                };
+                let styled_rows = if styled {
+                    let bytes = match node.pane.dump_rows_vt(range.top, rows) {
+                        Ok(bytes) => bytes,
+                        Err(error) => return CommandResult::err(format!("{error}\n")),
+                    };
+                    Some(capture_vt_normalize_rows(&bytes, rows))
+                } else {
+                    None
+                };
+                serialize_capture(args, &grid, range.top, range, styled_rows.as_deref())
+            }
         }
-    } else {
-        None
     };
-    let text = serialize_capture(args, &grid, range, styled_rows.as_deref());
     finish_capture(args, st, text)
 }
 
@@ -6646,19 +6668,21 @@ fn finish_capture(args: &[String], st: &mut ServerState, mut text: String) -> Co
 
 fn capture_range(
     args: &[String],
-    grid: &ghostty_sys::GridSnapshot,
+    total_rows: usize,
+    scrollback_rows: usize,
+    viewport_rows: u16,
     vars: &format::Vars,
     history_limit: usize,
 ) -> CaptureRange {
-    let last = grid.rows.len().saturating_sub(1);
-    let history = grid.scrollback_rows.min(last);
+    let last = total_rows.saturating_sub(1);
+    let history = scrollback_rows.min(last);
     // History past `history-limit` is gone in tmux, so it must not be readable
     // here either; Ghostty keeps its scrollback by bytes rather than rows, so
     // the limit is applied where the rows are read back.
     let floor = history.saturating_sub(history_limit);
     let default_top = history;
     let default_bottom = history
-        .saturating_add(grid.viewport_rows.saturating_sub(1) as usize)
+        .saturating_add(viewport_rows.saturating_sub(1) as usize)
         .min(last);
 
     let mut top = capture_endpoint(flag_value(args, "-S"), default_top, history, last, vars)
@@ -6697,9 +6721,13 @@ fn capture_endpoint(
     history.saturating_add_signed(offset as isize).min(last)
 }
 
+/// Serialize the rows of `range`. `grid.rows[0]` is physical row `start_row`,
+/// so a range-limited snapshot indexes relative to it while `-L` numbering and
+/// the range itself stay in physical-row terms.
 fn serialize_capture(
     args: &[String],
     grid: &ghostty_sys::GridSnapshot,
+    start_row: usize,
     range: CaptureRange,
     styled_rows: Option<&[String]>,
 ) -> String {
@@ -6712,7 +6740,7 @@ fn serialize_capture(
     let mut out = String::new();
 
     for (relative, row_index) in (range.top..=range.bottom).enumerate() {
-        let row = &grid.rows[row_index];
+        let row = &grid.rows[row_index - start_row];
         let mut line = if hyperlinks_only {
             let mut links = Vec::new();
             for cell in &row.cells {

@@ -9332,18 +9332,6 @@ impl ServerState {
         self.window(t.session, t.window).panes[t.pane].pane.dump()
     }
 
-    pub(crate) fn dump_pane_vt_rows(
-        &self,
-        target: &str,
-        start: usize,
-        rows: usize,
-    ) -> io::Result<Vec<u8>> {
-        let t = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
-        self.window(t.session, t.window).panes[t.pane]
-            .pane
-            .dump_rows_vt(start, rows)
-    }
-
     /// `swap-pane -s src -t dst`: exchange the two panes' positions. Same-window
     /// swaps are a simple positional swap; cross-window swaps exchange the pane
     /// nodes. Reports `can't find pane` on a miss.

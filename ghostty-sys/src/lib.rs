@@ -256,6 +256,15 @@ pub struct GridSnapshot {
     pub rows: Vec<GridRowSnapshot>,
 }
 
+/// Row geometry of the active screen, read without walking any cells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GridDims {
+    pub cols: u16,
+    pub viewport_rows: u16,
+    pub scrollback_rows: usize,
+    pub total_rows: usize,
+}
+
 // The handle is single-threaded but movable; access is externally serialized.
 unsafe impl Send for Terminal {}
 
@@ -581,19 +590,43 @@ impl Terminal {
         Ok(rows)
     }
 
+    /// Row geometry of the active screen: a handful of scalar reads, no cell
+    /// walk. Callers that only need a row range use this to size the range
+    /// before paying for [`Self::grid_snapshot_range`].
+    pub fn grid_dims(&self) -> Result<GridDims, Error> {
+        Ok(GridDims {
+            cols: self.get_u16(ffi::GHOSTTY_TERMINAL_DATA_COLS)?,
+            viewport_rows: self.get_u16(ffi::GHOSTTY_TERMINAL_DATA_ROWS)?,
+            scrollback_rows: self.get_usize(ffi::GHOSTTY_TERMINAL_DATA_SCROLLBACK_ROWS)?,
+            total_rows: self.get_usize(ffi::GHOSTTY_TERMINAL_DATA_TOTAL_ROWS)?,
+        })
+    }
+
     /// Snapshot every physical cell and row in the active screen.
     ///
     /// This reads Ghostty's public grid-reference API synchronously, so all
     /// untracked references are consumed before this method returns and before
     /// the caller can mutate the terminal again.
     pub fn grid_snapshot(&self) -> Result<GridSnapshot, Error> {
+        let total_rows = self.get_usize(ffi::GHOSTTY_TERMINAL_DATA_TOTAL_ROWS)?;
+        self.grid_snapshot_range(0, total_rows)
+    }
+
+    /// Snapshot only physical rows `[start, start + count)`, clamped to the
+    /// grid. The per-cell walk is by far the dominant cost of a snapshot, so
+    /// consumers with a known row range (`capture-pane -S/-E`) pay for that
+    /// range alone. `cols`, `viewport_rows`, and `scrollback_rows` still
+    /// describe the whole grid; `rows[0]` is physical row `start`.
+    pub fn grid_snapshot_range(&self, start: usize, count: usize) -> Result<GridSnapshot, Error> {
         let cols = self.get_u16(ffi::GHOSTTY_TERMINAL_DATA_COLS)?;
         let viewport_rows = self.get_u16(ffi::GHOSTTY_TERMINAL_DATA_ROWS)?;
         let total_rows = self.get_usize(ffi::GHOSTTY_TERMINAL_DATA_TOTAL_ROWS)?;
         let scrollback_rows = self.get_usize(ffi::GHOSTTY_TERMINAL_DATA_SCROLLBACK_ROWS)?;
-        let mut rows = Vec::with_capacity(total_rows);
+        let start = start.min(total_rows);
+        let end = start.saturating_add(count).min(total_rows);
+        let mut rows = Vec::with_capacity(end - start);
 
-        for y in 0..total_rows {
+        for y in start..end {
             let y = u32::try_from(y).map_err(|_| Error(ffi::GHOSTTY_INVALID_VALUE))?;
             let mut cells = Vec::with_capacity(cols as usize);
             let mut wrapped = false;
