@@ -650,14 +650,14 @@ pub(crate) trait StatusRenderer {
 pub(crate) struct RenderCache {
     rendered: Option<RenderedStatus>,
     valid: bool,
-    client: ClientContext,
+    client: RenderClientContext,
     format_jobs: Option<Rc<FormatJobRegistry>>,
     agent_revision: u64,
     agents: PaneAgents,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ClientContext {
+pub(crate) struct RenderClientContext {
     pub(crate) term: Option<String>,
     pub(crate) tty: Option<String>,
     pub(crate) pid: Option<i32>,
@@ -670,7 +670,7 @@ pub(crate) struct ClientContext {
     pub(crate) key_table: String,
 }
 
-impl Default for ClientContext {
+impl Default for RenderClientContext {
     fn default() -> Self {
         Self {
             term: None,
@@ -824,7 +824,7 @@ impl RenderCache {
     /// Render for one registered client, sharing that client's `#()` job tree
     /// so a command it runs and its status line reach one cache — tmux's
     /// per-client `c->jobs`.
-    pub(crate) fn for_client(client: ClientContext, format_jobs: Rc<FormatJobRegistry>) -> Self {
+    pub(crate) fn for_client(client: RenderClientContext, format_jobs: Rc<FormatJobRegistry>) -> Self {
         Self {
             client,
             format_jobs: Some(format_jobs),
@@ -1302,7 +1302,7 @@ fn render_status(
     session: &str,
     cols: u16,
     terminal_rows: u16,
-    client: &ClientContext,
+    client: &RenderClientContext,
     jobs: Option<&Rc<FormatJobRegistry>>,
     agents: &PaneAgents,
 ) -> RenderedStatus {
@@ -1391,7 +1391,7 @@ fn blank_row(cols: usize, base: &CellStyle) -> StatusRow {
 struct StatusContext<'a> {
     state: &'a ServerState,
     session: &'a Session,
-    client: &'a ClientContext,
+    client: &'a RenderClientContext,
     cols: u16,
     rows: u16,
     jobs: Option<&'a Rc<FormatJobRegistry>>,
@@ -1403,7 +1403,7 @@ impl<'a> StatusContext<'a> {
     fn new(
         state: &'a ServerState,
         session: &'a Session,
-        client: &'a ClientContext,
+        client: &'a RenderClientContext,
         cols: u16,
         rows: u16,
         jobs: Option<&'a Rc<FormatJobRegistry>>,
@@ -2556,7 +2556,7 @@ mod tests {
     fn status_conditionals_resolve_bare_variables_and_escaped_commas() {
         let state = ServerState::with_test_session().expect("state");
         let session = state.find("0").expect("session");
-        let client = ClientContext::default();
+        let client = RenderClientContext::default();
         let agents = PaneAgents::new();
         let context = StatusContext::new(&state, session, &client, 120, 24, None, true, &agents);
         let mut vars = context.base_vars();
@@ -2576,7 +2576,7 @@ mod tests {
     fn status_and_command_formats_share_core_evaluator_semantics() {
         let state = ServerState::with_test_session().expect("state");
         let session = state.find("0").expect("session");
-        let client = ClientContext::default();
+        let client = RenderClientContext::default();
         let agents = PaneAgents::new();
         let context = StatusContext::new(&state, session, &client, 120, 24, None, true, &agents);
         let mut vars = context.base_vars();
@@ -2607,7 +2607,7 @@ mod tests {
             "0",
             2,
             24,
-            &ClientContext::default(),
+            &RenderClientContext::default(),
             None,
             &PaneAgents::new(),
         );
@@ -2916,7 +2916,7 @@ mod tests {
             "0",
             2,
             24,
-            &ClientContext::default(),
+            &RenderClientContext::default(),
             None,
             &PaneAgents::new(),
         );

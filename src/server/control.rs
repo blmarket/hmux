@@ -203,7 +203,7 @@ impl EventControlClient {
             control_writer.enqueue_line(format!("%config-error {error}"));
         }
         let format_cache = status::RenderCache::for_client(
-            status::ClientContext {
+            status::RenderClientContext {
                 term: client_tty.term.clone(),
                 tty: client_tty.tty_name.clone(),
                 pid: client_tty.client_pid,

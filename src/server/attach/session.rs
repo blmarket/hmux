@@ -145,13 +145,13 @@ impl AttachSession {
 
         let status_timer = StatusTimer::new(status_interval, Instant::now());
         let mut status_cache = status::RenderCache::for_client(
-            status::ClientContext {
+            status::RenderClientContext {
                 term: (!terminal.name().is_empty()).then(|| terminal.name().to_string()),
                 tty: client_tty.tty_name.clone(),
                 pid: client_tty.client_pid,
                 cwd: context.cwd.clone(),
                 environment: context.environment.clone(),
-                ..status::ClientContext::default()
+                ..status::RenderClientContext::default()
             },
             render_attachment.format_jobs(),
         );
