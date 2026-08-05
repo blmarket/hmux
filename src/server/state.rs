@@ -299,7 +299,6 @@ pub(crate) struct ModeView {
     pub(crate) items: Vec<ModeItem>,
     pub(crate) all_items: Vec<ModeItem>,
     pub(crate) filter: String,
-    pub(crate) search: String,
     pub(crate) selected: usize,
     pub(crate) scroll: usize,
 }
@@ -340,7 +339,6 @@ impl ModeView {
             all_items: items.clone(),
             items,
             filter: String::new(),
-            search: String::new(),
             selected: 0,
             scroll: 0,
         }
@@ -12666,7 +12664,6 @@ impl ServerState {
             .mode_view
             .as_mut()
             .ok_or_else(|| io::Error::other("not in a mode"))?;
-        view.search = search.to_string();
         if !search.is_empty() && !view.items.is_empty() {
             let folded = search.to_lowercase();
             let start = (view.selected + 1) % view.items.len();
