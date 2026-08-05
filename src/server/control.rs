@@ -360,6 +360,36 @@ impl EventControlClient {
         self.lifecycle == ControlLifecycle::Finished
     }
 
+    /// Move pane-output backlog into the writer and onto the socket until the
+    /// backlog is gone or the socket stops taking bytes.
+    ///
+    /// One `write_control_output` pass moves at most a quarter of the writer's
+    /// headroom per pane, so a single pass after a large burst would leave the
+    /// rest of the journal stranded with no event to pump it: the pane only
+    /// notifies on *new* output, and a fully flushed writer never reports
+    /// writable. When the socket does fill, the writer keeps its pending block
+    /// and the `Output` wait source resumes the pump on the next turn.
+    fn pump_output(&mut self) -> io::Result<()> {
+        loop {
+            write_control_output(&mut self.control_writer, &mut self.streams, &self.options)?;
+            self.control_writer.flush()?;
+            if self.control_writer.has_pending() || !self.streams_have_backlog() {
+                return Ok(());
+            }
+        }
+    }
+
+    /// Whether any deliverable stream still has journal bytes the client has
+    /// not been sent.
+    fn streams_have_backlog(&self) -> bool {
+        !self.options.no_output
+            && self.streams.values().any(|stream| {
+                stream.enabled
+                    && !stream.paused
+                    && stream.offset != stream.observation.control_output_end()
+            })
+    }
+
     pub(crate) fn drive(&mut self, source: Option<EventControlSource>) -> io::Result<()> {
         if self.lifecycle == ControlLifecycle::Finished {
             return Ok(());
@@ -431,7 +461,7 @@ impl EventControlClient {
             if alert_changed {
                 self.advance_snapshot()?;
             }
-            write_control_output(&mut self.control_writer, &mut self.streams, &self.options)?;
+            self.pump_output()?;
             if pane_state_ready {
                 {
                     let mut state = self.state.borrow_mut();
@@ -465,7 +495,7 @@ impl EventControlClient {
             && !matches!(self.command_state, ControlCommandState::Waiting(_))
             && matches!(self.command_queue.state(), QueueState::Empty)
         {
-            write_control_output(&mut self.control_writer, &mut self.streams, &self.options)?;
+            self.pump_output()?;
             self.lifecycle = ControlLifecycle::Draining;
             self.finish_if_drained();
         }
@@ -970,7 +1000,7 @@ impl EventControlClient {
         self.enqueue_config_errors()?;
         if result.exit != 0 || !switches_client {
             self.advance_snapshot()?;
-            write_control_output(&mut self.control_writer, &mut self.streams, &self.options)?;
+            self.pump_output()?;
         }
         let completion = QueueCompletion {
             discard_group_tail: result.exit != 0 && !result.continue_queue,
