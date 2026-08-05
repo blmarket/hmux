@@ -2989,11 +2989,26 @@ fn compose_split_frame(
             .map(CopyModeView::line_number_width)
             .unwrap_or(0)
             .min(width.saturating_sub(1) as usize);
+        // tmux keeps `window-style`/`window-active-style` in the pane's default
+        // grid cell, so it reaches whatever the pane has not styled itself —
+        // including the cells the erase below blanks.
+        let window_style = status::option_style_escape_for(
+            st,
+            &format!("%{}", node.id),
+            if index == active {
+                "window-active-style"
+            } else {
+                "window-style"
+            },
+            "default",
+            terminal,
+        );
         for row in 0..height {
             out.extend_from_slice(
                 format!("\x1b[{};{}H", pane_top + top + row + 1, left + 1).as_bytes(),
             );
             append_terminal_style_reset(&mut out, terminal);
+            out.extend_from_slice(&window_style);
             out.extend_from_slice(format!("\x1b[{}X", width).as_bytes());
             out.extend_from_slice(
                 format!("\x1b[{};{}H", pane_top + top + row + 1, left + 1).as_bytes(),
@@ -3021,6 +3036,18 @@ fn compose_split_frame(
         .option_for_target(target, "pane-border-lines")
         .unwrap_or("single")
         .to_owned();
+    // tmux styles a border cell with `pane-active-border-style` when the cell
+    // sits on the active pane's own border and `pane-border-style` otherwise.
+    let active_border_escape = status::option_style_escape_for(
+        st,
+        target,
+        "pane-active-border-style",
+        "fg=green",
+        terminal,
+    );
+    let inactive_border_escape =
+        status::option_style_escape_for(st, target, "pane-border-style", "default", terminal);
+    let mut drew_border = false;
     let owner = |x: u16, y: u16| -> Option<u32> {
         (x < cols && y < available_rows)
             .then(|| owners[y as usize * cols as usize + x as usize])
@@ -3109,8 +3136,22 @@ fn compose_split_frame(
                     }
                 }
             }
-            out.extend_from_slice(format!("\x1b[{};{}H{cell}", pane_top + y + 1, x + 1).as_bytes());
+            out.extend_from_slice(format!("\x1b[{};{}H", pane_top + y + 1, x + 1).as_bytes());
+            let on_active_border = active_id.is_some()
+                && [left_owner, right_owner, above_owner, below_owner]
+                    .iter()
+                    .any(|owner| *owner == active_id);
+            out.extend_from_slice(if on_active_border {
+                &active_border_escape
+            } else {
+                &inactive_border_escape
+            });
+            out.extend_from_slice(cell.as_bytes());
+            drew_border = true;
         }
+    }
+    if drew_border {
+        append_terminal_style_reset(&mut out, terminal);
     }
 
     if status_h > 0 {
@@ -3371,6 +3412,31 @@ mod tests {
 
     fn contains_seq(haystack: &[u8], needle: &[u8]) -> bool {
         haystack.windows(needle.len()).any(|w| w == needle)
+    }
+
+    /// Whether the frame draws `glyph` at `cursor`. Each border cell carries the
+    /// `pane-border-style` escape between the cursor move and the glyph, so the
+    /// two are not adjacent bytes.
+    fn draws_at(frame: &[u8], cursor: &str, glyph: &str) -> bool {
+        frame
+            .windows(cursor.len())
+            .position(|window| window == cursor.as_bytes())
+            .map(|start| start + cursor.len())
+            .map(|rest| {
+                let mut rest = &frame[rest..];
+                while let Some(end) = sgr_prefix_len(rest) {
+                    rest = &rest[end..];
+                }
+                rest.starts_with(glyph.as_bytes())
+            })
+            .unwrap_or(false)
+    }
+
+    /// The length of a leading `CSI … m` sequence, if the slice starts with one.
+    fn sgr_prefix_len(bytes: &[u8]) -> Option<usize> {
+        let body = bytes.strip_prefix(b"\x1b[")?;
+        let end = body.iter().position(|byte| !byte.is_ascii_digit() && *byte != b';')?;
+        (body[end] == b'm').then_some(2 + end + 1)
     }
 
     #[test]
@@ -4195,7 +4261,7 @@ mod tests {
         let frame = compose_frame(&st, "0", 20, 9, 1, 0).expect("compose mixed splits");
 
         assert!(
-            contains_seq(&frame, "\x1b[5;11H├".as_bytes()),
+            draws_at(&frame, "\x1b[5;11H", "├"),
             "mixed split boundary must join at a T: {frame:?}"
         );
     }
