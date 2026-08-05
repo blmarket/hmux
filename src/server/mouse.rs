@@ -534,7 +534,7 @@ pub(crate) fn resolve_event(
     let Some(session) = state.find(session_name) else {
         return;
     };
-    let Ok((window, active)) = state.active_window_panes(session_name) else {
+    let Ok((window, _active)) = state.active_window_panes(session_name) else {
         return;
     };
     let status_height = status::height(state, session_name);
@@ -565,7 +565,7 @@ pub(crate) fn resolve_event(
         x: event.position.x,
         y: pane_y,
     };
-    event.target = resolve_pane_target(state, session.id, session_name, window, active, point);
+    event.target = resolve_pane_target(state, session.id, session_name, window, point);
 }
 
 fn resolve_status_target(
@@ -633,18 +633,9 @@ fn resolve_pane_target(
     session_id: u32,
     session_name: &str,
     window: &Window,
-    active: usize,
     point: MousePosition,
 ) -> Option<MouseTarget> {
-    let mut order = (0..window.panes.len()).collect::<Vec<_>>();
-    order.sort_by_key(|&index| {
-        (
-            window.panes[index].floating.is_some(),
-            index == active,
-            index,
-        )
-    });
-    order.reverse();
+    let order = window.z_order();
 
     for index in order.iter().copied() {
         let pane = &window.panes[index];

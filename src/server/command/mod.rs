@@ -4318,8 +4318,27 @@ pub(super) fn vars_full(
                 .set("pane_height", pane_rect.height.to_string())
                 .set("pane_left", pane_rect.left.to_string())
                 .set("pane_top", pane_rect.top.to_string())
+                // The last column/row the pane covers, not one past it, so a
+                // single-column pane reports the same value for both edges.
+                .set(
+                    "pane_right",
+                    pane_rect
+                        .left
+                        .saturating_add(pane_rect.width)
+                        .saturating_sub(1)
+                        .to_string(),
+                )
+                .set(
+                    "pane_bottom",
+                    pane_rect
+                        .top
+                        .saturating_add(pane_rect.height)
+                        .saturating_sub(1)
+                        .to_string(),
+                )
                 .set("pane_x", pane_rect.left.to_string())
                 .set("pane_y", pane_rect.top.to_string())
+                .set("pane_z", win.pane_z_index(pane_idx).to_string())
                 .set(
                     "pane_floating_flag",
                     if p.floating.is_some() { "1" } else { "0" },
@@ -4327,6 +4346,25 @@ pub(super) fn vars_full(
                 .set(
                     "pane_active",
                     if pane_idx == win.active { "1" } else { "0" },
+                )
+                // Zooming a pane makes it active first, so the flag rides the
+                // window's zoom state and its active pane together.
+                .set(
+                    "pane_zoomed_flag",
+                    if win.zoomed && pane_idx == win.active {
+                        "1"
+                    } else {
+                        "0"
+                    },
+                )
+                // The pid of the process the pane forked for its pty; empty once
+                // there is no child left to report.
+                .set(
+                    "pane_pid",
+                    p.pane
+                        .child_pid()
+                        .map(|pid| pid.to_string())
+                        .unwrap_or_default(),
                 )
                 // State flags not derived from the terminal grid. A pane is
                 // dead once its child has been waited for and the pane is
@@ -4431,6 +4469,14 @@ pub(super) fn vars_full(
                 .set("pane_marked", if marked == Some(p.id) { "1" } else { "0" })
                 .set("pane_marked_set", if marked.is_some() { "1" } else { "0" })
                 .set("pane_pipe", if p.pane.pipe_active() { "1" } else { "0" })
+                // tmux leaves `pane_pipe_pid` unset while no pipe is open.
+                .set(
+                    "pane_pipe_pid",
+                    p.pane
+                        .pipe_pid()
+                        .map(|pid| pid.to_string())
+                        .unwrap_or_default(),
+                )
                 .set("pane_bg", p.pane.background_color())
                 // Default terminal tab stops sit every 8 columns.
                 .set(

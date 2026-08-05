@@ -3737,6 +3737,44 @@ impl Window {
         &mut self.options
     }
 
+    /// The window's pane indices front to back, tmux's `w->z_index` order:
+    /// floating panes sit above the layout (the active one frontmost, then the
+    /// most recently created), and the tiled panes keep their layout order
+    /// underneath. Mouse hit-testing walks it front to back; `#{pane_z}` counts
+    /// how many floating panes a pane sits under.
+    pub(crate) fn z_order(&self) -> Vec<usize> {
+        let mut order = (0..self.panes.len()).collect::<Vec<_>>();
+        order.sort_by_key(|&index| {
+            (
+                self.panes[index].floating.is_some(),
+                index == self.active,
+                index,
+            )
+        });
+        order.reverse();
+        order
+    }
+
+    /// `#{pane_z}`: how far down tmux's z-index list the pane sits, counted as
+    /// `window_pane_zindex` does. A floating pane reports its own rank in the
+    /// floating stack (0 is frontmost); a tiled pane sits under all of them and
+    /// reports one level below, so the plain no-floating window reports 1.
+    pub(crate) fn pane_z_index(&self, index: usize) -> usize {
+        let mut depth = 0;
+        for candidate in self.z_order() {
+            if candidate == index {
+                if self.panes[index].floating.is_none() {
+                    depth += 1;
+                }
+                break;
+            }
+            if self.panes[candidate].floating.is_some() {
+                depth += 1;
+            }
+        }
+        depth
+    }
+
     pub(crate) fn pane_rect(&self, pane_id: u32) -> Option<PaneRect> {
         let node = self.panes.iter().find(|pane| pane.id == pane_id)?;
         let mut rect = node.floating.or_else(|| self.layout.pane_rect(pane_id))?;

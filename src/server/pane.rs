@@ -1440,6 +1440,19 @@ impl Pane {
             .is_some_and(|pipe| pipe.alive.get())
     }
 
+    /// The pid of the process the pane forked for its pty (`#{pane_pid}`).
+    pub(crate) fn child_pid(&self) -> Option<pid_t> {
+        self.child.as_ref().map(|child| child.pid)
+    }
+
+    /// The `pipe-pane` child's pid (`#{pane_pipe_pid}`), while the pipe is open.
+    pub(crate) fn pipe_pid(&self) -> Option<u32> {
+        self.pipe
+            .as_ref()
+            .filter(|pipe| pipe.alive.get())
+            .map(|pipe| pipe.pid)
+    }
+
     pub(crate) fn close_pipe(&mut self) {
         self.pipe_output_active.set(false);
         // The job owns the child's stdin; marking the buffer closed is what
