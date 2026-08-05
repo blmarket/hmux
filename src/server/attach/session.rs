@@ -803,6 +803,19 @@ impl AttachSession {
             super::super::state::RenderInvalidation::default()
         };
         if render_ready {
+            // `refresh-client -f` aimed at this client from elsewhere: the
+            // registry entry is already updated, so pull its flag view into
+            // the copies this client renders and runs commands with.
+            if !self
+                .attachments
+                .render_attachment
+                .take_flag_updates()
+                .is_empty()
+            {
+                let (flags, read_only) = self.attachments.render_attachment.client_flags_view();
+                self.status.status_cache.update_client_flags(flags, read_only);
+                self.compositor.target.context.read_only = read_only;
+            }
             for message in self.attachments.render_attachment.take_messages() {
                 if message.bell {
                     let _ = self.tty.output.queue(self.tty.render_fd.as_raw_fd(), b"\x07");

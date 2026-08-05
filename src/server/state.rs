@@ -3408,6 +3408,20 @@ impl ClientRenderAttachment {
         std::mem::take(&mut *self.slot.flag_updates.borrow_mut())
     }
 
+    /// The registry's current flag view for this client: the rendered
+    /// `#{client_flags}` string and the read-only bit. What a client that
+    /// doesn't own a `ClientFlagState` of its own reads back after
+    /// [`Self::take_flag_updates`].
+    pub(crate) fn client_flags_view(&self) -> (String, bool) {
+        self.registry
+            .inner
+            .borrow()
+            .clients
+            .get(&self.id)
+            .map(|entry| (entry.flags.clone(), entry.read_only))
+            .unwrap_or_default()
+    }
+
     pub(crate) fn update_terminal(&self, terminal: &ResolvedTerm) {
         {
             let mut inner = self.registry.inner.borrow_mut();
