@@ -4771,6 +4771,25 @@ fn set_terminal_mode_vars(pane: &super::pane::Pane, v: &mut Vars) {
         .set("cursor_shape", modes.cursor_shape.name());
 }
 
+/// The pane `#{mouse_pane}` reports for a status-line click, which names a pane
+/// only when the range was a pane range. Everything else resolves the way
+/// tmux's `cmd_mouse_window` does and takes that window's active pane.
+fn status_mouse_pane(st: &ServerState, target: &super::mouse::MouseTarget) -> Option<u32> {
+    if let Some(pane_id) = target.pane_id {
+        return Some(pane_id);
+    }
+    let session = st
+        .sessions()
+        .iter()
+        .find(|session| session.id == target.session_id)?;
+    let link = match target.window_id {
+        Some(id) => session.windows.iter().find(|link| link.id == id)?,
+        None => session.windows.get(session.active)?,
+    };
+    let window = st.window_for_link(link);
+    window.panes.get(window.active).map(|pane| pane.id)
+}
+
 /// Publish `#{mouse_*}`.
 ///
 /// The `*_flag` variables describe the *pane* (tmux reads `ft->wp->base.mode`),
@@ -4819,6 +4838,12 @@ fn set_mouse_vars(
             .set("mouse_status_line", line.to_string());
         if let Some(range) = target.status_range.as_ref() {
             v.set("mouse_status_range", super::mouse::range_name(range));
+        }
+        // tmux's `cmd_mouse_pane` still answers for a status click: the lookup
+        // falls back through the mouse window — or the session's current window
+        // when the click named none — to that window's active pane.
+        if let Some(pane_id) = status_mouse_pane(st, target) {
+            v.set("mouse_pane", format!("%{pane_id}"));
         }
         return;
     }
