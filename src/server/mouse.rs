@@ -122,7 +122,6 @@ pub(crate) struct MouseEvent {
     pub(crate) modifiers: MouseModifiers,
     pub(crate) position: MousePosition,
     pub(crate) last_position: Option<MousePosition>,
-    pub(crate) last_button: Option<MouseButton>,
     pub(crate) protocol: MouseProtocol,
     pub(crate) raw_button: u16,
     pub(crate) target: Option<MouseTarget>,
@@ -179,7 +178,6 @@ impl MouseEvent {
             modifiers,
             position,
             last_position: None,
-            last_button: None,
             protocol,
             raw_button,
             target: None,
@@ -384,7 +382,6 @@ impl MouseInputState {
     /// rewriting its kind to the key tmux would dispatch.
     pub(crate) fn observe(&mut self, event: &mut MouseEvent, now: Instant) {
         event.last_position = self.last_position;
-        event.last_button = self.last_button;
 
         if event.kind == MouseEventKind::Up && event.button.is_none() {
             event.button = self.last_button;
