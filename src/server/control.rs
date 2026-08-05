@@ -220,7 +220,7 @@ impl EventControlClient {
         control_context.tty_name = Some(client_name.clone());
         control_context.current_session_id = Some(session_id);
         control_context.read_only = options.read_only;
-        control_context.preserve_queue_insertions = true;
+        control_context.kind = command::ClientKind::Control;
         control_context.active_panes = options
             .active_pane
             .then(|| Rc::new(RefCell::new(BTreeMap::new())));

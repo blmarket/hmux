@@ -9,7 +9,7 @@ use std::time::Instant;
 
 use crate::integration::status::StatusHub;
 use crate::server::attach::ClientTty;
-use crate::server::command::{self, ClientContext, CommandResult};
+use crate::server::command::{self, ClientContext, ClientKind, CommandResult};
 use crate::server::control::{EventControlClient, EventControlSource};
 use crate::server::state::SharedState;
 use crate::server::Server;
@@ -202,7 +202,7 @@ impl ProtocolClient {
                 command_runtime: Rc::new(EventCommandRuntime::new(executor)),
                 protocol_state: ProtocolState::Identifying(IdentifyingState {
                     context: ClientContext {
-                        wait_for_interactions: true,
+                        kind: ClientKind::Command,
                         ..ClientContext::default()
                     },
                     client_tty: ClientTty::new(),

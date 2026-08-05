@@ -119,7 +119,7 @@ impl AttachSession {
         let stable_target = format!("${session_id}");
         let mut attached_context = context.clone();
         attached_context.current_session_id = Some(session_id);
-        attached_context.wait_for_interactions = false;
+        attached_context.kind = command::ClientKind::Attached;
         let compositor = AttachCompositorState::new(session_id, attached_context, stable_target);
         let target = compositor.target.stable_target.as_str();
         let terminal_identity = TerminalIdentity::new(

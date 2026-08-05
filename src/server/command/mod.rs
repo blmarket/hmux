@@ -89,7 +89,40 @@ pub struct CommandResult {
     pub(crate) control_flags: u8,
 }
 
+/// What kind of endpoint the commands run under a context come from. Fixed
+/// per connection: set at identify time and replaced on the clone a control
+/// or attached client keeps; every later clone inherits it.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum ClientKind {
+    /// No client: server-internal work such as deferred notification hooks.
+    #[default]
+    Detached,
+    /// An unattached command-line client.
+    Command,
+    /// A control-mode client.
+    Control,
+    /// A client attached to a session.
+    Attached,
+}
+
+/// The hook-body scope a queued command runs in.
+#[derive(Clone)]
+pub(crate) struct HookScope {
+    /// The `hook*` format variables; installed into the server state around
+    /// the command's execution.
+    pub(crate) vars: Rc<Vec<(String, String)>>,
+    /// The hook's own target, which is what a command in its body resolves
+    /// against when it names no target of its own.
+    pub(crate) target: Option<Rc<str>>,
+}
+
 /// Per-command-client process context collected from tmux identify frames.
+///
+/// Besides the process facts, this carries two kinds of execution state: who
+/// is asking ([`ClientKind`], fixed per connection) and how the command came
+/// to run — the [`HookScope`] plus the `suppress_*`/`nested_granularity`
+/// latches, stamped onto the clone a hook-body or nested queue runs with and
+/// inherited by everything queued beneath it.
 #[derive(Clone, Default)]
 pub struct ClientContext {
     pub cwd: Option<PathBuf>,
@@ -103,8 +136,11 @@ pub struct ClientContext {
     pub(crate) key_event: Option<super::key::KeyCode>,
     pub(crate) mouse: Option<MouseEvent>,
     pub(crate) interaction_reply: Option<PromptReply>,
-    pub(crate) wait_for_interactions: bool,
-    pub(crate) preserve_queue_insertions: bool,
+    pub(crate) kind: ClientKind,
+    /// Set on child queues (hook bodies and inserted nested command lines) so
+    /// they hand each inserted item's result to the parent queue intact; the
+    /// top-level queue decides whether to flatten them.
+    pub(crate) nested_granularity: bool,
     /// Set for commands run from a hook body. tmux's `CMDQ_STATE_NOHOOKS`
     /// suppresses only the `after-*`/`command-error` hooks a command would
     /// raise; the event notifications its mutations raise still fire, because
@@ -115,15 +151,30 @@ pub struct ClientContext {
     /// anything the body raises. This is what stops an event hook that mutates
     /// its own subject from re-triggering itself.
     pub(crate) suppress_notifications: bool,
-    /// The `hook*` format variables for a queued hook-body command; installed
-    /// into the server state around its execution.
-    pub(crate) hook_vars: Option<Rc<Vec<(String, String)>>>,
-    /// The hook's own target, which is what a command in its body resolves
-    /// against when it names no target of its own.
-    pub(crate) hook_target: Option<Rc<str>>,
+    /// The hook body this command runs in, if any. `set-hook -R` shows the
+    /// scope is independent of the `suppress_*` latches: its hook body gets a
+    /// scope but still runs its commands' own `after-*` hooks.
+    pub(crate) hook: Option<HookScope>,
 }
 
 impl ClientContext {
+    /// Whether an interactive command (`command-prompt`, `display-menu`, ...)
+    /// should keep this client blocked until the user responds. tmux blocks
+    /// command and control clients; an attached client's own commands run the
+    /// interaction inline in its UI instead.
+    pub(crate) fn wait_for_interactions(&self) -> bool {
+        matches!(self.kind, ClientKind::Command | ClientKind::Control)
+    }
+
+    /// Whether the results of commands inserted behind a queue item (hook
+    /// bodies, nested lines) stay separate `CommandResult`s instead of being
+    /// flattened into the item's own result. Control mode needs the separation
+    /// to give every queue item its own `%begin`/`%end` block; child queues
+    /// need it so the parent queue gets to make that choice.
+    pub(crate) fn preserve_queue_insertions(&self) -> bool {
+        matches!(self.kind, ClientKind::Control) || self.nested_granularity
+    }
+
     /// A copy whose environment is what a process this client starts should
     /// see: tmux's `environ_for_session` against the client's own session,
     /// which is what `job_run` builds for `run-shell`, `if-shell` and
@@ -567,8 +618,9 @@ fn install_command_target_context(
         .and_then(|mouse| mouse.target.as_ref())
         .map(|_| "=");
     let default_target = context
-        .hook_target
-        .as_deref()
+        .hook
+        .as_ref()
+        .and_then(|hook| hook.target.as_deref())
         .or(mouse_target)
         .and_then(|target| {
             let previous = state.replace_command_mouse(context.mouse.clone());
@@ -586,9 +638,9 @@ fn install_command_target_context(
         window_id: state.replace_command_window_id(window_id),
         active_panes: state.replace_command_active_panes(context.active_panes()),
         hook_vars: context
-            .hook_vars
+            .hook
             .as_ref()
-            .map(|vars| state.replace_hook_format_vars(vars.as_ref().clone())),
+            .map(|hook| state.replace_hook_format_vars(hook.vars.as_ref().clone())),
         mouse: state.replace_command_mouse(context.mouse.clone()),
         format_jobs: {
             let jobs = Rc::new(CommandJobs::new(state, context));
@@ -1495,7 +1547,8 @@ impl ResumableCommandQueue {
                     registry,
                 });
             }
-            if inflight.command.spec.name == "command-prompt" && self.context.wait_for_interactions
+            if inflight.command.spec.name == "command-prompt"
+                && self.context.wait_for_interactions()
             {
                 if let Err(error) = command_prompt_spec(&inflight.command.args) {
                     self.finish_execution(
@@ -1519,7 +1572,7 @@ impl ResumableCommandQueue {
                 self.suspended = Some(inflight);
                 return ResumableCommandTurn::Suspended(suspension);
             }
-            if self.context.wait_for_interactions
+            if self.context.wait_for_interactions()
                 && client_interaction_waits(inflight.command.spec.name, &inflight.command.args)
             {
                 let (reply, completed) = match PromptReply::new() {
@@ -1699,7 +1752,7 @@ impl ResumableCommandQueue {
             })?;
         let mut nested_context = self.context.clone();
         if matches!(capture, NestedCapture::Inserted | NestedCapture::Hook) {
-            nested_context.preserve_queue_insertions = true;
+            nested_context.nested_granularity = true;
         }
         if matches!(capture, NestedCapture::Hook) {
             nested_context.suppress_after_hooks = true;
@@ -1865,7 +1918,7 @@ impl ResumableCommandQueue {
         if inflight.contributes_status && (self.out.exit == 0 || exit != 0) {
             self.out.exit = exit;
         }
-        if self.context.preserve_queue_insertions {
+        if self.context.preserve_queue_insertions() {
             self.out.inserted_results.extend(inserted);
         } else {
             for inserted in inserted {
@@ -1971,12 +2024,18 @@ impl ResumableCommandQueue {
         };
 
         let mut hook_context = self.context.clone();
-        hook_context.hook_vars = Some(Rc::new(vars));
         // A hook body resolves an untargeted command against the hook's own
-        // target, not the server's current one.
-        if let Some(target) = requested_target {
-            hook_context.hook_target = Some(Rc::from(target));
-        }
+        // target, not the server's current one; a hook without a target of its
+        // own stays in the enclosing hook's scope.
+        hook_context.hook = Some(HookScope {
+            vars: Rc::new(vars),
+            target: requested_target.map(Rc::from).or_else(|| {
+                self.context
+                    .hook
+                    .as_ref()
+                    .and_then(|hook| hook.target.clone())
+            }),
+        });
         if matches!(origin, HookOrigin::Event) {
             // tmux runs an event hook's body on the global queue with
             // `CMDQ_STATE_NOHOOKS`, which is exactly what makes `notify_add`
@@ -1985,7 +2044,7 @@ impl ResumableCommandQueue {
         }
         if matches!(capture, NestedCapture::Hook) {
             hook_context.suppress_after_hooks = true;
-            hook_context.preserve_queue_insertions = true;
+            hook_context.nested_granularity = true;
         }
         let mut groups = Vec::new();
         for line in commands {
@@ -2055,7 +2114,7 @@ impl ResumableCommandQueue {
     }
 
     fn merge_inserted_result(&mut self, result: CommandResult) {
-        if self.context.preserve_queue_insertions {
+        if self.context.preserve_queue_insertions() {
             self.out.inserted_results.push(result);
         } else {
             self.out.append_stdout(&result);
@@ -2476,10 +2535,12 @@ fn push_event_hook(
         return;
     };
     let mut context = context.clone();
-    context.hook_target = requested_target.map(Rc::from);
+    context.hook = Some(HookScope {
+        vars: Rc::new(vars),
+        target: requested_target.map(Rc::from),
+    });
     context.suppress_after_hooks = true;
     context.suppress_notifications = true;
-    context.hook_vars = Some(Rc::new(vars));
     for command in commands {
         if command.trim().is_empty() {
             continue;
