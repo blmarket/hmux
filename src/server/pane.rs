@@ -1419,6 +1419,13 @@ impl Pane {
         self.spawn_spec.clone()
     }
 
+    /// The directory the pane was spawned in (`#{pane_start_path}`), when one
+    /// was chosen explicitly. `None` means the pane inherited the server's own
+    /// working directory, which is what the caller reports instead.
+    pub(crate) fn start_path(&self) -> Option<&Path> {
+        self.spawn_spec.as_ref()?.cwd.as_deref()
+    }
+
     pub(crate) fn spawn_from_spec(
         spec: &PaneSpawnSpec,
         cols: u16,

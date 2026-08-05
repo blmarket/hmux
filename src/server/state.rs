@@ -114,6 +114,10 @@ pub struct PaneNode {
     /// at the very top (or bottom) of the window for the row, since every other
     /// pane already has a border there to write on.
     pub(crate) border_status: Option<PaneBorderStatus>,
+    /// tmux's `PANE_UNSEENCHANGES`: output arrived while the pane was in a mode,
+    /// so the grid the mode froze is behind the pane. Cleared when the mode
+    /// goes, which is why the format reads it together with `mode`.
+    pub(crate) unseen_changes: bool,
     options: OptionSet,
 }
 
@@ -6475,6 +6479,7 @@ impl ServerState {
                     floating: None,
                 scrollbar_columns: 0,
                 border_status: None,
+                unseen_changes: false,
                     options: OptionSet::default(),
                 }],
                 active: 0,
@@ -6864,6 +6869,7 @@ impl ServerState {
                     floating: None,
                 scrollbar_columns: 0,
                 border_status: None,
+                unseen_changes: false,
                     options: OptionSet::default(),
                 }],
                 active: 0,
@@ -7012,6 +7018,7 @@ impl ServerState {
                     floating: None,
                 scrollbar_columns: 0,
                 border_status: None,
+                unseen_changes: false,
                     options: OptionSet::default(),
                 }],
                 active: 0,
@@ -7798,6 +7805,7 @@ impl ServerState {
             .retain(|pane_id, _| live_panes.contains(pane_id));
 
         let mut activities = Vec::new();
+        let mut unseen_changes = Vec::new();
         for window in self.windows.values() {
             let options = window.options(&self.global_options);
             let monitor_bell = options.get("monitor-bell") == Some("on");
@@ -7813,7 +7821,14 @@ impl ServerState {
                 let (revision, bells, at) = pane.pane.observation_state().alert_snapshot();
                 let previous = self.pane_alert_seen.insert(pane.id, (revision, bells));
                 let (previous_revision, previous_bells) = previous.unwrap_or((0, 0));
-                output |= revision > previous_revision;
+                let pane_output = revision > previous_revision;
+                // tmux flags the pane itself when output lands while a mode is
+                // showing a frozen grid; the flag is not about the window's
+                // activity condition, which is why it is per pane.
+                if pane_output && pane.mode.is_some() {
+                    unseen_changes.push(pane.id);
+                }
+                output |= pane_output;
                 bell |= bells > previous_bells;
                 if at > last_output {
                     last_output = at;
@@ -7828,6 +7843,13 @@ impl ServerState {
                 monitor_activity,
                 monitor_silence,
             });
+        }
+
+        // Leaving the last mode drops the flag, exactly as tmux's
+        // `window_pane_reset_mode` does.
+        for pane in self.windows.values_mut().flat_map(|w| &mut w.panes) {
+            pane.unseen_changes = pane.mode.is_some()
+                && (pane.unseen_changes || unseen_changes.contains(&pane.id));
         }
 
         // Windows whose whole condition set is re-examined this pass because a
@@ -8492,6 +8514,7 @@ impl ServerState {
                 floating: None,
                 scrollbar_columns: 0,
                 border_status: None,
+                unseen_changes: false,
                 options: OptionSet::default(),
             },
         );
@@ -8592,6 +8615,7 @@ impl ServerState {
                 }),
                 scrollbar_columns: 0,
                 border_status: None,
+                unseen_changes: false,
                 options: OptionSet::default(),
             },
         );
@@ -13850,6 +13874,7 @@ impl ServerState {
             floating: None,
             scrollbar_columns: 0,
             border_status: None,
+            unseen_changes: false,
             options: OptionSet::default(),
         });
         window.layout.keep_only(id);

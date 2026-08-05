@@ -4342,6 +4342,26 @@ pub(super) fn vars_full(
             v.set("pane_index", (pane_base_index + pane_idx).to_string())
                 .set("pane_id", format!("%{}", p.id))
                 .set("pane_start_command", p.start_command.clone())
+                // A pane spawned without an explicit `-c` inherits the server's
+                // working directory, the same one `#{session_path}` reports.
+                .set(
+                    "pane_start_path",
+                    p.pane
+                        .start_path()
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .unwrap_or_else(current_dir),
+                )
+                // Only meaningful while a mode is up: the flag records output
+                // the frozen grid has not caught up with, and leaving the mode
+                // is what clears it.
+                .set(
+                    "pane_unseen_changes",
+                    if p.mode.is_some() && p.unseen_changes {
+                        "1"
+                    } else {
+                        "0"
+                    },
+                )
                 .set("pane_width", pane_rect.width.to_string())
                 .set("pane_height", pane_rect.height.to_string())
                 .set("pane_left", pane_rect.left.to_string())
