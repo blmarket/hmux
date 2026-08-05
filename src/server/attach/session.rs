@@ -24,8 +24,8 @@ impl AttachSession {
     }
 
     /// Whether the server wants terminal focus reporting turned on.
-    fn focus_events(state: &SharedState) -> bool {
-        state.borrow_mut().server_options().get("focus-events") == Some("on")
+    fn focus_events(state: &ServerState) -> bool {
+        state.server_options().get("focus-events") == Some("on")
     }
 
     pub(crate) fn start_in_mode<W>(
@@ -172,7 +172,7 @@ impl AttachSession {
         set_nonblock(render_fd.as_raw_fd())?;
 
         let mut tty_output = TtyOutput::new();
-        let focus_events = Self::focus_events(state);
+        let focus_events = Self::focus_events(&state.borrow_mut());
         let tty_start = tty_start_sequence(&terminal, focus_events);
         let _ = tty_output.queue(render_fd.as_raw_fd(), &tty_start);
         if state.borrow_mut().option_for_target(target, "mouse") == Some("on") {
@@ -1107,7 +1107,7 @@ impl AttachSession {
                     }
                     Message::Unlock if self.compositor.io_state == ClientIoState::Locked => {
                         let _ = make_raw(self.tty.input_fd.as_raw_fd());
-                        let start = tty_start_sequence(&self.tty.terminal, Self::focus_events(state));
+                        let start = tty_start_sequence(&self.tty.terminal, Self::focus_events(&state.borrow_mut()));
                         let _ = self
                             .tty
                             .output
@@ -1133,7 +1133,7 @@ impl AttachSession {
                     }
                     Message::Wakeup if self.compositor.io_state == ClientIoState::Suspended => {
                         let _ = make_raw(self.tty.input_fd.as_raw_fd());
-                        let start = tty_start_sequence(&self.tty.terminal, Self::focus_events(state));
+                        let start = tty_start_sequence(&self.tty.terminal, Self::focus_events(&state.borrow_mut()));
                         let _ = self
                             .tty
                             .output

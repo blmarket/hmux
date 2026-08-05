@@ -319,16 +319,19 @@ impl<'a> ServerKeyTables<'a> {
 
 impl KeyTableSource for ServerKeyTables<'_> {
     fn default_table(&self) -> String {
-        super::client_key_table(self.state, self.target)
+        super::client_key_table(&self.state.borrow_mut(), self.target)
     }
 
     fn mode_table(&self) -> Option<String> {
-        copy_mode::is_active(self.state, self.target)
-            .then(|| copy_mode::key_table(self.state, self.target).to_string())
+        // One borrow for both reads: a second taken inside the `then` closure
+        // would still be alive alongside this one.
+        let st = self.state.borrow_mut();
+        copy_mode::is_active(&st, self.target)
+            .then(|| copy_mode::key_table(&st, self.target).to_string())
     }
 
     fn is_prefix(&self, key: KeyCode) -> bool {
-        super::is_configured_prefix(self.state, self.target, key)
+        super::is_configured_prefix(&self.state.borrow_mut(), self.target, key)
     }
 
     fn binding(&self, table: &str, key: KeyCode) -> Option<BindingInfo> {

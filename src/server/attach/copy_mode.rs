@@ -85,13 +85,12 @@ impl CopyModeAction {
     }
 }
 
-pub(super) fn is_active(state: &SharedState, target: &str) -> bool {
-    state.borrow_mut().active_copy_state(target).is_some()
+pub(super) fn is_active(state: &ServerState, target: &str) -> bool {
+    state.active_copy_state(target).is_some()
 }
 
-pub(super) fn key_table(state: &SharedState, target: &str) -> &'static str {
-    let vi = uses_vi_keys(&state.borrow_mut(), target);
-    if vi {
+pub(super) fn key_table(state: &ServerState, target: &str) -> &'static str {
+    if uses_vi_keys(state, target) {
         "copy-mode-vi"
     } else {
         "copy-mode"

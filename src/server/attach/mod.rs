@@ -658,18 +658,18 @@ fn read_key(bytes: &[u8]) -> (Key, usize) {
     (key, consumed)
 }
 
-fn is_configured_prefix(state: &SharedState, target: &str, key: KeyCode) -> bool {
-    let st = state.borrow_mut();
+fn is_configured_prefix(state: &ServerState, target: &str, key: KeyCode) -> bool {
     ["prefix", "prefix2"].into_iter().any(|option| {
-        st.option_for_target(target, option)
+        state
+            .option_for_target(target, option)
             .or_else(|| super::options::option_default(option))
             .and_then(parse_key_name)
             .is_some_and(|prefix| prefix == key)
     })
 }
 
-fn client_key_table(state: &SharedState, target: &str) -> String {
-    state.borrow_mut().session_key_table(target)
+fn client_key_table(state: &ServerState, target: &str) -> String {
+    state.session_key_table(target)
 }
 
 fn plain_prompt_key(byte: u8) -> String {
@@ -1172,9 +1172,8 @@ fn decode_prompt_key(bytes: &[u8]) -> Option<(String, usize)> {
 /// (`tty_keys_next`), so preserve that lower bound here. Invalid stored values
 /// fall back to the modeled tmux default rather than turning into an unbounded
 /// poll.
-fn prompt_escape_delay(state: &SharedState) -> Duration {
+fn prompt_escape_delay(state: &ServerState) -> Duration {
     let milliseconds = state
-        .borrow_mut()
         .server_options()
         .get("escape-time")
         .and_then(|value| value.parse::<u64>().ok())

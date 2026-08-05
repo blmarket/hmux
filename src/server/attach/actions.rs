@@ -283,7 +283,7 @@ pub(in crate::server) fn dispatch_control_client_keys(
             let Some(key) = key else {
                 continue;
             };
-            if is_configured_prefix(state, target, key) {
+            if is_configured_prefix(&state.borrow_mut(), target, key) {
                 *prefix_pending = true;
                 continue;
             }
@@ -292,9 +292,9 @@ pub(in crate::server) fn dispatch_control_client_keys(
             let table = if from_prefix {
                 "prefix".to_string()
             } else if state.borrow_mut().copy_mode_active(target) {
-                copy_mode::key_table(state, target).to_string()
+                copy_mode::key_table(&state.borrow_mut(), target).to_string()
             } else {
-                client_key_table(state, target)
+                client_key_table(&state.borrow_mut(), target)
             };
             let bound = state.borrow_mut().key_binding(&table, key).is_some();
             if !bound {

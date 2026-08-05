@@ -14,9 +14,9 @@ enum BindingFlow {
 }
 
 /// Whether this session acts on mouse reports at all (`mouse on`).
-fn mouse_enabled(state: &SharedState, target: &str) -> bool {
-    let st = state.borrow_mut();
-    st.option_for_target(target, "mouse")
+fn mouse_enabled(state: &ServerState, target: &str) -> bool {
+    state
+        .option_for_target(target, "mouse")
         .or_else(|| super::super::options::option_default("mouse"))
         .is_some_and(|value| value == "on")
 }
@@ -180,7 +180,7 @@ impl AttachSession {
         target: &str,
         now: Instant,
     ) {
-        let default_table = client_key_table(state, target);
+        let default_table = client_key_table(&state.borrow_mut(), target);
         if !self
             .compositor
             .input
@@ -222,7 +222,7 @@ impl AttachSession {
             PrefixOutcome::SendPrefix(bytes) => forward_buf.extend(bytes),
             PrefixOutcome::CopyMode(action) => {
                 // Re-entering copy mode from inside it only honors `-u`.
-                if copy_mode::is_active(state, target) {
+                if copy_mode::is_active(&state.borrow_mut(), target) {
                     action.reactivate(state, target);
                 } else {
                     action.apply(state, target);
@@ -448,7 +448,7 @@ impl AttachSession {
                         if could_be_terminal_key {
                             let deadline =
                                 self.compositor.input.key_prompt.deadline_or_insert(
-                                    Instant::now() + prompt_escape_delay(state),
+                                    Instant::now() + prompt_escape_delay(&state.borrow_mut()),
                                 );
                             if Instant::now() < deadline {
                                 break;
@@ -586,7 +586,7 @@ impl AttachSession {
                     self.compositor
                         .input
                         .key_prompt
-                        .set_deadline_if_none(Instant::now() + prompt_escape_delay(state));
+                        .set_deadline_if_none(Instant::now() + prompt_escape_delay(&state.borrow_mut()));
                 }
                 if prompt_tail.as_ref().is_none_or(Vec::is_empty) {
                     continue;
@@ -875,7 +875,7 @@ impl AttachSession {
                 // pointer (`server_client_key_callback`'s `forward_key`), which
                 // encodes it — or drops it — per its own DECSET modes.
                 if let Some(event) = mouse.as_ref() {
-                    if !mouse_enabled(state, target) {
+                    if !mouse_enabled(&state.borrow_mut(), target) {
                         flush_forward_buf(
                             state,
                             target,
