@@ -1017,6 +1017,8 @@ impl NativePaneObservation {
             keypad: modes.application_keypad,
             cursor_keys: modes.cursor_keys,
             cursor_shape: PaneCursorShape::from_parameter(self.cursor_shape.get()),
+            synchronized_output: modes.synchronized_output,
+            bracketed_paste: modes.bracketed_paste,
         }
     }
 
@@ -3355,6 +3357,9 @@ struct PaneModeSnapshot {
     /// What it *gets* also depends on the `extended-keys` option, which is
     /// applied where the key is encoded rather than here.
     extended_keys_request: ExtendedKeys,
+    /// DECSET 2026, tmux's `MODE_SYNC`: the pane asked for its output to be
+    /// held back until it says the frame is done.
+    synchronized_output: bool,
 }
 
 impl Default for PaneModeSnapshot {
@@ -3376,13 +3381,13 @@ impl Default for PaneModeSnapshot {
             cursor_keys: false,
             application_keypad: false,
             extended_keys_request: ExtendedKeys::Off,
+            synchronized_output: false,
         }
     }
 }
 
 struct ModeQueryDetector {
     tail: VecDeque<u8>,
-    synchronized_output: bool,
     /// Whether the pane asked which theme it is under (DSR ?996) and has
     /// not been answered yet.
     theme_query: bool,
@@ -3421,6 +3426,10 @@ pub(crate) struct PaneTerminalModes {
     pub(crate) cursor_keys: bool,
     /// The DECSCUSR style, as `#{cursor_shape}`.
     pub(crate) cursor_shape: PaneCursorShape,
+    /// DECSET 2026, as `#{synchronized_output_flag}`.
+    pub(crate) synchronized_output: bool,
+    /// DECSET 2004, as `#{bracket_paste_flag}`.
+    pub(crate) bracketed_paste: bool,
 }
 
 impl Default for PaneTerminalModes {
@@ -3436,6 +3445,8 @@ impl Default for PaneTerminalModes {
             keypad: false,
             cursor_keys: false,
             cursor_shape: PaneCursorShape::Default,
+            synchronized_output: false,
+            bracketed_paste: false,
         }
     }
 }
@@ -3519,7 +3530,6 @@ impl Default for ModeQueryDetector {
     fn default() -> Self {
         Self {
             tail: VecDeque::with_capacity(16),
-            synchronized_output: false,
             theme_query: false,
             modes: PaneModeSnapshot::default(),
         }
@@ -3543,9 +3553,9 @@ impl ModeQueryDetector {
         let tail: Vec<u8> = self.tail.iter().copied().collect();
 
         if tail.ends_with(b"\x1b[?2026h") {
-            self.synchronized_output = true;
+            self.modes.synchronized_output = true;
         } else if tail.ends_with(b"\x1b[?2026l") {
-            self.synchronized_output = false;
+            self.modes.synchronized_output = false;
         } else if tail.ends_with(b"\x1b[?25h") {
             self.modes.cursor_visible = true;
         } else if tail.ends_with(b"\x1b[?25l") {
@@ -3636,7 +3646,7 @@ impl ModeQueryDetector {
                 if let Ok(mode) = std::str::from_utf8(digits).unwrap_or("").parse::<u32>() {
                     let status = match mode {
                         2026 => {
-                            if self.synchronized_output {
+                            if self.modes.synchronized_output {
                                 1
                             } else {
                                 2

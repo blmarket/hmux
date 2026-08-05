@@ -4706,6 +4706,11 @@ fn set_terminal_mode_vars(pane: &super::pane::Pane, v: &mut Vars) {
         .set("cursor_very_visible", "0")
         .set("keypad_flag", flag(modes.keypad))
         .set("keypad_cursor_flag", flag(modes.cursor_keys))
+        .set(
+            "synchronized_output_flag",
+            flag(modes.synchronized_output),
+        )
+        .set("bracket_paste_flag", flag(modes.bracketed_paste))
         .set("cursor_shape", modes.cursor_shape.name());
 }
 
