@@ -294,7 +294,6 @@ pub(crate) struct ListenerHandle {
 
 pub(crate) struct PaneHandle {
     pane: ActorRef<EventPane>,
-    runtime_id: u64,
 }
 
 pub(crate) struct ChildSignalHandle {
@@ -357,10 +356,6 @@ impl ListenerHandle {
 }
 
 impl PaneHandle {
-    pub(crate) fn runtime_id(&self) -> u64 {
-        self.runtime_id
-    }
-
     pub(crate) fn is_alive(&self) -> bool {
         self.pane.is_alive()
     }
@@ -372,13 +367,15 @@ impl ChildSignalHandle {
     }
 }
 
-/// Metadata for one event-loop turn.
+/// Metadata for one event-loop turn. Test scaffolding for `run_turn`.
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TurnResult {
     dispatched: usize,
     poll: Option<PollResult>,
 }
 
+#[cfg(test)]
 impl TurnResult {
     pub(crate) fn dispatched(self) -> usize {
         self.dispatched
@@ -473,13 +470,13 @@ where
         Ok(ListenerHandle { listener, accepted })
     }
 
-    pub(crate) fn add_pane(&mut self, runtime_id: u64, io: PaneIo) -> PaneHandle {
+    pub(crate) fn add_pane(&mut self, io: PaneIo) -> PaneHandle {
         let pane = ActorRef::new(EventPane::new(io));
         self.events.push_back(Envelope::Pane {
             target: pane.clone(),
             event: PaneEvent::Start,
         });
-        PaneHandle { pane, runtime_id }
+        PaneHandle { pane }
     }
 
     /// Watch for `SIGINT`/`SIGTERM` on the loop. The source lives as long as
@@ -506,6 +503,38 @@ where
     /// Adopt every `#()` job launched since the last pass. Format expansion
     /// runs deep inside rendering, so the jobs are collected there and handed
     /// to the loop here.
+    /// Hand detached command work to the loop. The loop's own passes raise
+    /// hook bodies with no client behind them; they run as background queues,
+    /// the same way a `-b` command does.
+    pub(crate) fn adopt_background_commands(
+        &mut self,
+        server: &Server,
+        requests: Vec<crate::server::command::BackgroundCommandRequest>,
+    ) -> io::Result<()> {
+        if requests.is_empty() {
+            return Ok(());
+        }
+        let executor_handle = self.executor_handle.clone();
+        let target = self
+            .background_commands
+            .get_or_insert_with(|| {
+                ActorRef::new(BackgroundCommands::new(
+                    server.state(),
+                    server.status_hub(),
+                    self.executor.clone(),
+                    executor_handle,
+                ))
+            })
+            .clone();
+        for request in requests {
+            self.events.push_back(Envelope::Background {
+                target: target.clone(),
+                event: JobEvent::Start(request),
+            });
+        }
+        Ok(())
+    }
+
     pub(crate) fn adopt_format_jobs(&mut self, jobs: Vec<FormatJob>) -> io::Result<()> {
         if jobs.is_empty() {
             return Ok(());
@@ -591,19 +620,12 @@ where
         }
     }
 
-    pub(crate) fn shutdown_protocol(&mut self, target: &ProtocolHandle) {
-        self.events.push_back(Envelope::Protocol {
-            target: target.protocol.clone(),
-            event: ProtocolEvent::Shutdown,
-        });
-    }
-
     pub(crate) fn pending_events(&self) -> usize {
         self.events.len()
     }
 
     #[cfg(test)]
-    fn executor_handle(&self) -> SuspensionExecutorHandle {
+    pub(crate) fn executor_handle(&self) -> SuspensionExecutorHandle {
         self.executor_handle.clone()
     }
 
@@ -744,6 +766,9 @@ where
         result
     }
 
+    /// Drive one dispatch-then-poll turn. Test scaffolding; the server runs
+    /// the loop through [`EventLoop::run`].
+    #[cfg(test)]
     pub(crate) fn run_turn(
         &mut self,
         timeout: Option<Duration>,

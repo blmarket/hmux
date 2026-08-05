@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::Cell;
 use std::sync::{Arc, Mutex};
 
 use tracing_subscriber::fmt::MakeWriter;
@@ -145,27 +146,27 @@ fn frame(title: Option<&str>, screen: &str) -> Frame {
 struct ScriptedPane {
     child_pid: u32,
     frames: Vec<Frame>,
-    cursor: Mutex<usize>,
+    cursor: Cell<usize>,
 }
 
 impl ScriptedPane {
-    fn new(child_pid: u32, frames: Vec<Frame>) -> Arc<Self> {
-        Arc::new(Self {
+    fn new(child_pid: u32, frames: Vec<Frame>) -> Rc<Self> {
+        Rc::new(Self {
             child_pid,
             frames,
-            cursor: Mutex::new(0),
+            cursor: Cell::new(0),
         })
     }
 
     fn step(&self) {
-        let mut cursor = self.cursor.lock().unwrap();
-        if *cursor + 1 < self.frames.len() {
-            *cursor += 1;
+        let cursor = self.cursor.get();
+        if cursor + 1 < self.frames.len() {
+            self.cursor.set(cursor + 1);
         }
     }
 
     fn current(&self) -> (usize, Frame) {
-        let cursor = *self.cursor.lock().unwrap();
+        let cursor = self.cursor.get();
         (cursor, self.frames[cursor].clone())
     }
 }
@@ -179,7 +180,7 @@ impl PaneObservability for ScriptedPane {
     }
 
     fn output_revision(&self) -> io::Result<u64> {
-        Ok(*self.cursor.lock().unwrap() as u64)
+        Ok(self.cursor.get() as u64)
     }
 
     fn screen(&self, _source: ScreenSource, _lines: usize) -> io::Result<ScreenTail> {
@@ -203,7 +204,7 @@ impl PaneObservability for ScriptedPane {
 
 /// A server exposing a single fixed pane.
 struct FakeServer {
-    pane: Arc<ScriptedPane>,
+    pane: Rc<ScriptedPane>,
 }
 
 impl ServerObservability for FakeServer {
@@ -211,14 +212,14 @@ impl ServerObservability for FakeServer {
         Ok(vec![PaneId(0)])
     }
 
-    fn resolve_pane(&self, _id: PaneId) -> io::Result<Option<Arc<dyn PaneObservability>>> {
+    fn resolve_pane(&self, _id: PaneId) -> io::Result<Option<Rc<dyn PaneObservability>>> {
         Ok(Some(self.pane.clone()))
     }
 }
 
 /// A server exposing several fixed panes, one per `PaneId(index)`.
 struct MultiPaneServer {
-    panes: Vec<Arc<ScriptedPane>>,
+    panes: Vec<Rc<ScriptedPane>>,
 }
 
 impl ServerObservability for MultiPaneServer {
@@ -226,11 +227,11 @@ impl ServerObservability for MultiPaneServer {
         Ok((0..self.panes.len()).map(|i| PaneId(i as u32)).collect())
     }
 
-    fn resolve_pane(&self, id: PaneId) -> io::Result<Option<Arc<dyn PaneObservability>>> {
+    fn resolve_pane(&self, id: PaneId) -> io::Result<Option<Rc<dyn PaneObservability>>> {
         Ok(self
             .panes
             .get(id.0 as usize)
-            .map(|pane| pane.clone() as Arc<dyn PaneObservability>))
+            .map(|pane| pane.clone() as Rc<dyn PaneObservability>))
     }
 }
 

@@ -9,11 +9,10 @@
 //! the walk in [`ClientKeyState::resolve`] follows
 //! `server_client_key_callback`'s `table_changed`/`try_again` loop.
 
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::super::key::{KeyBase, KeyCode, SpecialKey};
-use super::super::state::{ServerState, DEFAULT_KEY_TABLE};
+use super::super::state::{SharedState, DEFAULT_KEY_TABLE};
 use super::copy_mode;
 
 /// The table the prefix key switches a client into.
@@ -300,24 +299,20 @@ impl ClientKeyState {
 
 /// The live server view [`ClientKeyState::resolve`] runs against.
 pub(super) struct ServerKeyTables<'a> {
-    state: &'a Arc<Mutex<ServerState>>,
+    state: &'a SharedState,
     target: &'a str,
 }
 
 impl<'a> ServerKeyTables<'a> {
-    pub(super) fn new(state: &'a Arc<Mutex<ServerState>>, target: &'a str) -> Self {
+    pub(super) fn new(state: &'a SharedState, target: &'a str) -> Self {
         Self { state, target }
     }
 
     fn option_number(&self, name: &str) -> u64 {
-        self.state
-            .lock()
-            .ok()
-            .and_then(|st| {
-                st.option_for_target(self.target, name)
-                    .or_else(|| super::super::options::option_default(name))
-                    .and_then(|value| value.parse::<u64>().ok())
-            })
+        let st = self.state.borrow_mut();
+        st.option_for_target(self.target, name)
+            .or_else(|| super::super::options::option_default(name))
+            .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(0)
     }
 }
@@ -337,7 +332,7 @@ impl KeyTableSource for ServerKeyTables<'_> {
     }
 
     fn binding(&self, table: &str, key: KeyCode) -> Option<BindingInfo> {
-        let st = self.state.lock().ok()?;
+        let st = self.state.borrow_mut();
         let binding = st.key_binding(table, key)?;
         Some(BindingInfo {
             repeat: binding.repeat,

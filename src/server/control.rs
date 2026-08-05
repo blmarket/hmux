@@ -1,9 +1,10 @@
 //! Runtime-independent control-mode client state.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::integration::status::StatusHub;
@@ -16,7 +17,7 @@ use super::pane::{NativePaneObservation, OutputSubscription};
 use super::registry::{self, Resolution};
 use super::state::{
     ClientAction, ClientFlagState as ControlClientOptions, ClientRenderAttachment,
-    ControlStateSnapshot, ServerState,
+    ControlStateSnapshot, ServerState, SharedState,
 };
 use super::status;
 use super::task::{ReadySet, TaskState};
@@ -40,9 +41,9 @@ pub(crate) enum EventControlSource {
 /// This state owns only the descriptors passed during identification and the
 /// native subscriptions needed by a control client.
 pub(crate) struct EventControlClient {
-    state: Arc<Mutex<ServerState>>,
+    state: SharedState,
     hub: StatusHub,
-    command_runtime: Arc<dyn command::CommandRuntime>,
+    command_runtime: Rc<dyn command::CommandRuntime>,
     client_tty: ClientTty,
     client_name: String,
     session_id: u32,
@@ -90,16 +91,14 @@ impl EventControlClient {
     pub(crate) fn new(
         args: &[String],
         client_tty: ClientTty,
-        state: Arc<Mutex<ServerState>>,
+        state: SharedState,
         hub: StatusHub,
         context: &command::ClientContext,
-        command_runtime: Arc<dyn command::CommandRuntime>,
+        command_runtime: Rc<dyn command::CommandRuntime>,
     ) -> io::Result<Self> {
         let session = match command::classify(args) {
             command::Intent::NewAttach => {
-                let mut state = state
-                    .lock()
-                    .map_err(|_| io::Error::other("native server state poisoned"))?;
+                let mut state = state.borrow_mut();
                 command::new_session_for_attach(args, &mut state, context)
                     .map_err(io::Error::other)?
             }
@@ -115,9 +114,7 @@ impl EventControlClient {
                         })
                     })
                     .map(|target| target.split(':').next().unwrap_or(target).to_string());
-                let mut state = state
-                    .lock()
-                    .map_err(|_| io::Error::other("native server state poisoned"))?;
+                let mut state = state.borrow_mut();
                 let target = attach::attach_target(supplied_target, &mut state, context)
                     .map_err(io::Error::other)?;
                 if state.find(&target).is_none() {
@@ -129,9 +126,7 @@ impl EventControlClient {
         };
 
         let (render_registry, session_id) = {
-            let mut state = state
-                .lock()
-                .map_err(|_| io::Error::other("native server state poisoned"))?;
+            let mut state = state.borrow_mut();
             let session_id = state
                 .session_id(&session)
                 .ok_or_else(|| io::Error::other(format!("can't find session: {session}")))?;
@@ -181,9 +176,7 @@ impl EventControlClient {
         let mut control_writer = ControlWriter::new(output_fd.as_raw_fd())?;
         let stable_session = format!("${session_id}");
         let (snapshot, checkpoint) = {
-            let state = state
-                .lock()
-                .map_err(|_| io::Error::other("native server state poisoned"))?;
+            let state = state.borrow_mut();
             (
                 state
                     .control_snapshot(&stable_session)
@@ -204,8 +197,7 @@ impl EventControlClient {
             snapshot.session_id, snapshot.session_name
         ));
         for error in state
-            .lock()
-            .map_err(|_| io::Error::other("native server state poisoned"))?
+            .borrow_mut()
             .take_config_errors()
         {
             control_writer.enqueue_line(format!("%config-error {error}"));
@@ -228,11 +220,10 @@ impl EventControlClient {
         control_context.tty_name = Some(client_name.clone());
         control_context.current_session_id = Some(session_id);
         control_context.read_only = options.read_only;
-        control_context.defer_attach_commands = context.defer_attach_commands;
         control_context.preserve_queue_insertions = true;
         control_context.active_panes = options
             .active_pane
-            .then(|| Arc::new(Mutex::new(BTreeMap::new())));
+            .then(|| Rc::new(RefCell::new(BTreeMap::new())));
         let mut frames = VecDeque::new();
         frames.push_back(Frame::new(Message::Flags(
             options.client_flags(client_tty.flags),
@@ -340,9 +331,8 @@ impl EventControlClient {
         let subscription = self.subscriptions.next_check;
         let alert = self
             .state
-            .lock()
-            .ok()
-            .and_then(|state| state.alert_poll_timeout())
+            .borrow_mut()
+            .alert_poll_timeout()
             .and_then(|duration| now.checked_add(duration));
         match (subscription, alert) {
             (Some(left), Some(right)) => Some(left.min(right)),
@@ -431,10 +421,7 @@ impl EventControlClient {
                 self.advance_snapshot()?;
             }
             let alert_changed = {
-                let mut state = self
-                    .state
-                    .lock()
-                    .map_err(|_| io::Error::other("native server state poisoned"))?;
+                let mut state = self.state.borrow_mut();
                 let changed = state.refresh_alerts(Instant::now());
                 if changed {
                     state.record_control_checkpoint();
@@ -447,10 +434,7 @@ impl EventControlClient {
             write_control_output(&mut self.control_writer, &mut self.streams, &self.options)?;
             if pane_state_ready {
                 {
-                    let mut state = self
-                        .state
-                        .lock()
-                        .map_err(|_| io::Error::other("native server state poisoned"))?;
+                    let mut state = self.state.borrow_mut();
                     state.reap_exited_panes();
                     state.record_control_checkpoint();
                 }
@@ -463,10 +447,7 @@ impl EventControlClient {
             {
                 self.format_cache.update_agents(self.hub.snapshot());
                 let (cols, rows) = self.client_size.unwrap_or((80, 24));
-                let state = self
-                    .state
-                    .lock()
-                    .map_err(|_| io::Error::other("native server state poisoned"))?;
+                let state = self.state.borrow_mut();
                 check_control_subscriptions(
                     &mut self.subscriptions,
                     &mut self.format_cache,
@@ -542,10 +523,7 @@ impl EventControlClient {
         if let Some((session_id, destroyed)) = requested_switch {
             let stable = format!("${session_id}");
             let checkpoint = {
-                let state = self
-                    .state
-                    .lock()
-                    .map_err(|_| io::Error::other("native server state poisoned"))?;
+                let state = self.state.borrow_mut();
                 state
                     .control_snapshot(&stable)
                     .map(|_| state.control_checkpoint_end())
@@ -575,7 +553,7 @@ impl EventControlClient {
             .update_client_flags(display_flags, self.options.read_only);
         self.context.read_only = self.options.read_only;
         if self.options.active_pane && self.context.active_panes.is_none() {
-            self.context.active_panes = Some(Arc::new(Mutex::new(BTreeMap::new())));
+            self.context.active_panes = Some(Rc::new(RefCell::new(BTreeMap::new())));
         } else if !self.options.active_pane {
             self.context.active_panes = None;
         }
@@ -586,10 +564,7 @@ impl EventControlClient {
 
     fn refresh_session(&mut self) -> io::Result<()> {
         let replacement = {
-            let state = self
-                .state
-                .lock()
-                .map_err(|_| io::Error::other("native server state poisoned"))?;
+            let state = self.state.borrow_mut();
             // Where a client goes when its session is destroyed is the server's
             // `detach-on-destroy` decision, delivered as a switch action before
             // this runs; reaching here means no session was offered.
@@ -620,14 +595,11 @@ impl EventControlClient {
         self.render_attachment.update_session(session_id);
         self.context.current_session_id = Some(session_id);
         if let Some(active_panes) = &self.context.active_panes {
-            if let Ok(mut active_panes) = active_panes.lock() {
-                active_panes.clear();
-            }
+            active_panes.borrow_mut().clear();
         }
         let next = self
             .state
-            .lock()
-            .map_err(|_| io::Error::other("native server state poisoned"))?
+            .borrow_mut()
             .control_snapshot(&self.stable_session)
             .ok_or_else(|| io::Error::other("fallback control session disappeared"))?;
         self.control_writer.enqueue_line(format!(
@@ -700,8 +672,7 @@ impl EventControlClient {
             }
             let aliases = self
                 .state
-                .lock()
-                .map_err(|_| io::Error::other("native server state poisoned"))?
+                .borrow_mut()
                 .command_aliases();
             match command::command_string_groups_with_aliases(&line, &aliases) {
                 Ok(groups) if !groups.is_empty() => self.command_queue.push_back_group(
@@ -801,7 +772,7 @@ impl EventControlClient {
                 .update_client_flags(display_flags, self.options.read_only);
             self.context.read_only = self.options.read_only;
             if self.options.active_pane && self.context.active_panes.is_none() {
-                self.context.active_panes = Some(Arc::new(Mutex::new(BTreeMap::new())));
+                self.context.active_panes = Some(Rc::new(RefCell::new(BTreeMap::new())));
             } else if !self.options.active_pane {
                 self.context.active_panes = None;
             }
@@ -825,10 +796,7 @@ impl EventControlClient {
         }
         if let Some(size) = control_size_action(&argv) {
             let next = {
-                let mut state = self
-                    .state
-                    .lock()
-                    .map_err(|_| io::Error::other("native server state poisoned"))?;
+                let mut state = self.state.borrow_mut();
                 match size {
                     ControlSizeAction::Client(cols, rows) => {
                         self.client_size = Some((cols, rows));
@@ -919,8 +887,8 @@ impl EventControlClient {
             argv,
             task: TaskState::new(command::CommandCoroutine::new(
                 queue,
-                Arc::clone(&self.state),
-                Arc::clone(&self.command_runtime),
+                Rc::clone(&self.state),
+                Rc::clone(&self.command_runtime),
                 64,
             )),
         });
@@ -988,8 +956,7 @@ impl EventControlClient {
             ) {
                 let _ = self
                     .state
-                    .lock()
-                    .map_err(|_| io::Error::other("native server state poisoned"))?
+                    .borrow_mut()
                     .resize_linked_window(target, cols, rows);
             }
         }
@@ -1044,8 +1011,7 @@ impl EventControlClient {
     fn enqueue_config_errors(&mut self) -> io::Result<()> {
         for error in self
             .state
-            .lock()
-            .map_err(|_| io::Error::other("native server state poisoned"))?
+            .borrow_mut()
             .take_config_errors()
         {
             self.control_writer
@@ -1202,7 +1168,7 @@ impl ControlCommandId {
 struct ControlPaneStream {
     runtime_id: u64,
     offset: u64,
-    observation: Arc<NativePaneObservation>,
+    observation: Rc<NativePaneObservation>,
     subscription: OutputSubscription,
     enabled: bool,
     paused: bool,
@@ -1320,7 +1286,7 @@ fn control_refresh_flag_values(args: &[String]) -> Vec<&str> {
 
 fn apply_control_colour_report(
     args: &[String],
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
 ) -> io::Result<bool> {
     let Some(Resolution::Name("refresh-client")) = args.first().map(|name| registry::resolve(name))
     else {
@@ -1348,8 +1314,7 @@ fn apply_control_colour_report(
         return Ok(true);
     }
     let _ = state
-        .lock()
-        .map_err(|_| io::Error::other("native server state poisoned"))?
+        .borrow_mut()
         .report_pane_control_colour(pane, report.as_bytes());
     Ok(true)
 }
@@ -1394,7 +1359,7 @@ fn control_pane_streams(
             ControlPaneStream {
                 runtime_id: pane.runtime_id,
                 offset,
-                observation: Arc::clone(&pane.observation),
+                observation: Rc::clone(&pane.observation),
                 subscription,
                 enabled: true,
                 paused: false,
@@ -1429,7 +1394,7 @@ fn sync_control_pane_streams(
             ControlPaneStream {
                 runtime_id: pane.runtime_id,
                 offset: 0,
-                observation: Arc::clone(&pane.observation),
+                observation: Rc::clone(&pane.observation),
                 subscription: pane.observation.subscribe_output()?,
                 enabled: true,
                 paused: false,
@@ -1442,7 +1407,7 @@ fn sync_control_pane_streams(
 
 #[allow(clippy::too_many_arguments)]
 fn advance_control_snapshot(
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     session_id: u32,
     stable_session: &str,
     checkpoint: &mut u64,
@@ -1451,9 +1416,7 @@ fn advance_control_snapshot(
     writer: &mut ControlWriter,
 ) -> io::Result<()> {
     let (end, mut updates, current) = {
-        let state = state
-            .lock()
-            .map_err(|_| io::Error::other("native server state poisoned"))?;
+        let state = state.borrow_mut();
         let (end, updates) = state.control_checkpoints_since(session_id, *checkpoint);
         (end, updates, state.control_snapshot(stable_session))
     };
@@ -2071,7 +2034,7 @@ mod tests {
     fn control_subscription_observes_agent_status_changes() -> io::Result<()> {
         let mut server = ServerState::empty();
         server.create_session("work", PaneSpec::Inert)?;
-        let state = Arc::new(Mutex::new(server));
+        let state = crate::server::state::shared_state(server);
         let hub = StatusHub::new();
 
         let (client_input, mut command_input) = UnixStream::pair()?;
@@ -2087,13 +2050,19 @@ mod tests {
             "-t".to_string(),
             "work".to_string(),
         ];
+        // The control client submits its command work to a loop, the same as
+        // it does in the daemon; this test never suspends, so the loop only
+        // has to exist.
+        let event_loop = crate::event_loop::driver::EventLoop::new()?;
         let mut control = EventControlClient::new(
             &args,
             tty,
             state,
             hub.clone(),
             &command::ClientContext::default(),
-            Arc::new(command::BlockingCommandRuntime),
+            Rc::new(crate::event_loop::suspend::EventCommandRuntime::new(
+                event_loop.executor_handle(),
+            )),
         )?;
 
         command_input.write_all(b"refresh-client -B 'agent:%*:#{pane_agent_state}'\n")?;

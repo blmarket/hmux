@@ -28,10 +28,12 @@ pub(in crate::server) mod windows;
 pub(in crate::server) use identity::all as all_commands;
 pub(in crate::server) use identity::Command;
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::integration::status::PaneAgents;
@@ -43,22 +45,15 @@ use super::mouse::MouseEvent;
 use super::options::{self, OptionScope, OptionSet, OptionsView};
 use super::registry::{self, CommandSpec, Resolution, SpecResolution};
 use super::state::{
-    BackgroundJobRegistry, ClientActionResult, ClientMessage, ClientMessageResult,
-    MenuItem, MenuRequest, ModeEdit, ModeItem, ModeKind, ModeView,
-    OverlayRequest, PaneSpec, PopupRequest, PromptCompletion, PromptReply, ServerState, Session,
-    SplitDirection, Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest,
-    WindowSizePolicy,
+    BackgroundJobRegistry, ClientActionResult, ClientMessage, ClientMessageResult, MenuItem,
+    MenuRequest, ModeEdit, ModeItem, ModeKind, ModeView, OverlayRequest, PaneSpec, PopupRequest,
+    PromptCompletion, PromptReply, ServerState, Session, SharedState, SplitDirection, Target,
+    WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
 };
 use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
-#[cfg(test)]
-use super::task::drive_blocking;
 use super::task::{
-    run_blocking, Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest,
-    WaitToken,
+    Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest, WaitToken,
 };
-#[cfg(test)]
-use suspend::IfShellJob;
-use suspend::{RunShellJob, SuspensionJob};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.
@@ -81,7 +76,7 @@ pub struct CommandResult {
     pub stdout_bytes: Vec<u8>,
     pub stderr: String,
     pub exit: i32,
-    pub(crate) pane_output_wait: Option<(Arc<super::pane::NativePaneObservation>, u64)>,
+    pub(crate) pane_output_wait: Option<(Rc<super::pane::NativePaneObservation>, u64)>,
     pub(crate) deferred_commands: Vec<DeferredCommand>,
     pub(crate) background_commands: Vec<BackgroundCommandRequest>,
     /// Continue the containing command list despite a nonzero client status.
@@ -102,10 +97,10 @@ pub struct ClientContext {
     pub tty_name: Option<String>,
     pub client_pid: Option<i32>,
     pub(crate) input_file: Option<Result<Vec<u8>, i32>>,
-    pub(crate) command_state: Option<Arc<Mutex<ServerState>>>,
+    pub(crate) command_state: Option<SharedState>,
     pub(crate) current_session_id: Option<u32>,
     pub(crate) read_only: bool,
-    pub(crate) active_panes: Option<Arc<Mutex<BTreeMap<u32, u32>>>>,
+    pub(crate) active_panes: Option<Rc<RefCell<BTreeMap<u32, u32>>>>,
     pub(crate) key_event: Option<super::key::KeyCode>,
     pub(crate) mouse: Option<MouseEvent>,
     pub(crate) interaction_reply: Option<PromptReply>,
@@ -122,13 +117,12 @@ pub struct ClientContext {
     /// its own subject from re-triggering itself.
     pub(crate) suppress_notifications: bool,
     pub(crate) defer_queue_commands: bool,
-    pub(crate) defer_attach_commands: bool,
     /// The `hook*` format variables for a queued hook-body command; installed
     /// into the server state around its execution.
-    pub(crate) hook_vars: Option<Arc<Vec<(String, String)>>>,
+    pub(crate) hook_vars: Option<Rc<Vec<(String, String)>>>,
     /// The hook's own target, which is what a command in its body resolves
     /// against when it names no target of its own.
-    pub(crate) hook_target: Option<Arc<str>>,
+    pub(crate) hook_target: Option<Rc<str>>,
 }
 
 impl ClientContext {
@@ -156,14 +150,12 @@ impl ClientContext {
     fn active_panes(&self) -> Option<BTreeMap<u32, u32>> {
         self.active_panes
             .as_ref()
-            .and_then(|panes| panes.lock().ok().map(|panes| panes.clone()))
+            .map(|panes| panes.borrow().clone())
     }
 
     fn set_active_pane(&self, window_id: u32, pane_id: u32) {
         if let Some(panes) = &self.active_panes {
-            if let Ok(mut panes) = panes.lock() {
-                panes.insert(window_id, pane_id);
-            }
+            panes.borrow_mut().insert(window_id, pane_id);
         }
     }
 }
@@ -343,13 +335,11 @@ pub(crate) fn command_prompt_spec(args: &[String]) -> Result<CommandPromptSpec, 
 
 pub(crate) fn expand_command_prompt_format(
     source: &str,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> String {
-    let Ok(mut st) = state.lock() else {
-        return source.to_string();
-    };
+    let mut st = state.borrow_mut();
     let previous_session = st.replace_command_session_id(context.current_session_id);
     let target = current_session(&st);
     let expanded = target
@@ -379,35 +369,10 @@ pub(crate) fn expand_command_prompt_format(
     expanded
 }
 
-pub(crate) fn run_command_prompt_template(
-    args: &[String],
-    values: &[String],
-    state: &Arc<Mutex<ServerState>>,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    let mut execution_context = context.clone();
-    execution_context.command_state = Some(Arc::clone(state));
-    execution_context.defer_queue_commands = true;
-    let template = command_prompt_template(args, values, state, agents, context);
-    let tokens = tokenize_line(&template);
-    if tokens.is_empty() {
-        return CommandResult::ok("");
-    }
-    let mut st = match state.lock() {
-        Ok(guard) => guard,
-        Err(_) => return CommandResult::err("server state poisoned\n"),
-    };
-    let previous_session = st.replace_command_session_id(execution_context.current_session_id);
-    let result = run_tokenized_line(&tokens, &mut st, agents, &execution_context);
-    st.replace_command_session_id(previous_session);
-    result
-}
-
 pub(crate) fn command_prompt_template(
     args: &[String],
     values: &[String],
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> String {
@@ -434,95 +399,18 @@ pub(crate) fn command_prompt_template(
 /// entire line before anything runs — then executes the commands in order,
 /// stopping at the first one that fails. We reproduce both phases here.
 #[cfg(test)]
-pub fn run(args: &[String], state: &Arc<Mutex<ServerState>>, agents: &PaneAgents) -> CommandResult {
+pub fn run(args: &[String], state: &SharedState, agents: &PaneAgents) -> CommandResult {
     let context = ClientContext::default();
+    let mut driver =
+        crate::event_loop::test_driver::LoopCommandDriver::new().expect("command test loop");
     let mut result = match start_resumable_command(args, state, agents, &context) {
-        Ok(queue) => BlockingCommandRuntime::run(queue, state),
+        Ok(queue) => driver.run_queue(queue, state),
         Err(result) => result,
     };
     for request in result.background_commands.drain(..) {
-        let _ =
-            BlockingCommandRuntime::spawn_background(request, Arc::clone(state), agents.clone());
+        driver.run_background(request, state, agents);
     }
     result
-}
-
-/// Blocking/threaded driver for shared command coroutines. Unit-test
-/// scaffolding behind [`run`]; the server runtime drives the same coroutines
-/// through the event loop.
-#[cfg(test)]
-#[derive(Clone, Default)]
-pub(crate) struct BlockingCommandRuntime;
-
-#[cfg(test)]
-impl BlockingCommandRuntime {
-    pub(crate) fn run(
-        queue: ResumableCommandQueue,
-        state: &Arc<Mutex<ServerState>>,
-    ) -> CommandResult {
-        let mut task = TaskState::new(CommandCoroutine::new(
-            queue,
-            Arc::clone(state),
-            Arc::new(Self),
-            64,
-        ));
-        drive_blocking(&mut task);
-        match task.take_output() {
-            Some(Ok(result)) => result,
-            Some(Err(error)) => CommandResult::err(format!("{error}\n")),
-            None => CommandResult::err("command stopped without a result\n"),
-        }
-    }
-
-    pub(crate) fn spawn_background(
-        request: BackgroundCommandRequest,
-        state: Arc<Mutex<ServerState>>,
-        agents: PaneAgents,
-    ) -> io::Result<()> {
-        std::thread::Builder::new()
-            .name("hmux-blocking-background".to_string())
-            .spawn(move || {
-                let (command, context) = request.resolve();
-                let queue = match command {
-                    BackgroundCommand::Line(command) => {
-                        let Some(command) = command.filter(|line| !line.trim().is_empty()) else {
-                            return;
-                        };
-                        start_resumable_command_string(&command, &state, &agents, &context)
-                    }
-                    BackgroundCommand::Args(args) => {
-                        if args.is_empty() {
-                            return;
-                        }
-                        start_resumable_command(&args, &state, &agents, &context)
-                    }
-                    BackgroundCommand::RunShell { args, jobs } => {
-                        run_blocking(suspend::BackgroundShellJob::new(&args, &context, jobs));
-                        return;
-                    }
-                };
-                let Ok(queue) = queue else { return };
-                let mut result = Self::run(queue, &state);
-                for request in result.background_commands.drain(..) {
-                    let _ = Self::spawn_background(request, Arc::clone(&state), agents.clone());
-                }
-            })?;
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-impl CommandRuntime for BlockingCommandRuntime {
-    fn submit(
-        &self,
-        suspension: CommandSuspension,
-    ) -> io::Result<Completion<CommandSuspensionResult>> {
-        let (completion, sender) = super::task::completion_pair()?;
-        std::thread::Builder::new()
-            .name("hmux-blocking-command".to_string())
-            .spawn(move || sender.complete(run_blocking(SuspensionJob::new(suspension))))?;
-        Ok(completion)
-    }
 }
 
 /// Parse and normalize every command before client-side file operations begin.
@@ -582,9 +470,12 @@ pub(crate) fn uses_client_file_protocol(args: &[String]) -> bool {
     }
 }
 
+/// Run a command line to completion on the calling thread. Test scaffolding;
+/// the server drives the same queue through the loop.
+#[cfg(test)]
 pub fn run_with_context(
     args: &[String],
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
@@ -592,22 +483,24 @@ pub fn run_with_context(
         Ok(queue) => queue,
         Err(error) => return error,
     };
-    run_resumable_command(queue, state)
+    crate::event_loop::test_driver::LoopCommandDriver::new()
+        .expect("command test loop")
+        .run_queue(queue, state)
 }
 
 pub(crate) fn start_resumable_command(
     args: &[String],
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> Result<ResumableCommandQueue, CommandResult> {
     let mut execution_context = context.clone();
-    execution_context.command_state = Some(Arc::clone(state));
+    execution_context.command_state = Some(Rc::clone(state));
     let expanded_args = expand_attached_separators(args);
     let groups = split_commands(&expanded_args);
-    let aliases = match state.lock() {
-        Ok(state) => state.command_aliases(),
-        Err(_) => return Err(CommandResult::err("server state poisoned\n")),
+    let aliases = {
+        let state = state.borrow_mut();
+        state.command_aliases()
     };
     let parsed = parse_command_groups_with_aliases(groups, &aliases)?;
     Ok(ResumableCommandQueue::new(
@@ -619,20 +512,20 @@ pub(crate) fn start_resumable_command(
 
 pub(crate) fn start_resumable_command_string(
     line: &str,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> Result<ResumableCommandQueue, CommandResult> {
     let tokens = tokenize_line(line);
     let owned_groups = tokenized_command_groups(&tokens);
     let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    let aliases = match state.lock() {
-        Ok(state) => state.command_aliases(),
-        Err(_) => return Err(CommandResult::err("server state poisoned\n")),
+    let aliases = {
+        let state = state.borrow_mut();
+        state.command_aliases()
     };
     let parsed = parse_command_groups_with_aliases(groups, &aliases)?;
     let mut execution_context = context.clone();
-    execution_context.command_state = Some(Arc::clone(state));
+    execution_context.command_state = Some(Rc::clone(state));
     execution_context.defer_queue_commands = true;
     Ok(ResumableCommandQueue::new(
         parsed,
@@ -644,16 +537,16 @@ pub(crate) fn start_resumable_command_string(
 pub(crate) fn start_resumable_command_string_with_tail(
     line: &str,
     tail: &[String],
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> Result<ResumableCommandQueue, CommandResult> {
     let tokens = tokenize_line(line);
     let owned_groups = tokenized_command_groups(&tokens);
     let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    let aliases = match state.lock() {
-        Ok(state) => state.command_aliases(),
-        Err(_) => return Err(CommandResult::err("server state poisoned\n")),
+    let aliases = {
+        let state = state.borrow_mut();
+        state.command_aliases()
     };
     let mut parsed = parse_command_groups_with_aliases(groups, &aliases)?;
     if !tail.is_empty() {
@@ -664,7 +557,7 @@ pub(crate) fn start_resumable_command_string_with_tail(
         )?);
     }
     let mut execution_context = context.clone();
-    execution_context.command_state = Some(Arc::clone(state));
+    execution_context.command_state = Some(Rc::clone(state));
     execution_context.defer_queue_commands = true;
     Ok(ResumableCommandQueue::new(
         parsed,
@@ -679,7 +572,7 @@ struct PreviousCommandTargetContext {
     active_panes: Option<BTreeMap<u32, u32>>,
     hook_vars: Option<Vec<(String, String)>>,
     mouse: Option<MouseEvent>,
-    format_jobs: Option<Arc<CommandJobs>>,
+    format_jobs: Option<Rc<CommandJobs>>,
 }
 
 fn install_command_target_context(
@@ -721,7 +614,7 @@ fn install_command_target_context(
             .map(|vars| state.replace_hook_format_vars(vars.as_ref().clone())),
         mouse: state.replace_command_mouse(context.mouse.clone()),
         format_jobs: {
-            let jobs = Arc::new(CommandJobs::new(state, context));
+            let jobs = Rc::new(CommandJobs::new(state, context));
             state.replace_command_format_jobs(Some(jobs))
         },
     }
@@ -874,7 +767,7 @@ pub(crate) enum BackgroundCommandRequest {
     RunShell {
         args: Vec<String>,
         context: ClientContext,
-        jobs: Arc<BackgroundJobRegistry>,
+        jobs: Rc<BackgroundJobRegistry>,
     },
 }
 
@@ -918,22 +811,6 @@ impl BackgroundCommandRequest {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn resolve(self) -> (BackgroundCommand, ClientContext) {
-        match self.into_pending() {
-            PendingBackground::Ready(command, context) => (command, context),
-            PendingBackground::Condition {
-                condition,
-                then_command,
-                else_command,
-                context,
-            } => {
-                let matched = run_blocking(IfShellJob::new(&condition, &context));
-                let command = if matched { then_command } else { else_command };
-                (BackgroundCommand::Line(command), context)
-            }
-        }
-    }
 }
 
 pub(crate) enum BackgroundCommand {
@@ -941,7 +818,7 @@ pub(crate) enum BackgroundCommand {
     Args(Vec<String>),
     RunShell {
         args: Vec<String>,
-        jobs: Arc<BackgroundJobRegistry>,
+        jobs: Rc<BackgroundJobRegistry>,
     },
 }
 
@@ -986,11 +863,11 @@ pub(crate) enum CommandSuspension {
     },
     WaitFor {
         args: Vec<String>,
-        registry: Arc<WaitRegistry>,
+        registry: Rc<WaitRegistry>,
     },
     CommandPrompt {
         args: Vec<String>,
-        registry: Arc<super::state::ClientPromptRegistry>,
+        registry: Rc<super::state::ClientPromptRegistry>,
         target: Option<String>,
         tty_name: Option<String>,
         wait: bool,
@@ -1025,7 +902,7 @@ impl SourceFileRead {
 }
 
 pub(crate) struct PaneOutputSuspension {
-    observation: Arc<super::pane::NativePaneObservation>,
+    observation: Rc<super::pane::NativePaneObservation>,
     before: u64,
     subscription: super::pane::OutputSubscription,
     deadline: Instant,
@@ -1036,7 +913,7 @@ impl PaneOutputSuspension {
     const OUTPUT_READY: WaitToken = WaitToken::new(0);
 
     fn new(
-        observation: Arc<super::pane::NativePaneObservation>,
+        observation: Rc<super::pane::NativePaneObservation>,
         before: u64,
         result: CommandResult,
     ) -> Result<Self, CommandResult> {
@@ -1179,8 +1056,8 @@ impl CommandTaskState {
 /// A complete command queue represented as one runtime-neutral coroutine.
 pub(crate) struct CommandCoroutine {
     queue: ResumableCommandQueue,
-    state: Arc<Mutex<ServerState>>,
-    runtime: Arc<dyn CommandRuntime>,
+    state: SharedState,
+    runtime: Rc<dyn CommandRuntime>,
     pending: Option<CommandTaskState>,
     pending_allows_attach_io: bool,
     budget: usize,
@@ -1189,8 +1066,8 @@ pub(crate) struct CommandCoroutine {
 impl CommandCoroutine {
     pub(crate) fn new(
         queue: ResumableCommandQueue,
-        state: Arc<Mutex<ServerState>>,
-        runtime: Arc<dyn CommandRuntime>,
+        state: SharedState,
+        runtime: Rc<dyn CommandRuntime>,
         budget: usize,
     ) -> Self {
         Self {
@@ -1292,7 +1169,7 @@ impl ResumableCommandQueue {
 
     pub(crate) fn drive(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         budget: usize,
     ) -> ResumableCommandTurn {
         for _ in 0..budget {
@@ -1385,7 +1262,8 @@ impl ResumableCommandQueue {
                     continue;
                 }
                 SharedQueueItem::EndHook { name } => {
-                    if let Ok(mut state) = state.lock() {
+                    {
+                        let mut state = state.borrow_mut();
                         state.end_hook(&name);
                         state.record_control_checkpoint();
                     }
@@ -1397,13 +1275,9 @@ impl ResumableCommandQueue {
             };
 
             {
-                let mut state = match state.lock() {
-                    Ok(state) => state,
-                    Err(_) => {
-                        return ResumableCommandTurn::Complete(CommandResult::err(
-                            "server state poisoned\n",
-                        ));
-                    }
+                let mut state = {
+                    let state = state.borrow_mut();
+                    state
                 };
                 state.add_message(format!(
                     "{} command: {}",
@@ -1423,13 +1297,9 @@ impl ResumableCommandQueue {
                 contributes_status,
             };
             if inflight.command.spec.name == "run-shell" && has_flag(&inflight.command.args, "-b") {
-                let jobs = match state.lock() {
-                    Ok(state) => state.background_job_registry(),
-                    Err(_) => {
-                        return ResumableCommandTurn::Complete(CommandResult::err(
-                            "server state poisoned\n",
-                        ));
-                    }
+                let jobs = {
+                    let state = state.borrow_mut();
+                    state.background_job_registry()
                 };
                 let mut result = CommandResult::ok("");
                 result
@@ -1448,9 +1318,9 @@ impl ResumableCommandQueue {
             {
                 let suspension = CommandSuspension::RunShell {
                     args: inflight.command.args.clone(),
-                    context: match state.lock() {
-                        Ok(state) => self.context.with_job_environment(&state),
-                        Err(_) => self.context.clone(),
+                    context: {
+                        let state = state.borrow_mut();
+                        self.context.with_job_environment(&state)
                     },
                 };
                 self.suspended = Some(inflight);
@@ -1471,8 +1341,8 @@ impl ResumableCommandQueue {
                 let then_command = positionals.get(1).map(|command| (*command).to_string());
                 let else_command = positionals.get(2).map(|command| (*command).to_string());
                 let request = if has_flag(&inflight.command.args, "-F") {
-                    let matched = match state.lock() {
-                        Ok(mut state) => {
+                    let matched = {
+                        let mut state = state.borrow_mut();
                             let previous =
                                 install_command_target_context(&mut state, &self.context);
                             let expanded = expand_if_cond(
@@ -1483,8 +1353,6 @@ impl ResumableCommandQueue {
                             );
                             restore_command_target_context(&mut state, previous);
                             !expanded.is_empty() && expanded != "0"
-                        }
-                        Err(_) => false,
                     };
                     BackgroundCommandRequest::Ready {
                         command: if matched { then_command } else { else_command },
@@ -1550,8 +1418,8 @@ impl ResumableCommandQueue {
                     continue;
                 };
                 if has_flag(&inflight.command.args, "-F") {
-                    let matched = match state.lock() {
-                        Ok(mut state) => {
+                    let matched = {
+                        let mut state = state.borrow_mut();
                             let previous =
                                 install_command_target_context(&mut state, &self.context);
                             let expanded = expand_if_cond(
@@ -1562,8 +1430,6 @@ impl ResumableCommandQueue {
                             );
                             restore_command_target_context(&mut state, previous);
                             !expanded.is_empty() && expanded != "0"
-                        }
-                        Err(_) => false,
                     };
                     let execution =
                         self.plan_if_shell_branch(&inflight.command.args, matched, state);
@@ -1572,9 +1438,9 @@ impl ResumableCommandQueue {
                 }
                 let suspension = CommandSuspension::IfShell {
                     condition: condition.to_string(),
-                    context: match state.lock() {
-                        Ok(state) => self.context.with_job_environment(&state),
-                        Err(_) => self.context.clone(),
+                    context: {
+                        let state = state.borrow_mut();
+                        self.context.with_job_environment(&state)
                     },
                 };
                 self.suspended = Some(inflight);
@@ -1617,11 +1483,9 @@ impl ResumableCommandQueue {
                 }
             }
             if inflight.command.spec.name == "save-buffer" {
-                let request = match state.lock() {
-                    Ok(state) => {
+                let request = {
+                    let state = state.borrow_mut();
                         save_buffer_client_request(&inflight.command.args, &state, &self.context)
-                    }
-                    Err(_) => Some(Err(CommandResult::err("server state poisoned\n"))),
                 };
                 if let Some(request) = request {
                     match request {
@@ -1643,18 +1507,9 @@ impl ResumableCommandQueue {
                 }
             }
             if inflight.command.spec.name == "wait-for" {
-                let registry = match state.lock() {
-                    Ok(state) => state.wait_registry(),
-                    Err(_) => {
-                        self.finish_execution(
-                            inflight,
-                            SharedCommandExecution::completed(CommandResult::err(
-                                "server state poisoned\n",
-                            )),
-                            state,
-                        );
-                        continue;
-                    }
+                let registry = {
+                    let state = state.borrow_mut();
+                    state.wait_registry()
                 };
                 let args = inflight.command.args.clone();
                 self.suspended = Some(inflight);
@@ -1673,18 +1528,9 @@ impl ResumableCommandQueue {
                     );
                     continue;
                 }
-                let registry = match state.lock() {
-                    Ok(state) => state.client_prompt_registry(),
-                    Err(_) => {
-                        self.finish_execution(
-                            inflight,
-                            SharedCommandExecution::completed(CommandResult::err(
-                                "server state poisoned\n",
-                            )),
-                            state,
-                        );
-                        continue;
-                    }
+                let registry = {
+                    let state = state.borrow_mut();
+                    state.client_prompt_registry()
                 };
                 let suspension = CommandSuspension::CommandPrompt {
                     target: command_prompt_target(&inflight.command.args),
@@ -1766,9 +1612,6 @@ impl ResumableCommandQueue {
             let command = &inflight.command;
 
             let mut execution = match command.spec.name {
-                "run-shell" if !has_flag(&command.args, "-b") => SharedCommandExecution::completed(
-                    run_shell_shared(&command.args, state, &self.agents, &self.context),
-                ),
                 "load-buffer" => SharedCommandExecution::completed(run_load_buffer_shared(
                     &command,
                     state,
@@ -1829,7 +1672,7 @@ impl ResumableCommandQueue {
         &self,
         args: &[String],
         matched: bool,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) -> SharedCommandExecution {
         let positionals = positionals(args, &["-t"]);
         let branch = if matched {
@@ -1862,15 +1705,15 @@ impl ResumableCommandQueue {
     fn plan_nested_command_line(
         &self,
         line: &str,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         capture: NestedCapture,
     ) -> Result<Vec<SharedQueueItem>, CommandResult> {
         let tokens = tokenize_line(line);
         let owned_groups = tokenized_command_groups(&tokens);
         let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-        let aliases = match state.lock() {
-            Ok(state) => state.command_aliases(),
-            Err(_) => return Err(CommandResult::err("server state poisoned\n")),
+        let aliases = {
+            let state = state.borrow_mut();
+            state.command_aliases()
         };
         let parsed =
             parse_command_groups_with_aliases(groups, &aliases).map_err(|mut result| {
@@ -1900,11 +1743,11 @@ impl ResumableCommandQueue {
     fn plan_deferred_commands(
         &self,
         commands: Vec<DeferredCommand>,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) -> Result<Vec<SharedQueueItem>, CommandResult> {
-        let aliases = match state.lock() {
-            Ok(state) => state.command_aliases(),
-            Err(_) => return Err(CommandResult::err("server state poisoned\n")),
+        let aliases = {
+            let state = state.borrow_mut();
+            state.command_aliases()
         };
         let mut planned = Vec::new();
         for command in commands {
@@ -1940,7 +1783,7 @@ impl ResumableCommandQueue {
     pub(crate) fn resume(
         &mut self,
         result: CommandSuspensionResult,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) {
         if let Some(nested) = self.nested.as_mut() {
             nested.queue.resume(result, state);
@@ -1952,15 +1795,13 @@ impl ResumableCommandQueue {
             .expect("command suspension completed without an active queue item");
         let execution = match result {
             CommandSuspensionResult::RunShell(completion) => {
-                let result = match state.lock() {
-                    Ok(mut state) => {
+                let result = {
+                    let mut state = state.borrow_mut();
                         let previous = install_command_target_context(&mut state, &self.context);
                         let result = finish_run_shell(completion, &mut state);
                         state.record_control_checkpoint();
                         restore_command_target_context(&mut state, previous);
                         result
-                    }
-                    Err(_) => CommandResult::err("server state poisoned\n"),
                 };
                 SharedCommandExecution::completed(result)
             }
@@ -1994,7 +1835,7 @@ impl ResumableCommandQueue {
         &mut self,
         inflight: SuspendedCommand,
         mut execution: SharedCommandExecution,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) {
         let command = &inflight.command;
         let exit = execution.result.exit;
@@ -2007,7 +1848,8 @@ impl ResumableCommandQueue {
                 } else {
                     format!("{location}: {diagnostic}")
                 };
-                if let Ok(mut state) = state.lock() {
+                {
+                    let mut state = state.borrow_mut();
                     state.push_config_error(diagnostic);
                 }
             }
@@ -2073,7 +1915,7 @@ impl ResumableCommandQueue {
         &self,
         command: &str,
         args: &[String],
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) -> Vec<Vec<SharedQueueItem>> {
         if self.context.suppress_after_hooks {
             return Vec::new();
@@ -2087,14 +1929,14 @@ impl ResumableCommandQueue {
     /// bodies, in the order the mutations happened.
     fn plan_notifications(
         &self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) -> Vec<Vec<SharedQueueItem>> {
         if self.context.suppress_notifications {
             return Vec::new();
         }
-        let notifications = match state.lock() {
-            Ok(mut state) => state.take_notifications(),
-            Err(_) => return Vec::new(),
+        let notifications = {
+            let mut state = state.borrow_mut();
+            state.take_notifications()
         };
         notifications
             .into_iter()
@@ -2116,7 +1958,7 @@ impl ResumableCommandQueue {
         hook: &str,
         requested_target: Option<&str>,
         vars: Vec<(String, String)>,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) -> Vec<Vec<SharedQueueItem>> {
         self.plan_hook_with_capture(
             hook,
@@ -2133,14 +1975,14 @@ impl ResumableCommandQueue {
         hook: &str,
         requested_target: Option<&str>,
         vars: Vec<(String, String)>,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         capture: NestedCapture,
         origin: HookOrigin,
     ) -> Vec<Vec<SharedQueueItem>> {
         let (commands, aliases) = {
-            let mut state = match state.lock() {
-                Ok(state) => state,
-                Err(_) => return Vec::new(),
+            let mut state = {
+                let state = state.borrow_mut();
+                state
             };
             let previous = install_command_target_context(&mut state, &self.context);
             let commands = hook_commands(hook, requested_target, &mut state, origin);
@@ -2152,11 +1994,11 @@ impl ResumableCommandQueue {
         };
 
         let mut hook_context = self.context.clone();
-        hook_context.hook_vars = Some(Arc::new(vars));
+        hook_context.hook_vars = Some(Rc::new(vars));
         // A hook body resolves an untargeted command against the hook's own
         // target, not the server's current one.
         if let Some(target) = requested_target {
-            hook_context.hook_target = Some(Arc::from(target));
+            hook_context.hook_target = Some(Rc::from(target));
         }
         if matches!(origin, HookOrigin::Event) {
             // tmux runs an event hook's body on the global queue with
@@ -2251,31 +2093,6 @@ impl ResumableCommandQueue {
 /// Execute a command list containing a blocking command without holding the
 /// server state mutex while it waits. Other commands still run one at a time
 /// with the same client/session context and hook behavior.
-fn run_shared_command_groups(
-    parsed: Vec<ParsedCommand>,
-    state: &Arc<Mutex<ServerState>>,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    run_resumable_command(ResumableCommandQueue::new(parsed, agents, context), state)
-}
-
-fn run_resumable_command(
-    mut queue: ResumableCommandQueue,
-    state: &Arc<Mutex<ServerState>>,
-) -> CommandResult {
-    loop {
-        match queue.drive(state, usize::MAX) {
-            ResumableCommandTurn::Pending => continue,
-            ResumableCommandTurn::Suspended(suspension) => {
-                let result = run_blocking(SuspensionJob::new(suspension));
-                queue.resume(result, state);
-            }
-            ResumableCommandTurn::Complete(result) => return result,
-        }
-    }
-}
-
 fn client_interaction_waits(name: &str, args: &[String]) -> bool {
     match name {
         "confirm-before" | "display-panes" => !has_flag(args, "-b"),
@@ -2310,13 +2127,13 @@ fn interaction_completion_result(completion: PromptCompletion) -> CommandResult 
 
 fn run_single_shared(
     command: &ParsedCommand,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
-    let mut state = match state.lock() {
-        Ok(state) => state,
-        Err(_) => return CommandResult::err("server state poisoned\n"),
+    let mut state = {
+        let state = state.borrow_mut();
+        state
     };
     let previous = install_command_target_context(&mut state, context);
     let result = run_single(
@@ -2331,79 +2148,9 @@ fn run_single_shared(
     result
 }
 
-fn run_shell_shared(
-    args: &[String],
-    state: &Arc<Mutex<ServerState>>,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    if has_flag(args, "-C") {
-        let Some(command) = positionals(args, &["-t", "-c", "-d"]).first().copied() else {
-            return CommandResult::ok("");
-        };
-        return run_inserted_command_string(command, state, agents, context);
-    }
-    let context = match state.lock() {
-        Ok(state) => context.with_job_environment(&state),
-        Err(_) => return CommandResult::err("server state poisoned\n"),
-    };
-    let completion = run_blocking(RunShellJob::new(args, &context));
-    let mut state = match state.lock() {
-        Ok(state) => state,
-        Err(_) => return CommandResult::err("server state poisoned\n"),
-    };
-    let previous = install_command_target_context(&mut state, &context);
-    let result = finish_run_shell(completion, &mut state);
-    state.record_control_checkpoint();
-    restore_command_target_context(&mut state, previous);
-    result
-}
-
-/// Execute a command list inserted by a deferred queue item. Inserted commands
-/// have their own queue group: their failure sets the client status but does
-/// not discard the original group's tail.
-fn run_inserted_command_string(
-    line: &str,
-    state: &Arc<Mutex<ServerState>>,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    let tokens = tokenize_line(line);
-    let owned_groups = tokenized_command_groups(&tokens);
-    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    let aliases = match state.lock() {
-        Ok(state) => state.command_aliases(),
-        Err(_) => return CommandResult::err("server state poisoned\n"),
-    };
-    let parsed = match parse_command_groups_with_aliases(groups, &aliases) {
-        Ok(parsed) => parsed,
-        Err(mut error) => {
-            error.continue_queue = true;
-            return error;
-        }
-    };
-
-    let mut result = CommandResult::ok("");
-    let mut inserted_context = context.clone();
-    inserted_context.preserve_queue_insertions = true;
-    for command in parsed {
-        let mut inserted =
-            run_shared_command_groups(vec![command], state, agents, &inserted_context);
-        let exit = inserted.exit;
-        let continue_queue = inserted.continue_queue;
-        let nested = std::mem::take(&mut inserted.inserted_results);
-        result.inserted_results.push(inserted);
-        result.inserted_results.extend(nested);
-        if exit != 0 && !continue_queue {
-            break;
-        }
-    }
-    result
-}
-
 fn prepare_source_file_paths(
     args: &[String],
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> Result<Vec<String>, CommandResult> {
@@ -2413,9 +2160,7 @@ fn prepare_source_file_paths(
             if !has_bool_flag(args, 'F') {
                 return Ok(raw_path.to_string());
             }
-            let mut state = state
-                .lock()
-                .map_err(|_| CommandResult::err("server state poisoned\n"))?;
+            let mut state = state.borrow_mut();
             let previous = install_command_target_context(&mut state, context);
             let path = expand_if_cond(raw_path, args, &state, agents);
             restore_command_target_context(&mut state, previous);
@@ -2428,7 +2173,7 @@ fn plan_source_file_completion(
     args: &[String],
     source_depth: u8,
     reads: Vec<SourceFileRead>,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
 ) -> SharedCommandExecution {
     let quiet = has_flag(args, "-q");
     let parse_only = has_flag(args, "-n");
@@ -2445,16 +2190,12 @@ fn plan_source_file_completion(
             Ok(contents) => {
                 let mut file_insertions = Vec::new();
                 let mut file_parse_error = false;
-                let environment = match state.lock() {
-                    Ok(state) => state
+                let environment = {
+                    let state = state.borrow_mut();
+                    state
                         .env_iter()
                         .map(|(name, value)| (name.clone(), value.clone()))
-                        .collect::<BTreeMap<_, _>>(),
-                    Err(_) => {
-                        return SharedCommandExecution::completed(CommandResult::err(
-                            "server state poisoned\n",
-                        ))
-                    }
+                        .collect::<BTreeMap<_, _>>()
                 };
                 let parsed = match source_lines(&contents, &environment) {
                     Ok(parsed) => parsed,
@@ -2466,7 +2207,8 @@ fn plan_source_file_completion(
                     }
                 };
                 if !parse_only {
-                    if let Ok(mut state) = state.lock() {
+                    {
+                        let mut state = state.borrow_mut();
                         for (name, value, hidden) in &parsed.assignments {
                             if *hidden {
                                 state.set_hidden_env(name, value);
@@ -2488,13 +2230,9 @@ fn plan_source_file_completion(
                     let parsed = if parse_only {
                         parse_command_groups(groups)
                     } else {
-                        let aliases = match state.lock() {
-                            Ok(state) => state.command_aliases(),
-                            Err(_) => {
-                                return SharedCommandExecution::completed(CommandResult::err(
-                                    "server state poisoned\n",
-                                ))
-                            }
+                        let aliases = {
+                            let state = state.borrow_mut();
+                            state.command_aliases()
                         };
                         parse_command_groups_with_aliases(groups, &aliases)
                     };
@@ -2539,7 +2277,8 @@ fn plan_source_file_completion(
                                 out.stderr.push_str(&result.stderr);
                                 out.exit = 1;
                                 out.continue_queue = true;
-                                if let Ok(mut state) = state.lock() {
+                                {
+                                    let mut state = state.borrow_mut();
                                     state.push_config_error(diagnostic);
                                 }
                             }
@@ -2577,7 +2316,7 @@ fn plan_source_file_completion(
 
 fn run_load_buffer_shared(
     command: &ParsedCommand,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
@@ -2589,56 +2328,11 @@ fn run_load_buffer_shared(
 
 fn run_save_buffer_shared(
     command: &ParsedCommand,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
     run_single_shared(command, state, agents, context)
-}
-
-/// Parse and execute a command line against already-locked state. Split out from
-/// [`run`] so commands that run other commands (`if-shell`) can drive the
-/// interpreter without re-locking the mutex (which would deadlock).
-fn run_line(
-    args: &[String],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    // A real tmux client preserves the historical shell spelling `start\;`
-    // as one argv word (`"start;"`) in MSG_COMMAND. The server-side parser
-    // still treats the trailing semicolon as a command separator. The same
-    // applies when it follows an attached flag value (`"-dsfoo;"`).
-    let expanded_args = expand_attached_separators(args);
-
-    // Split the line into `;`-separated command groups.
-    let groups: Vec<&[String]> = split_commands(&expanded_args);
-    run_command_groups(groups, st, agents, context)
-}
-
-/// Run a nested command list while the caller already owns the server-state
-/// lock. Mode key bindings use this path to avoid re-locking the state.
-pub(crate) fn run_locked(
-    args: &[String],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    run_line(args, st, agents, context)
-}
-
-/// Execute a line that was lexed from a tmux command string. Separator tokens
-/// retain their syntax role, so a quoted or escaped literal `;` remains an
-/// ordinary command argument.
-fn run_tokenized_line(
-    tokens: &[LineToken],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    let owned_groups = tokenized_command_groups(tokens);
-    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    run_command_groups(groups, st, agents, context)
 }
 
 fn tokenized_command_groups(tokens: &[LineToken]) -> Vec<Vec<String>> {
@@ -2660,69 +2354,9 @@ fn tokenized_command_groups(tokens: &[LineToken]) -> Vec<Vec<String>> {
     owned_groups
 }
 
-fn parse_tokenized_line(tokens: &[LineToken]) -> CommandResult {
-    let owned_groups = tokenized_command_groups(tokens);
-    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    match parse_command_groups(groups) {
-        Ok(_) => CommandResult::ok(""),
-        Err(error) => error,
-    }
-}
-
 struct ParsedCommand {
     spec: &'static CommandSpec,
     args: Vec<String>,
-}
-
-fn run_command_groups(
-    groups: Vec<&[String]>,
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    if groups.is_empty() {
-        return CommandResult::ok("");
-    }
-
-    let aliases = st.command_aliases();
-    let parsed = match parse_command_groups_with_aliases(groups, &aliases) {
-        Ok(parsed) => parsed,
-        Err(error) => return error,
-    };
-
-    // Exec phase: run each command in order, accumulating output; stop at the
-    // first one that fails and report its exit code.
-    let mut out = CommandResult::ok("");
-    for command in parsed {
-        st.add_message(format!(
-            "{} command: {}",
-            context
-                .client_pid
-                .map(|pid| format!("client-{pid}"))
-                .unwrap_or_else(|| "client-unknown".to_string()),
-            display_command(&command.args)
-        ));
-        let r = run_single(command.spec.command, &command.args, st, agents, context);
-        st.record_control_checkpoint();
-        out.append_stdout(&r);
-        out.stderr.push_str(&r.stderr);
-        out.exit = r.exit;
-        if r.exit != 0 {
-            run_hook(
-                "command-error",
-                flag_value(&command.args, "-t"),
-                hook_command_vars("command-error", command.spec.name, &command.args),
-                st,
-                agents,
-                context,
-            );
-            break;
-        }
-        run_after_hook(command.spec.name, &command.args, st, agents, context);
-        run_raised_notifications(st, agents, context);
-        st.record_control_checkpoint();
-    }
-    out
 }
 
 pub(crate) fn display_command(args: &[String]) -> String {
@@ -2790,129 +2424,94 @@ fn hook_command_vars(hook: &str, command: &str, args: &[String]) -> Vec<(String,
     vars
 }
 
-/// Run the `after-*` hook of a command the client file protocol completed
-/// outside the command queue (`save-buffer` to a client-side path).
-pub(crate) fn run_client_file_after_hook(
+/// The `after-*` hook of a command the client file protocol completed outside
+/// the command queue (`save-buffer` to a client-side path), plus whatever it
+/// raised, for the loop to run as detached queues.
+pub(crate) fn take_client_file_after_hooks(
     args: &[String],
     st: &mut ServerState,
     context: &ClientContext,
-) {
+) -> Vec<BackgroundCommandRequest> {
     let Some(name) = args.first() else {
-        return;
+        return Vec::new();
     };
     let Resolution::Name(name) = registry::resolve(name) else {
-        return;
+        return Vec::new();
     };
     let normalized = normalize_argv(name, args);
-    let agents = PaneAgents::new();
-    run_after_hook(name, &normalized, st, &agents, context);
-    run_raised_notifications(st, &agents, context);
-}
-
-fn run_after_hook(
-    command: &str,
-    args: &[String],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) {
-    let hook = format!("after-{command}");
-    let vars = hook_command_vars(&hook, command, args);
-    run_hook(&hook, flag_value(args, "-t"), vars, st, agents, context);
-}
-
-/// Drain whatever the command just raised, mirroring the queue path's
-/// `plan_notifications` for the synchronous runner.
-fn run_raised_notifications(st: &mut ServerState, agents: &PaneAgents, context: &ClientContext) {
-    if context.suppress_notifications {
-        return;
-    }
-    for notification in st.take_notifications() {
-        run_event_hook(
-            &notification.name,
-            notification.target.as_deref(),
-            notification.vars,
-            st,
-            agents,
-            context,
-        );
-    }
-}
-
-/// Run the bodies of notifications raised outside the command queue — a pane
-/// exiting, an alert firing. tmux dispatches these from its global command
-/// queue; hmux runs them from the server loop, where no client is involved.
-pub(crate) fn run_deferred_notification_hooks(st: &mut ServerState) {
-    // A body that raises further deferred notifications is bounded rather than
-    // allowed to spin the server loop.
-    const MAX_ROUNDS: usize = 8;
-    let agents = PaneAgents::new();
-    let context = ClientContext::default();
-    for _ in 0..MAX_ROUNDS {
-        let notifications = st.take_deferred_notifications();
-        if notifications.is_empty() {
-            return;
-        }
-        for notification in notifications {
-            run_event_hook(
+    let hook = format!("after-{name}");
+    let vars = hook_command_vars(&hook, name, &normalized);
+    let mut requests = Vec::new();
+    push_event_hook(
+        &hook,
+        flag_value(&normalized, "-t"),
+        vars,
+        st,
+        context,
+        &mut requests,
+    );
+    if !context.suppress_notifications {
+        for notification in st.take_notifications() {
+            push_event_hook(
                 &notification.name,
                 notification.target.as_deref(),
                 notification.vars,
                 st,
-                &agents,
-                &context,
+                context,
+                &mut requests,
             );
         }
     }
+    requests
 }
 
-fn run_event_hook(
+/// The bodies of notifications raised outside the command queue — a pane
+/// exiting, an alert firing. tmux dispatches these from its global command
+/// queue; hmux hands them to the loop as detached queues of their own, so a
+/// body that has to wait for a shell waits there rather than on the loop.
+pub(crate) fn take_deferred_notification_hooks(
+    st: &mut ServerState,
+) -> Vec<BackgroundCommandRequest> {
+    let context = ClientContext::default();
+    let mut requests = Vec::new();
+    for notification in st.take_deferred_notifications() {
+        push_event_hook(
+            &notification.name,
+            notification.target.as_deref(),
+            notification.vars,
+            st,
+            &context,
+            &mut requests,
+        );
+    }
+    requests
+}
+
+fn push_event_hook(
     hook: &str,
     requested_target: Option<&str>,
     vars: Vec<(String, String)>,
     st: &mut ServerState,
-    agents: &PaneAgents,
     context: &ClientContext,
+    requests: &mut Vec<BackgroundCommandRequest>,
 ) {
     let Some(commands) = hook_commands(hook, requested_target, st, HookOrigin::Event) else {
         return;
     };
     let mut context = context.clone();
-    context.hook_target = requested_target.map(Arc::from);
+    context.hook_target = requested_target.map(Rc::from);
     context.suppress_after_hooks = true;
     context.suppress_notifications = true;
-    let previous_targets = install_command_target_context(st, &context);
-    let previous = st.replace_hook_format_vars(vars);
+    context.hook_vars = Some(Rc::new(vars));
     for command in commands {
-        let tokens = tokenize_line(&command);
-        if !tokens.is_empty() {
-            let _ = run_tokenized_line(&tokens, st, agents, &context);
+        if command.trim().is_empty() {
+            continue;
         }
+        requests.push(BackgroundCommandRequest::Ready {
+            command: Some(command),
+            context: context.clone(),
+        });
     }
-    st.replace_hook_format_vars(previous);
-    restore_command_target_context(st, previous_targets);
-}
-
-fn run_hook(
-    hook: &str,
-    requested_target: Option<&str>,
-    vars: Vec<(String, String)>,
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) {
-    let Some(commands) = begin_hook_commands(hook, requested_target, st) else {
-        return;
-    };
-    let previous = st.replace_hook_format_vars(vars);
-    for command in commands {
-        let tokens = tokenize_line(&command);
-        if !tokens.is_empty() {
-            let _ = run_tokenized_line(&tokens, st, agents, context);
-        }
-    }
-    st.replace_hook_format_vars(previous);
-    st.end_hook(hook);
 }
 
 /// Whether a hook body comes from a command's `after-*`/`command-error` hook
@@ -2923,14 +2522,6 @@ fn run_hook(
 enum HookOrigin {
     Command,
     Event,
-}
-
-fn begin_hook_commands(
-    hook: &str,
-    requested_target: Option<&str>,
-    st: &mut ServerState,
-) -> Option<Vec<String>> {
-    hook_commands(hook, requested_target, st, HookOrigin::Command)
 }
 
 fn hook_commands(
@@ -4209,10 +3800,10 @@ struct TreeLoops<'a> {
 /// expansion — `display-message`, `if-shell -F`, a status redraw — caching each
 /// in the tree of the client the format belongs to.
 pub(crate) struct CommandJobs {
-    registry: Arc<super::status::FormatJobRegistry>,
+    registry: Rc<super::status::FormatJobRegistry>,
     session_id: u32,
     cwd: Option<PathBuf>,
-    environment: Arc<Vec<String>>,
+    environment: Rc<Vec<String>>,
 }
 
 impl CommandJobs {
@@ -4245,7 +3836,7 @@ impl format::FormatJobs for CommandJobs {
             vars,
             self.session_id,
             self.cwd.clone(),
-            Arc::clone(&self.environment),
+            Rc::clone(&self.environment),
             // Not a status redraw, so finishing must not invalidate one.
             false,
         )
@@ -6567,12 +6158,7 @@ fn show_options(args: &[String], st: &ServerState, window_command: bool) -> Comm
     }
 }
 
-fn set_hook(
-    args: &[String],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
+fn set_hook(args: &[String], st: &mut ServerState) -> CommandResult {
     let hook = positionals(args, &["-t"]).into_iter().next();
     if has_flag(args, "-R") {
         let Some(hook) = hook else {
@@ -6581,9 +6167,9 @@ fn set_hook(
         if !options::is_hook(hook) {
             return CommandResult::err(format!("invalid option: {hook}\n"));
         }
-        let vars = vec![("hook".to_string(), hook.to_string())];
-        run_hook(hook, flag_value(args, "-t"), vars, st, agents, context);
-        return CommandResult::ok("");
+        // `-R` runs the hook's body, which the queue lifts into queue items
+        // of its own before dispatch reaches here.
+        return CommandResult::err("not able to wait\n");
     }
     set_option(args, st, false)
 }
@@ -8218,24 +7804,6 @@ fn job_delay(args: &[String]) -> Result<std::time::Duration, CommandResult> {
     Ok(std::time::Duration::from_secs_f64(seconds))
 }
 
-/// `run-shell command`. Runs the command with `sh -c` and forwards its stdout to
-/// the client, like tmux's non-interactive run-shell.
-fn run_shell(
-    args: &[String],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    if has_flag(args, "-C") {
-        let Some(command) = positionals(args, &["-t", "-c", "-d"]).first().copied() else {
-            return CommandResult::ok("");
-        };
-        return run_tokenized_line(&tokenize_line(command), st, agents, context);
-    }
-    let completion = run_blocking(RunShellJob::new(args, &context.with_job_environment(st)));
-    finish_run_shell(completion, st)
-}
-
 pub(crate) struct RunShellCompletion {
     result: CommandResult,
     view: Option<(String, Vec<u8>)>,
@@ -8256,61 +7824,6 @@ fn finish_run_shell(completion: RunShellCompletion, state: &mut ServerState) -> 
     completion.result
 }
 
-/// `if-shell cond then [else]`. Runs `cond` with `sh -c`; on success executes the
-/// `then` tmux command, otherwise the optional `else` command. The branch is a
-/// tmux command line, executed through the interpreter.
-fn if_shell(
-    args: &[String],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    let pos = positionals(args, &["-t"]);
-    let cond = match pos.first() {
-        Some(c) => (*c).to_string(),
-        None => return CommandResult::err("if-shell: too few arguments\n"),
-    };
-    let then_cmd = pos.get(1).map(|command| (*command).to_string());
-    let else_cmd = pos.get(2).map(|command| (*command).to_string());
-    debug_assert!(!has_flag(args, "-b"));
-    let ok = if has_flag(args, "-F") {
-        // `-F`: the condition is a *format*, not a shell command. Real tmux
-        // expands it and branches on its truthiness — non-empty and not "0" —
-        // without spawning a subprocess (cmd-if-shell.c).
-        let expanded = expand_if_cond(&cond, args, st, agents);
-        !expanded.is_empty() && expanded != "0"
-    } else {
-        if cond
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .ends_with(&["run", "\"true\""])
-        {
-            true
-        } else {
-            let mut shell = shell_command(&cond, &context.with_job_environment(st));
-            shell.status().map(|s| s.success()).unwrap_or(false)
-        }
-    };
-    let branch = if ok { then_cmd } else { else_cmd };
-    match branch {
-        // The branch is a command line; split on whitespace (sufficient for the
-        // simple commands the control plane runs) and execute it.
-        Some(line) => {
-            let tokens = tokenize_line(&line);
-            if tokens.is_empty() {
-                CommandResult::ok("")
-            } else {
-                run_tokenized_line(&tokens, st, agents, context)
-            }
-        }
-        None => CommandResult::ok(""),
-    }
-}
-
-/// Collapse a key binding written as tmux's guarded `if-shell -F` form down to
-/// the branch that will actually run.
-///
-/// The default mouse bindings are all shaped `if -F '#{mouse_any_flag}...'
 /// {send -M} {copy-mode -M}`, and the branch decides between a client-local
 /// outcome (entering copy mode, resizing) and an ordinary command. Resolving
 /// the condition before dispatch is what lets the attach loop keep handling
@@ -8353,6 +7866,11 @@ pub(super) fn resolve_conditional_binding(
 /// target (`-t`, else the current session) so `#{...}` references resolve
 /// against the live tree. Falls back to an empty context when no target
 /// resolves — matching real tmux, which still expands the format.
+
+/// Expand `if-shell -F`'s condition as a format, anchored at the command's
+/// target (`-t`, else the current session) so `#{...}` references resolve
+/// against the live tree. Falls back to an empty context when no target
+/// resolves — matching real tmux, which still expands the format.
 fn expand_if_cond(cond: &str, args: &[String], st: &ServerState, agents: &PaneAgents) -> String {
     let target = flag_value(args, "-t")
         .map(str::to_string)
@@ -8381,104 +7899,6 @@ fn expand_if_cond(cond: &str, args: &[String], st: &ServerState, agents: &PaneAg
 
 /// `source-file [-Fnqv] [-t target] path ...`. Reads each file of tmux commands
 /// and runs them, exactly as `.tmux.conf` is loaded. A path that can't be opened
-/// reports the file-open error (`<strerror>: <path>`, exit 1) unless `-q`
-/// (quiet), which swallows it and keeps exit 0 — the idiom for sourcing an
-/// optional config. `-F` expands each path as a format in the target context.
-/// `-n` validates without mutation and `-v` prints the parsed commands. The
-/// shared-state execution path above inserts sourced commands into its command
-/// queue; this direct-state path is retained for the in-process interpreter.
-fn source_file(
-    args: &[String],
-    st: &mut ServerState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> CommandResult {
-    let quiet = has_flag(args, "-q");
-    let parse_only = has_flag(args, "-n");
-    let verbose = has_flag(args, "-v");
-    let mut out = CommandResult::ok("");
-    for raw_path in positionals(args, &["-t"]) {
-        let path = if has_bool_flag(args, 'F') {
-            expand_if_cond(raw_path, args, st, agents)
-        } else {
-            raw_path.to_string()
-        };
-        match std::fs::read_to_string(&path) {
-            Ok(contents) => {
-                let environment = st
-                    .env_iter()
-                    .map(|(name, value)| (name.clone(), value.clone()))
-                    .collect::<BTreeMap<_, _>>();
-                let parsed = match source_lines(&contents, &environment) {
-                    Ok(parsed) => parsed,
-                    Err((line, message)) => {
-                        out.stderr.push_str(&format!("{path}:{line}: {message}\n"));
-                        out.exit = 1;
-                        continue;
-                    }
-                };
-                if !parse_only {
-                    for (name, value, hidden) in &parsed.assignments {
-                        if *hidden {
-                            st.set_hidden_env(name, value);
-                        } else {
-                            st.set_env(name, value);
-                        }
-                    }
-                }
-                for (line_number, line) in parsed.lines {
-                    if verbose {
-                        out.stdout.push_str(&format!(
-                            "{path}:{line_number}: {}\n",
-                            source_verbose_line(&line)
-                        ));
-                    }
-                    let r = if parse_only {
-                        parse_tokenized_line(&line)
-                    } else {
-                        run_tokenized_line(&line, st, agents, context)
-                    };
-                    if !parse_only {
-                        out.append_stdout(&r);
-                        out.stderr.push_str(&r.stderr);
-                    }
-                    if r.exit != 0 {
-                        let diagnostic = r.stderr.trim_end();
-                        let location = format!("{path}:{line_number}");
-                        let diagnostic = if matches!(
-                            line.iter().find_map(LineToken::word),
-                            Some("if" | "if-shell")
-                        ) {
-                            format!("{location}: {location}: {diagnostic}")
-                        } else {
-                            format!("{location}: {diagnostic}")
-                        };
-                        if parse_only {
-                            out.stdout.push_str(&diagnostic);
-                            out.stdout.push('\n');
-                            out.exit = 1;
-                        } else {
-                            st.push_config_error(diagnostic);
-                        }
-                    }
-                }
-            }
-            Err(e) if quiet => {
-                // `-q`: an unreadable file is not an error. Match tmux, which only
-                // suppresses the missing-file diagnostic — other failures already
-                // surfaced by the sourced commands above still stand.
-                let _ = e;
-            }
-            Err(e) => {
-                out.stderr
-                    .push_str(&format!("{}: {}\n", io_error_message(&e), path));
-                out.exit = 1;
-            }
-        }
-    }
-    out
-}
-
 /// One parsed configuration file: the command lines with their file line
 /// numbers, plus the parser assignments made in active branches, which the
 /// caller publishes to the global environment as tmux does.
@@ -8495,6 +7915,16 @@ struct SourceCondition {
     active: bool,
     seen_else: bool,
 }
+
+/// Split a sourced config file into command argv lines. This preprocessing
+/// layer handles the configuration-only syntax which cannot be represented by
+/// ordinary command argv: conditional directives, parser assignments, and
+/// brace command blocks. `environment` is the server's global environment,
+/// which seeds `$NAME` expansion; an undefined name expands to nothing.
+///
+/// Like tmux, the whole file is parsed before anything runs, so a structural
+/// error — an unbalanced conditional or an invalid escape — rejects the file:
+/// the error is `(line, diagnostic)`.
 
 /// Split a sourced config file into command argv lines. This preprocessing
 /// layer handles the configuration-only syntax which cannot be represented by
@@ -9329,17 +8759,17 @@ fn pane_argv(
 mod tests {
     use super::*;
 
-    fn state() -> Arc<Mutex<ServerState>> {
-        Arc::new(Mutex::new(ServerState::with_test_session().unwrap()))
+    fn state() -> SharedState {
+        crate::server::state::shared_state(ServerState::with_test_session().unwrap())
     }
 
-    fn run_str(st: &Arc<Mutex<ServerState>>, args: &[&str]) -> CommandResult {
+    fn run_str(st: &SharedState, args: &[&str]) -> CommandResult {
         let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
         run(&owned, st, &PaneAgents::new())
     }
 
     fn run_str_agents(
-        st: &Arc<Mutex<ServerState>>,
+        st: &SharedState,
         agents: &PaneAgents,
         args: &[&str],
     ) -> CommandResult {
@@ -9400,7 +8830,7 @@ mod tests {
     fn read_only_command_does_not_invalidate_an_attached_client() {
         let st = state();
         let (pane_output, render) = {
-            let guard = st.lock().unwrap();
+            let guard = st.borrow_mut();
             let pane_output = guard.subscribe_active_pane_output("0").unwrap();
             let registry = guard.client_render_registry();
             let session_id = guard.session_id("0").unwrap();
@@ -9427,7 +8857,7 @@ mod tests {
     fn window_status_change_invalidates_only_its_attached_session() {
         let st = state();
         let (registry, session_0, session_1) = {
-            let mut guard = st.lock().unwrap();
+            let mut guard = st.borrow_mut();
             guard.create_session("1", PaneSpec::Inert).unwrap();
             (
                 guard.client_render_registry(),
@@ -9457,7 +8887,7 @@ mod tests {
     fn status_interval_change_wakes_attached_clients_to_reschedule_timer() {
         let st = state();
         let attached = {
-            let guard = st.lock().unwrap();
+            let guard = st.borrow_mut();
             let registry = guard.client_render_registry();
             registry
                 .attach(guard.session_id("0").unwrap(), "test-client".into())
@@ -9479,7 +8909,7 @@ mod tests {
     fn terminal_override_change_wakes_clients_to_rebuild_their_profiles() {
         let st = state();
         let attached = {
-            let guard = st.lock().unwrap();
+            let guard = st.borrow_mut();
             let registry = guard.client_render_registry();
             registry
                 .attach(guard.session_id("0").unwrap(), "test-client".into())
@@ -9758,7 +9188,7 @@ mod tests {
         // oldest top of scrollback history.
         let st = state();
         {
-            let mut g = st.lock().unwrap();
+            let mut g = st.borrow_mut();
             let _ = g.resize_session("0", 80, 24);
             let mut feed = b"HEAD_OLDEST\r\n".to_vec();
             for i in 1..=60 {
@@ -9791,7 +9221,7 @@ mod tests {
         // on a fresh server), not on stdout.
         let st = state();
         {
-            let g = st.lock().unwrap();
+            let g = st.borrow_mut();
             g.active_pane("0").unwrap().feed(b"CAPTURED_LINE");
         }
         let cap = run_str(&st, &["capture-pane", "-t", "0"]);
@@ -10030,7 +9460,7 @@ mod tests {
     fn display_message_routes_to_control_clients() {
         let st = state();
         let (session_id, registry) = {
-            let st = st.lock().unwrap();
+            let st = st.borrow_mut();
             (st.sessions()[0].id, st.client_render_registry())
         };
         let attachment = registry
@@ -11258,8 +10688,7 @@ mod tests {
             "brk\n"
         );
         assert_eq!(
-            st.lock()
-                .expect("state lock")
+            st.borrow_mut()
                 .option_for_target("0:1", "automatic-rename"),
             Some("off")
         );
@@ -12188,7 +11617,7 @@ mod tests {
     #[test]
     fn exit_empty_takes_hmux_after_session_beside_tmux_flag_values() {
         let st = state();
-        let show = |st: &Arc<Mutex<ServerState>>| {
+        let show = |st: &SharedState| {
             run_str(st, &["show-options", "-s", "-v", "exit-empty"]).stdout
         };
         assert_eq!(show(&st), "after-session\n");
@@ -12324,7 +11753,7 @@ mod tests {
     #[test]
     fn multi_command_stdout_preserves_text_and_binary_order() {
         let st = state();
-        st.lock().unwrap().set_buffer(Some("raw"), b"middle\0\xff");
+        st.borrow_mut().set_buffer(Some("raw"), b"middle\0\xff");
 
         let result = run_str(
             &st,
@@ -12494,7 +11923,7 @@ mod tests {
     #[test]
     fn new_session_for_attach_creates_and_returns_name() {
         let st = state();
-        let mut g = st.lock().unwrap();
+        let mut g = st.borrow_mut();
         // Explicit name.
         let context = ClientContext::default();
         let name = new_session_for_attach(
@@ -12541,7 +11970,7 @@ mod tests {
     #[test]
     fn new_session_for_attach_a_finds_existing() {
         let st = state();
-        let mut g = st.lock().unwrap();
+        let mut g = st.borrow_mut();
         // The default session "0" exists; `-A -s 0` must return it, not error.
         let name = new_session_for_attach(
             &["new-session".into(), "-A".into(), "-s".into(), "0".into()],
@@ -12555,7 +11984,7 @@ mod tests {
     #[test]
     fn new_session_for_attach_duplicate_errors_without_a() {
         let st = state();
-        let mut g = st.lock().unwrap();
+        let mut g = st.borrow_mut();
         // "0" already exists; creating it again without -A is tmux's duplicate error.
         let err = new_session_for_attach(
             &["new-session".into(), "-s".into(), "0".into()],
@@ -12569,7 +11998,7 @@ mod tests {
     #[test]
     fn new_session_for_attach_creates_session_group() {
         let st = state();
-        let mut g = st.lock().unwrap();
+        let mut g = st.borrow_mut();
         let name = new_session_for_attach(
             &[
                 "new-session".into(),

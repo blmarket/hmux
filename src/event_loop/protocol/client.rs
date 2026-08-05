@@ -5,14 +5,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::integration::status::StatusHub;
 use crate::server::attach::ClientTty;
 use crate::server::command::{self, ClientContext, CommandResult};
 use crate::server::control::{EventControlClient, EventControlSource};
-use crate::server::state::ServerState;
+use crate::server::state::SharedState;
 use crate::server::Server;
 use crate::tmux::codec::{encode_bytes, ImsgReader, NonblockingImsgWriter, MAX_IMSGSIZE};
 use crate::tmux::introspect::{log_frame, Direction};
@@ -21,7 +20,7 @@ use crate::tmux::traits::NonblockingFrameWriter;
 
 use super::super::actor::ActorRef;
 use super::super::driver::Outbox;
-use super::super::job::BackgroundCommands;
+use super::super::job::{BackgroundCommands, JobEvent};
 use super::super::reactor::Token;
 use super::super::suspend::{EventCommandRuntime, SuspensionExecutorHandle};
 use super::super::timer::TimerId;
@@ -52,7 +51,6 @@ pub(crate) enum ProtocolCloseReason {
     Completed,
     PeerClosed,
     Error(io::ErrorKind),
-    Shutdown,
     IdentifyExceedsLimit,
     FrameExceedsQueueLimit,
 }
@@ -72,7 +70,6 @@ pub(crate) enum ProtocolEvent {
     ControlTimer(u64),
     AttachReady(EventAttachSource),
     AttachTimer(u64),
-    Shutdown,
 }
 
 /// Completion state retained after direct protocol descriptors are dropped.
@@ -173,10 +170,10 @@ pub(super) struct ProtocolRegistrations {
 pub(crate) struct ProtocolClient {
     pub(super) reader: ImsgReader,
     pub(super) writer: NonblockingImsgWriter,
-    pub(super) state: Arc<Mutex<ServerState>>,
+    pub(super) state: SharedState,
     pub(super) hub: StatusHub,
     pub(super) background_commands: ActorRef<BackgroundCommands>,
-    pub(super) command_runtime: Arc<dyn command::CommandRuntime>,
+    pub(super) command_runtime: Rc<dyn command::CommandRuntime>,
     pub(super) protocol_state: ProtocolState,
     pub(super) registrations: ProtocolRegistrations,
     pub(super) work_queued: BTreeSet<ProtocolIoSide>,
@@ -202,11 +199,10 @@ impl ProtocolClient {
                 state,
                 hub,
                 background_commands,
-                command_runtime: Arc::new(EventCommandRuntime::new(executor)),
+                command_runtime: Rc::new(EventCommandRuntime::new(executor)),
                 protocol_state: ProtocolState::Identifying(IdentifyingState {
                     context: ClientContext {
                         wait_for_interactions: true,
-                        defer_attach_commands: true,
                         ..ClientContext::default()
                     },
                     client_tty: ClientTty::new(),
@@ -426,9 +422,6 @@ impl ProtocolClient {
                     self.sync_attach(target, outbox);
                 }
             }
-            ProtocolEvent::Shutdown => {
-                self.close(target, ProtocolCloseReason::Shutdown, outbox);
-            }
         }
     }
 
@@ -534,12 +527,8 @@ impl ProtocolClient {
     }
 
     /// The command line an argument-less client runs, from the server option.
-    /// Falls back to tmux's default when the state lock is unavailable.
     fn default_client_command(&self) -> Vec<String> {
-        self.state
-            .lock()
-            .map(|state| command::default_client_command(&state))
-            .unwrap_or_else(|_| vec!["new-session".to_string()])
+        command::default_client_command(&self.state.borrow_mut())
     }
 
     fn is_identify_message(message: &Message) -> bool {
@@ -709,11 +698,18 @@ impl ProtocolClient {
                     // The write is the command; its `after-*` hook belongs to
                     // the completed handshake, not to the queue step that never
                     // ran it.
-                    if let Ok(mut state) = self.state.lock() {
-                        command::run_client_file_after_hook(
+                    let hooks = {
+                        let mut state = self.state.borrow_mut();
+                        command::take_client_file_after_hooks(
                             &args,
                             &mut state,
                             &transaction.context,
+                        )
+                    };
+                    for request in hooks {
+                        outbox.enqueue_background(
+                            self.background_commands.clone(),
+                            JobEvent::Start(request),
                         );
                     }
                     if transaction.complete_group(&result) {

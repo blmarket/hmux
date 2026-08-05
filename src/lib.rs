@@ -12,7 +12,6 @@
 //! - [`serve`] — listeners and connection lifecycle management.
 
 pub mod error;
-#[allow(dead_code)]
 pub(crate) mod event_loop;
 pub(crate) mod server;
 /// Safe wrapper over libghostty-vt, hmux's terminal-emulation core. Lives in

@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd, RawFd};
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use crate::integration::status::StatusHub;
@@ -16,8 +16,7 @@ use crate::server::attach::{
     AttachStartFailure, AttachWaitReady, AttachWaitSources, ClientTty,
 };
 use crate::server::command::{self, ClientContext};
-use crate::server::pane::PaneIoMode;
-use crate::server::state::ServerState;
+use crate::server::state::SharedState;
 use crate::server::task::{ReadySet, TaskState};
 use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::Frame;
@@ -171,7 +170,7 @@ impl FrameWriter for AttachOutput {
 /// Interactive attach state driven directly by one protocol actor.
 pub(super) struct EventAttachClient {
     session: AttachSession,
-    state: Arc<Mutex<ServerState>>,
+    state: SharedState,
     hub: StatusHub,
     input: AttachInput,
     output: AttachOutput,
@@ -182,7 +181,7 @@ pub(super) struct EventAttachClient {
     deadline: Option<Instant>,
     phase: AttachPhase,
     background_commands: Vec<command::BackgroundCommandRequest>,
-    command_runtime: Arc<dyn command::CommandRuntime>,
+    command_runtime: Rc<dyn command::CommandRuntime>,
 }
 
 struct ActiveAttachCommand {
@@ -202,10 +201,10 @@ impl EventAttachClient {
     fn new(
         args: &[String],
         client_tty: ClientTty,
-        state: Arc<Mutex<ServerState>>,
+        state: SharedState,
         hub: StatusHub,
         context: &ClientContext,
-        command_runtime: Arc<dyn command::CommandRuntime>,
+        command_runtime: Rc<dyn command::CommandRuntime>,
     ) -> Result<Self, AttachStartError> {
         let mut output = AttachOutput::new();
         let session = attach::start_attach_session(
@@ -215,7 +214,6 @@ impl EventAttachClient {
             &hub,
             context,
             &mut output,
-            PaneIoMode::EventLoop,
         )
         .map_err(AttachStartError::from_failure)?;
         let mut attach = Self {
@@ -472,8 +470,8 @@ impl EventAttachClient {
                 self.phase = AttachPhase::Running(ActiveAttachCommand {
                     task: TaskState::new(command::CommandCoroutine::new(
                         queue,
-                        Arc::clone(&self.state),
-                        Arc::clone(&self.command_runtime),
+                        Rc::clone(&self.state),
+                        Rc::clone(&self.command_runtime),
                         64,
                     )),
                     continuation: request.continuation,
@@ -631,10 +629,10 @@ impl ProtocolClient {
         match EventAttachClient::new(
             &args,
             tty,
-            Arc::clone(&self.state),
+            Rc::clone(&self.state),
             self.hub.clone(),
             &context,
-            Arc::clone(&self.command_runtime),
+            Rc::clone(&self.command_runtime),
         ) {
             Ok(mut attach) => {
                 if let Err(error) = attach.drive(None) {

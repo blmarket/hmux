@@ -11,14 +11,17 @@ pub(in crate::server) enum Command {
 impl Command {
     pub(super) fn execute(
         self,
-        args: &[String],
-        context: &mut CommandContext<'_>,
+        _args: &[String],
+        _context: &mut CommandContext<'_>,
     ) -> CommandResult {
         match self {
-            Self::RunShell => run_shell(args, context.state, context.agents, context.client),
-            Self::IfShell => if_shell(args, context.state, context.agents, context.client),
-            Self::SourceFile => source_file(args, context.state, context.agents, context.client),
-            Self::WaitFor => CommandResult::err("not able to wait\n"),
+            // Every command here waits on something the loop polls, so the
+            // command queue lifts it into a job of its own before dispatch
+            // ever reaches this table. Reaching it would mean waiting under
+            // the state borrow, which is what the queue exists to avoid.
+            Self::RunShell | Self::IfShell | Self::SourceFile | Self::WaitFor => {
+                CommandResult::err("not able to wait\n")
+            }
         }
     }
 }

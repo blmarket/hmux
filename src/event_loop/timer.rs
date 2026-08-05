@@ -27,10 +27,12 @@ pub(crate) struct ExpiredTimer<T> {
 }
 
 impl<T> ExpiredTimer<T> {
+    #[cfg(test)]
     pub(crate) fn id(&self) -> TimerId {
         self.id
     }
 
+    #[cfg(test)]
     pub(crate) fn value(&self) -> &T {
         &self.value
     }
@@ -104,10 +106,12 @@ impl<T> TimerQueue<T> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
         self.timers.is_empty()
     }
 
+    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.timers.len()
     }

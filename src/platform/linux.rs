@@ -366,3 +366,4 @@ mod tests {
         assert_eq!(cwd, Some(PathBuf::from("/proc")));
     }
 }
+

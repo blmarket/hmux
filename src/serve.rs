@@ -33,7 +33,6 @@ pub fn run_event_loop(
     const DISPATCH_BUDGET: usize = 256;
 
     let mut event_loop = EventLoop::new()?;
-    server.enable_event_loop_pane_io()?;
     let child_signal = event_loop.add_child_signal(server.clone())?;
     event_loop.add_term_signal()?;
     let listener = event_loop.add_listener(bind_listener(listen_path)?, ACCEPT_BUDGET)?;
@@ -66,7 +65,7 @@ pub fn run_event_loop(
         event_loop.adopt_format_jobs(server.take_pending_format_jobs())?;
         event_loop.adopt_pane_pipes(server.take_new_pane_pipes())?;
         reap_protocol_clients(&mut clients);
-        server.enforce_lifecycle_policies()?;
+        event_loop.adopt_background_commands(&server, server.enforce_lifecycle_policies()?)?;
         if event_loop.pending_events() == 0 {
             event_loop.poll(timeout)?;
         }
@@ -143,7 +142,7 @@ fn sync_event_loop_panes(
                 "duplicate pane runtime id {runtime_id}"
             )));
         }
-        panes.insert(runtime_id, event_loop.add_pane(runtime_id, io));
+        panes.insert(runtime_id, event_loop.add_pane(io));
     }
 
     let active_ids = active_ids.into_iter().collect::<BTreeSet<_>>();
@@ -216,9 +215,7 @@ fn reap_protocol_clients(clients: &mut Vec<ProtocolHandle>) {
         }
         match client.close_reason() {
             Some(
-                ProtocolCloseReason::Completed
-                | ProtocolCloseReason::PeerClosed
-                | ProtocolCloseReason::Shutdown,
+                ProtocolCloseReason::Completed | ProtocolCloseReason::PeerClosed,
             ) => {}
             Some(ProtocolCloseReason::Error(kind)) => {
                 warn!(?kind, "event-loop protocol client ended with an I/O error");
@@ -584,8 +581,7 @@ mod tests {
             drain_fd(&master, &mut tty_output);
             let size = server
                 .state()
-                .lock()
-                .unwrap()
+                .borrow_mut()
                 .sessions()
                 .iter()
                 .find(|session| session.name == "direct-attach")

@@ -1,14 +1,12 @@
 //! Attach-client actions and key-binding resolution.
 
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use crate::integration::status::StatusHub;
 
 use super::super::command;
 use super::super::key::{basic_key_bytes, key_from_byte, parse_key_name, KeyCode};
 use super::super::mouse::MouseEvent;
-use super::super::state::{ClientKey, PromptCompletion, PromptReply, ServerState};
+use super::super::state::{ClientKey, PromptCompletion, PromptReply, SharedState};
 use super::copy_mode::{self, CopyModeAction};
 use super::{client_key_table, decode_tty_key, is_configured_prefix};
 
@@ -44,27 +42,22 @@ impl ActiveConfirm {
     pub(super) fn resolve(
         self,
         accepted: bool,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
         cols: u16,
         pane_rows: u16,
-        hub: &StatusHub,
-        context: &command::ClientContext,
     ) -> ConfirmResolution {
         let result = if accepted {
             match self.action {
                 ConfirmAction::Command(command) => {
-                    if context.defer_attach_commands {
-                        return ConfirmResolution::Deferred {
-                            command,
-                            reply: self.reply,
-                        };
-                    }
-                    let agents = hub.snapshot().panes;
-                    command::run_with_context(&command, state, &agents, context)
+                    return ConfirmResolution::Deferred {
+                        command,
+                        reply: self.reply,
+                    };
                 }
                 action @ (ConfirmAction::KillPane | ConfirmAction::KillWindow) => {
-                    let killed = if let Ok(mut state) = state.lock() {
+                    let killed = {
+                        let mut state = state.borrow_mut();
                         let killed = match action {
                             ConfirmAction::KillPane => state.kill_pane(target).is_ok(),
                             ConfirmAction::KillWindow => state.kill_window(target).is_ok(),
@@ -74,8 +67,6 @@ impl ActiveConfirm {
                             let _ = state.resize_session(target, cols, pane_rows);
                         }
                         killed
-                    } else {
-                        false
                     };
                     if killed {
                         command::CommandResult::ok("")
@@ -116,11 +107,6 @@ pub(super) enum PrefixOutcome {
     Prompt {
         args: Vec<String>,
     },
-    Message {
-        text: String,
-        duration: Duration,
-    },
-    ViewOutput(Vec<u8>),
     DeferredCommand {
         args: Vec<String>,
         context: command::ClientContext,
@@ -147,17 +133,15 @@ pub(super) enum PrefixOutcome {
 pub(super) fn dispatch_key_binding(
     table: &str,
     key: KeyCode,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     target: &str,
-    cols: u16,
-    pane_rows: u16,
     hub: &StatusHub,
     context: &command::ClientContext,
     mouse: Option<MouseEvent>,
 ) -> PrefixOutcome {
-    let binding = match state.lock() {
-        Ok(st) => st.key_binding(table, key).cloned(),
-        Err(_) => None,
+    let binding = {
+        let st = state.borrow_mut();
+        st.key_binding(table, key).cloned()
     };
     let Some(mut binding) = binding else {
         return PrefixOutcome::Handled { changed: false };
@@ -173,7 +157,8 @@ pub(super) fn dispatch_key_binding(
         binding_context.key_event = Some(key);
         binding_context.mouse = mouse.clone();
         let agents = hub.snapshot().panes;
-        if let Ok(mut st) = state.lock() {
+        {
+            let mut st = state.borrow_mut();
             binding.command = command::resolve_conditional_binding(
                 binding.command,
                 &mut st,
@@ -194,16 +179,14 @@ pub(super) fn dispatch_key_binding(
             } else {
                 "prefix"
             };
-            let bytes = state
-                .lock()
-                .ok()
-                .and_then(|st| {
-                    st.option_for_target(target, option)
-                        .or_else(|| super::super::options::option_default(option))
-                        .and_then(parse_key_name)
-                })
-                .and_then(basic_key_bytes)
-                .unwrap_or_default();
+            let bytes = {
+                let st = state.borrow_mut();
+                st.option_for_target(target, option)
+                    .or_else(|| super::super::options::option_default(option))
+                    .and_then(parse_key_name)
+            }
+            .and_then(basic_key_bytes)
+            .unwrap_or_default();
             return PrefixOutcome::SendPrefix(bytes);
         }
         "copy-mode" if !binding.command.iter().any(|word| word == ";") => {
@@ -232,43 +215,15 @@ pub(super) fn dispatch_key_binding(
                 .windows(2)
                 .find(|words| words[0] == "-d")
                 .and_then(|words| words[1].parse::<u64>().ok());
-            if context.defer_attach_commands {
-                let mut binding_context = context.clone();
-                binding_context.key_event = Some(key);
-                binding_context.mouse = mouse;
-                return PrefixOutcome::DeferredMessage {
-                    args: command,
-                    context: binding_context,
-                    target: target.to_string(),
-                    escape_hashes: binding.command.iter().any(|word| word == "-N"),
-                    explicit_duration,
-                };
-            }
-            let agents = hub.snapshot().panes;
-            let result = command::run_with_context(&command, state, &agents, context);
-            if result.exit != 0 {
-                return PrefixOutcome::Handled { changed: false };
-            }
-            let mut text = result
-                .stdout
-                .strip_suffix('\n')
-                .unwrap_or(&result.stdout)
-                .to_string();
-            if binding.command.iter().any(|word| word == "-N") {
-                text = text.replace('#', "##");
-            }
-            let milliseconds = explicit_duration
-                .or_else(|| {
-                    state.lock().ok().and_then(|state| {
-                        state
-                            .option_for_target(target, "display-time")
-                            .and_then(|value| value.parse().ok())
-                    })
-                })
-                .unwrap_or(750);
-            return PrefixOutcome::Message {
-                text,
-                duration: Duration::from_millis(milliseconds),
+            let mut binding_context = context.clone();
+            binding_context.key_event = Some(key);
+            binding_context.mouse = mouse;
+            return PrefixOutcome::DeferredMessage {
+                args: command,
+                context: binding_context,
+                target: target.to_string(),
+                escape_hashes: binding.command.iter().any(|word| word == "-N"),
+                explicit_duration,
             };
         }
         "confirm-before" | "confirm"
@@ -277,11 +232,7 @@ pub(super) fn dispatch_key_binding(
                 .last()
                 .is_some_and(|word| word == "kill-window") =>
         {
-            let name = state
-                .lock()
-                .ok()
-                .and_then(|st| st.active_window_name(target))
-                .unwrap_or_default();
+            let name = state.borrow_mut().active_window_name(target).unwrap_or_default();
             return PrefixOutcome::Confirm {
                 prompt: format!("kill-window {name}? (y/n)"),
                 action: ConfirmAction::KillWindow,
@@ -293,11 +244,7 @@ pub(super) fn dispatch_key_binding(
                 .last()
                 .is_some_and(|word| word == "kill-pane") =>
         {
-            let idx = state
-                .lock()
-                .ok()
-                .and_then(|st| st.active_pane_index(target))
-                .unwrap_or(0);
+            let idx = state.borrow_mut().active_pane_index(target).unwrap_or(0);
             return PrefixOutcome::Confirm {
                 prompt: format!("kill-pane {idx}? (y/n)"),
                 action: ConfirmAction::KillPane,
@@ -306,33 +253,19 @@ pub(super) fn dispatch_key_binding(
         _ => {}
     }
 
-    let agents = hub.snapshot().panes;
     let mut binding_context = context.clone();
     binding_context.key_event = Some(key);
     binding_context.mouse = mouse;
-    if context.defer_attach_commands {
-        return PrefixOutcome::DeferredCommand {
-            args: binding.command,
-            context: binding_context,
-        };
+    PrefixOutcome::DeferredCommand {
+        args: binding.command,
+        context: binding_context,
     }
-    let result = command::run_with_context(&binding.command, state, &agents, &binding_context);
-    if result.exit == 0 && !result.stdout_data().is_empty() {
-        return PrefixOutcome::ViewOutput(result.stdout_data().to_vec());
-    }
-    let changed = result.exit == 0;
-    if changed {
-        if let Ok(mut st) = state.lock() {
-            let _ = st.resize_session(target, cols, pane_rows);
-        }
-    }
-    PrefixOutcome::Handled { changed }
 }
 
 pub(in crate::server) fn dispatch_control_client_keys(
     keys: &[ClientKey],
     prefix_pending: &mut bool,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     target: &str,
     hub: &StatusHub,
     context: &command::ClientContext,
@@ -358,32 +291,27 @@ pub(in crate::server) fn dispatch_control_client_keys(
             let from_prefix = std::mem::take(prefix_pending);
             let table = if from_prefix {
                 "prefix".to_string()
-            } else if state
-                .lock()
-                .ok()
-                .is_some_and(|state| state.copy_mode_active(target))
-            {
+            } else if state.borrow_mut().copy_mode_active(target) {
                 copy_mode::key_table(state, target).to_string()
             } else {
                 client_key_table(state, target)
             };
-            let bound = state
-                .lock()
-                .ok()
-                .is_some_and(|state| state.key_binding(&table, key).is_some());
+            let bound = state.borrow_mut().key_binding(&table, key).is_some();
             if !bound {
                 if !from_prefix && injected.forward_unbound {
-                    if let Ok(state) = state.lock() {
+                    {
+                        let state = state.borrow_mut();
                         let _ = state.input_to_active_pane(target, &bytes[start..index]);
                     }
                 }
                 continue;
             }
 
-            match dispatch_key_binding(&table, key, state, target, 80, 24, hub, context, None) {
+            match dispatch_key_binding(&table, key, state, target, hub, context, None) {
                 PrefixOutcome::Detach => return true,
                 PrefixOutcome::SendPrefix(bytes) => {
-                    if let Ok(state) = state.lock() {
+                    {
+                        let state = state.borrow_mut();
                         let _ = state.input_to_active_pane(target, &bytes);
                     }
                 }
@@ -394,8 +322,6 @@ pub(in crate::server) fn dispatch_control_client_keys(
                 }
                 PrefixOutcome::Confirm { .. }
                 | PrefixOutcome::Prompt { .. }
-                | PrefixOutcome::Message { .. }
-                | PrefixOutcome::ViewOutput(_)
                 | PrefixOutcome::Handled { .. } => {}
             }
         }
@@ -403,28 +329,39 @@ pub(in crate::server) fn dispatch_control_client_keys(
     false
 }
 
+/// Resolve one prefix key and run whatever binding it deferred, standing in
+/// for the attach loop's continuation. Test scaffolding.
 #[cfg(test)]
 pub(super) fn dispatch_prefix_key(
     key: u8,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     target: &str,
     cols: u16,
     pane_rows: u16,
 ) -> PrefixOutcome {
-    let current_session_id = state.lock().ok().and_then(|st| st.session_id(target));
+    let current_session_id = state.borrow_mut().session_id(target);
     let context = command::ClientContext {
         current_session_id,
         ..command::ClientContext::default()
     };
-    dispatch_key_binding(
+    let hub = StatusHub::new();
+    let outcome = dispatch_key_binding(
         "prefix",
         key_from_byte(key),
         state,
         target,
-        cols,
-        pane_rows,
-        &StatusHub::new(),
+        &hub,
         &context,
         None,
-    )
+    );
+    let PrefixOutcome::DeferredCommand { args, context } = outcome else {
+        return outcome;
+    };
+    let result = command::run_with_context(&args, state, &hub.snapshot().panes, &context);
+    let changed = result.exit == 0;
+    if changed {
+        let mut st = state.borrow_mut();
+        let _ = st.resize_session(target, cols, pane_rows);
+    }
+    PrefixOutcome::Handled { changed }
 }

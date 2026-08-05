@@ -6,13 +6,13 @@
 //! state. Panes hold a libghostty-backed [`Pane`], so a created session is a
 //! genuinely running terminal, not a stub.
 
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use super::format::glob_match;
@@ -22,21 +22,24 @@ use super::input_keys::{
 use super::key::{parse_key_name, KeyCode};
 use super::options::{GlobalOptions, OptionSet, OptionsView};
 use super::pane::{
-    NativePaneObservation, Pane, PaneClipboardEvent, PaneIo, PaneIoMode, PaneKeyState,
+    NativePaneObservation, Pane, PaneClipboardEvent, PaneIo, PaneKeyState,
     PaneOutputPolicy, PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
 };
 use super::task::{completion_pair, Completion, CompletionSender};
 use super::term::ResolvedTerm;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
 
-#[cfg(not(test))]
-fn default_pane_io_mode() -> PaneIoMode {
-    PaneIoMode::EventLoop
-}
+/// The server state, shared by everything running on the loop.
+///
+/// One owner would be simpler, but the state outlives any single command: the
+/// protocol drivers, the attach compositors and the command queues all hold it
+/// across suspensions of their own. They all run on the loop, so the sharing is
+/// ownership, not concurrency.
+pub(crate) type SharedState = Rc<RefCell<ServerState>>;
 
-#[cfg(test)]
-fn default_pane_io_mode() -> PaneIoMode {
-    PaneIoMode::Threaded(super::pane::spawn_reader)
+/// Wrap a fresh [`ServerState`] in the handle everything on the loop shares.
+pub(crate) fn shared_state(state: ServerState) -> SharedState {
+    Rc::new(RefCell::new(state))
 }
 
 /// How to back a new pane's screen.
@@ -420,14 +423,12 @@ struct BackgroundJobRegistryState {
 
 #[derive(Default)]
 pub(crate) struct BackgroundJobRegistry {
-    inner: Mutex<BackgroundJobRegistryState>,
+    inner: RefCell<BackgroundJobRegistryState>,
 }
 
 impl BackgroundJobRegistry {
     pub(crate) fn register(&self, command: String, fd: RawFd, pid: u32) -> u64 {
-        let Ok(mut inner) = self.inner.lock() else {
-            return u64::MAX;
-        };
+        let mut inner = self.inner.borrow_mut();
         let id = inner.next_id;
         inner.next_id = inner.next_id.wrapping_add(1);
         inner.jobs.insert(
@@ -443,16 +444,11 @@ impl BackgroundJobRegistry {
     }
 
     pub(crate) fn remove(&self, id: u64) {
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.jobs.remove(&id);
-        }
+        self.inner.borrow_mut().jobs.remove(&id);
     }
 
     pub(crate) fn jobs(&self) -> Vec<BackgroundJob> {
-        self.inner
-            .lock()
-            .map(|inner| inner.jobs.values().cloned().collect())
-            .unwrap_or_default()
+        self.inner.borrow().jobs.values().cloned().collect()
     }
 }
 
@@ -537,14 +533,12 @@ pub(crate) enum WaitOutcome {
 
 #[derive(Default)]
 pub(crate) struct WaitRegistry {
-    channels: Mutex<BTreeMap<String, WaitChannel>>,
+    channels: RefCell<BTreeMap<String, WaitChannel>>,
 }
 
 impl WaitRegistry {
     pub(crate) fn signal(&self, name: &str) {
-        let Ok(mut channels) = self.channels.lock() else {
-            return;
-        };
+        let mut channels = self.channels.borrow_mut();
         let channel = channels.entry(name.to_string()).or_default();
         channel.woken = true;
         // Every waiter is released together, as the condvar broadcast this
@@ -564,9 +558,7 @@ impl WaitRegistry {
     }
 
     pub(crate) fn wait(&self, name: &str) -> WaitOutcome {
-        let Ok(mut channels) = self.channels.lock() else {
-            return WaitOutcome::Ready;
-        };
+        let mut channels = self.channels.borrow_mut();
         let channel = channels.entry(name.to_string()).or_default();
         if channel.woken {
             if channel.locked {
@@ -584,9 +576,7 @@ impl WaitRegistry {
     }
 
     pub(crate) fn lock(&self, name: &str) -> WaitOutcome {
-        let Ok(mut channels) = self.channels.lock() else {
-            return WaitOutcome::Ready;
-        };
+        let mut channels = self.channels.borrow_mut();
         let channel = channels.entry(name.to_string()).or_default();
         if !channel.locked {
             channel.locked = true;
@@ -600,9 +590,7 @@ impl WaitRegistry {
     }
 
     pub(crate) fn unlock(&self, name: &str) -> bool {
-        let Ok(mut channels) = self.channels.lock() else {
-            return false;
-        };
+        let mut channels = self.channels.borrow_mut();
         let Some(channel) = channels.get_mut(name) else {
             return false;
         };
@@ -2079,8 +2067,8 @@ pub struct KeyBinding {
 /// Client-scoped `command-prompt -k` routing. This is an internal server
 /// capability, deliberately kept out of the public `TmuxServer` trait.
 pub(crate) struct ClientPromptRegistry {
-    inner: Mutex<ClientPromptRegistryState>,
-    activity: AtomicU64,
+    inner: RefCell<ClientPromptRegistryState>,
+    activity: Cell<u64>,
 }
 
 #[derive(Default)]
@@ -2092,12 +2080,12 @@ struct ClientPromptRegistryState {
 struct ClientPromptEntry {
     name: String,
     tty_name: String,
-    slot: Arc<ClientPromptSlot>,
-    activity: Arc<AtomicU64>,
+    slot: Rc<ClientPromptSlot>,
+    activity: Rc<Cell<u64>>,
 }
 
 struct ClientPromptSlot {
-    inner: Mutex<ClientPromptSlotState>,
+    inner: RefCell<ClientPromptSlotState>,
     wakeup: <CurrentPlatform as Platform>::OutputWakeup,
 }
 
@@ -2114,14 +2102,14 @@ struct QueuedCommandPrompt {
 
 /// Registration owned by one interactive attach loop.
 pub(crate) struct ClientPromptAttachment {
-    registry: Arc<ClientPromptRegistry>,
+    registry: Rc<ClientPromptRegistry>,
     id: u64,
-    slot: Arc<ClientPromptSlot>,
-    activity: Arc<AtomicU64>,
+    slot: Rc<ClientPromptSlot>,
+    activity: Rc<Cell<u64>>,
 }
 
 pub(crate) struct ActiveCommandPrompt {
-    slot: Arc<ClientPromptSlot>,
+    slot: Rc<ClientPromptSlot>,
     args: Vec<String>,
     reply: Option<PromptReply>,
 }
@@ -2143,7 +2131,7 @@ pub(crate) struct PromptCompletion {
 /// blocking receive this replaces saw when its sender went away.
 #[derive(Clone)]
 pub(crate) struct PromptReply {
-    sender: Arc<Mutex<Option<CompletionSender<Option<PromptCompletion>>>>>,
+    sender: Rc<RefCell<Option<CompletionSender<Option<PromptCompletion>>>>>,
 }
 
 impl PromptReply {
@@ -2151,17 +2139,17 @@ impl PromptReply {
         let (completion, sender) = completion_pair()?;
         Ok((
             Self {
-                sender: Arc::new(Mutex::new(Some(sender))),
+                sender: Rc::new(RefCell::new(Some(sender))),
             },
             completion,
         ))
     }
 
     pub(crate) fn send(&self, completion: Option<PromptCompletion>) {
-        let Ok(mut sender) = self.sender.lock() else {
-            return;
-        };
-        if let Some(sender) = sender.take() {
+        // Taken out from under the borrow: completing writes to a descriptor
+        // whose reader may answer again on the same turn.
+        let sender = self.sender.borrow_mut().take();
+        if let Some(sender) = sender {
             sender.complete(completion);
         }
     }
@@ -2173,7 +2161,10 @@ impl std::fmt::Debug for PromptReply {
             .debug_struct("PromptReply")
             .field(
                 "answered",
-                &self.sender.lock().is_ok_and(|sender| sender.is_none()),
+                &self
+                    .sender
+                    .try_borrow()
+                    .is_ok_and(|sender| sender.is_none()),
             )
             .finish()
     }
@@ -2181,7 +2172,7 @@ impl std::fmt::Debug for PromptReply {
 
 impl Drop for PromptReply {
     fn drop(&mut self) {
-        if Arc::strong_count(&self.sender) == 1 {
+        if Rc::strong_count(&self.sender) == 1 {
             self.send(None);
         }
     }
@@ -2235,11 +2226,11 @@ impl std::ops::BitOr for RenderInvalidation {
 
 /// Per-client state-change notifications, scoped by stable session id.
 pub(crate) struct ClientRenderRegistry {
-    inner: Mutex<ClientRenderRegistryState>,
+    inner: RefCell<ClientRenderRegistryState>,
     /// Bumped whenever the set of clients, or which session one is on,
     /// changes. Lets the server loop skip the lifecycle sweep when nothing
     /// the policies depend on has moved.
-    generation: AtomicU64,
+    generation: Cell<u64>,
 }
 
 #[derive(Default)]
@@ -2292,11 +2283,11 @@ struct ClientRenderEntry {
     clipboard_query_at: Option<Instant>,
     flag_state: ClientFlagState,
     terminal: Option<ResolvedTerm>,
-    slot: Arc<ClientRenderSlot>,
+    slot: Rc<ClientRenderSlot>,
     /// This client's `#()` job tree — tmux's `c->jobs`, shared by every format
     /// the client expands (its status line and the commands it runs). Dropped
     /// with the client, which kills the jobs still running in it.
-    format_jobs: Arc<super::status::FormatJobRegistry>,
+    format_jobs: Rc<super::status::FormatJobRegistry>,
 }
 
 impl ClientRenderEntry {
@@ -2347,7 +2338,7 @@ pub(crate) struct AttachedClient {
 pub(crate) struct ControlPaneSnapshot {
     pub(crate) id: u32,
     pub(crate) runtime_id: u64,
-    pub(crate) observation: Arc<NativePaneObservation>,
+    pub(crate) observation: Rc<NativePaneObservation>,
 }
 
 #[derive(Clone)]
@@ -2525,47 +2516,55 @@ impl ClientFlagState {
 }
 
 struct ClientRenderSlot {
-    pending: AtomicU8,
-    action: Mutex<Option<ClientAction>>,
-    messages: Mutex<VecDeque<ClientMessage>>,
+    pending: Cell<u8>,
+    action: RefCell<Option<ClientAction>>,
+    messages: RefCell<VecDeque<ClientMessage>>,
     /// Bytes an application asked to have written to this client's terminal
     /// verbatim. Kept out of `action` for the same reason as `flag_updates`,
     /// and ordered because a payload is meaningless out of sequence.
-    client_output: Mutex<VecDeque<Vec<u8>>>,
+    client_output: RefCell<VecDeque<Vec<u8>>>,
     /// `refresh-client -f` values aimed at this client by *another* client.
     /// Kept out of `action` because flag updates must not displace a queued
     /// switch or detach, and several may arrive before the client next runs.
-    flag_updates: Mutex<Vec<String>>,
+    flag_updates: RefCell<Vec<String>>,
     wakeup: <CurrentPlatform as Platform>::OutputWakeup,
+}
+
+impl ClientRenderSlot {
+    /// Add `reason` to what this client must re-examine, and wake it.
+    fn publish(&self, reason: RenderInvalidation) {
+        self.pending.set(self.pending.get() | reason.bits());
+        let _ = self.wakeup.wake();
+    }
 }
 
 /// Registration owned by one interactive attach loop.
 pub(crate) struct ClientRenderAttachment {
-    registry: Arc<ClientRenderRegistry>,
+    registry: Rc<ClientRenderRegistry>,
     id: u64,
-    slot: Arc<ClientRenderSlot>,
-    format_jobs: Arc<super::status::FormatJobRegistry>,
+    slot: Rc<ClientRenderSlot>,
+    format_jobs: Rc<super::status::FormatJobRegistry>,
 }
 
 impl ClientRenderRegistry {
     fn new() -> Self {
         Self {
-            inner: Mutex::new(ClientRenderRegistryState::default()),
-            generation: AtomicU64::new(0),
+            inner: RefCell::new(ClientRenderRegistryState::default()),
+            generation: Cell::new(0),
         }
     }
 
     fn bump_generation(&self) {
-        self.generation.fetch_add(1, Ordering::Release);
+        self.generation.set(self.generation.get().wrapping_add(1));
     }
 
     pub(crate) fn generation(&self) -> u64 {
-        self.generation.load(Ordering::Acquire)
+        self.generation.get()
     }
 
     #[cfg(test)]
     pub(crate) fn attach(
-        self: &Arc<Self>,
+        self: &Rc<Self>,
         session_id: u32,
         name: String,
     ) -> io::Result<ClientRenderAttachment> {
@@ -2585,7 +2584,7 @@ impl ClientRenderRegistry {
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn attach_with_details(
-        self: &Arc<Self>,
+        self: &Rc<Self>,
         session_id: u32,
         name: String,
         term: String,
@@ -2600,20 +2599,17 @@ impl ClientRenderRegistry {
         let read_only = flag_state.read_only;
         let wakeup = CurrentPlatform::new_output_wakeup()?;
         wakeup.clear()?;
-        let slot = Arc::new(ClientRenderSlot {
-            pending: AtomicU8::new(0),
-            action: Mutex::new(None),
-            messages: Mutex::new(VecDeque::new()),
-            client_output: Mutex::new(VecDeque::new()),
-            flag_updates: Mutex::new(Vec::new()),
+        let slot = Rc::new(ClientRenderSlot {
+            pending: Cell::new(0),
+            action: RefCell::new(None),
+            messages: RefCell::new(VecDeque::new()),
+            client_output: RefCell::new(VecDeque::new()),
+            flag_updates: RefCell::new(Vec::new()),
             wakeup,
         });
         let ignore_size = flags.split(',').any(|flag| flag == "ignore-size");
-        let format_jobs = Arc::new(super::status::FormatJobRegistry::new(self));
-        let mut inner = self
-            .inner
-            .lock()
-            .map_err(|_| io::Error::other("client render registry poisoned"))?;
+        let format_jobs = Rc::new(super::status::FormatJobRegistry::new(self));
+        let mut inner = self.inner.borrow_mut();
         let id = inner.next_id;
         inner.next_id = inner.next_id.wrapping_add(1);
         inner.next_size_seq = inner.next_size_seq.wrapping_add(1);
@@ -2644,25 +2640,23 @@ impl ClientRenderRegistry {
                 clipboard_query_at: None,
                 flag_state,
                 terminal: None,
-                slot: Arc::clone(&slot),
-                format_jobs: Arc::clone(&format_jobs),
+                slot: Rc::clone(&slot),
+                format_jobs: Rc::clone(&format_jobs),
             },
         );
         let peers = inner
             .clients
             .iter()
             .filter(|(client_id, _)| **client_id != id)
-            .map(|(_, entry)| Arc::clone(&entry.slot))
+            .map(|(_, entry)| Rc::clone(&entry.slot))
             .collect::<Vec<_>>();
         drop(inner);
         self.bump_generation();
         for peer in peers {
-            peer.pending
-                .fetch_or(RenderInvalidation::STATUS.bits(), Ordering::Release);
-            let _ = peer.wakeup.wake();
+            peer.publish(RenderInvalidation::STATUS);
         }
         Ok(ClientRenderAttachment {
-            registry: Arc::clone(self),
+            registry: Rc::clone(self),
             id,
             slot,
             format_jobs,
@@ -2670,9 +2664,7 @@ impl ClientRenderRegistry {
     }
 
     fn clients(&self) -> Vec<AttachedClient> {
-        let Ok(inner) = self.inner.lock() else {
-            return Vec::new();
-        };
+        let inner = self.inner.borrow();
         inner
             .clients
             .values()
@@ -2706,30 +2698,26 @@ impl ClientRenderRegistry {
     fn client_format_jobs(
         &self,
         name: &str,
-    ) -> Option<(Arc<super::status::FormatJobRegistry>, u32)> {
-        let inner = self.inner.lock().ok()?;
+    ) -> Option<(Rc<super::status::FormatJobRegistry>, u32)> {
+        let inner = self.inner.borrow();
         inner
             .clients
             .values()
             .find(|entry| entry.name == name)
-            .map(|entry| (Arc::clone(&entry.format_jobs), entry.session_id))
+            .map(|entry| (Rc::clone(&entry.format_jobs), entry.session_id))
     }
 
-    pub(crate) fn all_format_jobs(&self) -> Vec<Arc<super::status::FormatJobRegistry>> {
-        let Ok(inner) = self.inner.lock() else {
-            return Vec::new();
-        };
+    pub(crate) fn all_format_jobs(&self) -> Vec<Rc<super::status::FormatJobRegistry>> {
+        let inner = self.inner.borrow();
         inner
             .clients
             .values()
-            .map(|entry| Arc::clone(&entry.format_jobs))
+            .map(|entry| Rc::clone(&entry.format_jobs))
             .collect()
     }
 
     fn names_for_sessions(&self, session_ids: &BTreeSet<u32>) -> Vec<String> {
-        let Ok(inner) = self.inner.lock() else {
-            return Vec::new();
-        };
+        let inner = self.inner.borrow();
         inner
             .clients
             .values()
@@ -2740,18 +2728,14 @@ impl ClientRenderRegistry {
 
     /// Deliver one window alert to every non-control client of `session_id`.
     fn announce_alert(&self, session_id: u32, bell: bool, text: Option<String>, duration_ms: u64) {
-        let Ok(inner) = self.inner.lock() else {
-            return;
-        };
+        let inner = self.inner.borrow();
         for entry in inner
             .clients
             .values()
             // tmux's `alerts_set_message` skips control clients outright.
             .filter(|entry| entry.session_id == session_id && !entry.control_mode)
         {
-            let Ok(mut messages) = entry.slot.messages.lock() else {
-                continue;
-            };
+            let mut messages = entry.slot.messages.borrow_mut();
             messages.push_back(ClientMessage {
                 text: text.clone().unwrap_or_default(),
                 duration_ms,
@@ -2765,49 +2749,33 @@ impl ClientRenderRegistry {
     /// client of `sessions`. tmux's `tty_client_ready` skips a client with no
     /// terminal of its own, which is what leaves control clients out.
     fn write_client_output(&self, sessions: &BTreeSet<u32>, bytes: &[u8]) {
-        let Ok(inner) = self.inner.lock() else {
-            return;
-        };
+        let inner = self.inner.borrow();
         for entry in inner
             .clients
             .values()
             .filter(|entry| sessions.contains(&entry.session_id) && !entry.control_mode)
         {
-            let Ok(mut queued) = entry.slot.client_output.lock() else {
-                continue;
-            };
+            let mut queued = entry.slot.client_output.borrow_mut();
             queued.push_back(bytes.to_vec());
             let _ = entry.slot.wakeup.wake();
         }
     }
 
     pub(crate) fn publish_session(&self, session_id: u32, reason: RenderInvalidation) {
-        let Ok(inner) = self.inner.lock() else {
-            return;
-        };
+        let inner = self.inner.borrow();
         for entry in inner
             .clients
             .values()
             .filter(|entry| entry.session_id == session_id)
         {
-            entry
-                .slot
-                .pending
-                .fetch_or(reason.bits(), Ordering::Release);
-            let _ = entry.slot.wakeup.wake();
+            entry.slot.publish(reason);
         }
     }
 
     fn publish_all(&self, reason: RenderInvalidation) {
-        let Ok(inner) = self.inner.lock() else {
-            return;
-        };
+        let inner = self.inner.borrow();
         for entry in inner.clients.values() {
-            entry
-                .slot
-                .pending
-                .fetch_or(reason.bits(), Ordering::Release);
-            let _ = entry.slot.wakeup.wake();
+            entry.slot.publish(reason);
         }
     }
 
@@ -2818,16 +2786,15 @@ impl ClientRenderRegistry {
         if command.is_empty() {
             return;
         }
-        if let Ok(mut action) = entry.slot.action.lock() {
+        {
+            let mut action = entry.slot.action.borrow_mut();
             *action = Some(ClientAction::Lock(command.to_string()));
             let _ = entry.slot.wakeup.wake();
         }
     }
 
     fn lock_all(&self, commands: &BTreeMap<u32, String>) {
-        let Ok(inner) = self.inner.lock() else {
-            return;
-        };
+        let inner = self.inner.borrow();
         for entry in inner.clients.values() {
             if let Some(command) = commands.get(&entry.session_id) {
                 Self::queue_lock(entry, command);
@@ -2836,9 +2803,7 @@ impl ClientRenderRegistry {
     }
 
     fn lock_session(&self, session_id: u32, command: &str) {
-        let Ok(inner) = self.inner.lock() else {
-            return;
-        };
+        let inner = self.inner.borrow();
         for entry in inner
             .clients
             .values()
@@ -2854,9 +2819,7 @@ impl ClientRenderRegistry {
         invoking_tty: Option<&str>,
         commands: &BTreeMap<u32, String>,
     ) -> ClientActionResult {
-        let Ok(inner) = self.inner.lock() else {
-            return ClientActionResult::NoCurrentClient;
-        };
+        let inner = self.inner.borrow();
         let explicit = target.map(|target| target.strip_suffix(':').unwrap_or(target));
         let selected = if let Some(target) = explicit {
             inner.clients.values().find(|entry| {
@@ -2943,9 +2906,7 @@ impl ClientRenderRegistry {
         invoking_tty: Option<&str>,
         values: &[String],
     ) -> ClientActionResult {
-        let Ok(mut inner) = self.inner.lock() else {
-            return ClientActionResult::NoCurrentClient;
-        };
+        let mut inner = self.inner.borrow_mut();
         let id = match Self::client_id_for(&inner, target, invoking_tty) {
             Ok(id) => id,
             Err(result) => return result,
@@ -2954,7 +2915,8 @@ impl ClientRenderRegistry {
         for value in values {
             entry.apply_flag_value(value);
         }
-        if let Ok(mut pending) = entry.slot.flag_updates.lock() {
+        {
+            let mut pending = entry.slot.flag_updates.borrow_mut();
             pending.extend(values.iter().cloned());
         }
         let _ = entry.slot.wakeup.wake();
@@ -2968,9 +2930,7 @@ impl ClientRenderRegistry {
         session_id: u32,
         message: ClientMessage,
     ) -> ClientMessageResult {
-        let Ok(inner) = self.inner.lock() else {
-            return ClientMessageResult::NoClient;
-        };
+        let inner = self.inner.borrow();
         let explicit = target.map(|target| target.strip_suffix(':').unwrap_or(target));
         let selected = if let Some(target) = explicit {
             inner.clients.values().find(|entry| {
@@ -3001,9 +2961,7 @@ impl ClientRenderRegistry {
         {
             return ClientMessageResult::CurrentControl;
         }
-        let Ok(mut messages) = entry.slot.messages.lock() else {
-            return ClientMessageResult::NoClient;
-        };
+        let mut messages = entry.slot.messages.borrow_mut();
         messages.push_back(message);
         let _ = entry.slot.wakeup.wake();
         ClientMessageResult::Queued
@@ -3014,14 +2972,13 @@ impl ClientRenderRegistry {
         target: Option<&str>,
         invoking_tty: Option<&str>,
     ) -> ClientActionResult {
-        let Ok(inner) = self.inner.lock() else {
-            return ClientActionResult::NoCurrentClient;
-        };
+        let inner = self.inner.borrow();
         let entry = match Self::client_entry(&inner, target, invoking_tty) {
             Ok(entry) => entry,
             Err(result) => return result,
         };
-        if let Ok(mut action) = entry.slot.action.lock() {
+        {
+            let mut action = entry.slot.action.borrow_mut();
             *action = Some(ClientAction::Detach);
             let _ = entry.slot.wakeup.wake();
         }
@@ -3033,14 +2990,13 @@ impl ClientRenderRegistry {
         target: Option<&str>,
         invoking_tty: Option<&str>,
     ) -> ClientActionResult {
-        let Ok(inner) = self.inner.lock() else {
-            return ClientActionResult::NoCurrentClient;
-        };
+        let inner = self.inner.borrow();
         let entry = match Self::client_entry(&inner, target, invoking_tty) {
             Ok(entry) => entry,
             Err(result) => return result,
         };
-        if let Ok(mut action) = entry.slot.action.lock() {
+        {
+            let mut action = entry.slot.action.borrow_mut();
             *action = Some(ClientAction::Suspend);
             let _ = entry.slot.wakeup.wake();
         }
@@ -3052,24 +3008,18 @@ impl ClientRenderRegistry {
         target: Option<&str>,
         invoking_tty: Option<&str>,
     ) -> ClientActionResult {
-        let Ok(inner) = self.inner.lock() else {
-            return ClientActionResult::NoCurrentClient;
-        };
+        let inner = self.inner.borrow();
         let entry = match Self::client_entry(&inner, target, invoking_tty) {
             Ok(entry) => entry,
             Err(result) => return result,
         };
         let reason = RenderInvalidation::STATUS | RenderInvalidation::LAYOUT;
-        entry
-            .slot
-            .pending
-            .fetch_or(reason.bits(), Ordering::Release);
-        let _ = entry.slot.wakeup.wake();
+        entry.slot.publish(reason);
         ClientActionResult::Queued
     }
 
     fn client_read_only(&self, target: Option<&str>, invoking_tty: Option<&str>) -> Option<bool> {
-        let inner = self.inner.lock().ok()?;
+        let inner = self.inner.borrow();
         Self::client_entry(&inner, target, invoking_tty)
             .ok()
             .map(|entry| entry.read_only)
@@ -3081,14 +3031,13 @@ impl ClientRenderRegistry {
         invoking_tty: Option<&str>,
         keys: Vec<ClientKey>,
     ) -> ClientActionResult {
-        let Ok(inner) = self.inner.lock() else {
-            return ClientActionResult::NoCurrentClient;
-        };
+        let inner = self.inner.borrow();
         let entry = match Self::client_entry(&inner, target, invoking_tty) {
             Ok(entry) => entry,
             Err(result) => return result,
         };
-        if let Ok(mut action) = entry.slot.action.lock() {
+        {
+            let mut action = entry.slot.action.borrow_mut();
             match action.as_mut() {
                 Some(ClientAction::Keys(queued)) => queued.extend(keys),
                 _ => *action = Some(ClientAction::Keys(keys)),
@@ -3109,9 +3058,7 @@ impl ClientRenderRegistry {
         invoking_tty: Option<&str>,
         data: Option<Vec<u8>>,
     ) -> ClientActionResult {
-        let Ok(inner) = self.inner.lock() else {
-            return ClientActionResult::NoCurrentClient;
-        };
+        let inner = self.inner.borrow();
         let entry = match Self::client_entry(&inner, target, invoking_tty) {
             Ok(entry) => entry,
             Err(ClientActionResult::NoCurrentClient) if inner.clients.len() == 1 => {
@@ -3119,7 +3066,8 @@ impl ClientRenderRegistry {
             }
             Err(result) => return result,
         };
-        if let Ok(mut action) = entry.slot.action.lock() {
+        {
+            let mut action = entry.slot.action.borrow_mut();
             *action = Some(ClientAction::SetSelection(data));
             let _ = entry.slot.wakeup.wake();
         }
@@ -3129,9 +3077,7 @@ impl ClientRenderRegistry {
     /// Set a client's terminal focus, reporting whether it changed.
     /// Store a client's `refresh-client` pan. `None` clears it (`-c`).
     fn set_client_pan(&self, client: &str, pan: Option<(u32, u16, u16)>) -> bool {
-        let Ok(mut inner) = self.inner.lock() else {
-            return false;
-        };
+        let mut inner = self.inner.borrow_mut();
         let Some(entry) = inner
             .clients
             .values_mut()
@@ -3155,9 +3101,7 @@ impl ClientRenderRegistry {
     }
 
     fn set_client_focused(&self, client: &str, focused: bool) -> bool {
-        let Ok(mut inner) = self.inner.lock() else {
-            return false;
-        };
+        let mut inner = self.inner.borrow_mut();
         let Some(entry) = inner
             .clients
             .values_mut()
@@ -3178,9 +3122,7 @@ impl ClientRenderRegistry {
     /// Record the theme a client's terminal reported, reporting whether it
     /// changed.
     fn set_client_theme(&self, client: &str, theme: &str) -> bool {
-        let Ok(mut inner) = self.inner.lock() else {
-            return false;
-        };
+        let mut inner = self.inner.borrow_mut();
         let Some(entry) = inner
             .clients
             .values_mut()
@@ -3197,9 +3139,7 @@ impl ClientRenderRegistry {
 
     /// Stamp a client's activity time, tmux's `c->activity_time`.
     fn touch_client_activity(&self, client: &str, at: i64) {
-        let Ok(mut inner) = self.inner.lock() else {
-            return;
-        };
+        let mut inner = self.inner.borrow_mut();
         if let Some(entry) = inner.clients.values_mut().find(|entry| entry.name == client) {
             entry.activity_micros = at;
         }
@@ -3207,9 +3147,7 @@ impl ClientRenderRegistry {
 
     /// Record the key table a client moved into.
     fn set_client_key_table(&self, client: &str, table: &str) {
-        let Ok(mut inner) = self.inner.lock() else {
-            return;
-        };
+        let mut inner = self.inner.borrow_mut();
         let Some(entry) = inner.clients.values_mut().find(|entry| entry.name == client) else {
             return;
         };
@@ -3224,9 +3162,7 @@ impl ClientRenderRegistry {
         invoking_tty: Option<&str>,
         timeout: Duration,
     ) -> bool {
-        let Ok(mut inner) = self.inner.lock() else {
-            return false;
-        };
+        let mut inner = self.inner.borrow_mut();
         let id = match Self::client_id_for(&inner, target, invoking_tty) {
             Ok(id) => id,
             Err(ClientActionResult::NoCurrentClient) if inner.clients.len() == 1 => {
@@ -3256,14 +3192,13 @@ impl ClientRenderRegistry {
         default_yes: bool,
         reply: Option<PromptReply>,
     ) -> ClientActionResult {
-        let Ok(inner) = self.inner.lock() else {
-            return ClientActionResult::NoCurrentClient;
-        };
+        let inner = self.inner.borrow();
         let entry = match Self::client_entry(&inner, target, invoking_tty) {
             Ok(entry) => entry,
             Err(result) => return result,
         };
-        if let Ok(mut action) = entry.slot.action.lock() {
+        {
+            let mut action = entry.slot.action.borrow_mut();
             *action = Some(ClientAction::Confirm {
                 prompt,
                 command,
@@ -3282,9 +3217,7 @@ impl ClientRenderRegistry {
         invoking_tty: Option<&str>,
         session_id: u32,
     ) -> ClientActionResult {
-        let Ok(mut inner) = self.inner.lock() else {
-            return ClientActionResult::NoCurrentClient;
-        };
+        let mut inner = self.inner.borrow_mut();
         let explicit = target.map(|target| target.strip_suffix(':').unwrap_or(target));
         let id = if let Some(target) = explicit {
             inner.clients.iter().find_map(|(id, entry)| {
@@ -3315,7 +3248,8 @@ impl ClientRenderRegistry {
             .get_mut(&id)
             .expect("selected client disappeared");
         entry.session_id = session_id;
-        if let Ok(mut action) = entry.slot.action.lock() {
+        {
+            let mut action = entry.slot.action.borrow_mut();
             *action = Some(ClientAction::Switch {
                 session_id,
                 destroyed: false,
@@ -3337,9 +3271,7 @@ impl ClientRenderRegistry {
         to: Option<u32>,
         no_detach_to: Option<u32>,
     ) {
-        let Ok(mut inner) = self.inner.lock() else {
-            return;
-        };
+        let mut inner = self.inner.borrow_mut();
         for entry in inner
             .clients
             .values_mut()
@@ -3355,7 +3287,8 @@ impl ClientRenderRegistry {
                 continue;
             };
             entry.session_id = target;
-            if let Ok(mut action) = entry.slot.action.lock() {
+            {
+                let mut action = entry.slot.action.borrow_mut();
                 *action = Some(ClientAction::Switch {
                     session_id: target,
                     destroyed: true,
@@ -3374,20 +3307,15 @@ impl ClientRenderRegistry {
         request: OverlayRequest,
         reply: Option<PromptReply>,
     ) -> ClientActionResult {
-        let Ok(inner) = self.inner.lock() else {
-            return ClientActionResult::NoCurrentClient;
-        };
+        let inner = self.inner.borrow();
         let entry = match Self::client_entry(&inner, target, invoking_tty) {
             Ok(entry) => entry,
             Err(result) => return result,
         };
-        if let Ok(mut action) = entry.slot.action.lock() {
+        {
+            let mut action = entry.slot.action.borrow_mut();
             *action = Some(ClientAction::Overlay { request, reply });
-            entry
-                .slot
-                .pending
-                .fetch_or(RenderInvalidation::LAYOUT.bits(), Ordering::Release);
-            let _ = entry.slot.wakeup.wake();
+            entry.slot.publish(RenderInvalidation::LAYOUT);
         }
         ClientActionResult::Queued
     }
@@ -3400,8 +3328,8 @@ impl ClientRenderAttachment {
 
     /// This client's `#()` job tree, so its status renderer and the commands it
     /// runs share one cache — as they do in tmux, where both reach `c->jobs`.
-    pub(crate) fn format_jobs(&self) -> Arc<super::status::FormatJobRegistry> {
-        Arc::clone(&self.format_jobs)
+    pub(crate) fn format_jobs(&self) -> Rc<super::status::FormatJobRegistry> {
+        Rc::clone(&self.format_jobs)
     }
 
     /// Clear readiness and take every reason published so far.
@@ -3411,23 +3339,20 @@ impl ClientRenderAttachment {
     /// one harmless coalesced follow-up poll).
     pub(crate) fn take(&self) -> RenderInvalidation {
         let _ = self.slot.wakeup.clear();
-        RenderInvalidation(self.slot.pending.swap(0, Ordering::AcqRel))
+        RenderInvalidation(self.slot.pending.replace(0))
     }
 
     pub(crate) fn take_action(&self) -> Option<ClientAction> {
-        self.slot.action.lock().ok()?.take()
+        self.slot.action.borrow_mut().take()
     }
 
     pub(crate) fn take_messages(&self) -> Vec<ClientMessage> {
-        self.slot
-            .messages
-            .lock()
-            .map(|mut messages| messages.drain(..).collect())
-            .unwrap_or_default()
+        self.slot.messages.borrow_mut().drain(..).collect()
     }
 
     pub(crate) fn update_size(&self, cols: u16, rows: u16) {
-        if let Ok(mut inner) = self.registry.inner.lock() {
+        {
+            let mut inner = self.registry.inner.borrow_mut();
             inner.next_size_seq = inner.next_size_seq.wrapping_add(1);
             let size_seq = inner.next_size_seq;
             if let Some(entry) = inner.clients.get_mut(&self.id) {
@@ -3442,7 +3367,8 @@ impl ClientRenderAttachment {
     }
 
     pub(crate) fn mark_size_changed(&self) {
-        if let Ok(mut inner) = self.registry.inner.lock() {
+        {
+            let mut inner = self.registry.inner.borrow_mut();
             if let Some(entry) = inner.clients.get_mut(&self.id) {
                 entry.size_changed = true;
             }
@@ -3450,7 +3376,8 @@ impl ClientRenderAttachment {
     }
 
     pub(crate) fn update_control_flags(&self, flags: String, flag_state: &ClientFlagState) {
-        if let Ok(mut inner) = self.registry.inner.lock() {
+        {
+            let mut inner = self.registry.inner.borrow_mut();
             if let Some(entry) = inner.clients.get_mut(&self.id) {
                 entry.ignore_size = flag_state.ignore_size;
                 entry.read_only = flag_state.read_only;
@@ -3464,32 +3391,26 @@ impl ClientRenderAttachment {
     pub(crate) fn client_name(&self) -> String {
         self.registry
             .inner
-            .lock()
-            .ok()
-            .and_then(|inner| inner.clients.get(&self.id).map(|entry| entry.name.clone()))
+            .borrow()
+            .clients
+            .get(&self.id)
+            .map(|entry| entry.name.clone())
             .unwrap_or_default()
     }
 
     /// Bytes an application asked to have written to this client's terminal.
     pub(crate) fn take_client_output(&self) -> Vec<Vec<u8>> {
-        self.slot
-            .client_output
-            .lock()
-            .map(|mut queued| queued.drain(..).collect())
-            .unwrap_or_default()
+        self.slot.client_output.borrow_mut().drain(..).collect()
     }
 
     /// `refresh-client -f` values another client aimed at this one.
     pub(crate) fn take_flag_updates(&self) -> Vec<String> {
-        self.slot
-            .flag_updates
-            .lock()
-            .map(|mut pending| std::mem::take(&mut *pending))
-            .unwrap_or_default()
+        std::mem::take(&mut *self.slot.flag_updates.borrow_mut())
     }
 
     pub(crate) fn update_terminal(&self, terminal: &ResolvedTerm) {
-        if let Ok(mut inner) = self.registry.inner.lock() {
+        {
+            let mut inner = self.registry.inner.borrow_mut();
             if let Some(entry) = inner.clients.get_mut(&self.id) {
                 entry.terminal = Some(terminal.clone());
             }
@@ -3497,7 +3418,8 @@ impl ClientRenderAttachment {
     }
 
     pub(crate) fn update_session(&self, session_id: u32) {
-        if let Ok(mut inner) = self.registry.inner.lock() {
+        {
+            let mut inner = self.registry.inner.borrow_mut();
             if let Some(entry) = inner.clients.get_mut(&self.id) {
                 entry.session_id = session_id;
             }
@@ -3508,19 +3430,18 @@ impl ClientRenderAttachment {
 
 impl Drop for ClientRenderAttachment {
     fn drop(&mut self) {
-        if let Ok(mut inner) = self.registry.inner.lock() {
+        {
+            let mut inner = self.registry.inner.borrow_mut();
             inner.clients.remove(&self.id);
             let peers = inner
                 .clients
                 .values()
-                .map(|entry| Arc::clone(&entry.slot))
+                .map(|entry| Rc::clone(&entry.slot))
                 .collect::<Vec<_>>();
             drop(inner);
             self.registry.bump_generation();
             for peer in peers {
-                peer.pending
-                    .fetch_or(RenderInvalidation::STATUS.bits(), Ordering::Release);
-                let _ = peer.wakeup.wake();
+                peer.publish(RenderInvalidation::STATUS);
             }
         }
     }
@@ -3529,28 +3450,25 @@ impl Drop for ClientRenderAttachment {
 impl ClientPromptRegistry {
     fn new() -> Self {
         Self {
-            inner: Mutex::new(ClientPromptRegistryState::default()),
-            activity: AtomicU64::new(0),
+            inner: RefCell::new(ClientPromptRegistryState::default()),
+            activity: Cell::new(0),
         }
     }
 
     pub(crate) fn attach(
-        self: &Arc<Self>,
+        self: &Rc<Self>,
         tty_name: String,
         client_pid: Option<i32>,
         _session_id: u32,
     ) -> io::Result<ClientPromptAttachment> {
         let wakeup = CurrentPlatform::new_output_wakeup()?;
         wakeup.clear()?;
-        let slot = Arc::new(ClientPromptSlot {
-            inner: Mutex::new(ClientPromptSlotState::default()),
+        let slot = Rc::new(ClientPromptSlot {
+            inner: RefCell::new(ClientPromptSlotState::default()),
             wakeup,
         });
-        let activity = Arc::new(AtomicU64::new(self.next_activity()));
-        let mut inner = self
-            .inner
-            .lock()
-            .map_err(|_| io::Error::other("client prompt registry poisoned"))?;
+        let activity = Rc::new(Cell::new(self.next_activity()));
+        let mut inner = self.inner.borrow_mut();
         let id = inner.next_id;
         inner.next_id = inner.next_id.wrapping_add(1);
         let name = if tty_name.is_empty() {
@@ -3563,12 +3481,12 @@ impl ClientPromptRegistry {
             ClientPromptEntry {
                 name,
                 tty_name,
-                slot: Arc::clone(&slot),
-                activity: Arc::clone(&activity),
+                slot: Rc::clone(&slot),
+                activity: Rc::clone(&activity),
             },
         );
         Ok(ClientPromptAttachment {
-            registry: Arc::clone(self),
+            registry: Rc::clone(self),
             id,
             slot,
             activity,
@@ -3576,7 +3494,9 @@ impl ClientPromptRegistry {
     }
 
     fn next_activity(&self) -> u64 {
-        self.activity.fetch_add(1, Ordering::Relaxed)
+        let issued = self.activity.get();
+        self.activity.set(issued.wrapping_add(1));
+        issued
     }
 
     pub(crate) fn request_command(
@@ -3587,9 +3507,7 @@ impl ClientPromptRegistry {
         wait: bool,
     ) -> CommandPromptRequestResult {
         let completed = {
-            let Ok(inner) = self.inner.lock() else {
-                return CommandPromptRequestResult::NoCurrentClient;
-            };
+            let inner = self.inner.borrow();
             let explicit = target.map(|target| target.strip_suffix(':').unwrap_or(target));
             let selected = if let Some(target) = explicit {
                 inner.clients.values().find(|entry| {
@@ -3607,7 +3525,7 @@ impl ClientPromptRegistry {
                         inner
                             .clients
                             .values()
-                            .max_by_key(|entry| entry.activity.load(Ordering::Relaxed))
+                            .max_by_key(|entry| entry.activity.get())
                     })
             };
             let Some(entry) = selected else {
@@ -3617,13 +3535,11 @@ impl ClientPromptRegistry {
                     CommandPromptRequestResult::NoCurrentClient
                 };
             };
-            let slot = Arc::clone(&entry.slot);
+            let slot = Rc::clone(&entry.slot);
             let Ok((reply, completed)) = PromptReply::new() else {
                 return CommandPromptRequestResult::NoCurrentClient;
             };
-            let Ok(mut state) = slot.inner.lock() else {
-                return CommandPromptRequestResult::NoCurrentClient;
-            };
+            let mut state = slot.inner.borrow_mut();
             if state.active || state.queued_command.is_some() {
                 return CommandPromptRequestResult::Busy;
             }
@@ -3648,11 +3564,11 @@ impl ClientPromptAttachment {
 
     pub(crate) fn take_command_prompt(&self) -> Option<ActiveCommandPrompt> {
         let _ = self.slot.wakeup.clear();
-        let mut state = self.slot.inner.lock().ok()?;
+        let mut state = self.slot.inner.borrow_mut();
         let queued = state.queued_command.take()?;
         state.active = true;
         Some(ActiveCommandPrompt {
-            slot: Arc::clone(&self.slot),
+            slot: Rc::clone(&self.slot),
             args: queued.args,
             reply: Some(queued.reply),
         })
@@ -3660,16 +3576,18 @@ impl ClientPromptAttachment {
 
     pub(crate) fn note_activity(&self) {
         self.activity
-            .store(self.registry.next_activity(), Ordering::Relaxed);
+            .set(self.registry.next_activity());
     }
 }
 
 impl Drop for ClientPromptAttachment {
     fn drop(&mut self) {
-        if let Ok(mut inner) = self.registry.inner.lock() {
+        {
+            let mut inner = self.registry.inner.borrow_mut();
             inner.clients.remove(&self.id);
         }
-        if let Ok(mut state) = self.slot.inner.lock() {
+        {
+            let mut state = self.slot.inner.borrow_mut();
             if let Some(queued) = state.queued_command.take() {
                 queued.reply.send(None);
             }
@@ -3683,7 +3601,8 @@ impl ActiveCommandPrompt {
     }
 
     pub(crate) fn complete(mut self, result: PromptCompletion) {
-        if let Ok(mut state) = self.slot.inner.lock() {
+        {
+            let mut state = self.slot.inner.borrow_mut();
             state.active = false;
         }
         if let Some(reply) = self.reply.take() {
@@ -3692,7 +3611,8 @@ impl ActiveCommandPrompt {
     }
 
     pub(crate) fn cancel(mut self) {
-        if let Ok(mut state) = self.slot.inner.lock() {
+        {
+            let mut state = self.slot.inner.borrow_mut();
             state.active = false;
         }
         if let Some(reply) = self.reply.take() {
@@ -3703,7 +3623,8 @@ impl ActiveCommandPrompt {
 
 impl Drop for ActiveCommandPrompt {
     fn drop(&mut self) {
-        if let Ok(mut state) = self.slot.inner.lock() {
+        {
+            let mut state = self.slot.inner.borrow_mut();
             state.active = false;
         }
     }
@@ -4068,7 +3989,8 @@ pub struct ServerState {
     /// as `TMUX` names it in a spawned process. Empty in the unit tests and in
     /// any embedding that never binds a socket.
     socket_path: PathBuf,
-    pane_io_mode: PaneIoMode,
+    /// Pipe jobs that belong to no pane, waiting for the loop to adopt them.
+    new_pipes: Vec<super::pane::PanePipeIo>,
     sessions: Vec<Session>,
     /// Windows are owned once by the server and referenced through [`Winlink`].
     windows: BTreeMap<u32, Window>,
@@ -4126,7 +4048,7 @@ pub struct ServerState {
     /// and generation it was built for. A command builds its job runner whether
     /// or not it expands a `#()`, and rebuilding the whole environment each
     /// time is not free.
-    job_environment_cache: Mutex<Option<(u64, Option<u32>, Arc<Vec<String>>)>>,
+    job_environment_cache: RefCell<Option<(u64, Option<u32>, Rc<Vec<String>>)>>,
     /// Independent server, global-session, and global-window option tables.
     global_options: GlobalOptions,
     /// The paste-buffer stack, newest first (tmux's `#{buffer_name}` order in
@@ -4156,7 +4078,7 @@ pub struct ServerState {
     /// read once rather than on every option change.
     prompt_history_file_loaded: Option<PathBuf>,
     message_log: Vec<MessageLogEntry>,
-    background_jobs: Arc<BackgroundJobRegistry>,
+    background_jobs: Rc<BackgroundJobRegistry>,
     running_hooks: BTreeSet<String>,
     /// The `hook*` format variables published to the hook body currently
     /// executing; empty outside hook bodies. Like `command_session_id`, a
@@ -4171,7 +4093,7 @@ pub struct ServerState {
     command_mouse: Option<super::mouse::MouseEvent>,
     /// `#()` job runner of the command currently executing, so any format it
     /// expands caches its jobs in the tree of the client that ran it.
-    command_format_jobs: Option<Arc<super::command::CommandJobs>>,
+    command_format_jobs: Option<Rc<super::command::CommandJobs>>,
     /// Stable window selected for the command currently executing, when the
     /// default target names one — a hook body targeting a specific window.
     command_window_id: Option<u32>,
@@ -4184,14 +4106,14 @@ pub struct ServerState {
     pane_alert_seen: BTreeMap<u32, (u64, u64)>,
     window_last_activity: BTreeMap<u32, std::time::Instant>,
     silence_alerted: BTreeSet<u32>,
-    client_prompts: Arc<ClientPromptRegistry>,
-    client_renders: Arc<ClientRenderRegistry>,
-    wait_registry: Arc<WaitRegistry>,
+    client_prompts: Rc<ClientPromptRegistry>,
+    client_renders: Rc<ClientRenderRegistry>,
+    wait_registry: Rc<WaitRegistry>,
     /// No-client format jobs, corresponding to tmux's process-global job tree.
     /// Current native consumers use client-owned status caches; this remains a
     /// distinct owner for no-client format contexts as those are implemented.
     #[allow(dead_code)]
-    format_jobs: Arc<super::status::FormatJobRegistry>,
+    format_jobs: Rc<super::status::FormatJobRegistry>,
 }
 
 /// When an empty server shuts itself down.
@@ -4211,11 +4133,11 @@ impl ServerState {
     /// remains available for the first client, and the policy starts applying
     /// once a session has existed.
     pub fn empty() -> ServerState {
-        let client_renders = Arc::new(ClientRenderRegistry::new());
+        let client_renders = Rc::new(ClientRenderRegistry::new());
         let mut state = ServerState {
             initial_attach_pending: true,
             socket_path: PathBuf::new(),
-            pane_io_mode: default_pane_io_mode(),
+            new_pipes: Vec::new(),
             sessions: Vec::new(),
             windows: BTreeMap::new(),
             session_groups: BTreeMap::new(),
@@ -4239,7 +4161,7 @@ impl ServerState {
             hidden_environment: BTreeSet::new(),
             seeded_environment: BTreeSet::new(),
             environment_generation: 0,
-            job_environment_cache: Mutex::new(None),
+            job_environment_cache: RefCell::new(None),
             global_options: GlobalOptions::new(),
             buffers: Vec::new(),
             buffer_created: BTreeMap::new(),
@@ -4251,7 +4173,7 @@ impl ServerState {
             prompt_history: BTreeMap::new(),
             prompt_history_file_loaded: None,
             message_log: Vec::new(),
-            background_jobs: Arc::new(BackgroundJobRegistry::default()),
+            background_jobs: Rc::new(BackgroundJobRegistry::default()),
             running_hooks: BTreeSet::new(),
             hook_format_vars: Vec::new(),
             command_session_id: None,
@@ -4264,10 +4186,10 @@ impl ServerState {
             pane_alert_seen: BTreeMap::new(),
             window_last_activity: BTreeMap::new(),
             silence_alerted: BTreeSet::new(),
-            client_prompts: Arc::new(ClientPromptRegistry::new()),
-            format_jobs: Arc::new(super::status::FormatJobRegistry::new(&client_renders)),
+            client_prompts: Rc::new(ClientPromptRegistry::new()),
+            format_jobs: Rc::new(super::status::FormatJobRegistry::new(&client_renders)),
             client_renders,
-            wait_registry: Arc::new(WaitRegistry::default()),
+            wait_registry: Rc::new(WaitRegistry::default()),
         };
         state.install_default_key_bindings();
         state
@@ -4302,7 +4224,7 @@ impl ServerState {
                 format!("can't find session: {session_name}"),
             )
         })?;
-        let attachment = Arc::clone(&self.client_renders)
+        let attachment = Rc::clone(&self.client_renders)
             .attach(session_id, format!("test-client-{session_id}"))?;
         attachment.update_size(cols, rows);
         self.recalculate_sizes()?;
@@ -4313,17 +4235,23 @@ impl ServerState {
         self.initial_attach_pending
     }
 
-    pub(crate) fn set_pane_io_mode(&mut self, mode: PaneIoMode) {
-        self.pane_io_mode = mode;
+    /// Hand a pipe job the loop owns from here. `copy-pipe` uses this for the
+    /// child it feeds a selection to, which belongs to no pane.
+    pub(crate) fn adopt_pipe(&mut self, pipe: super::pane::PanePipeIo) {
+        self.new_pipes.push(pipe);
     }
 
-    /// Pipe children opened since the last call, across every pane.
+    /// Pipe children opened since the last call, across every pane and the
+    /// pane-less jobs adopted directly.
     pub(crate) fn take_new_pane_pipes(&mut self) -> Vec<super::pane::PanePipeIo> {
-        self.windows
-            .values_mut()
-            .flat_map(|window| window.panes.iter_mut())
-            .flat_map(|node| node.pane.take_new_pipes())
-            .collect()
+        let mut pipes = std::mem::take(&mut self.new_pipes);
+        pipes.extend(
+            self.windows
+                .values_mut()
+                .flat_map(|window| window.panes.iter_mut())
+                .flat_map(|node| node.pane.take_new_pipes()),
+        );
+        pipes
     }
 
     pub(crate) fn take_event_pane_ios(&mut self) -> Vec<(u64, PaneIo)> {
@@ -5538,12 +5466,12 @@ impl ServerState {
         }
     }
 
-    pub(crate) fn client_prompt_registry(&self) -> Arc<ClientPromptRegistry> {
-        Arc::clone(&self.client_prompts)
+    pub(crate) fn client_prompt_registry(&self) -> Rc<ClientPromptRegistry> {
+        Rc::clone(&self.client_prompts)
     }
 
-    pub(crate) fn client_render_registry(&self) -> Arc<ClientRenderRegistry> {
-        Arc::clone(&self.client_renders)
+    pub(crate) fn client_render_registry(&self) -> Rc<ClientRenderRegistry> {
+        Rc::clone(&self.client_renders)
     }
 
     pub(crate) fn attached_clients(&self) -> Vec<AttachedClient> {
@@ -5748,13 +5676,13 @@ impl ServerState {
         )
     }
 
-    pub(crate) fn wait_registry(&self) -> Arc<WaitRegistry> {
-        Arc::clone(&self.wait_registry)
+    pub(crate) fn wait_registry(&self) -> Rc<WaitRegistry> {
+        Rc::clone(&self.wait_registry)
     }
 
     #[allow(dead_code)]
-    pub(crate) fn format_job_registry(&self) -> Arc<super::status::FormatJobRegistry> {
-        Arc::clone(&self.format_jobs)
+    pub(crate) fn format_job_registry(&self) -> Rc<super::status::FormatJobRegistry> {
+        Rc::clone(&self.format_jobs)
     }
 
     /// Every `#()` job launched since the last call, across the per-client
@@ -5786,8 +5714,8 @@ impl ServerState {
         &self.message_log
     }
 
-    pub(crate) fn background_job_registry(&self) -> Arc<BackgroundJobRegistry> {
-        Arc::clone(&self.background_jobs)
+    pub(crate) fn background_job_registry(&self) -> Rc<BackgroundJobRegistry> {
+        Rc::clone(&self.background_jobs)
     }
 
     /// The `#()` job tree a format expanded by `client` uses, with the session
@@ -5797,7 +5725,7 @@ impl ServerState {
     pub(crate) fn format_jobs_for_client(
         &self,
         client: Option<&str>,
-    ) -> (Arc<super::status::FormatJobRegistry>, Option<u32>) {
+    ) -> (Rc<super::status::FormatJobRegistry>, Option<u32>) {
         match client.and_then(|name| self.client_renders.client_format_jobs(name)) {
             Some((jobs, session_id)) => (jobs, Some(session_id)),
             // A command client has a job tree of its own that dies with it, so
@@ -5805,7 +5733,7 @@ impl ServerState {
             // keeps `#()` output in `c->jobs`, and that client is already gone.
             // Only a format with no client at all reaches the server's tree.
             None if client.is_some() => (
-                Arc::new(super::status::FormatJobRegistry::new(&self.client_renders)),
+                Rc::new(super::status::FormatJobRegistry::new(&self.client_renders)),
                 None,
             ),
             None => (self.format_job_registry(), None),
@@ -5849,12 +5777,12 @@ impl ServerState {
     /// the command expands starts its jobs in the right client's tree.
     pub(crate) fn replace_command_format_jobs(
         &mut self,
-        jobs: Option<Arc<super::command::CommandJobs>>,
-    ) -> Option<Arc<super::command::CommandJobs>> {
+        jobs: Option<Rc<super::command::CommandJobs>>,
+    ) -> Option<Rc<super::command::CommandJobs>> {
         std::mem::replace(&mut self.command_format_jobs, jobs)
     }
 
-    pub(crate) fn command_format_jobs(&self) -> Option<&Arc<super::command::CommandJobs>> {
+    pub(crate) fn command_format_jobs(&self) -> Option<&Rc<super::command::CommandJobs>> {
         self.command_format_jobs.as_ref()
     }
 
@@ -6166,11 +6094,10 @@ impl ServerState {
     pub fn reap_exited_panes(&mut self) -> bool {
         let had_sessions = !self.sessions.is_empty();
         let mut removed = false;
-        let event_loop_io = matches!(self.pane_io_mode, PaneIoMode::EventLoop);
         for window in self.windows.values_mut() {
             for pane in &mut window.panes {
                 if pane.pane.has_exited() {
-                    pane.pane.collect_exited_child(event_loop_io);
+                    pane.pane.collect_exited_child();
                 }
             }
         }
@@ -6221,7 +6148,7 @@ impl ServerState {
                 .iter()
                 .filter(|pane| {
                     pane.pane.has_exited()
-                        && (!event_loop_io || pane.pane.child_reaped())
+                        && pane.pane.child_reaped()
                         && !retained.contains(&pane.id)
                 })
                 .map(|pane| pane.id)
@@ -6229,7 +6156,7 @@ impl ServerState {
             let before = window.panes.len();
             window.panes.retain(|pane| {
                 !pane.pane.has_exited()
-                    || (event_loop_io && !pane.pane.child_reaped())
+                    || !pane.pane.child_reaped()
                     || retained.contains(&pane.id)
             });
             let panes_removed = window.panes.len() != before;
@@ -6348,11 +6275,11 @@ impl ServerState {
             PaneSpec::Inert => Pane::inert(cols, rows)?,
             PaneSpec::Command(argv) => {
                 let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-                Pane::spawn_in_mode(&refs, None, cols, rows, self.pane_io_mode)?
+                Pane::spawn(&refs, None, cols, rows)?
             }
             PaneSpec::CommandIn(argv, cwd) => {
                 let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-                Pane::spawn_in_mode(&refs, Some(&cwd), cols, rows, self.pane_io_mode)?
+                Pane::spawn(&refs, Some(&cwd), cols, rows)?
             }
         };
 
@@ -6728,7 +6655,7 @@ impl ServerState {
         // Spawn the pane before mutating counters so a spawn failure leaves state
         // untouched.
         let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-        let pane = Pane::spawn_in_mode(&refs, cwd, cols, rows, self.pane_io_mode)?;
+        let pane = Pane::spawn(&refs, cwd, cols, rows)?;
 
         let window_id = self.next_window_id;
         self.next_window_id += 1;
@@ -6878,7 +6805,7 @@ impl ServerState {
         // mutating counters so a failure leaves state untouched.
         let (cols, rows) = self.default_window_size(session_pos, None, None);
         let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-        let pane = Pane::spawn_in_mode(&refs, cwd, cols, rows, self.pane_io_mode)?;
+        let pane = Pane::spawn(&refs, cwd, cols, rows)?;
 
         let window_id = self.next_window_id;
         self.next_window_id += 1;
@@ -8361,11 +8288,11 @@ impl ServerState {
             PaneSpec::Inert => Pane::inert(cols, rows)?,
             PaneSpec::Command(argv) => {
                 let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
-                Pane::spawn_in_mode(&refs, None, cols, rows, self.pane_io_mode)?
+                Pane::spawn(&refs, None, cols, rows)?
             }
             PaneSpec::CommandIn(argv, cwd) => {
                 let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
-                Pane::spawn_in_mode(&refs, Some(&cwd), cols, rows, self.pane_io_mode)?
+                Pane::spawn(&refs, Some(&cwd), cols, rows)?
             }
         };
         let pane_id = self.next_pane_id;
@@ -8459,7 +8386,7 @@ impl ServerState {
             .unwrap_or(rows / 4)
             .clamp(1, rows.saturating_sub(1).max(1));
         let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
-        let pane = Pane::spawn_in_mode(&refs, cwd, width, height, self.pane_io_mode)?;
+        let pane = Pane::spawn(&refs, cwd, width, height)?;
         let pane_id = self.next_pane_id;
         self.next_pane_id += 1;
         let window = self.window_mut(target.session, target.window);
@@ -10112,22 +10039,24 @@ impl ServerState {
     ///
     /// Cached against [`ServerState::environment_generation`], because a
     /// command builds its job runner whether or not it expands a `#()`.
-    pub(crate) fn job_environment(&self, session: Option<&str>) -> Arc<Vec<String>> {
+    pub(crate) fn job_environment(&self, session: Option<&str>) -> Rc<Vec<String>> {
         let session_id = session
             .and_then(|target| self.resolve_session(target))
             .map(|session| session.id);
         let generation = self.environment_generation;
-        if let Ok(mut cache) = self.job_environment_cache.lock() {
-            if let Some((cached_generation, cached_session, environment)) = cache.as_ref() {
-                if *cached_generation == generation && *cached_session == session_id {
-                    return Arc::clone(environment);
-                }
+        if let Some((cached_generation, cached_session, environment)) =
+            self.job_environment_cache.borrow().as_ref()
+        {
+            if *cached_generation == generation && *cached_session == session_id {
+                return Rc::clone(environment);
             }
-            let environment = Arc::new(self.spawn_environment(session, &[], &[]));
-            *cache = Some((generation, session_id, Arc::clone(&environment)));
-            return environment;
         }
-        Arc::new(self.spawn_environment(session, &[], &[]))
+        // Built outside the borrow: `spawn_environment` walks the rest of the
+        // state and must not run with the cache borrowed.
+        let environment = Rc::new(self.spawn_environment(session, &[], &[]));
+        *self.job_environment_cache.borrow_mut() =
+            Some((generation, session_id, Rc::clone(&environment)));
+        environment
     }
 
     /// tmux's `environ_update`: copy the variables `update-environment` names
@@ -12267,7 +12196,7 @@ impl ServerState {
     pub(crate) fn pane_observation_state(
         &self,
         target: &str,
-    ) -> io::Result<Arc<super::pane::NativePaneObservation>> {
+    ) -> io::Result<Rc<super::pane::NativePaneObservation>> {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         Ok(
             self.window(resolved.session, resolved.window).panes[resolved.pane]
@@ -13673,7 +13602,7 @@ impl ServerState {
                 None => return Ok(()),
             },
         };
-        let pane = Pane::spawn_from_spec_mode(&spec, cols, rows, self.pane_io_mode)?;
+        let pane = Pane::spawn_from_spec(&spec, cols, rows)?;
         let node = &mut self.window_mut(resolved.session, resolved.window).panes[resolved.pane];
         node.pane = pane;
         node.mode = None;
@@ -13706,7 +13635,6 @@ impl ServerState {
             .map(|session| session.id)
             .collect::<Vec<_>>();
         if argv.as_ref().is_none_or(Vec::is_empty) {
-            let io_mode = self.pane_io_mode;
             let replacements = self
                 .window(resolved.session, resolved.window)
                 .panes
@@ -13716,7 +13644,7 @@ impl ServerState {
                         return Ok(None);
                     };
                     let (cols, rows) = node.pane.size();
-                    Pane::spawn_from_spec_mode(&spec, cols, rows, io_mode).map(Some)
+                    Pane::spawn_from_spec(&spec, cols, rows).map(Some)
                 })
                 .collect::<io::Result<Vec<_>>>()?;
             let window = self.window_mut(resolved.session, resolved.window);
@@ -13743,7 +13671,7 @@ impl ServerState {
             let window = self.window(resolved.session, resolved.window);
             let (cols, rows) = (window.cols, window.rows);
             let spec = PaneSpawnSpec { argv, cwd };
-            Pane::spawn_from_spec_mode(&spec, cols, rows, self.pane_io_mode)?
+            Pane::spawn_from_spec(&spec, cols, rows)?
         };
         let window = self.window_mut(resolved.session, resolved.window);
         let id = window.panes[resolved.pane].id;
@@ -15616,7 +15544,7 @@ fn session_not_found(part: &str) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::task::run_blocking;
+    use crate::event_loop::test_driver::run_on_loop;
 
     #[test]
     fn copy_vt_rows_exclude_crlf_and_trailing_cursor() {
@@ -15707,7 +15635,7 @@ mod tests {
 
     #[test]
     fn client_prompt_registry_routes_by_tty() {
-        let registry = Arc::new(ClientPromptRegistry::new());
+        let registry = Rc::new(ClientPromptRegistry::new());
         let client_a = registry
             .attach("/dev/pts/7".to_string(), Some(700), 7)
             .expect("attach client A");
@@ -15734,14 +15662,14 @@ mod tests {
             inserted: true,
         });
 
-        let answered = run_blocking(answer).expect("answer").expect("completion");
+        let answered = run_on_loop(answer).expect("answer").expect("completion");
         assert_eq!(answered.stdout, "Up");
         assert_eq!(answered.exit, 0);
     }
 
     #[test]
     fn detaching_client_cancels_its_queued_prompt() {
-        let registry = Arc::new(ClientPromptRegistry::new());
+        let registry = Rc::new(ClientPromptRegistry::new());
         let client = registry
             .attach("/dev/pts/7".to_string(), Some(700), 7)
             .expect("attach client");
@@ -15757,7 +15685,7 @@ mod tests {
         drop(client);
 
         // A detached client answers nothing; the queue continues on its own.
-        assert!(run_blocking(answer).expect("answer").is_none());
+        assert!(run_on_loop(answer).expect("answer").is_none());
     }
 
     #[test]

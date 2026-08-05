@@ -1,15 +1,18 @@
 //! The swappable server abstraction — **definitions only** (per design.md and
 //! prompt.md). Message types and codecs live beside this in sibling modules.
 //!
-//! The connection is split into independent read and write halves so the
-//! two-thread-per-connection model (client→server and server→client) can hold one
-//! handle each. A single `&mut self` connection, or one behind a mutex, would
-//! deadlock: a blocking `recv` on the read side would hold the lock the write
-//! side needs.
+//! The connection is split into independent read and write halves so each
+//! direction can be registered, and made ready, on its own. A single
+//! `&mut self` connection would also make a blocking `recv` on the read side
+//! hold back the write side.
 //!
-//! Tests in the `hmux-conformance` workspace crate are generic over
-//! [`TmuxServer`] so the same suite can validate native hmux against a direct
-//! stock tmux reference.
+//! Two contracts describe a connection. [`NonblockingTmuxServer`] is what the
+//! daemon speaks: both halves report `WouldBlock` and are driven by a readiness
+//! loop. [`TmuxServer`] is the blocking form, kept for the client side — tests
+//! in the `hmux-conformance` workspace crate are generic over it so the same
+//! suite can validate native hmux against a direct stock tmux reference. New
+//! server-side work should take the nonblocking contract; the blocking one is
+//! slated for removal once nothing needs a blocking client.
 
 use std::{error, fmt, io};
 
@@ -52,9 +55,29 @@ impl<F> fmt::Display for WriteQueueFull<F> {
 
 impl<F> error::Error for WriteQueueFull<F> {}
 
+/// A tmux control-plane server whose connections are driven by a readiness
+/// loop.
+///
+/// This is the contract the daemon speaks. A server and the halves it hands out
+/// belong to one thread; callers that do need to move one across threads bound
+/// it themselves.
+pub trait NonblockingTmuxServer {
+    type Reader: NonblockingFrameReader;
+    type Writer: NonblockingFrameWriter;
+
+    /// Open a fresh client connection, returning its read and write halves.
+    ///
+    /// Both halves are left in whatever mode makes them report
+    /// [`io::ErrorKind::WouldBlock`] rather than wait.
+    fn connect_nonblocking(&self) -> io::Result<(Self::Reader, Self::Writer)>;
+}
+
 /// A tmux control-plane server: something a client can connect to and exchange
-/// [`Frame`]s with.
-pub trait TmuxServer: Send + Sync {
+/// [`Frame`]s with, one blocking call at a time.
+///
+/// The blocking form of [`NonblockingTmuxServer`], kept for the client side.
+/// The daemon's own connections use the nonblocking halves only.
+pub trait TmuxServer {
     type Reader: FrameReader;
     type Writer: FrameWriter;
 
@@ -62,8 +85,9 @@ pub trait TmuxServer: Send + Sync {
     fn connect(&self) -> io::Result<(Self::Reader, Self::Writer)>;
 }
 
-/// The receiving half of a connection.
-pub trait FrameReader: Send {
+/// The receiving half of a connection. The blocking counterpart of
+/// [`NonblockingFrameReader`].
+pub trait FrameReader {
     /// Block until the next frame arrives. Returns an `UnexpectedEof` error when
     /// the peer closes at a frame boundary.
     fn recv(&mut self) -> io::Result<Frame>;
@@ -74,7 +98,7 @@ pub trait FrameReader: Send {
 /// This trait is intentionally independent of [`FrameReader`]. Event-driven
 /// users should not need to implement or depend on the legacy blocking
 /// operation.
-pub trait NonblockingFrameReader: Send {
+pub trait NonblockingFrameReader {
     /// Return the next complete frame without blocking.
     ///
     /// Returns [`io::ErrorKind::WouldBlock`] when no complete frame is
@@ -87,7 +111,7 @@ pub trait NonblockingFrameReader: Send {
 ///
 /// Implementations choose their input frame type and privately own all queued
 /// and partial-write state.
-pub trait NonblockingFrameWriter: Send {
+pub trait NonblockingFrameWriter {
     /// One owned logical value accepted by the writer.
     type Frame;
 
@@ -110,8 +134,10 @@ pub trait NonblockingFrameWriter: Send {
     fn has_pending(&self) -> bool;
 }
 
-/// The sending half of a connection.
-pub trait FrameWriter: Send {
+/// The sending half of a connection. The blocking counterpart of
+/// [`NonblockingFrameWriter`], and the frame sink the attach compositor writes
+/// a client's output through.
+pub trait FrameWriter {
     /// Send a frame, forwarding any attached `SCM_RIGHTS` fd.
     fn send(&mut self, frame: Frame) -> io::Result<()>;
 }

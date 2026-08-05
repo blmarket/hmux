@@ -13,7 +13,7 @@ use super::style::{self, CellPresentation, CellStyle, Colour, TerminalStyleWrite
 use super::term::{terminal_acs, terminal_utf8, TerminalCapabilities};
 use crate::integration::status::{PaneAgents, StatusSnapshot};
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::{self, Read};
@@ -21,8 +21,7 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
 const DEFAULT_STATUS_LEFT: &str = "[#{session_name}] ";
@@ -54,28 +53,28 @@ struct FormatJobEntry {
     /// second it ran in is over.
     last_started_second: i64,
     last_notified: Instant,
-    process: Option<Arc<FormatJobProcess>>,
+    process: Option<Rc<FormatJobProcess>>,
 }
 
 struct FormatJobProcess {
-    cancelled: AtomicBool,
-    pgid: AtomicI32,
+    cancelled: Cell<bool>,
+    pgid: Cell<i32>,
     /// The pipe the job's output is read from, as `show-messages -J` reports it.
-    fd: AtomicI32,
+    fd: Cell<i32>,
 }
 
 impl FormatJobProcess {
     fn new() -> Self {
         Self {
-            cancelled: AtomicBool::new(false),
-            pgid: AtomicI32::new(0),
-            fd: AtomicI32::new(-1),
+            cancelled: Cell::new(false),
+            pgid: Cell::new(0),
+            fd: Cell::new(-1),
         }
     }
 
     fn register(&self, pgid: i32) -> bool {
-        self.pgid.store(pgid, Ordering::Release);
-        if self.cancelled.load(Ordering::Acquire) {
+        self.pgid.set(pgid);
+        if self.cancelled.get() {
             self.kill(pgid);
             false
         } else {
@@ -84,8 +83,8 @@ impl FormatJobProcess {
     }
 
     fn cancel(&self) {
-        self.cancelled.store(true, Ordering::Release);
-        let pgid = self.pgid.load(Ordering::Acquire);
+        self.cancelled.set(true);
+        let pgid = self.pgid.get();
         if pgid > 0 {
             self.kill(pgid);
         }
@@ -119,11 +118,11 @@ impl Drop for FormatJobEntry {
 /// no client, keyed by the command and the session/window/pane the expansion
 /// was anchored at (`fj->tag`).
 pub(crate) struct FormatJobRegistry {
-    jobs: Mutex<HashMap<FormatJobKey, FormatJobEntry>>,
+    jobs: RefCell<HashMap<FormatJobKey, FormatJobEntry>>,
     /// Jobs whose child is running but which the loop has not adopted yet.
     /// Format expansion happens deep inside rendering, so a launch records the
     /// job here and the loop picks it up on its next pass.
-    pending: Mutex<Vec<FormatJob>>,
+    pending: RefCell<Vec<FormatJob>>,
     /// Weak so a per-client tree stored beside its client entry does not keep
     /// the render registry that owns the entry alive.
     renders: Weak<ClientRenderRegistry>,
@@ -131,11 +130,11 @@ pub(crate) struct FormatJobRegistry {
 }
 
 impl FormatJobRegistry {
-    pub(crate) fn new(renders: &Arc<ClientRenderRegistry>) -> Self {
+    pub(crate) fn new(renders: &Rc<ClientRenderRegistry>) -> Self {
         Self {
-            jobs: Mutex::new(HashMap::new()),
-            pending: Mutex::new(Vec::new()),
-            renders: Arc::downgrade(renders),
+            jobs: RefCell::new(HashMap::new()),
+            pending: RefCell::new(Vec::new()),
+            renders: Rc::downgrade(renders),
             eviction_timeout: Duration::from_secs(3600),
         }
     }
@@ -144,13 +143,13 @@ impl FormatJobRegistry {
     /// in this wall-clock second. `vars` supplies the scope the tree is keyed
     /// by, so the same command expanded for two panes gets two entries.
     pub(crate) fn output_for(
-        self: &Arc<Self>,
+        self: &Rc<Self>,
         command: &str,
         expanded: String,
         vars: &Vars,
         session_id: u32,
         cwd: Option<PathBuf>,
-        environment: Arc<Vec<String>>,
+        environment: Rc<Vec<String>>,
         status: bool,
     ) -> String {
         let scope = format!(
@@ -174,10 +173,7 @@ impl FormatJobRegistry {
 
     /// Jobs launched since the last call, for the loop to drive.
     pub(crate) fn take_pending(&self) -> Vec<FormatJob> {
-        self.pending
-            .lock()
-            .map(|mut pending| std::mem::take(&mut *pending))
-            .unwrap_or_default()
+        std::mem::take(&mut *self.pending.borrow_mut())
     }
 
     /// Drop finished entries nothing has re-run within `eviction_timeout`, so a
@@ -196,9 +192,7 @@ impl FormatJobRegistry {
 
     /// The jobs still running, for `show-messages -J`.
     pub(crate) fn running(&self) -> Vec<FormatJobInfo> {
-        let Ok(jobs) = self.jobs.lock() else {
-            return Vec::new();
-        };
+        let jobs = self.jobs.borrow();
         let mut running = jobs
             .iter()
             .filter(|(_, job)| job.running)
@@ -206,8 +200,8 @@ impl FormatJobRegistry {
                 let process = job.process.as_ref()?;
                 Some(FormatJobInfo {
                     command: job.expanded_command.clone(),
-                    fd: process.fd.load(Ordering::Acquire),
-                    pid: process.pgid.load(Ordering::Acquire),
+                    fd: process.fd.get(),
+                    pid: process.pgid.get(),
                 })
             })
             .collect::<Vec<_>>();
@@ -216,21 +210,19 @@ impl FormatJobRegistry {
     }
 
     fn output(
-        self: &Arc<Self>,
+        self: &Rc<Self>,
         key: FormatJobKey,
         expanded_command: String,
         session_id: u32,
         cwd: Option<PathBuf>,
-        environment: Arc<Vec<String>>,
+        environment: Rc<Vec<String>>,
         status: bool,
     ) -> String {
         let now = Instant::now();
         let second = super::state::now_epoch();
         let mut launch = None;
         let output = {
-            let Ok(mut jobs) = self.jobs.lock() else {
-                return String::new();
-            };
+            let mut jobs = self.jobs.borrow_mut();
             Self::evict_expired(&mut jobs, self.eviction_timeout, now);
             match jobs.get_mut(&key) {
                 Some(job) => {
@@ -242,14 +234,14 @@ impl FormatJobRegistry {
                         if let Some(process) = job.process.take() {
                             process.cancel();
                         }
-                        let process = Arc::new(FormatJobProcess::new());
+                        let process = Rc::new(FormatJobProcess::new());
                         job.expanded_command = expanded_command.clone();
                         job.running = true;
                         job.generation = job.generation.wrapping_add(1);
                         job.last_started = now;
                         job.last_started_second = second;
                         job.last_notified = now;
-                        job.process = Some(Arc::clone(&process));
+                        job.process = Some(Rc::clone(&process));
                         launch = Some((job.generation, process));
                     }
                     if job.running
@@ -262,7 +254,7 @@ impl FormatJobRegistry {
                     }
                 }
                 None => {
-                    let process = Arc::new(FormatJobProcess::new());
+                    let process = Rc::new(FormatJobProcess::new());
                     jobs.insert(
                         key.clone(),
                         FormatJobEntry {
@@ -273,7 +265,7 @@ impl FormatJobRegistry {
                             last_started: now,
                             last_started_second: second,
                             last_notified: now,
-                            process: Some(Arc::clone(&process)),
+                            process: Some(Rc::clone(&process)),
                         },
                     );
                     launch = Some((1, process));
@@ -284,7 +276,7 @@ impl FormatJobRegistry {
 
         if let Some((generation, process)) = launch {
             let job = FormatJob::spawn(
-                Arc::downgrade(self),
+                Rc::downgrade(self),
                 key,
                 generation,
                 session_id,
@@ -294,9 +286,7 @@ impl FormatJobRegistry {
                 &environment,
                 process,
             );
-            if let Ok(mut pending) = self.pending.lock() {
-                pending.push(job);
-            }
+            self.pending.borrow_mut().push(job);
         }
         output
     }
@@ -310,9 +300,7 @@ impl FormatJobRegistry {
         output: String,
     ) {
         let notify = {
-            let Ok(mut jobs) = self.jobs.lock() else {
-                return;
-            };
+            let mut jobs = self.jobs.borrow_mut();
             let Some(job) = jobs.get_mut(key) else {
                 return;
             };
@@ -344,9 +332,7 @@ impl FormatJobRegistry {
         output: String,
     ) {
         {
-            let Ok(mut jobs) = self.jobs.lock() else {
-                return;
-            };
+            let mut jobs = self.jobs.borrow_mut();
             let Some(job) = jobs.get_mut(&key) else {
                 return;
             };
@@ -395,7 +381,7 @@ pub(crate) struct FormatJob {
     status: bool,
     /// Kept alive so the entry's `show-messages -J` view stays valid, and so
     /// cancellation still has the process group to kill.
-    _process: Arc<FormatJobProcess>,
+    _process: Rc<FormatJobProcess>,
     stage: FormatJobStage,
     /// The last line seen, which is what the finished job reports.
     output: String,
@@ -429,7 +415,7 @@ impl FormatJob {
         command: &str,
         cwd: Option<&std::path::Path>,
         environment: &[String],
-        process: Arc<FormatJobProcess>,
+        process: Rc<FormatJobProcess>,
     ) -> Self {
         let done = |process| Self {
             registry: registry.clone(),
@@ -441,7 +427,25 @@ impl FormatJob {
             stage: FormatJobStage::Done,
             output: String::new(),
         };
-        if process.cancelled.load(Ordering::Acquire) {
+        // A child that was spawned but cannot be read from still has to be
+        // collected. `wait(2)` here would stall the loop for as long as the
+        // child lives, so hand it to the same nonblocking reap the ordinary
+        // path ends with — which also reports the job as finished.
+        let reap = |process, child| Self {
+            registry: registry.clone(),
+            key: key.clone(),
+            generation,
+            session_id,
+            status,
+            _process: process,
+            stage: FormatJobStage::Reaping {
+                child,
+                retry: Instant::now(),
+                backoff: FORMAT_REAP_RETRY_MIN,
+            },
+            output: String::new(),
+        };
+        if process.cancelled.get() {
             return done(process);
         }
         let mut shell = Command::new("sh");
@@ -467,19 +471,16 @@ impl FormatJob {
             return done(process);
         };
         if !process.register(child.id() as i32) {
-            let _ = child.wait();
-            return done(process);
+            return reap(process, child);
         }
         let Some(stdout) = child.stdout.take() else {
-            let _ = child.wait();
-            return done(process);
+            return reap(process, child);
         };
-        process.fd.store(stdout.as_raw_fd(), Ordering::Release);
+        process.fd.set(stdout.as_raw_fd());
         // The loop reads this pipe between its other work, so the read may
         // never block once the child stalls mid-line.
         if set_nonblocking(stdout.as_fd()).is_err() {
-            let _ = child.wait();
-            return done(process);
+            return reap(process, child);
         }
         Self {
             registry,
@@ -650,7 +651,7 @@ pub(crate) struct RenderCache {
     rendered: Option<RenderedStatus>,
     valid: bool,
     client: ClientContext,
-    format_jobs: Option<Arc<FormatJobRegistry>>,
+    format_jobs: Option<Rc<FormatJobRegistry>>,
     agent_revision: u64,
     agents: PaneAgents,
 }
@@ -797,7 +798,7 @@ impl StatusRenderer for RenderCache {
             let jobs = self
                 .format_jobs
                 .get_or_insert_with(|| {
-                    Arc::new(FormatJobRegistry::new(&state.client_render_registry()))
+                    Rc::new(FormatJobRegistry::new(&state.client_render_registry()))
                 })
                 .clone();
             self.rendered = Some(render_status(
@@ -823,7 +824,7 @@ impl RenderCache {
     /// Render for one registered client, sharing that client's `#()` job tree
     /// so a command it runs and its status line reach one cache — tmux's
     /// per-client `c->jobs`.
-    pub(crate) fn for_client(client: ClientContext, format_jobs: Arc<FormatJobRegistry>) -> Self {
+    pub(crate) fn for_client(client: ClientContext, format_jobs: Rc<FormatJobRegistry>) -> Self {
         Self {
             client,
             format_jobs: Some(format_jobs),
@@ -887,7 +888,7 @@ impl RenderCache {
         let session = state.find(session)?;
         let jobs = self
             .format_jobs
-            .get_or_insert_with(|| Arc::new(FormatJobRegistry::new(&state.client_render_registry())))
+            .get_or_insert_with(|| Rc::new(FormatJobRegistry::new(&state.client_render_registry())))
             .clone();
         let context = StatusContext::new(
             state,
@@ -915,7 +916,7 @@ impl RenderCache {
         let session = state.find(session)?;
         let jobs = self
             .format_jobs
-            .get_or_insert_with(|| Arc::new(FormatJobRegistry::new(&state.client_render_registry())))
+            .get_or_insert_with(|| Rc::new(FormatJobRegistry::new(&state.client_render_registry())))
             .clone();
         let context = StatusContext::new(
             state,
@@ -1302,7 +1303,7 @@ fn render_status(
     cols: u16,
     terminal_rows: u16,
     client: &ClientContext,
-    jobs: Option<&Arc<FormatJobRegistry>>,
+    jobs: Option<&Rc<FormatJobRegistry>>,
     agents: &PaneAgents,
 ) -> RenderedStatus {
     let lines = usize::from(height(state, session));
@@ -1393,7 +1394,7 @@ struct StatusContext<'a> {
     client: &'a ClientContext,
     cols: u16,
     rows: u16,
-    jobs: Option<&'a Arc<FormatJobRegistry>>,
+    jobs: Option<&'a Rc<FormatJobRegistry>>,
     job_status: bool,
     agents: &'a PaneAgents,
 }
@@ -1405,7 +1406,7 @@ impl<'a> StatusContext<'a> {
         client: &'a ClientContext,
         cols: u16,
         rows: u16,
-        jobs: Option<&'a Arc<FormatJobRegistry>>,
+        jobs: Option<&'a Rc<FormatJobRegistry>>,
         job_status: bool,
         agents: &'a PaneAgents,
     ) -> Self {
@@ -2648,8 +2649,8 @@ mod tests {
 
         let first_jobs = first.format_jobs.as_ref().expect("first client jobs");
         let second_jobs = second.format_jobs.as_ref().expect("second client jobs");
-        assert!(!Arc::ptr_eq(first_jobs, second_jobs));
-        assert!(!Arc::ptr_eq(first_jobs, &state.format_job_registry()));
+        assert!(!Rc::ptr_eq(first_jobs, second_jobs));
+        assert!(!Rc::ptr_eq(first_jobs, &state.format_job_registry()));
     }
 
     #[test]
@@ -2660,7 +2661,7 @@ mod tests {
         let state = ServerState::with_test_session().expect("state");
         let first = state.format_job_registry();
         let second = state.format_job_registry();
-        assert!(Arc::ptr_eq(&first, &second));
+        assert!(Rc::ptr_eq(&first, &second));
     }
 
     /// A cache entry with a synthetic age, so eviction can be observed without

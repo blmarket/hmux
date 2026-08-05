@@ -1,9 +1,10 @@
 use super::*;
+use crate::server::state::SharedState;
 
 impl AttachSession {
     pub(super) fn render_turn(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         triggers: AttachRenderTriggers,
     ) -> io::Result<()> {
         let AttachRenderTriggers {
@@ -26,8 +27,8 @@ impl AttachSession {
 
         if should_render {
             let mut wrote_frame = false;
-            let mut large_scroll_repaint = false;
-            if let Ok(st) = state.lock() {
+            let large_scroll_repaint = {
+                let st = state.borrow_mut();
                 let title = terminal_title_update(
                     &st,
                     target,
@@ -43,14 +44,14 @@ impl AttachSession {
                         .output
                         .queue(self.tty.render_fd.as_raw_fd(), &title);
                 }
-                large_scroll_repaint = take_large_scroll_repaint(
+                take_large_scroll_repaint(
                     &st,
                     target,
                     self.viewport.cols,
                     &self.tty.terminal,
                     &mut self.compositor.render.seen_large_scroll,
-                );
-            }
+                )
+            };
             let frame = self
                 .compositor
                 .ui
@@ -60,25 +61,23 @@ impl AttachSession {
                 .map(Ok)
                 .unwrap_or_else(|| {
                     let client = self.attachments.render_attachment.client_name();
-                    let st = state.lock();
-                    match st {
-                        Ok(g) => compose_frame_cached(
-                            &g,
-                            target,
-                            Some(client.as_str()),
-                            self.viewport.cols,
-                            self.viewport.rows,
-                            self.viewport.status_height,
-                            0,
-                            &mut self.status.status_cache,
-                            &self.tty.terminal,
-                        ),
-                        Err(_) => Err(io::Error::other("state poisoned")),
-                    }
+                    let st = state.borrow_mut();
+                    compose_frame_cached(
+                        &st,
+                        target,
+                        Some(client.as_str()),
+                        self.viewport.cols,
+                        self.viewport.rows,
+                        self.viewport.status_height,
+                        0,
+                        &mut self.status.status_cache,
+                        &self.tty.terminal,
+                    )
                 });
             if let Ok(mut frame) = frame {
                 if let Some(overlay) = self.compositor.ui.active_overlay.as_ref() {
-                    if let Ok(st) = state.lock() {
+                    {
+                        let st = state.borrow_mut();
                         frame.extend_from_slice(&overlay.render(
                             &st,
                             target,
@@ -94,7 +93,8 @@ impl AttachSession {
                 // underneath.
                 if let Some(prompt) = self.compositor.ui.command_prompt.as_ref() {
                     if prompt.has_completion() {
-                        if let Ok(state) = state.lock() {
+                        {
+                            let state = state.borrow_mut();
                             frame.extend_from_slice(&render_prompt_completion(
                                 prompt,
                                 &state,
@@ -106,10 +106,8 @@ impl AttachSession {
                             ));
                         }
                     }
-                    let (display, cursor, row, style, fill) = state
-                        .lock()
-                        .ok()
-                        .map(|st| {
+                    let (display, cursor, row, style, fill) = {
+                        let st = state.borrow_mut();
                             let (display, cursor) = prompt.formatted_display(
                                 &st,
                                 target,
@@ -147,16 +145,7 @@ impl AttachSession {
                                     .split(',')
                                     .any(|part| part.trim().starts_with("fill=")),
                             )
-                        })
-                        .unwrap_or_else(|| {
-                            (
-                                prompt.display(),
-                                prompt.display_cursor(),
-                                self.viewport.rows,
-                                "bg=yellow,fg=black,fill=yellow".to_string(),
-                                true,
-                            )
-                        });
+                    };
                     let writable_cols = term::writable_width(
                         &self.tty.terminal,
                         row,
@@ -176,7 +165,8 @@ impl AttachSession {
                     // tmux's `status_prompt_redraw` puts the prompt's own
                     // cursor colour and shape on the client's terminal, with a
                     // separate shape for the vi command mode.
-                    if let Ok(st) = state.lock() {
+                    {
+                        let st = state.borrow_mut();
                         frame.extend_from_slice(&prompt_cursor_sequence(
                             &st,
                             target,
@@ -185,10 +175,8 @@ impl AttachSession {
                     }
                 } else if let Some(active) = &self.compositor.ui.confirm {
                     let prompt = &active.prompt;
-                    let (row, style, fill) = state
-                        .lock()
-                        .ok()
-                        .map(|st| {
+                    let (row, style, fill) = {
+                        let st = state.borrow_mut();
                             let visible_lines = self.viewport.status_height.max(1);
                             let line = st
                                 .option_for_target(target, "message-line")
@@ -216,14 +204,7 @@ impl AttachSession {
                                     .split(',')
                                     .any(|part| part.trim().starts_with("fill=")),
                             )
-                        })
-                        .unwrap_or_else(|| {
-                            (
-                                self.viewport.rows,
-                                "bg=yellow,fg=black,fill=yellow".to_string(),
-                                true,
-                            )
-                        });
+                    };
                     let writable_cols = term::writable_width(
                         &self.tty.terminal,
                         row,
@@ -241,10 +222,8 @@ impl AttachSession {
                         &self.tty.terminal,
                     ));
                 } else if let Some(message) = self.compositor.ui.status_message.as_ref() {
-                    let (row, rendered) = state
-                        .lock()
-                        .ok()
-                        .map(|st| {
+                    let (row, rendered) = {
+                        let st = state.borrow_mut();
                             let visible_lines = self.viewport.status_height.max(1);
                             let line = st
                                 .option_for_target(target, "message-line")
@@ -280,8 +259,7 @@ impl AttachSession {
                                     &self.tty.terminal,
                                 ),
                             )
-                        })
-                        .unwrap_or_else(|| (self.viewport.rows, Vec::new()));
+                    };
                     frame.extend_from_slice(&render_status_message_row_at(
                         row,
                         &rendered,

@@ -14,27 +14,22 @@ enum BindingFlow {
 }
 
 /// Whether this session acts on mouse reports at all (`mouse on`).
-fn mouse_enabled(state: &Arc<Mutex<ServerState>>, target: &str) -> bool {
-    state
-        .lock()
-        .ok()
-        .and_then(|st| {
-            st.option_for_target(target, "mouse")
-                .or_else(|| super::super::options::option_default("mouse"))
-                .map(|value| value == "on")
-        })
-        .unwrap_or(false)
+fn mouse_enabled(state: &SharedState, target: &str) -> bool {
+    let st = state.borrow_mut();
+    st.option_for_target(target, "mouse")
+        .or_else(|| super::super::options::option_default("mouse"))
+        .is_some_and(|value| value == "on")
 }
 
 /// Spell a typed key the way the pane it is going to expects it.
 ///
 /// `None` is a key that pane has no form for, which tmux drops.
 fn encode_key_for_pane(
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     target: &str,
     key: PaneKey,
 ) -> Option<Vec<u8>> {
-    let encoding = state.lock().ok()?.encode_pane_key(target, key).ok()?;
+    let encoding = state.borrow_mut().encode_pane_key(target, key).ok()?;
     encoding.complete.then_some(encoding.bytes)
 }
 
@@ -44,11 +39,12 @@ fn encode_key_for_pane(
 /// Nothing is written when the pane asked for no mouse mode, when the event
 /// hit no pane (status line, border), or when the report is one the pane's
 /// mode does not carry — the encoder answers all three by producing no bytes.
-fn forward_mouse_to_pane(state: &Arc<Mutex<ServerState>>, event: &MouseEvent) {
+fn forward_mouse_to_pane(state: &SharedState, event: &MouseEvent) {
     let Some((pane_id, input)) = event.pane_input_event() else {
         return;
     };
-    if let Ok(st) = state.lock() {
+    {
+        let st = state.borrow_mut();
         let _ = st.input_mouse_to_pane(&format!("%{pane_id}"), input);
     }
 }
@@ -58,23 +54,21 @@ fn forward_mouse_to_pane(state: &Arc<Mutex<ServerState>>, event: &MouseEvent) {
 /// Continue a copy-mode drag: the pointer moves the selection's far end in the
 /// pane the drag started in. `false` when that pane has no drag under way, so
 /// the report falls through to the key tables.
-fn drag_copy_selection(state: &Arc<Mutex<ServerState>>, event: &MouseEvent) -> bool {
+fn drag_copy_selection(state: &SharedState, event: &MouseEvent) -> bool {
     let Some(target) = event.target.as_ref() else {
         return false;
     };
     let (Some(pane_id), Some(position)) = (target.pane_id, target.local_position) else {
         return false;
     };
-    let Ok(mut state) = state.lock() else {
-        return false;
-    };
+    let mut state = state.borrow_mut();
     let pane_target = format!("%{pane_id}");
     let vi = super::copy_mode::uses_vi_keys(&state, &pane_target);
     state.drag_copy_selection_to_mouse(&pane_target, position.x, position.y, vi)
 }
 
 fn flush_forward_buf(
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     target: &str,
     forward_buf: &mut Vec<u8>,
     forwarded: &mut PaneInputStats,
@@ -99,7 +93,7 @@ impl AttachSession {
     fn take_terminal_reports(
         &mut self,
         data: &[u8],
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
     ) -> Vec<u8> {
         const REPORTS: [&[u8]; 4] = [
@@ -137,13 +131,11 @@ impl AttachSession {
     fn apply_terminal_report(
         &mut self,
         report: &[u8],
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
     ) {
         let client = self.attachments.render_attachment.client_name();
-        let Ok(mut st) = state.lock() else {
-            return;
-        };
+        let mut st = state.borrow_mut();
         match report {
             FOCUS_IN_REPORT | FOCUS_OUT_REPORT => {
                 let focused = report == FOCUS_IN_REPORT;
@@ -164,14 +156,15 @@ impl AttachSession {
     /// `server_status_client` after every table change: it is what
     /// `#{client_key_table}`/`#{client_prefix}` read and what makes a status
     /// line show a pending prefix.
-    fn publish_key_table(&mut self, state: &Arc<Mutex<ServerState>>) {
+    fn publish_key_table(&mut self, state: &SharedState) {
         let table = self.compositor.input.keys.table();
         if self.compositor.input.published_key_table == table {
             return;
         }
         self.compositor.input.published_key_table = table.to_string();
         let client = self.attachments.render_attachment.client_name();
-        if let Ok(mut st) = state.lock() {
+        {
+            let mut st = state.borrow_mut();
             st.set_client_key_table(&client, &self.compositor.input.published_key_table);
         }
         self.status
@@ -183,7 +176,7 @@ impl AttachSession {
     /// once `repeat-time` passes, with no further input.
     pub(super) fn expire_repeat_chain(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
         now: Instant,
     ) {
@@ -214,7 +207,7 @@ impl AttachSession {
     fn apply_binding_outcome(
         &mut self,
         outcome: PrefixOutcome,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
         hub: &StatusHub,
         forward_buf: &mut Vec<u8>,
@@ -256,20 +249,6 @@ impl AttachSession {
                     prompt.initial_incremental(state, hub, &self.compositor.target.context);
                     self.compositor.ui.command_prompt = Some(prompt);
                 }
-                *force_render = true;
-            }
-            PrefixOutcome::Message { text, duration } => {
-                self.compositor.ui.confirm = None;
-                self.compositor.ui.status_message = Some(StatusMessage {
-                    text,
-                    deadline: Instant::now()
-                        .checked_add(duration)
-                        .unwrap_or_else(Instant::now),
-                });
-                *force_render = true;
-            }
-            PrefixOutcome::ViewOutput(bytes) => {
-                append_view_output(state, target, &bytes);
                 *force_render = true;
             }
             PrefixOutcome::DeferredCommand { args, context } => {
@@ -318,7 +297,7 @@ impl AttachSession {
     /// binding sees the same tables and target a real press would.
     pub(super) fn expire_click_timer(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
         hub: &StatusHub,
         now: Instant,
@@ -340,8 +319,6 @@ impl AttachSession {
             key,
             state,
             target,
-            self.viewport.cols,
-            self.viewport.pane_rows,
             hub,
             &self.compositor.target.context,
             Some(event),
@@ -368,7 +345,7 @@ impl AttachSession {
 
     pub(super) fn drive_input(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
     ) -> io::Result<Option<AttachDrive>> {
         // A key binding's command must finish before the next key's runs: a
@@ -386,9 +363,8 @@ impl AttachSession {
         //    an OSC 11 default-background request followed by a CSI 5n status
         //    request; it needs both the RGB and CSI 0n replies.
         let terminal_queries = state
-            .lock()
-            .ok()
-            .and_then(|st| st.take_active_pane_terminal_queries(target).ok())
+            .borrow_mut()
+            .take_active_pane_terminal_queries(target)
             .unwrap_or_default();
         for query in terminal_queries {
             let _ = self
@@ -554,7 +530,8 @@ impl AttachSession {
             // tmux stamps the client and its session on every key, which is
             // what defers the `lock-after-time` timer while somebody is typing
             // — including keys that only reach the pane.
-            if let Ok(mut st) = state.lock() {
+            {
+                let mut st = state.borrow_mut();
                 st.touch_client_activity(
                     &self.attachments.render_attachment.client_name(),
                     self.compositor.target.session_id,
@@ -665,7 +642,6 @@ impl AttachSession {
                     if let Some(command) = selected_command
                         .as_ref()
                         .filter(|command| !command.is_empty())
-                        .filter(|_| self.compositor.target.context.defer_attach_commands)
                     {
                         let overlay = self
                             .compositor
@@ -684,27 +660,17 @@ impl AttachSession {
                         force_render = true;
                         break;
                     }
-                    let result = if let Some(command) =
-                        selected_command.filter(|command| !command.is_empty())
-                    {
-                        let agents = hub.snapshot().panes;
-                        Some(command::run_with_context(
-                            &command,
-                            state,
-                            &agents,
-                            &self.compositor.target.context,
-                        ))
-                    } else if close {
-                        Some(if close_exit == 0 {
+                    // A selected command was queued above, so only the
+                    // overlay's own exit is left to report.
+                    let result = close.then(|| {
+                        if close_exit == 0 {
                             command::CommandResult::ok("")
                         } else {
                             let mut result = command::CommandResult::err("");
                             result.exit = close_exit;
                             result
-                        })
-                    } else {
-                        None
-                    };
+                        }
+                    });
                     if close {
                         if let Some(mut overlay) = self.compositor.ui.active_overlay.take() {
                             overlay.complete(
@@ -783,8 +749,6 @@ impl AttachSession {
                         target,
                         self.viewport.cols,
                         self.viewport.pane_rows,
-                        hub,
-                        &self.compositor.target.context,
                     ) {
                         self.commands.pending.push_back(AttachCommandRequest {
                             source: command::DeferredCommand::Args(command),
@@ -798,11 +762,7 @@ impl AttachSession {
                     }
                     continue;
                 }
-                if state
-                    .lock()
-                    .ok()
-                    .is_some_and(|st| st.mode_view_active(target))
-                {
+                if state.borrow_mut().mode_view_active(target) {
                     let (decoded, consumed) = decode_tty_key(&data[i..]).unwrap_or_else(|| {
                         (
                             DecodedTtyKey {
@@ -816,34 +776,17 @@ impl AttachSession {
                     });
                     i += consumed;
                     let outcome = state
-                        .lock()
-                        .ok()
-                        .and_then(|mut st| {
-                            st.mode_view_key(
-                                target,
-                                &decoded.name,
-                                self.viewport.pane_rows as usize,
-                            )
-                            .ok()
-                        })
+                        .borrow_mut()
+                        .mode_view_key(target, &decoded.name, self.viewport.pane_rows as usize)
                         .unwrap_or(ModeViewKeyResult::None);
                     match outcome {
                         ModeViewKeyResult::Command(command) if !command.is_empty() => {
-                            if self.compositor.target.context.defer_attach_commands {
-                                self.commands.pending.push_back(AttachCommandRequest {
-                                    source: command::DeferredCommand::Args(command),
-                                    context: self.compositor.target.context.clone(),
-                                    continuation: AttachCommandContinuation::Ignore,
-                                });
-                                break;
-                            }
-                            let agents = hub.snapshot().panes;
-                            let _ = command::run_with_context(
-                                &command,
-                                state,
-                                &agents,
-                                &self.compositor.target.context,
-                            );
+                            self.commands.pending.push_back(AttachCommandRequest {
+                                source: command::DeferredCommand::Args(command),
+                                context: self.compositor.target.context.clone(),
+                                continuation: AttachCommandContinuation::Ignore,
+                            });
+                            break;
                         }
                         ModeViewKeyResult::Prompt(request) => {
                             if let Ok(mut prompt) = CommandPrompt::for_mode(
@@ -870,8 +813,7 @@ impl AttachSession {
                                 None,
                                 self.viewport.cols,
                                 self.viewport.rows,
-                                self.pane_io.mode,
-                            ) {
+                                    ) {
                                 self.compositor.ui.active_overlay = overlay;
                             }
                         }
@@ -1029,8 +971,6 @@ impl AttachSession {
                     key,
                     state,
                     target,
-                    self.viewport.cols,
-                    self.viewport.pane_rows,
                     hub,
                     &self.compositor.target.context,
                     mouse,
@@ -1102,9 +1042,7 @@ impl AttachSession {
             self.compositor.render.last_render.clear();
             self.compositor.render.force_clear = true;
             self.status.status_cache.invalidate();
-            let st = state
-                .lock()
-                .map_err(|_| io::Error::other("state poisoned"))?;
+            let st = state.borrow_mut();
             match active_window_output_subscription(&st, target) {
                 Ok(subscription) => {
                     (
@@ -1129,11 +1067,11 @@ impl AttachSession {
 /// tmux's `tty_keys_user` matches the option's array by index: entry *n* is the
 /// key `Usern`.
 fn user_key_at(
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
     target: &str,
     data: &[u8],
 ) -> Option<(super::super::key::KeyCode, usize)> {
-    let state = state.lock().ok()?;
+    let state = state.borrow_mut();
     let sequences = state.user_key_sequences(target);
     sequences
         .iter()

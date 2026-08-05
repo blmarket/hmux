@@ -1,9 +1,8 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 use crate::server::command::{self, ClientContext, CommandResult};
-use crate::server::state::ServerState;
+use crate::server::state::SharedState;
 use crate::server::task::TaskState;
 
 /// One validated command line, possibly split around client-side file work.
@@ -69,14 +68,12 @@ pub(crate) enum CommandStep {
     },
 }
 
-pub(super) fn run_command_work(work: CommandWork, state: &Arc<Mutex<ServerState>>) -> CommandStep {
+pub(super) fn run_command_work(work: CommandWork, state: &SharedState) -> CommandStep {
     match work {
         CommandWork::Initial { args, context } => {
-            let aliases = match state.lock() {
-                Ok(state) => state.command_aliases(),
-                Err(_) => {
-                    return CommandStep::Complete(CommandResult::err("server state poisoned\n"));
-                }
+            let aliases = {
+                let state = state.borrow_mut();
+                state.command_aliases()
             };
             let groups = match command::command_line_groups(&args, &aliases) {
                 Ok(groups) => groups,
@@ -99,16 +96,16 @@ pub(super) fn run_command_work(work: CommandWork, state: &Arc<Mutex<ServerState>
 
 fn advance_command_transaction(
     mut transaction: CommandTransaction,
-    state: &Arc<Mutex<ServerState>>,
+    state: &SharedState,
 ) -> CommandStep {
     loop {
         let Some(args) = transaction.groups.pop_front() else {
             return CommandStep::Complete(transaction.output);
         };
 
-        let file_write = match state.lock() {
-            Ok(state) => command::save_buffer_client_request(&args, &state, &transaction.context),
-            Err(_) => Some(Err(CommandResult::err("server state poisoned\n"))),
+        let file_write = {
+            let state = state.borrow_mut();
+            command::save_buffer_client_request(&args, &state, &transaction.context)
         };
         if let Some(request) = file_write {
             match request {

@@ -5,13 +5,13 @@
 //! executor as a job of its own and reports back here when it finishes.
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
 
 use crate::integration::status::StatusHub;
 use crate::server::command::{
     self, BackgroundCommand, BackgroundCommandRequest, ClientContext, PendingBackground,
 };
-use crate::server::state::ServerState;
+use crate::server::state::SharedState;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;
@@ -31,9 +31,9 @@ pub(crate) enum JobEvent {
 }
 
 pub(crate) struct BackgroundCommands {
-    state: Arc<Mutex<ServerState>>,
+    state: SharedState,
     hub: StatusHub,
-    runtime: Arc<EventCommandRuntime>,
+    runtime: Rc<EventCommandRuntime>,
     executor: ActorRef<SuspensionExecutor>,
     next_id: u64,
     jobs: BTreeMap<u64, JobState>,
@@ -51,7 +51,7 @@ enum JobState {
 
 impl BackgroundCommands {
     pub(crate) fn new(
-        state: Arc<Mutex<ServerState>>,
+        state: SharedState,
         hub: StatusHub,
         executor: ActorRef<SuspensionExecutor>,
         executor_handle: SuspensionExecutorHandle,
@@ -59,7 +59,7 @@ impl BackgroundCommands {
         Self {
             state,
             hub,
-            runtime: Arc::new(EventCommandRuntime::new(executor_handle)),
+            runtime: Rc::new(EventCommandRuntime::new(executor_handle)),
             executor,
             next_id: 1,
             jobs: BTreeMap::new(),
@@ -141,9 +141,9 @@ impl BackgroundCommands {
     /// The client context a shell job runs with: the caller's, with the
     /// environment tmux's `environ_for_session` would have built for it.
     fn job_context(&self, context: &ClientContext) -> ClientContext {
-        match self.state.lock() {
-            Ok(state) => context.with_job_environment(&state),
-            Err(_) => context.clone(),
+        {
+            let state = self.state.borrow_mut();
+            context.with_job_environment(&state)
         }
     }
 
@@ -186,8 +186,8 @@ impl BackgroundCommands {
         let id = self.allocate_id();
         let coroutine = command::CommandCoroutine::new(
             queue,
-            Arc::clone(&self.state),
-            Arc::clone(&self.runtime) as Arc<dyn command::CommandRuntime>,
+            Rc::clone(&self.state),
+            Rc::clone(&self.runtime) as Rc<dyn command::CommandRuntime>,
             COMMAND_QUEUE_BUDGET,
         );
         self.jobs.insert(id, JobState::Running);

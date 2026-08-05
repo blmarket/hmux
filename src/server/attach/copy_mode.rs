@@ -1,9 +1,10 @@
 //! Copy-mode input actions and viewport rendering for attached clients.
 
-use std::sync::{Arc, Mutex};
 
 use super::super::mouse::MouseEvent;
-use super::super::state::{copy_search_segments, copy_selection_segments, CopyState, ServerState};
+use super::super::state::{
+    copy_search_segments, copy_selection_segments, CopyState, ServerState, SharedState,
+};
 use super::super::term::TerminalCapabilities;
 use super::super::{format, options, status};
 use super::append_terminal_style_reset;
@@ -38,11 +39,9 @@ impl CopyModeAction {
         }
     }
 
-    pub(super) fn apply(self, state: &Arc<Mutex<ServerState>>, target: &str) {
+    pub(super) fn apply(self, state: &SharedState, target: &str) {
         enter(state, target, self.page_up, self.scroll_exit);
-        let Ok(mut state) = state.lock() else {
-            return;
-        };
+        let mut state = state.borrow_mut();
         let vi = uses_vi_keys(&state, target);
         if let Some(mouse) = self.mouse {
             let position = mouse.pane_position();
@@ -81,24 +80,17 @@ impl CopyModeAction {
     }
 
     /// Re-entering copy mode from its own key table only honors `-u`.
-    pub(super) fn reactivate(self, state: &Arc<Mutex<ServerState>>, target: &str) {
+    pub(super) fn reactivate(self, state: &SharedState, target: &str) {
         enter(state, target, self.page_up, self.scroll_exit);
     }
 }
 
-pub(super) fn is_active(state: &Arc<Mutex<ServerState>>, target: &str) -> bool {
-    state
-        .lock()
-        .ok()
-        .is_some_and(|state| state.active_copy_state(target).is_some())
+pub(super) fn is_active(state: &SharedState, target: &str) -> bool {
+    state.borrow_mut().active_copy_state(target).is_some()
 }
 
-pub(super) fn key_table(state: &Arc<Mutex<ServerState>>, target: &str) -> &'static str {
-    let vi = state
-        .lock()
-        .ok()
-        .map(|state| uses_vi_keys(&state, target))
-        .unwrap_or_else(|| options::mode_keys_default() == "vi");
+pub(super) fn key_table(state: &SharedState, target: &str) -> &'static str {
+    let vi = uses_vi_keys(&state.borrow_mut(), target);
     if vi {
         "copy-mode-vi"
     } else {
@@ -113,8 +105,9 @@ pub(super) fn uses_vi_keys(state: &ServerState, target: &str) -> bool {
     }
 }
 
-fn enter(state: &Arc<Mutex<ServerState>>, target: &str, page_up: bool, scroll_exit: bool) {
-    if let Ok(mut state) = state.lock() {
+fn enter(state: &SharedState, target: &str, page_up: bool, scroll_exit: bool) {
+    {
+        let mut state = state.borrow_mut();
         let _ = state.set_pane_mode_with_scroll_exit(target, Some("copy-mode"), scroll_exit);
         if page_up {
             let vi = uses_vi_keys(&state, target);

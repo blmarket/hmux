@@ -1,12 +1,10 @@
 use std::collections::{BTreeSet, VecDeque};
-use std::io;
-use std::sync::{Arc, Mutex};
 
 use crate::integration::status::StatusHub;
 
 use super::super::key::parse_key_name;
 use super::super::state::{
-    self, MenuItem, MenuRequest, ModeBindingUpdate, ModeEdit, ModePrompt, ServerState,
+    self, MenuItem, MenuRequest, ModeBindingUpdate, ModeEdit, ModePrompt, ServerState, SharedState,
 };
 use super::super::term::TerminalCapabilities;
 use super::super::{command, format, status};
@@ -188,7 +186,7 @@ impl CommandPrompt {
     pub(super) fn apply_deferred_side_effect(
         &self,
         result: &command::CommandResult,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
     ) {
         if result.exit != 0 {
             return;
@@ -198,7 +196,8 @@ impl CommandPrompt {
         else {
             return;
         };
-        if let Ok(mut state) = state.lock() {
+        {
+            let mut state = state.borrow_mut();
             let _ = state.mode_view_update_edit(target, edit, value);
         }
     }
@@ -206,7 +205,7 @@ impl CommandPrompt {
     pub(super) fn new(
         args: Vec<String>,
         external: Option<state::ActiveCommandPrompt>,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
     ) -> Result<Self, String> {
@@ -264,7 +263,7 @@ impl CommandPrompt {
     pub(super) fn for_mode(
         request: ModePrompt,
         target: &str,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
     ) -> Result<Self, String> {
@@ -329,14 +328,6 @@ impl CommandPrompt {
             .unwrap_or(":")
     }
 
-    pub(super) fn display(&self) -> String {
-        format!("{}{}", self.label(), self.editor.buffer.text())
-    }
-
-    pub(super) fn display_cursor(&self) -> usize {
-        self.label().chars().count() + self.editor.buffer.cursor
-    }
-
     pub(super) fn formatted_display(
         &self,
         state: &ServerState,
@@ -384,77 +375,48 @@ impl CommandPrompt {
     fn run(
         &self,
         values: &[String],
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
     ) -> command::CommandResult {
         if let Some(value) = values.last() {
             match &self.request.action {
                 CommandPromptAction::ModeSearch { target } => {
-                    return match state
-                        .lock()
-                        .map_err(|_| io::Error::other("server state poisoned"))
-                        .and_then(|mut state| state.mode_view_search(target, value))
-                    {
+                    return match state.borrow_mut().mode_view_search(target, value) {
                         Ok(()) => command::CommandResult::ok(""),
                         Err(error) => command::CommandResult::err(format!("{error}\n")),
                     };
                 }
                 CommandPromptAction::ModeFilter { target } => {
-                    return match state
-                        .lock()
-                        .map_err(|_| io::Error::other("server state poisoned"))
-                        .and_then(|mut state| state.mode_view_filter(target, value))
-                    {
+                    return match state.borrow_mut().mode_view_filter(target, value) {
                         Ok(()) => command::CommandResult::ok(""),
                         Err(error) => command::CommandResult::err(format!("{error}\n")),
                     };
                 }
                 CommandPromptAction::ModeEdit { target, edit } => {
-                    return run_mode_edit(edit, value, target, state, hub, context);
+                    return run_mode_edit(edit, value, target, state);
                 }
                 CommandPromptAction::ModeCommand { item_target } => {
-                    return run_mode_command(value, item_target, state, hub, context);
+                    return run_mode_command(value, item_target);
                 }
                 CommandPromptAction::Command => {}
             }
         }
-        if context.defer_attach_commands {
-            let template = command::command_prompt_template(
-                &self.request.args,
-                values,
-                state,
-                &hub.snapshot().panes,
-                context,
-            );
-            let mut result = command::CommandResult::ok("");
-            if !template.trim().is_empty() || !self.request.tail.is_empty() {
-                result
-                    .deferred_commands
-                    .push(command::DeferredCommand::Line {
-                        line: template,
-                        tail: self.request.tail.clone(),
-                    });
-            }
-            return result;
-        }
-        let mut result = command::run_command_prompt_template(
+        let template = command::command_prompt_template(
             &self.request.args,
             values,
             state,
             &hub.snapshot().panes,
             context,
         );
-        if result.exit == 0 && !self.request.tail.is_empty() {
-            let tail = command::run_with_context(
-                &self.request.tail,
-                state,
-                &hub.snapshot().panes,
-                context,
-            );
-            result.append_stdout(&tail);
-            result.stderr.push_str(&tail.stderr);
-            result.exit = tail.exit;
+        let mut result = command::CommandResult::ok("");
+        if !template.trim().is_empty() || !self.request.tail.is_empty() {
+            result
+                .deferred_commands
+                .push(command::DeferredCommand::Line {
+                    line: template,
+                    tail: self.request.tail.clone(),
+                });
         }
         result
     }
@@ -462,7 +424,7 @@ impl CommandPrompt {
     pub(super) fn complete(
         &mut self,
         result: &command::CommandResult,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         context: &command::ClientContext,
     ) {
         match std::mem::replace(&mut self.execution.owner, PromptOwner::Resolved) {
@@ -495,7 +457,7 @@ impl CommandPrompt {
 
     pub(super) fn initial_incremental(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
     ) {
@@ -512,7 +474,7 @@ impl CommandPrompt {
     fn changed(
         &mut self,
         prefix: char,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
     ) {
@@ -532,13 +494,14 @@ impl CommandPrompt {
 
     fn finish_page(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
     ) -> CommandPromptInput {
         let input = self.editor.buffer.text();
         if !input.is_empty() {
-            if let Ok(mut st) = state.lock() {
+            {
+                let mut st = state.borrow_mut();
                 st.add_prompt_history(&self.request.spec.prompt_type, &input);
             }
         }
@@ -677,12 +640,12 @@ impl CommandPrompt {
         self.editor.buffer.cursor = index;
     }
 
-    fn paste(&mut self, state: &Arc<Mutex<ServerState>>) {
+    fn paste(&mut self, state: &SharedState) {
         let source = self.editor.yank.clone().unwrap_or_else(|| {
             state
-                .lock()
-                .ok()
-                .and_then(|st| st.buffer(None).map(prompt_paste_text))
+                .borrow_mut()
+                .buffer(None)
+                .map(prompt_paste_text)
                 .unwrap_or_default()
         });
         let inserted = source.chars().collect::<Vec<_>>();
@@ -703,7 +666,7 @@ impl CommandPrompt {
 
     fn complete_word(
         &mut self,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         context: &command::ClientContext,
     ) -> bool {
         let Some((start, end)) =
@@ -717,19 +680,13 @@ impl CommandPrompt {
         if word.len() >= 64 {
             return false;
         }
-        let completion = state
-            .lock()
-            .ok()
-            .map(|state| {
-                command_prompt_completion(
-                    &state,
-                    context,
-                    &self.request.spec.prompt_type,
-                    &word,
-                    start == 0,
-                )
-            })
-            .unwrap_or(PromptCompletion::None);
+        let completion = command_prompt_completion(
+            &state.borrow_mut(),
+            context,
+            &self.request.spec.prompt_type,
+            &word,
+            start == 0,
+        );
         match completion {
             PromptCompletion::None => false,
             PromptCompletion::Replace(replacement) => {
@@ -824,7 +781,7 @@ impl CommandPrompt {
     pub(super) fn handle_key(
         &mut self,
         key: &str,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
     ) -> CommandPromptInput {
@@ -887,17 +844,11 @@ impl CommandPrompt {
             .map(|id| format!("${id}"))
             .unwrap_or_default();
         let separators = state
-            .lock()
-            .ok()
-            .and_then(|st| {
-                st.option_for_target(&target, "word-separators")
-                    .map(str::to_string)
-            })
+            .borrow_mut()
+            .option_for_target(&target, "word-separators")
+            .map(str::to_string)
             .unwrap_or_else(|| " !\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~".to_string());
-        let vi_keys = state
-            .lock()
-            .ok()
-            .is_some_and(|st| st.option_for_target(&target, "status-keys") == Some("vi"));
+        let vi_keys = state.borrow_mut().option_for_target(&target, "status-keys") == Some("vi");
         if self.editor.mode == PromptInputMode::ViCommand {
             match key {
                 "i" => {
@@ -1005,7 +956,8 @@ impl CommandPrompt {
                     self.changed('=', state, hub, context);
                 }
                 "Up" | "k" => {
-                    if let Ok(st) = state.lock() {
+                    {
+                        let st = state.borrow_mut();
                         let history = st.prompt_history(&self.request.spec.prompt_type);
                         if self.editor.history_index < history.len() {
                             self.editor.history_index += 1;
@@ -1018,7 +970,8 @@ impl CommandPrompt {
                 }
                 "Down" | "j" if self.editor.history_index > 0 => {
                     self.editor.history_index -= 1;
-                    if let Ok(st) = state.lock() {
+                    {
+                        let st = state.borrow_mut();
                         let history = st.prompt_history(&self.request.spec.prompt_type);
                         let value = if self.editor.history_index == 0 {
                             ""
@@ -1152,7 +1105,8 @@ impl CommandPrompt {
                 self.changed('=', state, hub, context);
             }
             "Up" | "C-p" => {
-                if let Ok(st) = state.lock() {
+                {
+                    let st = state.borrow_mut();
                     let history = st.prompt_history(&self.request.spec.prompt_type);
                     if self.editor.history_index < history.len() {
                         self.editor.history_index += 1;
@@ -1166,7 +1120,8 @@ impl CommandPrompt {
             "Down" | "C-n" => {
                 if self.editor.history_index > 0 {
                     self.editor.history_index -= 1;
-                    if let Ok(st) = state.lock() {
+                    {
+                        let st = state.borrow_mut();
                         let history = st.prompt_history(&self.request.spec.prompt_type);
                         let value = if self.editor.history_index == 0 {
                             ""
@@ -1224,62 +1179,28 @@ impl CommandPrompt {
     }
 }
 
-fn run_mode_command(
-    value: &str,
-    item_target: &str,
-    state: &Arc<Mutex<ServerState>>,
-    hub: &StatusHub,
-    context: &command::ClientContext,
-) -> command::CommandResult {
+fn run_mode_command(value: &str, item_target: &str) -> command::CommandResult {
     if value.is_empty() {
         return command::CommandResult::ok("");
     }
     let line = command::replace_prompt_template(value, item_target, 1);
-    if context.defer_attach_commands {
-        let mut result = command::CommandResult::ok("");
-        if !line.trim().is_empty() {
-            result
-                .deferred_commands
-                .push(command::DeferredCommand::Line {
-                    line,
-                    tail: Vec::new(),
-                });
-        }
-        return result;
+    let mut result = command::CommandResult::ok("");
+    if !line.trim().is_empty() {
+        result
+            .deferred_commands
+            .push(command::DeferredCommand::Line {
+                line,
+                tail: Vec::new(),
+            });
     }
-    let argv = match command_line_argv(&line, state) {
-        Ok(argv) => argv,
-        Err(error) => return error,
-    };
-    command::run_with_context(&argv, state, &hub.snapshot().panes, context)
-}
-
-fn command_line_argv(
-    line: &str,
-    state: &Arc<Mutex<ServerState>>,
-) -> Result<Vec<String>, command::CommandResult> {
-    let aliases = match state.lock() {
-        Ok(state) => state.command_aliases(),
-        Err(_) => return Err(command::CommandResult::err("server state poisoned\n")),
-    };
-    let groups = command::command_string_groups_with_aliases(line, &aliases)?;
-    let mut argv = Vec::new();
-    for group in groups {
-        if !argv.is_empty() {
-            argv.push(";".to_string());
-        }
-        argv.extend(group);
-    }
-    Ok(argv)
+    result
 }
 
 fn run_mode_edit(
     edit: &ModeEdit,
     value: &str,
     target: &str,
-    state: &Arc<Mutex<ServerState>>,
-    hub: &StatusHub,
-    context: &command::ClientContext,
+    state: &SharedState,
 ) -> command::CommandResult {
     match edit {
         ModeEdit::Option { name, .. } => {
@@ -1291,19 +1212,10 @@ fn run_mode_edit(
                 name.clone(),
                 value.to_string(),
             ];
-            if context.defer_attach_commands {
-                let mut result = command::CommandResult::ok("");
-                result
-                    .deferred_commands
-                    .push(command::DeferredCommand::Args(args));
-                return result;
-            }
-            let result = command::run_with_context(&args, state, &hub.snapshot().panes, context);
-            if result.exit == 0 {
-                if let Ok(mut state) = state.lock() {
-                    let _ = state.mode_view_update_edit(target, edit, value);
-                }
-            }
+            let mut result = command::CommandResult::ok("");
+            result
+                .deferred_commands
+                .push(command::DeferredCommand::Args(args));
             result
         }
         ModeEdit::BindingCommand {
@@ -1316,9 +1228,9 @@ fn run_mode_edit(
             if value.is_empty() {
                 return command::CommandResult::ok("");
             }
-            let aliases = match state.lock() {
-                Ok(state) => state.command_aliases(),
-                Err(_) => return command::CommandResult::err("server state poisoned\n"),
+            let aliases = {
+                let state = state.borrow_mut();
+                state.command_aliases()
             };
             let groups = match command::command_string_groups_with_aliases(value, &aliases) {
                 Ok(groups) => groups,
@@ -1334,9 +1246,9 @@ fn run_mode_edit(
             let Some(key_code) = parse_key_name(key) else {
                 return command::CommandResult::err(format!("unknown key: {key}\n"));
             };
-            let mut state = match state.lock() {
-                Ok(state) => state,
-                Err(_) => return command::CommandResult::err("server state poisoned\n"),
+            let mut state = {
+                let state = state.borrow_mut();
+                state
             };
             state.bind_key(table, key_code, commands.clone(), *repeat, note.clone());
             let display = command::display_command(&commands);
@@ -1366,9 +1278,9 @@ fn run_mode_edit(
             let Some(key_code) = parse_key_name(key) else {
                 return command::CommandResult::err(format!("unknown key: {key}\n"));
             };
-            let mut state = match state.lock() {
-                Ok(state) => state,
-                Err(_) => return command::CommandResult::err("server state poisoned\n"),
+            let mut state = {
+                let state = state.borrow_mut();
+                state
             };
             state.bind_key(
                 table,

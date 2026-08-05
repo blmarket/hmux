@@ -1,4 +1,5 @@
 use super::*;
+use crate::server::state::SharedState;
 
 pub(crate) struct ActiveOverlay {
     state: OverlayState,
@@ -135,7 +136,6 @@ impl ActiveOverlay {
         reply: Option<super::super::state::PromptReply>,
         cols: u16,
         rows: u16,
-        pane_io_mode: PaneIoMode,
     ) -> io::Result<Option<Self>> {
         Ok(match request {
             OverlayRequest::Clear => None,
@@ -187,12 +187,11 @@ impl ActiveOverlay {
                     wrapped
                 };
                 let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
-                let mut pane = Pane::spawn_in_mode(
+                let mut pane = Pane::spawn(
                     &refs,
                     request.cwd.as_deref(),
                     inner_width.max(1),
                     inner_height.max(1),
-                    pane_io_mode,
                 )?;
                 let io = pane.take_event_io().map(Box::new);
                 Some(Self {
@@ -295,7 +294,7 @@ impl ActiveOverlay {
         mouse: Option<&MouseEvent>,
         cols: u16,
         rows: u16,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
     ) -> OverlayInputOutcome {
         match &mut self.state {
@@ -872,7 +871,7 @@ impl DisplayPanesOverlay {
     fn handle_key(
         &self,
         key: &str,
-        state: &Arc<Mutex<ServerState>>,
+        state: &SharedState,
         target: &str,
     ) -> OverlayInputOutcome {
         if !self.accept_input || matches!(key, "Escape" | "q" | "C-c") {
@@ -886,12 +885,12 @@ impl DisplayPanesOverlay {
         else {
             return OverlayInputOutcome::stay();
         };
-        let pane_id = state.lock().ok().and_then(|st| {
-            st.active_window_panes(target)
-                .ok()
-                .and_then(|(window, _)| window.panes.get(index as usize))
-                .map(|pane| pane.id)
-        });
+        let pane_id = state
+            .borrow_mut()
+            .active_window_panes(target)
+            .ok()
+            .and_then(|(window, _)| window.panes.get(index as usize))
+            .map(|pane| pane.id);
         let Some(pane_id) = pane_id else {
             return OverlayInputOutcome::stay();
         };
