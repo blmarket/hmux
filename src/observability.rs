@@ -1,7 +1,8 @@
 //! Versioned, read-only runtime observability contracts.
 //!
 //! These traits are deliberately independent of
-//! [`TmuxServer`](crate::tmux::TmuxServer), keeping pane inspection separate
+//! [`NonblockingTmuxServer`](crate::tmux::NonblockingTmuxServer), keeping pane
+//! inspection separate
 //! from the wire-protocol contract.
 
 /// The first version of the pane observability contract.

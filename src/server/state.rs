@@ -2065,7 +2065,7 @@ pub struct KeyBinding {
 }
 
 /// Client-scoped `command-prompt -k` routing. This is an internal server
-/// capability, deliberately kept out of the public `TmuxServer` trait.
+/// capability, deliberately kept out of the public server trait.
 pub(crate) struct ClientPromptRegistry {
     inner: RefCell<ClientPromptRegistryState>,
     activity: Cell<u64>,

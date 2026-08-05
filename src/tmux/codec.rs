@@ -29,7 +29,7 @@ use libc::{c_int, c_void};
 
 use super::message::{Frame, Message};
 use super::traits::{
-    FrameReader, FrameWriter, NonblockingFrameReader, NonblockingFrameWriter, WriteQueueFull,
+    NonblockingFrameReader, NonblockingFrameWriter, WriteQueueFull,
 };
 
 /// `IMSG_HEADER_SIZE` — `sizeof(struct imsg_hdr)`.
@@ -481,12 +481,6 @@ pub(crate) fn split_nonblocking_stream_with_queue_limit(
     ))
 }
 
-impl FrameReader for ImsgReader {
-    fn recv(&mut self) -> io::Result<Frame> {
-        ImsgReader::recv(self)
-    }
-}
-
 impl NonblockingFrameReader for ImsgReader {
     fn try_recv(&mut self) -> io::Result<Frame> {
         ImsgReader::try_recv(self)
@@ -506,12 +500,6 @@ impl NonblockingFrameWriter for NonblockingImsgWriter {
 
     fn has_pending(&self) -> bool {
         !self.pending.is_empty()
-    }
-}
-
-impl FrameWriter for ImsgWriter {
-    fn send(&mut self, frame: Frame) -> io::Result<()> {
-        ImsgWriter::send(self, frame)
     }
 }
 
