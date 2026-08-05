@@ -1116,7 +1116,7 @@ fn resolve_mouse_key(
             local.y = shift_coordinate(local.y, resolved_position.y, reported_position.y);
         }
     }
-    apply_focus_follows_mouse(state, target, event);
+    apply_focus_follows_mouse(&mut state.borrow_mut(), target, event);
     decoded.code = event.key_code();
     if let Some(code) = decoded.code {
         decoded.name = code.to_string();
@@ -1138,11 +1138,7 @@ fn shift_coordinate(local: u16, from: u16, to: u16) -> u16 {
 ///
 /// tmux does this inside `server_client_check_mouse` rather than through a
 /// binding, so it happens even though `MouseMovePane` cannot be bound at all.
-fn apply_focus_follows_mouse(
-    state: &SharedState,
-    target: &str,
-    event: &MouseEvent,
-) {
+fn apply_focus_follows_mouse(state: &mut ServerState, target: &str, event: &MouseEvent) {
     if event.kind != MouseEventKind::Move {
         return;
     }
@@ -1154,7 +1150,7 @@ fn apply_focus_follows_mouse(
     else {
         return;
     };
-    let mut st = state.borrow_mut();
+    let st = state;
     if st.option_for_target(target, "focus-follows-mouse") != Some("on") {
         return;
     }
@@ -3147,12 +3143,11 @@ fn add_input_stats(total: &mut PaneInputStats, batch: PaneInputStats) {
 }
 
 fn forward_input(
-    state: &SharedState,
+    state: &ServerState,
     session: &str,
     bytes: &[u8],
 ) -> io::Result<PaneInputStats> {
-    let st = state.borrow_mut();
-    st.input_to_active_pane_with_stats(session, bytes)
+    state.input_to_active_pane_with_stats(session, bytes)
 }
 
 #[cfg(test)]

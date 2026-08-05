@@ -24,12 +24,8 @@ fn mouse_enabled(state: &ServerState, target: &str) -> bool {
 /// Spell a typed key the way the pane it is going to expects it.
 ///
 /// `None` is a key that pane has no form for, which tmux drops.
-fn encode_key_for_pane(
-    state: &SharedState,
-    target: &str,
-    key: PaneKey,
-) -> Option<Vec<u8>> {
-    let encoding = state.borrow_mut().encode_pane_key(target, key).ok()?;
+fn encode_key_for_pane(state: &ServerState, target: &str, key: PaneKey) -> Option<Vec<u8>> {
+    let encoding = state.encode_pane_key(target, key).ok()?;
     encoding.complete.then_some(encoding.bytes)
 }
 
@@ -39,14 +35,11 @@ fn encode_key_for_pane(
 /// Nothing is written when the pane asked for no mouse mode, when the event
 /// hit no pane (status line, border), or when the report is one the pane's
 /// mode does not carry — the encoder answers all three by producing no bytes.
-fn forward_mouse_to_pane(state: &SharedState, event: &MouseEvent) {
+fn forward_mouse_to_pane(state: &ServerState, event: &MouseEvent) {
     let Some((pane_id, input)) = event.pane_input_event() else {
         return;
     };
-    {
-        let st = state.borrow_mut();
-        let _ = st.input_mouse_to_pane(&format!("%{pane_id}"), input);
-    }
+    let _ = state.input_mouse_to_pane(&format!("%{pane_id}"), input);
 }
 
 /// Send the plain bytes buffered so far to the active pane, keeping them ahead
@@ -78,7 +71,7 @@ fn flush_forward_buf(
         return;
     }
     first_forward_at.get_or_insert_with(Instant::now);
-    if let Ok(stats) = forward_input(state, target, forward_buf) {
+    if let Ok(stats) = forward_input(&state.borrow_mut(), target, forward_buf) {
         add_input_stats(forwarded, stats);
     }
     forward_buf.clear();
@@ -334,7 +327,7 @@ impl AttachSession {
             &mut force_render,
         );
         if !forward_buf.is_empty() {
-            let _ = forward_input(state, target, &forward_buf);
+            let _ = forward_input(&state.borrow_mut(), target, &forward_buf);
         }
         if force_render {
             self.compositor.render.last_render.clear();
@@ -883,7 +876,7 @@ impl AttachSession {
                             &mut forwarded,
                             &mut first_forward_at,
                         );
-                        forward_mouse_to_pane(state, event);
+                        forward_mouse_to_pane(&state.borrow_mut(), event);
                         continue;
                     }
                 }
@@ -933,7 +926,7 @@ impl AttachSession {
                             &mut forwarded,
                             &mut first_forward_at,
                         );
-                        forward_mouse_to_pane(state, event);
+                        forward_mouse_to_pane(&state.borrow_mut(), event);
                     } else if forward_unbound {
                         // Likewise for every other key. tmux never hands a
                         // client's bytes to a pane verbatim: it decodes them and
@@ -944,7 +937,7 @@ impl AttachSession {
                         match flags {
                             Some(flags) => {
                                 if let Some(bytes) =
-                                    encode_key_for_pane(state, target, flags.pane_key(key))
+                                    encode_key_for_pane(&state.borrow_mut(), target, flags.pane_key(key))
                                 {
                                     forward_buf.extend_from_slice(&bytes);
                                 }
@@ -1011,7 +1004,7 @@ impl AttachSession {
         }
         if !forward_buf.is_empty() {
             first_forward_at.get_or_insert_with(Instant::now);
-            if let Ok(stats) = forward_input(state, target, &forward_buf) {
+            if let Ok(stats) = forward_input(&state.borrow_mut(), target, &forward_buf) {
                 add_input_stats(&mut forwarded, stats);
             }
         }
