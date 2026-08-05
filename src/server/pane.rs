@@ -1826,6 +1826,16 @@ impl Pane {
             .map_err(ghostty_err)
     }
 
+    /// One physical row as trimmed plain text, without formatting the rest of
+    /// the grid.
+    pub(crate) fn dump_plain_row(&self, row: usize) -> io::Result<String> {
+        self.observation
+            .term
+            .borrow_mut()
+            .dump_plain_rows(row, 1, self.cols)
+            .map_err(ghostty_err)
+    }
+
     /// Format only the rows visible at a copy-mode scroll offset. Returning
     /// the clamped offset lets the compositor decide whether the live cursor
     /// belongs in the selected viewport.

@@ -1562,10 +1562,12 @@ impl<'a> StatusContext<'a> {
             self.option("status-justify")
         );
         for (index, window) in self.session.windows.iter().enumerate() {
-            let item = self.window_item(window, index);
+            // One vars context serves the window's own item and the separator
+            // after it; building it is the expensive half of a status render.
+            let item_vars = self.vars_for(self.session, index, None);
+            let item = self.window_item_with_vars(window, index, &item_vars);
             out.push_str(&item);
             if index + 1 != self.session.windows.len() {
-                let item_vars = self.vars_for(self.session, index, None);
                 out.push_str(&self.expand(self.option("window-status-separator"), &item_vars, 0));
             }
         }
@@ -1576,8 +1578,7 @@ impl<'a> StatusContext<'a> {
         out
     }
 
-    fn window_item(&self, window: &Winlink, index: usize) -> String {
-        let vars = self.vars_for(self.session, index, None);
+    fn window_item_with_vars(&self, window: &Winlink, index: usize, vars: &Vars) -> String {
         let active = index == self.session.active;
         let option = if active {
             "window-status-current-format"

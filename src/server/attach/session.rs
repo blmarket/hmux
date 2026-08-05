@@ -208,6 +208,7 @@ impl AttachSession {
             status: AttachStatus {
                 status_timer,
                 status_cache,
+                output_refresh: OutputStatusRefresh::default(),
             },
             pane_io: AttachPaneIo {
                 latmon,
@@ -586,6 +587,7 @@ impl AttachSession {
                 now,
             ),
         );
+        let timeout = minimum_poll_timeout(timeout, self.status.output_refresh.poll_timeout(now));
         let timeout = minimum_poll_timeout(
             timeout,
             self.compositor
@@ -750,7 +752,8 @@ impl AttachSession {
         };
         self.expire_repeat_chain(state, target, now);
         self.expire_click_timer(state, target, hub, now);
-        let status_timer_ready = self.status.status_timer.take_expired(now);
+        let status_timer_ready = self.status.status_timer.take_expired(now)
+            | self.status.output_refresh.take_expired(now);
         let overlay_tick = self.compositor.ui.active_overlay.is_some();
         let overlay_exit = self
             .compositor
@@ -1044,7 +1047,13 @@ impl AttachSession {
         }
         if output_ready {
             self.attachments.output_subscription.drain();
-            self.status.status_cache.invalidate();
+            // Output reaches the status only through slow-moving derived
+            // content, so its invalidation is throttled; a deferred refresh
+            // fires through `take_expired` above. Alerts, renames, and option
+            // changes invalidate immediately via `RenderInvalidation::STATUS`.
+            if self.status.output_refresh.request(now) {
+                self.status.status_cache.invalidate();
+            }
             // If this wake came from the active pane, mark its latest output so
             // the upcoming compose is timed against the keystroke that caused
             // it. Background-pane wakes have no newer active timestamp.

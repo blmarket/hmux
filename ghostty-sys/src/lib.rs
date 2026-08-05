@@ -797,6 +797,46 @@ impl Terminal {
         result
     }
 
+    /// Render a contiguous range of full-screen rows as trimmed plain text
+    /// without formatting rows outside that range. `start` is zero-based from
+    /// the oldest history row. Single-row readers (`#{cursor_character}`)
+    /// use this to avoid paying for the whole scrollback.
+    pub fn dump_plain_rows(&self, start: usize, rows: usize, cols: u16) -> Result<String, Error> {
+        if rows == 0 || cols == 0 {
+            return Ok(String::new());
+        }
+        let end = start.saturating_add(rows - 1);
+        let start_y = u32::try_from(start).map_err(|_| Error(ffi::GHOSTTY_INVALID_VALUE))?;
+        let end_y = u32::try_from(end).map_err(|_| Error(ffi::GHOSTTY_INVALID_VALUE))?;
+        let mut start_ref = empty_grid_ref();
+        let mut end_ref = empty_grid_ref();
+        check(unsafe {
+            ffi::ghostty_terminal_grid_ref(self.raw, screen_point(0, start_y), &mut start_ref)
+        })?;
+        check(unsafe {
+            ffi::ghostty_terminal_grid_ref(self.raw, screen_point(cols - 1, end_y), &mut end_ref)
+        })?;
+        let selection = ffi::GhosttySelection {
+            size: mem::size_of::<ffi::GhosttySelection>(),
+            start: start_ref,
+            end: end_ref,
+            rectangle: false,
+        };
+        let mut options = plain_formatter_options(false);
+        options.selection = &selection as *const ffi::GhosttySelection as *const _;
+
+        let mut fmt: ffi::GhosttyFormatter = ptr::null_mut();
+        // SAFETY: valid out-pointer + live terminal; NULL allocator = default.
+        check(unsafe {
+            ffi::ghostty_formatter_terminal_new(ptr::null(), &mut fmt, self.raw, options)
+        })?;
+
+        let result = self.format_to_string(fmt);
+        // SAFETY: `fmt` was created above and is freed exactly once here.
+        unsafe { ffi::ghostty_formatter_free(fmt) };
+        result
+    }
+
     /// Render the active screen as VT escape sequences suitable for writing
     /// directly to a client tty. Includes cursor position, SGR styles, and
     /// other screen state needed for faithful reproduction.

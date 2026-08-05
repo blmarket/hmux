@@ -4727,12 +4727,12 @@ fn pane_cursor_character(pane: &super::pane::Pane) -> String {
     let Ok((x, y)) = pane.cursor_position() else {
         return String::new();
     };
-    pane.dump()
+    let history = pane.scrollback_rows().unwrap_or(0);
+    pane.dump_plain_row(history + y as usize)
         .ok()
-        .and_then(|dump| {
-            let history = pane.scrollback_rows().unwrap_or(0);
-            dump.lines()
-                .nth(history + y as usize)
+        .and_then(|row| {
+            row.lines()
+                .next()
                 .and_then(|line| line.chars().nth(x as usize))
         })
         .map(|character| character.to_string())

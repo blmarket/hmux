@@ -146,6 +146,57 @@ fn status_deadline(now: Instant, interval: Duration) -> Instant {
         .unwrap_or_else(|| now + Duration::from_secs(i32::MAX as u64))
 }
 
+/// How often pane output alone may force a status recomposition. Output only
+/// reaches the status through slow-moving derived content — automatic-rename
+/// names, pane titles, live pane variables — and tmux refreshes those on its
+/// 500ms name-check cadence rather than per output burst. Alerts and explicit
+/// changes still invalidate immediately through `RenderInvalidation::STATUS`.
+const OUTPUT_STATUS_REFRESH: Duration = Duration::from_millis(500);
+
+/// Throttle for output-driven status invalidation.
+///
+/// A burst inside the throttle window arms a deferred deadline instead of
+/// invalidating, so a lone burst (a shell starting `vim`, then silence) still
+/// refreshes the status once the window elapses rather than waiting for the
+/// much slower `status-interval` tick.
+#[derive(Debug, Default)]
+struct OutputStatusRefresh {
+    last: Option<Instant>,
+    due: Option<Instant>,
+}
+
+impl OutputStatusRefresh {
+    /// Note pane output at `now`: `true` to invalidate immediately, `false`
+    /// when the refresh was deferred to the armed deadline instead.
+    fn request(&mut self, now: Instant) -> bool {
+        match self.last {
+            Some(last) if now.saturating_duration_since(last) < OUTPUT_STATUS_REFRESH => {
+                self.due
+                    .get_or_insert(status_deadline(last, OUTPUT_STATUS_REFRESH));
+                false
+            }
+            _ => {
+                self.last = Some(now);
+                true
+            }
+        }
+    }
+
+    /// Whether an armed deferred refresh has come due.
+    fn take_expired(&mut self, now: Instant) -> bool {
+        if self.due.is_none_or(|due| now < due) {
+            return false;
+        }
+        self.due = None;
+        self.last = Some(now);
+        true
+    }
+
+    fn poll_timeout(&self, now: Instant) -> i32 {
+        deadline_poll_timeout(self.due, now)
+    }
+}
+
 fn deadline_poll_timeout(deadline: Option<Instant>, now: Instant) -> i32 {
     let Some(deadline) = deadline else {
         return -1;
@@ -354,6 +405,7 @@ struct AttachViewport {
 struct AttachStatus {
     status_timer: StatusTimer,
     status_cache: status::RenderCache,
+    output_refresh: OutputStatusRefresh,
 }
 
 struct AttachPaneIo {
@@ -3848,6 +3900,7 @@ mod tests {
             ServerState::with_test_session().expect("build state"),
         )
     }
+
 
     fn replace_active_pane_with_inert(st: &mut ServerState) {
         let pane = st.active_pane_mut("0").expect("active pane");
