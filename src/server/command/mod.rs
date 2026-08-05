@@ -92,15 +92,19 @@ pub struct CommandResult {
 /// What kind of endpoint the commands run under a context come from. Fixed
 /// per connection: set at identify time and replaced on the clone a control
 /// or attached client keeps; every later clone inherits it.
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub(crate) enum ClientKind {
     /// No client: server-internal work such as deferred notification hooks.
     #[default]
     Detached,
     /// An unattached command-line client.
     Command,
-    /// A control-mode client.
-    Control,
+    /// A control-mode client. When the client's active-pane flag is on, it
+    /// carries the client's own view of each window's active pane, shared
+    /// with every context cloned for its commands.
+    Control {
+        active_panes: Option<Rc<RefCell<BTreeMap<u32, u32>>>>,
+    },
     /// A client attached to a session.
     Attached,
 }
@@ -132,7 +136,6 @@ pub struct ClientContext {
     pub(crate) input_file: Option<Result<Vec<u8>, i32>>,
     pub(crate) current_session_id: Option<u32>,
     pub(crate) read_only: bool,
-    pub(crate) active_panes: Option<Rc<RefCell<BTreeMap<u32, u32>>>>,
     pub(crate) key_event: Option<super::key::KeyCode>,
     pub(crate) mouse: Option<MouseEvent>,
     pub(crate) interaction_reply: Option<PromptReply>,
@@ -163,7 +166,7 @@ impl ClientContext {
     /// command and control clients; an attached client's own commands run the
     /// interaction inline in its UI instead.
     pub(crate) fn wait_for_interactions(&self) -> bool {
-        matches!(self.kind, ClientKind::Command | ClientKind::Control)
+        matches!(self.kind, ClientKind::Command | ClientKind::Control { .. })
     }
 
     /// Whether the results of commands inserted behind a queue item (hook
@@ -172,7 +175,7 @@ impl ClientContext {
     /// to give every queue item its own `%begin`/`%end` block; child queues
     /// need it so the parent queue gets to make that choice.
     pub(crate) fn preserve_queue_insertions(&self) -> bool {
-        matches!(self.kind, ClientKind::Control) || self.nested_granularity
+        matches!(self.kind, ClientKind::Control { .. }) || self.nested_granularity
     }
 
     /// A copy whose environment is what a process this client starts should
@@ -196,14 +199,22 @@ impl ClientContext {
             .find_map(|(key, value)| (key == name).then_some(value))
     }
 
+    /// The control client's shared active-pane map, if this context belongs to
+    /// a control client tracking one.
+    pub(crate) fn control_active_panes(&self) -> Option<&Rc<RefCell<BTreeMap<u32, u32>>>> {
+        match &self.kind {
+            ClientKind::Control { active_panes } => active_panes.as_ref(),
+            _ => None,
+        }
+    }
+
     fn active_panes(&self) -> Option<BTreeMap<u32, u32>> {
-        self.active_panes
-            .as_ref()
+        self.control_active_panes()
             .map(|panes| panes.borrow().clone())
     }
 
     fn set_active_pane(&self, window_id: u32, pane_id: u32) {
-        if let Some(panes) = &self.active_panes {
+        if let Some(panes) = self.control_active_panes() {
             panes.borrow_mut().insert(window_id, pane_id);
         }
     }
@@ -5176,7 +5187,7 @@ fn select_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -
     .into_iter()
     .find(|(flag, _, _)| has_flag(args, flag));
     if let Some((_, direction, forward)) = directional {
-        if context.active_panes.is_some() {
+        if context.control_active_panes().is_some() {
             return match st.pane_in_direction(&target, direction, forward) {
                 Ok((window_id, pane_id)) => {
                     context.set_active_pane(window_id, pane_id);
@@ -5194,7 +5205,7 @@ fn select_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -
     // plain form selects (activates) it.
     let result = if has_flag(args, "-m") {
         st.mark_pane(&target)
-    } else if context.active_panes.is_some() {
+    } else if context.control_active_panes().is_some() {
         match st.resolve(&target) {
             Some(target) => {
                 let (window_id, pane_id) = st.target_pane_ids(target);

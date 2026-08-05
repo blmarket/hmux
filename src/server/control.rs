@@ -220,10 +220,11 @@ impl EventControlClient {
         control_context.tty_name = Some(client_name.clone());
         control_context.current_session_id = Some(session_id);
         control_context.read_only = options.read_only;
-        control_context.kind = command::ClientKind::Control;
-        control_context.active_panes = options
-            .active_pane
-            .then(|| Rc::new(RefCell::new(BTreeMap::new())));
+        control_context.kind = command::ClientKind::Control {
+            active_panes: options
+                .active_pane
+                .then(|| Rc::new(RefCell::new(BTreeMap::new()))),
+        };
         let mut frames = VecDeque::new();
         frames.push_back(Frame::new(Message::Flags(
             options.client_flags(client_tty.flags),
@@ -552,14 +553,24 @@ impl EventControlClient {
         self.format_cache
             .update_client_flags(display_flags, self.options.read_only);
         self.context.read_only = self.options.read_only;
-        if self.options.active_pane && self.context.active_panes.is_none() {
-            self.context.active_panes = Some(Rc::new(RefCell::new(BTreeMap::new())));
-        } else if !self.options.active_pane {
-            self.context.active_panes = None;
-        }
+        self.sync_active_pane_tracking();
         self.frames.push_back(Frame::new(Message::Flags(
             self.options.client_flags(self.client_tty.flags),
         )));
+    }
+
+    /// Bring the context's active-pane map in line with the client's current
+    /// active-pane flag, keeping the existing map (and its recorded panes)
+    /// when the flag stays on.
+    fn sync_active_pane_tracking(&mut self) {
+        let command::ClientKind::Control { active_panes } = &mut self.context.kind else {
+            return;
+        };
+        if self.options.active_pane && active_panes.is_none() {
+            *active_panes = Some(Rc::new(RefCell::new(BTreeMap::new())));
+        } else if !self.options.active_pane {
+            *active_panes = None;
+        }
     }
 
     fn refresh_session(&mut self) -> io::Result<()> {
@@ -594,7 +605,7 @@ impl EventControlClient {
         self.checkpoint = checkpoint;
         self.render_attachment.update_session(session_id);
         self.context.current_session_id = Some(session_id);
-        if let Some(active_panes) = &self.context.active_panes {
+        if let Some(active_panes) = self.context.control_active_panes() {
             active_panes.borrow_mut().clear();
         }
         let next = self
@@ -771,11 +782,7 @@ impl EventControlClient {
             self.format_cache
                 .update_client_flags(display_flags, self.options.read_only);
             self.context.read_only = self.options.read_only;
-            if self.options.active_pane && self.context.active_panes.is_none() {
-                self.context.active_panes = Some(Rc::new(RefCell::new(BTreeMap::new())));
-            } else if !self.options.active_pane {
-                self.context.active_panes = None;
-            }
+            self.sync_active_pane_tracking();
             if reset_output_offsets {
                 for stream in self.streams.values_mut() {
                     stream.offset = stream.observation.control_output_end();
