@@ -4011,6 +4011,53 @@ fn set_current_client_vars(
         );
 }
 
+/// The value `#{window_name}` will resolve to. Under `automatic-rename` the
+/// name comes from the active pane's current command — a `/proc` walk — so
+/// that case stays a deferred computation until a format asks for it.
+enum LazyWindowName {
+    Ready(String),
+    AutomaticRename {
+        fallback: String,
+        probe: Option<crate::server::pane::PaneProcessProbe>,
+        source: String,
+        in_mode: bool,
+    },
+}
+
+impl LazyWindowName {
+    fn set_into(self, vars: &mut Vars) {
+        match self {
+            Self::Ready(name) => {
+                vars.set("window_name", name);
+            }
+            Self::AutomaticRename {
+                fallback,
+                probe,
+                source,
+                in_mode,
+            } => {
+                vars.set_lazy("window_name", move || {
+                    let current = probe
+                        .as_ref()
+                        .and_then(|probe| probe.current_command())
+                        .unwrap_or_default();
+                    let mut rename_vars = format::Vars::new();
+                    rename_vars
+                        .set("pane_current_command", current)
+                        .set("pane_in_mode", if in_mode { "1" } else { "0" })
+                        .set("pane_dead", "0");
+                    let expanded = format::expand(&source, &rename_vars);
+                    if expanded.is_empty() {
+                        fallback.clone()
+                    } else {
+                        expanded
+                    }
+                });
+            }
+        }
+    }
+}
+
 pub(super) fn vars_full(
     st: &ServerState,
     sess: &Session,
@@ -4137,22 +4184,21 @@ pub(super) fn vars_full(
         let automatic_rename = window_options
             .get("automatic-rename")
             .is_some_and(|value| value == "on" || value == "1");
-        let mut displayed_window_name = win.name.clone();
+        let mut displayed_window_name = LazyWindowName::Ready(win.name.clone());
         if automatic_rename {
             if let Some(pane) = active_pane {
-                let current = pane.pane.current_command().unwrap_or_default();
-                let source = window_options
-                    .get("automatic-rename-format")
-                    .unwrap_or("#{pane_current_command}");
-                let mut rename_vars = format::Vars::new();
-                rename_vars
-                    .set("pane_current_command", current)
-                    .set("pane_in_mode", if pane.mode.is_some() { "1" } else { "0" })
-                    .set("pane_dead", "0");
-                let expanded = format::expand(source, &rename_vars);
-                if !expanded.is_empty() {
-                    displayed_window_name = expanded;
-                }
+                // Resolving the automatic name walks `/proc` for the pane's
+                // current command, so it is deferred until a format actually
+                // asks for `#{window_name}`.
+                displayed_window_name = LazyWindowName::AutomaticRename {
+                    fallback: win.name.clone(),
+                    probe: pane.pane.process_probe(),
+                    source: window_options
+                        .get("automatic-rename-format")
+                        .unwrap_or("#{pane_current_command}")
+                        .to_string(),
+                    in_mode: pane.mode.is_some(),
+                };
             }
         } else if window_options
             .get("allow-rename")
@@ -4160,7 +4206,7 @@ pub(super) fn vars_full(
         {
             if let Some(title) = active_pane.and_then(|pane| pane.pane.title()) {
                 if !title.is_empty() {
-                    displayed_window_name = title;
+                    displayed_window_name = LazyWindowName::Ready(title);
                 }
             }
         }
@@ -4169,9 +4215,9 @@ pub(super) fn vars_full(
         let active_sessions = st.window_active_session_list(win.id);
         let window_flags = st.printable_window_flags(sess, win_idx, true);
         let window_raw_flags = st.printable_window_flags(sess, win_idx, false);
+        displayed_window_name.set_into(&mut v);
         v.set("window_index", link.index.to_string())
             .set("window_id", format!("@{}", win.id))
-            .set("window_name", displayed_window_name)
             .set("window_panes", win.panes.len().to_string())
             .set(
                 "window_linked",
@@ -4374,19 +4420,7 @@ pub(super) fn vars_full(
                 .set("pane_marked_set", if marked.is_some() { "1" } else { "0" })
                 .set("pane_pipe", if p.pane.pipe_active() { "1" } else { "0" })
                 .set("pane_bg", p.pane.background_color())
-                // The pane's working directory is read live from its child (as
-                // real tmux does via osdep_get_cwd), so it follows a shell that
-                // `cd`s. A childless (inert) pane has no live cwd and falls back
-                // to the server process's cwd, matching stock tmux.
                 // Default terminal tab stops sit every 8 columns.
-                .set(
-                    "pane_current_path",
-                    p.pane.current_path().unwrap_or_else(current_dir),
-                )
-                .set(
-                    "pane_current_command",
-                    p.pane.current_command().unwrap_or_default(),
-                )
                 .set(
                     "pane_tabs",
                     p.pane
@@ -4398,6 +4432,27 @@ pub(super) fn vars_full(
                 )
                 // The pane title defaults to the host name, as real tmux does.
                 .set("pane_title", pane_title);
+            // The pane's working directory is read live from its child (as
+            // real tmux does via osdep_get_cwd), so it follows a shell that
+            // `cd`s. A childless (inert) pane has no live cwd and falls back
+            // to the server process's cwd, matching stock tmux. The `/proc`
+            // reads behind both variables run only if a format names them.
+            let probe = p.pane.process_probe();
+            {
+                let probe = probe.clone();
+                v.set_lazy("pane_current_path", move || {
+                    probe
+                        .as_ref()
+                        .and_then(|probe| probe.current_path())
+                        .unwrap_or_else(current_dir)
+                });
+            }
+            v.set_lazy("pane_current_command", move || {
+                probe
+                    .as_ref()
+                    .and_then(|probe| probe.current_command())
+                    .unwrap_or_default()
+            });
             set_terminal_mode_vars(&p.pane, &mut v);
             if let Some(copy) = p.copy.as_ref() {
                 let view_top = copy.grid.scrollback_rows.saturating_sub(copy.scroll);
@@ -8838,6 +8893,7 @@ mod tests {
         let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
         run(&owned, st, &PaneAgents::new())
     }
+
 
     fn run_str_agents(
         st: &SharedState,

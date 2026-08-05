@@ -1626,9 +1626,31 @@ impl Pane {
     /// makes `#{pane_current_path}` follow a shell as it `cd`s, which is the
     /// behavior real tmux exposes.
     pub fn current_path(&self) -> Option<String> {
+        self.process_probe()?.current_path()
+    }
+
+    /// Capture what a format callback needs to resolve
+    /// `#{pane_current_path}` / `#{pane_current_command}` later without
+    /// touching the pane again: the pty's foreground and session pids (two
+    /// ioctls, read now) and the in-memory spawn command fallback. The
+    /// expensive part — the `/proc` (or `libproc`) walk — is deferred to the
+    /// probe's accessors, so a format that never names these variables never
+    /// pays for it. `None` for a pane with no live child.
+    pub(crate) fn process_probe(&self) -> Option<PaneProcessProbe> {
         let child = self.child.as_ref()?;
-        CurrentPlatform::pane_cwd(child.master.as_fd())
-            .map(|path| path.to_string_lossy().into_owned())
+        let fd = child.master.as_raw_fd();
+        // SAFETY: querying the foreground group / session of an owned pty
+        // master fd.
+        let foreground = unsafe { libc::tcgetpgrp(fd) };
+        let session_leader = unsafe { libc::tcgetsid(fd) };
+        Some(PaneProcessProbe {
+            foreground: (foreground > 0).then_some(foreground),
+            session_leader: (session_leader > 0).then_some(session_leader),
+            fallback_command: self
+                .spawn_spec
+                .as_ref()
+                .map(|spec| stringify_argv(&spec.argv)),
+        })
     }
 
     /// The program occupying the pane's foreground process group.
@@ -1640,35 +1662,7 @@ impl Pane {
     /// pipeline whose first member exits ahead of the others leaves the
     /// terminal owned by a group that names no process at all.
     pub fn current_command(&self) -> Option<String> {
-        let child = self.child.as_ref()?;
-        // SAFETY: querying the foreground group of an owned pty master fd.
-        let pid = unsafe { libc::tcgetpgrp(child.master.as_raw_fd()) };
-        // tmux's Linux osdep_get_name reads argv[0] from /proc/PID/cmdline.
-        // Keep the executable-name candidates as a fallback for platforms or
-        // processes where the argument vector is unavailable.
-        let foreground = (pid > 0)
-            .then(|| {
-                CurrentPlatform::process_arguments(pid as u32)
-                    .into_iter()
-                    .next()
-                    .or_else(|| {
-                        CurrentPlatform::process_programs(pid as u32)
-                            .into_iter()
-                            .next()
-                    })
-            })
-            .flatten()
-            .map(|program| program.to_string_lossy().into_owned());
-
-        foreground
-            .filter(|program| !program.is_empty())
-            .or_else(|| {
-                self.spawn_spec
-                    .as_ref()
-                    .map(|spec| stringify_argv(&spec.argv))
-            })
-            .map(|command| parse_window_name(&command))
-            .filter(|name| !name.is_empty())
+        self.process_probe()?.current_command()
     }
 
     /// Drain terminal queries emitted by the child since the previous call.
@@ -4362,6 +4356,67 @@ fn flush_pane_input(fd: c_int, queued: &mut VecDeque<u8>) {
 
 fn ghostty_err(e: crate::ghostty::Error) -> io::Error {
     io::Error::other(format!("ghostty: {e}"))
+}
+
+/// A pane's foreground-process identity, captured while the pane was at hand.
+///
+/// Holds only owned data (pids and the spawn command line), so a deferred
+/// format callback can resolve the process-derived variables long after the
+/// pane borrow ended. A pid whose process has exited simply fails its
+/// `/proc` read and falls through, exactly as the live path always has.
+#[derive(Clone)]
+pub(crate) struct PaneProcessProbe {
+    foreground: Option<pid_t>,
+    session_leader: Option<pid_t>,
+    fallback_command: Option<String>,
+}
+
+impl PaneProcessProbe {
+    /// The working directory of the pane's foreground process group
+    /// (`#{pane_current_path}`).
+    ///
+    /// Mirrors tmux's `osdep_get_cwd`: prefer the foreground group, then fall
+    /// back to the session leader — the group id is only a pid while the
+    /// group's leader lives, and a shell pipeline whose first member exited
+    /// leaves a group that names no process.
+    pub(crate) fn current_path(&self) -> Option<String> {
+        [self.foreground, self.session_leader]
+            .into_iter()
+            .flatten()
+            .find_map(|pid| CurrentPlatform::process_cwd(pid as u32))
+            .map(|path| path.to_string_lossy().into_owned())
+    }
+
+    /// The program occupying the pane's foreground process group
+    /// (`#{pane_current_command}`).
+    ///
+    /// Mirrors tmux's `format_cb_current_command`, which tries the foreground
+    /// group's `argv[0]` and then falls back to the pane's own command line —
+    /// the fallback is what answers for a leaderless group.
+    pub(crate) fn current_command(&self) -> Option<String> {
+        // tmux's Linux osdep_get_name reads argv[0] from /proc/PID/cmdline.
+        // Keep the executable-name candidates as a fallback for platforms or
+        // processes where the argument vector is unavailable.
+        let foreground = self
+            .foreground
+            .and_then(|pid| {
+                CurrentPlatform::process_arguments(pid as u32)
+                    .into_iter()
+                    .next()
+                    .or_else(|| {
+                        CurrentPlatform::process_programs(pid as u32)
+                            .into_iter()
+                            .next()
+                    })
+            })
+            .map(|program| program.to_string_lossy().into_owned());
+
+        foreground
+            .filter(|program| !program.is_empty())
+            .or_else(|| self.fallback_command.clone())
+            .map(|command| parse_window_name(&command))
+            .filter(|name| !name.is_empty())
+    }
 }
 
 /// Render a pane's argument vector the way tmux's `cmd_stringify_argv` does,

@@ -23,11 +23,40 @@ use regex::RegexBuilder;
 
 use super::style::{parse_colour, Colour};
 
+/// One variable's value: either materialized, or a deferred computation that
+/// runs (once) only if a format actually looks the variable up. The deferred
+/// form exists for the variables whose value is a syscall away — `/proc`
+/// walks behind `#{pane_current_command}`, say — which would otherwise be
+/// paid on every command dispatch whether or not the template names them.
+#[derive(Clone)]
+enum Slot {
+    Ready(String),
+    Lazy(LazySlot),
+}
+
+#[derive(Clone)]
+struct LazySlot {
+    compute: std::rc::Rc<dyn Fn() -> String>,
+    cache: std::cell::OnceCell<String>,
+}
+
+impl std::fmt::Debug for Slot {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Slot::Ready(value) => value.fmt(formatter),
+            Slot::Lazy(slot) => match slot.cache.get() {
+                Some(value) => value.fmt(formatter),
+                None => formatter.write_str("<lazy>"),
+            },
+        }
+    }
+}
+
 /// A resolved format context: the variable → value map for one target
 /// (session, and optionally a specific window/pane within it).
 #[derive(Debug, Clone)]
 pub struct Vars {
-    map: HashMap<String, String>,
+    map: HashMap<String, Slot>,
 }
 
 impl Vars {
@@ -35,10 +64,16 @@ impl Vars {
         let mut vars = Vars {
             map: HashMap::new(),
         };
-        let uid = unsafe { libc::getuid() };
+        // The daemon's uid cannot change, and resolving the name walks NSS
+        // (sockets to nscd, /etc/passwd) — worth doing exactly once.
+        static USER: std::sync::OnceLock<(libc::uid_t, Option<String>)> = std::sync::OnceLock::new();
+        let (uid, user) = USER.get_or_init(|| {
+            let uid = unsafe { libc::getuid() };
+            (uid, username(uid))
+        });
         vars.set("uid", uid.to_string());
-        if let Some(user) = username(uid) {
-            vars.set("user", user);
+        if let Some(user) = user {
+            vars.set("user", user.clone());
         }
         vars
     }
@@ -54,12 +89,32 @@ impl Vars {
                 _ => value,
             };
         }
-        self.map.insert(key, value);
+        self.map.insert(key, Slot::Ready(value));
+        self
+    }
+
+    /// Set a variable whose value is computed on first lookup. No flag
+    /// normalization is applied: deferred variables are never option flags.
+    pub fn set_lazy(
+        &mut self,
+        key: impl Into<String>,
+        compute: impl Fn() -> String + 'static,
+    ) -> &mut Vars {
+        self.map.insert(
+            key.into(),
+            Slot::Lazy(LazySlot {
+                compute: std::rc::Rc::new(compute),
+                cache: std::cell::OnceCell::new(),
+            }),
+        );
         self
     }
 
     pub(crate) fn lookup(&self, key: &str) -> Option<&str> {
-        self.map.get(key).map(String::as_str)
+        match self.map.get(key)? {
+            Slot::Ready(value) => Some(value),
+            Slot::Lazy(slot) => Some(slot.cache.get_or_init(|| (slot.compute)())),
+        }
     }
 }
 
