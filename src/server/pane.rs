@@ -38,21 +38,13 @@ pub struct Pane {
     /// from the PTY owner lets consumers inspect a resolved pane without
     /// retaining the native server's global state lock.
     observation: Rc<NativePaneObservation>,
-    /// Terminal queries emitted by the child which must be relayed to an
-    /// attached outer terminal. Ghostty consumes OSC sequences while updating
-    /// the grid, so they need a separate side channel to reach the compositor.
-    terminal_queries: Rc<RefCell<VecDeque<Vec<u8>>>>,
     /// The running child + pty, or `None` for an inert (process-less) pane.
     child: Option<Child>,
-    /// Bytes queued to be written to the child's pty (keystrokes and terminal-
-    /// query replies) that have not yet been accepted by the child. The pty
-    /// master is non-blocking, so a child that stops reading its stdin (a stalled
-    /// full-screen app) can never block a server thread writing to it — pending
-    /// bytes wait here and are flushed by the active I/O driver on writability. The
-    /// buffer is bounded; once full, further input is dropped rather than allowed
-    /// to stall the shared server, matching how tmux tolerates an unresponsive
-    /// pane. Shared with the active I/O driver.
+    /// Bytes pending to be written to the child's pty (keystrokes and terminal-
+    /// query replies).
     pending_input: Rc<RefCell<VecDeque<u8>>>,
+    /// Messages queried from child
+    terminal_queries: Rc<RefCell<VecDeque<Vec<u8>>>>,
     /// Original process specification retained for command-less respawns.
     spawn_spec: Option<PaneSpawnSpec>,
     /// Buffer the PTY reader appends to when `pipe-pane -O` is active.
