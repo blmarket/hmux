@@ -115,7 +115,6 @@ pub struct ClientContext {
     /// anything the body raises. This is what stops an event hook that mutates
     /// its own subject from re-triggering itself.
     pub(crate) suppress_notifications: bool,
-    pub(crate) defer_queue_commands: bool,
     /// The `hook*` format variables for a queued hook-body command; installed
     /// into the server state around its execution.
     pub(crate) hook_vars: Option<Rc<Vec<(String, String)>>>,
@@ -516,13 +515,7 @@ pub(crate) fn start_resumable_command_string(
         state.command_aliases()
     };
     let parsed = parse_command_groups_with_aliases(groups, &aliases)?;
-    let mut execution_context = context.clone();
-    execution_context.defer_queue_commands = true;
-    Ok(ResumableCommandQueue::new(
-        parsed,
-        agents,
-        &execution_context,
-    ))
+    Ok(ResumableCommandQueue::new(parsed, agents, context))
 }
 
 pub(crate) fn start_resumable_command_string_with_tail(
@@ -547,13 +540,7 @@ pub(crate) fn start_resumable_command_string_with_tail(
             &aliases,
         )?);
     }
-    let mut execution_context = context.clone();
-    execution_context.defer_queue_commands = true;
-    Ok(ResumableCommandQueue::new(
-        parsed,
-        agents,
-        &execution_context,
-    ))
+    Ok(ResumableCommandQueue::new(parsed, agents, context))
 }
 
 struct PreviousCommandTargetContext {

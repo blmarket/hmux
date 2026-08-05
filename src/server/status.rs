@@ -2828,7 +2828,7 @@ mod tests {
         use crate::integration::AgentState;
         use crate::observability::v1::PaneId;
 
-        let mut state = ServerState::with_test_session().expect("state");
+        let state = ServerState::with_test_session().expect("state");
         let session = state.find("0").expect("session");
         let window = state.window_for_link(&session.windows[session.active]);
         let pane_id = PaneId(window.panes[window.active].id);
