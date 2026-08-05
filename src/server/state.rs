@@ -12271,6 +12271,17 @@ impl ServerState {
         }
     }
 
+    /// `#{pane_key_mode}`: the name tmux gives the pane's effective
+    /// extended-key state, so it follows the same `extended-keys` resolution
+    /// the encoder uses rather than the pane's raw request.
+    pub(crate) fn pane_key_mode_name(&self, pane: &PaneNode) -> &'static str {
+        match self.pane_key_modes(pane.pane.key_state()).extended {
+            ExtendedKeys::All => "Ext 2",
+            ExtendedKeys::Standard => "Ext 1",
+            ExtendedKeys::Off => "VT10x",
+        }
+    }
+
     fn pane_key_options(&self) -> PaneKeyOptions {
         let options = self.server_options();
         let backspace = match options.get("backspace") {

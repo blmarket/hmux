@@ -4391,6 +4391,7 @@ pub(super) fn vars_full(
                         .map(|death| unix_seconds(death.at).to_string())
                         .unwrap_or_default(),
                 )
+                .set("pane_key_mode", st.pane_key_mode_name(p))
                 .set("pane_in_mode", if p.mode.is_some() { "1" } else { "0" })
                 .set("pane_input_off", if p.input_off { "1" } else { "0" })
                 .set("pane_mode", p.mode.clone().unwrap_or_default())
