@@ -1,77 +1,114 @@
+Emit OSC 8 hyperlinks from the VT formatter.
+
+Upstream emits hyperlinks for HTML only (its own comment calls VT support
+future work). `Terminal::dump_vt` is hmux's compositor primitive -- the bytes
+an attached client's terminal receives -- so without this a linked cell
+reaches the client as plain text.
+
+The hunks, and what pins each one (all in ghostty-sys/src/lib.rs unless noted):
+
+  1. Close an open link before the row's newline. The compositor splits a dump
+     on newlines and repaints each row at its own position, so a link left
+     open would carry into whatever is drawn next, including another pane's
+     row. HTML keeps one <a> across newlines, so this is VT-only.
+     -> vt_dump_closes_osc8_hyperlinks_at_every_row_end
+  2. Let the slow path's hyperlink block run for any styled format, not just
+     HTML.  -> vt_dump_carries_osc8_hyperlinks
+  3. Read the explicit OSC 8 id and pass it to the open sequence; implicit ids
+     stay out of the output.  -> vt_dump_carries_osc8_explicit_id
+  4. Same id through the point-map's discarding writer, so byte accounting
+     matches the real writer.  -> "Page VT hyperlink" (zig, point-map length)
+  5. Let the batched cell-run fast path break on hyperlink transitions for any
+     styled format. Without this the run swallows the transition and no OSC 8
+     is emitted at all -- the trap that survived the previous upstream bump
+     unnoticed.  -> vt_dump_separates_adjacent_osc8_hyperlinks
+  6/7. The VT arms of formatHyperlinkOpen/Close.
+  8. Zig-side tests for the above.
+
 diff --git a/ghostty-sys/vendor/libghostty-vt/src/terminal/formatter.zig b/ghostty-sys/vendor/libghostty-vt/src/terminal/formatter.zig
-index f8cf61e..63a47b7 100644
 --- a/ghostty-sys/vendor/libghostty-vt/src/terminal/formatter.zig
 +++ b/ghostty-sys/vendor/libghostty-vt/src/terminal/formatter.zig
-@@ -1054,6 +1054,14 @@ pub const PageFormatter = struct {
-                     style = .{};
+@@ -1171,6 +1171,14 @@
+                     style_id = 0;
                  }
  
 +                // Close any open hyperlink before emitting newlines so each
 +                // VT row is self-contained; the next linked cell re-opens it.
 +                // HTML keeps a single <a> tag across newlines.
-+                if (self.opts.emit == .vt and current_hyperlink_id != null) {
-+                    try self.formatHyperlinkClose(writer);
++                if (emit == .vt and current_hyperlink_id != null) {
++                    try self.formatHyperlinkClose(emit, writer);
 +                    current_hyperlink_id = null;
 +                }
 +
-                 const sequence: []const u8 = switch (self.opts.emit) {
+                 const sequence: []const u8 = switch (emit) {
                      // Plaintext just uses standard newlines because newlines
                      // on their own usually move the cursor back in anywhere
-@@ -1242,10 +1250,9 @@ pub const PageFormatter = struct {
+@@ -1412,10 +1420,9 @@
  
                  // Hyperlink state
                  hyperlink: {
 -                    // We currently only emit hyperlinks for HTML. In the
 -                    // future we can support emitting OSC 8 hyperlinks for
 -                    // VT output as well.
--                    if (self.opts.emit != .html) break :hyperlink;
+-                    if (comptime emit != .html) break :hyperlink;
 +                    // Only styled formats carry hyperlinks: HTML emits
 +                    // <a> tags and VT emits OSC 8 sequences.
-+                    if (!formatStyled(self.opts.emit)) break :hyperlink;
++                    if (!comptime formatStyled(emit)) break :hyperlink;
  
                      // Get the hyperlink ID. This ID is our internal ID,
                      // not necessarily the OSC8 ID.
-@@ -1270,15 +1277,18 @@ pub const PageFormatter = struct {
-                     current_hyperlink_id = link_id;
- 
-                     // Emit the opening hyperlink tag
--                    const uri = uri: {
--                        const link = self.page.hyperlink_set.get(
--                            self.page.memory,
--                            link_id,
--                        );
--                        break :uri link.uri.offset.ptr(self.page.memory)[0..link.uri.len];
-+                    const link = self.page.hyperlink_set.get(
-+                        self.page.memory,
-+                        link_id,
-+                    );
-+                    const uri = link.uri.offset.ptr(self.page.memory)[0..link.uri.len];
-+                    const explicit_id: ?[]const u8 = switch (link.id) {
-+                        .explicit => |slice| slice.offset.ptr(self.page.memory)[0..slice.len],
-+                        .implicit => null,
+@@ -1447,9 +1454,26 @@
+                         );
+                         break :uri link.uri.offset.ptr(self.page.memory)[0..link.uri.len];
                      };
++
++                    // OSC 8 only carries an id the program set itself.
++                    // Implicit ids are an internal detail, so they stay out
++                    // of the output.
++                    const explicit_id: ?[]const u8 = id: {
++                        const link = self.page.hyperlink_set.get(
++                            self.page.memory,
++                            link_id,
++                        );
++                        break :id switch (link.id) {
++                            .explicit => |slice| slice.offset.ptr(
++                                self.page.memory,
++                            )[0..slice.len],
++                            .implicit => null,
++                        };
++                    };
                      try self.formatHyperlinkOpen(
+                         emit,
                          writer,
 +                        explicit_id,
                          uri,
                      );
  
-@@ -1288,6 +1298,7 @@ pub const PageFormatter = struct {
-                         var discarding: std.Io.Writer.Discarding = .init(&.{});
+@@ -1460,6 +1484,7 @@
                          try self.formatHyperlinkOpen(
+                             emit,
                              &discarding.writer,
 +                            explicit_id,
                              uri,
                          );
-                         for (0..std.math.cast(
-@@ -1545,10 +1556,22 @@ pub const PageFormatter = struct {
-     fn formatHyperlinkOpen(
+                         map.map.appendNTimes(
+@@ -1630,7 +1655,7 @@
+             // cell must belong to the currently open hyperlink (or none).
+             // Transitions take the slow path. This is checked after blank
+             // accounting because blank cells never touch hyperlink state.
+-            if (comptime emit == .html) {
++            if (comptime formatStyled(emit)) {
+                 if (cell.hyperlink) {
+                     const run_id = run_hyperlink_id orelse break;
+                     const cell_id = self.page.lookupHyperlink(cell) orelse break;
+@@ -2028,10 +2053,22 @@
          self: PageFormatter,
+         comptime emit: Format,
          writer: *std.Io.Writer,
 +        id: ?[]const u8,
          uri: []const u8,
      ) std.Io.Writer.Error!void {
-         switch (self.opts.emit) {
+         switch (emit) {
 -            .plain, .vt => unreachable,
 +            .plain => unreachable,
 +
@@ -88,9 +125,9 @@ index f8cf61e..63a47b7 100644
  
              // layout since we're primarily using it as a CSS wrapper.
              .html => {
-@@ -1568,7 +1591,8 @@ pub const PageFormatter = struct {
+@@ -2053,7 +2090,8 @@
      ) std.Io.Writer.Error!void {
-         const str: []const u8 = switch (self.opts.emit) {
+         const str: []const u8 = switch (emit) {
              .html => "</a>",
 -            .plain, .vt => return,
 +            .vt => "\x1b]8;;\x1b\\",
@@ -98,7 +135,7 @@ index f8cf61e..63a47b7 100644
          };
  
          try writer.writeAll(str);
-@@ -3609,6 +3633,111 @@ test "Page VT duplicate style not emitted twice" {
+@@ -4094,6 +4132,191 @@
      try testing.expectEqual(output.len, point_map.items.len);
  }
  
@@ -195,6 +232,11 @@ index f8cf61e..63a47b7 100644
 +    const page = pages.pages.last.?.page();
 +
 +    var formatter: PageFormatter = .init(page, .vt);
++
++    var point_map: std.ArrayList(Coordinate) = .empty;
++    defer point_map.deinit(alloc);
++    formatter.point_map = .{ .alloc = alloc, .map = &point_map };
++
 +    try formatter.format(&builder.writer);
 +    const output = builder.writer.buffered();
 +
@@ -203,6 +245,81 @@ index f8cf61e..63a47b7 100644
 +    try testing.expectEqualStrings(
 +        "\x1b]8;;http://e/\x1b\\ab\x1b]8;;\x1b\\\r\n" ++
 +            "\x1b]8;;http://e/\x1b\\cd\x1b]8;;\x1b\\",
++        output,
++    );
++
++    // The extra open/close pair must stay accounted for in the point map.
++    try testing.expectEqual(output.len, point_map.items.len);
++}
++
++test "Page VT hyperlink explicit id reopened on the next row" {
++    const testing = std.testing;
++    const alloc = testing.allocator;
++    const io = testing.io;
++
++    var builder: std.Io.Writer.Allocating = .init(alloc);
++    defer builder.deinit();
++
++    var t = try Terminal.init(io, alloc, .{
++        .cols = 80,
++        .rows = 24,
++    });
++    defer t.deinit(alloc);
++
++    var s = t.vtStream();
++    defer s.deinit();
++
++    s.nextSlice("\x1b]8;id=foo;http://e/\x1b\\ab\r\ncd\x1b]8;;\x1b\\");
++
++    const pages = &t.screens.active.pages;
++    const page = pages.pages.last.?.page();
++
++    var formatter: PageFormatter = .init(page, .vt);
++    try formatter.format(&builder.writer);
++    const output = builder.writer.buffered();
++
++    // Reopening carries the explicit id, so the two rows stay one link
++    // for terminals that group by id.
++    try testing.expectEqualStrings(
++        "\x1b]8;id=foo;http://e/\x1b\\ab\x1b]8;;\x1b\\\r\n" ++
++            "\x1b]8;id=foo;http://e/\x1b\\cd\x1b]8;;\x1b\\",
++        output,
++    );
++}
++
++test "Page VT adjacent hyperlinks" {
++    const testing = std.testing;
++    const alloc = testing.allocator;
++    const io = testing.io;
++
++    var builder: std.Io.Writer.Allocating = .init(alloc);
++    defer builder.deinit();
++
++    var t = try Terminal.init(io, alloc, .{
++        .cols = 80,
++        .rows = 24,
++    });
++    defer t.deinit(alloc);
++
++    var s = t.vtStream();
++    defer s.deinit();
++
++    // No unlinked cell separates the two: the second link must interrupt
++    // the batched cell run so the transition is emitted.
++    s.nextSlice(
++        "\x1b]8;;http://a/\x1b\\aa" ++
++            "\x1b]8;;http://b/\x1b\\bb\x1b]8;;\x1b\\",
++    );
++
++    const pages = &t.screens.active.pages;
++    const page = pages.pages.last.?.page();
++
++    var formatter: PageFormatter = .init(page, .vt);
++    try formatter.format(&builder.writer);
++    const output = builder.writer.buffered();
++    try testing.expectEqualStrings(
++        "\x1b]8;;http://a/\x1b\\aa\x1b]8;;\x1b\\" ++
++            "\x1b]8;;http://b/\x1b\\bb\x1b]8;;\x1b\\",
 +        output,
 +    );
 +}

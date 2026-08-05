@@ -261,8 +261,8 @@ fn imageGetTyped(
         .height => out.* = image.height,
         .format => out.* = image.format,
         .compression => out.* = image.compression,
-        .data_ptr => out.* = image.data.ptr,
-        .data_len => out.* = image.data.len,
+        .data_ptr => out.* = (image.data.bytes() orelse return .no_value).ptr,
+        .data_len => out.* = image.data.len(),
         .generation => out.* = image.generation,
     }
 
@@ -659,7 +659,8 @@ test "placement_iterator next on empty storage" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -688,7 +689,8 @@ test "placement_iterator get before next returns invalid" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -719,7 +721,8 @@ test "placement_iterator with transmit and display" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -772,7 +775,8 @@ test "placement_iterator with multiple placements" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -829,7 +833,8 @@ test "placement_iterator_set layer filter" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -919,7 +924,8 @@ test "image_get_handle returns null for missing id" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -940,7 +946,8 @@ test "image_get_handle and image_get with transmitted image" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -983,6 +990,57 @@ test "image_get_handle and image_get with transmitted image" {
     try testing.expect(data_len > 0);
 }
 
+test "image_get exposes pending metadata without a data pointer" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        80,
+        24,
+    ));
+    defer terminal_c.free(t);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(
+        t,
+        .kitty_graphics,
+        @ptrCast(&graphics),
+    ));
+
+    const alloc = lib.alloc.default(&lib.alloc.test_allocator);
+    const pending = try graphics.addPendingImage(testing.io, alloc, .{
+        .id = 42,
+        .number = 7,
+        .width = 1,
+        .height = 4,
+        .format = .rgb,
+        .data = .{ .pending = 12 },
+    });
+
+    const img = image_get_handle(graphics, 42);
+    try testing.expect(img != null);
+
+    var number: u32 = 0;
+    try testing.expectEqual(Result.success, image_get(img, .number, @ptrCast(&number)));
+    try testing.expectEqual(@as(u32, 7), number);
+
+    var data_len: usize = 0;
+    try testing.expectEqual(Result.success, image_get(img, .data_len, @ptrCast(&data_len)));
+    try testing.expectEqual(@as(usize, 12), data_len);
+
+    var data_ptr: [*]const u8 = undefined;
+    try testing.expectEqual(Result.no_value, image_get(img, .data_ptr, @ptrCast(&data_ptr)));
+
+    const pixels = try alloc.dupe(u8, "*" ** 12);
+    try testing.expect(pending.complete(graphics, testing.io, pixels));
+    const completed_img = image_get_handle(graphics, 42);
+    try testing.expect(completed_img != null);
+    try testing.expectEqual(Result.success, image_get(completed_img, .data_ptr, @ptrCast(&data_ptr)));
+    try testing.expectEqualSlices(u8, pixels, data_ptr[0..data_len]);
+}
+
 test "placement_rect with transmit and display" {
     if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
 
@@ -990,7 +1048,8 @@ test "placement_rect with transmit and display" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -1051,7 +1110,8 @@ test "placement_pixel_size with transmit and display" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -1106,7 +1166,8 @@ test "placement_grid_size with transmit and display" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -1160,7 +1221,8 @@ test "placement_viewport_pos with transmit and display" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -1205,7 +1267,8 @@ test "placement_viewport_pos fully off-screen above" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 5, .max_scrollback = 100 },
+        80,
+        5,
     ));
     defer terminal_c.free(t);
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 5, 10, 20));
@@ -1244,7 +1307,8 @@ test "placement_viewport_pos top off-screen" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 5, .max_scrollback = 100 },
+        80,
+        5,
     ));
     defer terminal_c.free(t);
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 5, 10, 20));
@@ -1287,7 +1351,8 @@ test "placement_viewport_pos bottom off-screen" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 5, .max_scrollback = 0 },
+        80,
+        5,
     ));
     defer terminal_c.free(t);
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 5, 10, 20));
@@ -1327,7 +1392,8 @@ test "placement_viewport_pos top and bottom off-screen" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 5, .max_scrollback = 100 },
+        80,
+        5,
     ));
     defer terminal_c.free(t);
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 5, 10, 20));
@@ -1378,7 +1444,8 @@ test "placement_source_rect defaults to full image" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
@@ -1417,7 +1484,8 @@ test "placement_source_rect with explicit source rect" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
@@ -1461,7 +1529,8 @@ test "placement_source_rect clamps to image bounds" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
@@ -1522,7 +1591,8 @@ test "placement_render_info returns all fields" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
@@ -1561,7 +1631,8 @@ test "placement_render_info off-screen sets viewport_visible false" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 5, .max_scrollback = 100 },
+        80,
+        5,
     ));
     defer terminal_c.free(t);
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 5, 10, 20));
@@ -1610,7 +1681,8 @@ test "image_get_multi success" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
@@ -1664,7 +1736,8 @@ test "placement_get_multi success" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
@@ -1722,7 +1795,8 @@ test "storage generation via get" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -1774,7 +1848,8 @@ test "image generation detects same-sized retransmission" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -1835,7 +1910,8 @@ test "image generation via image_get_multi" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -1871,7 +1947,8 @@ test "image compression and format always report decoded data" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 
@@ -1917,7 +1994,8 @@ test "generation never recurs across resets and screen switches" {
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib.alloc.test_allocator,
         &t,
-        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+        80,
+        24,
     ));
     defer terminal_c.free(t);
 

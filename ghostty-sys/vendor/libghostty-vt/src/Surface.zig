@@ -154,6 +154,10 @@ child_exited: bool = false,
 /// to let us know.
 focused: bool = true,
 
+/// Whether this surface may be visible. Unknown visibility is considered
+/// visible so reporting remains conservative.
+visible: bool = true,
+
 /// Used to determine whether to continuously scroll.
 selection_scroll_active: bool = false,
 
@@ -869,7 +873,10 @@ fn queueIo(
             .write_small,
             .write_stable,
             .write_alloc,
-            => return,
+            => {
+                msg.deinit();
+                return;
+            },
 
             else => {},
         }
@@ -3310,9 +3317,27 @@ pub fn occlusionCallback(self: *Surface, visible: bool) !void {
     crash.sentry.thread_state = self.crashThreadState();
     defer crash.sentry.thread_state = null;
 
+    // Avoid duplicate renderer and visibility reports.
+    if (self.visible == visible) return;
+    self.visible = visible;
+
+    // Update the terminal state for synchronous queries, then notify the IO
+    // thread so it can emit a mode 2033 report when enabled.
+    self.renderer_state.mutex.lockUncancelable(global.io());
+    self.io.terminal.flags.visible = visible;
+    const report_visibility = self.io.terminal.modes.get(.report_visibility);
+    self.renderer_state.mutex.unlock(global.io());
+    if (report_visibility) {
+        self.queueIo(.{ .visibility_report = .{
+            .visible = visible,
+            .force = false,
+        } }, .unlocked);
+    }
+
     _ = self.renderer_thread.mailbox.push(global.io(), .{
         .visible = visible,
     }, .{ .forever = {} });
+
     try self.queueRender();
 }
 
@@ -3655,6 +3680,12 @@ pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) !
 fn isMouseReporting(self: *const Surface) bool {
     return self.config.mouse_reporting and
         self.io.terminal.flags.mouse_event != .none;
+}
+
+pub fn mouseReportingActive(self: *Surface) bool {
+    self.renderer_state.mutex.lockUncancelable(global.io());
+    defer self.renderer_state.mutex.unlock(global.io());
+    return self.isMouseReporting();
 }
 
 fn mouseReport(
@@ -5948,8 +5979,8 @@ fn completeClipboardReadOSC52(
     // This must hold the base64 encoded data PLUS the OSC code surrounding it.
     const enc = std.base64.standard.Encoder;
     const size = enc.calcSize(data.len);
-    var buf = try self.alloc.alloc(u8, size + 9); // const for OSC
-    defer self.alloc.free(buf);
+    const buf = try self.alloc.alloc(u8, size + 9); // const for OSC
+    errdefer self.alloc.free(buf);
 
     const kind: u8 = switch (clipboard_type) {
         .standard => 'c',
@@ -5967,10 +5998,10 @@ fn completeClipboardReadOSC52(
     const encoded = enc.encode(buf[prefix.len..], data);
     assert(encoded.len == size);
 
-    self.queueIo(try termio.Message.writeReq(
-        self.alloc,
-        buf,
-    ), .unlocked);
+    self.queueIo(.{ .write_alloc = .{
+        .alloc = self.alloc,
+        .data = buf,
+    } }, .unlocked);
 }
 
 fn showDesktopNotification(self: *Surface, title: [:0]const u8, body: [:0]const u8) !void {
@@ -6041,4 +6072,19 @@ fn presentSurface(self: *Surface) !void {
 /// not available on a particular platform.
 pub fn getProcessInfo(self: *Surface, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
     return self.io.getProcessInfo(info);
+}
+
+test "queueIo frees allocated writes in readonly mode" {
+    const testing = std.testing;
+
+    const surface = try testing.allocator.create(Surface);
+    defer testing.allocator.destroy(surface);
+    surface.readonly = true;
+
+    // queueIo must free allocated writes in read-only mode.
+    const data = try testing.allocator.dupe(u8, "\x1b]lGhostty\x1b\\");
+    surface.queueIo(.{ .write_alloc = .{
+        .alloc = testing.allocator,
+        .data = data,
+    } }, .unlocked);
 }

@@ -183,7 +183,7 @@ pub fn initStaticAppleUniversal(
         const target_query: std.Target.Query = .{
             .cpu_arch = .aarch64,
             .os_tag = p.os_tag,
-            .os_version_min = Config.osVersionMin(p.os_tag),
+            .os_version_min = Config.osVersionMinLibVt(p.os_tag),
         };
         if (detectAppleSDK(
             b.graph.io,
@@ -197,7 +197,7 @@ pub fn initStaticAppleUniversal(
             const sim_zig = try zig.retarget(b, cfg, deps, b.resolveTargetQuery(.{
                 .cpu_arch = .aarch64,
                 .os_tag = p.os_tag,
-                .os_version_min = Config.osVersionMin(p.os_tag),
+                .os_version_min = Config.osVersionMinLibVt(p.os_tag),
                 .abi = .simulator,
                 .cpu_model = .{ .explicit = &std.Target.aarch64.cpu.apple_a17 },
             }));
@@ -247,6 +247,19 @@ fn initLib(
         // Zig's ubsan emits /exclude-symbols linker directives that
         // are incompatible with the MSVC linker (LNK4229).
         lib.bundle_ubsan_rt = false;
+
+        if (kind == .static) {
+            if (target.result.abi == .msvc) {
+                // Zig's compiler runtime doesn't provide MSVC's security
+                // cookie symbols when libc is linked. Disable stack-protector
+                // generation so static consumers don't need BufferOverflowU.
+                lib.root_module.stack_protector = false;
+            }
+
+            // The Zig standard library uses NT and kernel32 symbols.
+            lib.root_module.linkSystemLibrary("ntdll", .{});
+            lib.root_module.linkSystemLibrary("kernel32", .{});
+        }
     }
 
     if (lib.rootModuleTarget().abi.isAndroid()) {
