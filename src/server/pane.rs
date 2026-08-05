@@ -45,8 +45,6 @@ pub struct Pane {
     pending_input: Rc<RefCell<VecDeque<u8>>>,
     /// Messages queried from child
     terminal_queries: Rc<RefCell<VecDeque<Vec<u8>>>>,
-    /// Original process specification retained for command-less respawns.
-    spawn_spec: Option<PaneSpawnSpec>,
     /// Buffer the PTY reader appends to when `pipe-pane -O` is active.
     pipe_output: Rc<RefCell<PanePipeOutbound>>,
     pipe_output_active: Rc<Cell<bool>>,
@@ -274,6 +272,8 @@ static NEXT_PANE_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 struct Child {
     pid: pid_t,
     master: OwnedFd,
+    /// Original process specification retained for command-less respawns.
+    spawn_spec: PaneSpawnSpec,
     alive: Rc<Cell<bool>>,
     reaped: bool,
     termination_requested: bool,
@@ -1267,7 +1267,6 @@ impl Pane {
             terminal_queries: Rc::new(RefCell::new(VecDeque::new())),
             child: None,
             pending_input: Rc::new(RefCell::new(VecDeque::new())),
-            spawn_spec: None,
             pipe_output: Rc::new(RefCell::new(PanePipeOutbound::default())),
             pipe_output_active: Rc::new(Cell::new(false)),
             pipe: None,
@@ -1377,6 +1376,10 @@ impl Pane {
             child: Some(Child {
                 pid,
                 master,
+                spawn_spec: PaneSpawnSpec {
+                    argv: argv.iter().map(|arg| (*arg).to_string()).collect(),
+                    cwd: cwd.map(Path::to_path_buf),
+                },
                 alive,
                 reaped: false,
                 termination_requested: false,
@@ -1384,10 +1387,6 @@ impl Pane {
                 death: None,
             }),
             pending_input,
-            spawn_spec: Some(PaneSpawnSpec {
-                argv: argv.iter().map(|arg| (*arg).to_string()).collect(),
-                cwd: cwd.map(Path::to_path_buf),
-            }),
             pipe_output,
             pipe_output_active,
             pipe: None,
@@ -1400,14 +1399,14 @@ impl Pane {
     }
 
     pub(crate) fn spawn_spec(&self) -> Option<PaneSpawnSpec> {
-        self.spawn_spec.clone()
+        self.child.as_ref().map(|child| child.spawn_spec.clone())
     }
 
     /// The directory the pane was spawned in (`#{pane_start_path}`), when one
     /// was chosen explicitly. `None` means the pane inherited the server's own
     /// working directory, which is what the caller reports instead.
     pub(crate) fn start_path(&self) -> Option<&Path> {
-        self.spawn_spec.as_ref()?.cwd.as_deref()
+        self.child.as_ref()?.spawn_spec.cwd.as_deref()
     }
 
     pub(crate) fn spawn_from_spec(spec: &PaneSpawnSpec, cols: u16, rows: u16) -> io::Result<Pane> {
@@ -1642,10 +1641,7 @@ impl Pane {
         Some(PaneProcessProbe {
             foreground: (foreground > 0).then_some(foreground),
             session_leader: (session_leader > 0).then_some(session_leader),
-            fallback_command: self
-                .spawn_spec
-                .as_ref()
-                .map(|spec| stringify_argv(&spec.argv)),
+            fallback_command: Some(stringify_argv(&child.spawn_spec.argv)),
         })
     }
 
