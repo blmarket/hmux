@@ -47,6 +47,10 @@ SHELL_COMMANDS = frozenset(
 DEVSHELL_PREFIX = "nix develop . --command"
 DEVSHELL_PROBE = f"{DEVSHELL_PREFIX} true >/dev/null 2>&1"
 
+CLAUDE_RATE_LIMIT_COMMAND = "/rate-limit-options"
+CLAUDE_RATE_LIMIT_OPTION_ONE = "Stop and wait for limit to reset"
+_ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
+
 
 def devshell_available(path: Path) -> bool:
     """Return whether `path` looks like it can supply a nix dev shell.
@@ -67,6 +71,29 @@ def _is_shell_command(command: str) -> bool:
         return True
     # Login shells are reported with a leading dash (e.g. "-zsh").
     return command.lstrip("-") in SHELL_COMMANDS
+
+
+def is_claude_rate_limit_options_dialog(capture: str) -> bool:
+    """Return whether a visible pane capture is Claude's rate-limit menu.
+
+    The command text can remain in the prompt after the menu is dismissed, so
+    require the menu title and its first option as well. ``capture-pane -p``
+    returns the visible alternate screen, which keeps old scrollback from
+    triggering this detector.
+    """
+    plain = _ANSI_ESCAPE.sub("", capture)
+    lines = [" ".join(line.split()) for line in plain.splitlines()]
+    return (
+        any(CLAUDE_RATE_LIMIT_COMMAND in line for line in lines)
+        and any("What do you want to do?" in line for line in lines)
+        and any(
+            re.search(
+                rf"(?:^[❯>]\s*)?1\.\s*{re.escape(CLAUDE_RATE_LIMIT_OPTION_ONE)}\s*$",
+                line,
+            )
+            for line in lines
+        )
+    )
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -767,6 +794,7 @@ class AgentmonService:
                     session_id=session_id or None,
                     repository=repository,
                     window_name=window_name,
+                    tmux_pane_id=_pane_id,
                 )
             )
         return runs
@@ -864,6 +892,50 @@ class AgentmonService:
         window = run.location.split(":", 1)[1].split(".", 1)[0]
         session = run.location.split(":", 1)[0]
         _run([self.tmux, "-S", self.socket, "select-window", "-t", f"{session}:{window}"])
+
+    @staticmethod
+    def _tmux_pane_target(run: AgentRun) -> str:
+        """Use the selected agent pane when a window contains several panes."""
+        return run.tmux_pane_id or run.location
+
+    def rate_limit_options_visible(self, run: AgentRun) -> bool:
+        """Return whether a Claude run is showing its rate-limit options menu."""
+        if run.agent not in {"claude", "claude-code"} or run.state == "exited":
+            return False
+        result = _run(
+            [
+                self.tmux,
+                "-S",
+                self.socket,
+                "capture-pane",
+                "-p",
+                "-t",
+                self._tmux_pane_target(run),
+            ],
+            check=False,
+        )
+        return result.returncode == 0 and is_claude_rate_limit_options_dialog(
+            result.stdout
+        )
+
+    def auto_wait_if_rate_limited(self, run: AgentRun) -> bool:
+        """Confirm Claude's wait option only if its rate-limit menu is visible."""
+        if not self.rate_limit_options_visible(run):
+            return False
+        result = _run(
+            [
+                self.tmux,
+                "-S",
+                self.socket,
+                "send-keys",
+                "-t",
+                self._tmux_pane_target(run),
+                "Home",
+                "Enter",
+            ],
+            check=False,
+        )
+        return result.returncode == 0
 
     def open_shell_window(self, run: AgentRun) -> str:
         """Create and select a shell window in the agent's current directory."""

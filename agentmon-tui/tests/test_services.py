@@ -15,6 +15,7 @@ from agentmon.services import (
     CommandError,
     discover_repository,
     discover_socket,
+    is_claude_rate_limit_options_dialog,
 )
 from agentmon.transcript import Transcript
 
@@ -390,6 +391,168 @@ def test_runs_include_hmux_agent_session_id(
     assert "#{pane_agent_session_id}" in calls[0][-1]
 
 
+def test_detects_claude_rate_limit_options_dialog() -> None:
+    capture = """
+    ❯ /rate-limit-options
+
+    ──────────────────────────────────────────────────────────────────────────
+      What do you want to do?
+
+      ❯ 1. Stop and wait for limit to reset
+        2. Upgrade your plan
+        3. Upgrade to Team plan
+
+      Enter to confirm · Esc to cancel
+    """
+
+    assert is_claude_rate_limit_options_dialog(capture)
+
+
+@pytest.mark.parametrize(
+    "capture",
+    (
+        "❯ /rate-limit-options\n",
+        "What do you want to do?\n1. Upgrade your plan\n",
+        "❯ /rate-limit-options\nWhat do you want to do?\n1. Upgrade your plan\n",
+    ),
+)
+def test_rate_limit_detector_requires_the_complete_menu(capture: str) -> None:
+    assert not is_claude_rate_limit_options_dialog(capture)
+
+
+def test_auto_wait_if_rate_limited_rechecks_and_confirms_option_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agentmon import services
+
+    calls: list[list[str]] = []
+
+    capture = (
+        "❯ /rate-limit-options\n"
+        "What do you want to do?\n"
+        "❯ 1. Stop and wait for limit to reset\n"
+    )
+
+    def fake_run(args: list[str], **kwargs: object):
+        calls.append(args)
+        stdout = capture if "capture-pane" in args else ""
+        return subprocess.CompletedProcess(args, 0, stdout, "")
+
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+    run = AgentRun(
+        "window:0:2",
+        "0:2",
+        "claude-run",
+        "blocked",
+        "claude",
+        Path("/tmp/run"),
+        tmux_pane_id="%pane",
+    )
+    monkeypatch.setattr(services, "_run", fake_run)
+
+    assert service.auto_wait_if_rate_limited(run)
+    assert calls == [
+        [
+            "tmux",
+            "-S",
+            "/tmp/hmux.sock",
+            "capture-pane",
+            "-p",
+            "-t",
+            "%pane",
+        ],
+        [
+            "tmux",
+            "-S",
+            "/tmp/hmux.sock",
+            "send-keys",
+            "-t",
+            "%pane",
+            "Home",
+            "Enter",
+        ]
+    ]
+
+
+def test_auto_wait_if_rate_limited_does_not_send_when_menu_is_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agentmon import services
+
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "❯ /rate-limit-options\n", "")
+
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+    run = AgentRun(
+        "window:0:2",
+        "0:2",
+        "claude-run",
+        "blocked",
+        "claude",
+        Path("/tmp/run"),
+        tmux_pane_id="%pane",
+    )
+    monkeypatch.setattr(services, "_run", fake_run)
+
+    assert not service.auto_wait_if_rate_limited(run)
+    assert calls == [
+        [
+            "tmux",
+            "-S",
+            "/tmp/hmux.sock",
+            "capture-pane",
+            "-p",
+            "-t",
+            "%pane",
+        ]
+    ]
+
+
+def test_rate_limit_options_visible_captures_the_run_pane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agentmon import services
+
+    capture = (
+        "❯ /rate-limit-options\n"
+        "What do you want to do?\n"
+        "❯ 1. Stop and wait for limit to reset\n"
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, capture, "")
+
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+    run = AgentRun(
+        "window:0:2",
+        "0:2",
+        "claude-run",
+        "blocked",
+        "claude",
+        Path("/tmp/run"),
+        tmux_pane_id="%pane",
+    )
+    monkeypatch.setattr(services, "_run", fake_run)
+
+    assert service.rate_limit_options_visible(run)
+    assert calls == [
+        [
+            "tmux",
+            "-S",
+            "/tmp/hmux.sock",
+            "capture-pane",
+            "-p",
+            "-t",
+            "%pane",
+        ]
+    ]
+
+
 def test_runs_include_agents_from_multiple_git_repositories(
     monkeypatch: pytest.MonkeyPatch, repository: Repository
 ) -> None:
@@ -482,6 +645,7 @@ def test_runs_track_each_window_and_prefer_its_agent_pane(
     assert runs[0].location == "dev:4"
     assert runs[0].agent == "codex"
     assert runs[0].session_id == "agent-session"
+    assert runs[0].tmux_pane_id == "%2"
     assert runs[1].location == "dev:5"
     assert runs[1].agent == "window"
     assert runs[1].state == "none"
@@ -491,6 +655,7 @@ def test_runs_track_each_window_and_prefer_its_agent_pane(
     assert runs[3].location == "dev:7"
     assert runs[3].agent == "codex"
     assert runs[3].session_id == "side-session"
+    assert runs[3].tmux_pane_id == "%6"
     assert runs[3].worktree_state == "not-git"
 
 

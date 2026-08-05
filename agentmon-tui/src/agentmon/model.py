@@ -68,6 +68,7 @@ class AgentRun:
     session_id: str | None = None
     repository: Repository | None = None
     window_name: str = ""
+    tmux_pane_id: str | None = None
 
 
 @dataclass(frozen=True)
