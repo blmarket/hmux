@@ -4091,7 +4091,9 @@ pub(super) fn vars_full(
     // `pid` only by truthiness.
     v.set("pid", server_pid().to_string())
         .set("socket_path", st.socket_path().to_string_lossy())
-        .set("version", super::TMUX_VERSION);
+        .set("version", super::TMUX_VERSION)
+        .set("server_sessions", st.sessions().len().to_string())
+        .set("next_session_id", format!("${}", st.next_session_id()));
     v.set("session_name", sess.name.clone())
         .set("session_id", format!("${}", sess.id))
         .set("session_windows", sess.windows.len().to_string())
@@ -4175,6 +4177,16 @@ pub(super) fn vars_full(
         // MRU window-index stack (current window first). tmux keys `#{session_stack}`
         // on recency; the current window sits at the top.
         .set("session_stack", session_stack(sess));
+    // tmux keeps a session's windows in an index-keyed tree, so the "first" and
+    // "last" window are the lowest and highest index, not the ends of the list.
+    let lowest_window_index = sess.windows.iter().map(|link| link.index).min();
+    let highest_window_index = sess.windows.iter().map(|link| link.index).max();
+    if let Some(index) = sess.windows.get(sess.active).map(|link| link.index) {
+        v.set("active_window_index", index.to_string());
+    }
+    if let Some(index) = highest_window_index {
+        v.set("last_window_index", index.to_string());
+    }
     if let Some(link) = sess.windows.get(win_idx) {
         let win = st.window_for_link(link);
         let window_options = win.options(st.global_options());
@@ -4242,6 +4254,22 @@ pub(super) fn vars_full(
             .set("window_active", if is_active { "1" } else { "0" })
             .set("window_flags", window_flags)
             .set("window_last_flag", if is_last { "1" } else { "0" })
+            .set(
+                "window_start_flag",
+                if Some(link.index) == lowest_window_index {
+                    "1"
+                } else {
+                    "0"
+                },
+            )
+            .set(
+                "window_end_flag",
+                if Some(link.index) == highest_window_index {
+                    "1"
+                } else {
+                    "0"
+                },
+            )
             .set(
                 "window_bell_flag",
                 if link.alert_flags & super::state::ALERT_BELL != 0 {

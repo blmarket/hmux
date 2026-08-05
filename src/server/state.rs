@@ -5177,6 +5177,12 @@ impl ServerState {
         &self.sessions
     }
 
+    /// The id the next session created will get, as `#{next_session_id}`
+    /// reports it.
+    pub(crate) fn next_session_id(&self) -> u32 {
+        self.next_session_id
+    }
+
     pub(crate) fn session_mut(&mut self, session: usize) -> &mut Session {
         &mut self.sessions[session]
     }
