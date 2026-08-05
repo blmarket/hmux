@@ -20,7 +20,8 @@ use crate::server::state::SharedState;
 use crate::server::task::{ReadySet, TaskState};
 use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::Frame;
-use crate::tmux::traits::{FrameWriter, NonblockingFrameReader};
+use crate::server::attach::FrameSink;
+use crate::tmux::traits::NonblockingFrameReader;
 
 use super::super::actor::ActorRef;
 use super::super::driver::Outbox;
@@ -152,7 +153,7 @@ impl AttachOutput {
     }
 }
 
-impl FrameWriter for AttachOutput {
+impl FrameSink for AttachOutput {
     fn send(&mut self, frame: Frame) -> io::Result<()> {
         let bytes = encode_bytes(&frame).len();
         if bytes > ATTACH_QUEUE_LIMIT.saturating_sub(self.bytes) {

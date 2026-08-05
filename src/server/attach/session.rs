@@ -37,7 +37,7 @@ impl AttachSession {
         writer: &mut W,
     ) -> Result<Self, AttachStartFailure>
     where
-        W: FrameWriter + ?Sized,
+        W: FrameSink + ?Sized,
     {
         let render_fd_borrowed = client_tty.render_fd();
         let input_fd_borrowed = client_tty.input_fd();
@@ -410,7 +410,7 @@ impl AttachSession {
     ) -> io::Result<AttachDrive>
     where
         R: NonblockingFrameReader,
-        W: FrameWriter,
+        W: FrameSink,
     {
         match self.finish {
             AttachFinishState::Running => unreachable!("finish drive while running"),
@@ -686,7 +686,7 @@ impl AttachSession {
     ) -> io::Result<AttachDrive>
     where
         R: NonblockingFrameReader,
-        W: FrameWriter,
+        W: FrameSink,
     {
         if self.finish != AttachFinishState::Running {
             return self.drive_finish(state, ready, reader, writer);
@@ -734,7 +734,7 @@ impl AttachSession {
         writer: &mut W,
     ) -> io::Result<AttachNotificationOutcome>
     where
-        W: FrameWriter,
+        W: FrameSink,
     {
         let stable_target = self.compositor.target.stable_target.clone();
         let target = stable_target.as_str();
@@ -1058,7 +1058,7 @@ impl AttachSession {
     ) -> io::Result<Option<AttachDrive>>
     where
         R: NonblockingFrameReader,
-        W: FrameWriter,
+        W: FrameSink,
     {
         let target = self.compositor.target.stable_target.as_str();
         match reader.try_recv() {

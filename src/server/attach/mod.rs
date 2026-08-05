@@ -43,7 +43,7 @@ use std::time::{Duration, Instant};
 
 use crate::integration::status::StatusHub;
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
-use crate::tmux::traits::{FrameWriter, NonblockingFrameReader};
+use crate::tmux::traits::NonblockingFrameReader;
 
 use super::cmd_send_keys::base64_encode;
 use super::input_keys::PaneKey;
@@ -368,6 +368,16 @@ struct AttachCommands {
     /// would silently drop every binding but the last.
     pending: VecDeque<AttachCommandRequest>,
     deferred_prompts: VecDeque<AttachCommandRequest>,
+}
+
+/// Where the attach compositor puts the frames it produces.
+///
+/// Deliberately not one of the wire traits: the compositor does not own a
+/// connection, it hands finished frames to whichever protocol driver is
+/// carrying this client. The queue behind this decides what "full" means and
+/// reports it as [`io::ErrorKind::WouldBlock`].
+pub(crate) trait FrameSink {
+    fn send(&mut self, frame: Frame) -> io::Result<()>;
 }
 
 pub(crate) struct AttachCommandRequest {
@@ -1577,7 +1587,7 @@ pub(crate) fn start_attach_session<W>(
     writer: &mut W,
 ) -> Result<AttachSession, AttachStartFailure>
 where
-    W: FrameWriter + ?Sized,
+    W: FrameSink + ?Sized,
 {
     let target = match command::classify(args) {
         command::Intent::Attach => {
