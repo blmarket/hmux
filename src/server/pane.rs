@@ -324,30 +324,10 @@ pub(crate) struct NativePaneObservation {
     /// Last DECSCUSR parameter emitted by the pane (0..=6). The VT formatter
     /// restores cursor position but does not serialize this terminal state.
     cursor_shape: Cell<u8>,
-    bracketed_paste: Cell<bool>,
-    /// Whether the pane asked for focus reporting (DECSET 1004).
-    focus_reporting: Cell<bool>,
-    /// Whether the pane asked for theme updates (DECSET 2031).
-    theme_updates: Cell<bool>,
-    /// The pane's DECSET mouse modes: 0 for none, else 1000/1002/1003, with
-    /// 1005 and 1006 as separate flags.
-    mouse_tracking_mode: Cell<u8>,
-    mouse_utf8: Cell<bool>,
-    mouse_sgr: Cell<bool>,
-    /// The terminal modes tmux publishes as `#{insert_flag}`,
-    /// `#{origin_flag}`, `#{wrap_flag}`, `#{cursor_flag}` and
-    /// `#{cursor_blinking}`. Ghostty owns the emulation; these are tracked
+    /// The pane's reportable VT modes, republished as one snapshot at the end
+    /// of each output batch. Ghostty owns the emulation; these are tracked
     /// beside it because it does not expose them.
-    insert_mode: Cell<bool>,
-    origin_mode: Cell<bool>,
-    wrap_mode: Cell<bool>,
-    cursor_visible: Cell<bool>,
-    cursor_blinking: Cell<bool>,
-    /// DECCKM, DECKPAM and the requested `modifyOtherKeys` level, which
-    /// together decide how a key is spelled for this pane.
-    cursor_keys: Cell<bool>,
-    application_keypad: Cell<bool>,
-    extended_keys_request: Cell<u8>,
+    modes: Cell<PaneModeSnapshot>,
     /// Set when the pane sent DSR ?996 and is waiting for an answer.
     theme_query: Cell<bool>,
     background: RefCell<String>,
@@ -932,21 +912,8 @@ impl NativePaneObservation {
             redraw_detector: RefCell::new(ScrollRedrawDetector::new(rows)),
             control_output: RefCell::new(ControlOutputJournal::default()),
             cursor_shape: Cell::new(0),
-            bracketed_paste: Cell::new(false),
-            focus_reporting: Cell::new(false),
-            theme_updates: Cell::new(false),
+            modes: Cell::new(PaneModeSnapshot::default()),
             theme_query: Cell::new(false),
-            mouse_tracking_mode: Cell::new(0),
-            mouse_utf8: Cell::new(false),
-            mouse_sgr: Cell::new(false),
-            insert_mode: Cell::new(false),
-            origin_mode: Cell::new(false),
-            wrap_mode: Cell::new(true),
-            cursor_visible: Cell::new(true),
-            cursor_blinking: Cell::new(false),
-            cursor_keys: Cell::new(false),
-            application_keypad: Cell::new(false),
-            extended_keys_request: Cell::new(0),
             background: RefCell::new("default".to_string()),
             foreground: RefCell::new("default".to_string()),
             cursor_colour: RefCell::new("none".to_string()),
@@ -983,15 +950,12 @@ impl NativePaneObservation {
     /// be applied to `extended_request`, which is why this is not already a
     /// `PaneKeyModes`.
     pub(crate) fn key_state(&self) -> PaneKeyState {
+        let modes = self.modes.get();
         PaneKeyState {
-            cursor_keys: self.cursor_keys.get(),
-            application_keypad: self.application_keypad.get(),
-            bracketed_paste: self.bracketed_paste.get(),
-            extended_request: match self.extended_keys_request.get() {
-                1 => ExtendedKeys::Standard,
-                2 => ExtendedKeys::All,
-                _ => ExtendedKeys::Off,
-            },
+            cursor_keys: modes.cursor_keys,
+            application_keypad: modes.application_keypad,
+            bracketed_paste: modes.bracketed_paste,
+            extended_request: modes.extended_keys_request,
         }
     }
 
@@ -1043,28 +1007,25 @@ impl NativePaneObservation {
     }
 
     fn terminal_modes(&self) -> PaneTerminalModes {
+        let modes = self.modes.get();
         PaneTerminalModes {
-            insert: self.insert_mode.get(),
-            origin: self.origin_mode.get(),
-            wrap: self.wrap_mode.get(),
-            cursor_visible: self.cursor_visible.get(),
-            cursor_blinking: self.cursor_blinking.get(),
-            keypad: self.application_keypad.get(),
-            cursor_keys: self.cursor_keys.get(),
+            insert: modes.insert_mode,
+            origin: modes.origin_mode,
+            wrap: modes.wrap_mode,
+            cursor_visible: modes.cursor_visible,
+            cursor_blinking: modes.cursor_blinking,
+            keypad: modes.application_keypad,
+            cursor_keys: modes.cursor_keys,
             cursor_shape: PaneCursorShape::from_parameter(self.cursor_shape.get()),
         }
     }
 
     pub(crate) fn mouse_modes(&self) -> PaneMouseModes {
+        let modes = self.modes.get();
         PaneMouseModes {
-            tracking: match self.mouse_tracking_mode.get() {
-                1 => Some(MouseTrackingMode::Standard),
-                2 => Some(MouseTrackingMode::Button),
-                3 => Some(MouseTrackingMode::All),
-                _ => None,
-            },
-            utf8: self.mouse_utf8.get(),
-            sgr: self.mouse_sgr.get(),
+            tracking: modes.mouse_tracking,
+            utf8: modes.mouse_utf8,
+            sgr: modes.mouse_sgr,
         }
     }
 
@@ -1928,7 +1889,7 @@ impl Pane {
     }
 
     pub(crate) fn bracketed_paste_enabled(&self) -> bool {
-        self.observation.bracketed_paste.get()
+        self.observation.modes.get().bracketed_paste
     }
 
     /// The pane's DECCKM, DECKPAM and `modifyOtherKeys` state, which decide how
@@ -1939,12 +1900,12 @@ impl Pane {
 
     /// Whether the pane asked to be told when focus moves (DECSET 1004).
     pub(crate) fn focus_reporting_enabled(&self) -> bool {
-        self.observation.focus_reporting.get()
+        self.observation.modes.get().focus_reporting
     }
 
     /// Whether the pane asked to be told when the theme changes (DECSET 2031).
     pub(crate) fn theme_updates_enabled(&self) -> bool {
-        self.observation.theme_updates.get()
+        self.observation.modes.get().theme_updates
     }
 
     /// The pane program's DECSET mouse reporting state, which decides both
@@ -2406,7 +2367,7 @@ impl PaneIo {
                 // one also decides whether the cursor blinks, odd styles
                 // blinking and even ones steady.
                 if shape != 0 {
-                    self.mode_query_detector.cursor_blinking = !shape.is_multiple_of(2);
+                    self.mode_query_detector.modes.cursor_blinking = !shape.is_multiple_of(2);
                 }
             }
             if let Some(reply) = self.mode_query_detector.feed_byte(byte) {
@@ -2418,7 +2379,7 @@ impl PaneIo {
                     PaneCursorShape::from_parameter(
                         self.observation.cursor_shape.get(),
                     ),
-                    self.mode_query_detector.cursor_blinking,
+                    self.mode_query_detector.modes.cursor_blinking,
                 ));
             }
             if let Some(update) = self.osc_detector.feed_byte(byte) {
@@ -2467,51 +2428,7 @@ impl PaneIo {
                 }
             }
         }
-        self.observation
-            .bracketed_paste
-            .set(self.mode_query_detector.bracketed_paste);
-        self.observation
-            .focus_reporting
-            .set(self.mode_query_detector.focus_reporting);
-        self.observation
-            .theme_updates
-            .set(self.mode_query_detector.theme_updates);
-        self.observation.mouse_tracking_mode.set(match self.mode_query_detector.mouse_tracking {
-                None => 0,
-                Some(MouseTrackingMode::Standard) => 1,
-                Some(MouseTrackingMode::Button) => 2,
-                Some(MouseTrackingMode::All) => 3,
-            });
-        self.observation
-            .mouse_utf8
-            .set(self.mode_query_detector.mouse_utf8);
-        self.observation
-            .mouse_sgr
-            .set(self.mode_query_detector.mouse_sgr);
-        self.observation
-            .insert_mode
-            .set(self.mode_query_detector.insert_mode);
-        self.observation
-            .origin_mode
-            .set(self.mode_query_detector.origin_mode);
-        self.observation
-            .wrap_mode
-            .set(self.mode_query_detector.wrap_mode);
-        self.observation
-            .cursor_visible
-            .set(self.mode_query_detector.cursor_visible);
-        self.observation
-            .cursor_blinking
-            .set(self.mode_query_detector.cursor_blinking);
-        self.observation
-            .cursor_keys
-            .set(self.mode_query_detector.cursor_keys);
-        self.observation.application_keypad.set(self.mode_query_detector.application_keypad);
-        self.observation.extended_keys_request.set(match self.mode_query_detector.extended_keys_request {
-                ExtendedKeys::Off => 0,
-                ExtendedKeys::Standard => 1,
-                ExtendedKeys::All => 2,
-            });
+        self.observation.modes.set(self.mode_query_detector.modes);
         if std::mem::take(&mut self.mode_query_detector.theme_query) {
             self.observation.theme_query.set(true);
         }
@@ -3375,16 +3292,16 @@ struct CursorShapeDetector {
 }
 
 /// Track the DEC modes tmux answers locally and recognize DECRQM queries.
-struct ModeQueryDetector {
-    tail: VecDeque<u8>,
-    synchronized_output: bool,
+/// The reportable VT modes a pane's byte stream has set, in their own types.
+/// The detector mutates them in place; the observation republishes the whole
+/// snapshot at the end of each output batch.
+#[derive(Clone, Copy)]
+struct PaneModeSnapshot {
     cursor_visible: bool,
+    /// DECSET 2004: the pane wants the paste markers.
     bracketed_paste: bool,
     /// DECSET 1004: the pane asked to be told when focus moves.
     focus_reporting: bool,
-    /// Whether the pane asked which theme it is under (DSR ?996) and has
-    /// not been answered yet.
-    theme_query: bool,
     /// DECSET 2031: the pane asked to be told when the theme changes.
     theme_updates: bool,
     /// The pane program's mouse reporting mode, if any. tmux keeps 1000/1002/
@@ -3412,6 +3329,38 @@ struct ModeQueryDetector {
     /// What it *gets* also depends on the `extended-keys` option, which is
     /// applied where the key is encoded rather than here.
     extended_keys_request: ExtendedKeys,
+}
+
+impl Default for PaneModeSnapshot {
+    /// A terminal that has been sent none of these sequences: tmux starts a
+    /// screen with the cursor shown and wrapping on.
+    fn default() -> Self {
+        Self {
+            cursor_visible: true,
+            bracketed_paste: false,
+            focus_reporting: false,
+            theme_updates: false,
+            mouse_tracking: None,
+            mouse_utf8: false,
+            mouse_sgr: false,
+            insert_mode: false,
+            origin_mode: false,
+            wrap_mode: true,
+            cursor_blinking: false,
+            cursor_keys: false,
+            application_keypad: false,
+            extended_keys_request: ExtendedKeys::Off,
+        }
+    }
+}
+
+struct ModeQueryDetector {
+    tail: VecDeque<u8>,
+    synchronized_output: bool,
+    /// Whether the pane asked which theme it is under (DSR ?996) and has
+    /// not been answered yet.
+    theme_query: bool,
+    modes: PaneModeSnapshot,
 }
 
 /// A pane's own key-output modes, before the `extended-keys` option decides how
@@ -3545,28 +3494,15 @@ impl Default for ModeQueryDetector {
         Self {
             tail: VecDeque::with_capacity(16),
             synchronized_output: false,
-            cursor_visible: true,
-            bracketed_paste: false,
-            focus_reporting: false,
-            theme_updates: false,
             theme_query: false,
-            mouse_tracking: None,
-            mouse_utf8: false,
-            mouse_sgr: false,
-            insert_mode: false,
-            origin_mode: false,
-            wrap_mode: true,
-            cursor_blinking: false,
-            cursor_keys: false,
-            application_keypad: false,
-            extended_keys_request: ExtendedKeys::Off,
+            modes: PaneModeSnapshot::default(),
         }
     }
 }
 
 impl ModeQueryDetector {
     fn mouse_mode_status(&self, mode: MouseTrackingMode) -> u8 {
-        if self.mouse_tracking == Some(mode) {
+        if self.modes.mouse_tracking == Some(mode) {
             1
         } else {
             2
@@ -3585,76 +3521,76 @@ impl ModeQueryDetector {
         } else if tail.ends_with(b"\x1b[?2026l") {
             self.synchronized_output = false;
         } else if tail.ends_with(b"\x1b[?25h") {
-            self.cursor_visible = true;
+            self.modes.cursor_visible = true;
         } else if tail.ends_with(b"\x1b[?25l") {
-            self.cursor_visible = false;
+            self.modes.cursor_visible = false;
         } else if tail.ends_with(b"\x1b[?2004h") {
-            self.bracketed_paste = true;
+            self.modes.bracketed_paste = true;
         } else if tail.ends_with(b"\x1b[?2004l") {
-            self.bracketed_paste = false;
+            self.modes.bracketed_paste = false;
         } else if tail.ends_with(b"\x1b[?1004h") {
-            self.focus_reporting = true;
+            self.modes.focus_reporting = true;
         } else if tail.ends_with(b"\x1b[?1004l") {
-            self.focus_reporting = false;
+            self.modes.focus_reporting = false;
         } else if tail.ends_with(b"\x1b[?2031h") {
-            self.theme_updates = true;
+            self.modes.theme_updates = true;
         } else if tail.ends_with(b"\x1b[?2031l") {
-            self.theme_updates = false;
+            self.modes.theme_updates = false;
         } else if tail.ends_with(b"\x1b[?1000h") {
-            self.mouse_tracking = Some(MouseTrackingMode::Standard);
+            self.modes.mouse_tracking = Some(MouseTrackingMode::Standard);
         } else if tail.ends_with(b"\x1b[?1002h") {
-            self.mouse_tracking = Some(MouseTrackingMode::Button);
+            self.modes.mouse_tracking = Some(MouseTrackingMode::Button);
         } else if tail.ends_with(b"\x1b[?1003h") {
-            self.mouse_tracking = Some(MouseTrackingMode::All);
+            self.modes.mouse_tracking = Some(MouseTrackingMode::All);
         } else if tail.ends_with(b"\x1b[?1000l")
             || tail.ends_with(b"\x1b[?1001l")
             || tail.ends_with(b"\x1b[?1002l")
             || tail.ends_with(b"\x1b[?1003l")
         {
-            self.mouse_tracking = None;
+            self.modes.mouse_tracking = None;
         } else if tail.ends_with(b"\x1b[?1005h") {
-            self.mouse_utf8 = true;
+            self.modes.mouse_utf8 = true;
         } else if tail.ends_with(b"\x1b[?1005l") {
-            self.mouse_utf8 = false;
+            self.modes.mouse_utf8 = false;
         } else if tail.ends_with(b"\x1b[?1006h") {
-            self.mouse_sgr = true;
+            self.modes.mouse_sgr = true;
         } else if tail.ends_with(b"\x1b[?1006l") {
-            self.mouse_sgr = false;
+            self.modes.mouse_sgr = false;
         } else if tail.ends_with(b"\x1b[4h") {
-            self.insert_mode = true;
+            self.modes.insert_mode = true;
         } else if tail.ends_with(b"\x1b[4l") {
-            self.insert_mode = false;
+            self.modes.insert_mode = false;
         } else if tail.ends_with(b"\x1b[?6h") {
-            self.origin_mode = true;
+            self.modes.origin_mode = true;
         } else if tail.ends_with(b"\x1b[?6l") {
-            self.origin_mode = false;
+            self.modes.origin_mode = false;
         } else if tail.ends_with(b"\x1b[?7h") {
-            self.wrap_mode = true;
+            self.modes.wrap_mode = true;
         } else if tail.ends_with(b"\x1b[?7l") {
-            self.wrap_mode = false;
+            self.modes.wrap_mode = false;
         } else if tail.ends_with(b"\x1b[?12h") {
-            self.cursor_blinking = true;
+            self.modes.cursor_blinking = true;
         } else if tail.ends_with(b"\x1b[?12l") {
-            self.cursor_blinking = false;
+            self.modes.cursor_blinking = false;
         } else if tail.ends_with(b"\x1b[?1h") {
-            self.cursor_keys = true;
+            self.modes.cursor_keys = true;
         } else if tail.ends_with(b"\x1b[?1l") {
-            self.cursor_keys = false;
+            self.modes.cursor_keys = false;
         } else if tail.ends_with(b"\x1b=") {
-            self.application_keypad = true;
+            self.modes.application_keypad = true;
         } else if tail.ends_with(b"\x1b>") {
-            self.application_keypad = false;
+            self.modes.application_keypad = false;
         } else if tail.ends_with(b"\x1b[>4;2m") {
-            self.extended_keys_request = ExtendedKeys::All;
+            self.modes.extended_keys_request = ExtendedKeys::All;
         } else if tail.ends_with(b"\x1b[>4;1m") {
-            self.extended_keys_request = ExtendedKeys::Standard;
+            self.modes.extended_keys_request = ExtendedKeys::Standard;
         } else if tail.ends_with(b"\x1b[>4;0m")
             || tail.ends_with(b"\x1b[>4m")
             || tail.ends_with(b"\x1b[>4n")
         {
             // `CSI > 4 m` with no level, and `CSI > 4 n`, both put the keyboard
             // back to the standard forms.
-            self.extended_keys_request = ExtendedKeys::Off;
+            self.modes.extended_keys_request = ExtendedKeys::Off;
         } else if tail.ends_with(b"\x1b[?996n") {
             // DSR ?996: the pane is asking which theme it is running under.
             self.theme_query = true;
@@ -3681,21 +3617,21 @@ impl ModeQueryDetector {
                             }
                         }
                         25 => {
-                            if self.cursor_visible {
+                            if self.modes.cursor_visible {
                                 1
                             } else {
                                 2
                             }
                         }
                         1004 => {
-                            if self.focus_reporting {
+                            if self.modes.focus_reporting {
                                 1
                             } else {
                                 2
                             }
                         }
                         2031 => {
-                            if self.theme_updates {
+                            if self.modes.theme_updates {
                                 1
                             } else {
                                 2
@@ -3705,14 +3641,14 @@ impl ModeQueryDetector {
                         1002 => self.mouse_mode_status(MouseTrackingMode::Button),
                         1003 => self.mouse_mode_status(MouseTrackingMode::All),
                         1005 => {
-                            if self.mouse_utf8 {
+                            if self.modes.mouse_utf8 {
                                 1
                             } else {
                                 2
                             }
                         }
                         1006 => {
-                            if self.mouse_sgr {
+                            if self.modes.mouse_sgr {
                                 1
                             } else {
                                 2
