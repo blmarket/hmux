@@ -7897,6 +7897,9 @@ pub(super) fn buffer_vars(st: &ServerState, name: &str, data: &[u8]) -> Vars {
     vars.set("buffer_name", name.to_owned())
         .set("buffer_size", data.len().to_string())
         .set("buffer_sample", String::from_utf8_lossy(data).into_owned())
+        // `buffer_sample` is the shortened, printable form a listing shows;
+        // `buffer_full` is the buffer's whole contents.
+        .set("buffer_full", String::from_utf8_lossy(data).into_owned())
         .set(
             "buffer_created",
             st.buffer_created(name)
