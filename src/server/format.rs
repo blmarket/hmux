@@ -615,7 +615,11 @@ impl Expander<'_> {
                 .iter()
                 .any(|modifier| *modifier == "E" || *modifier == "T")
             {
-                let mut value = self.lookup(vars, name).unwrap_or_default();
+                // `E`/`T` re-expand what the body resolved to, and a body that
+                // is itself a format is expanded on the way in — tmux's
+                // "expanding inner format" step, which runs before the
+                // modifier's own second pass.
+                let mut value = self.resolve_body(name, vars, depth);
                 value = self.expand(&value, vars, depth);
                 if modifiers.contains(&"T") {
                     value = expand_time_string(&value);
