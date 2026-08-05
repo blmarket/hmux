@@ -333,10 +333,9 @@ impl PaneHandle {
         self.observation.contract_title()
     }
 
-    /// Read title and a bounded live-bottom tail under one terminal lock.
-    pub(crate) fn terminal_tail(&self, max_rows: u16) -> io::Result<TerminalTail> {
-        let (title, text) = self.observation.contract_terminal_tail(max_rows as usize)?;
-        Ok(TerminalTail { title, text })
+    /// Read a bounded live-bottom tail of the terminal screen.
+    pub(crate) fn terminal_tail(&self, max_rows: u16) -> io::Result<String> {
+        self.observation.contract_terminal_tail(max_rows as usize)
     }
 
     fn output_revision(&self) -> u64 {
@@ -349,14 +348,6 @@ impl PaneHandle {
 pub(crate) struct PaneProcess {
     pub(crate) child_pid: Option<u32>,
     pub(crate) exited: bool,
-}
-
-/// Coherent title and screen inputs for a screen-aware observer.
-#[allow(dead_code)]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct TerminalTail {
-    pub(crate) title: Option<String>,
-    pub(crate) text: String,
 }
 
 struct ObservationState {
@@ -513,7 +504,7 @@ mod tests {
         }
         server.reconcile_event_observations().unwrap();
         let tail = handle.terminal_tail(1).expect("tail");
-        assert_eq!(tail.text, "second");
+        assert_eq!(tail, "second");
 
         assert!(server.state().borrow_mut().kill_session("0"));
         server.reconcile_event_observations().unwrap();
@@ -535,7 +526,7 @@ mod tests {
         ));
         assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
         assert_eq!(
-            handle.terminal_tail(1).expect("retained tail").text,
+            handle.terminal_tail(1).expect("retained tail"),
             "second"
         );
     }

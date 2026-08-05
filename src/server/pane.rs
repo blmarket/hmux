@@ -1196,18 +1196,15 @@ impl NativePaneObservation {
         Ok(self.announced_title())
     }
 
-    /// Return the terminal facts needed by the native observation boundary in
-    /// one terminal-lock critical section. Keeping this operation here avoids
-    /// a title read and a tail read observing different VT states.
+    /// Return a bounded tail of the terminal screen for the native observation
+    /// boundary.
     #[allow(dead_code)]
-    pub(crate) fn contract_terminal_tail(
-        &self,
-        max_rows: usize,
-    ) -> io::Result<(Option<String>, String)> {
+    pub(crate) fn contract_terminal_tail(&self, max_rows: usize) -> io::Result<String> {
         let terminal = self.term.borrow_mut();
-        let title = terminal.title().map_err(ghostty_err)?;
-        let text = trailing_lines(&terminal.dump_plain().map_err(ghostty_err)?, max_rows);
-        Ok((title, text))
+        Ok(trailing_lines(
+            &terminal.dump_plain().map_err(ghostty_err)?,
+            max_rows,
+        ))
     }
 }
 
