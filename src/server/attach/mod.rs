@@ -1935,6 +1935,44 @@ fn scrollbar_style_field(style: &str, name: &str, default: u16) -> u16 {
         .unwrap_or(default)
 }
 
+/// The glyph a border cell of this shape takes under `pane-border-lines`, as
+/// tmux's `screen_redraw_border_set` picks it. `None` means the cell joins no
+/// two panes, so nothing is drawn there.
+///
+/// tmux writes the `single` set as ACS names the terminal's line-drawing
+/// charset resolves; hmux emits the Unicode forms the engine resolves those to,
+/// per the ACS policy in README.md. `number`, which paints each border with its
+/// pane's index rather than a line, still falls back to `single`.
+fn pane_border_cell(
+    lines: &str,
+    up: bool,
+    right: bool,
+    down: bool,
+    left: bool,
+) -> Option<&'static str> {
+    // Ordered vertical, horizontal, left join, right join, top join, bottom
+    // join, cross — tmux's `CELL_*` shapes, minus the corners a tiled layout
+    // never produces and the outside cell the fill character owns.
+    let shape = match (up, right, down, left) {
+        (true, false, true, false) => 0,
+        (false, true, false, true) => 1,
+        (true, true, true, false) => 2,
+        (true, false, true, true) => 3,
+        (false, true, true, true) => 4,
+        (true, true, false, true) => 5,
+        (true, true, true, true) => 6,
+        _ => return None,
+    };
+    let set: &[&'static str; 7] = match lines {
+        "double" => &["║", "═", "╠", "╣", "╦", "╩", "╬"],
+        "heavy" => &["┃", "━", "┣", "┫", "┳", "┻", "╋"],
+        "simple" => &["|", "-", "+", "+", "+", "+", "+"],
+        "spaces" => &[" ", " ", " ", " ", " ", " ", " "],
+        _ => &["│", "─", "├", "┤", "┬", "┴", "┼"],
+    };
+    Some(set[shape])
+}
+
 /// The horizontal border glyph `pane-border-lines` asks for, as
 /// `tty_acs_*_borders` spells it. `number` and `simple` fall back to the ASCII
 /// forms tmux uses where the terminal has no line drawing.
@@ -2979,6 +3017,10 @@ fn compose_split_frame(
     }
 
     let indicators = st.option_for_target(target, "pane-border-indicators") == Some("both");
+    let border_lines = st
+        .option_for_target(target, "pane-border-lines")
+        .unwrap_or("single")
+        .to_owned();
     let owner = |x: u16, y: u16| -> Option<u32> {
         (x < cols && y < available_rows)
             .then(|| owners[y as usize * cols as usize + x as usize])
@@ -3020,15 +3062,8 @@ fn compose_split_frame(
             let right = horizontal || separates(upper_right, lower_right);
             let down = vertical || separates(lower_left, lower_right);
             let left = horizontal || separates(upper_left, lower_left);
-            let mut cell = match (up, right, down, left) {
-                (true, false, true, false) => "│",
-                (false, true, false, true) => "─",
-                (true, true, true, false) => "├",
-                (true, false, true, true) => "┤",
-                (false, true, true, true) => "┬",
-                (true, true, false, true) => "┴",
-                (true, true, true, true) => "┼",
-                _ => continue,
+            let Some(mut cell) = pane_border_cell(&border_lines, up, right, down, left) else {
+                continue;
             };
             if indicators && vertical {
                 let pair = (left_owner, right_owner);
