@@ -344,7 +344,7 @@ fn choose_client(args: &[String], state: &mut ServerState, agents: &PaneAgents) 
         .unwrap_or("detach-client -t '%%'");
     let options = ChooseOptions::parse(args);
     let mut rows = Vec::new();
-    for client in state.attached_clients() {
+    for client in state.client_snapshots() {
         let Some(vars) = client_vars(state, agents, &client) else {
             continue;
         };
@@ -792,7 +792,7 @@ fn list_clients(args: &[String], state: &ServerState, agents: &PaneAgents) -> Co
     }
     let filter = flag_value(args, "-f");
     let mut output = String::new();
-    for client in state.attached_clients() {
+    for client in state.client_snapshots() {
         let Some(session) = state
             .sessions()
             .iter()
@@ -821,7 +821,7 @@ fn list_clients(args: &[String], state: &ServerState, agents: &PaneAgents) -> Co
 fn client_vars(
     state: &ServerState,
     agents: &PaneAgents,
-    client: &super::super::state::AttachedClient,
+    client: &super::super::state::ClientSnapshot,
 ) -> Option<format::Vars> {
     let session = state
         .sessions()

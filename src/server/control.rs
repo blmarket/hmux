@@ -1965,13 +1965,7 @@ fn control_size_is_ignored(
     client_name: &str,
     options: &ControlClientOptions,
 ) -> bool {
-    options.ignore_size
-        && state.attached_clients().iter().any(|client| {
-            client.session_id == session_id
-                && client.name != client_name
-                && !client.ignore_size
-                && (!client.control_mode || client.size_changed)
-        })
+    options.ignore_size && state.other_client_constrains_size(session_id, client_name)
 }
 
 fn is_control_refresh_operation(args: &[String]) -> bool {

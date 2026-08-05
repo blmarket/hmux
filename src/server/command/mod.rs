@@ -3962,7 +3962,7 @@ fn set_current_client_vars(
     named: Option<&str>,
     vars: &mut Vars,
 ) {
-    let clients = st.attached_clients();
+    let clients = st.client_snapshots();
     // An explicit `-c` names the client the format is evaluated for; otherwise
     // the invoking client wins when it is one of the attached clients.
     let client = named
@@ -3985,7 +3985,7 @@ fn set_current_client_vars(
     // The per-client viewport onto an oversized window. tmux leaves the offsets
     // *unset* rather than zero when the window fits, so a format testing
     // `#{window_bigger}` can tell "flush" from "panned to the origin".
-    if let Some(view) = st.client_window_offset(client) {
+    if let Some(view) = st.client_window_offset(&client.viewport()) {
         vars.set("window_bigger", if view.bigger { "1" } else { "0" });
         if view.bigger {
             vars.set("window_offset_x", view.ox.to_string())
@@ -6280,24 +6280,18 @@ fn show_messages(args: &[String], st: &ServerState) -> CommandResult {
         if show_terminals {
             let target = flag_value(args, "-t");
             let mut terminal_number = 0;
-            for client in st.attached_clients() {
+            for (name, term, terminal) in st.client_terminals() {
                 if target.is_some_and(|target| {
                     let target = target.strip_suffix(':').unwrap_or(target);
-                    client.name != target
-                        && client
-                            .name
+                    name != target
+                        && name
                             .strip_prefix("/dev/")
                             .is_none_or(|name| name != target)
                 }) {
                     continue;
                 }
-                let Some(terminal) = client.terminal else {
-                    continue;
-                };
                 output.push_str(&format!(
-                    "Terminal {terminal_number}: {} for {}, flags=0x{:x}:\n",
-                    client.term,
-                    client.name,
+                    "Terminal {terminal_number}: {term} for {name}, flags=0x{:x}:\n",
                     terminal.flags()
                 ));
                 for description in terminal.descriptions() {

@@ -2301,10 +2301,32 @@ impl ClientRenderEntry {
             .flag_state
             .display_flags_full(self.identified, self.control_mode, self.focused);
     }
+
+    /// Whether this client's terminal size constrains window sizing: a
+    /// control client contributes nothing until it declares a size.
+    fn counts_for_sizing(&self) -> bool {
+        !self.control_mode || self.size_changed
+    }
+
+    fn viewport(&self) -> ViewportClient {
+        ViewportClient {
+            session_id: self.session_id,
+            control_mode: self.control_mode,
+            cols: self.cols,
+            rows: self.rows,
+            pan_window: self.pan_window,
+            pan_ox: self.pan_ox,
+            pan_oy: self.pan_oy,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct AttachedClient {
+/// A value snapshot of one client for the format and chooser consumers
+/// outside this module (`#{client_*}` vars, `list-clients`, `choose-client`).
+/// Server-internal paths read the registry entries directly instead of
+/// materializing these.
+pub(crate) struct ClientSnapshot {
     pub(crate) session_id: u32,
     pub(crate) name: String,
     pub(crate) term: String,
@@ -2314,24 +2336,43 @@ pub(crate) struct AttachedClient {
     pub(crate) flags: String,
     pub(crate) read_only: bool,
     pub(crate) control_mode: bool,
-    pub(crate) ignore_size: bool,
-    pub(crate) size_changed: bool,
-    /// Ordering of this client's latest size declaration; higher is newer.
-    pub(crate) size_seq: u64,
     /// The window this client's pan applies to, and the pan itself.
     pub(crate) pan_window: Option<u32>,
     pub(crate) pan_ox: u16,
     pub(crate) pan_oy: u16,
-    pub(crate) terminal: Option<ResolvedTerm>,
     /// The theme this client's terminal reported (`dark`/`light`), empty until
     /// it says — tmux's `#{client_theme}`.
     pub(crate) theme: String,
-    /// Whether the client's terminal currently has focus.
-    pub(crate) focused: bool,
     /// The key table the client is in — tmux's `#{client_key_table}`.
     pub(crate) key_table: String,
     /// When this client last sent a key, in microseconds since the epoch.
     pub(crate) activity_micros: i64,
+}
+
+/// The client-side inputs of the oversized-window viewport calculation.
+#[derive(Clone, Copy)]
+pub(crate) struct ViewportClient {
+    pub(crate) session_id: u32,
+    pub(crate) control_mode: bool,
+    pub(crate) cols: u16,
+    pub(crate) rows: u16,
+    pub(crate) pan_window: Option<u32>,
+    pub(crate) pan_ox: u16,
+    pub(crate) pan_oy: u16,
+}
+
+impl ClientSnapshot {
+    pub(crate) fn viewport(&self) -> ViewportClient {
+        ViewportClient {
+            session_id: self.session_id,
+            control_mode: self.control_mode,
+            cols: self.cols,
+            rows: self.rows,
+            pan_window: self.pan_window,
+            pan_ox: self.pan_ox,
+            pan_oy: self.pan_oy,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -2663,12 +2704,12 @@ impl ClientRenderRegistry {
         })
     }
 
-    fn clients(&self) -> Vec<AttachedClient> {
+    fn snapshots(&self) -> Vec<ClientSnapshot> {
         let inner = self.inner.borrow();
         inner
             .clients
             .values()
-            .map(|entry| AttachedClient {
+            .map(|entry| ClientSnapshot {
                 session_id: entry.session_id,
                 name: entry.name.clone(),
                 term: entry.term.clone(),
@@ -2678,19 +2719,34 @@ impl ClientRenderRegistry {
                 flags: entry.flags.clone(),
                 read_only: entry.read_only,
                 control_mode: entry.control_mode,
-                ignore_size: entry.ignore_size,
-                size_changed: entry.size_changed,
-                size_seq: entry.size_seq,
                 pan_window: entry.pan_window,
                 pan_ox: entry.pan_ox,
                 pan_oy: entry.pan_oy,
-                terminal: entry.terminal.clone(),
                 theme: entry.theme.clone(),
-                focused: entry.focused,
                 key_table: entry.key_table.clone(),
                 activity_micros: entry.activity_micros,
             })
             .collect()
+    }
+
+    /// Run `f` over the live registry entries without materializing
+    /// snapshots. `f` must not touch the registry itself: the entries are
+    /// handed out under the registry borrow.
+    fn with_entries<R>(
+        &self,
+        f: impl FnOnce(std::collections::btree_map::Values<'_, u64, ClientRenderEntry>) -> R,
+    ) -> R {
+        let inner = self.inner.borrow();
+        f(inner.clients.values())
+    }
+
+    /// The viewport inputs of the client called `name`.
+    fn viewport_client(&self, name: &str) -> Option<ViewportClient> {
+        self.with_entries(|mut entries| {
+            entries
+                .find(|entry| entry.name == name)
+                .map(ClientRenderEntry::viewport)
+        })
     }
 
     /// The job tree and current session of the client called `name`, which is
@@ -5488,8 +5544,36 @@ impl ServerState {
         Rc::clone(&self.client_renders)
     }
 
-    pub(crate) fn attached_clients(&self) -> Vec<AttachedClient> {
-        self.client_renders.clients()
+    pub(crate) fn client_snapshots(&self) -> Vec<ClientSnapshot> {
+        self.client_renders.snapshots()
+    }
+
+    /// Each attached client's resolved terminal description, for
+    /// `show-messages -T`: `(name, TERM, resolved)`. The only path that pays
+    /// for a `ResolvedTerm` clone.
+    pub(crate) fn client_terminals(&self) -> Vec<(String, String, ResolvedTerm)> {
+        self.client_renders.with_entries(|entries| {
+            entries
+                .filter_map(|entry| {
+                    let terminal = entry.terminal.clone()?;
+                    Some((entry.name.clone(), entry.term.clone(), terminal))
+                })
+                .collect()
+        })
+    }
+
+    /// Whether a client other than `client_name` holds the session's size:
+    /// tmux's `ignore_client_size` — an `ignore-size` client is ignored only
+    /// while some counted client is unflagged.
+    pub(crate) fn other_client_constrains_size(&self, session_id: u32, client_name: &str) -> bool {
+        self.client_renders.with_entries(|mut entries| {
+            entries.any(|entry| {
+                entry.session_id == session_id
+                    && entry.name != client_name
+                    && !entry.ignore_size
+                    && entry.counts_for_sizing()
+            })
+        })
     }
 
     pub(crate) fn send_client_message(
@@ -5569,11 +5653,13 @@ impl ServerState {
 
     /// Whether some attached, focused client is currently showing this window.
     fn window_has_focused_client(&self, window_id: u32) -> bool {
-        self.attached_clients().into_iter().any(|client| {
-            client.focused
-                && self
-                    .current_window_of_session(client.session_id)
-                    .is_some_and(|current| current == window_id)
+        self.client_renders.with_entries(|mut entries| {
+            entries.any(|entry| {
+                entry.focused
+                    && self
+                        .current_window_of_session(entry.session_id)
+                        .is_some_and(|current| current == window_id)
+            })
         })
     }
 
@@ -10743,11 +10829,11 @@ impl ServerState {
     /// tmux's `server_client_check_window_resize`: apply a deferred size once
     /// some attached session is showing the window.
     fn flush_pending_window_sizes(&mut self) -> io::Result<()> {
-        let visible = self
-            .attached_clients()
-            .iter()
-            .filter_map(|client| self.current_window_of_session(client.session_id))
-            .collect::<BTreeSet<_>>();
+        let visible = self.client_renders.with_entries(|entries| {
+            entries
+                .filter_map(|entry| self.current_window_of_session(entry.session_id))
+                .collect::<BTreeSet<_>>()
+        });
         let mut result = Ok(());
         for window_id in visible {
             let Some(size) = self
@@ -10824,42 +10910,44 @@ impl ServerState {
     /// The clients whose terminal size counts, with their pane area already
     /// measured — tmux's `ignore_client_size` plus `status_line_size`.
     fn sizing_clients(&self) -> Vec<SizingClient> {
-        let clients = self.attached_clients();
-        // A control client contributes nothing until it declares a size, and an
-        // `ignore-size` client counts only while every client is flagged.
-        let counts = |client: &AttachedClient| !client.control_mode || client.size_changed;
-        let any_unflagged = clients
-            .iter()
-            .any(|client| counts(client) && !client.ignore_size);
-        clients
-            .iter()
-            .filter(|client| counts(client) && !(client.ignore_size && any_unflagged))
-            .filter_map(|client| {
-                let session = self
-                    .sessions
-                    .iter()
-                    .find(|session| session.id == client.session_id)?;
-                // A control client has no status line to pay for, and tmux turns
-                // the status line off rather than shrink a window to nothing on
-                // a terminal too short to hold both (`CLIENT_STATUSOFF`).
-                let status = if client.control_mode {
-                    0
-                } else {
-                    self.status_lines(session)
-                };
-                let rows = if client.rows > status {
-                    client.rows - status
-                } else {
-                    client.rows
-                };
-                Some(SizingClient {
-                    session_id: client.session_id,
-                    cols: client.cols,
-                    rows,
-                    size_seq: client.size_seq,
+        self.client_renders.with_entries(|entries| {
+            // An `ignore-size` client counts only while every client is
+            // flagged.
+            let entries = entries.collect::<Vec<_>>();
+            let any_unflagged = entries
+                .iter()
+                .any(|entry| entry.counts_for_sizing() && !entry.ignore_size);
+            entries
+                .iter()
+                .filter(|entry| entry.counts_for_sizing() && !(entry.ignore_size && any_unflagged))
+                .filter_map(|entry| {
+                    let session = self
+                        .sessions
+                        .iter()
+                        .find(|session| session.id == entry.session_id)?;
+                    // A control client has no status line to pay for, and tmux
+                    // turns the status line off rather than shrink a window to
+                    // nothing on a terminal too short to hold both
+                    // (`CLIENT_STATUSOFF`).
+                    let status = if entry.control_mode {
+                        0
+                    } else {
+                        self.status_lines(session)
+                    };
+                    let rows = if entry.rows > status {
+                        entry.rows - status
+                    } else {
+                        entry.rows
+                    };
+                    Some(SizingClient {
+                        session_id: entry.session_id,
+                        cols: entry.cols,
+                        rows,
+                        size_seq: entry.size_seq,
+                    })
                 })
-            })
-            .collect()
+                .collect()
+        })
     }
 
     /// The rows a session's status line occupies — tmux's `status_line_size`.
@@ -11047,7 +11135,7 @@ impl ServerState {
             .then(|| ((window.cols, window.rows), fill.to_owned()))
     }
 
-    pub(crate) fn client_window_offset(&self, client: &AttachedClient) -> Option<ClientViewport> {
+    pub(crate) fn client_window_offset(&self, client: &ViewportClient) -> Option<ClientViewport> {
         let window_id = self.current_window_of_session(client.session_id)?;
         let window = self.windows.get(&window_id)?;
         let session = self
@@ -11125,9 +11213,8 @@ impl ServerState {
     /// The viewport of the client with this name, for the render path — which
     /// knows the client it is painting for by name, not by handle.
     pub(crate) fn client_viewport(&self, client_name: &str) -> Option<ClientViewport> {
-        let clients = self.attached_clients();
-        let client = clients.iter().find(|client| client.name == client_name)?;
-        self.client_window_offset(client)
+        let client = self.client_renders.viewport_client(client_name)?;
+        self.client_window_offset(&client)
     }
 
     /// `refresh-client -L/-R/-U/-D`, and `-c` to drop the pan.
@@ -11142,13 +11229,17 @@ impl ServerState {
         adjust: Option<WindowResizeAdjust>,
         adjustment: u16,
     ) -> ClientActionResult {
-        let clients = self.attached_clients();
-        let Some(client) = target
-            .and_then(|name| clients.iter().find(|client| client.name == name))
-            .or_else(|| {
-                invoking_tty.and_then(|tty| clients.iter().find(|client| client.name == tty))
+        let selected = target
+            .and_then(|name| {
+                let client = self.client_renders.viewport_client(name)?;
+                Some((name.to_string(), client))
             })
-        else {
+            .or_else(|| {
+                let tty = invoking_tty?;
+                let client = self.client_renders.viewport_client(tty)?;
+                Some((tty.to_string(), client))
+            });
+        let Some((name, client)) = selected else {
             return if target.is_some() {
                 ClientActionResult::TargetNotFound
             } else {
@@ -11156,14 +11247,14 @@ impl ServerState {
             };
         };
         let Some(adjust) = adjust else {
-            self.client_renders.set_client_pan(&client.name, None);
+            self.client_renders.set_client_pan(&name, None);
             self.invalidate_session(client.session_id, RenderInvalidation::LAYOUT);
             return ClientActionResult::Queued;
         };
         let Some(window_id) = self.current_window_of_session(client.session_id) else {
             return ClientActionResult::NoCurrentClient;
         };
-        let Some(view) = self.client_window_offset(client) else {
+        let Some(view) = self.client_window_offset(&client) else {
             return ClientActionResult::NoCurrentClient;
         };
         let (mut ox, mut oy) = if client.pan_window == Some(window_id) {
@@ -11184,11 +11275,9 @@ impl ServerState {
             WindowResizeAdjust::Up => oy = oy.saturating_sub(adjustment),
             WindowResizeAdjust::Down => oy = oy.saturating_add(adjustment).min(limit_y),
         }
-        let session_id = client.session_id;
-        let name = client.name.clone();
         self.client_renders
             .set_client_pan(&name, Some((window_id, ox, oy)));
-        self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
+        self.invalidate_session(client.session_id, RenderInvalidation::LAYOUT);
         ClientActionResult::Queued
     }
 
@@ -11394,11 +11483,11 @@ impl ServerState {
     /// command path, so what changed is read from a snapshot of it instead of
     /// from a call at each site.
     fn sync_client_notifications(&mut self) {
-        let current = self
-            .attached_clients()
-            .into_iter()
-            .map(|client| (client.name, (client.session_id, client.cols, client.rows)))
-            .collect::<BTreeMap<_, _>>();
+        let current = self.client_renders.with_entries(|entries| {
+            entries
+                .map(|entry| (entry.name.clone(), (entry.session_id, entry.cols, entry.rows)))
+                .collect::<BTreeMap<_, _>>()
+        });
         let previous = std::mem::replace(&mut self.known_clients, current.clone());
         let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
         for (name, (session_id, cols, rows)) in &current {
@@ -11515,10 +11604,8 @@ impl ServerState {
 
     /// The sessions that currently have at least one client attached.
     fn attached_session_ids(&self) -> BTreeSet<u32> {
-        self.attached_clients()
-            .into_iter()
-            .map(|client| client.session_id)
-            .collect()
+        self.client_renders
+            .with_entries(|entries| entries.map(|entry| entry.session_id).collect())
     }
 
     /// The session other than `exclude` with the newest activity time, in
@@ -11861,16 +11948,16 @@ impl ServerState {
                 (name.clone(), hasher.finish())
             })
             .collect::<BTreeMap<_, _>>();
-        let clients = self
-            .attached_clients()
-            .into_iter()
-            .filter_map(|client| {
-                sessions
-                    .get(&client.session_id)
-                    .cloned()
-                    .map(|name| (client.name, (client.session_id, name)))
-            })
-            .collect::<BTreeMap<_, _>>();
+        let clients = self.client_renders.with_entries(|entries| {
+            entries
+                .filter_map(|entry| {
+                    sessions
+                        .get(&entry.session_id)
+                        .cloned()
+                        .map(|name| (entry.name.clone(), (entry.session_id, name)))
+                })
+                .collect::<BTreeMap<_, _>>()
+        });
         Some(ControlStateSnapshot {
             session_id: session.id,
             session_name: session.name.clone(),
