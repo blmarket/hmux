@@ -30,11 +30,6 @@ use super::term::ResolvedTerm;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
 
 /// The server state, shared by everything running on the loop.
-///
-/// One owner would be simpler, but the state outlives any single command: the
-/// protocol drivers, the attach compositors and the command queues all hold it
-/// across suspensions of their own. They all run on the loop, so the sharing is
-/// ownership, not concurrency.
 pub(crate) type SharedState = Rc<RefCell<ServerState>>;
 
 /// Wrap a fresh [`ServerState`] in the handle everything on the loop shares.
