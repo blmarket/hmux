@@ -97,7 +97,6 @@ pub struct ClientContext {
     pub tty_name: Option<String>,
     pub client_pid: Option<i32>,
     pub(crate) input_file: Option<Result<Vec<u8>, i32>>,
-    pub(crate) command_state: Option<SharedState>,
     pub(crate) current_session_id: Option<u32>,
     pub(crate) read_only: bool,
     pub(crate) active_panes: Option<Rc<RefCell<BTreeMap<u32, u32>>>>,
@@ -493,8 +492,6 @@ pub(crate) fn start_resumable_command(
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> Result<ResumableCommandQueue, CommandResult> {
-    let mut execution_context = context.clone();
-    execution_context.command_state = Some(Rc::clone(state));
     let expanded_args = expand_attached_separators(args);
     let groups = split_commands(&expanded_args);
     let aliases = {
@@ -502,11 +499,7 @@ pub(crate) fn start_resumable_command(
         state.command_aliases()
     };
     let parsed = parse_command_groups_with_aliases(groups, &aliases)?;
-    Ok(ResumableCommandQueue::new(
-        parsed,
-        agents,
-        &execution_context,
-    ))
+    Ok(ResumableCommandQueue::new(parsed, agents, context))
 }
 
 pub(crate) fn start_resumable_command_string(
@@ -524,7 +517,6 @@ pub(crate) fn start_resumable_command_string(
     };
     let parsed = parse_command_groups_with_aliases(groups, &aliases)?;
     let mut execution_context = context.clone();
-    execution_context.command_state = Some(Rc::clone(state));
     execution_context.defer_queue_commands = true;
     Ok(ResumableCommandQueue::new(
         parsed,
@@ -556,7 +548,6 @@ pub(crate) fn start_resumable_command_string_with_tail(
         )?);
     }
     let mut execution_context = context.clone();
-    execution_context.command_state = Some(Rc::clone(state));
     execution_context.defer_queue_commands = true;
     Ok(ResumableCommandQueue::new(
         parsed,
