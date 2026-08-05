@@ -2879,12 +2879,12 @@ fn compose_split_frame(
         } else if let Some(copy_view) = copy_view.as_ref() {
             (copy_view.rows(height), copy_view.cursor(height, width), 0)
         } else {
-            let vt = node.pane.dump_vt()?;
+            let (vt, _) = node.pane.dump_viewport_vt(0, height as usize)?;
             let (pane_rows, cursor) = split_pane_vt(&vt);
             (
                 pane_rows.into_iter().map(<[u8]>::to_vec).collect(),
                 cursor.to_vec(),
-                node.pane.scrollback_rows().unwrap_or(0),
+                0,
             )
         };
         if index == active {
