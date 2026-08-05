@@ -75,6 +75,11 @@ impl Vars {
         if let Some(user) = user {
             vars.set("user", user.clone());
         }
+        // The hostname is server-global too: tmux resolves `#{host}` from the
+        // format's global table, so it expands even where the lookup found no
+        // session, window or pane to hang the rest of the context off.
+        vars.set_lazy("host", hostname)
+            .set_lazy("host_short", hostname_short);
         vars
     }
 
@@ -122,6 +127,31 @@ impl Default for Vars {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The full hostname (`#{host}`), via `gethostname(3)` — the same source real
+/// tmux uses, so it matches on the same machine. Empty on failure.
+pub(super) fn hostname() -> String {
+    static HOSTNAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    HOSTNAME.get_or_init(read_hostname).clone()
+}
+
+fn read_hostname() -> String {
+    let mut buf = [0 as libc::c_char; 256];
+    // SAFETY: `gethostname` writes at most `buf.len()` bytes into `buf`.
+    let rc = unsafe { libc::gethostname(buf.as_mut_ptr(), buf.len()) };
+    if rc != 0 {
+        return String::new();
+    }
+    // SAFETY: `gethostname` NUL-terminates on success (buffer is large enough).
+    let cstr = unsafe { CStr::from_ptr(buf.as_ptr()) };
+    cstr.to_string_lossy().into_owned()
+}
+
+/// The short hostname (`#{host_short}`): the part before the first `.`.
+pub(super) fn hostname_short() -> String {
+    let h = hostname();
+    h.split('.').next().unwrap_or(&h).to_string()
 }
 
 fn username(uid: libc::uid_t) -> Option<String> {

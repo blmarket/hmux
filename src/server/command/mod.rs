@@ -33,7 +33,6 @@ use std::rc::Rc;
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::integration::status::PaneAgents;
@@ -4087,11 +4086,10 @@ pub(super) fn vars_full(
     let attached_clients = st.session_attached_client_names(sess);
     let group_attached_clients = st.session_group_attached_client_names(sess);
     // Server-global variables (same for every target). Values are volatile
-    // (`pid` differs per process); conformance pins `host`/`host_short` by exact
-    // value — same machine as the tmux reference — and `pid` only by truthiness.
-    v.set("host", hostname())
-        .set("host_short", hostname_short())
-        .set("pid", server_pid().to_string())
+    // (`pid` differs per process); conformance pins `host`/`host_short` (set by
+    // `Vars::new`) by exact value — same machine as the tmux reference — and
+    // `pid` only by truthiness.
+    v.set("pid", server_pid().to_string())
         .set("socket_path", st.socket_path().to_string_lossy())
         .set("version", super::TMUX_VERSION);
     v.set("session_name", sess.name.clone())
@@ -4304,7 +4302,7 @@ pub(super) fn vars_full(
                 .get("pane-base-index")
                 .and_then(|value| value.parse::<usize>().ok())
                 .unwrap_or(0);
-            let pane_title = st.pane_title(p).unwrap_or_else(hostname);
+            let pane_title = st.pane_title(p).unwrap_or_else(format::hostname);
             let death = p.pane.death();
             // A session option, so it is read through the session view rather
             // than the window's.
@@ -4804,31 +4802,6 @@ fn layout_checksum(s: &str) -> u16 {
 /// variable reports.
 fn unix_seconds(at: SystemTime) -> u64 {
     at.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
-}
-
-/// The full hostname (`#{host}`), via `gethostname(3)` — the same source real
-/// tmux uses, so it matches on the same machine. Empty on failure.
-fn hostname() -> String {
-    static HOSTNAME: OnceLock<String> = OnceLock::new();
-    HOSTNAME.get_or_init(read_hostname).clone()
-}
-
-fn read_hostname() -> String {
-    let mut buf = [0 as libc::c_char; 256];
-    // SAFETY: `gethostname` writes at most `buf.len()` bytes into `buf`.
-    let rc = unsafe { libc::gethostname(buf.as_mut_ptr(), buf.len()) };
-    if rc != 0 {
-        return String::new();
-    }
-    // SAFETY: `gethostname` NUL-terminates on success (buffer is large enough).
-    let cstr = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) };
-    cstr.to_string_lossy().into_owned()
-}
-
-/// The short hostname (`#{host_short}`): the part before the first `.`.
-fn hostname_short() -> String {
-    let h = hostname();
-    h.split('.').next().unwrap_or(&h).to_string()
 }
 
 /// The server process id (`#{pid}`).
