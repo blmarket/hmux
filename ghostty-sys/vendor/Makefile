@@ -1,6 +1,6 @@
 REPO   := https://github.com/ghostty-org/ghostty
 REF    := main
-COMMIT := 2de5e7d38e1354759211722a8687c0815d2cf02c
+COMMIT := 2346c4fe4767373cda50b5977d95191f714b1cca
 DIR  := libghostty-vt
 WORK := .vendor-work
 ZIG  ?= zig
@@ -19,8 +19,10 @@ vendor:
 	mkdir -p $(DIR)
 	tar xzf $(WORK)/zig-out/dist/$(DIR)-*.tar.gz -C $(DIR) --strip-components=1
 	rm -rf $(WORK)
+	# Patch paths are rooted at the hmux workspace, so strip the leading
+	# `a/ghostty-sys/vendor` while applying from this directory.
 	for patch in $(PATCHES); do \
-		git apply "$(CURDIR)/$$patch"; \
+		git apply -p3 "$(CURDIR)/$$patch"; \
 	done
 	@echo "Regenerated $(DIR)/ from $(REPO)@$(COMMIT)"
 

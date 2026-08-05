@@ -37,6 +37,7 @@ const InspectorWindow = @import("inspector_window.zig").InspectorWindow;
 const i18n = @import("../../../os/i18n.zig");
 const media = @import("../media.zig");
 const global = @import("../../../global.zig");
+const gtk_version = @import("../gtk_version.zig");
 
 const log = std.log.scoped(.gtk_ghostty_surface);
 
@@ -1991,6 +1992,58 @@ pub const Surface = extern struct {
         );
     }
 
+    fn snapshot(self: *Self, snap: *gtk.Snapshot) callconv(.c) void {
+        const priv = self.private();
+
+        const blur = blur: {
+            // Native GTK blur is only available since GTK 4.23.3
+            if (gtk_version.runtimeUntil(4, 23, 3)) break :blur null;
+            const config = priv.config orelse break :blur null;
+
+            break :blur switch (config.get().@"background-blur") {
+                .radius => |v| @as(f32, v),
+                .true, .@"macos-glass-regular", .@"macos-glass-clear" => 20.0,
+                .false => null,
+            };
+        };
+
+        if (blur) |b| blur: {
+            // pushCopy and appendPaste are only supported since 4.22.
+            // These two functions are crucial for the blur function
+            // and it cannot be implemented otherwise, so if you compile
+            // Ghostty on an older GTK version, you won't get blur.
+            // Sorry.
+            if (comptime !gtk_version.atLeast(4, 22, 0)) break :blur;
+
+            const width = self.as(gtk.Widget).getWidth();
+            const height = self.as(gtk.Widget).getHeight();
+
+            // Push the current render state (background)
+            // to be appended below
+            snap.pushCopy();
+            defer snap.pop();
+
+            // Apply blur to the copied background
+            snap.pushBlur(b);
+            defer snap.pop();
+
+            snap.appendPaste(&.{
+                .f_origin = .{ .f_x = 0, .f_y = 0 },
+                .f_size = .{
+                    .f_width = @floatFromInt(width),
+                    .f_height = @floatFromInt(height),
+                },
+            }, 0);
+        }
+
+        // Draw the children normally
+        gtk.Widget.virtual_methods.snapshot.call(
+            Class.parent,
+            self.as(Parent),
+            snap,
+        );
+    }
+
     //---------------------------------------------------------------
     // Properties
 
@@ -2819,7 +2872,10 @@ pub const Surface = extern struct {
             return;
         }
 
-        if (button == .middle and !priv.gtk_enable_primary_paste) {
+        if (button == .middle and
+            !priv.gtk_enable_primary_paste and
+            !core_surface.mouseReportingActive())
+        {
             return;
         }
 
@@ -2879,7 +2935,10 @@ pub const Surface = extern struct {
             return;
         }
 
-        if (button == .middle and !priv.gtk_enable_primary_paste) {
+        if (button == .middle and
+            !priv.gtk_enable_primary_paste and
+            !surface.mouseReportingActive())
+        {
             return;
         }
 
@@ -3324,7 +3383,7 @@ pub const Surface = extern struct {
         self: *Self,
     ) callconv(.c) void {
         self.updateMapped(true);
-        self.updateOcclusion(true);
+        self.updateOcclusion();
     }
 
     fn glareaUnmap(
@@ -3332,7 +3391,7 @@ pub const Surface = extern struct {
         self: *Self,
     ) callconv(.c) void {
         self.updateMapped(false);
-        self.updateOcclusion(false);
+        self.updateOcclusion();
     }
 
     fn updateMapped(self: *Self, mapped: bool) void {
@@ -3341,11 +3400,21 @@ pub const Surface = extern struct {
         self.as(gobject.Object).notifyByPspec(properties.mapped.impl.param_spec);
     }
 
-    fn updateOcclusion(self: *Self, visible: bool) void {
+    /// Update the core surface visibility based on both GTK widget and
+    /// toplevel state. This is public so the window can call it when its
+    /// suspended state changes.
+    pub fn updateOcclusion(self: *Self) void {
         const surface = self.core() orelse return;
+        const visible = self.private().mapped and !self.windowSuspended();
         surface.occlusionCallback(visible) catch |err| {
             log.warn("error in occlusion callback err={}", .{err});
         };
+    }
+
+    fn windowSuspended(self: *Self) bool {
+        const native = self.as(gtk.Widget).getNative() orelse return false;
+        const window = gobject.ext.cast(gtk.Window, native) orelse return false;
+        return window.isSuspended() != 0;
     }
 
     fn glareaRender(
@@ -3727,6 +3796,7 @@ pub const Surface = extern struct {
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
             gobject.Object.virtual_methods.finalize.implement(class, &finalize);
+            gtk.Widget.virtual_methods.snapshot.implement(class, &snapshot);
         }
 
         pub const as = C.Class.as;

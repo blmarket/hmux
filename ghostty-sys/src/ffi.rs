@@ -2,7 +2,7 @@
 //! use (terminal lifecycle + VT stream, formatters, and Unicode width).
 //!
 //! Mirrors `include/ghostty/vt/{types,terminal,formatter,mouse}.h` from the
-//! vendored upstream `ghostty` main commit `2de5e7d3` (the 1.3.2-dev line).
+//! vendored upstream `ghostty` main commit `2346c4fe` (the 1.3.2-dev line).
 //! Written by hand from the MIT-licensed headers rather than generated, so we
 //! don't depend on `bindgen`/libclang. The `#[repr(C)]` layouts match the C
 //! structs field-for-field; the sized structs (`size` first) are versioned by
@@ -148,16 +148,10 @@ pub struct GhosttySelection {
 
 pub const GHOSTTY_POINT_TAG_SCREEN: i32 = 2;
 
-// ---- terminal.h `GhosttyTerminalOptions` -------------------------------
-#[repr(C)]
-pub struct GhosttyTerminalOptions {
-    /// Terminal width in cells. Must be > 0.
-    pub cols: u16,
-    /// Terminal height in cells. Must be > 0.
-    pub rows: u16,
-    /// Maximum scrollback lines to retain.
-    pub max_scrollback: usize,
-}
+// ---- terminal.h `GhosttyTerminalOption` --------------------------------
+/// Maximum scrollback allocation in bytes; value is a `size_t*`, NULL removes
+/// the limit.
+pub const GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES: i32 = 27;
 
 #[repr(C)]
 pub struct GhosttyMousePosition {
@@ -229,7 +223,16 @@ extern "C" {
     pub fn ghostty_terminal_new(
         allocator: *const c_void,
         terminal: *mut GhosttyTerminal,
-        options: GhosttyTerminalOptions,
+        cols: u16,
+        rows: u16,
+    ) -> i32;
+
+    // `value` points at the option's input type (see `GHOSTTY_TERMINAL_OPT_*`);
+    // NULL clears the option.
+    pub fn ghostty_terminal_set(
+        terminal: GhosttyTerminal,
+        option: i32,
+        value: *const c_void,
     ) -> i32;
 
     pub fn ghostty_terminal_free(terminal: GhosttyTerminal);

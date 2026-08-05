@@ -23,6 +23,7 @@
 00jciv00
 04cb
 0xdvc
+12ya
 -4rh1t3ct0r7
 52dyd
 aalhendi
@@ -71,6 +72,7 @@ brentschroeter
 brianc442
 c0x0o
 carldaws
+carlvillads
 cespare
 charliie-dev
 chernetskyi
@@ -113,18 +115,21 @@ escalonc
 eunos-1128
 exlee
 -f1813483-netizen
+fallintoplace
 faukah
 filip7
 flou
 fornwall
 francescarpi
 fru1tworld
+gadgetman6
 gagbo
 ghokun
 gmile
 gordonbondon
 gpanders
 guilhermetk
+-guysoft LLM communication (likely automated)
 h3nock
 hakonhagland
 halosatrio
@@ -140,7 +145,7 @@ illiakrauchanka
 j0hnm4r5
 jacobsandlund
 jake-stewart
-jamesarch
+-jamesarch Bad AI etiquette
 jamylak
 jarred-sumner
 jcollie
@@ -177,6 +182,7 @@ lepips
 liby
 linustalacko
 lonsagisawa
+lotheac
 louisunlimited
 luisnquin
 lynicis
@@ -256,8 +262,10 @@ rjwittams
 rmengelbrecht
 rmunn
 rockorager
+ronijacobson
 rpfaeffle
 ruoyouz
+ruseel
 sahilkmishra
 samasaur1
 sandydoo
@@ -267,8 +275,10 @@ secrus
 seruman
 seyoungjeong
 silveirapf
+simonbcn
 slsrepo
 sunshine-syz
+svmhdvn
 tasselx
 tbrundige
 tdgroot
@@ -283,10 +293,12 @@ turbolent
 tweedbeetle
 uhojin
 unphased
+unsaltedscholar
 uzaaft
 vancluever
 vaughanandrews
 -vectorpeak Stupid bot cosplaying as a maintainer
+vegerot
 viruslobster
 vlsi
 voidnv

@@ -269,18 +269,24 @@ impl Terminal {
 
     /// Create a `cols`×`rows` terminal with native-pane scrollback.
     pub fn new(cols: u16, rows: u16) -> Result<Terminal, Error> {
-        let options = ffi::GhosttyTerminalOptions {
-            cols: cols.max(1),
-            rows: rows.max(1),
-            max_scrollback: Self::DEFAULT_MAX_SCROLLBACK_BYTES,
-        };
         let mut raw: ffi::GhosttyTerminal = ptr::null_mut();
         // SAFETY: `raw` is a valid out-pointer; NULL allocator = default.
-        check(unsafe { ffi::ghostty_terminal_new(ptr::null(), &mut raw, options) })?;
+        check(unsafe {
+            ffi::ghostty_terminal_new(ptr::null(), &mut raw, cols.max(1), rows.max(1))
+        })?;
         if raw.is_null() {
             return Err(Error(ffi::GHOSTTY_SUCCESS)); // succeeded but null: treat as error
         }
         let mut terminal = Terminal { raw };
+        let max_scrollback = Self::DEFAULT_MAX_SCROLLBACK_BYTES;
+        // SAFETY: live handle; the byte limit option takes a `size_t*`.
+        check(unsafe {
+            ffi::ghostty_terminal_set(
+                raw,
+                ffi::GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES,
+                (&max_scrollback as *const usize).cast(),
+            )
+        })?;
         // tmux stores extended grapheme clusters in one display cell sequence.
         // Enable Ghostty's corresponding mode so emoji modifiers, ZWJ
         // sequences, and regional indicators retain tmux-compatible widths.
@@ -1083,6 +1089,23 @@ mod tests {
         }
     }
 
+    /// `capture-pane -e` and the copy-mode/mouse hyperlink formats read the
+    /// link off the cell, so the snapshot must carry both the URI and the id
+    /// the program set explicitly. Implicit ids are internal and stay unset.
+    #[test]
+    fn grid_snapshot_carries_hyperlink_uri_and_explicit_id() {
+        let mut term = Terminal::new(12, 2).expect("new terminal");
+        term.write(b"\x1b]8;id=x1;https://example.test\x1b\\a\x1b]8;;\x1b\\");
+        term.write(b"\x1b]8;;https://plain.test\x1b\\b\x1b]8;;\x1b\\c");
+        let snapshot = term.grid_snapshot().expect("snapshot");
+        let cells = &snapshot.rows[0].cells;
+        assert_eq!(cells[0].hyperlink.as_deref(), Some("https://example.test"));
+        assert_eq!(cells[0].hyperlink_id.as_deref(), Some("x1"));
+        assert_eq!(cells[1].hyperlink.as_deref(), Some("https://plain.test"));
+        assert_eq!(cells[1].hyperlink_id, None, "implicit ids stay unreported");
+        assert_eq!(cells[2].hyperlink, None);
+    }
+
     #[test]
     fn grid_snapshot_retains_graphemes_width_and_soft_wraps() {
         let mut term = Terminal::new(4, 3).expect("new terminal");
@@ -1168,6 +1191,44 @@ mod tests {
             s.contains("\x1b]8;;https://example.test\x1b\\link\x1b]8;;\x1b\\"),
             "vt dump must re-open and close the OSC 8 hyperlink around the \
              linked cells, got {s:?}"
+        );
+    }
+
+    /// The compositor splits a dump on newlines and repaints each row at its
+    /// own screen position, so a row that ends inside a link must close it:
+    /// an open OSC 8 would otherwise carry into whatever is drawn next,
+    /// including another pane's row.
+    #[test]
+    fn vt_dump_closes_osc8_hyperlinks_at_every_row_end() {
+        let mut term = Terminal::new(40, 3).expect("new terminal");
+        term.write(b"\x1b]8;;https://example.test\x1b\\ab\r\ncd\x1b]8;;\x1b\\");
+        let vt = term.dump_vt().expect("vt dump");
+        let s = String::from_utf8_lossy(&vt);
+        for row in s.split("\r\n") {
+            let opens = row.matches("\x1b]8;;https://example.test\x1b\\").count();
+            let closes = row.matches("\x1b]8;;\x1b\\").count();
+            assert_eq!(
+                opens, closes,
+                "every row must close the links it opens, got {row:?} in {s:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn vt_dump_separates_adjacent_osc8_hyperlinks() {
+        let mut term = Terminal::new(40, 3).expect("new terminal");
+        term.write(
+            b"\x1b]8;;https://one.test\x1b\\aa\x1b]8;;https://two.test\x1b\\bb\x1b]8;;\x1b\\",
+        );
+        let vt = term.dump_vt().expect("vt dump");
+        let s = String::from_utf8_lossy(&vt);
+        assert!(
+            s.contains(
+                "\x1b]8;;https://one.test\x1b\\aa\x1b]8;;\x1b\\\
+                 \x1b]8;;https://two.test\x1b\\bb\x1b]8;;\x1b\\"
+            ),
+            "adjacent links must be closed and reopened between the runs, \
+             got {s:?}"
         );
     }
 

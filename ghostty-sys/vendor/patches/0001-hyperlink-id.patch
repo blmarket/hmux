@@ -1,3 +1,15 @@
+Expose the explicit OSC 8 id of a cell's hyperlink.
+
+Upstream reports a cell's hyperlink URI but not the id the program set with
+`OSC 8 ; id=... ; uri`. hmux needs it because `capture-pane -e` reproduces the
+id byte-for-byte, and because the copy-mode and mouse hyperlink formats read
+the link off the cell rather than out of a text dump.
+
+Purely additive: a new `ghostty_grid_ref_hyperlink_id` alongside the existing
+`_hyperlink_uri`, exported the same way. Implicit ids are internal, so they
+report empty. Pinned by `grid_snapshot_carries_hyperlink_uri_and_explicit_id`
+in ghostty-sys.
+
 diff --git a/ghostty-sys/vendor/libghostty-vt/include/ghostty/vt/grid_ref.h b/ghostty-sys/vendor/libghostty-vt/include/ghostty/vt/grid_ref.h
 index c43791d..24b28f7 100644
 --- a/ghostty-sys/vendor/libghostty-vt/include/ghostty/vt/grid_ref.h
