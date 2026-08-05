@@ -786,7 +786,7 @@ impl EventControlClient {
                 self.options.client_flags(self.client_tty.flags),
             )));
         }
-        let handled_colour = apply_control_colour_report(&argv, &self.state)?;
+        let handled_colour = apply_control_colour_report(&argv, &mut self.state.borrow_mut())?;
         let handled_offsets =
             apply_control_offset_actions(&argv, &mut self.streams, &mut self.control_writer);
         let handled_subscriptions =
@@ -1284,10 +1284,7 @@ fn control_refresh_flag_values(args: &[String]) -> Vec<&str> {
     values
 }
 
-fn apply_control_colour_report(
-    args: &[String],
-    state: &SharedState,
-) -> io::Result<bool> {
+fn apply_control_colour_report(args: &[String], state: &mut ServerState) -> io::Result<bool> {
     let Some(Resolution::Name("refresh-client")) = args.first().map(|name| registry::resolve(name))
     else {
         return Ok(false);
@@ -1313,9 +1310,7 @@ fn apply_control_colour_report(
     if parse_control_colour_report(report).is_none() {
         return Ok(true);
     }
-    let _ = state
-        .borrow_mut()
-        .report_pane_control_colour(pane, report.as_bytes());
+    let _ = state.report_pane_control_colour(pane, report.as_bytes());
     Ok(true)
 }
 

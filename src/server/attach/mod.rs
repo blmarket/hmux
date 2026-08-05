@@ -1245,12 +1245,11 @@ fn active_window_output_subscription(
 /// the active window's pane set or selection. Returns true when the caller must
 /// redraw and ignore readiness reported for the old platform wakeup.
 fn refresh_active_window_output_subscription(
-    state: &SharedState,
+    st: &ServerState,
     session: &str,
     subscribed_window: &mut ActiveWindowOutputKey,
     subscription: &mut OutputSubscription,
 ) -> io::Result<bool> {
-    let st = state.borrow_mut();
     let (panes, active) = st.active_window_pane_identities(session).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,
@@ -3878,7 +3877,7 @@ mod tests {
 
         assert!(
             refresh_active_window_output_subscription(
-                &state,
+                &state.borrow_mut(),
                 "0",
                 &mut subscribed_window,
                 &mut subscription,
@@ -3892,7 +3891,7 @@ mod tests {
         );
         assert!(
             !refresh_active_window_output_subscription(
-                &state,
+                &state.borrow_mut(),
                 "0",
                 &mut subscribed_window,
                 &mut subscription,
@@ -3910,7 +3909,7 @@ mod tests {
             .expect("close selected window");
         assert!(
             refresh_active_window_output_subscription(
-                &state,
+                &state.borrow_mut(),
                 "0",
                 &mut subscribed_window,
                 &mut subscription,
@@ -3936,7 +3935,7 @@ mod tests {
         replace_active_pane_with_inert(&mut state.borrow_mut());
 
         assert!(refresh_active_window_output_subscription(
-            &state,
+            &state.borrow_mut(),
             "0",
             &mut subscribed_window,
             &mut subscription,
@@ -3966,7 +3965,7 @@ mod tests {
             .expect("split inactive pane");
 
         assert!(refresh_active_window_output_subscription(
-            &state,
+            &state.borrow_mut(),
             "0",
             &mut subscribed_window,
             &mut subscription,

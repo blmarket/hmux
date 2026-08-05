@@ -335,11 +335,10 @@ pub(crate) fn command_prompt_spec(args: &[String]) -> Result<CommandPromptSpec, 
 
 pub(crate) fn expand_command_prompt_format(
     source: &str,
-    state: &SharedState,
+    st: &mut ServerState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> String {
-    let mut st = state.borrow_mut();
     let previous_session = st.replace_command_session_id(context.current_session_id);
     let target = current_session(&st);
     let expanded = target
@@ -383,7 +382,7 @@ pub(crate) fn command_prompt_template(
         .unwrap_or("%1")
         .to_string();
     if has_flag(&normalized, "-F") {
-        template = expand_command_prompt_format(&template, state, agents, context);
+        template = expand_command_prompt_format(&template, &mut state.borrow_mut(), agents, context);
     }
     for (index, value) in values.iter().enumerate() {
         template = replace_prompt_template(&template, value, (index + 1) as u8);

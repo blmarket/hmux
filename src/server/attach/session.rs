@@ -528,7 +528,7 @@ impl AttachSession {
         }
 
         match refresh_active_window_output_subscription(
-            state,
+            &state.borrow_mut(),
             target,
             &mut self.attachments.subscribed_window,
             &mut self.attachments.output_subscription,
@@ -1009,7 +1009,7 @@ impl AttachSession {
         // replace the stale subscription before attributing output or sending
         // that input to the newly active pane.
         match refresh_active_window_output_subscription(
-            state,
+            &state.borrow_mut(),
             target,
             &mut self.attachments.subscribed_window,
             &mut self.attachments.output_subscription,

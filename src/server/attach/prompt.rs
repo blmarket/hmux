@@ -217,19 +217,28 @@ impl CommandPrompt {
             .to_vec();
         let spec = command::command_prompt_spec(&prompt_args)?;
         let agents = hub.snapshot().panes;
+        // One borrow for every page: each expansion installs and restores the
+        // command's session, so they must not nest.
+        let mut st = state.borrow_mut();
         let pages = spec
             .pages
             .iter()
             .map(|page| PromptPage {
-                label: command::expand_command_prompt_format(&page.label, state, &agents, context),
+                label: command::expand_command_prompt_format(
+                    &page.label,
+                    &mut st,
+                    &agents,
+                    context,
+                ),
                 initial: command::expand_command_prompt_format(
                     &page.initial,
-                    state,
+                    &mut st,
                     &agents,
                     context,
                 ),
             })
             .collect::<Vec<_>>();
+        drop(st);
         let last = pages
             .first()
             .map(|page| page.initial.clone())
