@@ -4360,7 +4360,21 @@ pub(super) fn vars_full(
                     "pane_search_string",
                     p.search_string.as_deref().unwrap_or(""),
                 )
-                .set("pane_synchronized", "0")
+                // tmux reads this off the *pane's* option view, so a
+                // pane-scoped `set-option -p synchronize-panes` shows through
+                // where the window's own value would not.
+                .set(
+                    "pane_synchronized",
+                    if p
+                        .options(win, st.global_options())
+                        .get("synchronize-panes")
+                        .is_some_and(|value| value == "on" || value == "1")
+                    {
+                        "1"
+                    } else {
+                        "0"
+                    },
+                )
                 .set("pane_at_top", if pane_rect.top == 0 { "1" } else { "0" })
                 .set(
                     "pane_at_bottom",
