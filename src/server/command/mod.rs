@@ -5298,6 +5298,13 @@ fn parse_pane_position(value: &str, total: u16) -> Result<i32, ()> {
 
 /// `select-pane [-t target]`. Makes the target pane active.
 fn select_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -> CommandResult {
+    // `-l` takes the whole last-pane path first, exactly as tmux routes
+    // `select-pane -l` and `last-pane` through one branch — including the
+    // `-d`/`-e` input toggles, which then act on the last pane, not the
+    // target pane.
+    if has_flag(args, "-l") {
+        return last_pane_cmd(args, st);
+    }
     // `-M` clears the server's marked pane and ignores everything else.
     if has_flag(args, "-M") {
         st.clear_mark();
@@ -6611,16 +6618,28 @@ fn show_environment_line(name: &str, value: Option<&str>, shell: bool) -> String
     }
 }
 
-/// `last-pane [-t target]`. Switches to the previously-active pane.
+/// `last-pane [-de] [-t target]`. Switches to the previously-active pane;
+/// with `-e` or `-d` it instead enables or disables input on that pane
+/// without switching, as tmux's `cmd-select-pane.c` does (`-e` wins when
+/// both are given).
 fn last_pane_cmd(args: &[String], st: &mut ServerState) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
         .or_else(|| current_target(st));
     match target {
-        Some(t) => match st.last_pane(&t) {
-            Ok(()) => CommandResult::ok(""),
-            Err(error) => command_target_error(error, &t, "window"),
-        },
+        Some(t) => {
+            let result = if has_flag(args, "-e") {
+                st.set_last_pane_input_off(&t, false)
+            } else if has_flag(args, "-d") {
+                st.set_last_pane_input_off(&t, true)
+            } else {
+                st.last_pane(&t)
+            };
+            match result {
+                Ok(()) => CommandResult::ok(""),
+                Err(error) => command_target_error(error, &t, "window"),
+            }
+        }
         None => CommandResult::err("can't establish current session\n"),
     }
 }

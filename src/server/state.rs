@@ -3752,6 +3752,15 @@ impl Window {
         &mut self.options
     }
 
+    /// The pane `last-pane` and `select-pane -l` act on: the recorded
+    /// previously-active pane, or — as tmux's `cmd-select-pane.c` falls back —
+    /// the only other pane when the window holds exactly two.
+    pub(crate) fn last_pane_index(&self) -> Option<usize> {
+        self.last_pane
+            .filter(|&pane| pane < self.panes.len())
+            .or_else(|| (self.panes.len() == 2).then_some(1 - self.active))
+    }
+
     /// The window's pane indices front to back, tmux's `w->z_index` order:
     /// floating panes sit above the layout (the active one frontmost, then the
     /// most recently created), and the tiled panes keep their layout order
@@ -9347,7 +9356,7 @@ impl ServerState {
         let t = self.resolve_window_target(target)?;
         let session_id = self.sessions[t.session].id;
         let win = self.window_mut(t.session, t.window);
-        match win.last_pane.filter(|&p| p < win.panes.len()) {
+        match win.last_pane_index() {
             Some(lp) => {
                 win.last_pane = Some(win.active);
                 win.active = lp;
@@ -9355,6 +9364,28 @@ impl ServerState {
                     session_id,
                     RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
                 );
+                Ok(())
+            }
+            None => Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "no last pane".to_string(),
+            )),
+        }
+    }
+
+    /// `last-pane -d`/`-e` (and `select-pane -l` with those flags): set or
+    /// clear the input-off flag on the previously-active pane. tmux toggles
+    /// the flag without switching to the pane.
+    pub(crate) fn set_last_pane_input_off(
+        &mut self,
+        target: &str,
+        input_off: bool,
+    ) -> io::Result<()> {
+        let t = self.resolve_window_target(target)?;
+        let win = self.window_mut(t.session, t.window);
+        match win.last_pane_index() {
+            Some(lp) => {
+                win.panes[lp].input_off = input_off;
                 Ok(())
             }
             None => Err(io::Error::new(
