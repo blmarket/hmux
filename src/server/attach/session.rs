@@ -695,6 +695,9 @@ impl AttachSession {
         if ready.tty_output {
             self.tty.output.flush(self.tty.render_fd.as_raw_fd())?;
         }
+        self.attachments
+            .render_attachment
+            .publish_written(self.tty.output.total_written());
         if self.tty.output.has_pending() {
             return Ok(AttachDrive::Continue);
         }

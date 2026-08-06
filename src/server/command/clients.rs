@@ -787,8 +787,27 @@ fn list_clients(args: &[String], state: &ServerState, agents: &PaneAgents) -> Co
         ));
     }
     let filter = flag_value(args, "-f");
+    let (sort_order, reversed) = match super::list_sort_criteria(args) {
+        Ok(criteria) => criteria,
+        Err(error) => return error,
+    };
+    let mut clients = state.client_snapshots();
+    super::apply_list_sort(
+        &mut clients,
+        sort_order,
+        reversed,
+        |key, a, b| match key {
+            super::ListSortOrder::Name => a.name.cmp(&b.name),
+            super::ListSortOrder::Size => a.cols.cmp(&b.cols).then(a.rows.cmp(&b.rows)),
+            super::ListSortOrder::Creation => a.created_micros.cmp(&b.created_micros),
+            // Most recent activity first, as tmux inverts this comparison.
+            super::ListSortOrder::Activity => b.activity_micros.cmp(&a.activity_micros),
+            _ => std::cmp::Ordering::Equal,
+        },
+        |client| client.name.clone(),
+    );
     let mut output = String::new();
-    for client in state.client_snapshots() {
+    for client in clients {
         let Some(session) = state
             .sessions()
             .iter()
@@ -811,6 +830,42 @@ fn list_clients(args: &[String], state: &ServerState, agents: &PaneAgents) -> Co
     CommandResult::ok(output)
 }
 
+/// The client-entry format variables shared by the `list-clients` context and
+/// the client a `display-message` resolves (tmux's `format_defaults_client`).
+pub(super) fn set_client_entry_vars(
+    state: &ServerState,
+    client: &super::super::state::ClientSnapshot,
+    vars: &mut format::Vars,
+) {
+    let last_session = client.last_session_id.and_then(|id| {
+        state
+            .sessions()
+            .iter()
+            .find(|session| session.id == id)
+            .map(|session| session.name.clone())
+    });
+    vars.set(
+        "client_activity",
+        (client.activity_micros / 1_000_000).to_string(),
+    )
+    .set(
+        "client_created",
+        (client.created_micros / 1_000_000).to_string(),
+    )
+    // hmux never learns the terminal's pixel size; tmux without one reports
+    // zero cell dimensions the same way.
+    .set("client_cell_width", "0")
+    .set("client_cell_height", "0")
+    .set("client_termfeatures", client.termfeatures.clone())
+    // The secondary-DA terminal type: empty until the terminal answers a
+    // query the attach flow does not send.
+    .set("client_termtype", "")
+    .set("client_written", client.written.to_string())
+    // hmux never discards output the way tmux's backoff does.
+    .set("client_discarded", "0")
+    .set("client_last_session", last_session.unwrap_or_default());
+}
+
 /// The format variables one attached client answers to, shared by
 /// `list-clients` and `choose-client`. `None` when the client's session has
 /// gone away underneath it.
@@ -825,6 +880,9 @@ fn client_vars(
         .find(|session| session.id == client.session_id)?;
     let client_utf8 = client.flags.split(',').any(|flag| flag == "UTF-8");
     let mut vars = super::vars_for(state, session, session.active, agents, state.marked_pane());
+    set_client_entry_vars(state, client, &mut vars);
+    // The format's session here is the client's own session.
+    vars.set("session_active", "1");
     vars.set("client_name", client.name.clone())
         .set("client_tty", client.name.clone())
         .set("client_termname", client.term.clone())

@@ -59,6 +59,7 @@ pub(crate) fn snapshot_grid(
             wrapped,
             used,
             size: line.map_or(0, super::grid::Line::size),
+            extd: line.map_or(0, super::grid::Line::extd),
             flags: row_flags(line),
         });
     }

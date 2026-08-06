@@ -458,6 +458,7 @@ impl GhosttyScreen {
                 wrapped,
                 used: size,
                 size,
+                extd: 0,
                 flags: RowFlags::default(),
             });
         }

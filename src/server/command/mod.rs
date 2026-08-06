@@ -1352,7 +1352,26 @@ impl ResumableCommandQueue {
                 && !has_flag(&inflight.command.args, "-C")
             {
                 let suspension = CommandSuspension::RunShell {
-                    args: inflight.command.args.clone(),
+                    args: {
+                        // Pin `-t` to the pane's stable `%id` now: tmux keys
+                        // the output view on the pane itself, so a pane that
+                        // dies mid-run must not let the *name* re-resolve to
+                        // a survivor — the output falls back to the client.
+                        let mut args = inflight.command.args.clone();
+                        let state = state.borrow_mut();
+                        if let Some(position) = args.iter().position(|arg| arg == "-t") {
+                            if let Some(value) = args.get(position + 1) {
+                                if let Some(resolved) = state.resolve(value) {
+                                    let pane_id = state
+                                        .window(resolved.session, resolved.window)
+                                        .panes[resolved.pane]
+                                        .id;
+                                    args[position + 1] = format!("%{pane_id}");
+                                }
+                            }
+                        }
+                        args
+                    },
                     context: {
                         let state = state.borrow_mut();
                         self.context.with_job_environment(&state)
@@ -2826,16 +2845,100 @@ fn list_commands(args: &[String]) -> CommandResult {
 
 /// `list-sessions [-F format]`. Sessions are listed sorted by name (tmux keys
 /// its session tree by name), one per line; `-F` overrides the default summary.
+/// tmux's `sort.c` orders behind the `list-*` `-O` flag.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ListSortOrder {
+    Activity,
+    Creation,
+    Index,
+    Modifier,
+    Name,
+    Order,
+    Size,
+    Z,
+}
+
+/// Parse `-O`/`-r` the way tmux's `sort_order_from_string` is consumed: no
+/// `-O` means no sorting at all (a bare `-r` is inert), and an unknown order
+/// is an error.
+fn list_sort_criteria(args: &[String]) -> Result<(Option<ListSortOrder>, bool), CommandResult> {
+    let reversed = has_flag(args, "-r");
+    let Some(order) = flag_value(args, "-O") else {
+        return Ok((None, reversed));
+    };
+    let order = match order.to_ascii_lowercase().as_str() {
+        "activity" => ListSortOrder::Activity,
+        "creation" => ListSortOrder::Creation,
+        "index" | "key" => ListSortOrder::Index,
+        "modifier" => ListSortOrder::Modifier,
+        "name" | "title" => ListSortOrder::Name,
+        "order" => ListSortOrder::Order,
+        "size" => ListSortOrder::Size,
+        "z" => ListSortOrder::Z,
+        _ => return Err(CommandResult::err("invalid sort order\n")),
+    };
+    Ok((Some(order), reversed))
+}
+
+/// Sort one `list-*` table tmux's way: the `-O` comparison first, ties broken
+/// by the name column, and `-r` flipping the combined result. `order` is the
+/// natural enumeration, where `-r` just reverses the slice.
+fn apply_list_sort<T>(
+    items: &mut [T],
+    order: Option<ListSortOrder>,
+    reversed: bool,
+    compare: impl Fn(ListSortOrder, &T, &T) -> std::cmp::Ordering,
+    name: impl Fn(&T) -> String,
+) {
+    let Some(order) = order else {
+        return;
+    };
+    if order == ListSortOrder::Order {
+        if reversed {
+            items.reverse();
+        }
+        return;
+    }
+    items.sort_by(|a, b| {
+        let result = compare(order, a, b).then_with(|| name(a).cmp(&name(b)));
+        if reversed {
+            result.reverse()
+        } else {
+            result
+        }
+    });
+}
+
 fn list_sessions(args: &[String], st: &ServerState, agents: &PaneAgents) -> CommandResult {
     let template = flag_value(args, "-F");
     let filter = flag_value(args, "-f");
+    let (sort_order, reversed) = match list_sort_criteria(args) {
+        Ok(criteria) => criteria,
+        Err(error) => return error,
+    };
     let mut order: Vec<&Session> = st.sessions().iter().collect();
     order.sort_by(|a, b| a.name.cmp(&b.name));
+    apply_list_sort(
+        &mut order,
+        sort_order,
+        reversed,
+        |key, a, b| match key {
+            ListSortOrder::Index => a.id.cmp(&b.id),
+            ListSortOrder::Creation => a.created_epoch.cmp(&b.created_epoch),
+            // Most recent activity first, as tmux inverts this comparison.
+            ListSortOrder::Activity => b.activity_micros.cmp(&a.activity_micros),
+            ListSortOrder::Name => a.name.cmp(&b.name),
+            _ => std::cmp::Ordering::Equal,
+        },
+        |session| session.name.clone(),
+    );
 
     let marked = st.marked_pane();
     let mut out = String::new();
     for s in order {
-        let vars = vars_for(st, s, s.active, agents, marked);
+        let mut vars = vars_for(st, s, s.active, agents, marked);
+        // tmux's `FORMAT_TYPE_SESSION` marker for this list context.
+        vars.set("session_format", "1");
         if let Some(f) = filter {
             if !format::is_true(&expand_command_format(st, f, &vars, None)) {
                 continue;
@@ -3046,7 +3149,9 @@ fn list_keys(args: &[String], st: &ServerState) -> CommandResult {
             return CommandResult::err(format!("table {table} doesn't exist\n"));
         }
     }
-    let requested_name = positionals(args, &["-T"]).into_iter().next();
+    let requested_name = positionals(args, &["-F", "-O", "-P", "-T"])
+        .into_iter()
+        .next();
     let requested = match requested_name {
         Some(name) => match parse_key_name(name) {
             Some(key) => Some(key),
@@ -3055,6 +3160,53 @@ fn list_keys(args: &[String], st: &ServerState) -> CommandResult {
         None => None,
     };
     let bindings = st.key_bindings(table);
+    // `-F` expands a template per binding with tmux's `key_*` variables;
+    // `-N` narrows the list to bindings that carry a note (unless `-a`).
+    if let Some(template) = flag_value(args, "-F") {
+        let notes_filter = has_flag(args, "-N") && !has_flag(args, "-a");
+        let filtered: Vec<_> = bindings
+            .iter()
+            .filter(|(_, key, binding)| {
+                !requested.is_some_and(|wanted| wanted != *key)
+                    && (!notes_filter || binding.note.is_some())
+            })
+            .collect();
+        let key_has_repeat = filtered.iter().any(|(_, _, binding)| binding.repeat);
+        let key_string_width = filtered
+            .iter()
+            .map(|(_, key, _)| format_key_name(*key).chars().count())
+            .max()
+            .unwrap_or(0);
+        let key_table_width = filtered
+            .iter()
+            .map(|(table_name, _, _)| table_name.chars().count())
+            .max()
+            .unwrap_or(0);
+        let mut out = String::new();
+        for (table_name, key, binding) in &filtered {
+            let mut vars = format::Vars::new();
+            vars.set("notes_only", if has_flag(args, "-N") { "1" } else { "0" })
+                .set("key_has_repeat", if key_has_repeat { "1" } else { "0" })
+                .set("key_string_width", key_string_width.to_string())
+                .set("key_table_width", key_table_width.to_string())
+                .set("key_repeat", if binding.repeat { "1" } else { "0" })
+                .set("key_note", binding.note.clone().unwrap_or_default())
+                .set("key_table", *table_name)
+                .set("key_string", format_key_name(*key))
+                .set("key_command", binding.command.join(" "));
+            let line = format::expand(template, &vars);
+            if !line.is_empty() {
+                out.push_str(&line);
+                out.push('\n');
+            }
+        }
+        // A sole match goes through the target client's status message, which
+        // a detached command client sees as a successful empty result.
+        if filtered.len() <= 1 {
+            return CommandResult::ok("");
+        }
+        return CommandResult::ok(out);
+    }
     let mut out = String::new();
     let mut matched = 0;
     for (table_name, key, binding) in bindings {
@@ -3417,6 +3569,32 @@ fn new_window(args: &[String], st: &mut ServerState, context: &ClientContext) ->
         Some(x) => x,
         None => return CommandResult::err("can't establish current session\n"),
     };
+    // `-S` with a name and no explicit window index selects an existing window
+    // of that name instead of creating one. tmux errors on an ambiguous name,
+    // skips the selection under `-d`, and returns before the `-P` print either
+    // way.
+    if has_flag(args, "-S") && explicit.is_none() {
+        if let Some(name) = flag_value(args, "-n") {
+            let sess = st.find(&session).expect("session present");
+            let matches: Vec<u32> = sess
+                .windows
+                .iter()
+                .filter(|link| st.window_for_link(link).name == name)
+                .map(|link| link.index)
+                .collect();
+            if matches.len() > 1 {
+                return CommandResult::err(format!("multiple windows named {name}\n"));
+            }
+            if let Some(index) = matches.first() {
+                if !has_flag(args, "-d") {
+                    if let Err(error) = st.select_window(&format!("{session}:{index}")) {
+                        return CommandResult::err(format!("{error}\n"));
+                    }
+                }
+                return CommandResult::ok("");
+            }
+        }
+    }
     // `-a` (after) / `-b` (before) insert *relative* to an anchor window rather
     // than at an explicit index. `-b` takes precedence over `-a` (tmux keys the
     // shuffle on whether `-b` is present). The anchor is the `-t` window part when
@@ -3533,22 +3711,52 @@ fn list_windows(args: &[String], st: &ServerState, agents: &PaneAgents) -> Comma
         }
     };
 
+    let (sort_order, reversed) = match list_sort_criteria(args) {
+        Ok(criteria) => criteria,
+        Err(error) => return error,
+    };
+    let mut links: Vec<(&Session, usize)> = sessions
+        .iter()
+        .flat_map(|sess| (0..sess.windows.len()).map(move |idx| (*sess, idx)))
+        .collect();
+    apply_list_sort(
+        &mut links,
+        sort_order,
+        reversed,
+        |key, (sess_a, idx_a), (sess_b, idx_b)| {
+            let (link_a, link_b) = (&sess_a.windows[*idx_a], &sess_b.windows[*idx_b]);
+            let (win_a, win_b) = (st.window_for_link(link_a), st.window_for_link(link_b));
+            match key {
+                ListSortOrder::Index => link_a.index.cmp(&link_b.index),
+                // `activity_epoch` is written once at creation (see `Window`),
+                // so it is the creation key; tmux's activity sort is inverted.
+                ListSortOrder::Creation => win_a.activity_epoch.cmp(&win_b.activity_epoch),
+                ListSortOrder::Activity => win_b.activity_epoch.cmp(&win_a.activity_epoch),
+                ListSortOrder::Name => win_a.name.cmp(&win_b.name),
+                ListSortOrder::Size => (u32::from(win_a.cols) * u32::from(win_a.rows))
+                    .cmp(&(u32::from(win_b.cols) * u32::from(win_b.rows))),
+                _ => std::cmp::Ordering::Equal,
+            }
+        },
+        |(sess, idx)| st.window_for_link(&sess.windows[*idx]).name.clone(),
+    );
+
     let marked = st.marked_pane();
     let mut out = String::new();
-    for sess in sessions {
-        for (idx, _win) in sess.windows.iter().enumerate() {
-            let vars = vars_for(st, sess, idx, agents, marked);
-            if let Some(f) = filter {
-                if !format::is_true(&expand_command_format(st, f, &vars, None)) {
-                    continue;
-                }
+    for (sess, idx) in links {
+        let mut vars = vars_for(st, sess, idx, agents, marked);
+        // tmux's `FORMAT_TYPE_WINDOW` marker for this list context.
+        vars.set("window_format", "1");
+        if let Some(f) = filter {
+            if !format::is_true(&expand_command_format(st, f, &vars, None)) {
+                continue;
             }
-            // Structural default (tmux's includes a volatile layout id + @id, so
-            // this isn't byte-identical; the suite pins `list-windows` via -F).
-            let line = expand_command_format(st, template.unwrap_or(default_line), &vars, None);
-            out.push_str(&line);
-            out.push('\n');
         }
+        // Structural default (tmux's includes a volatile layout id + @id, so
+        // this isn't byte-identical; the suite pins `list-windows` via -F).
+        let line = expand_command_format(st, template.unwrap_or(default_line), &vars, None);
+        out.push_str(&line);
+        out.push('\n');
     }
     CommandResult::ok(out)
 }
@@ -3602,21 +3810,65 @@ fn list_panes(args: &[String], st: &ServerState, agents: &PaneAgents) -> Command
         vec![(&st.sessions()[resolved.session], resolved.window)]
     };
 
+    let (sort_order, reversed) = match list_sort_criteria(args) {
+        Ok(criteria) => criteria,
+        Err(error) => return error,
+    };
+    let mut panes: Vec<(&Session, usize, usize)> = windows
+        .iter()
+        .flat_map(|(sess, win_pos)| {
+            (0..st.session_window(sess, *win_pos).panes.len())
+                .map(move |pane_idx| (*sess, *win_pos, pane_idx))
+        })
+        .collect();
+    let pane_title = |sess: &Session, win_pos: usize, pane_idx: usize| {
+        st.session_window(sess, win_pos)
+            .panes
+            .get(pane_idx)
+            .and_then(|pane| st.pane_title(pane))
+            .unwrap_or_else(format::hostname)
+    };
+    apply_list_sort(
+        &mut panes,
+        sort_order,
+        reversed,
+        |key, (sess_a, win_a, idx_a), (sess_b, win_b, idx_b)| {
+            let win_a = st.session_window(sess_a, *win_a);
+            let win_b = st.session_window(sess_b, *win_b);
+            let (pane_a, pane_b) = (&win_a.panes[*idx_a], &win_b.panes[*idx_b]);
+            match key {
+                ListSortOrder::Index => idx_a.cmp(idx_b),
+                // Pane ids are allocated in creation order, as tmux's are.
+                ListSortOrder::Creation => pane_a.id.cmp(&pane_b.id),
+                ListSortOrder::Size => {
+                    let area = |win: &super::state::Window, id: u32| {
+                        win.pane_rect(id)
+                            .map(|rect| u32::from(rect.width) * u32::from(rect.height))
+                            .unwrap_or(0)
+                    };
+                    area(win_a, pane_a.id).cmp(&area(win_b, pane_b.id))
+                }
+                ListSortOrder::Name => std::cmp::Ordering::Equal,
+                // tmux's activity key is the pane's `active_point`, an
+                // ordering hmux does not track; ties fall to the title.
+                _ => std::cmp::Ordering::Equal,
+            }
+        },
+        |(sess, win_pos, pane_idx)| pane_title(sess, *win_pos, *pane_idx),
+    );
+
     let marked = st.marked_pane();
     let mut out = String::new();
-    for (sess, win_pos) in windows {
-        let win = st.session_window(sess, win_pos);
-        for pane_idx in 0..win.panes.len() {
-            let vars = vars_full(st, sess, win_pos, pane_idx, agents, marked);
-            if let Some(f) = filter {
-                if !format::is_true(&expand_command_format(st, f, &vars, None)) {
-                    continue;
-                }
+    for (sess, win_pos, pane_idx) in panes {
+        let vars = vars_full(st, sess, win_pos, pane_idx, agents, marked);
+        if let Some(f) = filter {
+            if !format::is_true(&expand_command_format(st, f, &vars, None)) {
+                continue;
             }
-            let line = expand_command_format(st, template.unwrap_or(default_line), &vars, None);
-            out.push_str(&line);
-            out.push('\n');
         }
+        let line = expand_command_format(st, template.unwrap_or(default_line), &vars, None);
+        out.push_str(&line);
+        out.push('\n');
     }
     CommandResult::ok(out)
 }
@@ -3973,6 +4225,19 @@ fn set_current_client_vars(
                 .set("window_offset_y", view.oy.to_string());
         }
     }
+    clients::set_client_entry_vars(st, client, vars);
+    // Whether the format's session is the one this client is attached to —
+    // tmux's `format_cb_session_active`, which needs both in context.
+    if let Some(session_id) = session_id {
+        vars.set(
+            "session_active",
+            if client.session_id == session_id {
+                "1"
+            } else {
+                "0"
+            },
+        );
+    }
     let default_table = st
         .sessions()
         .iter()
@@ -4039,6 +4304,29 @@ impl LazyWindowName {
     }
 }
 
+// The `*_mode_format` variables report each choose mode's default line
+// format; tmux exposes them as constant server-wide strings.
+const BUFFER_MODE_DEFAULT_FORMAT: &str = "#{t/p:buffer_created}: #{buffer_sample}";
+const CLIENT_MODE_DEFAULT_FORMAT: &str = "#{t/p:client_activity}: session #{session_name}";
+const TREE_MODE_DEFAULT_FORMAT: &str = concat!(
+    "#{?pane_format,",
+    "#{?pane_marked,#[reverse],}#{?pane_floating_flag,#[italics],}",
+    "#{pane_current_command}#{pane_flags}",
+    "#{?#{&&:#{pane_title},#{!=:#{pane_title},#{host_short}}},: \"#{pane_title}\",}",
+    ",window_format,",
+    "#{?window_marked_flag,#[reverse],}",
+    "#{window_name}#{window_flags}",
+    "#{?#{&&:#{==:#{window_panes},1},#{&&:#{pane_title},#{!=:#{pane_title},#{host_short}}}},: \"#{pane_title}\",}",
+    ",",
+    "#{session_windows} windows",
+    "#{?session_grouped, ",
+    "(group #{session_group}: ",
+    "#{session_group_list}),",
+    "}",
+    "#{?session_attached, (attached),}",
+    "}",
+);
+
 pub(super) fn vars_full(
     st: &ServerState,
     sess: &Session,
@@ -4075,7 +4363,19 @@ pub(super) fn vars_full(
         .set("socket_path", st.socket_path().to_string_lossy())
         .set("version", super::TMUX_VERSION)
         .set("server_sessions", st.sessions().len().to_string())
-        .set("next_session_id", format!("${}", st.next_session_id()));
+        .set("next_session_id", format!("${}", st.next_session_id()))
+        .set("start_time", st.started_epoch().to_string())
+        // Honest capability answers: hmux renders no sixel and its daemon
+        // loads no config file (see README.md on server capability gaps).
+        .set("sixel_support", "0")
+        .set("config_files", "")
+        .set("buffer_mode_format", BUFFER_MODE_DEFAULT_FORMAT)
+        .set("client_mode_format", CLIENT_MODE_DEFAULT_FORMAT)
+        .set("tree_mode_format", TREE_MODE_DEFAULT_FORMAT)
+        // Context-type markers; the list commands override theirs to 1.
+        .set("session_format", "0")
+        .set("window_format", "0")
+        .set("pane_format", "0");
     v.set("session_name", sess.name.clone())
         .set("session_id", format!("${}", sess.id))
         .set("session_windows", sess.windows.len().to_string())
@@ -4095,6 +4395,7 @@ pub(super) fn vars_full(
             },
         )
         .set("session_attached", attached_clients.len().to_string())
+        .set("session_attached_list", attached_clients.join(","))
         .set(
             "session_many_attached",
             if attached_clients.len() > 1 { "1" } else { "0" },
@@ -4269,6 +4570,41 @@ pub(super) fn vars_full(
                     "0"
                 },
             )
+            // tmux's session alert flags read the *context* window's alerts
+            // (`format_cb_session_activity_flag` checks `ft->wl`), so they
+            // mirror the window flags rather than OR over the session.
+            .set(
+                "session_bell_flag",
+                if link.alert_flags & super::state::ALERT_BELL != 0 {
+                    "1"
+                } else {
+                    "0"
+                },
+            )
+            .set(
+                "session_activity_flag",
+                if link.alert_flags & super::state::ALERT_ACTIVITY != 0 {
+                    "1"
+                } else {
+                    "0"
+                },
+            )
+            .set(
+                "session_silence_flag",
+                if link.alert_flags & super::state::ALERT_SILENCE != 0 {
+                    "1"
+                } else {
+                    "0"
+                },
+            )
+            .set(
+                "window_active_clients",
+                st.window_active_client_names(win.id).len().to_string(),
+            )
+            .set(
+                "window_active_clients_list",
+                st.window_active_client_names(win.id).join(","),
+            )
             .set(
                 "window_silence_flag",
                 if link.alert_flags & super::state::ALERT_SILENCE != 0 {
@@ -4297,16 +4633,38 @@ pub(super) fn vars_full(
             .set("window_cell_width", "16")
             .set("window_cell_height", "32")
             // The window's pane layout string (with tmux's checksum prefix).
+            // Zoom leaves the saved layout in `window_layout` while the
+            // visible layout is the single full-window cell tmux swaps in.
             .set("window_layout", window_layout(win))
-            .set("window_visible_layout", window_layout(win));
+            .set(
+                "window_visible_layout",
+                if win.zoomed {
+                    window_zoomed_layout(win)
+                } else {
+                    window_layout(win)
+                },
+            );
         if let Some(p) = win.panes.get(pane_idx) {
             let (window_width, window_height) = (win.cols, win.rows);
-            let pane_rect = win.pane_rect(p.id).unwrap_or(super::state::PaneRect {
-                top: 0,
-                left: 0,
-                height: window_height,
-                width: window_width,
-            });
+            // A zoomed pane lives in tmux's single full-window layout cell, so
+            // its geometry formats grow to the window; the saved layout only
+            // answers for the panes the zoom hid.
+            let zoomed_full = win.zoomed && pane_idx == win.active;
+            let pane_rect = if zoomed_full {
+                super::state::PaneRect {
+                    top: 0,
+                    left: 0,
+                    height: window_height,
+                    width: window_width,
+                }
+            } else {
+                win.pane_rect(p.id).unwrap_or(super::state::PaneRect {
+                    top: 0,
+                    left: 0,
+                    height: window_height,
+                    width: window_width,
+                })
+            };
             let pane_base_index = win
                 .options(st.global_options())
                 .get("pane-base-index")
@@ -4503,6 +4861,26 @@ pub(super) fn vars_full(
                 // `pane_format` marks a pane-level format context (always 1 here,
                 // since this table is built per pane).
                 .set("pane_format", "1")
+                .set_lazy("history_bytes", {
+                    // The byte totals walk every grid row, so they stay a
+                    // deferred computation until a format asks.
+                    let observation = p.pane.observation_state();
+                    move || {
+                        observation
+                            .history_byte_formats()
+                            .map(|(bytes, _)| bytes)
+                            .unwrap_or_default()
+                    }
+                })
+                .set_lazy("history_all_bytes", {
+                    let observation = p.pane.observation_state();
+                    move || {
+                        observation
+                            .history_byte_formats()
+                            .map(|(_, all)| all)
+                            .unwrap_or_default()
+                    }
+                })
                 // `pane_marked` is 1 only for the server's marked pane;
                 // `pane_marked_set` is 1 whenever any pane is marked server-wide.
                 .set("pane_marked", if marked == Some(p.id) { "1" } else { "0" })
@@ -4834,7 +5212,10 @@ fn set_mouse_vars(st: &ServerState, sess: &Session, win_idx: usize, pane_idx: us
         .unwrap_or(" !\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~")
         .to_string();
     let (word, line) = super::mouse::grid_word_and_line(pane, position, &separators);
-    v.set("mouse_word", word).set("mouse_line", line);
+    v.set("mouse_word", word).set("mouse_line", line).set(
+        "mouse_hyperlink",
+        super::mouse::grid_hyperlink(pane, position),
+    );
 }
 
 fn pane_cursor_character(pane: &super::pane::Pane) -> String {
@@ -4900,6 +5281,15 @@ fn window_stack_index(sess: &Session, win_idx: usize) -> usize {
 /// `layout_dump` output plus its 4-hex-digit checksum prefix.
 fn window_layout(win: &super::state::Window) -> String {
     let body = win.layout.dump();
+    format!("{:04x},{body}", layout_checksum(&body))
+}
+
+/// The visible layout of a zoomed window: the one full-window cell holding the
+/// zoomed pane, which is what tmux's live `layout_root` dumps while the real
+/// layout waits in `saved_layout_root`.
+fn window_zoomed_layout(win: &super::state::Window) -> String {
+    let pane_id = win.panes.get(win.active).map(|pane| pane.id).unwrap_or(0);
+    let body = format!("{}x{},0,0,{}", win.cols, win.rows, pane_id);
     format!("{:04x},{body}", layout_checksum(&body))
 }
 
@@ -5058,7 +5448,7 @@ fn clear_history(args: &[String], st: &mut ServerState) -> CommandResult {
 /// becomes active. With `-P`, prints the new pane via `-F` (or
 /// `NEW_WINDOW_TEMPLATE`).
 fn split_window(args: &[String], st: &mut ServerState, context: &ClientContext) -> CommandResult {
-    const VALUE_FLAGS: &[&str] = &["-c", "-e", "-F", "-l", "-p", "-t"];
+    const VALUE_FLAGS: &[&str] = &["-c", "-e", "-F", "-l", "-m", "-p", "-t"];
     let target = flag_value(args, "-t")
         .map(str::to_string)
         .or_else(|| current_target(st));
@@ -5082,6 +5472,45 @@ fn split_window(args: &[String], st: &mut ServerState, context: &ClientContext) 
     } else {
         SplitDirection::TopBottom
     };
+    // `-l size` (cells, or `N%`) and `-p percentage` pin the *new* pane's size
+    // on the split axis; percentages are of the target pane's current extent.
+    let new_size = {
+        let axis_total = {
+            let sess = &st.sessions()[resolved.session];
+            let win = st.window_for_link(&sess.windows[resolved.window]);
+            let rect = win
+                .pane_rect(win.panes[resolved.pane].id)
+                .unwrap_or(super::state::PaneRect {
+                    top: 0,
+                    left: 0,
+                    height: win.rows,
+                    width: win.cols,
+                });
+            match direction {
+                SplitDirection::LeftRight => rect.width,
+                SplitDirection::TopBottom => rect.height,
+            }
+        };
+        let percentage_of = |value: &str| {
+            value
+                .parse::<u32>()
+                .ok()
+                .map(|percentage| (u32::from(axis_total) * percentage / 100) as u16)
+        };
+        let parsed = if let Some(value) = flag_value(args, "-l") {
+            Some(match value.strip_suffix('%') {
+                Some(percentage) => percentage_of(percentage),
+                None => value.parse::<u16>().ok(),
+            })
+        } else {
+            flag_value(args, "-p").map(|value| percentage_of(value))
+        };
+        match parsed {
+            Some(None) => return CommandResult::err("create pane failed: size invalid\n"),
+            Some(size) => size,
+            None => None,
+        }
+    };
     let explicit_cwd = command_option_value(args, "-c", VALUE_FLAGS).map(PathBuf::from);
     let cwd = explicit_cwd.as_deref().or(context.cwd.as_deref());
     let command = trailing_command(args, VALUE_FLAGS);
@@ -5093,10 +5522,34 @@ fn split_window(args: &[String], st: &mut ServerState, context: &ClientContext) 
     let spawn_environment = flag_values(args, "-e");
     let argv = pane_argv(argv, context, &spawn_environment, st, Some(&target));
     let created = if empty {
-        st.split_window_direction_with_spec(&target, select, before, direction, PaneSpec::Inert)
+        st.split_window_direction_with_spec(
+            &target,
+            select,
+            before,
+            direction,
+            PaneSpec::Inert,
+            new_size,
+        )
     } else {
-        st.split_window_direction_with_spawn(&target, select, before, direction, &argv, cwd)
+        st.split_window_direction_with_spawn(
+            &target, select, before, direction, &argv, cwd, new_size,
+        )
     };
+    // `-k` (and `-m format`) keep the pane in place when its command exits:
+    // tmux sets the pane's remain-on-exit to `key` plus the format under `-m`.
+    if let Ok(pane) = &created {
+        if has_flag(args, "-k") || flag_value(args, "-m").is_some() {
+            let new_target = Target {
+                session: resolved.session,
+                window: resolved.window,
+                pane: *pane,
+            };
+            st.set_pane_option(new_target, "remain-on-exit", "key");
+            if let Some(message) = flag_value(args, "-m") {
+                st.set_pane_option(new_target, "remain-on-exit-format", message);
+            }
+        }
+    }
     match created {
         Ok(pane) if has_flag(args, "-P") => {
             let sess = &st.sessions()[resolved.session];
@@ -5224,6 +5677,7 @@ fn new_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -> C
             direction,
             &argv,
             cwd,
+            None,
         )
     } else {
         st.new_floating_pane_with_spawn(&target, select, width, height, left, top, &argv, cwd)
@@ -5442,7 +5896,7 @@ fn kill_pane(args: &[String], st: &mut ServerState) -> CommandResult {
 /// that has not exited is "still active". With `-k`, or against an exited pane,
 /// the command succeeds silently — the actual re-exec of the pane's command is
 /// interactive byte work outside this control-plane layer.
-fn respawn_pane(args: &[String], st: &mut ServerState) -> CommandResult {
+fn respawn_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
         .or_else(|| current_target(st));
@@ -5470,7 +5924,23 @@ fn respawn_pane(args: &[String], st: &mut ServerState) -> CommandResult {
     // shell command line, several are an argv (tmux's `spawn_pane`).
     let argv =
         (!command.is_empty()).then(|| pane_command_argv(command.as_slice(), st, Some(&target)));
-    let cwd = command_option_value(args, "-c", &["-c", "-e", "-t"]).map(PathBuf::from);
+    let mut cwd = command_option_value(args, "-c", &["-c", "-e", "-t"]).map(PathBuf::from);
+    // `-e` reaches the replacement the way a spawn's environment does. With no
+    // command the saved spawn spec is materialized so the wrap has an argv to
+    // carry, keeping its stored working directory.
+    let environment = flag_values(args, "-e");
+    let argv = if environment.is_empty() {
+        argv
+    } else {
+        let base = argv.or_else(|| {
+            let saved = node.pane.spawn_spec()?;
+            if cwd.is_none() {
+                cwd = saved.cwd;
+            }
+            Some(saved.argv)
+        });
+        base.map(|argv| pane_argv(argv, context, &environment, st, Some(&target)))
+    };
     match st.respawn_pane_process(&target, argv, cwd) {
         Ok(()) => CommandResult::ok(""),
         Err(error) => CommandResult::err(format!("{error}\n")),
@@ -5485,7 +5955,7 @@ fn respawn_pane(args: &[String], st: &mut ServerState) -> CommandResult {
 /// exited. With `-k`, or an all-exited window, the command succeeds silently —
 /// the actual re-exec of the panes' commands is interactive byte work outside
 /// this control-plane layer.
-fn respawn_window(args: &[String], st: &mut ServerState) -> CommandResult {
+fn respawn_window(args: &[String], st: &mut ServerState, context: &ClientContext) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
         .or_else(|| current_target(st));
@@ -5511,6 +5981,13 @@ fn respawn_window(args: &[String], st: &mut ServerState) -> CommandResult {
     let command = trailing_command(args, &["-c", "-e", "-t"]);
     let argv =
         (!command.is_empty()).then(|| pane_command_argv(command.as_slice(), st, Some(&target)));
+    // `-e` reaches the replacement the way a spawn's environment does.
+    let environment = flag_values(args, "-e");
+    let argv = if environment.is_empty() {
+        argv
+    } else {
+        argv.map(|argv| pane_argv(argv, context, &environment, st, Some(&target)))
+    };
     let cwd = command_option_value(args, "-c", &["-c", "-e", "-t"]).map(PathBuf::from);
     match st.respawn_window_process(&target, argv, cwd) {
         Ok(()) => CommandResult::ok(""),
@@ -7566,11 +8043,42 @@ pub(crate) const LAYOUT_NAMES: &[&str] = &[
     "tiled",
 ];
 
-/// `select-layout [-t target] [layout]`. The geometry isn't modeled, but the
-/// layout argument is validated: a name must be one tmux knows, otherwise it must
-/// look like a custom layout string (which contains a `,`). Anything else is
-/// rejected with tmux's `invalid layout: <arg>`.
+/// `select-layout [-Enop] [-t target] [layout]`. Every invocation snapshots
+/// the window's layout into tmux's `w->old_layout` slot first, which is what
+/// `-o` restores; an error puts the previous snapshot back, as tmux does.
 fn select_layout(args: &[String], st: &mut ServerState) -> CommandResult {
+    let target = flag_value(args, "-t")
+        .map(str::to_string)
+        .or_else(|| current_target(st));
+    let Some(target) = target else {
+        return CommandResult::err("can't establish current session\n");
+    };
+    let previous_old = st.snapshot_window_layout(&target).ok().flatten();
+    let result = select_layout_action(args, st, &target, previous_old.as_deref());
+    if result.exit != 0 {
+        st.restore_window_old_layout(&target, previous_old);
+    }
+    result
+}
+
+fn select_layout_action(
+    args: &[String],
+    st: &mut ServerState,
+    target: &str,
+    previous_old: Option<&str>,
+) -> CommandResult {
+    if has_flag(args, "-n") || has_flag(args, "-p") {
+        return match st.cycle_layout(target, has_flag(args, "-n")) {
+            Ok(()) => CommandResult::ok(""),
+            Err(error) => command_target_error(error, target, "window"),
+        };
+    }
+    if has_flag(args, "-E") {
+        return match st.spread_window_layout(target) {
+            Ok(()) => CommandResult::ok(""),
+            Err(error) => command_target_error(error, target, "pane"),
+        };
+    }
     if let Some(layout) = positionals(args, &["-t"]).into_iter().next() {
         let known = LAYOUT_NAMES.iter().position(|name| name == &layout);
         let valid = known.is_some()
@@ -7580,29 +8088,36 @@ fn select_layout(args: &[String], st: &mut ServerState) -> CommandResult {
             return CommandResult::err(format!("invalid layout: {layout}\n"));
         }
         if let Some(layout) = known {
-            let target = flag_value(args, "-t")
-                .map(str::to_string)
-                .or_else(|| current_target(st));
-            let Some(target) = target else {
-                return CommandResult::err("can't establish current session\n");
-            };
-            return match st.select_named_layout(&target, layout) {
+            return match st.select_named_layout(target, layout) {
                 Ok(()) => CommandResult::ok(""),
-                Err(error) => command_target_error(error, &target, "pane"),
+                Err(error) => command_target_error(error, target, "pane"),
             };
         }
-        let target = flag_value(args, "-t")
-            .map(str::to_string)
-            .or_else(|| current_target(st));
-        let Some(target) = target else {
-            return CommandResult::err("can't establish current session\n");
-        };
-        return match st.select_custom_layout(&target, layout) {
+        return match st.select_custom_layout(target, layout) {
             Ok(()) => CommandResult::ok(""),
             Err(error) => CommandResult::err(format!("can't set layout: {error}\n")),
         };
     }
-    CommandResult::ok("")
+    if has_flag(args, "-o") {
+        // `-o` re-applies the layout the *previous* command snapshot; with no
+        // history it is a no-op, as in tmux.
+        return match previous_old {
+            Some(old) => match st.select_custom_layout(target, old) {
+                Ok(()) => CommandResult::ok(""),
+                Err(error) => CommandResult::err(format!("can't set layout: {error}\n")),
+            },
+            None => CommandResult::ok(""),
+        };
+    }
+    // Bare `select-layout` reapplies the last preset (tmux's `w->lastlayout`).
+    match st.window_last_preset_layout(target) {
+        Ok(Some(preset)) => match st.select_named_layout(target, preset) {
+            Ok(()) => CommandResult::ok(""),
+            Err(error) => command_target_error(error, target, "pane"),
+        },
+        Ok(None) => CommandResult::ok(""),
+        Err(error) => command_target_error(error, target, "pane"),
+    }
 }
 
 fn cycle_layout(args: &[String], st: &mut ServerState, forward: bool) -> CommandResult {
@@ -7612,9 +8127,15 @@ fn cycle_layout(args: &[String], st: &mut ServerState, forward: bool) -> Command
     let Some(target) = target else {
         return CommandResult::err("can't establish current session\n");
     };
+    // next-layout/previous-layout share select-layout's exec in tmux, so they
+    // snapshot `w->old_layout` the same way.
+    let previous_old = st.snapshot_window_layout(&target).ok().flatten();
     match st.cycle_layout(&target, forward) {
         Ok(()) => CommandResult::ok(""),
-        Err(error) => command_target_error(error, &target, "window"),
+        Err(error) => {
+            st.restore_window_old_layout(&target, previous_old);
+            command_target_error(error, &target, "window")
+        }
     }
 }
 
@@ -8060,9 +8581,27 @@ pub(super) fn buffer_vars(st: &ServerState, name: &str, data: &[u8]) -> Vars {
 fn list_buffers(args: &[String], st: &ServerState) -> CommandResult {
     let template = flag_value(args, "-F");
     let filter = flag_value(args, "-f");
+    let (sort_order, reversed) = match list_sort_criteria(args) {
+        Ok(criteria) => criteria,
+        Err(error) => return error,
+    };
+    let mut buffers: Vec<(usize, &(String, Vec<u8>))> = st.buffers().iter().enumerate().collect();
+    apply_list_sort(
+        &mut buffers,
+        sort_order,
+        reversed,
+        |key, (pos_a, (_, data_a)), (pos_b, (_, data_b))| match key {
+            // The stack is newest first, which is tmux's descending
+            // `pb->order` comparison for the creation key.
+            ListSortOrder::Creation => pos_a.cmp(pos_b),
+            ListSortOrder::Size => data_a.len().cmp(&data_b.len()),
+            _ => std::cmp::Ordering::Equal,
+        },
+        |(_, (name, _))| name.clone(),
+    );
     let default_line = "#{buffer_name}: #{buffer_size} bytes: \"#{buffer_sample}\"";
     let mut out = String::new();
-    for (name, data) in st.buffers() {
+    for (_, (name, data)) in buffers {
         let v = buffer_vars(st, name, data);
         if let Some(f) = filter {
             if !format::is_true(&expand_command_format(st, f, &v, None)) {
@@ -8133,10 +8672,18 @@ impl RunShellCompletion {
 }
 
 fn finish_run_shell(completion: RunShellCompletion, state: &mut ServerState) -> CommandResult {
+    let mut result = completion.result;
     if let Some((target, output)) = completion.view {
-        let _ = state.append_view_output(&target, &output);
+        // tmux resolves the view pane when the child finishes; with the pane
+        // gone by then the output falls back to the invoking client, the way
+        // `cmdq_print` does without a pane to draw into.
+        if state.append_view_output(&target, &output).is_err() {
+            result
+                .stdout
+                .push_str(&String::from_utf8_lossy(&output));
+        }
     }
-    completion.result
+    result
 }
 
 /// {send -M} {copy-mode -M}`, and the branch decides between a client-local
