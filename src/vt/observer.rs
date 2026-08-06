@@ -261,7 +261,7 @@ impl Observer {
                 out.event(Event::Reply(
                     format!(
                         "\x1bP>|{XTVERSION_NAME} {}\x1b\\",
-                        crate::server::TMUX_VERSION
+                        crate::TMUX_VERSION
                     )
                     .into_bytes(),
                 ));

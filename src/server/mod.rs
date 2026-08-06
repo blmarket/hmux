@@ -49,11 +49,7 @@ use state::ServerState;
 
 type EventPaneSnapshot = (Vec<(u64, PaneIo)>, Vec<u64>);
 
-/// The tmux release whose behavior this server implements, as `#{version}`
-/// reports it and as XTVERSION answers a pane. Conformance is pinned to this
-/// version, so an application that special-cases a terminal by version has to
-/// see the same answer the command language claims to implement.
-pub(crate) const TMUX_VERSION: &str = "3.7b";
+pub(crate) use crate::TMUX_VERSION;
 
 /// Runtime-independent tmux server state and behavior.
 ///
