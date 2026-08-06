@@ -210,6 +210,22 @@ impl Parser {
         self.string_capacity = input_buffer_capacity(limit);
     }
 
+    /// The bytes of a sequence the parser is still part-way through, which is
+    /// what `capture-pane -P` returns.
+    ///
+    /// This is tmux's `input_pending`. tmux accumulates into `since_ground`
+    /// only while the state machine is *out* of ground state and drains it on
+    /// the way back in, so a partly-collected UTF-8 character is not pending
+    /// input: `input.c` collects those without leaving ground, and so does
+    /// this.
+    pub(crate) fn pending(&self) -> &[u8] {
+        if self.state == State::Ground {
+            &[]
+        } else {
+            &self.raw
+        }
+    }
+
     /// Feed one chunk of pane output, calling `emit` once per complete token.
     ///
     /// A sequence split across chunks is retained, so the caller may hand over
@@ -336,15 +352,7 @@ impl Parser {
             self.raw.push(byte);
             match self.utf8.push(byte) {
                 Utf8Step::More => {}
-                Utf8Step::Done(character) => {
-                    let trailing = self.utf8.take_trailing();
-                    self.dispatch(TokenKind::Print(character), emit);
-                    // A malformed sequence can be terminated by a byte that
-                    // itself opens the next one; replay it rather than lose it.
-                    for byte in trailing {
-                        self.ground(byte, emit);
-                    }
-                }
+                Utf8Step::Done(character) => self.dispatch(TokenKind::Print(character), emit),
             }
             return;
         }
@@ -793,24 +801,30 @@ fn parse_number(digits: &[u8]) -> Option<u32> {
     Some(value)
 }
 
-/// The UTF-8 sequence being collected in ground state.
+/// The UTF-8 sequence being collected in ground state, tmux's `utf8_open` and
+/// `utf8_append`.
 ///
-/// One malformed sequence becomes one `U+FFFD`, not one per byte — the cell
-/// count tmux ends up with. A byte that cannot continue the sequence but could
-/// open a new one is handed back so the caller can replay it.
+/// One malformed sequence becomes one `U+FFFD`, and the length that decides
+/// where "one sequence" ends is the one the *lead byte* announced. A byte that
+/// cannot continue the sequence does not end it: it poisons the result and is
+/// swallowed with the rest, so a three-byte lead consumes three bytes whatever
+/// they turn out to be. That is `utf8_append` setting `ud->width = 0xff` and
+/// carrying on, and it is why a valid character buried inside a bad sequence
+/// does not reappear — tmux never reconsiders those bytes.
 #[derive(Default)]
 struct Utf8Collector {
     bytes: Vec<u8>,
     /// Expected total length of the sequence in progress.
     width: usize,
-    /// Bytes that terminated a malformed sequence and must be reconsidered.
-    trailing: Vec<u8>,
+    /// tmux's `ud->width = 0xff`: something arrived that cannot be part of this
+    /// sequence, so whatever it collects decodes to one replacement.
+    poisoned: bool,
 }
 
 enum Utf8Step {
     /// The sequence needs more bytes.
     More,
-    /// A character is ready. The caller must also drain [`Utf8Collector::take_trailing`].
+    /// A character is ready.
     Done(char),
 }
 
@@ -823,35 +837,37 @@ impl Utf8Collector {
                 0xc2..=0xdf => 2,
                 0xe0..=0xef => 3,
                 0xf0..=0xf4 => 4,
-                // A continuation byte or an over-long lead opens nothing.
+                // A continuation byte or an over-long lead opens nothing, and
+                // nothing is collected: `utf8_open` fails before it appends.
                 _ => return Utf8Step::Done(REPLACEMENT),
             };
+            self.poisoned = false;
             self.bytes.push(byte);
             return Utf8Step::More;
         }
-        if !(0x80..=0xbf).contains(&byte) {
-            // The sequence is malformed; this byte may still open the next one.
-            self.bytes.clear();
-            self.trailing.push(byte);
-            return Utf8Step::Done(REPLACEMENT);
-        }
+        // A byte that is not a continuation still belongs to this sequence —
+        // it just guarantees the sequence is bad.
+        self.poisoned |= !(0x80..=0xbf).contains(&byte);
         self.bytes.push(byte);
         if self.bytes.len() < self.width {
             return Utf8Step::More;
         }
-        let character = std::str::from_utf8(&self.bytes)
-            .ok()
-            .and_then(|text| text.chars().next())
-            .unwrap_or(REPLACEMENT);
+        let character = if self.poisoned {
+            REPLACEMENT
+        } else {
+            std::str::from_utf8(&self.bytes)
+                .ok()
+                .and_then(|text| text.chars().next())
+                .unwrap_or(REPLACEMENT)
+        };
         self.bytes.clear();
         Utf8Step::Done(character)
     }
 
-    fn take_trailing(&mut self) -> Vec<u8> {
-        std::mem::take(&mut self.trailing)
-    }
-
-    /// Give up on an incomplete sequence because a non-UTF-8 byte arrived.
+    /// Give up on an incomplete sequence because a byte that cannot be part of
+    /// one at all arrived — anything below `0x80`, which the ground state
+    /// handles itself. tmux's `input_stop_utf8`, called from `input_print` and
+    /// `input_c0_dispatch` before either looks at the byte.
     fn flush(&mut self) -> Option<char> {
         (!self.bytes.is_empty()).then(|| {
             self.bytes.clear();
@@ -861,7 +877,6 @@ impl Utf8Collector {
 
     fn reset(&mut self) {
         self.bytes.clear();
-        self.trailing.clear();
     }
 }
 
@@ -1054,6 +1069,24 @@ mod tests {
             vec![TokenKind::Print('\u{fffd}'), TokenKind::Print('(')]
         );
         assert_eq!(tokens(b"\xff"), vec![TokenKind::Print('\u{fffd}')]);
+    }
+
+    #[test]
+    fn a_bad_sequence_swallows_the_length_its_lead_byte_announced() {
+        // A three-byte lead consumes three bytes even when the second is a
+        // perfectly good two-byte character: `utf8_append` poisons the result
+        // and keeps collecting, so the buried character never reappears.
+        assert_eq!(
+            tokens(b"\xe0\xc3\xa9"),
+            vec![TokenKind::Print('\u{fffd}')],
+            "one sequence, one replacement, nothing replayed"
+        );
+        // The same sequence one byte shorter leaves the third slot to whatever
+        // comes next, which is also swallowed.
+        assert_eq!(
+            tokens(b"\xe0\xc3\xa9\xc3\xa9"),
+            vec![TokenKind::Print('\u{fffd}'), TokenKind::Print('é')]
+        );
     }
 
     #[test]

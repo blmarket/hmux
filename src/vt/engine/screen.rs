@@ -13,31 +13,22 @@
 
 use std::collections::BTreeSet;
 
-use super::cell::{colour, Cell, CellData};
+use super::cell::{colour, Cell, CellData, UTF8_SIZE};
+use super::combine;
 use super::grid::{colour_is_default, line_flag, Grid};
+use super::hyperlinks::Hyperlinks;
+use crate::vt::screen::{mode, ScreenOptions};
+use crate::vt::width;
 
-/// tmux's `MODE_*`, the bits `screen->mode` carries.
-pub(crate) mod mode {
-    pub(crate) const CURSOR: u32 = 0x1;
-    pub(crate) const INSERT: u32 = 0x2;
-    pub(crate) const KCURSOR: u32 = 0x4;
-    pub(crate) const KKEYPAD: u32 = 0x8;
-    pub(crate) const WRAP: u32 = 0x10;
-    /// DECSET 1000: presses and releases.
-    pub(crate) const MOUSE_STANDARD: u32 = 0x20;
-    /// DECSET 1002: adds motion while a button is held.
-    pub(crate) const MOUSE_BUTTON: u32 = 0x40;
-    /// DECSET 1005: UTF-8 coordinate encoding.
-    pub(crate) const MOUSE_UTF8: u32 = 0x100;
-    /// DECSET 1006: SGR encoding.
-    pub(crate) const MOUSE_SGR: u32 = 0x200;
-    /// DECSET 1003: adds button-less motion.
-    pub(crate) const MOUSE_ALL: u32 = 0x1000;
-    pub(crate) const ORIGIN: u32 = 0x2000;
-    pub(crate) const CRLF: u32 = 0x4000;
-
-    /// tmux's `ALL_MOUSE_MODES`: the program asked for reports at all.
-    pub(crate) const ALL_MOUSE: u32 = MOUSE_STANDARD | MOUSE_BUTTON | MOUSE_ALL;
+/// What [`Screen::combine`] decided about a character, which is tmux's return
+/// value from `screen_write_combine` given a name.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Combined {
+    /// The character was folded into the cell to its left, or dropped. Either
+    /// way it does not get a cell of its own.
+    Consumed,
+    /// The character stands alone and should be placed normally.
+    NotCombined,
 }
 
 /// tmux's default history limit, the `history-limit` option's default.
@@ -70,6 +61,11 @@ pub(crate) struct Screen {
     pub(crate) tabs: BTreeSet<usize>,
     /// The cell attributes the next character is written with.
     pub(crate) cell: Cell,
+    /// The OSC 8 links this screen's cells point into, tmux's
+    /// `screen->hyperlinks`.
+    pub(crate) hyperlinks: Hyperlinks,
+    /// The pane options this screen consults, as the server last resolved them.
+    pub(crate) options: ScreenOptions,
 }
 
 impl Screen {
@@ -89,6 +85,8 @@ impl Screen {
             mode: mode::CURSOR | mode::WRAP,
             tabs: default_tabs(sx),
             cell: Cell::default(),
+            hyperlinks: Hyperlinks::default(),
+            options: ScreenOptions::default(),
         }
     }
 
@@ -376,13 +374,31 @@ impl Screen {
 
     /// tmux's `screen_write_clearscreen`.
     pub(crate) fn clear_screen(&mut self, bg: i32) {
+        if self.scrolls_on_clear() {
+            self.grid.view_clear_history(bg);
+            return;
+        }
         let py = self.view_y(0);
         let (sx, sy) = (self.grid.sx, self.sy());
         self.grid.clear(0, py, sx, sy, bg);
     }
 
+    /// Whether a clear should push the screen into the history rather than
+    /// blank it. The alternate screen keeps no history, so there is nowhere for
+    /// it to go and the option does not apply there.
+    fn scrolls_on_clear(&self) -> bool {
+        self.options.scroll_on_clear && self.has_history()
+    }
+
     /// tmux's `screen_write_clearendofscreen`.
     pub(crate) fn clear_end_of_screen(&mut self, bg: i32) {
+        // From the home position this erases the whole screen, so it takes the
+        // same route as `clear_screen`. From anywhere else it does not, and
+        // tmux checks the cursor rather than the extent.
+        if self.cx == 0 && self.cy == 0 && self.scrolls_on_clear() {
+            self.grid.view_clear_history(bg);
+            return;
+        }
         let py = self.view_y(self.cy);
         let (sx, sy) = (self.grid.sx, self.sy());
         self.grid.clear(self.cx, py, sx - self.cx, 1, bg);
@@ -433,11 +449,14 @@ impl Screen {
         if cell.is_padding() {
             return;
         }
-        let width = usize::from(cell.data.width);
-        if width == 0 {
-            self.combine(cell);
+        // Every character is offered to the combining rules first, not just the
+        // zero-width ones: a skin tone, a flag's second half and a Hangul jamo
+        // all have a width of their own and still belong in the cell to their
+        // left.
+        if self.combine(cell) == Combined::Consumed {
             return;
         }
+        let width = usize::from(cell.data.width);
         let sx = self.sx();
         let wrap = self.mode & mode::WRAP != 0;
 
@@ -476,14 +495,46 @@ impl Screen {
         }
     }
 
-    /// tmux's `screen_write_combine`, reduced to what the grid needs: a
-    /// zero-width character joins the cluster in the cell to its left.
-    fn combine(&mut self, cell: &Cell) {
-        if self.cx == 0 {
-            return;
+    /// tmux's `screen_write_combine`: decide whether this character joins the
+    /// cluster in the cell to its left, and fold it in if so.
+    ///
+    /// The return value is tmux's: [`Combined::Consumed`] means the character
+    /// has been dealt with — folded in, or deliberately dropped — and
+    /// [`Combined::NotCombined`] means it should be placed as a cell of its own.
+    fn combine(&mut self, cell: &Cell) -> Combined {
+        let incoming = cell.data.text();
+
+        // tmux discards the Hangul filler outright, wherever it appears.
+        if combine::is_hangul_filler(incoming) {
+            return Combined::Consumed;
         }
+
+        // A character that makes no sense on its own is flagged here and
+        // dropped below if there turns out to be nothing to combine it with.
+        let mut force_wide = false;
+        let zero_width = if combine::is_zwj(incoming) {
+            true
+        } else if combine::is_vs(incoming) {
+            force_wide = width::variation_selector_always_wide();
+            true
+        } else {
+            cell.data.width == 0
+        };
+        let alone = if zero_width {
+            Combined::Consumed
+        } else {
+            Combined::NotCombined
+        };
+
+        // Nothing to combine a single-byte character with, and nothing to the
+        // left of column zero.
+        if cell.data.bytes.len() < 2 || self.cx == 0 {
+            return alone;
+        }
+
+        // Find the cell to combine with, stepping back over a padding cell onto
+        // the wide character it belongs to.
         let row = self.view_y(self.cy);
-        // Step back over a padding cell onto the wide character it belongs to.
         let mut n = 1;
         let mut last = self.grid.get(self.cx - n, row);
         if self.cx != 1 && last.is_padding() {
@@ -491,12 +542,51 @@ impl Screen {
             last = self.grid.get(self.cx - n, row);
         }
         if usize::from(last.data.width) != n || last.is_padding() {
-            return;
+            return alone;
         }
-        for character in cell.data.text().chars() {
-            last.data.combine(character);
+
+        // A character with a width of its own only combines if one of the
+        // scripts' rules says it should.
+        if !zero_width {
+            match combine::jamo_state(last.data.text(), incoming) {
+                combine::JamoState::NotComposable => return Combined::Consumed,
+                combine::JamoState::Choseong => return Combined::NotCombined,
+                combine::JamoState::Composable => {}
+                combine::JamoState::NotHangulJamo => {
+                    if combine::should_combine(last.data.text(), incoming)
+                        || combine::should_combine(incoming, last.data.text())
+                    {
+                        force_wide = true;
+                    } else if !combine::has_zwj(last.data.text()) {
+                        return Combined::NotCombined;
+                    }
+                }
+            }
         }
-        self.grid.set(self.cx - n, row, &last);
+
+        // A cluster that would outgrow the cell is left to start its own.
+        if last.data.bytes.len() + cell.data.bytes.len() > UTF8_SIZE {
+            return Combined::NotCombined;
+        }
+        last.data.bytes.extend_from_slice(&cell.data.bytes);
+
+        // A modifier or variation selector widens the cell it joined, which
+        // costs the column to the right of it and moves the cursor on.
+        let mut cx = self.cx;
+        if last.data.width == 1 && force_wide {
+            last.data.width = 2;
+            n = 2;
+            cx += 1;
+        } else {
+            force_wide = false;
+        }
+
+        self.grid.set(cx - n, row, &last);
+        if force_wide {
+            self.grid.set_padding(cx - 1, row, &last);
+        }
+        self.set_cursor(Some(cx), None);
+        Combined::Consumed
     }
 
     /// tmux's `screen_write_overwrite`: clear the padding around a wide
@@ -651,7 +741,8 @@ impl Screen {
         };
         // The pane may have been resized while the alternate screen was up.
         grid.reflow(self.grid.sx);
-        grid.resize_y(self.grid.sy, colour::DEFAULT);
+        let cursor = grid.hsize + self.cy.min(grid.sy - 1);
+        grid.resize_y(self.grid.sy, cursor, colour::DEFAULT);
         self.grid = grid;
         if restore_cursor {
             if let Some(state) = self.saved_state.take() {
@@ -664,9 +755,11 @@ impl Screen {
         self.set_cursor(Some(self.cx), Some(self.cy));
     }
 
-    /// Whether the alternate screen is in use.
-    pub(crate) fn is_alternate(&self) -> bool {
-        self.saved_grid.is_some()
+    /// The grid the alternate-screen switch displaced, or `None` when no
+    /// alternate screen is in use. tmux's `saved_grid`, which `capture-pane -a`
+    /// reads; its presence is also what "the alternate screen is up" means.
+    pub(crate) fn saved_grid(&self) -> Option<&Grid> {
+        self.saved_grid.as_ref()
     }
 
     /// RIS: back to a screen that has been sent nothing.
@@ -708,12 +801,17 @@ impl Screen {
             }
         }
         if sy != self.grid.sy {
-            let before = self.grid.sy;
-            self.grid.resize_y(sy, colour::DEFAULT);
-            // The cursor follows the content: shrinking pushes rows into the
-            // history, so the cursor moves up with them.
-            if sy < before {
-                self.cy = self.cy.saturating_sub(before - sy);
+            // tmux carries the cursor through a resize as an absolute row and
+            // converts back at the end; a cursor that ended up inside the
+            // history has nowhere to be but the top left.
+            let cursor = self
+                .grid
+                .resize_y(sy, self.view_y(self.cy), colour::DEFAULT);
+            if cursor >= self.grid.hsize {
+                self.cy = cursor - self.grid.hsize;
+            } else {
+                self.cx = 0;
+                self.cy = 0;
             }
         }
         self.rupper = 0;
@@ -951,11 +1049,61 @@ mod tests {
     }
 
     #[test]
+    fn clearing_the_screen_can_push_it_into_the_history() {
+        let mut screen = Screen::new(10, 4, 100);
+        for row in 0..3 {
+            screen.cursor_move(Some(0), Some(row), false);
+            put(&mut screen, &format!("row{row}"));
+        }
+        assert_eq!(screen.grid.hsize, 0);
+
+        screen.clear_screen(colour::DEFAULT);
+        // The three written rows move into the history; the fourth was never
+        // touched, so it is blanked where it stands rather than stored.
+        assert_eq!(screen.grid.hsize, 3);
+        assert_eq!(history(&screen, 0), "row0");
+        assert_eq!(history(&screen, 2), "row2");
+        assert_eq!(text(&screen, 0), "", "the viewport is blank afterwards");
+    }
+
+    #[test]
+    fn scroll_on_clear_off_blanks_the_screen_where_it_stands() {
+        let mut screen = Screen::new(10, 4, 100);
+        screen.options.scroll_on_clear = false;
+        put(&mut screen, "kept");
+        screen.clear_screen(colour::DEFAULT);
+        assert_eq!(screen.grid.hsize, 0, "nothing was stored");
+        assert_eq!(text(&screen, 0), "");
+    }
+
+    #[test]
+    fn a_clear_from_home_takes_the_same_route_as_a_whole_screen_erase() {
+        let mut screen = Screen::new(10, 4, 100);
+        put(&mut screen, "here");
+        screen.cursor_move(Some(0), Some(0), false);
+        screen.clear_end_of_screen(colour::DEFAULT);
+        assert_eq!(screen.grid.hsize, 1);
+        assert_eq!(history(&screen, 0), "here");
+    }
+
+    #[test]
+    fn a_clear_from_anywhere_else_stores_nothing() {
+        let mut screen = Screen::new(10, 4, 100);
+        put(&mut screen, "here");
+        // Column one, not the home position: this erases part of the screen,
+        // and tmux checks where the cursor is rather than what it covers.
+        screen.cursor_move(Some(1), Some(0), false);
+        screen.clear_end_of_screen(colour::DEFAULT);
+        assert_eq!(screen.grid.hsize, 0);
+        assert_eq!(text(&screen, 0), "h");
+    }
+
+    #[test]
     fn the_alternate_screen_is_blank_and_keeps_no_history() {
         let mut screen = Screen::new(8, 2, 100);
         put(&mut screen, "primary");
         screen.alternate_on(true);
-        assert!(screen.is_alternate());
+        assert!(screen.saved_grid().is_some());
         assert_eq!(text(&screen, 0), "");
         put(&mut screen, "alt");
         screen.linefeed(false, colour::DEFAULT);

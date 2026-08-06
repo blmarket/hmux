@@ -30,13 +30,13 @@ use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, Scr
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 use crate::server::input_keys::ExtendedKeys;
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
-use crate::vt::observer::{Event as VtEvent, Observer, OscUpdate};
+use crate::vt::observer::{decrqss_reply, Event as VtEvent, Observer, OscUpdate};
 use crate::vt::parser::INPUT_BUFFER_DEFAULT_SIZE;
 use crate::vt::parser::{Param, Token, TokenKind};
 
 use crate::vt::input::{InputEncoder, MouseEvent};
 pub(crate) use crate::vt::observer::parse_packed_colour;
-use crate::vt::screen::{Grid, GridDims, VtScreen};
+use crate::vt::screen::{mode, CaptureExtent, Grid, GridDims, ScreenOptions, VtScreen};
 use crate::vt::PaneScreen;
 
 /// A single pane. Holds the emulated screen and, if live, the child on its pty.
@@ -981,12 +981,7 @@ impl NativePaneObservation {
     fn observe_output(&self, pending: &[u8]) -> (Vec<Vec<u8>>, Vec<&'static [u8]>) {
         self.append_control_output(pending);
         let policy = self.output_policy();
-        let observed = {
-            let mut observer = self.observer.borrow_mut();
-            let observed = observer.feed(pending, &policy);
-            self.modes.set(observer.modes());
-            observed
-        };
+        let observed = self.observer.borrow_mut().feed(pending, &policy);
         let tokens = &observed.screen[..];
 
         let mut replies: Vec<Vec<u8>> = Vec::new();
@@ -1006,6 +1001,11 @@ impl NativePaneObservation {
                 large_scroll |= self.write_terminal(&mut terminal, token);
             }
             self.record_change(large_scroll);
+            // The modes are republished from the screen once the whole batch
+            // has reached it. Reading them before would report what the pane
+            // asked for a read ago, and there is nothing else holding them:
+            // the screen's mode word is the only copy.
+            self.modes.set(PaneModeSnapshot::of(terminal.modes()));
         }
         (replies, queries)
     }
@@ -1044,6 +1044,15 @@ impl NativePaneObservation {
                     replies.push(reply);
                 }
             }
+            VtEvent::DecPrivateModeReport(mode) => {
+                let status = dec_mode_status(terminal.modes(), mode);
+                replies.push(format!("\x1b[?{mode};{status}$y").into_bytes());
+            }
+            VtEvent::StatusReport(request) => replies.push(decrqss_reply(
+                &request,
+                PaneCursorShape::from_parameter(self.cursor_shape.get()),
+                terminal.modes() & mode::CURSOR_BLINKING != 0,
+            )),
             VtEvent::SetTabStop => {
                 if let Ok((x, _)) = terminal.cursor_position() {
                     self.update_tab_stops(|stops| {
@@ -1275,7 +1284,7 @@ impl Pane {
     /// A pane with a screen but no process. Useful as a lightweight session
     /// placeholder and for feeding synthetic bytes in tests.
     pub fn inert(cols: u16, rows: u16) -> io::Result<Pane> {
-        let term = PaneScreen::new(cols, rows).map_err(io::Error::other)?;
+        let term = PaneScreen::new(cols, rows);
         Ok(Pane {
             observation: Rc::new(NativePaneObservation::new(
                 Rc::new(RefCell::new(term)),
@@ -1305,7 +1314,7 @@ impl Pane {
     ) -> io::Result<Pane> {
         assert!(!argv.is_empty(), "argv must have at least the program");
 
-        let term = PaneScreen::new(cols, rows).map_err(io::Error::other)?;
+        let term = PaneScreen::new(cols, rows);
         let term = Rc::new(RefCell::new(term));
         let terminal_queries = Rc::new(RefCell::new(VecDeque::new()));
 
@@ -1675,6 +1684,13 @@ impl Pane {
         self.terminal_queries.borrow_mut().drain(..).collect()
     }
 
+    /// Publish the options the pane's *screen* consults; see [`ScreenOptions`].
+    /// Like the output policy, these are pushed rather than looked up, and for
+    /// the same reason: the screen has no view of the option tables.
+    pub(crate) fn set_screen_options(&self, options: ScreenOptions) {
+        self.observation.term.borrow_mut().set_options(options);
+    }
+
     /// Publish the options the pane's output is parsed against. The server
     /// re-pushes these whenever they can have changed, since the parse itself
     /// has no view of the option tables.
@@ -1768,6 +1784,29 @@ impl Pane {
             .grid_snapshot_range(start, count)
     }
 
+    /// `resize-pane -T`; see
+    /// [`crate::vt::screen::VtScreen::trim_history_below_cursor`].
+    pub(crate) fn trim_history_below_cursor(&self) -> io::Result<()> {
+        self.observation
+            .term
+            .borrow_mut()
+            .trim_history_below_cursor()
+    }
+
+    /// The screen the alternate-screen switch displaced, which
+    /// `capture-pane -a` reads, or `None` when the pane is not on an alternate
+    /// screen. The VT half is the `-e` serialization of the same rows.
+    pub(crate) fn inactive_snapshot(&self) -> io::Result<Option<(Grid, Vec<u8>)>> {
+        self.observation.term.borrow_mut().inactive_snapshot()
+    }
+
+    /// Bytes of an escape sequence the pane's tokenizer has not finished, which
+    /// `capture-pane -P` returns. This is the pane's one parser, so the answer
+    /// is the same framing everything else on this pane was decided by.
+    pub(crate) fn pending_input(&self) -> Vec<u8> {
+        self.observation.observer.borrow().pending().to_vec()
+    }
+
     pub(crate) fn background_color(&self) -> String {
         self.observation.background.borrow().clone()
     }
@@ -1792,11 +1831,18 @@ impl Pane {
         self.observation.term.borrow_mut().dump_vt()
     }
 
-    pub(crate) fn dump_rows_vt(&self, start: usize, rows: usize) -> io::Result<Vec<u8>> {
+    /// Rows as `capture-pane -e` wants them, which is not the same read as the
+    /// compositor's: see [`crate::vt::screen::VtScreen::dump_vt_capture_rows`].
+    pub(crate) fn dump_rows_vt(
+        &self,
+        start: usize,
+        rows: usize,
+        extent: CaptureExtent,
+    ) -> io::Result<Vec<u8>> {
         self.observation
             .term
             .borrow_mut()
-            .dump_vt_rows(start, rows, self.cols)
+            .dump_vt_capture_rows(start, rows, self.cols, extent)
     }
 
     /// One physical row as trimmed plain text, without formatting the rest of
@@ -2272,10 +2318,39 @@ fn default_tab_stops(columns: u16) -> BTreeSet<u16> {
         .collect()
 }
 
+/// The DECRQM answer for one private mode: 1 set, 2 reset, 0 unrecognized.
+///
+/// tmux answers more modes than this — DECCKM, DECOM, DECAWM, the alternate
+/// screen, and the cursor blink whose unset answer comes from the
+/// `cursor-style` option. Those stay unrecognized here, as they were before the
+/// screen started answering.
+fn dec_mode_status(modes: u32, mode: u32) -> u8 {
+    let reports = |bit: u32| Some(modes & bit != 0);
+    let set = match mode {
+        25 => reports(mode::CURSOR),
+        1000 => reports(mode::MOUSE_STANDARD),
+        1002 => reports(mode::MOUSE_BUTTON),
+        1003 => reports(mode::MOUSE_ALL),
+        1004 => reports(mode::FOCUSON),
+        1005 => reports(mode::MOUSE_UTF8),
+        1006 => reports(mode::MOUSE_SGR),
+        2026 => reports(mode::SYNC),
+        2031 => reports(mode::THEME_UPDATES),
+        _ => None,
+    };
+    match set {
+        Some(true) => 1,
+        Some(false) => 2,
+        None => 0,
+    }
+}
+
 /// The reportable VT modes a pane's byte stream has set, in their own types.
 ///
-/// The tokenizer mutates these in place as it dispatches; the observation
-/// republishes the whole snapshot at the end of each output batch.
+/// This is a *reading* of the screen's mode word, not a second copy of it: the
+/// screen applies every DECSET the pane sends and this projects the bits the
+/// server cares about into the shapes it wants them in. The observation
+/// republishes it at the end of each output batch.
 #[derive(Clone, Copy)]
 pub(crate) struct PaneModeSnapshot {
     pub(crate) cursor_visible: bool,
@@ -2313,6 +2388,46 @@ pub(crate) struct PaneModeSnapshot {
     /// DECSET 2026, tmux's `MODE_SYNC`: the pane asked for its output to be
     /// held back until it says the frame is done.
     pub(crate) synchronized_output: bool,
+}
+
+impl PaneModeSnapshot {
+    /// Read a screen's mode word.
+    pub(crate) fn of(modes: u32) -> PaneModeSnapshot {
+        let on = |bit: u32| modes & bit != 0;
+        PaneModeSnapshot {
+            cursor_visible: on(mode::CURSOR),
+            bracketed_paste: on(mode::BRACKETPASTE),
+            focus_reporting: on(mode::FOCUSON),
+            theme_updates: on(mode::THEME_UPDATES),
+            // The three tracking modes are mutually exclusive in the word, so
+            // at most one of these matches.
+            mouse_tracking: if on(mode::MOUSE_ALL) {
+                Some(MouseTrackingMode::All)
+            } else if on(mode::MOUSE_BUTTON) {
+                Some(MouseTrackingMode::Button)
+            } else if on(mode::MOUSE_STANDARD) {
+                Some(MouseTrackingMode::Standard)
+            } else {
+                None
+            },
+            mouse_utf8: on(mode::MOUSE_UTF8),
+            mouse_sgr: on(mode::MOUSE_SGR),
+            insert_mode: on(mode::INSERT),
+            origin_mode: on(mode::ORIGIN),
+            wrap_mode: on(mode::WRAP),
+            cursor_blinking: on(mode::CURSOR_BLINKING),
+            cursor_keys: on(mode::KCURSOR),
+            application_keypad: on(mode::KKEYPAD),
+            extended_keys_request: if on(mode::KEYS_EXTENDED_2) {
+                ExtendedKeys::All
+            } else if on(mode::KEYS_EXTENDED) {
+                ExtendedKeys::Standard
+            } else {
+                ExtendedKeys::Off
+            },
+            synchronized_output: on(mode::SYNC),
+        }
+    }
 }
 
 impl Default for PaneModeSnapshot {
@@ -2891,7 +3006,7 @@ mod tests {
 
     /// A BEL that terminates an OSC string is a terminator, not a bell.
     fn inert_observation() -> NativePaneObservation {
-        let term = PaneScreen::new(20, 4).expect("terminal");
+        let term = PaneScreen::new(20, 4);
         NativePaneObservation::new(Rc::new(RefCell::new(term)), None, 20, 4)
     }
 

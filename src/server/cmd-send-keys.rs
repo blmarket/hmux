@@ -736,7 +736,7 @@ fn encode_parsed_key_for_pane(state: &ServerState, target: &str, code: KeyCode) 
 }
 
 fn encode_parsed_key_for_client(code: KeyCode) -> Option<ClientKey> {
-    let terminal = PaneScreen::new(80, 24).ok()?;
+    let terminal = PaneScreen::new(80, 24);
     let bytes = with_ghostty_key_event(code, |event| terminal.encode_key(event).ok()).flatten()?;
     Some(ClientKey {
         bytes,

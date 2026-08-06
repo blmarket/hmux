@@ -27,7 +27,7 @@ impl TerminalModel {
     pub fn new(cols: u16, rows: u16) -> io::Result<TerminalModel> {
         Ok(TerminalModel {
             parser: Parser::default(),
-            screen: PaneScreen::new(cols, rows).map_err(io::Error::other)?,
+            screen: PaneScreen::new(cols, rows),
         })
     }
 

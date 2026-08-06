@@ -1,10 +1,10 @@
 //! The in-house engine as a screen the server can use.
 //!
 //! This is the other side of [`crate::vt::screen::VtScreen`] from
-//! [`crate::vt::ghostty`]: same trait, same types, no libghostty-vt. It is not
-//! the default backend — [`crate::vt::PaneScreen`] still names the Ghostty one
-//! — and making it the default is the signed-off decision the plan calls
-//! Phase 3.
+//! [`crate::vt::ghostty`]: same trait, same types, no libghostty-vt. It is the
+//! backend [`crate::vt::PaneScreen`] names, so this is what a pane's grid
+//! actually is; the Ghostty one survives behind its feature as the thing the
+//! differential harness diffs against.
 
 use std::io;
 
@@ -14,7 +14,7 @@ use super::keys;
 use super::screen::DEFAULT_HISTORY_LIMIT;
 use crate::vt::input::{InputEncoder, KeyEvent, MouseEvent};
 use crate::vt::parser::Token;
-use crate::vt::screen::{Grid, GridDims, VtScreen};
+use crate::vt::screen::{CaptureExtent, Grid, GridDims, ScreenOptions, VtScreen};
 
 /// hmux's own screen.
 pub(crate) struct EngineScreen {
@@ -42,6 +42,24 @@ impl VtScreen for EngineScreen {
         self.engine
             .screen
             .resize(usize::from(cols.max(1)), usize::from(rows.max(1)));
+        Ok(())
+    }
+
+    fn set_options(&mut self, options: ScreenOptions) {
+        self.engine.screen.options = options;
+    }
+
+    fn modes(&self) -> u32 {
+        self.engine.screen.mode
+    }
+
+    fn trim_history_below_cursor(&mut self) -> io::Result<()> {
+        let screen = &mut self.engine.screen;
+        // The rows below the cursor are what goes, and there is only as much
+        // history as there is to pull up in their place.
+        let adjust = (screen.sy() - 1 - screen.cy).min(screen.grid.hsize);
+        screen.grid.remove_history(adjust);
+        screen.cy += adjust;
         Ok(())
     }
 
@@ -76,6 +94,25 @@ impl VtScreen for EngineScreen {
         Ok(dump::snapshot(&self.engine.screen, 0, total))
     }
 
+    fn inactive_snapshot(&self) -> io::Result<Option<(Grid, Vec<u8>)>> {
+        let screen = &self.engine.screen;
+        Ok(screen.saved_grid().map(|grid| {
+            let total = grid.total();
+            (
+                dump::snapshot_grid(screen, grid, 0, total),
+                // `-a` reads the whole displaced screen; which extent the
+                // capture wants is decided when its rows are serialized.
+                dump::vt_grid(
+                    screen,
+                    grid,
+                    0,
+                    total,
+                    dump::RowExtent::Capture(CaptureExtent::Allocated),
+                ),
+            )
+        }))
+    }
+
     fn grid_snapshot_range(&self, start: usize, count: usize) -> io::Result<Grid> {
         Ok(dump::snapshot(&self.engine.screen, start, count))
     }
@@ -99,14 +136,42 @@ impl VtScreen for EngineScreen {
 
     fn dump_vt(&self) -> io::Result<Vec<u8>> {
         let total = self.engine.screen.grid.total();
-        Ok(dump::vt(&self.engine.screen, 0, total))
+        Ok(dump::vt(
+            &self.engine.screen,
+            0,
+            total,
+            dump::RowExtent::Redraw,
+        ))
     }
 
     fn dump_vt_rows(&self, start: usize, rows: usize, cols: u16) -> io::Result<Vec<u8>> {
         if rows == 0 || cols == 0 {
             return Ok(Vec::new());
         }
-        Ok(dump::vt(&self.engine.screen, start, rows))
+        Ok(dump::vt(
+            &self.engine.screen,
+            start,
+            rows,
+            dump::RowExtent::Redraw,
+        ))
+    }
+
+    fn dump_vt_capture_rows(
+        &self,
+        start: usize,
+        rows: usize,
+        cols: u16,
+        extent: CaptureExtent,
+    ) -> io::Result<Vec<u8>> {
+        if rows == 0 || cols == 0 {
+            return Ok(Vec::new());
+        }
+        Ok(dump::vt(
+            &self.engine.screen,
+            start,
+            rows,
+            dump::RowExtent::Capture(extent),
+        ))
     }
 }
 

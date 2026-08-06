@@ -6,8 +6,9 @@
 //! reporting mode and which wire format the program asked for — screen state,
 //! and so the screen's to answer.
 
-use super::screen::{mode, Screen};
+use super::screen::Screen;
 use crate::vt::input::{Key, KeyEvent, MouseAction, MouseButton, MouseEvent};
+use crate::vt::screen::mode;
 
 /// The wire button number, before the modifier and motion bits.
 ///
@@ -142,6 +143,25 @@ pub(crate) fn encode_key(screen: &Screen, key: KeyEvent<'_>) -> Vec<u8> {
         Key::TAB => b"\t".to_vec(),
         Key::BACKSPACE => b"\x7f".to_vec(),
         Key::ESCAPE => b"\x1b".to_vec(),
+        other if other.function_number().is_some() => {
+            // xterm's function keys, which is what tmux's `input-keys.c`
+            // sends: SS3 for the first four and a numbered tilde for the rest.
+            // The numbers skip 16 and 22, as they always have.
+            match other.function_number().unwrap_or(1) {
+                1 => b"\x1bOP".to_vec(),
+                2 => b"\x1bOQ".to_vec(),
+                3 => b"\x1bOR".to_vec(),
+                4 => b"\x1bOS".to_vec(),
+                5 => tilde(15),
+                6 => tilde(17),
+                7 => tilde(18),
+                8 => tilde(19),
+                9 => tilde(20),
+                10 => tilde(21),
+                11 => tilde(23),
+                _ => tilde(24),
+            }
+        }
         _ => {
             let Some(text) = key.text else {
                 return Vec::new();
@@ -179,6 +199,33 @@ mod tests {
             engine.apply(&token.kind);
         }
         engine
+    }
+
+    #[test]
+    fn the_function_keys_are_xterms() {
+        let engine = screen(b"");
+        let send = |number: u8| {
+            encode_key(
+                &engine.screen,
+                KeyEvent {
+                    key: Key::function(number).expect("function key"),
+                    shift: false,
+                    control: false,
+                    alt: false,
+                    text: None,
+                    unshifted_codepoint: None,
+                },
+            )
+        };
+        // The first four are SS3; the rest are numbered, and the numbering
+        // skips 16 and 22 as xterm's always has.
+        assert_eq!(send(1), b"\x1bOP");
+        assert_eq!(send(4), b"\x1bOS");
+        assert_eq!(send(5), b"\x1b[15~");
+        assert_eq!(send(6), b"\x1b[17~");
+        assert_eq!(send(10), b"\x1b[21~");
+        assert_eq!(send(11), b"\x1b[23~");
+        assert_eq!(send(12), b"\x1b[24~");
     }
 
     fn press(column: u16, row: u16) -> MouseEvent {

@@ -19,7 +19,9 @@ use std::io;
 pub(crate) struct Key(i32);
 
 impl Key {
-    /// The opaque code, for a backend that has to translate it.
+    /// The opaque code, for a backend that has to translate it. Only the
+    /// libghostty-vt backend does; the engine reads the key itself.
+    #[cfg_attr(not(feature = "ghostty"), allow(dead_code))]
     pub(crate) fn code(self) -> i32 {
         self.0
     }
@@ -92,6 +94,14 @@ impl Key {
             .then(|| Key(Key::F1.0 + i32::from(number - 1)))
     }
 
+    /// The function-key number this key is, the inverse of [`Key::function`].
+    pub(crate) fn function_number(self) -> Option<u8> {
+        let offset = self.0 - Key::F1.0;
+        (0..12)
+            .contains(&offset)
+            .then(|| u8::try_from(offset + 1).unwrap_or(1))
+    }
+
     pub(crate) fn numpad_digit(digit: char) -> Option<Key> {
         digit
             .to_digit(10)
@@ -108,7 +118,9 @@ pub(crate) struct KeyEvent<'a> {
     pub(crate) alt: bool,
     /// The text the press would insert, when it inserts any.
     pub(crate) text: Option<&'a str>,
-    /// The character the key bears with no shift applied.
+    /// The character the key bears with no shift applied. Only the
+    /// libghostty-vt backend needs it told to it separately.
+    #[cfg_attr(not(feature = "ghostty"), allow(dead_code))]
     pub(crate) unshifted_codepoint: Option<char>,
 }
 

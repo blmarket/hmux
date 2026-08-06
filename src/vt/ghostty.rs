@@ -1,13 +1,22 @@
 //! The libghostty-vt backend for the emulation seam.
 //!
-//! [`GhosttyScreen`] is the screen hmux ships today: a safe wrapper over the
-//! `ghostty-sys` bindings that implements [`VtScreen`] and [`InputEncoder`].
-//! Everything specific to that library lives here — the FFI, the two-call
-//! buffer protocol, the option structs — so nothing above the seam names it.
+//! [`GhosttyScreen`] is a safe wrapper over the `ghostty-sys` bindings that
+//! implements [`VtScreen`] and [`InputEncoder`]. Everything specific to that
+//! library lives here — the FFI, the two-call buffer protocol, the option
+//! structs — so nothing above the seam names it.
 //!
 //! Where the library does not expose what the daemon needs, the reconstruction
 //! is this backend's problem and not the server's. That is the whole point of
 //! putting the seam here rather than at the library's own surface.
+//!
+//! This is no longer the shipped backend — [`crate::vt::PaneScreen`] names the
+//! in-house engine — and the whole module is behind the `ghostty` feature. It
+//! is kept as the alternate implementation the seam was carved to allow, and
+//! as the other side of [`crate::vt::differential`], which is its only caller.
+
+// The differential harness is test-only, so in a non-test build with this
+// feature on nothing constructs the backend.
+#![allow(dead_code)]
 
 use std::io;
 use std::mem;
@@ -17,7 +26,10 @@ use ghostty_sys::ffi;
 
 use super::input::{InputEncoder, KeyEvent, MouseAction, MouseButton, MouseEvent};
 use super::parser::Token;
-use super::screen::{CellSemantic, CellWidth, Grid, GridCell, GridDims, GridRow, VtScreen};
+use super::screen::{
+    CaptureExtent, CellSemantic, CellWidth, Grid, GridCell, GridDims, GridRow, RowFlags,
+    ScreenOptions, VtScreen,
+};
 
 /// A libghostty-vt error, wrapping the C `GhosttyResult` code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -430,9 +442,24 @@ impl GhosttyScreen {
                     semantic,
                     hyperlink,
                     hyperlink_id,
+                    // libghostty-vt does not keep a tab's origin: by the time a
+                    // cell is readable the tab is the blanks it painted.
+                    tab: false,
                 });
             }
-            rows.push(GridRow { cells, wrapped });
+            // Ghostty's rows are physical cells with no tmux allocation
+            // boundary behind them, so both extents are the whole row and the
+            // line flags it does not keep read as unset. `capture-pane -N`,
+            // `-T` and `-F` see the difference; the engine is what answers them
+            // faithfully.
+            let size = cells.len();
+            rows.push(GridRow {
+                cells,
+                wrapped,
+                used: size,
+                size,
+                flags: RowFlags::default(),
+            });
         }
 
         Ok(Grid {
@@ -801,6 +828,26 @@ impl VtScreen for GhosttyScreen {
         Ok(GhosttyScreen::resize(self, cols, rows)?)
     }
 
+    /// libghostty-vt keeps the modes but publishes no word of them, and a
+    /// backend that cannot report state owes the reconstruction itself — a
+    /// shadow tokenizer inside this module. Nothing asks: the default build
+    /// runs the engine, and the differential harness compares grids and
+    /// encoders. So this reports the modes a screen starts with, and the day
+    /// something here needs better, that shadow is what it costs.
+    fn modes(&self) -> u32 {
+        super::screen::mode::CURSOR | super::screen::mode::WRAP
+    }
+
+    /// libghostty-vt decides for itself what clearing the screen does with the
+    /// scrollback, so there is nothing here for `scroll-on-clear` to steer.
+    fn set_options(&mut self, _options: ScreenOptions) {}
+
+    /// libghostty-vt owns its scrollback and offers nothing equivalent, so this
+    /// backend leaves the grid alone rather than approximating the move.
+    fn trim_history_below_cursor(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
     fn cursor_position(&self) -> io::Result<(u16, u16)> {
         Ok(GhosttyScreen::cursor_position(self)?)
     }
@@ -819,6 +866,13 @@ impl VtScreen for GhosttyScreen {
 
     fn grid_snapshot(&self) -> io::Result<Grid> {
         Ok(GhosttyScreen::grid_snapshot(self)?)
+    }
+
+    /// libghostty-vt exposes only the screen in use. The grid the alternate
+    /// screen displaced is inside the library with no way to read it, so `-a`
+    /// gets the same answer as a pane that never switched: there is none.
+    fn inactive_snapshot(&self) -> io::Result<Option<(Grid, Vec<u8>)>> {
+        Ok(None)
     }
 
     fn grid_snapshot_range(&self, start: usize, count: usize) -> io::Result<Grid> {
@@ -842,6 +896,20 @@ impl VtScreen for GhosttyScreen {
     }
 
     fn dump_vt_rows(&self, start: usize, rows: usize, cols: u16) -> io::Result<Vec<u8>> {
+        Ok(GhosttyScreen::dump_vt_rows(self, start, rows, cols)?)
+    }
+
+    fn dump_vt_capture_rows(
+        &self,
+        start: usize,
+        rows: usize,
+        cols: u16,
+        _extent: CaptureExtent,
+    ) -> io::Result<Vec<u8>> {
+        // libghostty-vt's rows have neither of tmux's two extents behind them,
+        // so there is nothing for the requested one to select and the capture
+        // and the redraw are the same bytes here. That difference is this
+        // backend's to carry, not the server's.
         Ok(GhosttyScreen::dump_vt_rows(self, start, rows, cols)?)
     }
 }

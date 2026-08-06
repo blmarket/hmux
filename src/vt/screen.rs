@@ -18,6 +18,59 @@ use std::io;
 
 use super::parser::Token;
 
+/// tmux's `MODE_*`, the bits `screen->mode` carries.
+///
+/// This is the whole word, not the part that steers the grid. Modes nothing in
+/// the engine reads — bracketed paste, focus reporting — still belong here: they
+/// are the pane's state, one sequence sets and clears them, and a second copy
+/// beside this one is a second implementation of the same DECSET semantics with
+/// its own chances to disagree.
+pub(crate) mod mode {
+    pub(crate) const CURSOR: u32 = 0x1;
+    pub(crate) const INSERT: u32 = 0x2;
+    pub(crate) const KCURSOR: u32 = 0x4;
+    pub(crate) const KKEYPAD: u32 = 0x8;
+    pub(crate) const WRAP: u32 = 0x10;
+    /// DECSET 1000: presses and releases.
+    pub(crate) const MOUSE_STANDARD: u32 = 0x20;
+    /// DECSET 1002: adds motion while a button is held.
+    pub(crate) const MOUSE_BUTTON: u32 = 0x40;
+    /// DECSET 12, and a side effect of every DECSCUSR style but the default.
+    pub(crate) const CURSOR_BLINKING: u32 = 0x80;
+    /// DECSET 1005: UTF-8 coordinate encoding.
+    pub(crate) const MOUSE_UTF8: u32 = 0x100;
+    /// DECSET 1006: SGR encoding.
+    pub(crate) const MOUSE_SGR: u32 = 0x200;
+    /// DECSET 2004: the pane wants the paste markers.
+    pub(crate) const BRACKETPASTE: u32 = 0x400;
+    /// DECSET 1004: the pane asked to be told when focus moves.
+    pub(crate) const FOCUSON: u32 = 0x800;
+    /// DECSET 1003: adds button-less motion.
+    pub(crate) const MOUSE_ALL: u32 = 0x1000;
+    pub(crate) const ORIGIN: u32 = 0x2000;
+    pub(crate) const CRLF: u32 = 0x4000;
+    /// `CSI > 4 ; 1 m`: the `modifyOtherKeys` level the pane asked for. What it
+    /// gets also depends on `extended-keys`, which hmux applies where the key
+    /// is encoded rather than here — so these two bits are the pane's request,
+    /// where tmux's are the request already mixed with the option.
+    pub(crate) const KEYS_EXTENDED: u32 = 0x8000;
+    /// `CSI > 4 ; 2 m`: the same request, at the level that reports every key.
+    pub(crate) const KEYS_EXTENDED_2: u32 = 0x4_0000;
+    /// DECSET 2031: the pane asked to be told when the theme changes.
+    pub(crate) const THEME_UPDATES: u32 = 0x8_0000;
+    /// DECSET 2026: the pane asked for its output to be held back until it says
+    /// the frame is done.
+    pub(crate) const SYNC: u32 = 0x10_0000;
+    /// The pane has spoken about the cursor blink itself, so a query is
+    /// answered from [`CURSOR_BLINKING`] rather than from `cursor-style`.
+    pub(crate) const CURSOR_BLINKING_SET: u32 = 0x2_0000;
+
+    /// tmux's `ALL_MOUSE_MODES`: the program asked for reports at all.
+    pub(crate) const ALL_MOUSE: u32 = MOUSE_STANDARD | MOUSE_BUTTON | MOUSE_ALL;
+    /// tmux's `EXTENDED_KEY_MODES`.
+    pub(crate) const ALL_KEYS_EXTENDED: u32 = KEYS_EXTENDED | KEYS_EXTENDED_2;
+}
+
 /// Ghostty-style display-cell width classification.
 ///
 /// A wide character occupies its own [`Wide`](CellWidth::Wide) cell plus a
@@ -29,6 +82,9 @@ pub(crate) enum CellWidth {
     Narrow,
     Wide,
     SpacerTail,
+    /// Only libghostty-vt reports this; tmux's grid has no equivalent, so the
+    /// engine never produces one.
+    #[cfg_attr(not(feature = "ghostty"), allow(dead_code))]
     SpacerHead,
 }
 
@@ -36,6 +92,10 @@ pub(crate) enum CellWidth {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CellSemantic {
     Output,
+    /// Only libghostty-vt reports this. tmux classifies rows with
+    /// `GRID_LINE_START_PROMPT` and `GRID_LINE_START_OUTPUT` alone, so under
+    /// the engine every row is one of the other two.
+    #[cfg_attr(not(feature = "ghostty"), allow(dead_code))]
     Input,
     Prompt,
 }
@@ -54,6 +114,78 @@ pub(crate) struct GridCell {
     /// The OSC 8 `id=` the program set explicitly, if any. Implicit ids the
     /// emulator invents for its own bookkeeping are not reported.
     pub(crate) hyperlink_id: Option<String>,
+    /// Whether this cell stands for the run of columns a horizontal tab
+    /// created, tmux's `GRID_FLAG_TAB`.
+    ///
+    /// The cell holds blanks so that the grid renders as the program intended,
+    /// but a text read of the row puts the tab back: tmux's
+    /// `grid_string_cells` emits a single `\t` for such a cell, which is why
+    /// `capture-pane` output can be narrower than the columns it covers. A
+    /// backend that does not keep the tab's origin reports `false` and the tab
+    /// reads back as the spaces it painted.
+    pub(crate) tab: bool,
+}
+
+/// The tmux `GRID_LINE_*` flags of one row, which `capture-pane -F` reports.
+///
+/// [`GridRow::wrapped`] is the sixth and is kept separate because everything
+/// reads it. `GRID_LINE_DEAD` has no field: it marks a placeholder left behind
+/// mid-reflow, and no grid a caller can observe holds one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct RowFlags {
+    /// Some cell on the row belongs to an OSC 8 hyperlink.
+    pub(crate) hyperlink: bool,
+    /// Command output starts on this row (OSC 133 C).
+    pub(crate) start_output: bool,
+    /// A shell-integration prompt starts on this row (OSC 133 A).
+    pub(crate) start_prompt: bool,
+    /// The row has held a cell needing tmux's extended representation — a wide
+    /// or multi-byte character, an RGB colour, an underline colour or a link.
+    /// It is sticky, as in tmux: erasing the cell does not clear the flag.
+    pub(crate) extended: bool,
+}
+
+/// The pane options the screen itself has to consult.
+///
+/// tmux reads these out of `wp->options` inside the operation that needs them,
+/// with the whole server in reach. hmux's screen runs away from server state,
+/// so the resolved values are pushed to it instead and re-pushed whenever they
+/// can have changed. That is the same shape
+/// [`PaneOutputPolicy`](crate::server::pane::PaneOutputPolicy) has for the
+/// tokenizer, and it is deliberately a separate one: those options decide how a
+/// pane's bytes are *parsed*, these decide what an operation does to the grid,
+/// and a backend that implements one need not implement the other.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ScreenOptions {
+    /// `scroll-on-clear`: whether clearing the screen moves what was on it into
+    /// the history instead of blanking it where it stands.
+    pub(crate) scroll_on_clear: bool,
+}
+
+impl Default for ScreenOptions {
+    /// tmux's defaults, which is what a screen uses until the server says
+    /// otherwise.
+    fn default() -> Self {
+        ScreenOptions {
+            scroll_on_clear: true,
+        }
+    }
+}
+
+/// How far along a row `capture-pane` reads.
+///
+/// tmux's `grid_string_cells` takes this as a flag bit, and the two extents are
+/// genuinely different boundaries rather than one with a tidier spelling. The
+/// choice is visible in `-e` output: a capture that runs to the allocated
+/// extent crosses the blank cells past what a program wrote, and the style
+/// transition into those blanks outlives the trailing-space trim that removes
+/// the blanks themselves.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CaptureExtent {
+    /// tmux's `cellsize`, which is what a capture reads unless asked otherwise.
+    Allocated,
+    /// tmux's `cellused`, the written extent, which `-J` and `-T` ask for.
+    Written,
 }
 
 /// One physical row of a grid snapshot.
@@ -62,6 +194,17 @@ pub(crate) struct GridRow {
     pub(crate) cells: Vec<GridCell>,
     /// Whether this physical row soft-wraps into the following one.
     pub(crate) wrapped: bool,
+    /// tmux's `cellused`: how far into the row a program has written.
+    ///
+    /// This cannot be recovered from the cells. A cell erased inside the
+    /// written extent is indistinguishable from one never touched, so a reader
+    /// scanning back from the right for content finds a different boundary than
+    /// tmux does — which is exactly what `capture-pane -J`/`-T` stop at.
+    pub(crate) used: usize,
+    /// tmux's `cellsize`: the row's allocated extent, where a capture that
+    /// keeps empty cells (the default, and `-N`) stops.
+    pub(crate) size: usize,
+    pub(crate) flags: RowFlags,
 }
 
 /// An immutable copy of the active screen, scrollback first, viewport last.
@@ -104,6 +247,24 @@ pub(crate) trait VtScreen {
     /// Resize the grid. Both dimensions are clamped to at least one.
     fn resize(&mut self, cols: u16, rows: u16) -> io::Result<()>;
 
+    /// Apply the pane options the screen consults; see [`ScreenOptions`].
+    fn set_options(&mut self, options: ScreenOptions);
+
+    /// The pane's VT modes, as [`mode`]'s bits.
+    ///
+    /// Every mode a pane can set lives here, not only the ones that steer the
+    /// grid, because one sequence writes a mode and one word should hold it.
+    /// The server reads this rather than counting DECSETs beside the screen.
+    fn modes(&self) -> u32;
+
+    /// `resize-pane -T`: drop the rows below the cursor and pull the same
+    /// number of rows out of the history into the viewport, so the cursor's
+    /// line ends up at the bottom of the screen with its content intact.
+    ///
+    /// This is tmux's one operation on history that is neither a write nor a
+    /// read, and a backend that does not own its scrollback cannot offer it.
+    fn trim_history_below_cursor(&mut self) -> io::Result<()>;
+
     /// The cursor, zero-based and relative to the viewport.
     fn cursor_position(&self) -> io::Result<(u16, u16)>;
 
@@ -124,6 +285,17 @@ pub(crate) trait VtScreen {
 
     /// Snapshot every physical cell and row.
     fn grid_snapshot(&self) -> io::Result<Grid>;
+
+    /// The *inactive* screen — the one the alternate-screen switch displaced —
+    /// as its snapshot and its `capture-pane -e` serialization, or `None` when
+    /// no alternate screen is in use.
+    ///
+    /// tmux keeps it as `saved_grid` and `capture-pane -a` is the only thing
+    /// that reads it. Both forms come back together because a capture picks one
+    /// of them and the grid is walked either way; splitting them would mean
+    /// walking it twice or asking a backend to hold a cursor into a screen that
+    /// has none.
+    fn inactive_snapshot(&self) -> io::Result<Option<(Grid, Vec<u8>)>>;
 
     /// Snapshot only physical rows `[start, start + count)`, clamped to the
     /// grid. The per-cell walk dominates the cost of a snapshot, so a consumer
@@ -148,4 +320,20 @@ pub(crate) trait VtScreen {
 
     /// VT bytes for physical rows `[start, start + rows)` alone.
     fn dump_vt_rows(&self, start: usize, rows: usize, cols: u16) -> io::Result<Vec<u8>>;
+
+    /// As [`Self::dump_vt_rows`], but for `capture-pane -e` rather than for a
+    /// client's tty.
+    ///
+    /// The two are not the same read. A capture runs to one of the row's two
+    /// extents, so a space a program wrote — perhaps carrying a background
+    /// colour — is part of the captured row. A redraw stops at the last
+    /// non-blank cell and erases the rest, which is cheaper and is what the
+    /// compositor wants. tmux keeps the same two paths apart.
+    fn dump_vt_capture_rows(
+        &self,
+        start: usize,
+        rows: usize,
+        cols: u16,
+        extent: CaptureExtent,
+    ) -> io::Result<Vec<u8>>;
 }

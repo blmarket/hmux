@@ -14,10 +14,17 @@
 //!
 //! [`PaneScreen`] names the implementation this build ships. Server code calls
 //! trait methods, so that alias is the only place a backend is chosen.
+//!
+//! The backend is [`engine`], hmux's own port of tmux's grid and screen model.
+//! The libghostty-vt backend it replaced is still buildable behind the
+//! `ghostty` feature, which is what [`differential`] diffs against; nothing in
+//! the default build links it, and the default build needs only the Rust
+//! toolchain.
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ghostty"))]
 mod differential;
 pub(crate) mod engine;
+#[cfg(feature = "ghostty")]
 pub(crate) mod ghostty;
 pub(crate) mod input;
 pub(crate) mod observer;
@@ -26,4 +33,4 @@ pub(crate) mod screen;
 pub(crate) mod width;
 
 /// The screen implementation this build ships.
-pub(crate) type PaneScreen = ghostty::GhosttyScreen;
+pub(crate) type PaneScreen = engine::backend::EngineScreen;

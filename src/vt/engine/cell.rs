@@ -75,6 +75,8 @@ pub(crate) mod colour {
         ))
     }
 
+    // Consumed by the `capture-pane -e` style serializer in the server.
+    #[allow(dead_code)]
     /// The palette index of a 256-colour value, if it is one. The eight bright
     /// aixterm colours (90–97, 100–107) are folded onto 8–15, as tmux folds
     /// them.
@@ -131,18 +133,6 @@ impl CellData {
     /// only ever arrive as an encoded `char`.
     pub(crate) fn text(&self) -> &str {
         std::str::from_utf8(&self.bytes).unwrap_or("")
-    }
-
-    /// Append a zero-width codepoint to the cluster, as a combining mark
-    /// arriving after the base character does. Beyond [`UTF8_SIZE`] bytes the
-    /// mark is dropped rather than allowed to grow the cell without bound.
-    pub(crate) fn combine(&mut self, character: char) {
-        let mut buffer = [0u8; 4];
-        let encoded = character.encode_utf8(&mut buffer).as_bytes();
-        if self.bytes.len() + encoded.len() > UTF8_SIZE {
-            return;
-        }
-        self.bytes.extend_from_slice(encoded);
     }
 }
 
@@ -235,16 +225,6 @@ mod tests {
         assert_eq!(colour::as_rgb(colour::indexed(4)), None);
         // aixterm brights fold onto the palette's own bright half.
         assert_eq!(colour::as_index(94), Some(12));
-    }
-
-    #[test]
-    fn a_cluster_grows_only_to_the_cell_limit() {
-        let mut data = CellData::from_char('e', 1);
-        for _ in 0..20 {
-            data.combine('\u{301}');
-        }
-        assert!(data.bytes.len() <= UTF8_SIZE);
-        assert!(data.text().starts_with('e'));
     }
 
     #[test]

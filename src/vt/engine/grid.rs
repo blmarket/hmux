@@ -16,10 +16,17 @@ use super::cell::{colour, flag, Cell, CellData};
 pub(crate) mod line_flag {
     /// The line soft-wraps into the next one.
     pub(crate) const WRAPPED: u8 = 0x1;
+    /// Some cell on this line has needed tmux's extended cell representation.
+    /// tmux sets this in `grid_extended_cell`, where it is an allocation
+    /// decision, and never clears it; `capture-pane -F` reports it as `X`.
+    pub(crate) const EXTENDED: u8 = 0x2;
     /// A shell-integration prompt starts on this line (OSC 133 A).
     pub(crate) const START_PROMPT: u8 = 0x8;
     /// Command output starts on this line (OSC 133 C).
     pub(crate) const START_OUTPUT: u8 = 0x10;
+    /// Some cell on this line belongs to an OSC 8 hyperlink. `capture-pane -e`
+    /// checks this before it walks a row looking for links.
+    pub(crate) const HYPERLINK: u8 = 0x20;
 }
 
 /// Lay one logical line out at `sx` columns, appending the rows it becomes.
@@ -52,6 +59,23 @@ fn lay_out(out: &mut Vec<Line>, cells: Vec<Cell>, sx: usize, flags: u8) {
     out.push(row);
 }
 
+/// tmux's `grid_need_extended_cell`: whether a cell is too rich for the compact
+/// entry and has to be stored in the line's extended array.
+///
+/// This engine stores every cell the same way, so the answer changes no storage
+/// here. It is still worth computing, because tmux lets the answer show: the
+/// line flag it sets is sticky and `capture-pane -F` prints it.
+fn needs_extended(cell: &Cell) -> bool {
+    cell.attr > 0xff
+        || cell.data.bytes.len() > 1
+        || cell.data.width > 1
+        || cell.fg & colour::FLAG_RGB != 0
+        || cell.bg & colour::FLAG_RGB != 0
+        || cell.us != colour::DEFAULT
+        || cell.link != 0
+        || cell.flags & flag::TAB != 0
+}
+
 /// tmux's `COLOUR_DEFAULT`: neither of the two spellings of "unset".
 pub(crate) fn colour_is_default(value: i32) -> bool {
     value == 8 || value == 9
@@ -68,7 +92,8 @@ pub(crate) struct Line {
 }
 
 impl Line {
-    /// The allocated extent, tmux's `cellsize`.
+    /// The allocated extent, tmux's `cellsize`, which is where a capture that
+    /// keeps its empty cells stops.
     pub(crate) fn size(&self) -> usize {
         self.cells.len()
     }
@@ -141,6 +166,12 @@ impl Grid {
         let line = &mut self.lines[py];
         if px + 1 > line.used {
             line.used = px + 1;
+        }
+        if cell.link != 0 {
+            line.flags |= line_flag::HYPERLINK;
+        }
+        if needs_extended(cell) {
+            line.flags |= line_flag::EXTENDED;
         }
         line.cells[px] = cell.clone();
     }
@@ -328,6 +359,56 @@ impl Grid {
     }
 
     /// tmux's `grid_clear_history`.
+    /// tmux's `grid_view_clear_history`: push the viewport into the history
+    /// instead of blanking it where it stands.
+    ///
+    /// Only the rows a program actually wrote go. A screen whose last two rows
+    /// were never touched scrolls the rows above them and blanks the rest, so
+    /// clearing does not fill the scrollback with the blank tail of a
+    /// half-drawn screen — and a screen nothing was written to scrolls nothing
+    /// at all.
+    pub(crate) fn view_clear_history(&mut self, bg: i32) {
+        let last = (0..self.sy)
+            .filter(|yy| {
+                self.line(self.hsize + yy)
+                    .is_some_and(|line| line.used() != 0)
+            })
+            .map(|yy| yy + 1)
+            .next_back()
+            .unwrap_or(0);
+        if last == 0 {
+            let py = self.hsize;
+            self.clear(0, py, self.sx, self.sy, bg);
+            return;
+        }
+        for _ in 0..last {
+            self.collect_history();
+            self.scroll_history(bg);
+        }
+        if last < self.sy {
+            let py = self.hsize;
+            self.clear(0, py, self.sx, self.sy - last, bg);
+        }
+        // The view is back at the bottom: everything that was on it is history.
+        self.hscrolled = 0;
+    }
+
+    /// tmux's `grid_remove_history`: drop the last `ny` rows and count `ny`
+    /// fewer of them as history.
+    ///
+    /// Nothing moves. The viewport is addressed from `hsize`, so lowering it
+    /// slides the window down over rows that were history a moment ago, and the
+    /// rows that fall off the bottom are the ones the viewport no longer
+    /// reaches. Asking to remove more history than there is does nothing at
+    /// all, as in tmux.
+    pub(crate) fn remove_history(&mut self, ny: usize) {
+        if ny > self.hsize {
+            return;
+        }
+        self.lines.truncate(self.hsize + self.sy - ny);
+        self.hsize -= ny;
+    }
+
     pub(crate) fn clear_history(&mut self) {
         self.lines.drain(..self.hsize);
         self.hsize = 0;
@@ -362,19 +443,49 @@ impl Grid {
         }
     }
 
-    /// Grow or shrink the viewport height, taking rows from or giving rows back
-    /// to the history as tmux's `screen_resize_y` does.
-    pub(crate) fn resize_y(&mut self, sy: usize, bg: i32) {
+    /// Grow or shrink the viewport height: tmux's `screen_resize_y`.
+    ///
+    /// The cursor is carried through as an *absolute* row and handed back the
+    /// same way, because that is the coordinate a resize does not move. How far
+    /// the cursor travels in viewport terms falls out of what happened to the
+    /// history, which is exactly how tmux keeps the two in step.
+    pub(crate) fn resize_y(&mut self, sy: usize, cursor: usize, bg: i32) -> usize {
         if sy == self.sy {
-            return;
+            return cursor;
         }
         if sy < self.sy {
-            // The rows that fall off the bottom go into the history.
-            let lost = self.sy - sy;
-            self.hsize += lost;
+            let before = self.sy;
+            let cy = cursor.saturating_sub(self.hsize);
+            let mut needed = before - sy;
+
+            // Delete as many rows as possible from below the cursor before
+            // touching the history. Skipping this is not a small difference:
+            // a pane merely made shorter would accumulate scrollback it never
+            // scrolled, and every row index the server reports — copy mode's
+            // cursor, `capture-pane`'s ranges, `history_size` — would shift.
+            let eaten = needed.min((before - 1).saturating_sub(cy));
+            needed -= eaten;
+
+            let mut cursor = cursor;
+            if self.hlimit != 0 {
+                // The rows left over become history, which leaves the absolute
+                // cursor row where it was.
+                self.hsize += needed;
+                self.hscrolled += needed;
+            } else if needed > 0 {
+                // With no history to give them to, they come off the top and
+                // the cursor comes with them.
+                let available = cy.min(needed);
+                if available > 0 {
+                    self.move_lines(self.hsize, self.hsize + available, before - available, bg);
+                    cursor -= available;
+                }
+            }
+            self.lines.truncate(self.hsize + sy);
             self.sy = sy;
-            return;
+            return cursor;
         }
+
         let gained = sy - self.sy;
         // Pull rows back out of the history where there are any, and otherwise
         // add blank ones at the bottom.
@@ -386,6 +497,7 @@ impl Grid {
             self.empty_line(last, bg);
         }
         self.sy = sy;
+        cursor
     }
 
     /// Rewrap every stored row to a new width: tmux's `grid_reflow`.

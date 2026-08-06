@@ -11,8 +11,10 @@
 
 use super::cell::{attr, colour, Cell, CellData};
 use super::grid::line_flag;
-use super::screen::{erase_background, mode, Screen};
+use super::hyperlinks;
+use super::screen::{erase_background, Screen};
 use crate::vt::parser::{Param, TokenKind};
+use crate::vt::screen::mode;
 use crate::vt::width::codepoint_width;
 
 /// The character sets `SO`/`SI` and `ESC ( 0` select between.
@@ -273,6 +275,30 @@ impl Engine {
             // SCP / RCP, the CSI spellings of DECSC and DECRC.
             (None, [], b's') => self.screen.save_cursor(),
             (None, [], b'u') => self.screen.restore_cursor(),
+            // `CSI > 4 ; n m`, tmux's MODKEYS: which `modifyOtherKeys` level
+            // the pane wants. Only the two bits are recorded here; whether the
+            // pane actually gets them is `extended-keys`'s decision, made where
+            // the key is encoded.
+            (Some(b'>'), [], b'm') if params.first().is_none_or(|param| param.or(4) == 4) => {
+                self.screen.mode_clear(mode::ALL_KEYS_EXTENDED);
+                match params.get(1).map_or(0, |param| param.or(0)) {
+                    1 => self.screen.mode_set(mode::KEYS_EXTENDED),
+                    2 => self.screen.mode_set(mode::KEYS_EXTENDED_2),
+                    _ => {}
+                }
+            }
+            // `CSI > 4 n`, tmux's MODOFF: withdraw the request.
+            (Some(b'>'), [], b'n') if params.first().is_some_and(|param| param.or(0) == 4) => {
+                self.screen.mode_clear(mode::ALL_KEYS_EXTENDED);
+            }
+            // DECSCUSR. The style itself is the server's to report; what the
+            // screen keeps is the blink every style but the default decides.
+            (None, [b' '], b'q') => {
+                let style = get(0, 0);
+                if (1..=6).contains(&style) {
+                    self.toggle(mode::CURSOR_BLINKING, style % 2 == 1);
+                }
+            }
             _ => {}
         }
         // Only a printable character leaves something for REP to repeat.
@@ -331,8 +357,11 @@ impl Engine {
         }
     }
 
-    /// DECSET / DECRST. Only the modes that change the *screen* are here; the
-    /// ones the server reports or answers were handled by the observer.
+    /// DECSET / DECRST.
+    ///
+    /// Every mode the pane can set lands here, including the ones only the
+    /// server reads. The screen is where tmux keeps them and where hmux keeps
+    /// them: one sequence writes a mode and one word holds it.
     fn set_private_modes(&mut self, params: &[Param], set: bool) {
         for param in params {
             let Some(mode) = param.value else { continue };
@@ -346,6 +375,13 @@ impl Engine {
                 }
                 // DECAWM.
                 7 => self.toggle(mode::WRAP, set),
+                // The cursor blink. Either spelling also records that the pane
+                // asked at all, which is what tells a later query apart from
+                // the `cursor-style` option's answer.
+                12 => {
+                    self.toggle(mode::CURSOR_BLINKING, set);
+                    self.screen.mode_set(mode::CURSOR_BLINKING_SET);
+                }
                 // DECTCEM.
                 25 => self.toggle(mode::CURSOR, set),
                 // The mouse reporting modes. tmux keeps 1000/1002/1003
@@ -361,8 +397,16 @@ impl Engine {
                         });
                     }
                 }
+                // Highlight tracking, which tmux does not implement: turning it
+                // off still turns the modes it groups with off, and turning it
+                // on does nothing.
+                1001 if !set => self.screen.mode_clear(mode::ALL_MOUSE),
+                1004 => self.toggle(mode::FOCUSON, set),
                 1005 => self.toggle(mode::MOUSE_UTF8, set),
                 1006 => self.toggle(mode::MOUSE_SGR, set),
+                2004 => self.toggle(mode::BRACKETPASTE, set),
+                2026 => self.toggle(mode::SYNC, set),
+                2031 => self.toggle(mode::THEME_UPDATES, set),
                 // The alternate screen. 1049 also saves and restores the
                 // cursor; 47 and 1047 do not.
                 47 | 1047 => {
@@ -544,12 +588,17 @@ impl Engine {
 
     // ---- OSC --------------------------------------------------------------
 
-    /// The only OSC sequences that change the *grid* are the shell-integration
-    /// ones. Everything else the observer already turned into server state.
+    /// The OSC sequences that change the *grid* are the shell-integration ones
+    /// and the hyperlink one. Everything else the observer already turned into
+    /// server state.
     fn osc(&mut self, data: &[u8]) {
         let Ok(text) = std::str::from_utf8(data) else {
             return;
         };
+        if let Some(body) = text.strip_prefix("8;") {
+            self.osc_8(body);
+            return;
+        }
         let Some(body) = text.strip_prefix("133;") else {
             return;
         };
@@ -567,6 +616,21 @@ impl Engine {
                 .set_line_flags(row, line_flag::START_OUTPUT, true),
             _ => {}
         }
+    }
+
+    /// tmux's `input_osc_8`: open or close a hyperlink on the pen, so the cells
+    /// written after it belong to that link.
+    fn osc_8(&mut self, body: &str) {
+        // A malformed sequence leaves whatever link is open alone, as tmux's
+        // `bad` path does.
+        let Some((id, uri)) = hyperlinks::parse(body) else {
+            return;
+        };
+        self.screen.cell.link = match uri {
+            Some(uri) => self.screen.hyperlinks.put(&uri, id.as_deref()),
+            // An empty URI closes the open link.
+            None => 0,
+        };
     }
 }
 
@@ -591,6 +655,170 @@ mod tests {
         (0..grid.line_length(row))
             .map(|px| grid.get(px, row).data.text().to_string())
             .collect()
+    }
+
+    /// The cluster in a cell and the cursor column, which together are what
+    /// the combining rules are observable through.
+    fn cell(engine: &Engine, px: usize) -> String {
+        engine
+            .screen
+            .grid
+            .get(px, engine.screen.grid.hsize)
+            .data
+            .text()
+            .to_string()
+    }
+
+    // The expectations in the combining tests below were taken from tmux 3.7b
+    // itself: each payload was printed into a clean pane and the cursor column
+    // and `capture-pane` bytes read back. They are the oracle's answers, not a
+    // reading of `utf8-combined.c`.
+
+    /// The snapshot's view of one viewport cell, which is what `capture-pane`
+    /// and copy mode read.
+    fn snapshot_cell(engine: &Engine, px: usize) -> crate::vt::screen::GridCell {
+        let grid = super::super::dump::snapshot(&engine.screen, engine.screen.grid.hsize, 1);
+        grid.rows[0].cells[px].clone()
+    }
+
+    #[test]
+    fn an_osc_8_link_is_carried_by_the_cells_written_under_it() {
+        let mut engine = screen(24, 3);
+        feed(
+            &mut engine,
+            b"\x1b]8;id=x1;https://a.test\x1b\\LINK\x1b]8;;\x1b\\ plain",
+        );
+        assert_eq!(text(&engine, 0), "LINK plain");
+        for px in 0..4 {
+            let cell = snapshot_cell(&engine, px);
+            assert_eq!(cell.hyperlink.as_deref(), Some("https://a.test"));
+            assert_eq!(cell.hyperlink_id.as_deref(), Some("x1"));
+        }
+        // The empty URI closed the link, so what follows is not part of it.
+        assert_eq!(snapshot_cell(&engine, 4).hyperlink, None);
+        assert_eq!(snapshot_cell(&engine, 5).hyperlink, None);
+    }
+
+    #[test]
+    fn an_anonymous_link_reports_its_uri_but_no_id() {
+        let mut engine = screen(24, 3);
+        feed(&mut engine, b"\x1b]8;;https://b.test\x1b\\X");
+        let cell = snapshot_cell(&engine, 0);
+        assert_eq!(cell.hyperlink.as_deref(), Some("https://b.test"));
+        assert_eq!(cell.hyperlink_id, None);
+    }
+
+    #[test]
+    fn a_row_carrying_a_link_is_flagged_for_the_capture_path() {
+        let mut engine = screen(24, 3);
+        feed(&mut engine, b"\x1b]8;;https://b.test\x1b\\X");
+        let row = engine.screen.grid.hsize;
+        assert!(engine.screen.grid.line(row).unwrap().flags & line_flag::HYPERLINK != 0);
+    }
+
+    #[test]
+    fn a_malformed_osc_8_leaves_the_open_link_alone() {
+        let mut engine = screen(24, 3);
+        // No `;` at all: tmux logs it and changes nothing.
+        feed(
+            &mut engine,
+            b"\x1b]8;;https://b.test\x1b\\A\x1b]8;id=x1\x1b\\B",
+        );
+        assert_eq!(
+            snapshot_cell(&engine, 1).hyperlink.as_deref(),
+            Some("https://b.test")
+        );
+    }
+
+    #[test]
+    fn a_hangul_filler_is_dropped_without_taking_a_cell() {
+        let mut engine = screen(12, 3);
+        feed(&mut engine, "\u{3164}".as_bytes());
+        assert_eq!(engine.screen.cx, 0);
+        assert_eq!(text(&engine, 0), "");
+    }
+
+    #[test]
+    fn hangul_jamo_compose_into_one_cell_in_syllable_order() {
+        let mut engine = screen(12, 3);
+        feed(&mut engine, "\u{1100}\u{1161}\u{11a8}".as_bytes());
+        assert_eq!(engine.screen.cx, 2, "the syllable is one wide cell");
+        assert_eq!(cell(&engine, 0), "\u{1100}\u{1161}\u{11a8}");
+    }
+
+    #[test]
+    fn a_jamo_with_nothing_to_compose_onto_is_discarded() {
+        // tmux prints `a` and drops the vowel: it cannot begin a syllable.
+        let mut engine = screen(12, 3);
+        feed(&mut engine, "a\u{1161}".as_bytes());
+        assert_eq!(engine.screen.cx, 1);
+        assert_eq!(text(&engine, 0), "a");
+    }
+
+    #[test]
+    fn a_lone_jamo_vowel_still_gets_its_own_cell_at_the_margin() {
+        // At column zero there is nothing to combine with, so the vowel is
+        // placed rather than dropped, and it is one column wide.
+        let mut engine = screen(12, 3);
+        feed(&mut engine, "\u{1161}".as_bytes());
+        assert_eq!(engine.screen.cx, 1);
+        assert_eq!(cell(&engine, 0), "\u{1161}");
+    }
+
+    #[test]
+    fn two_regional_indicators_make_one_wide_flag() {
+        let mut engine = screen(12, 3);
+        feed(&mut engine, "\u{1f1ec}\u{1f1e7}".as_bytes());
+        assert_eq!(engine.screen.cx, 2, "the pair is forced to two columns");
+        assert_eq!(cell(&engine, 0), "\u{1f1ec}\u{1f1e7}");
+        assert!(engine
+            .screen
+            .grid
+            .get(1, engine.screen.grid.hsize)
+            .is_padding());
+    }
+
+    #[test]
+    fn a_third_regional_indicator_starts_the_next_flag() {
+        let mut engine = screen(12, 3);
+        feed(
+            &mut engine,
+            "\u{1f1ec}\u{1f1e7}\u{1f1ec}\u{1f1e7}".as_bytes(),
+        );
+        assert_eq!(engine.screen.cx, 4, "two flags, two cells");
+        assert_eq!(cell(&engine, 0), "\u{1f1ec}\u{1f1e7}");
+        assert_eq!(cell(&engine, 2), "\u{1f1ec}\u{1f1e7}");
+    }
+
+    #[test]
+    fn a_skin_tone_modifier_joins_the_emoji_before_it() {
+        let mut engine = screen(12, 3);
+        feed(&mut engine, "\u{1f469}\u{1f3fd}".as_bytes());
+        assert_eq!(engine.screen.cx, 2);
+        assert_eq!(cell(&engine, 0), "\u{1f469}\u{1f3fd}");
+    }
+
+    #[test]
+    fn a_variation_selector_widens_the_cell_it_joins() {
+        // U+2764 is one column on its own; VS16 makes the pair two, which is
+        // what `variation-selector-always-wide` asks for and what tmux does.
+        let mut engine = screen(12, 3);
+        feed(&mut engine, "\u{2764}\u{fe0f}".as_bytes());
+        assert_eq!(engine.screen.cx, 2);
+        assert_eq!(cell(&engine, 0), "\u{2764}\u{fe0f}");
+        assert!(engine
+            .screen
+            .grid
+            .get(1, engine.screen.grid.hsize)
+            .is_padding());
+    }
+
+    #[test]
+    fn a_joiner_pulls_the_next_emoji_into_the_same_cell() {
+        let mut engine = screen(12, 3);
+        feed(&mut engine, "\u{1f468}\u{200d}\u{1f469}".as_bytes());
+        assert_eq!(engine.screen.cx, 2, "the joined pair stays one cell");
+        assert_eq!(cell(&engine, 0), "\u{1f468}\u{200d}\u{1f469}");
     }
 
     #[test]
@@ -746,10 +974,10 @@ mod tests {
     fn the_alternate_screen_switches_and_comes_back() {
         let mut engine = screen(10, 2);
         feed(&mut engine, b"primary\x1b[?1049h");
-        assert!(engine.screen.is_alternate());
+        assert!(engine.screen.saved_grid().is_some());
         assert_eq!(text(&engine, 0), "");
         feed(&mut engine, b"alt\x1b[?1049l");
-        assert!(!engine.screen.is_alternate());
+        assert!(engine.screen.saved_grid().is_none());
         assert_eq!(text(&engine, 0), "primary");
         assert_eq!(engine.screen.cx, 7);
     }

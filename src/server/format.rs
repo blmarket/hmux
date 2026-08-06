@@ -710,7 +710,7 @@ impl Expander<'_> {
             return bool01(self.context.name_exists(vars, scope, &name));
         }
         // `w:BODY` — the display width of the resolved body, using the same
-        // libghostty-vt codepoint-width table as the native terminal grid.
+        // codepoint-width policy as the terminal grid.
         if let Some(rest) = content.strip_prefix("w:") {
             return display_width(&self.resolve_body(rest, vars, depth)).to_string();
         }
@@ -1171,7 +1171,8 @@ pub(crate) fn display_width(s: &str) -> usize {
 /// Tokenize format display content into borrowed source spans and widths.
 ///
 /// Literal hashes are grouped as escaped `##` pairs and style directives are
-/// zero-width. Ordinary codepoints use libghostty-vt's terminal width table.
+/// zero-width. Ordinary codepoints use the terminal width policy in
+/// [`crate::vt::width`].
 pub(crate) fn display_tokens(s: &str) -> DisplayTokens<'_> {
     DisplayTokens {
         source: s,
@@ -2112,7 +2113,7 @@ mod tests {
     }
 
     #[test]
-    fn truncate_obeys_ghostty_codepoint_width_boundaries() {
+    fn truncate_obeys_codepoint_width_boundaries() {
         let mut v = vars();
         v.set("value", "a界b");
         assert_eq!(expand("#{=2:value}", &v), "a");
@@ -2164,7 +2165,7 @@ mod tests {
     }
 
     #[test]
-    fn pad_uses_ghostty_display_columns() {
+    fn pad_uses_display_columns() {
         let mut v = vars();
         v.set("value", "界");
         assert_eq!(expand("[#{p3:value}]", &v), "[界 ]");
@@ -2191,7 +2192,7 @@ mod tests {
     }
 
     #[test]
-    fn width_modifier_uses_ghosttys_scalar_widths() {
+    fn width_modifier_uses_scalar_widths() {
         let mut v = vars();
         v.set("value", "界");
         assert_eq!(expand("#{w:value}", &v), "2");
@@ -2202,9 +2203,11 @@ mod tests {
         v.set("value", "👩‍💻");
         assert_eq!(expand("#{w:value}", &v), "4");
 
-        // Conjoining Jamo is a documented Ghostty-vs-tmux width difference.
+        // A conjoining jamo is one column, as tmux's width tables say. What
+        // makes it disappear into the syllable before it is the screen's
+        // combining rule, which a format expansion never runs.
         v.set("value", "\u{1161}");
-        assert_eq!(expand("#{w:value}", &v), "0");
+        assert_eq!(expand("#{w:value}", &v), "1");
     }
 
     #[test]

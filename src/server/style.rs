@@ -520,8 +520,20 @@ impl CaptureStyleWriter {
         self.current = next.clone();
     }
 
+    /// End one row of a capture.
+    ///
+    /// The style is deliberately left open. tmux carries `grid_string_cells`'s
+    /// last cell across the rows of a single `capture-pane`, so a row that ends
+    /// mid-style is followed either by a row that opens with the transition or,
+    /// if it is the last one, by nothing at all — closing here would put a
+    /// reset at the end of every capture that tmux does not write. The
+    /// hyperlink and the line-drawing set do close per row, as they do in tmux.
     pub(crate) fn finish_row(&mut self, out: &mut Vec<u8>) {
-        self.transition(out, &CellPresentation::default());
+        let next = CellPresentation {
+            style: self.current.style,
+            ..CellPresentation::default()
+        };
+        self.transition(out, &next);
     }
 }
 

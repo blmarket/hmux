@@ -214,7 +214,7 @@ impl Server {
         // — the window it sized has to be re-derived from the clients left.
         let _ = state.recalculate_sizes();
         // A pane created since the last pass has never been told its options.
-        state.refresh_pane_output_policies();
+        state.refresh_pane_options();
         let _ = state.refresh_pane_scrollbars();
         state.process_pane_passthrough();
         state.process_pane_clipboard();

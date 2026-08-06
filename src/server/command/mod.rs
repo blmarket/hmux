@@ -53,7 +53,7 @@ use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
 use super::task::{
     Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest, WaitToken,
 };
-use crate::vt::screen::{CellSemantic, CellWidth, Grid, GridRow};
+use crate::vt::screen::{CaptureExtent, CellWidth, Grid, GridRow};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.
@@ -6661,8 +6661,8 @@ fn unlink_window(args: &[String], st: &mut ServerState) -> CommandResult {
     }
 }
 
-/// A resolved physical row range in a Ghostty grid. Rows are zero-based from
-/// the oldest retained history row, matching tmux's internal grid coordinates.
+/// A resolved physical row range. Rows are zero-based from the oldest retained
+/// history row, matching tmux's internal grid coordinates.
 #[derive(Clone, Copy, Debug)]
 struct CaptureRange {
     top: usize,
@@ -6671,10 +6671,10 @@ struct CaptureRange {
 
 /// `capture-pane [-aCeFHJLMNpPqT] [-b name] [-E end] [-S start] [-t pane]`.
 ///
-/// The command surface and operation selection follow tmux 3.7b, while the
-/// bytes are serialized from Ghostty's grid. In particular, physical rows,
-/// soft wraps, cell usage, semantic prompt/output markers, and hyperlinks come
-/// from the foundational terminal engine rather than a tmux-shaped text dump.
+/// The command surface and operation selection follow tmux 3.7b, and so does
+/// what they read: physical rows, soft wraps, the two per-row extents, the
+/// prompt/output line flags and hyperlinks all come out of the engine's port of
+/// `grid.c` rather than from a tmux-shaped text dump laid over something else.
 fn capture_pane(args: &[String], st: &mut ServerState, agents: &PaneAgents) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
@@ -6689,23 +6689,37 @@ fn capture_pane(args: &[String], st: &mut ServerState, agents: &PaneAgents) -> C
         None => return CommandResult::err(format!("{}\n", st.pane_target_error(&target))),
     };
 
-    // Ghostty's public API exposes only its active screen. A tmux `-a` request
-    // selects the inactive alternate grid and must not silently return the
-    // active grid instead. Preserve tmux's no-grid result; `-q` makes it empty.
-    if has_flag(args, "-a") {
-        if has_flag(args, "-q") {
-            return finish_capture(args, st, String::new());
-        }
-        return CommandResult::err("no alternate screen\n");
+    // `-P` returns the bytes the pane's tokenizer is part-way through, tmux's
+    // `input_pending`. `-H` takes precedence and continues to the grid
+    // hyperlink operation, as in tmux.
+    if has_flag(args, "-P") && !has_flag(args, "-H") {
+        let pending = st.window(resolved.session, resolved.window).panes[resolved.pane]
+            .pane
+            .pending_input();
+        let pending = if has_flag(args, "-C") {
+            capture_escape_pending(&pending)
+        } else {
+            pending
+        };
+        return finish_capture(args, st, pending);
     }
 
-    // `-P` asks for bytes pending in the terminal parser. libghostty-vt owns
-    // that parser but does not expose its pending input, so the faithful engine
-    // result is an empty pending stream. `-H` takes precedence and continues to
-    // the grid hyperlink operation, as in tmux.
-    if has_flag(args, "-P") && !has_flag(args, "-H") {
-        return finish_capture(args, st, String::new());
-    }
+    // `-a` reads the screen the alternate-screen switch displaced. With no
+    // alternate screen up there is nothing to read and tmux fails, which `-q`
+    // turns into an empty capture.
+    let inactive = if has_flag(args, "-a") {
+        let snapshot = st.window(resolved.session, resolved.window).panes[resolved.pane]
+            .pane
+            .inactive_snapshot();
+        match snapshot {
+            Ok(Some(snapshot)) => Some(snapshot),
+            Ok(None) if has_flag(args, "-q") => return finish_capture(args, st, Vec::new()),
+            Ok(None) => return CommandResult::err("no alternate screen\n"),
+            Err(error) => return CommandResult::err(format!("{error}\n")),
+        }
+    } else {
+        None
+    };
 
     let mut vars = vars_full(
         st,
@@ -6734,26 +6748,35 @@ fn capture_pane(args: &[String], st: &mut ServerState, agents: &PaneAgents) -> C
     // grid's row geometry alone — and only the rows inside it are snapshotted.
     let text = {
         let node = &st.window(resolved.session, resolved.window).panes[resolved.pane];
-        let frozen = if use_mode { node.copy.as_ref() } else { None };
-        if let Some(copy) = frozen {
-            if copy.grid.rows.is_empty() {
+        // Two reads arrive already materialized as a whole grid plus its `-e`
+        // bytes: the screen copy mode froze, and the one the alternate screen
+        // displaced. Neither is the live grid, and both are served the same way.
+        let whole = inactive
+            .as_ref()
+            .map(|(grid, vt)| (grid, vt))
+            .or_else(|| match use_mode {
+                true => node.copy.as_ref().map(|copy| (&copy.grid, &copy.vt)),
+                false => None,
+            });
+        if let Some((grid, vt)) = whole {
+            if grid.rows.is_empty() {
                 String::new()
             } else {
                 let range = capture_range(
                     args,
-                    copy.grid.rows.len(),
-                    copy.grid.scrollback_rows,
-                    copy.grid.viewport_rows,
+                    grid.rows.len(),
+                    grid.scrollback_rows,
+                    grid.viewport_rows,
                     &vars,
                     history_limit,
                 );
                 let styled_rows = if styled {
-                    let all = capture_vt_normalize_rows(&copy.vt, copy.grid.rows.len());
+                    let all = capture_vt_normalize_rows(vt, grid.rows.len());
                     Some(all[range.top..=range.bottom].to_vec())
                 } else {
                     None
                 };
-                serialize_capture(args, &copy.grid, 0, range, styled_rows.as_deref())
+                serialize_capture(args, grid, 0, range, styled_rows.as_deref())
             }
         } else {
             let dims = match node.pane.grid_dims() {
@@ -6777,7 +6800,10 @@ fn capture_pane(args: &[String], st: &mut ServerState, agents: &PaneAgents) -> C
                     Err(error) => return CommandResult::err(format!("{error}\n")),
                 };
                 let styled_rows = if styled {
-                    let bytes = match node.pane.dump_rows_vt(range.top, rows) {
+                    let bytes = match node
+                        .pane
+                        .dump_rows_vt(range.top, rows, capture_extent(args))
+                    {
                         Ok(bytes) => bytes,
                         Err(error) => return CommandResult::err(format!("{error}\n")),
                     };
@@ -6789,22 +6815,42 @@ fn capture_pane(args: &[String], st: &mut ServerState, agents: &PaneAgents) -> C
             }
         }
     };
-    finish_capture(args, st, text)
+    finish_capture(args, st, text.into_bytes())
 }
 
-fn finish_capture(args: &[String], st: &mut ServerState, mut text: String) -> CommandResult {
+/// Deliver a capture, which is bytes rather than text: `-P` returns whatever
+/// the pane's parser is holding, and a half-read UTF-8 character in an OSC
+/// payload is not a string.
+fn finish_capture(args: &[String], st: &mut ServerState, mut bytes: Vec<u8>) -> CommandResult {
     if has_flag(args, "-p") {
         // tmux always prints one terminating newline, including for an empty
         // capture. Row serializers already end in one, so do not add a second.
-        if !text.ends_with('\n') {
-            text.push('\n');
+        if !bytes.ends_with(b"\n") {
+            bytes.push(b'\n');
         }
-        return CommandResult::ok(text);
+        return CommandResult::ok_bytes(bytes);
     }
     // Buffer captures retain the row serializer's final newline. An empty
     // parser-pending or hyperlink capture stores a genuinely empty buffer.
-    st.set_buffer(flag_value(args, "-b"), text.as_bytes());
+    st.set_buffer(flag_value(args, "-b"), &bytes);
     CommandResult::ok("")
+}
+
+/// `capture-pane -PC`, which escapes by its own rule rather than the one grid
+/// rows use: tmux writes a byte literally only when it is at least a space and
+/// not a backslash, and everything else as a three-digit octal escape. The
+/// comparison is against a signed `char`, which puts every byte with the high
+/// bit set on the escaped side.
+fn capture_escape_pending(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    for &byte in bytes {
+        if (b' '..0x80).contains(&byte) && byte != b'\\' {
+            out.push(byte);
+        } else {
+            out.extend_from_slice(format!("\\{byte:03o}").as_bytes());
+        }
+    }
+    out
 }
 
 fn capture_range(
@@ -6883,11 +6929,16 @@ fn serialize_capture(
     for (relative, row_index) in (range.top..=range.bottom).enumerate() {
         let row = &grid.rows[row_index - start_row];
         let mut line = if hyperlinks_only {
+            // tmux checks the row's flag before walking it and stops at the
+            // written extent, so a link in a cell nothing wrote into is not
+            // reported.
             let mut links = Vec::new();
-            for cell in &row.cells {
-                if let Some(link) = cell.hyperlink.as_ref() {
-                    if seen_links.insert(link.clone()) {
-                        links.push(link.clone());
+            if row.flags.hyperlink {
+                for cell in row.cells.iter().take(row.used.min(row.cells.len())) {
+                    if let Some(link) = cell.hyperlink.as_ref() {
+                        if seen_links.insert(link.clone()) {
+                            links.push(link.clone());
+                        }
                     }
                 }
             }
@@ -6896,7 +6947,9 @@ fn serialize_capture(
             }
             links.join(" ")
         } else if let Some(styled) = styled_rows {
-            styled.get(relative).cloned().unwrap_or_default()
+            let mut styled = styled.get(relative).cloned().unwrap_or_default();
+            capture_trim_trailing(args, &mut styled);
+            styled
         } else {
             capture_plain_row(row, args)
         };
@@ -6919,57 +6972,71 @@ fn serialize_capture(
     out
 }
 
-fn capture_plain_row(row: &GridRow, args: &[String]) -> String {
-    let join = has_flag(args, "-J");
-    let preserve_trailing = join || has_flag(args, "-N");
-    let stop_at_used = join || has_flag(args, "-T");
-    let mut end = row.cells.len();
-    if stop_at_used {
-        end = row
-            .cells
-            .iter()
-            .rposition(|cell| !cell.text.is_empty())
-            .map_or(0, |index| index + 1);
+/// How far along each row this capture reads, tmux's `GRID_STRING_EMPTY_CELLS`:
+/// to the written extent when `-J` or `-T` asked for it, and to the allocated
+/// one otherwise.
+fn capture_extent(args: &[String]) -> CaptureExtent {
+    if has_flag(args, "-J") || has_flag(args, "-T") {
+        CaptureExtent::Written
+    } else {
+        CaptureExtent::Allocated
     }
+}
+
+/// One row as text, following `grid_string_cells`'s two independent decisions:
+/// how far along the row to read, and whether to trim what trails.
+fn capture_plain_row(row: &GridRow, args: &[String]) -> String {
+    let end = match capture_extent(args) {
+        CaptureExtent::Written => row.used,
+        CaptureExtent::Allocated => row.size,
+    }
+    .min(row.cells.len());
 
     let mut line = String::new();
     for cell in row.cells.iter().take(end) {
         if matches!(cell.width, CellWidth::SpacerTail | CellWidth::SpacerHead) {
             continue;
         }
-        if cell.text.is_empty() {
+        if cell.tab {
+            line.push('\t');
+        } else if cell.text.is_empty() {
             line.push(' ');
         } else {
             line.push_str(&cell.text);
         }
     }
-    if !preserve_trailing {
-        line.truncate(line.trim_end_matches(' ').len());
-    }
+    capture_trim_trailing(args, &mut line);
     line
 }
 
+/// tmux's `GRID_STRING_TRIM_SPACES`: a capture drops the blanks trailing a row
+/// unless `-J` or `-N` asked to keep them.
+///
+/// It trims spaces and nothing else, so anything written just before them
+/// survives. That is how a `-e` capture can end in a style change with no text
+/// left to style: the row was read into its allocated blanks, the transition
+/// into those blanks was emitted, and only the blanks went.
+fn capture_trim_trailing(args: &[String], line: &mut String) {
+    if has_flag(args, "-J") || has_flag(args, "-N") {
+        return;
+    }
+    line.truncate(line.trim_end_matches(' ').len());
+}
+
+/// The `-F` flags, in tmux's order. `D` is absent because no grid a capture can
+/// reach holds a dead line, and `X` is an allocation decision tmux lets show.
 fn capture_row_flags(row: &GridRow) -> String {
     let mut flags = String::new();
-    if row.cells.iter().any(|cell| cell.hyperlink.is_some()) {
-        flags.push('H');
-    }
-    if row
-        .cells
-        .iter()
-        .any(|cell| !cell.text.is_empty() && cell.semantic == CellSemantic::Output)
-    {
-        flags.push('O');
-    }
-    if row
-        .cells
-        .iter()
-        .any(|cell| !cell.text.is_empty() && cell.semantic == CellSemantic::Prompt)
-    {
-        flags.push('P');
-    }
-    if row.wrapped {
-        flags.push('W');
+    for (present, flag) in [
+        (row.flags.hyperlink, 'H'),
+        (row.flags.start_output, 'O'),
+        (row.flags.start_prompt, 'P'),
+        (row.wrapped, 'W'),
+        (row.flags.extended, 'X'),
+    ] {
+        if present {
+            flags.push(flag);
+        }
     }
     if flags.is_empty() {
         flags.push('-');
@@ -7309,6 +7376,22 @@ fn resize_pane(args: &[String], st: &mut ServerState) -> CommandResult {
     };
     if st.resolve(&target).is_none() {
         return CommandResult::err(format!("{}\n", st.pane_target_error(&target)));
+    }
+    // `-T` trims the blank rows below the cursor and pulls the same number of
+    // rows out of the history. tmux does nothing at all when the pane is in a
+    // mode, whose screen is not the one that would be trimmed.
+    if has_bool_flag(args, 'T') {
+        let Some(resolved) = st.resolve(&target) else {
+            return CommandResult::ok("");
+        };
+        let node = &st.window(resolved.session, resolved.window).panes[resolved.pane];
+        if node.copy.is_some() {
+            return CommandResult::ok("");
+        }
+        return match node.pane.trim_history_below_cursor() {
+            Ok(()) => CommandResult::ok(""),
+            Err(error) => CommandResult::err(format!("{error}\n")),
+        };
     }
     if has_bool_flag(args, 'Z') {
         return match st.toggle_zoom(&target) {
@@ -8994,8 +9077,12 @@ mod tests {
             "\x1b[48;2;1;2;3m",
             "\x1b[58;5;4m"
         );
-        assert_eq!(rows[0], format!("{prefix}A\x1b[0m"));
-        assert_eq!(rows[1], format!("{prefix}B\x1b[0m"));
+        // The style carries into the second row rather than being closed and
+        // reopened, which is what tmux's `lastgc` does across the rows of one
+        // capture: the second row differs from the first in nothing, so it
+        // opens with nothing.
+        assert_eq!(rows[0], format!("{prefix}A"));
+        assert_eq!(rows[1], "B");
     }
 
     #[test]
@@ -9010,7 +9097,9 @@ mod tests {
                 "\x1b[1;3m\x1b[31mA",
                 "\x1b[0m\x1b[1m\x1b[31mB",
                 "\x1b]8;id=link;https://example.test\x1b\\C",
-                "\x1b[0m\x1b]8;;\x1b\\"
+                // The row closes the link it opened, as `grid_string_cells`
+                // does, and leaves the style open for whatever follows.
+                "\x1b]8;;\x1b\\"
             )
         );
     }

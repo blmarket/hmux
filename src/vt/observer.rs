@@ -21,10 +21,7 @@
 use std::collections::VecDeque;
 
 use super::parser::{Param, Parser, StringEnd, Token, TokenKind};
-use crate::server::input_keys::ExtendedKeys;
-use crate::server::pane::{
-    MouseTrackingMode, PaneClipboardEvent, PaneCursorShape, PaneModeSnapshot, PaneOutputPolicy,
-};
+use crate::server::pane::{PaneClipboardEvent, PaneCursorShape, PaneOutputPolicy};
 use crate::server::x11_colour;
 
 /// The OSC 11 question hmux forwards to the client's own terminal, because only
@@ -72,6 +69,13 @@ pub(crate) enum Event {
     SaveAlternateCursor,
     /// DSR 6n: answer with where the cursor is now.
     CursorPositionReport,
+    /// DECRQM: answer whether this private mode is set, as the screen has it
+    /// at this point in the stream.
+    DecPrivateModeReport(u32),
+    /// DECRQSS: answer this setting request. The payload is the request itself,
+    /// still unparsed, because what answers it is state the observer does not
+    /// hold.
+    StatusReport(Vec<u8>),
     /// HTS: set a tab stop in the cursor's column.
     SetTabStop,
     /// TBC 0: clear the tab stop in the cursor's column.
@@ -109,29 +113,25 @@ pub(crate) struct Observed {
 /// One pane's tokenizer plus the state the tokens change.
 pub(crate) struct Observer {
     parser: Parser,
-    modes: PaneModeSnapshot,
     /// The pane's `OSC 4` palette, as packed `0xrrggbb`. tmux keeps one per
     /// pane so a query is answered from what that pane set, not the client's.
     palette: Box<[Option<u32>; 256]>,
-    /// The last DECSCUSR parameter, which DECRQSS reports back.
-    cursor_shape: u8,
 }
 
 impl Default for Observer {
     fn default() -> Self {
         Self {
             parser: Parser::default(),
-            modes: PaneModeSnapshot::default(),
             palette: Box::new([None; 256]),
-            cursor_shape: 0,
         }
     }
 }
 
 impl Observer {
-    /// The pane's reportable VT modes, as of the last byte fed.
-    pub(crate) fn modes(&self) -> PaneModeSnapshot {
-        self.modes
+    /// The bytes of a sequence the tokenizer has not finished, which
+    /// `capture-pane -P` returns. See [`Parser::pending`].
+    pub(crate) fn pending(&self) -> &[u8] {
+        self.parser.pending()
     }
 
     /// Tokenize one chunk of pane output against the current options.
@@ -219,16 +219,11 @@ impl Observer {
     }
 
     fn esc(&mut self, token: Token, intermediates: &[u8], final_byte: u8, out: &mut Observed) {
-        if intermediates.is_empty() {
-            match final_byte {
-                // HTS: the stop lands in the column the cursor is in *now*.
-                b'H' => {
-                    out.event(Event::SetTabStop);
-                }
-                b'=' => self.modes.application_keypad = true,
-                b'>' => self.modes.application_keypad = false,
-                _ => {}
-            }
+        // HTS is the one escape the server has to see: the stop lands in the
+        // column the cursor is in *now*, so the screen has to be told where
+        // that is rather than working it out at the end of the read.
+        if intermediates.is_empty() && final_byte == b'H' {
+            out.event(Event::SetTabStop);
         }
         out.keep(token);
     }
@@ -249,12 +244,12 @@ impl Observer {
             (Some(b'?'), [], b'h' | b'l') => {
                 return self.dec_mode(token, params, final_byte == b'h', policy, out);
             }
-            // DECRQM for a private mode.
+            // DECRQM for a private mode. The answer is a mode word read, so
+            // it is ordered into the stream like the cursor report: what the
+            // pane asked about is what the screen has *here*.
             (Some(b'?'), [b'$'], b'p') => {
-                let mode = params.first().map_or(0, |param| param.or(0));
-                let status = self.dec_mode_status(mode);
-                out.event(Event::Reply(
-                    format!("\x1b[?{mode};{status}$y").into_bytes(),
+                out.event(Event::DecPrivateModeReport(
+                    params.first().map_or(0, |param| param.or(0)),
                 ));
             }
             // Secondary DA and XTVERSION.
@@ -270,20 +265,6 @@ impl Observer {
                     )
                     .into_bytes(),
                 ));
-            }
-            // `CSI > 4 ; n m` (modifyOtherKeys) and `CSI > 4 n`, which resets it.
-            // What the pane *gets* also depends on `extended-keys`, applied
-            // where the key is encoded rather than here.
-            (Some(b'>'), [], b'm') if params.first().is_none_or(|param| param.or(4) == 4) => {
-                self.modes.extended_keys_request =
-                    match params.get(1).map_or(0, |param| param.or(0)) {
-                        1 => ExtendedKeys::Standard,
-                        2 => ExtendedKeys::All,
-                        _ => ExtendedKeys::Off,
-                    };
-            }
-            (Some(b'>'), [], b'n') if params.first().is_some_and(|param| param.or(0) == 4) => {
-                self.modes.extended_keys_request = ExtendedKeys::Off;
             }
             // DSR ?996: which theme is this terminal using?
             (Some(b'?'), [], b'n') if params.first().is_some_and(|p| p.or(0) == 996) => {
@@ -308,10 +289,6 @@ impl Observer {
                 6 => out.event(Event::CursorPositionReport),
                 _ => {}
             },
-            // IRM.
-            (None, [], b'h' | b'l') if params.first().is_some_and(|param| param.or(0) == 4) => {
-                self.modes.insert_mode = final_byte == b'h';
-            }
             // TBC.
             (None, [], b'g') => match params.first().map_or(0, |param| param.or(0)) {
                 0 => out.event(Event::ClearTabStop),
@@ -322,14 +299,7 @@ impl Observer {
             (None, [b' '], b'q') => {
                 let shape = params.first().map_or(0, |param| param.or(0));
                 if shape <= 6 {
-                    let shape = shape as u8;
-                    self.cursor_shape = shape;
-                    // tmux's `screen_set_cursor_style`: every style but the
-                    // default also decides blinking, odd ones blinking.
-                    if shape != 0 {
-                        self.modes.cursor_blinking = !shape.is_multiple_of(2);
-                    }
-                    out.event(Event::CursorShape(shape));
+                    out.event(Event::CursorShape(shape as u8));
                 }
             }
             _ => {}
@@ -351,24 +321,6 @@ impl Observer {
         for param in params {
             let Some(mode) = param.value else { continue };
             let alternate = matches!(mode, 47 | 1047 | 1049);
-            match mode {
-                1 => self.modes.cursor_keys = set,
-                6 => self.modes.origin_mode = set,
-                7 => self.modes.wrap_mode = set,
-                12 => self.modes.cursor_blinking = set,
-                25 => self.modes.cursor_visible = set,
-                1000 => self.modes.mouse_tracking = set.then_some(MouseTrackingMode::Standard),
-                1002 => self.modes.mouse_tracking = set.then_some(MouseTrackingMode::Button),
-                1003 => self.modes.mouse_tracking = set.then_some(MouseTrackingMode::All),
-                1001 if !set => self.modes.mouse_tracking = None,
-                1005 => self.modes.mouse_utf8 = set,
-                1006 => self.modes.mouse_sgr = set,
-                1004 => self.modes.focus_reporting = set,
-                2004 => self.modes.bracketed_paste = set,
-                2026 => self.modes.synchronized_output = set,
-                2031 => self.modes.theme_updates = set,
-                _ => {}
-            }
             // tmux parses an alternate-screen switch and then returns early
             // from `screen_write_alternateon`/`_alternateoff` when the option
             // is off, so the switch has no effect at all — including on the
@@ -415,24 +367,6 @@ impl Observer {
             },
             raw,
         );
-    }
-
-    /// The DECRQM answer for one private mode: 1 set, 2 reset, 0 unrecognized.
-    fn dec_mode_status(&self, mode: u32) -> u8 {
-        let mouse =
-            |wanted: MouseTrackingMode| u8::from(self.modes.mouse_tracking != Some(wanted)) + 1;
-        match mode {
-            25 => u8::from(!self.modes.cursor_visible) + 1,
-            1000 => mouse(MouseTrackingMode::Standard),
-            1002 => mouse(MouseTrackingMode::Button),
-            1003 => mouse(MouseTrackingMode::All),
-            1004 => u8::from(!self.modes.focus_reporting) + 1,
-            1005 => u8::from(!self.modes.mouse_utf8) + 1,
-            1006 => u8::from(!self.modes.mouse_sgr) + 1,
-            2026 => u8::from(!self.modes.synchronized_output) + 1,
-            2031 => u8::from(!self.modes.theme_updates) + 1,
-            _ => 0,
-        }
     }
 
     fn osc(
@@ -589,11 +523,9 @@ impl Observer {
         // DECRQSS is `DCS $ q Pt ST`. tmux takes it before anything else with a
         // `$` intermediate.
         if intermediates == [b'$'] && final_byte == b'q' {
-            out.event(Event::Reply(decrqss_reply(
-                data,
-                PaneCursorShape::from_parameter(self.cursor_shape),
-                self.modes.cursor_blinking,
-            )));
+            // The cursor style and its blink are the pane's and the screen's
+            // respectively, so the reply is composed where both are in reach.
+            out.event(Event::StatusReport(data.to_vec()));
             return;
         }
         // `DCS tmux; … ST`. The final byte is the first byte of tmux's DCS
@@ -639,7 +571,7 @@ fn first_is_zero(params: &[Param]) -> bool {
 /// Divergence: with no DECSCUSR applied tmux falls back to the `cursor-style`
 /// option, which the pane's reader has no view of, so hmux always reports the
 /// default 0 there. Both agree once a pane has set a style itself.
-fn decrqss_reply(request: &[u8], shape: PaneCursorShape, blinking: bool) -> Vec<u8> {
+pub(crate) fn decrqss_reply(request: &[u8], shape: PaneCursorShape, blinking: bool) -> Vec<u8> {
     if request != b" q" {
         return b"\x1bP0$r\x1b\\".to_vec();
     }
@@ -946,29 +878,16 @@ mod tests {
             .events
             .iter()
             .all(|(_, event)| !matches!(event, Event::AlternateScreen(_))));
-        assert_eq!(
-            observer.modes().mouse_tracking,
-            Some(MouseTrackingMode::Standard)
-        );
     }
 
     #[test]
-    fn modes_follow_multi_parameter_decset() {
-        let (observer, _) = observe(b"\x1b[?1;7;25;2004h");
-        let modes = observer.modes();
-        assert!(modes.cursor_keys && modes.wrap_mode && modes.cursor_visible);
-        assert!(modes.bracketed_paste);
-    }
-
-    #[test]
-    fn decrqm_answers_from_the_tracked_mode() {
+    fn decrqm_asks_the_screen_rather_than_answering_itself() {
+        // The observer no longer holds a mode word to answer from, so the query
+        // becomes an event and is answered where the screen is in reach — at
+        // this point in the stream, after the DECSET ahead of it has landed.
         assert_eq!(
             events(b"\x1b[?2026h\x1b[?2026$p"),
-            vec![Event::Reply(b"\x1b[?2026;1$y".to_vec())]
-        );
-        assert_eq!(
-            events(b"\x1b[?2026$p"),
-            vec![Event::Reply(b"\x1b[?2026;2$y".to_vec())]
+            vec![Event::DecPrivateModeReport(2026)]
         );
     }
 
@@ -1057,17 +976,26 @@ mod tests {
     }
 
     #[test]
-    fn decrqss_reports_the_style_the_pane_set() {
+    fn decrqss_is_forwarded_unparsed_for_the_pane_to_answer() {
+        // The cursor style and the blink that answer this live on the pane and
+        // the screen, so the observer hands the request on rather than holding
+        // copies of both to answer it here.
         assert_eq!(
             events(b"\x1b[4 q\x1bP$q q\x1b\\"),
-            vec![
-                Event::CursorShape(4),
-                Event::Reply(b"\x1bP1$r q4 q\x1b\\".to_vec()),
-            ]
+            vec![Event::CursorShape(4), Event::StatusReport(b" q".to_vec()),]
+        );
+    }
+
+    #[test]
+    fn a_decrqss_reply_reports_the_style_and_its_blink() {
+        assert_eq!(
+            decrqss_reply(b" q", PaneCursorShape::Underline, false),
+            b"\x1bP1$r q4 q\x1b\\".to_vec()
         );
         assert_eq!(
-            events(b"\x1bP$qm\x1b\\"),
-            vec![Event::Reply(b"\x1bP0$r\x1b\\".to_vec())]
+            decrqss_reply(b"m", PaneCursorShape::Default, false),
+            b"\x1bP0$r\x1b\\".to_vec(),
+            "a setting hmux does not report is refused, not guessed at"
         );
     }
 

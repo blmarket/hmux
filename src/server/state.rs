@@ -29,9 +29,11 @@ use super::task::{completion_pair, Completion, CompletionSender};
 use super::term::ResolvedTerm;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
 use crate::vt::input::MouseEvent;
-#[cfg(test)]
-use crate::vt::screen::GridRow;
-use crate::vt::screen::{CellSemantic, CellWidth, Grid, GridCell, VtScreen};
+use crate::vt::parser::tokenize;
+use crate::vt::screen::{
+    CellSemantic, CellWidth, Grid, GridCell, GridRow, ScreenOptions, VtScreen,
+};
+use crate::vt::width;
 use crate::vt::PaneScreen;
 
 /// The server state, shared by everything running on the loop.
@@ -1733,8 +1735,17 @@ fn scrollbar_style_columns(style: Option<&str>) -> u16 {
 }
 
 fn resize_panes_to_layout(window: &mut Window) -> io::Result<()> {
-    for pane in &mut window.panes {
-        if let Some(rect) = pane.floating.or_else(|| window.layout.pane_rect(pane.id)) {
+    // The grid has to match the rect the pane is drawn in — `Window::pane_rect`
+    // takes the scrollbar columns and the border-status row off the layout cell
+    // — or the compositor dumps more rows than the pane has on screen and the
+    // reserved row never fits in the frame.
+    let rects = window
+        .panes
+        .iter()
+        .map(|pane| window.pane_rect(pane.id))
+        .collect::<Vec<_>>();
+    for (pane, rect) in window.panes.iter_mut().zip(rects) {
+        if let Some(rect) = rect {
             if let Some(copy) = pane.copy.as_mut() {
                 reflow_copy_snapshot(copy, rect.width.max(1), rect.height.max(1))?;
             }
@@ -1764,9 +1775,10 @@ fn reflow_copy_snapshot(state: &mut CopyState, cols: u16, rows: u16) -> io::Resu
             }
         }
     }
-    let mut terminal = PaneScreen::new(state.grid.cols, state.grid.viewport_rows)
-        .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
-    terminal.write(&copy_reflow_vt(state));
+    let mut terminal = PaneScreen::new(state.grid.cols, state.grid.viewport_rows);
+    for token in tokenize(&copy_reflow_vt(state)) {
+        terminal.apply(&token);
+    }
     terminal
         .resize(cols, rows)
         .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
@@ -1819,9 +1831,10 @@ fn view_output_vt(output: &[u8]) -> Vec<u8> {
 }
 
 fn view_copy_state(output: Vec<u8>, cols: u16, rows: u16) -> io::Result<CopyState> {
-    let mut terminal = PaneScreen::new(cols.max(1), rows.max(1))
-        .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
-    terminal.write(&view_output_vt(&output));
+    let mut terminal = PaneScreen::new(cols.max(1), rows.max(1));
+    for token in tokenize(&view_output_vt(&output)) {
+        terminal.apply(&token);
+    }
     let grid = terminal
         .grid_snapshot()
         .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
@@ -6239,9 +6252,25 @@ impl ServerState {
         }
         if matches!(
             name,
-            "alternate-screen" | "allow-set-title" | "allow-passthrough" | "input-buffer-size"
+            "alternate-screen"
+                | "allow-set-title"
+                | "allow-passthrough"
+                | "input-buffer-size"
+                | "scroll-on-clear"
         ) {
-            self.refresh_pane_output_policies();
+            self.refresh_pane_options();
+        }
+        // The width policy is server-wide in tmux — one cache, rebuilt whenever
+        // either option is set — so it is pushed rather than looked up. Only
+        // characters written after this see the change, as in tmux: a cell
+        // already in the grid keeps the width it was placed with.
+        if name == "codepoint-widths" {
+            let options = OptionsView::one(self.global_options.server());
+            width::set_codepoint_widths(options.array_values(name));
+        }
+        if name == "variation-selector-always-wide" {
+            let options = OptionsView::one(self.global_options.server());
+            width::set_variation_selector_always_wide(options.get(name) != Some("off"));
         }
     }
 
@@ -8003,16 +8032,21 @@ impl ServerState {
         Ok(())
     }
 
-    /// Push each pane the options its own output has to be parsed against.
+    /// Push each pane the options it has to consult about its own output: how
+    /// the bytes are parsed, and what an operation on the grid does.
     ///
-    /// tmux reads them from `wp->options` at the moment the sequence is parsed.
-    /// hmux parses a pane's bytes off the state lock, so the resolved values are
-    /// pushed to the pane instead — once per server loop, and again as soon as a
-    /// `set-option` touches one of them.
-    pub(crate) fn refresh_pane_output_policies(&self) {
+    /// tmux reads them from `wp->options` at the moment they matter, with the
+    /// whole server in reach. hmux runs both the tokenizer and the screen off
+    /// the state lock, so the resolved values are pushed to the pane instead —
+    /// once per server loop, and again as soon as a `set-option` touches one of
+    /// them.
+    pub(crate) fn refresh_pane_options(&self) {
         for window in self.windows.values() {
             for node in &window.panes {
                 let options = node.options(window, &self.global_options);
+                node.pane.set_screen_options(ScreenOptions {
+                    scroll_on_clear: options.get("scroll-on-clear") != Some("off"),
+                });
                 node.pane.set_output_policy(PaneOutputPolicy {
                     alternate_screen: options.get("alternate-screen") != Some("off"),
                     allow_set_title: options.get("allow-set-title") != Some("off"),
@@ -14199,25 +14233,61 @@ fn copy_line_length(grid: &Grid, row: usize) -> usize {
     length.min(grid.cols as usize)
 }
 
-fn copy_cell_in_set(grid: &Grid, cursor: &CopyCursor, set: &str) -> bool {
-    let Some(cell) = grid
-        .rows
-        .get(cursor.row)
-        .and_then(|row| row.cells.get(cursor.col))
-    else {
-        return set.contains(' ');
+/// tmux's `grid_in_set`: whether the cell under the cursor is one of `set`, and
+/// how many columns of it are.
+///
+/// The answer is a column count rather than a flag because of tabs. A set that
+/// contains `\t` matches a tab cell whole — and matches a cell inside the run
+/// the tab painted, counting the columns that are left — so a caller stepping
+/// over whitespace crosses the tab in one move instead of landing inside it.
+/// Everything else is one column, and nothing is zero.
+fn copy_cell_set_width(grid: &Grid, cursor: &CopyCursor, set: &str) -> usize {
+    let Some(row) = grid.rows.get(cursor.row) else {
+        return usize::from(set.contains(' '));
     };
+    let Some(cell) = row.cells.get(cursor.col) else {
+        return usize::from(set.contains(' '));
+    };
+    if set.contains('\t') {
+        if copy_cell_is_padding(cell) {
+            // Walk back to whatever owns this padding; only a tab's counts.
+            let start = row.cells[..cursor.col]
+                .iter()
+                .rposition(|cell| !copy_cell_is_padding(cell));
+            if let Some(start) = start {
+                if row.cells[start].tab {
+                    let width = copy_cell_columns(row, start);
+                    return width.saturating_sub(cursor.col - start);
+                }
+            }
+        } else if cell.tab {
+            return copy_cell_columns(row, cursor.col);
+        }
+    }
     if copy_cell_is_padding(cell) {
-        return false;
+        return 0;
     }
     if cell.text.is_empty() {
-        return set.contains(' ');
+        return usize::from(set.contains(' '));
     }
     let mut chars = cell.text.chars();
     let Some(ch) = chars.next() else {
-        return set.contains(' ');
+        return usize::from(set.contains(' '));
     };
-    chars.next().is_none() && set.chars().any(|candidate| candidate == ch)
+    usize::from(chars.next().is_none() && set.chars().any(|candidate| candidate == ch))
+}
+
+/// How many columns the cell at `col` covers: itself plus the padding that
+/// follows it. tmux reads this off `gc.data.width`.
+fn copy_cell_columns(row: &GridRow, col: usize) -> usize {
+    1 + row.cells[col + 1..]
+        .iter()
+        .take_while(|cell| copy_cell_is_padding(cell))
+        .count()
+}
+
+fn copy_cell_in_set(grid: &Grid, cursor: &CopyCursor, set: &str) -> bool {
+    copy_cell_set_width(grid, cursor, set) != 0
 }
 
 fn copy_cursor_limit(grid: &Grid, row: usize, vi: bool) -> usize {
@@ -15464,10 +15534,14 @@ fn move_next_start(cursor: &mut CopyCursor, grid: &Grid, vi: bool, separators: &
             }
         }
     }
-    while copy_reader_handle_wrap(cursor, grid, &mut line_end)
-        && copy_cell_in_set(grid, cursor, " \t")
-    {
-        cursor.col += 1;
+    // A tab is crossed in one step: its whole run is whitespace, and stopping
+    // inside it would leave the cursor on padding.
+    while copy_reader_handle_wrap(cursor, grid, &mut line_end) {
+        let width = copy_cell_set_width(grid, cursor, " \t");
+        if width == 0 {
+            break;
+        }
+        cursor.col += width;
     }
     clamp_copy_cursor(cursor, grid, vi);
 }
@@ -15582,7 +15656,11 @@ fn append_copy_cells(output: &mut String, grid: &Grid, row: usize, from: usize, 
             }
             CellWidth::Narrow | CellWidth::Wide => {}
         }
-        if cell.text.is_empty() {
+        // tmux's `window_copy_copy_line` puts the tab back rather than copying
+        // the blanks it painted, so what is yanked is what was typed.
+        if cell.tab {
+            output.push('\t');
+        } else if cell.text.is_empty() {
             output.push(' ');
         } else {
             output.push_str(&cell.text);
@@ -15698,6 +15776,7 @@ fn session_not_found(part: &str) -> io::Error {
 mod tests {
     use super::*;
     use crate::event_loop::test_driver::run_on_loop;
+    use crate::vt::screen::RowFlags;
 
     #[test]
     fn copy_vt_rows_exclude_crlf_and_trailing_cursor() {
@@ -15734,6 +15813,7 @@ mod tests {
                 semantic: CellSemantic::Output,
                 hyperlink: None,
                 hyperlink_id: None,
+                tab: false,
             })
             .collect::<Vec<_>>();
         cells.resize(
@@ -15744,8 +15824,10 @@ mod tests {
                 semantic: CellSemantic::Output,
                 hyperlink: None,
                 hyperlink_id: None,
+                tab: false,
             },
         );
+        let size = cells.len();
         let grid = Grid {
             cols: 20,
             viewport_rows: 1,
@@ -15753,6 +15835,9 @@ mod tests {
             rows: vec![GridRow {
                 cells,
                 wrapped: false,
+                used: text.chars().count(),
+                size,
+                flags: RowFlags::default(),
             }],
         };
         let state = CopyState {
