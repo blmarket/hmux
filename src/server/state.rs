@@ -4267,8 +4267,9 @@ pub(crate) fn now_micros() -> i64 {
     // SAFETY: `gettimeofday` fills the caller-owned `timeval` and the null
     // timezone pointer is the documented way to skip the obsolete second arg.
     unsafe { libc::gettimeofday(&mut tv, std::ptr::null_mut()) };
-    // `timeval`'s fields are already `i64` on the supported platforms.
-    tv.tv_sec * 1_000_000 + tv.tv_usec
+    // `tv_sec` is `i64` everywhere we support, but `tv_usec` is `i32` on
+    // Darwin and `i64` on Linux; `i64::from` covers both widths.
+    tv.tv_sec * 1_000_000 + i64::from(tv.tv_usec)
 }
 
 /// The whole server's state. Guarded by a mutex at the connection layer.
