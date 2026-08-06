@@ -1031,6 +1031,10 @@ impl NativePaneObservation {
                 let status = dec_mode_status(terminal.modes(), self.alternate_on.get(), mode);
                 replies.push(format!("\x1b[?{mode};{status}$y").into_bytes());
             }
+            VtEvent::DecModeReport(mode) => {
+                let status = ansi_mode_status(terminal.modes(), mode);
+                replies.push(format!("\x1b[{mode};{status}$y").into_bytes());
+            }
             VtEvent::StatusReport(request) => replies.push(decrqss_reply(
                 &request,
                 PaneCursorShape::from_parameter(self.cursor_shape.get()),
@@ -2328,6 +2332,15 @@ fn dec_mode_status(modes: u32, alternate_on: bool, mode: u32) -> u8 {
         Some(true) => 1,
         Some(false) => 2,
         None => 0,
+    }
+}
+
+/// tmux's DECRQM answer for a standard mode: 1 set, 2 reset, 0 unrecognized.
+fn ansi_mode_status(modes: u32, mode: u32) -> u8 {
+    match mode {
+        4 if modes & mode::INSERT != 0 => 1,
+        4 => 2,
+        _ => 0,
     }
 }
 

@@ -169,6 +169,9 @@ pub(crate) enum Event {
     /// DECRQM: answer whether this private mode is set, as the screen has it
     /// at this point in the stream.
     DecPrivateModeReport(u32),
+    /// ANSI DECRQM: answer whether this standard mode is set, as the screen
+    /// has it at this point in the stream.
+    DecModeReport(u32),
     /// DECRQSS: answer this setting request. The payload is the request itself,
     /// still unparsed, because what answers it is state the observer does not
     /// hold.
@@ -346,6 +349,12 @@ impl Observer {
             // pane asked about is what the screen has *here*.
             (Some(b'?'), [b'$'], b'p') => {
                 out.event(Event::DecPrivateModeReport(
+                    params.first().map_or(0, |param| param.or(0)),
+                ));
+            }
+            // ANSI DECRQM for a standard mode.
+            (None, [b'$'], b'p') => {
+                out.event(Event::DecModeReport(
                     params.first().map_or(0, |param| param.or(0)),
                 ));
             }
@@ -975,6 +984,11 @@ mod tests {
             events(b"\x1b[?2026h\x1b[?2026$p"),
             vec![Event::DecPrivateModeReport(2026)]
         );
+    }
+
+    #[test]
+    fn ansi_decrqm_is_reported_as_a_standard_mode_event() {
+        assert_eq!(events(b"\x1b[4$p"), vec![Event::DecModeReport(4)]);
     }
 
     #[test]
