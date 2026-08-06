@@ -375,6 +375,25 @@ impl Grid {
         if ny > self.hsize {
             ny = self.hsize;
         }
+        self.trim_history(ny);
+    }
+
+    /// Change the history cap and immediately discard rows beyond it.
+    ///
+    /// tmux applies a lowered `history-limit` to panes that already exist, so
+    /// this is the `all` form of `grid_collect_history`, unlike the amortized
+    /// one-tenth collection used while output is scrolling.
+    pub(crate) fn set_history_limit(&mut self, hlimit: usize) {
+        self.hlimit = hlimit;
+        if self.hsize > hlimit {
+            self.trim_history(self.hsize - hlimit);
+        }
+    }
+
+    fn trim_history(&mut self, ny: usize) {
+        if ny == 0 || ny > self.hsize {
+            return;
+        }
         self.lines.drain(..ny);
         self.hsize -= ny;
         if self.hscrolled > self.hsize {

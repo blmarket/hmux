@@ -6450,6 +6450,7 @@ impl ServerState {
             "alternate-screen"
                 | "allow-set-title"
                 | "allow-passthrough"
+                | "history-limit"
                 | "input-buffer-size"
                 | "scroll-on-clear"
         ) {
@@ -8305,6 +8306,24 @@ impl ServerState {
     /// once per server loop, and again as soon as a `set-option` touches one of
     /// them.
     pub(crate) fn refresh_pane_options(&self) {
+        // `history-limit` is a session option, but the rows live in panes.
+        // Apply each session's effective value to the panes in its windows so
+        // lowering it trims already populated grids, as tmux does.
+        for session in &self.sessions {
+            let history_limit = session
+                .options(&self.global_options)
+                .get("history-limit")
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(2000);
+            for link in &session.windows {
+                let Some(window) = self.windows.get(&link.id) else {
+                    continue;
+                };
+                for node in &window.panes {
+                    node.pane.set_history_limit(history_limit);
+                }
+            }
+        }
         for window in self.windows.values() {
             for node in &window.panes {
                 let options = node.options(window, &self.global_options);

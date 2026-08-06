@@ -49,6 +49,10 @@ impl VtScreen for EngineScreen {
         self.engine.screen.options = options;
     }
 
+    fn set_history_limit(&mut self, limit: usize) {
+        self.engine.screen.set_history_limit(limit);
+    }
+
     fn modes(&self) -> u32 {
         self.engine.screen.mode
     }

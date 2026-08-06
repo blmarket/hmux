@@ -843,6 +843,10 @@ impl VtScreen for GhosttyScreen {
     /// scrollback, so there is nothing here for `scroll-on-clear` to steer.
     fn set_options(&mut self, _options: ScreenOptions) {}
 
+    /// libghostty-vt owns its scrollback and exposes no row-based history cap,
+    /// so the alternate backend cannot apply this server option.
+    fn set_history_limit(&mut self, _limit: usize) {}
+
     /// libghostty-vt owns its scrollback and offers nothing equivalent, so this
     /// backend leaves the grid alone rather than approximating the move.
     fn trim_history_below_cursor(&mut self) -> io::Result<()> {

@@ -124,6 +124,17 @@ impl Screen {
         }
     }
 
+    /// Apply a session's history limit to the primary grid. While the
+    /// alternate screen is active, its zero-history grid is untouched and the
+    /// displaced primary grid is trimmed instead.
+    pub(crate) fn set_history_limit(&mut self, limit: usize) {
+        if let Some(saved) = self.saved_grid.as_mut() {
+            saved.set_history_limit(limit);
+        } else {
+            self.grid.set_history_limit(limit);
+        }
+    }
+
     /// tmux's `screen_write_cursormove`: absolute addressing, which origin mode
     /// makes relative to the scrolling region.
     pub(crate) fn cursor_move(&mut self, px: Option<usize>, py: Option<usize>, origin: bool) {

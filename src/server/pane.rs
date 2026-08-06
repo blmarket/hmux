@@ -1678,6 +1678,11 @@ impl Pane {
         self.observation.term.borrow_mut().set_options(options);
     }
 
+    /// Apply the session's history cap to the pane's primary scrollback.
+    pub(crate) fn set_history_limit(&self, limit: usize) {
+        self.observation.term.borrow_mut().set_history_limit(limit);
+    }
+
     /// Publish the options the pane's output is parsed against. The server
     /// re-pushes these whenever they can have changed, since the parse itself
     /// has no view of the option tables.

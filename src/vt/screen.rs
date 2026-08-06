@@ -254,6 +254,14 @@ pub(crate) trait VtScreen {
     /// Apply the pane options the screen consults; see [`ScreenOptions`].
     fn set_options(&mut self, options: ScreenOptions);
 
+    /// Apply a pane's history limit to the retained primary-screen scrollback.
+    ///
+    /// The server owns this option, while the screen owns the rows it trims;
+    /// keeping the operation here avoids reconstructing a grid at the command
+    /// layer. A backend without row-level history control may leave this as a
+    /// no-op and document that limitation.
+    fn set_history_limit(&mut self, limit: usize);
+
     /// The pane's VT modes, as [`mode`]'s bits.
     ///
     /// Every mode a pane can set lives here, not only the ones that steer the
