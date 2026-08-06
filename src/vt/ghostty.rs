@@ -915,10 +915,6 @@ impl VtScreen for GhosttyScreen {
 }
 
 impl InputEncoder for GhosttyScreen {
-    fn encode_key(&self, key: KeyEvent<'_>) -> io::Result<Vec<u8>> {
-        Ok(GhosttyScreen::encode_key(self, key)?)
-    }
-
     fn encode_mouse(&self, mouse: MouseEvent) -> io::Result<Vec<u8>> {
         Ok(GhosttyScreen::encode_mouse(self, mouse)?)
     }

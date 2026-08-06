@@ -12,7 +12,7 @@ use super::dispatch::Engine;
 use super::dump;
 use super::keys;
 use super::screen::DEFAULT_HISTORY_LIMIT;
-use crate::vt::input::{InputEncoder, KeyEvent, MouseEvent};
+use crate::vt::input::{InputEncoder, MouseEvent};
 use crate::vt::parser::Token;
 use crate::vt::screen::{CaptureExtent, Grid, GridDims, ScreenOptions, VtScreen};
 
@@ -176,10 +176,6 @@ impl VtScreen for EngineScreen {
 }
 
 impl InputEncoder for EngineScreen {
-    fn encode_key(&self, key: KeyEvent<'_>) -> io::Result<Vec<u8>> {
-        Ok(keys::encode_key(&self.engine.screen, key))
-    }
-
     fn encode_mouse(&self, mouse: MouseEvent) -> io::Result<Vec<u8>> {
         Ok(keys::encode_mouse(&self.engine.screen, mouse))
     }

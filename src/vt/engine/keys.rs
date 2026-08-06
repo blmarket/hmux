@@ -119,8 +119,10 @@ pub(crate) fn encode_mouse(screen: &Screen, mouse: MouseEvent) -> Vec<u8> {
 /// about `extended-keys` and the terminal's key tables. This
 /// covers the remaining caller, which needs the plain forms a terminal in its
 /// default modes would send.
-pub(crate) fn encode_key(screen: &Screen, key: KeyEvent<'_>) -> Vec<u8> {
-    let application = screen.mode & mode::KCURSOR != 0;
+///
+/// Only the mode word matters to the answer, so that is all it takes.
+pub(crate) fn encode_key(mode_word: u32, key: KeyEvent<'_>) -> Vec<u8> {
+    let application = mode_word & mode::KCURSOR != 0;
     let cursor = |final_byte: char| -> Vec<u8> {
         let introducer = if application { "\x1bO" } else { "\x1b[" };
         format!("{introducer}{final_byte}").into_bytes()
@@ -206,7 +208,7 @@ mod tests {
         let engine = screen(b"");
         let send = |number: u8| {
             encode_key(
-                &engine.screen,
+                engine.screen.mode,
                 KeyEvent {
                     key: Key::function(number).expect("function key"),
                     shift: false,
@@ -395,9 +397,9 @@ mod tests {
             unshifted_codepoint: None,
         };
         let normal = screen(b"");
-        assert_eq!(encode_key(&normal.screen, event), b"\x1b[A".to_vec());
+        assert_eq!(encode_key(normal.screen.mode, event), b"\x1b[A".to_vec());
         let application = screen(b"\x1b[?1h");
-        assert_eq!(encode_key(&application.screen, event), b"\x1bOA".to_vec());
+        assert_eq!(encode_key(application.screen.mode, event), b"\x1bOA".to_vec());
     }
 
     #[test]
@@ -411,10 +413,10 @@ mod tests {
             text: Some("c"),
             unshifted_codepoint: Some('c'),
         };
-        assert_eq!(encode_key(&engine.screen, base), b"c".to_vec());
+        assert_eq!(encode_key(engine.screen.mode, base), b"c".to_vec());
         assert_eq!(
             encode_key(
-                &engine.screen,
+                engine.screen.mode,
                 KeyEvent {
                     control: true,
                     ..base
@@ -423,7 +425,7 @@ mod tests {
             vec![0x03]
         );
         assert_eq!(
-            encode_key(&engine.screen, KeyEvent { alt: true, ..base }),
+            encode_key(engine.screen.mode, KeyEvent { alt: true, ..base }),
             vec![0x1b, b'c']
         );
     }

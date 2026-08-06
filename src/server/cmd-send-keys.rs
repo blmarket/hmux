@@ -17,8 +17,7 @@ use super::input_keys::{PaneKey, PaneKeyEncoding};
 use super::key::{parse_key_name, KeyBase, KeyCode, Modifiers, SpecialKey};
 use super::options;
 use super::state::{ClientKey, KeyBinding, ServerState};
-use crate::vt::input::{InputEncoder, Key, KeyEvent};
-use crate::vt::PaneScreen;
+use crate::vt::input::{encode_key_default_modes, Key, KeyEvent};
 
 const VALUE_FLAGS: &[&str] = &["-c", "-N", "-t"];
 
@@ -736,8 +735,7 @@ fn encode_parsed_key_for_pane(state: &ServerState, target: &str, code: KeyCode) 
 }
 
 fn encode_parsed_key_for_client(code: KeyCode) -> Option<ClientKey> {
-    let terminal = PaneScreen::new(80, 24);
-    let bytes = with_ghostty_key_event(code, |event| terminal.encode_key(event).ok()).flatten()?;
+    let bytes = with_ghostty_key_event(code, encode_key_default_modes)?;
     Some(ClientKey {
         bytes,
         forward_unbound: matches!(code.base, KeyBase::Char(_)),

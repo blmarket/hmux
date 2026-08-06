@@ -161,14 +161,21 @@ pub(crate) struct MouseEvent {
     pub(crate) any_button_pressed: bool,
 }
 
-/// Encoding a press or a click for the program running in the pane.
+/// The bytes this key press produces on a terminal in its default modes —
+/// what `send-keys` needs for a client, where there is no pane whose modes
+/// could apply.
+pub(crate) fn encode_key_default_modes(key: KeyEvent<'_>) -> Vec<u8> {
+    use super::screen::mode;
+    super::engine::keys::encode_key(mode::CURSOR | mode::WRAP, key)
+}
+
+/// Encoding a click for the program running in the pane.
 ///
 /// The encoding depends on modes the program set, so this is implemented
-/// alongside the screen that tracks them rather than as a free function.
+/// alongside the screen that tracks them rather than as a free function. Keys
+/// are not here: the pane's key path is the server's port of `input-keys.c`,
+/// and the keyless caller has [`encode_key_default_modes`].
 pub(crate) trait InputEncoder {
-    /// The bytes this key press produces under the screen's current modes.
-    fn encode_key(&self, key: KeyEvent<'_>) -> io::Result<Vec<u8>>;
-
     /// The bytes this mouse event produces, or none when the program has asked
     /// for no mouse reports.
     fn encode_mouse(&self, mouse: MouseEvent) -> io::Result<Vec<u8>>;
