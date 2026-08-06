@@ -1,8 +1,8 @@
 //! Encoding input for the program in the pane.
 //!
-//! Key encoding is already hmux's own: [`crate::server::input_keys`] is the
-//! port of tmux's `input-keys.c`, and every key a pane receives goes through
-//! it. What is left here is the mouse, whose encoding depends on which
+//! Key encoding is already hmux's own: the server's `input_keys` module is
+//! the port of tmux's `input-keys.c`, and every key a pane receives goes
+//! through it. What is left here is the mouse, whose encoding depends on which
 //! reporting mode and which wire format the program asked for — screen state,
 //! and so the screen's to answer.
 
@@ -115,8 +115,8 @@ pub(crate) fn encode_mouse(screen: &Screen, mouse: MouseEvent) -> Vec<u8> {
 /// Encode one key press for the program in the pane.
 ///
 /// The pane's own key path does not come through here: the server encodes a
-/// key against the pane's options with [`crate::server::input_keys::encode`],
-/// which knows about `extended-keys` and the terminal's key tables. This
+/// key against the pane's options with its `input_keys::encode`, which knows
+/// about `extended-keys` and the terminal's key tables. This
 /// covers the remaining caller, which needs the plain forms a terminal in its
 /// default modes would send.
 pub(crate) fn encode_key(screen: &Screen, key: KeyEvent<'_>) -> Vec<u8> {

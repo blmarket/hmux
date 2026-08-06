@@ -12,20 +12,32 @@
 //! different reasons: a grid rewrite should not drag key encoding with it, and
 //! owning the width tables should not mean owning the grid.
 //!
-//! [`PaneScreen`] names the implementation this build ships. Server code calls
-//! trait methods, so that alias is the only place a backend is chosen.
+//! # The contract
 //!
-//! The backend is [`engine`], hmux's own port of tmux's grid and screen model.
-//! The libghostty-vt backend it replaced is still buildable behind the
-//! `ghostty` feature, which is what [`differential`] diffs against; nothing in
-//! the default build links it, and the default build needs only the Rust
-//! toolchain.
+//! Inbound, the interface is the five `pub(crate)` submodules — [`parser`],
+//! [`observer`], [`screen`], [`input`], [`width`] — plus [`PaneScreen`], the
+//! implementation this build ships. Server code calls trait methods, so that
+//! alias is the only place a backend is chosen; `engine` (hmux's own port of
+//! tmux's grid and screen model) and `ghostty` (the libghostty-vt backend it
+//! replaced, still buildable behind the `ghostty` feature for `differential`
+//! to diff against) are private behind it.
+//!
+//! Outbound there is nothing: vt never depends on the server module. Every
+//! type crossing the seam is vt-owned — [`observer::OutputPolicy`],
+//! [`screen::ScreenOptions`], the event and token types — and the server
+//! pushes resolved option values in rather than vt reading server state.
+//!
+//! One caveat: [`width`] is process-global mutable state, mirroring tmux's
+//! global options — there is one width policy per process, not one per screen.
+//!
+//! `hmux::model::TerminalModel` is the only `pub` window onto this seam, and
+//! it is not a compatibility contract.
 
 #[cfg(all(test, feature = "ghostty"))]
 mod differential;
-pub(crate) mod engine;
+mod engine;
 #[cfg(feature = "ghostty")]
-pub(crate) mod ghostty;
+mod ghostty;
 pub(crate) mod input;
 pub(crate) mod observer;
 pub(crate) mod parser;
