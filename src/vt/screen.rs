@@ -151,7 +151,7 @@ pub(crate) struct RowFlags {
 /// with the whole server in reach. hmux's screen runs away from server state,
 /// so the resolved values are pushed to it instead and re-pushed whenever they
 /// can have changed. That is the same shape
-/// [`PaneOutputPolicy`](crate::server::pane::PaneOutputPolicy) has for the
+/// [`OutputPolicy`](super::observer::OutputPolicy) has for the
 /// tokenizer, and it is deliberately a separate one: those options decide how a
 /// pane's bytes are *parsed*, these decide what an operation does to the grid,
 /// and a backend that implements one need not implement the other.

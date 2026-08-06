@@ -20,8 +20,7 @@
 
 use std::collections::VecDeque;
 
-use super::parser::{Param, Parser, StringEnd, Token, TokenKind};
-use crate::server::pane::{PaneClipboardEvent, PaneCursorShape, PaneOutputPolicy};
+use super::parser::{Param, Parser, StringEnd, Token, TokenKind, INPUT_BUFFER_DEFAULT_SIZE};
 use super::x11_colour;
 
 /// The OSC 11 question hmux forwards to the client's own terminal, because only
@@ -36,6 +35,104 @@ pub(crate) const DEVICE_STATUS_REPORT_QUERY: &[u8] = b"\x1b[5n";
 /// an application that special-cases a terminal by name has to see the same
 /// answer the daemon's command language claims to implement.
 const XTVERSION_NAME: &str = "tmux";
+
+/// The options a pane's *own output* has to be parsed against.
+///
+/// tmux reads these from `wp->options` inside `input_parse`, which runs with the
+/// whole server in reach. hmux parses a pane's bytes away from the server state,
+/// so the resolved values are pushed to the pane instead and re-pushed whenever
+/// they can have changed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct OutputPolicy {
+    /// `alternate-screen`: whether smcup and rmcup switch screens at all.
+    pub(crate) alternate_screen: bool,
+    /// `allow-set-title`: whether the pane may retitle itself.
+    pub(crate) allow_set_title: bool,
+    /// `allow-passthrough`: how far a `DCS tmux;` payload reaches.
+    pub(crate) passthrough: PassthroughPolicy,
+    /// `input-buffer-size`: how long a terminal string may grow before the
+    /// parser abandons it.
+    pub(crate) input_buffer_size: u32,
+    /// `pane-colours`, packed as `0xrrggbb` by index — the palette a query
+    /// falls back to when the pane has set nothing itself.
+    pub(crate) palette: Vec<Option<u32>>,
+}
+
+/// The options' own defaults, which a pane parses against until the server's
+/// first refresh reaches it.
+impl Default for OutputPolicy {
+    fn default() -> Self {
+        Self {
+            alternate_screen: true,
+            allow_set_title: true,
+            passthrough: PassthroughPolicy::Off,
+            input_buffer_size: INPUT_BUFFER_DEFAULT_SIZE,
+            palette: Vec::new(),
+        }
+    }
+}
+
+/// `allow-passthrough`: whether a pane may write to a client's terminal
+/// directly, and whether it has to be the pane on screen to do so.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum PassthroughPolicy {
+    #[default]
+    Off,
+    /// `on`: only clients whose current window holds the pane.
+    Visible,
+    /// `all`: also clients that merely have the window linked, which is tmux's
+    /// `TTY_CTX_INVISIBLE_PANES`.
+    Always,
+}
+
+/// One OSC 52 sequence seen in a pane's output.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ClipboardEvent {
+    /// `OSC 52 ; <selection> ; <base64>` — an application setting the
+    /// clipboard, already decoded.
+    Set { data: Vec<u8> },
+    /// `OSC 52 ; <selection> ; ?` — an application asking for it.
+    Query {
+        /// The selection character echoed back in the reply; empty when the
+        /// request named none that tmux recognises.
+        selection: String,
+        /// Whether the request ended with ST rather than BEL, which the reply
+        /// mirrors.
+        string_terminator: bool,
+    },
+}
+
+/// The cursor style a pane asked for with DECSCUSR.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum CursorShape {
+    #[default]
+    Default,
+    Block,
+    Underline,
+    Bar,
+}
+
+impl CursorShape {
+    /// tmux's `screen_set_cursor_style` mapping of a DECSCUSR parameter.
+    pub(crate) fn from_parameter(parameter: u8) -> Self {
+        match parameter {
+            1 | 2 => Self::Block,
+            3 | 4 => Self::Underline,
+            5 | 6 => Self::Bar,
+            _ => Self::Default,
+        }
+    }
+
+    /// The name `#{cursor_shape}` reports.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Block => "block",
+            Self::Underline => "underline",
+            Self::Bar => "bar",
+        }
+    }
+}
 
 /// One OSC sequence that changed a pane's reported state.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -92,7 +189,7 @@ pub(crate) enum Event {
     /// A pane colour or path the formats report.
     Osc(OscUpdate),
     /// An OSC 52 clipboard set or query.
-    Clipboard(PaneClipboardEvent),
+    Clipboard(ClipboardEvent),
     /// A `DCS tmux;` payload, already stripped of its prefix and terminator.
     Passthrough(Vec<u8>),
     /// DSR ?996: the pane asked which theme it is running under.
@@ -135,7 +232,7 @@ impl Observer {
     }
 
     /// Tokenize one chunk of pane output against the current options.
-    pub(crate) fn feed(&mut self, input: &[u8], policy: &PaneOutputPolicy) -> Observed {
+    pub(crate) fn feed(&mut self, input: &[u8], policy: &OutputPolicy) -> Observed {
         self.parser.set_string_capacity(policy.input_buffer_size);
         let mut tokens = VecDeque::new();
         self.parser.parse(input, |token| tokens.push_back(token));
@@ -146,7 +243,7 @@ impl Observer {
         observed
     }
 
-    fn token(&mut self, token: Token, policy: &PaneOutputPolicy, out: &mut Observed) {
+    fn token(&mut self, token: Token, policy: &OutputPolicy, out: &mut Observed) {
         match token.kind.clone() {
             // The decoded character, not the bytes it came from: a malformed
             // sequence has already been resolved to one replacement here, and
@@ -236,7 +333,7 @@ impl Observer {
         params: &[Param],
         intermediates: &[u8],
         final_byte: u8,
-        policy: &PaneOutputPolicy,
+        policy: &OutputPolicy,
         out: &mut Observed,
     ) {
         match (private, intermediates, final_byte) {
@@ -314,7 +411,7 @@ impl Observer {
         token: Token,
         params: &[Param],
         set: bool,
-        policy: &PaneOutputPolicy,
+        policy: &OutputPolicy,
         out: &mut Observed,
     ) {
         let mut forwarded: Vec<u32> = Vec::with_capacity(params.len());
@@ -374,7 +471,7 @@ impl Observer {
         token: Token,
         data: &[u8],
         end: StringEnd,
-        policy: &PaneOutputPolicy,
+        policy: &OutputPolicy,
         out: &mut Observed,
     ) {
         // tmux's `input_exit_osc`: a body that does not open with digits names
@@ -475,7 +572,7 @@ impl Observer {
         &mut self,
         body: &str,
         end: StringEnd,
-        policy: &PaneOutputPolicy,
+        policy: &OutputPolicy,
     ) -> Option<Vec<u8>> {
         let mut reply = Vec::new();
         let mut rest = body;
@@ -517,7 +614,7 @@ impl Observer {
         intermediates: &[u8],
         final_byte: u8,
         data: &[u8],
-        policy: &PaneOutputPolicy,
+        policy: &OutputPolicy,
         out: &mut Observed,
     ) {
         // DECRQSS is `DCS $ q Pt ST`. tmux takes it before anything else with a
@@ -534,7 +631,7 @@ impl Observer {
         // grid content hmux reproduces, so nothing is forwarded either.
         if final_byte == b't'
             && data.starts_with(b"mux;")
-            && policy.passthrough != crate::server::pane::PassthroughPolicy::Off
+            && policy.passthrough != PassthroughPolicy::Off
         {
             out.event(Event::Passthrough(data[4..].to_vec()));
         }
@@ -571,18 +668,18 @@ fn first_is_zero(params: &[Param]) -> bool {
 /// Divergence: with no DECSCUSR applied tmux falls back to the `cursor-style`
 /// option, which the pane's reader has no view of, so hmux always reports the
 /// default 0 there. Both agree once a pane has set a style itself.
-pub(crate) fn decrqss_reply(request: &[u8], shape: PaneCursorShape, blinking: bool) -> Vec<u8> {
+pub(crate) fn decrqss_reply(request: &[u8], shape: CursorShape, blinking: bool) -> Vec<u8> {
     if request != b" q" {
         return b"\x1bP0$r\x1b\\".to_vec();
     }
     let ps = match shape {
-        PaneCursorShape::Default => 0,
-        PaneCursorShape::Block if blinking => 1,
-        PaneCursorShape::Block => 2,
-        PaneCursorShape::Underline if blinking => 3,
-        PaneCursorShape::Underline => 4,
-        PaneCursorShape::Bar if blinking => 5,
-        PaneCursorShape::Bar => 6,
+        CursorShape::Default => 0,
+        CursorShape::Block if blinking => 1,
+        CursorShape::Block => 2,
+        CursorShape::Underline if blinking => 3,
+        CursorShape::Underline => 4,
+        CursorShape::Bar if blinking => 5,
+        CursorShape::Bar => 6,
     };
     format!("\x1bP1$r q{ps} q\x1b\\").into_bytes()
 }
@@ -613,12 +710,12 @@ fn progress_bar_report(body: &str) -> Option<OscUpdate> {
 }
 
 /// One `OSC 52` body, as tmux's `input_osc_52` reads it.
-fn clipboard_event(body: &[u8], end: StringEnd) -> Option<PaneClipboardEvent> {
+fn clipboard_event(body: &[u8], end: StringEnd) -> Option<ClipboardEvent> {
     let text = std::str::from_utf8(body).ok()?;
     // A sequence with no `;` at all names no payload and is dropped.
     let (selection, payload) = text.split_once(';')?;
     if payload == "?" {
-        return Some(PaneClipboardEvent::Query {
+        return Some(ClipboardEvent::Query {
             selection: osc52_reply_selection(selection),
             string_terminator: end == StringEnd::StringTerminator,
         });
@@ -627,7 +724,7 @@ fn clipboard_event(body: &[u8], end: StringEnd) -> Option<PaneClipboardEvent> {
     if payload.is_empty() {
         return None;
     }
-    base64_decode_strict(payload).map(|data| PaneClipboardEvent::Set { data })
+    base64_decode_strict(payload).map(|data| ClipboardEvent::Set { data })
 }
 
 /// The selection tmux echoes back in an OSC 52 reply: the first character it
@@ -755,16 +852,9 @@ fn scale_hex(component: &str) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::pane::PassthroughPolicy;
 
-    fn policy() -> PaneOutputPolicy {
-        PaneOutputPolicy {
-            alternate_screen: true,
-            allow_set_title: true,
-            passthrough: PassthroughPolicy::Off,
-            input_buffer_size: super::super::parser::INPUT_BUFFER_DEFAULT_SIZE,
-            palette: Vec::new(),
-        }
+    fn policy() -> OutputPolicy {
+        OutputPolicy::default()
     }
 
     /// The bytes a backend that parses for itself would be handed: every
@@ -828,7 +918,7 @@ mod tests {
     #[test]
     fn a_refused_title_never_reaches_the_screen() {
         let mut observer = Observer::default();
-        let refused = PaneOutputPolicy {
+        let refused = OutputPolicy {
             allow_set_title: false,
             ..policy()
         };
@@ -864,7 +954,7 @@ mod tests {
     #[test]
     fn a_refused_alternate_switch_is_dropped_but_its_neighbours_survive() {
         let mut observer = Observer::default();
-        let refused = PaneOutputPolicy {
+        let refused = OutputPolicy {
             alternate_screen: false,
             ..policy()
         };
@@ -946,13 +1036,13 @@ mod tests {
     fn clipboard_sets_and_queries_are_reported() {
         assert_eq!(
             events(b"\x1b]52;c;aGk=\x07"),
-            vec![Event::Clipboard(PaneClipboardEvent::Set {
+            vec![Event::Clipboard(ClipboardEvent::Set {
                 data: b"hi".to_vec()
             })]
         );
         assert_eq!(
             events(b"\x1b]52;c;?\x1b\\"),
-            vec![Event::Clipboard(PaneClipboardEvent::Query {
+            vec![Event::Clipboard(ClipboardEvent::Query {
                 selection: "c".to_string(),
                 string_terminator: true,
             })]
@@ -963,7 +1053,7 @@ mod tests {
     fn passthrough_is_reported_only_when_the_option_allows_it() {
         assert!(events(b"\x1bPtmux;\x1b\x1b[31m\x1b\\").is_empty());
         let mut observer = Observer::default();
-        let allowed = PaneOutputPolicy {
+        let allowed = OutputPolicy {
             passthrough: PassthroughPolicy::Visible,
             ..policy()
         };
@@ -989,11 +1079,11 @@ mod tests {
     #[test]
     fn a_decrqss_reply_reports_the_style_and_its_blink() {
         assert_eq!(
-            decrqss_reply(b" q", PaneCursorShape::Underline, false),
+            decrqss_reply(b" q", CursorShape::Underline, false),
             b"\x1bP1$r q4 q\x1b\\".to_vec()
         );
         assert_eq!(
-            decrqss_reply(b"m", PaneCursorShape::Default, false),
+            decrqss_reply(b"m", CursorShape::Default, false),
             b"\x1bP0$r\x1b\\".to_vec(),
             "a setting hmux does not report is refused, not guessed at"
         );

@@ -31,11 +31,14 @@ use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 use crate::server::input_keys::ExtendedKeys;
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
 use crate::vt::observer::{decrqss_reply, Event as VtEvent, Observer, OscUpdate};
-use crate::vt::parser::INPUT_BUFFER_DEFAULT_SIZE;
 use crate::vt::parser::{Param, Token, TokenKind};
 
 use crate::vt::input::{InputEncoder, MouseEvent};
 pub(crate) use crate::vt::observer::parse_packed_colour;
+pub(crate) use crate::vt::observer::{
+    ClipboardEvent as PaneClipboardEvent, CursorShape as PaneCursorShape,
+    OutputPolicy as PaneOutputPolicy, PassthroughPolicy,
+};
 use crate::vt::screen::{mode, CaptureExtent, Grid, GridDims, ScreenOptions, VtScreen};
 use crate::vt::PaneScreen;
 
@@ -379,41 +382,6 @@ pub(crate) struct NativePaneObservation {
     observer: RefCell<Observer>,
 }
 
-/// The options a pane's *own output* has to be parsed against.
-///
-/// tmux reads these from `wp->options` inside `input_parse`, which runs with the
-/// whole server in reach. hmux parses a pane's bytes away from the server state,
-/// so the resolved values are pushed to the pane instead and re-pushed whenever
-/// they can have changed.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PaneOutputPolicy {
-    /// `alternate-screen`: whether smcup and rmcup switch screens at all.
-    pub(crate) alternate_screen: bool,
-    /// `allow-set-title`: whether the pane may retitle itself.
-    pub(crate) allow_set_title: bool,
-    /// `allow-passthrough`: how far a `DCS tmux;` payload reaches.
-    pub(crate) passthrough: PassthroughPolicy,
-    /// `input-buffer-size`: how long a terminal string may grow before the
-    /// parser abandons it.
-    pub(crate) input_buffer_size: u32,
-    /// `pane-colours`, packed as `0xrrggbb` by index — the palette a query
-    /// falls back to when the pane has set nothing itself.
-    pub(crate) palette: Vec<Option<u32>>,
-}
-
-/// `allow-passthrough`: whether a pane may write to a client's terminal
-/// directly, and whether it has to be the pane on screen to do so.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) enum PassthroughPolicy {
-    #[default]
-    Off,
-    /// `on`: only clients whose current window holds the pane.
-    Visible,
-    /// `all`: also clients that merely have the window linked, which is tmux's
-    /// `TTY_CTX_INVISIBLE_PANES`.
-    Always,
-}
-
 /// [`PaneOutputPolicy`] as the pane's parser reads it: shared with the server,
 /// so each field is an atomic rather than behind the state lock.
 struct PaneOutputPolicyCell {
@@ -457,16 +425,19 @@ impl PaneOutputPolicyCell {
 }
 
 /// The options' own defaults, which a pane parses against until the server's
-/// first refresh reaches it.
+/// first refresh reaches it. The values themselves live in
+/// [`PaneOutputPolicy`]'s `Default`.
 impl Default for PaneOutputPolicyCell {
     fn default() -> Self {
-        Self {
-            alternate_screen: Cell::new(true),
-            allow_set_title: Cell::new(true),
-            passthrough: Cell::new(0),
-            input_buffer_size: Cell::new(INPUT_BUFFER_DEFAULT_SIZE),
-            palette: RefCell::new(Vec::new()),
-        }
+        let cell = Self {
+            alternate_screen: Cell::default(),
+            allow_set_title: Cell::default(),
+            passthrough: Cell::default(),
+            input_buffer_size: Cell::default(),
+            palette: RefCell::default(),
+        };
+        cell.store(PaneOutputPolicy::default());
+        cell
     }
 }
 
@@ -479,23 +450,6 @@ pub(crate) struct PanePassthrough {
     /// that merely has the window linked gets the payload too — tmux's
     /// `TTY_CTX_INVISIBLE_PANES`.
     pub(crate) invisible_panes: bool,
-}
-
-/// One OSC 52 sequence seen in a pane's output.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum PaneClipboardEvent {
-    /// `OSC 52 ; <selection> ; <base64>` — an application setting the
-    /// clipboard, already decoded.
-    Set { data: Vec<u8> },
-    /// `OSC 52 ; <selection> ; ?` — an application asking for it.
-    Query {
-        /// The selection character echoed back in the reply; empty when the
-        /// request named none that tmux recognises.
-        selection: String,
-        /// Whether the request ended with ST rather than BEL, which the reply
-        /// mirrors.
-        string_terminator: bool,
-    },
 }
 
 struct OutputEvent {
@@ -2526,38 +2480,6 @@ pub(crate) struct PaneOscState {
     /// The last progress percentage the pane reported, which survives a state
     /// change that does not carry one.
     pub(crate) progress_value: u8,
-}
-
-/// The cursor style a pane asked for with DECSCUSR.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) enum PaneCursorShape {
-    #[default]
-    Default,
-    Block,
-    Underline,
-    Bar,
-}
-
-impl PaneCursorShape {
-    /// tmux's `screen_set_cursor_style` mapping of a DECSCUSR parameter.
-    pub(crate) fn from_parameter(parameter: u8) -> Self {
-        match parameter {
-            1 | 2 => Self::Block,
-            3 | 4 => Self::Underline,
-            5 | 6 => Self::Bar,
-            _ => Self::Default,
-        }
-    }
-
-    /// The name `#{cursor_shape}` reports.
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Self::Default => "default",
-            Self::Block => "block",
-            Self::Underline => "underline",
-            Self::Bar => "bar",
-        }
-    }
 }
 
 /// A pane's DECSET mouse state, as `#{mouse_*_flag}` reports it.
