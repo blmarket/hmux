@@ -41,7 +41,7 @@ impl Command {
             Self::Swap => swap_pane(args, st),
             Self::Move | Self::Join => move_pane(args, st),
             Self::Break => break_pane(args, st),
-            Self::Respawn => respawn_pane(args, st),
+            Self::Respawn => respawn_pane(args, st, context.client),
             Self::Resize => resize_pane(args, st),
             Self::ResizeWindow => resize_window(args, st),
             Self::RotateWindow => rotate_window(args, st),

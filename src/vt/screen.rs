@@ -204,6 +204,10 @@ pub(crate) struct GridRow {
     /// tmux's `cellsize`: the row's allocated extent, where a capture that
     /// keeps empty cells (the default, and `-N`) stops.
     pub(crate) size: usize,
+    /// tmux's `extdsize`: how many extended entries the row has allocated,
+    /// which `#{history_all_bytes}` counts. A backend with no allocation
+    /// model behind its rows reports zero.
+    pub(crate) extd: usize,
     pub(crate) flags: RowFlags,
 }
 

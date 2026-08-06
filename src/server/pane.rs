@@ -754,6 +754,35 @@ impl OutputSubscription {
 }
 
 impl NativePaneObservation {
+    /// `#{history_bytes}` and `#{history_all_bytes}`: the byte totals of the C
+    /// structures tmux would allocate for this grid. The struct sizes are
+    /// tmux's on LP64 — `grid_line` (40), packed `grid_cell_entry` (5) and
+    /// packed `grid_extd_entry` (23) — because the variables report those
+    /// allocations, not hmux's own storage.
+    pub(crate) fn history_byte_formats(&self) -> io::Result<(String, String)> {
+        const GRID_LINE_BYTES: usize = 40;
+        const GRID_CELL_ENTRY_BYTES: usize = 5;
+        const GRID_EXTD_ENTRY_BYTES: usize = 23;
+        let term = self.term.borrow_mut();
+        let dims = term.grid_dims()?;
+        let grid = term.grid_snapshot_range(0, dims.total_rows)?;
+        let lines = dims.total_rows;
+        let cells: usize = grid.rows.iter().map(|row| row.size).sum();
+        let extended: usize = grid.rows.iter().map(|row| row.extd).sum();
+        let total = lines * GRID_LINE_BYTES
+            + cells * GRID_CELL_ENTRY_BYTES
+            + extended * GRID_EXTD_ENTRY_BYTES;
+        Ok((
+            total.to_string(),
+            format!(
+                "{lines},{},{cells},{},{extended},{}",
+                lines * GRID_LINE_BYTES,
+                cells * GRID_CELL_ENTRY_BYTES,
+                extended * GRID_EXTD_ENTRY_BYTES,
+            ),
+        ))
+    }
+
     fn new(
         term: Rc<RefCell<PaneScreen>>,
         child: Option<ObservedChild>,

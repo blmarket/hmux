@@ -53,6 +53,9 @@ fn lay_out(out: &mut Vec<Line>, cells: Vec<Cell>, sx: usize, flags: u8) {
             width = 0;
         }
         width += cell_width;
+        if needs_extended(&cell) {
+            row.extd += 1;
+        }
         row.cells.push(cell);
         row.used = row.cells.len();
     }
@@ -88,6 +91,10 @@ pub(crate) struct Line {
     cells: Vec<Cell>,
     /// tmux's `cellused`: how far a program has written into the row.
     used: usize,
+    /// tmux's `extdsize`: how many extended entries the line has allocated.
+    /// Monotonic while the line lives — tmux never reclaims an entry when a
+    /// rich cell is overwritten with a simple one — and reset with the line.
+    extd: usize,
     pub(crate) flags: u8,
 }
 
@@ -101,6 +108,11 @@ impl Line {
     /// The written extent, tmux's `cellused`.
     pub(crate) fn used(&self) -> usize {
         self.used
+    }
+
+    /// The allocated extended entries, tmux's `extdsize`.
+    pub(crate) fn extd(&self) -> usize {
+        self.extd
     }
 
     pub(crate) fn is_wrapped(&self) -> bool {
@@ -172,6 +184,12 @@ impl Grid {
         }
         if needs_extended(cell) {
             line.flags |= line_flag::EXTENDED;
+            // tmux allocates a new extended entry only when the cell was not
+            // already extended; overwriting extended with simple leaks the
+            // entry, which is why the count never goes down.
+            if !needs_extended(&line.cells[px]) {
+                line.extd += 1;
+            }
         }
         line.cells[px] = cell.clone();
     }
@@ -200,6 +218,12 @@ impl Grid {
             sx = screen_width / 2;
         } else if screen_width > sx {
             sx = screen_width;
+        }
+        // An RGB background makes the fill cell itself extended, and tmux's
+        // `grid_clear_cell` allocates an entry for each one it writes.
+        let grown = sx.saturating_sub(line.cells.len());
+        if needs_extended(&Cell::cleared(bg)) {
+            line.extd += grown;
         }
         line.cells.resize(sx, Cell::cleared(bg));
     }

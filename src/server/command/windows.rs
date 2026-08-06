@@ -57,7 +57,7 @@ impl Command {
             Self::Move => move_window(args, st),
             Self::Link => link_window(args, st),
             Self::Unlink => unlink_window(args, st),
-            Self::Respawn => respawn_window(args, st),
+            Self::Respawn => respawn_window(args, st, context.client),
         }
     }
 }

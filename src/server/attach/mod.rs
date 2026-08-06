@@ -528,6 +528,9 @@ impl From<io::Error> for AttachStartFailure {
 struct TtyOutput {
     bytes: Vec<u8>,
     written: usize,
+    /// Lifetime total of bytes written to the terminal — tmux's `c->written`,
+    /// which `#{client_written}` reports.
+    total: u64,
 }
 
 impl TtyOutput {
@@ -535,7 +538,12 @@ impl TtyOutput {
         TtyOutput {
             bytes: Vec::new(),
             written: 0,
+            total: 0,
         }
+    }
+
+    fn total_written(&self) -> u64 {
+        self.total
     }
 
     fn has_pending(&self) -> bool {
@@ -566,6 +574,7 @@ impl TtyOutput {
             };
             if written > 0 {
                 self.written += written as usize;
+                self.total += written as u64;
                 continue;
             }
             if written == 0 {
@@ -4185,6 +4194,7 @@ mod tests {
                 false,
                 super::super::state::SplitDirection::TopBottom,
                 PaneSpec::Inert,
+                None,
             )
             .expect("split inactive pane");
 

@@ -1099,9 +1099,22 @@ impl LayoutCell {
         direction: SplitDirection,
         before: bool,
     ) -> bool {
+        self.split_sized(target_id, new_id, direction, before, None)
+    }
+
+    /// [`Self::split`] with an explicit size for the *new* pane on the split
+    /// axis (`split-window -l`/`-p`); `None` keeps the even split.
+    fn split_sized(
+        &mut self,
+        target_id: u32,
+        new_id: u32,
+        direction: SplitDirection,
+        before: bool,
+        new_size: Option<u16>,
+    ) -> bool {
         if matches!(self, Self::Pane { pane_id, .. } if *pane_id == target_id) {
             let old = self.rect();
-            let (first, second) = split_axis(old.axis(direction));
+            let (first, second) = split_axis_sized(old.axis(direction), new_size, before);
             let mut old_rect = old;
             old_rect.set_axis(direction, if before { second } else { first });
             let mut new_rect = old;
@@ -1142,7 +1155,7 @@ impl LayoutCell {
             && matches!(children[index], Self::Pane { pane_id, .. } if pane_id == target_id)
         {
             let old = children[index].rect();
-            let (first, second) = split_axis(old.axis(direction));
+            let (first, second) = split_axis_sized(old.axis(direction), new_size, before);
             let mut old_rect = old;
             old_rect.set_axis(direction, if before { second } else { first });
             let mut new_rect = old;
@@ -1161,12 +1174,73 @@ impl LayoutCell {
             self.fix_offsets();
             true
         } else {
-            let changed = children[index].split(target_id, new_id, direction, before);
+            let changed =
+                children[index].split_sized(target_id, new_id, direction, before, new_size);
             if changed {
                 self.fix_offsets();
             }
             changed
         }
+    }
+
+    /// tmux's `layout_spread_out`: climb from the pane's innermost parent
+    /// outward until one level's children can be evened out.
+    fn spread_pane(&mut self, pane_id: u32) -> bool {
+        let Self::Split { children, .. } = self else {
+            return false;
+        };
+        let Some(index) = children.iter().position(|child| child.contains(pane_id)) else {
+            return false;
+        };
+        if children[index].spread_pane(pane_id) {
+            return true;
+        }
+        self.spread_cell()
+    }
+
+    /// tmux's `layout_spread_cell`: give every child `(size - borders) /
+    /// children` cells on the split axis, the first children absorbing the
+    /// remainder.
+    fn spread_cell(&mut self) -> bool {
+        let Self::Split {
+            direction,
+            children,
+            rect,
+        } = self
+        else {
+            return false;
+        };
+        let direction = *direction;
+        let number = children.len() as u16;
+        if number <= 1 {
+            return false;
+        }
+        let size = rect.axis(direction);
+        if size < number - 1 {
+            return false;
+        }
+        let each = (size - (number - 1)) / number;
+        if each == 0 {
+            return false;
+        }
+        let mut remainder = i32::from(size) - i32::from(number) * (i32::from(each) + 1) + 1;
+        let mut changed = false;
+        for child in children.iter_mut() {
+            let mut target = each;
+            if remainder > 0 {
+                target += 1;
+                remainder -= 1;
+            }
+            let change = i32::from(target) - i32::from(child.rect().axis(direction));
+            if change != 0 {
+                changed = true;
+            }
+            child.resize_axis(direction, change);
+        }
+        if changed {
+            self.fix_offsets();
+        }
+        changed
     }
 
     fn resize(&mut self, width: u16, height: u16) {
@@ -1479,6 +1553,32 @@ fn split_axis(size: u16) -> (u16, u16) {
         .saturating_sub(1)
         .clamp(1, size.saturating_sub(2).max(1));
     (size.saturating_sub(second).saturating_sub(1).max(1), second)
+}
+
+/// [`split_axis`] with the *new* pane pinned at `new_size` cells; the border
+/// line takes one cell and the target keeps the rest. The new pane is the
+/// first child when the split inserts before, the second otherwise.
+fn split_axis_sized(size: u16, new_size: Option<u16>, before: bool) -> (u16, u16) {
+    let Some(new) = new_size else {
+        return split_axis(size);
+    };
+    let new = new.clamp(1, size.saturating_sub(2).max(1));
+    let old = size.saturating_sub(new).saturating_sub(1).max(1);
+    if before {
+        (new, old)
+    } else {
+        (old, new)
+    }
+}
+
+/// The layout as a `select-layout`-consumable custom string: the dump body
+/// behind tmux's 4-hex rotate-and-add checksum prefix.
+pub(crate) fn checksummed_layout_dump(layout: &LayoutCell) -> String {
+    let body = layout.dump();
+    let checksum = body.bytes().fold(0u16, |sum, byte| {
+        sum.rotate_right(1).wrapping_add(u16::from(byte))
+    });
+    format!("{checksum:04x},{body}")
 }
 
 fn parse_custom_layout(value: &str) -> io::Result<LayoutCell> {
@@ -1967,6 +2067,9 @@ pub struct Window {
     pub(crate) pending_size: Option<(u16, u16)>,
     pub(crate) layout: LayoutCell,
     pub(crate) last_layout: Option<usize>,
+    /// The layout string before the last `select-layout`-family command —
+    /// tmux's `w->old_layout`, which `select-layout -o` restores.
+    pub(crate) old_layout: Option<String>,
     pub(crate) last_new_pane_x: u16,
     pub(crate) last_new_pane_y: u16,
     /// Conditions raised for this window and not yet turned into alerts, as
@@ -2285,6 +2388,14 @@ struct ClientRenderEntry {
     /// When this client last sent a key, in microseconds since the epoch —
     /// tmux's `c->activity_time`, which orders `cmd_find_best_client`.
     activity_micros: i64,
+    /// When this client attached, in microseconds since the epoch — tmux's
+    /// `c->creation_time`, which `#{client_created}` reports.
+    created_micros: i64,
+    /// The session this client showed before its last switch — tmux's
+    /// `c->last_session`, cleared when a switch lands on the same session.
+    last_session_id: Option<u32>,
+    /// Bytes written to this client's terminal — tmux's `c->written`.
+    written: u64,
     /// When a clipboard query was last sent to this client's terminal.
     clipboard_query_at: Option<Instant>,
     flag_state: ClientFlagState,
@@ -2353,6 +2464,15 @@ pub(crate) struct ClientSnapshot {
     pub(crate) key_table: String,
     /// When this client last sent a key, in microseconds since the epoch.
     pub(crate) activity_micros: i64,
+    /// When this client attached, in microseconds since the epoch.
+    pub(crate) created_micros: i64,
+    /// The session this client showed before its last switch, if any.
+    pub(crate) last_session_id: Option<u32>,
+    /// The features resolved for this client's terminal, in tmux's
+    /// feature-bit order — `#{client_termfeatures}`.
+    pub(crate) termfeatures: String,
+    /// Bytes written to this client's terminal — `#{client_written}`.
+    pub(crate) written: u64,
 }
 
 /// The client-side inputs of the oversized-window viewport calculation.
@@ -2684,6 +2804,9 @@ impl ClientRenderRegistry {
                 theme: String::new(),
                 key_table: DEFAULT_KEY_TABLE.to_string(),
                 activity_micros: now_micros(),
+                created_micros: now_micros(),
+                last_session_id: None,
+                written: 0,
                 clipboard_query_at: None,
                 flag_state,
                 terminal: None,
@@ -2731,6 +2854,14 @@ impl ClientRenderRegistry {
                 theme: entry.theme.clone(),
                 key_table: entry.key_table.clone(),
                 activity_micros: entry.activity_micros,
+                created_micros: entry.created_micros,
+                last_session_id: entry.last_session_id,
+                termfeatures: entry
+                    .terminal
+                    .as_ref()
+                    .map(|terminal| terminal.feature_list())
+                    .unwrap_or_default(),
+                written: entry.written,
             })
             .collect()
     }
@@ -3316,6 +3447,9 @@ impl ClientRenderRegistry {
             .clients
             .get_mut(&id)
             .expect("selected client disappeared");
+        // tmux's `server_client_set_session`: a switch that lands on a
+        // different session remembers the one it left; anything else clears it.
+        entry.last_session_id = (entry.session_id != session_id).then_some(entry.session_id);
         entry.session_id = session_id;
         {
             let mut action = entry.slot.action.borrow_mut();
@@ -3350,6 +3484,7 @@ impl ClientRenderRegistry {
             }) else {
                 continue;
             };
+            entry.last_session_id = (entry.session_id != target).then_some(entry.session_id);
             entry.session_id = target;
             {
                 let mut action = entry.slot.action.borrow_mut();
@@ -3388,6 +3523,15 @@ impl ClientRenderRegistry {
 impl ClientRenderAttachment {
     pub(crate) fn as_raw_fd(&self) -> RawFd {
         self.slot.wakeup.as_fd().as_raw_fd()
+    }
+
+    /// Publish the running total of bytes the attach loop has written to this
+    /// client's terminal, backing `#{client_written}`.
+    pub(crate) fn publish_written(&self, total: u64) {
+        let mut inner = self.registry.inner.borrow_mut();
+        if let Some(entry) = inner.clients.get_mut(&self.id) {
+            entry.written = total;
+        }
     }
 
     /// This client's `#()` job tree, so its status renderer and the commands it
@@ -4133,6 +4277,8 @@ pub struct ServerState {
     /// first session. An untargeted attach may consume this state by creating
     /// session 0; becoming empty later must not repeat that bootstrap behavior.
     initial_attach_pending: bool,
+    /// When this server state was created, as `#{start_time}` reports it.
+    started_epoch: i64,
     /// The pathname this server listens on, as `#{socket_path}` reports it and
     /// as `TMUX` names it in a spawned process. Empty in the unit tests and in
     /// any embedding that never binds a socket.
@@ -4284,6 +4430,7 @@ impl ServerState {
         let client_renders = Rc::new(ClientRenderRegistry::new());
         let mut state = ServerState {
             initial_attach_pending: true,
+            started_epoch: now_epoch(),
             socket_path: PathBuf::new(),
             new_pipes: Vec::new(),
             sessions: Vec::new(),
@@ -5394,6 +5541,28 @@ impl ServerState {
             .names_for_sessions(&BTreeSet::from([session.id]))
     }
 
+    /// When this server state was created (`#{start_time}`).
+    pub(crate) fn started_epoch(&self) -> i64 {
+        self.started_epoch
+    }
+
+    /// The clients whose session currently shows `window_id` — tmux's
+    /// `#{window_active_clients}` walk over `c->session->curw`.
+    pub(crate) fn window_active_client_names(&self, window_id: u32) -> Vec<String> {
+        let showing = self
+            .sessions
+            .iter()
+            .filter(|session| {
+                session
+                    .windows
+                    .get(session.active)
+                    .is_some_and(|link| self.window_for_link(link).id == window_id)
+            })
+            .map(|session| session.id)
+            .collect::<BTreeSet<u32>>();
+        self.client_renders.names_for_sessions(&showing)
+    }
+
     pub(crate) fn session_group_attached_client_names(&self, session: &Session) -> Vec<String> {
         if !self.is_grouped(session) {
             return Vec::new();
@@ -5455,6 +5624,22 @@ impl ServerState {
         if session.active != previous {
             let session_id = session.id;
             self.notify_session("session-window-changed", session_id);
+            // tmux's `session_select` tail: a selection runs
+            // `window_update_activity`, so the alert check fires again and an
+            // unattached session's monitor-activity re-flags even the winlink
+            // it just selected.
+            let window_id = self.sessions[session_pos].windows[position].id;
+            let monitor_activity = self
+                .windows
+                .get(&window_id)
+                .is_some_and(|window| {
+                    window.options(&self.global_options).get("monitor-activity") == Some("on")
+                });
+            self.window_last_activity
+                .insert(window_id, std::time::Instant::now());
+            if monitor_activity {
+                self.deliver_alert(window_id, ALERT_ACTIVITY);
+            }
         }
     }
 
@@ -6307,11 +6492,20 @@ impl ServerState {
             .values()
             .flat_map(|window| {
                 window.panes.iter().filter_map(|pane| {
-                    (pane
+                    // `on` and `key` keep the dead pane; `failed` keeps it
+                    // only when the child exited non-zero (or to a signal).
+                    let keep = match pane
                         .options(window, &self.global_options)
                         .get("remain-on-exit")
-                        == Some("on"))
-                    .then_some(pane.id)
+                    {
+                        Some("on") | Some("key") => true,
+                        Some("failed") => pane
+                            .pane
+                            .death()
+                            .is_some_and(|death| death.status != Some(0)),
+                        _ => false,
+                    };
+                    keep.then_some(pane.id)
                 })
             })
             .collect::<BTreeSet<_>>();
@@ -6328,6 +6522,63 @@ impl ServerState {
                 pane.id
             })
             .collect::<Vec<_>>();
+        // tmux's `server_destroy_pane` paints the expanded remain-on-exit-format
+        // onto a pane it keeps: full scroll region, cursor to the bottom-left,
+        // one linefeed, then the text — and the cursor is hidden.
+        for &pane_id in newly_exited.iter().filter(|id| retained.contains(id)) {
+            let Some((window, pane)) = self.windows.values().find_map(|window| {
+                window
+                    .panes
+                    .iter()
+                    .find(|pane| pane.id == pane_id)
+                    .map(|pane| (window, pane))
+            }) else {
+                continue;
+            };
+            let template = pane
+                .options(window, &self.global_options)
+                .get("remain-on-exit-format")
+                .unwrap_or_default()
+                .to_string();
+            if template.is_empty() {
+                continue;
+            }
+            let death = pane.pane.death();
+            let mut vars = super::format::Vars::new();
+            vars.set("pane_id", format!("%{pane_id}"))
+                .set("pane_dead", "1")
+                .set(
+                    "pane_dead_status",
+                    death
+                        .and_then(|death| death.status)
+                        .map(|status| status.to_string())
+                        .unwrap_or_default(),
+                )
+                .set(
+                    "pane_dead_signal",
+                    death
+                        .and_then(|death| death.signal)
+                        .map(|signal| signal.to_string())
+                        .unwrap_or_default(),
+                )
+                .set(
+                    "pane_dead_time",
+                    death
+                        .map(|death| {
+                            death
+                                .at
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs()
+                                .to_string()
+                        })
+                        .unwrap_or_default(),
+                );
+            let expanded = super::format::expand(&template, &vars);
+            let (_, rows) = pane.pane.size();
+            pane.pane
+                .feed(format!("\x1b[r\x1b[{rows};1H\n\x1b[?25l{expanded}").as_bytes());
+        }
         self.deferred_notifications(|state| {
             for pane_id in newly_exited {
                 let name = if retained.contains(&pane_id) {
@@ -6528,6 +6779,7 @@ impl ServerState {
                 pending_size: None,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
+                old_layout: None,
                 last_new_pane_x: 0,
                 last_new_pane_y: 0,
                 // tmux's `window_create` raises activity, so a monitor turned on
@@ -6918,6 +7170,7 @@ impl ServerState {
                 pending_size: None,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
+                old_layout: None,
                 last_new_pane_x: 0,
                 last_new_pane_y: 0,
                 // tmux's `window_create` raises activity, so a monitor turned on
@@ -7067,6 +7320,7 @@ impl ServerState {
                 pending_size: None,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
+                old_layout: None,
                 last_new_pane_x: 0,
                 last_new_pane_y: 0,
                 // tmux's `window_create` raises activity, so a monitor turned on
@@ -8481,7 +8735,15 @@ impl ServerState {
         direction: SplitDirection,
     ) -> io::Result<usize> {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-        self.split_window_direction_with_spawn(target, select, before, direction, &[shell], None)
+        self.split_window_direction_with_spawn(
+            target,
+            select,
+            before,
+            direction,
+            &[shell],
+            None,
+            None,
+        )
     }
 
     pub(crate) fn split_window_direction_with_spawn(
@@ -8492,12 +8754,13 @@ impl ServerState {
         direction: SplitDirection,
         argv: &[String],
         cwd: Option<&Path>,
+        new_size: Option<u16>,
     ) -> io::Result<usize> {
         let spec = match cwd {
             Some(cwd) => PaneSpec::CommandIn(argv.to_vec(), cwd.to_path_buf()),
             None => PaneSpec::Command(argv.to_vec()),
         };
-        self.split_window_direction_with_spec(target, select, before, direction, spec)
+        self.split_window_direction_with_spec(target, select, before, direction, spec, new_size)
     }
 
     pub(crate) fn split_window_direction_with_spec(
@@ -8507,6 +8770,7 @@ impl ServerState {
         before: bool,
         direction: SplitDirection,
         spec: PaneSpec,
+        new_size: Option<u16>,
     ) -> io::Result<usize> {
         let (_, pane_part) = split_pane_target(target);
         let t = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
@@ -8541,7 +8805,10 @@ impl ServerState {
         let old_active = win.active;
         let target_index = t.pane;
         let target_id = win.panes[target_index].id;
-        if !win.layout.split(target_id, pane_id, direction, before) {
+        if !win
+            .layout
+            .split_sized(target_id, pane_id, direction, before, new_size)
+        {
             return Err(io::Error::other("target pane is absent from layout"));
         }
         win.panes.insert(
@@ -9963,6 +10230,7 @@ impl ServerState {
                 pending_size: None,
                 layout: LayoutCell::pane(node_id, source_size.0, source_size.1),
                 last_layout: None,
+                old_layout: None,
                 last_new_pane_x: 0,
                 last_new_pane_y: 0,
                 // tmux's `window_create` raises activity, so a monitor turned on
@@ -10746,6 +11014,56 @@ impl ServerState {
         // the cells are rebuilt, and once from the command itself.
         self.notify_window("window-layout-changed", window_id);
         self.notify_window("window-layout-changed", window_id);
+        Ok(())
+    }
+
+    /// Snapshot the target window's layout into tmux's `w->old_layout` slot,
+    /// returning the value it replaces — what `select-layout -o` restores.
+    pub(crate) fn snapshot_window_layout(&mut self, target: &str) -> io::Result<Option<String>> {
+        let resolved = self.resolve_window_target(target)?;
+        let window = self.window_mut(resolved.session, resolved.window);
+        let dump = checksummed_layout_dump(&window.layout);
+        Ok(window.old_layout.replace(dump))
+    }
+
+    /// Put a previously snapshot `old_layout` back, for a failed
+    /// `select-layout` (tmux's error path restores `w->old_layout`).
+    pub(crate) fn restore_window_old_layout(&mut self, target: &str, value: Option<String>) {
+        if let Ok(resolved) = self.resolve_window_target(target) {
+            self.window_mut(resolved.session, resolved.window).old_layout = value;
+        }
+    }
+
+    /// The last preset layout applied to the target window, which a bare
+    /// `select-layout` reapplies (tmux's `w->lastlayout`).
+    pub(crate) fn window_last_preset_layout(&self, target: &str) -> io::Result<Option<usize>> {
+        let resolved = self.resolve_window_target(target)?;
+        Ok(self.window(resolved.session, resolved.window).last_layout)
+    }
+
+    /// `select-layout -E`: spread the target pane's siblings evenly, climbing
+    /// outward from its innermost split (tmux's `layout_spread_out`).
+    pub(crate) fn spread_window_layout(&mut self, target: &str) -> io::Result<()> {
+        let t = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
+        let window_id = self.sessions[t.session].windows[t.window].id;
+        let affected_sessions = self
+            .sessions
+            .iter()
+            .filter(|session| session.windows.iter().any(|link| link.id == window_id))
+            .map(|session| session.id)
+            .collect::<Vec<_>>();
+        let win = self.window_mut(t.session, t.window);
+        let pane_id = win.panes[t.pane].id;
+        if win.layout.spread_pane(pane_id) {
+            resize_panes_to_layout(win)?;
+            for session_id in affected_sessions {
+                self.invalidate_session(
+                    session_id,
+                    RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
+                );
+            }
+            self.notify_window("window-layout-changed", window_id);
+        }
         Ok(())
     }
 
@@ -15868,6 +16186,7 @@ mod tests {
                 wrapped: false,
                 used: text.chars().count(),
                 size,
+                extd: 0,
                 flags: RowFlags::default(),
             }],
         };

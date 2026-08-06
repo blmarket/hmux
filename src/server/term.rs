@@ -523,6 +523,17 @@ impl ResolvedTerm {
         self.terminal_flags & TERM_VT100_LIKE != 0
     }
 
+    /// The resolved features in tmux's feature-bit order, as
+    /// `#{client_termfeatures}` reports them (`tty_get_features`).
+    pub(crate) fn feature_list(&self) -> String {
+        FEATURES
+            .iter()
+            .filter(|feature| self.features.contains(feature.name))
+            .map(|feature| feature.name)
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
     pub(crate) fn descriptions(&self) -> Vec<String> {
         CAPABILITY_NAMES
             .iter()

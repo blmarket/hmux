@@ -342,6 +342,20 @@ pub(crate) fn grid_word_and_line(
     (word, line.to_string())
 }
 
+/// The OSC 8 hyperlink under the mouse, tmux's `#{mouse_hyperlink}` — read
+/// from the clicked cell's link metadata, empty when the cell has none.
+pub(crate) fn grid_hyperlink(pane: &super::pane::Pane, position: MousePosition) -> String {
+    let history = pane.scrollback_rows().unwrap_or(0);
+    let Ok(grid) = pane.grid_snapshot_range(history + usize::from(position.y), 1) else {
+        return String::new();
+    };
+    grid.rows
+        .first()
+        .and_then(|row| row.cells.get(usize::from(position.x)))
+        .and_then(|cell| cell.hyperlink.clone())
+        .unwrap_or_default()
+}
+
 /// tmux's `KEYC_CLICK_TIMEOUT`.
 const CLICK_TIMEOUT: Duration = Duration::from_millis(300);
 
@@ -846,6 +860,7 @@ mod tests {
                 false,
                 SplitDirection::LeftRight,
                 PaneSpec::Inert,
+                None,
             )
             .expect("split");
         let mut cache = RenderCache::default();
