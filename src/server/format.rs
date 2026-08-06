@@ -22,6 +22,7 @@ use std::ffi::{CStr, CString};
 use regex::RegexBuilder;
 
 use super::style::{parse_colour, Colour};
+use crate::vt::width::codepoint_width;
 
 /// One variable's value: either materialized, or a deferred computation that
 /// runs (once) only if a format actually looks the variable up. The deferred
@@ -1205,7 +1206,7 @@ impl<'a> Iterator for DisplayTokens<'a> {
             let end = self.index + ch.len_utf8();
             let token = (
                 &self.source[self.index..end],
-                ghostty_sys::codepoint_width(ch as u32) as usize,
+                codepoint_width(ch as u32) as usize,
             );
             self.index = end;
             return Some(token);

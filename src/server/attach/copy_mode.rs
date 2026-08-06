@@ -7,6 +7,7 @@ use super::super::state::{
 use super::super::term::TerminalCapabilities;
 use super::super::{format, options, status};
 use super::append_terminal_style_reset;
+use crate::vt::screen::{CellWidth, GridCell};
 
 pub(super) struct CopyModeAction {
     page_up: bool,
@@ -397,10 +398,7 @@ fn render_mark_and_position(
                 .map_or(0, |last| last + 1);
             out.extend_from_slice(&style);
             for (column, cell) in cells.iter().take(width as usize).enumerate() {
-                if matches!(
-                    cell.width,
-                    ghostty_sys::GridCellWidth::SpacerTail | ghostty_sys::GridCellWidth::SpacerHead
-                ) {
+                if matches!(cell.width, CellWidth::SpacerTail | CellWidth::SpacerHead) {
                     continue;
                 }
                 if column == used {
@@ -544,12 +542,9 @@ fn render_search(
     }
 }
 
-fn render_cells(out: &mut Vec<u8>, cells: &[ghostty_sys::GridCellSnapshot]) {
+fn render_cells(out: &mut Vec<u8>, cells: &[GridCell]) {
     for cell in cells {
-        if matches!(
-            cell.width,
-            ghostty_sys::GridCellWidth::SpacerTail | ghostty_sys::GridCellWidth::SpacerHead
-        ) {
+        if matches!(cell.width, CellWidth::SpacerTail | CellWidth::SpacerHead) {
             continue;
         }
         if cell.text.is_empty() {

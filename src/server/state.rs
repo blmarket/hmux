@@ -28,6 +28,11 @@ use super::pane::{
 use super::task::{completion_pair, Completion, CompletionSender};
 use super::term::ResolvedTerm;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
+use crate::vt::input::MouseEvent;
+#[cfg(test)]
+use crate::vt::screen::GridRow;
+use crate::vt::screen::{CellSemantic, CellWidth, Grid, GridCell, VtScreen};
+use crate::vt::PaneScreen;
 
 /// The server state, shared by everything running on the loop.
 pub(crate) type SharedState = Rc<RefCell<ServerState>>;
@@ -622,7 +627,7 @@ pub(crate) struct CopyState {
     pub(crate) prefix: u32,
     pub(crate) scroll_exit: bool,
     pub(crate) recentre: CopyRecentre,
-    pub(crate) grid: ghostty_sys::GridSnapshot,
+    pub(crate) grid: Grid,
     /// Frozen styled VT serialization captured with `grid`.
     pub(crate) vt: Vec<u8>,
     /// Byte ranges for the content of each row in `vt`, excluding CR and the
@@ -1750,7 +1755,7 @@ fn reflow_copy_snapshot(state: &mut CopyState, cols: u16, rows: u16) -> io::Resu
     let mut metadata = Vec::new();
     for (row, line) in state.grid.rows.iter().enumerate() {
         for (col, cell) in line.cells.iter().enumerate() {
-            if cell.semantic != ghostty_sys::GridCellSemantic::Output || cell.hyperlink.is_some() {
+            if cell.semantic != CellSemantic::Output || cell.hyperlink.is_some() {
                 metadata.push((
                     copy_point_offset(&state.grid, (row, col)),
                     cell.semantic,
@@ -1759,7 +1764,7 @@ fn reflow_copy_snapshot(state: &mut CopyState, cols: u16, rows: u16) -> io::Resu
             }
         }
     }
-    let mut terminal = ghostty_sys::Terminal::new(state.grid.cols, state.grid.viewport_rows)
+    let mut terminal = PaneScreen::new(state.grid.cols, state.grid.viewport_rows)
         .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
     terminal.write(&copy_reflow_vt(state));
     terminal
@@ -1814,7 +1819,7 @@ fn view_output_vt(output: &[u8]) -> Vec<u8> {
 }
 
 fn view_copy_state(output: Vec<u8>, cols: u16, rows: u16) -> io::Result<CopyState> {
-    let mut terminal = ghostty_sys::Terminal::new(cols.max(1), rows.max(1))
+    let mut terminal = PaneScreen::new(cols.max(1), rows.max(1))
         .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
     terminal.write(&view_output_vt(&output));
     let grid = terminal
@@ -1857,7 +1862,7 @@ fn view_copy_state(output: Vec<u8>, cols: u16, rows: u16) -> io::Result<CopyStat
     })
 }
 
-fn copy_point_offset(grid: &ghostty_sys::GridSnapshot, point: (usize, usize)) -> usize {
+fn copy_point_offset(grid: &Grid, point: (usize, usize)) -> usize {
     let mut offset = 0;
     for row in 0..point.0.min(grid.rows.len()) {
         offset += copy_line_length(grid, row);
@@ -1868,7 +1873,7 @@ fn copy_point_offset(grid: &ghostty_sys::GridSnapshot, point: (usize, usize)) ->
     offset + point.1.min(copy_line_length(grid, point.0))
 }
 
-fn copy_point_at_offset(grid: &ghostty_sys::GridSnapshot, mut offset: usize) -> (usize, usize) {
+fn copy_point_at_offset(grid: &Grid, mut offset: usize) -> (usize, usize) {
     for row in 0..grid.rows.len() {
         let length = copy_line_length(grid, row);
         if offset <= length {
@@ -12262,11 +12267,7 @@ impl ServerState {
         }
     }
 
-    pub(crate) fn input_mouse_to_pane(
-        &self,
-        target: &str,
-        event: ghostty_sys::MouseEvent,
-    ) -> io::Result<()> {
+    pub(crate) fn input_mouse_to_pane(&self, target: &str, event: MouseEvent) -> io::Result<()> {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let pane = &self.window(resolved.session, resolved.window).panes[resolved.pane];
         if pane.input_off {
@@ -14181,14 +14182,11 @@ fn pane_pos_in(win: &Window, spec: &str, base: usize) -> Option<usize> {
     (idx < n).then_some(idx)
 }
 
-fn copy_cell_is_padding(cell: &ghostty_sys::GridCellSnapshot) -> bool {
-    matches!(
-        cell.width,
-        ghostty_sys::GridCellWidth::SpacerTail | ghostty_sys::GridCellWidth::SpacerHead
-    )
+fn copy_cell_is_padding(cell: &GridCell) -> bool {
+    matches!(cell.width, CellWidth::SpacerTail | CellWidth::SpacerHead)
 }
 
-fn copy_line_length(grid: &ghostty_sys::GridSnapshot, row: usize) -> usize {
+fn copy_line_length(grid: &Grid, row: usize) -> usize {
     let Some(row) = grid.rows.get(row) else {
         return 0;
     };
@@ -14201,7 +14199,7 @@ fn copy_line_length(grid: &ghostty_sys::GridSnapshot, row: usize) -> usize {
     length.min(grid.cols as usize)
 }
 
-fn copy_cell_in_set(grid: &ghostty_sys::GridSnapshot, cursor: &CopyCursor, set: &str) -> bool {
+fn copy_cell_in_set(grid: &Grid, cursor: &CopyCursor, set: &str) -> bool {
     let Some(cell) = grid
         .rows
         .get(cursor.row)
@@ -14222,7 +14220,7 @@ fn copy_cell_in_set(grid: &ghostty_sys::GridSnapshot, cursor: &CopyCursor, set: 
     chars.next().is_none() && set.chars().any(|candidate| candidate == ch)
 }
 
-fn copy_cursor_limit(grid: &ghostty_sys::GridSnapshot, row: usize, vi: bool) -> usize {
+fn copy_cursor_limit(grid: &Grid, row: usize, vi: bool) -> usize {
     let length = copy_line_length(grid, row);
     if vi && length != 0 {
         length - 1
@@ -14231,12 +14229,12 @@ fn copy_cursor_limit(grid: &ghostty_sys::GridSnapshot, row: usize, vi: bool) -> 
     }
 }
 
-fn clamp_copy_cursor(cursor: &mut CopyCursor, grid: &ghostty_sys::GridSnapshot, vi: bool) {
+fn clamp_copy_cursor(cursor: &mut CopyCursor, grid: &Grid, vi: bool) {
     cursor.row = cursor.row.min(grid.rows.len().saturating_sub(1));
     cursor.col = cursor.col.min(copy_cursor_limit(grid, cursor.row, vi));
 }
 
-fn clamp_copy_point(point: &mut (usize, usize), grid: &ghostty_sys::GridSnapshot, vi: bool) {
+fn clamp_copy_point(point: &mut (usize, usize), grid: &Grid, vi: bool) {
     point.0 = point.0.min(grid.rows.len().saturating_sub(1));
     point.1 = point.1.min(copy_cursor_limit(grid, point.0, vi));
 }
@@ -14501,7 +14499,7 @@ fn recentre_copy_cursor(state: &mut CopyState) {
     align_copy_cursor_in_view(state, target);
 }
 
-fn copy_ascii_cell(grid: &ghostty_sys::GridSnapshot, row: usize, col: usize) -> Option<u8> {
+fn copy_ascii_cell(grid: &Grid, row: usize, col: usize) -> Option<u8> {
     let cell = grid.rows.get(row)?.cells.get(col)?;
     if copy_cell_is_padding(cell) || cell.text.len() != 1 {
         return None;
@@ -14528,7 +14526,7 @@ fn matching_close(open: u8) -> Option<u8> {
 }
 
 fn find_previous_matching_bracket(
-    grid: &ghostty_sys::GridSnapshot,
+    grid: &Grid,
     row: usize,
     col: usize,
     close: u8,
@@ -14565,7 +14563,7 @@ fn find_previous_matching_bracket(
 }
 
 fn find_next_matching_bracket(
-    grid: &ghostty_sys::GridSnapshot,
+    grid: &Grid,
     row: usize,
     col: usize,
     open: u8,
@@ -14688,7 +14686,7 @@ fn move_copy_matching_bracket(state: &mut CopyState, backward: bool, vi: bool) {
     }
 }
 
-fn copy_first_nonblank(grid: &ghostty_sys::GridSnapshot, row: usize) -> usize {
+fn copy_first_nonblank(grid: &Grid, row: usize) -> usize {
     let limit = copy_line_length(grid, row);
     (0..limit)
         .find(|&col| {
@@ -14703,7 +14701,7 @@ fn move_copy_prompt(state: &mut CopyState, forward: bool, output: bool) {
         state.grid.rows[row]
             .cells
             .iter()
-            .any(|cell| cell.semantic == ghostty_sys::GridCellSemantic::Prompt)
+            .any(|cell| cell.semantic == CellSemantic::Prompt)
     };
     let mut candidates = Vec::new();
     for row in 0..state.grid.rows.len() {
@@ -14792,7 +14790,7 @@ fn select_copy_line(state: &mut CopyState, vi: bool) {
     });
 }
 
-fn copy_word_class(grid: &ghostty_sys::GridSnapshot, cursor: &CopyCursor, separators: &str) -> u8 {
+fn copy_word_class(grid: &Grid, cursor: &CopyCursor, separators: &str) -> u8 {
     if copy_cell_in_set(grid, cursor, " \t") {
         0
     } else if copy_cell_in_set(grid, cursor, separators) {
@@ -14930,11 +14928,7 @@ fn search_uses_posix_regex(pattern: &str) -> bool {
     pattern.bytes().any(|byte| b"^$*+()?[].\\".contains(&byte))
 }
 
-fn copy_search_matches(
-    grid: &ghostty_sys::GridSnapshot,
-    pattern: &str,
-    regex: bool,
-) -> Vec<CopySearchMatch> {
+fn copy_search_matches(grid: &Grid, pattern: &str, regex: bool) -> Vec<CopySearchMatch> {
     if pattern.is_empty() || grid.rows.is_empty() {
         return Vec::new();
     }
@@ -14979,7 +14973,7 @@ fn copy_search_matches(
                 } else {
                     text.push_str(&cell.text);
                 }
-                let width = usize::from(matches!(cell.width, ghostty_sys::GridCellWidth::Wide)) + 1;
+                let width = usize::from(matches!(cell.width, CellWidth::Wide)) + 1;
                 cells.push(CopySearchCell {
                     row,
                     col,
@@ -15330,11 +15324,7 @@ pub(crate) fn copy_search_segments(
         .collect()
 }
 
-fn copy_reader_handle_wrap(
-    cursor: &mut CopyCursor,
-    grid: &ghostty_sys::GridSnapshot,
-    line_end: &mut usize,
-) -> bool {
+fn copy_reader_handle_wrap(cursor: &mut CopyCursor, grid: &Grid, line_end: &mut usize) -> bool {
     let last_row = grid.rows.len().saturating_sub(1);
     while cursor.col > *line_end {
         if cursor.row == last_row {
@@ -15351,7 +15341,7 @@ fn copy_reader_handle_wrap(
     true
 }
 
-fn copy_reader_cursor_right(cursor: &mut CopyCursor, grid: &ghostty_sys::GridSnapshot) {
+fn copy_reader_cursor_right(cursor: &mut CopyCursor, grid: &Grid) {
     let end = copy_line_length(grid, cursor.row).saturating_sub(1);
     if cursor.col < end {
         cursor.col += 1;
@@ -15367,7 +15357,7 @@ fn copy_reader_cursor_right(cursor: &mut CopyCursor, grid: &ghostty_sys::GridSna
     }
 }
 
-fn copy_reader_cursor_left(cursor: &mut CopyCursor, grid: &ghostty_sys::GridSnapshot, wrap: bool) {
+fn copy_reader_cursor_left(cursor: &mut CopyCursor, grid: &Grid, wrap: bool) {
     while cursor.col > 0
         && grid.rows[cursor.row]
             .cells
@@ -15384,12 +15374,7 @@ fn copy_reader_cursor_left(cursor: &mut CopyCursor, grid: &ghostty_sys::GridSnap
     }
 }
 
-fn move_previous(
-    cursor: &mut CopyCursor,
-    grid: &ghostty_sys::GridSnapshot,
-    vi: bool,
-    separators: &str,
-) {
+fn move_previous(cursor: &mut CopyCursor, grid: &Grid, vi: bool, separators: &str) {
     if grid.rows.is_empty() {
         return;
     }
@@ -15444,12 +15429,7 @@ fn move_previous(
     clamp_copy_cursor(cursor, grid, vi);
 }
 
-fn move_next_start(
-    cursor: &mut CopyCursor,
-    grid: &ghostty_sys::GridSnapshot,
-    vi: bool,
-    separators: &str,
-) {
+fn move_next_start(cursor: &mut CopyCursor, grid: &Grid, vi: bool, separators: &str) {
     if grid.rows.is_empty() {
         return;
     }
@@ -15492,11 +15472,7 @@ fn move_next_start(
     clamp_copy_cursor(cursor, grid, vi);
 }
 
-fn copy_reader_next_word_end(
-    cursor: &mut CopyCursor,
-    grid: &ghostty_sys::GridSnapshot,
-    separators: &str,
-) {
+fn copy_reader_next_word_end(cursor: &mut CopyCursor, grid: &Grid, separators: &str) {
     let mut line_end = if grid.rows[cursor.row].wrapped {
         grid.cols.saturating_sub(1) as usize
     } else {
@@ -15529,12 +15505,7 @@ fn copy_reader_next_word_end(
     }
 }
 
-fn move_next_end(
-    cursor: &mut CopyCursor,
-    grid: &ghostty_sys::GridSnapshot,
-    vi: bool,
-    separators: &str,
-) {
+fn move_next_end(cursor: &mut CopyCursor, grid: &Grid, vi: bool, separators: &str) {
     if grid.rows.is_empty() {
         return;
     }
@@ -15598,24 +15569,18 @@ pub(crate) fn copy_selection_segments(state: &CopyState, vi: bool) -> Vec<(usize
         .collect()
 }
 
-fn append_copy_cells(
-    output: &mut String,
-    grid: &ghostty_sys::GridSnapshot,
-    row: usize,
-    from: usize,
-    to: usize,
-) {
+fn append_copy_cells(output: &mut String, grid: &Grid, row: usize, from: usize, to: usize) {
     if from >= to {
         return;
     }
     for cell in &grid.rows[row].cells[from..to] {
         match cell.width {
-            ghostty_sys::GridCellWidth::SpacerTail => continue,
-            ghostty_sys::GridCellWidth::SpacerHead => {
+            CellWidth::SpacerTail => continue,
+            CellWidth::SpacerHead => {
                 output.push(' ');
                 continue;
             }
-            ghostty_sys::GridCellWidth::Narrow | ghostty_sys::GridCellWidth::Wide => {}
+            CellWidth::Narrow | CellWidth::Wide => {}
         }
         if cell.text.is_empty() {
             output.push(' ');
@@ -15763,29 +15728,29 @@ mod tests {
         let text = "        Indented";
         let mut cells = text
             .chars()
-            .map(|ch| ghostty_sys::GridCellSnapshot {
+            .map(|ch| GridCell {
                 text: ch.to_string(),
-                width: ghostty_sys::GridCellWidth::Narrow,
-                semantic: ghostty_sys::GridCellSemantic::Output,
+                width: CellWidth::Narrow,
+                semantic: CellSemantic::Output,
                 hyperlink: None,
                 hyperlink_id: None,
             })
             .collect::<Vec<_>>();
         cells.resize(
             20,
-            ghostty_sys::GridCellSnapshot {
+            GridCell {
                 text: String::new(),
-                width: ghostty_sys::GridCellWidth::Narrow,
-                semantic: ghostty_sys::GridCellSemantic::Output,
+                width: CellWidth::Narrow,
+                semantic: CellSemantic::Output,
                 hyperlink: None,
                 hyperlink_id: None,
             },
         );
-        let grid = ghostty_sys::GridSnapshot {
+        let grid = Grid {
             cols: 20,
             viewport_rows: 1,
             scrollback_rows: 0,
-            rows: vec![ghostty_sys::GridRowSnapshot {
+            rows: vec![GridRow {
                 cells,
                 wrapped: false,
             }],

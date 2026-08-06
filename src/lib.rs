@@ -9,20 +9,20 @@
 //! - [`tmux`] — message layer, codec, server traits, and compatibility re-exports.
 //! - [`observability`] — versioned pane observation contracts.
 //! - [`integration`] — prototype consumers of optional runtime capabilities.
+//! - [`model`] — a terminal model for out-of-process test harnesses.
 //! - [`serve`] — listeners and connection lifecycle management.
+//! - `vt` — the pane tokenizer, the terminal-emulation seam, and its backend.
 
 pub mod error;
 pub(crate) mod event_loop;
-pub(crate) mod server;
-/// Safe wrapper over libghostty-vt, hmux's terminal-emulation core. Lives in
-/// the standalone `ghostty-sys` crate (which owns the raw FFI and
-/// the build/link logic); re-exported here so `hmux::ghostty::*` is unchanged.
-pub use ghostty_sys as ghostty;
 pub mod integration;
+pub mod model;
 pub mod observability;
 #[allow(dead_code)]
 mod platform;
 pub mod serve;
+pub(crate) mod server;
 pub mod tmux;
+pub(crate) mod vt;
 
 pub use error::{Error, Result};

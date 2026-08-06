@@ -53,6 +53,7 @@ use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
 use super::task::{
     Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest, WaitToken,
 };
+use crate::vt::screen::{CellSemantic, CellWidth, Grid, GridRow};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.
@@ -4635,11 +4636,7 @@ pub(super) fn vars_full(
                         .cells
                         .iter()
                         .filter(|cell| {
-                            !matches!(
-                                cell.width,
-                                ghostty_sys::GridCellWidth::SpacerTail
-                                    | ghostty_sys::GridCellWidth::SpacerHead
-                            )
+                            !matches!(cell.width, CellWidth::SpacerTail | CellWidth::SpacerHead)
                         })
                         .map(|cell| {
                             if cell.text.is_empty() {
@@ -6870,7 +6867,7 @@ fn capture_endpoint(
 /// the range itself stay in physical-row terms.
 fn serialize_capture(
     args: &[String],
-    grid: &ghostty_sys::GridSnapshot,
+    grid: &Grid,
     start_row: usize,
     range: CaptureRange,
     styled_rows: Option<&[String]>,
@@ -6922,7 +6919,7 @@ fn serialize_capture(
     out
 }
 
-fn capture_plain_row(row: &ghostty_sys::GridRowSnapshot, args: &[String]) -> String {
+fn capture_plain_row(row: &GridRow, args: &[String]) -> String {
     let join = has_flag(args, "-J");
     let preserve_trailing = join || has_flag(args, "-N");
     let stop_at_used = join || has_flag(args, "-T");
@@ -6937,10 +6934,7 @@ fn capture_plain_row(row: &ghostty_sys::GridRowSnapshot, args: &[String]) -> Str
 
     let mut line = String::new();
     for cell in row.cells.iter().take(end) {
-        if matches!(
-            cell.width,
-            ghostty_sys::GridCellWidth::SpacerTail | ghostty_sys::GridCellWidth::SpacerHead
-        ) {
+        if matches!(cell.width, CellWidth::SpacerTail | CellWidth::SpacerHead) {
             continue;
         }
         if cell.text.is_empty() {
@@ -6955,7 +6949,7 @@ fn capture_plain_row(row: &ghostty_sys::GridRowSnapshot, args: &[String]) -> Str
     line
 }
 
-fn capture_row_flags(row: &ghostty_sys::GridRowSnapshot) -> String {
+fn capture_row_flags(row: &GridRow) -> String {
     let mut flags = String::new();
     if row.cells.iter().any(|cell| cell.hyperlink.is_some()) {
         flags.push('H');
@@ -6963,14 +6957,14 @@ fn capture_row_flags(row: &ghostty_sys::GridRowSnapshot) -> String {
     if row
         .cells
         .iter()
-        .any(|cell| !cell.text.is_empty() && cell.semantic == ghostty_sys::GridCellSemantic::Output)
+        .any(|cell| !cell.text.is_empty() && cell.semantic == CellSemantic::Output)
     {
         flags.push('O');
     }
     if row
         .cells
         .iter()
-        .any(|cell| !cell.text.is_empty() && cell.semantic == ghostty_sys::GridCellSemantic::Prompt)
+        .any(|cell| !cell.text.is_empty() && cell.semantic == CellSemantic::Prompt)
     {
         flags.push('P');
     }

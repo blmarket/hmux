@@ -1,0 +1,818 @@
+//! Applying tokens to the screen: tmux's `input.c` dispatch tables.
+//!
+//! The framing is already done by [`crate::vt::parser`]; what is left is the
+//! meaning of each sequence, which is exactly what `input.c`'s `input_c0_*`,
+//! `input_esc_*` and `input_csi_*` handlers decide. They are ported here one
+//! for one, against the same `screen-write.c` operations.
+//!
+//! Sequences the *server* answers rather than the screen — device attributes,
+//! DSR, DECRQM, OSC colours, clipboard, passthrough — are absent by design:
+//! [`crate::vt::observer`] already handled them before the token got here.
+
+use super::cell::{attr, colour, Cell, CellData};
+use super::grid::line_flag;
+use super::screen::{erase_background, mode, Screen};
+use crate::vt::parser::{Param, TokenKind};
+use crate::vt::width::codepoint_width;
+
+/// The character sets `SO`/`SI` and `ESC ( 0` select between.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Charsets {
+    /// Which of G0/G1 is currently mapped into GL, tmux's `cell.set`.
+    selected: u8,
+    /// Whether G0 and G1 are the line-drawing set, tmux's `g0set`/`g1set`.
+    g0_acs: bool,
+    g1_acs: bool,
+}
+
+impl Charsets {
+    fn acs_selected(self) -> bool {
+        if self.selected == 0 {
+            self.g0_acs
+        } else {
+            self.g1_acs
+        }
+    }
+}
+
+/// The screen plus the parser-side state `input.c` keeps beside it.
+pub(crate) struct Engine {
+    pub(crate) screen: Screen,
+    charsets: Charsets,
+    /// tmux's `ictx->last`: the character REP repeats.
+    last: Option<CellData>,
+    /// tmux's `INPUT_LAST`: whether `last` is still the most recent thing
+    /// written, which is what makes REP legal.
+    last_valid: bool,
+}
+
+impl Engine {
+    pub(crate) fn new(sx: usize, sy: usize, hlimit: usize) -> Engine {
+        Engine {
+            screen: Screen::new(sx, sy, hlimit),
+            charsets: Charsets::default(),
+            last: None,
+            last_valid: false,
+        }
+    }
+
+    /// Apply one token.
+    pub(crate) fn apply(&mut self, kind: &TokenKind) {
+        match kind {
+            TokenKind::Print(character) => self.print(*character),
+            TokenKind::Control(byte) => self.control(*byte),
+            TokenKind::Esc {
+                intermediates,
+                final_byte,
+            } => self.esc(intermediates, *final_byte),
+            TokenKind::Csi {
+                private,
+                params,
+                intermediates,
+                final_byte,
+            } => self.csi(*private, params, intermediates, *final_byte),
+            TokenKind::Osc { data, .. } => self.osc(data),
+            // A DCS carries no grid content hmux reproduces, and the rename and
+            // APC forms never reach the screen: the observer consumed them.
+            TokenKind::Dcs { .. } | TokenKind::Apc { .. } | TokenKind::Rename { .. } => {}
+        }
+    }
+
+    /// The background an erase uses, tmux's `bg` in `input_csi_dispatch`.
+    fn bg(&self) -> i32 {
+        erase_background(&self.screen.cell)
+    }
+
+    // ---- printable characters --------------------------------------------
+
+    /// tmux's `input_print` and `input_top_bit_set`, which differ only in where
+    /// the character came from.
+    fn print(&mut self, character: char) {
+        let width = codepoint_width(character as u32);
+        let mut cell = self.screen.cell.clone();
+        if self.charsets.acs_selected() && character.is_ascii() {
+            cell.attr |= attr::CHARSET;
+        } else {
+            cell.attr &= !attr::CHARSET;
+        }
+        cell.data = CellData::from_char(character, width);
+        self.screen.put_cell(&cell);
+        self.last = Some(cell.data);
+        self.last_valid = true;
+    }
+
+    /// tmux's `input_c0_dispatch`.
+    fn control(&mut self, byte: u8) {
+        match byte {
+            // NUL and BEL change nothing on the screen; the bell is the
+            // server's business and the observer already reported it.
+            0x00 | 0x07 => {}
+            0x08 => self.screen.backspace(),
+            0x09 => self.screen.tab(),
+            0x0a..=0x0c => {
+                let bg = self.screen.cell.bg;
+                self.screen.linefeed(false, bg);
+                if self.screen.mode & mode::CRLF != 0 {
+                    self.screen.carriage_return();
+                }
+            }
+            0x0d => self.screen.carriage_return(),
+            // SO and SI swap which character set is mapped in.
+            0x0e => self.charsets.selected = 1,
+            0x0f => self.charsets.selected = 0,
+            _ => {}
+        }
+        self.last_valid = false;
+    }
+
+    // ---- escape sequences -------------------------------------------------
+
+    /// tmux's `input_esc_dispatch`.
+    fn esc(&mut self, intermediates: &[u8], final_byte: u8) {
+        match (intermediates, final_byte) {
+            // RIS.
+            ([], b'c') => {
+                self.charsets = Charsets::default();
+                self.screen.reset();
+            }
+            // IND.
+            ([], b'D') => {
+                let bg = self.screen.cell.bg;
+                self.screen.linefeed(false, bg);
+            }
+            // NEL.
+            ([], b'E') => {
+                let bg = self.screen.cell.bg;
+                self.screen.carriage_return();
+                self.screen.linefeed(false, bg);
+            }
+            // HTS: the observer reports the stop, and the screen records it.
+            ([], b'H') if self.screen.cx < self.screen.sx() => {
+                let cx = self.screen.cx;
+                self.screen.tabs.insert(cx);
+            }
+            // RI.
+            ([], b'M') => {
+                let bg = self.screen.cell.bg;
+                self.screen.reverse_index(bg);
+            }
+            // DECKPAM / DECKPNM.
+            ([], b'=') => self.screen.mode_set(mode::KKEYPAD),
+            ([], b'>') => self.screen.mode_clear(mode::KKEYPAD),
+            // DECSC / DECRC.
+            ([], b'7') => self.screen.save_cursor(),
+            ([], b'8') => self.screen.restore_cursor(),
+            // DECALN.
+            ([b'#'], b'8') => self.screen.alignment_test(),
+            // SCS: select the line-drawing set into G0 or G1, or ASCII back.
+            ([b'('], b'0') => self.charsets.g0_acs = true,
+            ([b'('], b'B') => self.charsets.g0_acs = false,
+            ([b')'], b'0') => self.charsets.g1_acs = true,
+            ([b')'], b'B') => self.charsets.g1_acs = false,
+            _ => {}
+        }
+        self.last_valid = false;
+    }
+
+    // ---- control sequences ------------------------------------------------
+
+    #[allow(clippy::too_many_lines)]
+    fn csi(&mut self, private: Option<u8>, params: &[Param], intermediates: &[u8], final_byte: u8) {
+        let bg = self.bg();
+        let get = |index: usize, default: u32| -> usize {
+            params.get(index).map_or(default, |param| param.or(default)) as usize
+        };
+        // tmux's `input_get` with a minimum of one: a zero parameter is read as
+        // one for every operation that counts something.
+        let count = |index: usize| -> usize { get(index, 1).max(1) };
+
+        match (private, intermediates, final_byte) {
+            // ICH.
+            (None, [], b'@') => self.screen.insert_character(count(0), bg),
+            // CUU / CUD / CUF / CUB.
+            (None, [], b'A') => self.screen.cursor_up(count(0)),
+            (None, [], b'B') => self.screen.cursor_down(count(0)),
+            (None, [], b'C') => self.screen.cursor_right(count(0)),
+            (None, [], b'D') => self.screen.cursor_left(count(0)),
+            // CNL / CPL.
+            (None, [], b'E') => {
+                self.screen.carriage_return();
+                self.screen.cursor_down(count(0));
+            }
+            (None, [], b'F') => {
+                self.screen.carriage_return();
+                self.screen.cursor_up(count(0));
+            }
+            // HPA (both spellings).
+            (None, [], b'G' | b'`') => {
+                self.screen.cursor_move(Some(count(0) - 1), None, true);
+            }
+            // CUP / HVP.
+            (None, [], b'H' | b'f') => {
+                let (row, column) = (count(0) - 1, count(1) - 1);
+                self.screen.cursor_move(Some(column), Some(row), true);
+            }
+            // ED.
+            (None, [], b'J') => match get(0, 0) {
+                0 => self.screen.clear_end_of_screen(bg),
+                1 => self.screen.clear_start_of_screen(bg),
+                2 => self.screen.clear_screen(bg),
+                // A Linux console extension: drop the history.
+                3 if get(1, 0) == 0 => self.screen.clear_history(),
+                _ => {}
+            },
+            // EL.
+            (None, [], b'K') => match get(0, 0) {
+                0 => self.screen.clear_end_of_line(bg),
+                1 => self.screen.clear_start_of_line(bg),
+                2 => self.screen.clear_line(bg),
+                _ => {}
+            },
+            // IL / DL.
+            (None, [], b'L') => self.screen.insert_line(count(0), bg),
+            (None, [], b'M') => self.screen.delete_line(count(0), bg),
+            // DCH.
+            (None, [], b'P') => self.screen.delete_character(count(0), bg),
+            // SU / SD.
+            (None, [], b'S') => self.screen.scroll_up(count(0), bg),
+            (None, [], b'T') => self.screen.scroll_down(count(0), bg),
+            // ECH.
+            (None, [], b'X') => self.screen.clear_character(count(0), bg),
+            // CBT: back to the previous tab stop, n times.
+            (None, [], b'Z') => self.cursor_back_tab(count(0)),
+            // REP: repeat the last printable character.
+            (None, [], b'b') => self.repeat(count(0)),
+            // VPA.
+            (None, [], b'd') => self.screen.cursor_move(None, Some(count(0) - 1), true),
+            // TBC.
+            (None, [], b'g') => match get(0, 0) {
+                0 => {
+                    let cx = self.screen.cx;
+                    self.screen.tabs.remove(&cx);
+                }
+                3 => self.screen.tabs.clear(),
+                _ => {}
+            },
+            // SM / RM.
+            (None, [], b'h') => self.set_modes(params, true),
+            (None, [], b'l') => self.set_modes(params, false),
+            // DECSET / DECRST.
+            (Some(b'?'), [], b'h') => self.set_private_modes(params, true),
+            (Some(b'?'), [], b'l') => self.set_private_modes(params, false),
+            // SGR.
+            (None, [], b'm') => self.sgr(params),
+            // DECSTBM.
+            (None, [], b'r') => {
+                let sy = self.screen.sy();
+                let upper = count(0) - 1;
+                let lower = get(1, sy as u32).max(1) - 1;
+                self.screen.set_scroll_region(upper, lower);
+                // tmux homes the cursor after setting the region.
+                self.screen.cursor_move(Some(0), Some(0), true);
+            }
+            // SCP / RCP, the CSI spellings of DECSC and DECRC.
+            (None, [], b's') => self.screen.save_cursor(),
+            (None, [], b'u') => self.screen.restore_cursor(),
+            _ => {}
+        }
+        // Only a printable character leaves something for REP to repeat.
+        if !matches!((private, intermediates, final_byte), (None, [], b'b')) {
+            self.last_valid = false;
+        }
+    }
+
+    /// CBT.
+    fn cursor_back_tab(&mut self, n: usize) {
+        let mut cx = self.screen.cx.min(self.screen.sx() - 1);
+        for _ in 0..n {
+            if cx == 0 {
+                break;
+            }
+            loop {
+                cx -= 1;
+                if cx == 0 || self.screen.tabs.contains(&cx) {
+                    break;
+                }
+            }
+        }
+        self.screen.cx = cx;
+    }
+
+    /// REP: write the last printable character `n` more times, clamped to the
+    /// rest of the row. Anything other than a printable character in between
+    /// makes it a no-op, as tmux's `INPUT_LAST` flag does.
+    fn repeat(&mut self, n: usize) {
+        if !self.last_valid {
+            return;
+        }
+        let Some(data) = self.last.clone() else {
+            return;
+        };
+        let n = n.min(self.screen.sx() - self.screen.cx);
+        let cell = Cell {
+            data,
+            ..self.screen.cell.clone()
+        };
+        for _ in 0..n {
+            self.screen.put_cell(&cell);
+        }
+    }
+
+    /// SM / RM, the non-private modes. tmux implements only IRM.
+    fn set_modes(&mut self, params: &[Param], set: bool) {
+        for param in params {
+            if param.or(0) == 4 {
+                if set {
+                    self.screen.mode_set(mode::INSERT);
+                } else {
+                    self.screen.mode_clear(mode::INSERT);
+                }
+            }
+        }
+    }
+
+    /// DECSET / DECRST. Only the modes that change the *screen* are here; the
+    /// ones the server reports or answers were handled by the observer.
+    fn set_private_modes(&mut self, params: &[Param], set: bool) {
+        for param in params {
+            let Some(mode) = param.value else { continue };
+            match mode {
+                // DECCKM.
+                1 => self.toggle(mode::KCURSOR, set),
+                // DECOM. Setting or clearing it homes the cursor.
+                6 => {
+                    self.toggle(mode::ORIGIN, set);
+                    self.screen.cursor_move(Some(0), Some(0), true);
+                }
+                // DECAWM.
+                7 => self.toggle(mode::WRAP, set),
+                // DECTCEM.
+                25 => self.toggle(mode::CURSOR, set),
+                // The mouse reporting modes. tmux keeps 1000/1002/1003
+                // mutually exclusive — each one clears the others — and tracks
+                // the two encodings independently.
+                1000 | 1002 | 1003 => {
+                    self.screen.mode_clear(mode::ALL_MOUSE);
+                    if set {
+                        self.screen.mode_set(match mode {
+                            1000 => mode::MOUSE_STANDARD,
+                            1002 => mode::MOUSE_BUTTON,
+                            _ => mode::MOUSE_ALL,
+                        });
+                    }
+                }
+                1005 => self.toggle(mode::MOUSE_UTF8, set),
+                1006 => self.toggle(mode::MOUSE_SGR, set),
+                // The alternate screen. 1049 also saves and restores the
+                // cursor; 47 and 1047 do not.
+                47 | 1047 => {
+                    if set {
+                        self.screen.alternate_on(false);
+                    } else {
+                        self.screen.alternate_off(false);
+                    }
+                }
+                1049 => {
+                    if set {
+                        self.screen.alternate_on(true);
+                    } else {
+                        self.screen.alternate_off(true);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn toggle(&mut self, bits: u32, set: bool) {
+        if set {
+            self.screen.mode_set(bits);
+        } else {
+            self.screen.mode_clear(bits);
+        }
+    }
+
+    // ---- SGR --------------------------------------------------------------
+
+    /// tmux's `input_csi_dispatch_sgr`.
+    fn sgr(&mut self, params: &[Param]) {
+        if params.is_empty() {
+            let link = self.screen.cell.link;
+            self.screen.cell = Cell {
+                link,
+                ..Cell::default()
+            };
+            return;
+        }
+        let mut index = 0;
+        while index < params.len() {
+            let param = &params[index];
+            // A parameter with sub-parameters is the colon form, which carries
+            // its own arguments rather than taking the ones after it.
+            if !param.subs.is_empty() {
+                self.sgr_colon(param);
+                index += 1;
+                continue;
+            }
+            let n = param.or(0);
+            if matches!(n, 38 | 48 | 58) {
+                index += 1;
+                let kind = params.get(index).map_or(0, |param| param.or(0));
+                match kind {
+                    // Direct colour: three more parameters.
+                    2 => {
+                        let red = params.get(index + 1).map_or(0, |p| p.or(0));
+                        let green = params.get(index + 2).map_or(0, |p| p.or(0));
+                        let blue = params.get(index + 3).map_or(0, |p| p.or(0));
+                        self.set_sgr_colour(n, colour::rgb(red as u8, green as u8, blue as u8));
+                        index += 4;
+                    }
+                    // Palette colour: one more.
+                    5 => {
+                        let value = params.get(index + 1).map_or(0, |p| p.or(0));
+                        self.set_sgr_colour(n, colour::indexed(value as u8));
+                        index += 2;
+                    }
+                    _ => index += 1,
+                }
+                continue;
+            }
+            self.sgr_one(n);
+            index += 1;
+        }
+    }
+
+    /// The colon form, `38:2::r:g:b` and `4:3`.
+    fn sgr_colon(&mut self, param: &Param) {
+        let read = |index: usize| -> Option<u32> { param.subs.get(index).copied().flatten() };
+        match param.value {
+            // Underline style.
+            Some(4) => {
+                if param.subs.len() != 1 {
+                    return;
+                }
+                let cell = &mut self.screen.cell;
+                cell.attr &= !attr::ALL_UNDERSCORE;
+                cell.attr |= match read(0) {
+                    Some(1) => attr::UNDERSCORE,
+                    Some(2) => attr::UNDERSCORE_2,
+                    Some(3) => attr::UNDERSCORE_3,
+                    Some(4) => attr::UNDERSCORE_4,
+                    Some(5) => attr::UNDERSCORE_5,
+                    _ => 0,
+                };
+            }
+            Some(n @ (38 | 48 | 58)) => match read(0) {
+                // `38:2::r:g:b` has an empty colour-space id; `38:2:r:g:b`
+                // does not. Both are in use, so the triple is taken from the
+                // end rather than from a fixed offset.
+                Some(2) => {
+                    let len = param.subs.len();
+                    if len < 4 {
+                        return;
+                    }
+                    let red = read(len - 3).unwrap_or(0);
+                    let green = read(len - 2).unwrap_or(0);
+                    let blue = read(len - 1).unwrap_or(0);
+                    self.set_sgr_colour(n, colour::rgb(red as u8, green as u8, blue as u8));
+                }
+                Some(5) => {
+                    if let Some(value) = read(1) {
+                        self.set_sgr_colour(n, colour::indexed(value as u8));
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    fn set_sgr_colour(&mut self, which: u32, value: i32) {
+        let cell = &mut self.screen.cell;
+        match which {
+            38 => cell.fg = value,
+            48 => cell.bg = value,
+            _ => cell.us = value,
+        }
+    }
+
+    /// One plain SGR parameter.
+    fn sgr_one(&mut self, n: u32) {
+        let cell = &mut self.screen.cell;
+        match n {
+            0 => {
+                let link = cell.link;
+                *cell = Cell {
+                    link,
+                    ..Cell::default()
+                };
+            }
+            1 => cell.attr |= attr::BRIGHT,
+            2 => cell.attr |= attr::DIM,
+            3 => cell.attr |= attr::ITALICS,
+            4 => {
+                cell.attr &= !attr::ALL_UNDERSCORE;
+                cell.attr |= attr::UNDERSCORE;
+            }
+            5 | 6 => cell.attr |= attr::BLINK,
+            7 => cell.attr |= attr::REVERSE,
+            8 => cell.attr |= attr::HIDDEN,
+            9 => cell.attr |= attr::STRIKETHROUGH,
+            21 => {
+                cell.attr &= !attr::ALL_UNDERSCORE;
+                cell.attr |= attr::UNDERSCORE_2;
+            }
+            22 => cell.attr &= !(attr::BRIGHT | attr::DIM),
+            23 => cell.attr &= !attr::ITALICS,
+            24 => cell.attr &= !attr::ALL_UNDERSCORE,
+            25 => cell.attr &= !attr::BLINK,
+            27 => cell.attr &= !attr::REVERSE,
+            28 => cell.attr &= !attr::HIDDEN,
+            29 => cell.attr &= !attr::STRIKETHROUGH,
+            30..=37 => cell.fg = (n - 30) as i32,
+            39 => cell.fg = colour::DEFAULT,
+            40..=47 => cell.bg = (n - 40) as i32,
+            49 => cell.bg = colour::DEFAULT,
+            53 => cell.attr |= attr::OVERLINE,
+            55 => cell.attr &= !attr::OVERLINE,
+            59 => cell.us = colour::DEFAULT,
+            90..=97 => cell.fg = n as i32,
+            100..=107 => cell.bg = (n - 10) as i32,
+            _ => {}
+        }
+    }
+
+    // ---- OSC --------------------------------------------------------------
+
+    /// The only OSC sequences that change the *grid* are the shell-integration
+    /// ones. Everything else the observer already turned into server state.
+    fn osc(&mut self, data: &[u8]) {
+        let Ok(text) = std::str::from_utf8(data) else {
+            return;
+        };
+        let Some(body) = text.strip_prefix("133;") else {
+            return;
+        };
+        let row = self.screen.grid.hsize + self.screen.cy;
+        match body.chars().next() {
+            // A prompt starts here.
+            Some('A') => self
+                .screen
+                .grid
+                .set_line_flags(row, line_flag::START_PROMPT, true),
+            // Command output starts here.
+            Some('C') => self
+                .screen
+                .grid
+                .set_line_flags(row, line_flag::START_OUTPUT, true),
+            _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vt::parser::tokenize;
+
+    fn screen(sx: usize, sy: usize) -> Engine {
+        Engine::new(sx, sy, 100)
+    }
+
+    fn feed(engine: &mut Engine, input: &[u8]) {
+        for token in tokenize(input) {
+            engine.apply(&token.kind);
+        }
+    }
+
+    fn text(engine: &Engine, py: usize) -> String {
+        let grid = &engine.screen.grid;
+        let row = grid.hsize + py;
+        (0..grid.line_length(row))
+            .map(|px| grid.get(px, row).data.text().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn plain_text_and_newlines_land_where_they_should() {
+        let mut engine = screen(20, 3);
+        feed(&mut engine, b"one\r\ntwo");
+        assert_eq!(text(&engine, 0), "one");
+        assert_eq!(text(&engine, 1), "two");
+        assert_eq!((engine.screen.cx, engine.screen.cy), (3, 1));
+    }
+
+    #[test]
+    fn cursor_addressing_is_one_based_on_the_wire() {
+        let mut engine = screen(20, 5);
+        feed(&mut engine, b"\x1b[3;5Hx");
+        assert_eq!((engine.screen.cx, engine.screen.cy), (5, 2));
+        assert_eq!(engine.screen.grid.get(4, 2).data.text(), "x");
+    }
+
+    #[test]
+    fn a_missing_parameter_takes_the_sequences_own_default() {
+        let mut engine = screen(20, 5);
+        feed(&mut engine, b"\x1b[10;10H\x1b[H");
+        assert_eq!((engine.screen.cx, engine.screen.cy), (0, 0));
+        feed(&mut engine, b"\x1b[3;3H\x1b[C");
+        assert_eq!(engine.screen.cx, 3, "CUF with no parameter moves one");
+    }
+
+    #[test]
+    fn erase_in_line_reaches_exactly_where_the_parameter_says() {
+        let mut engine = screen(10, 2);
+        feed(&mut engine, b"abcdef\x1b[1;4H\x1b[K");
+        assert_eq!(text(&engine, 0), "abc");
+
+        let mut engine = screen(10, 2);
+        feed(&mut engine, b"abcdef\x1b[1;4H\x1b[1K");
+        assert_eq!(text(&engine, 0), "    ef");
+
+        let mut engine = screen(10, 2);
+        feed(&mut engine, b"abcdef\x1b[2K");
+        assert_eq!(text(&engine, 0), "");
+    }
+
+    #[test]
+    fn erase_in_display_clears_forward_backward_and_whole() {
+        let mut engine = screen(6, 3);
+        feed(&mut engine, b"aaa\r\nbbb\r\nccc\x1b[2;2H\x1b[J");
+        assert_eq!(text(&engine, 0), "aaa");
+        assert_eq!(text(&engine, 1), "b");
+        assert_eq!(text(&engine, 2), "");
+    }
+
+    #[test]
+    fn sgr_sets_and_resets_the_pen() {
+        let mut engine = screen(10, 2);
+        feed(&mut engine, b"\x1b[1;31mA\x1b[0mB");
+        let a = engine.screen.grid.get(0, 0);
+        assert_eq!(a.attr & attr::BRIGHT, attr::BRIGHT);
+        assert_eq!(a.fg, 1);
+        let b = engine.screen.grid.get(1, 0);
+        assert_eq!(b.attr, 0);
+        assert_eq!(b.fg, colour::DEFAULT);
+    }
+
+    #[test]
+    fn sgr_carries_direct_and_palette_colours_in_both_notations() {
+        let mut engine = screen(10, 2);
+        feed(&mut engine, b"\x1b[38;2;1;2;3mA");
+        assert_eq!(engine.screen.grid.get(0, 0).fg, colour::rgb(1, 2, 3));
+
+        let mut engine = screen(10, 2);
+        feed(&mut engine, b"\x1b[38:2::4:5:6mA");
+        assert_eq!(
+            engine.screen.grid.get(0, 0).fg,
+            colour::rgb(4, 5, 6),
+            "the colon form with an empty colour-space id"
+        );
+
+        let mut engine = screen(10, 2);
+        feed(&mut engine, b"\x1b[48;5;200mA");
+        assert_eq!(engine.screen.grid.get(0, 0).bg, colour::indexed(200));
+    }
+
+    #[test]
+    fn the_underline_style_replaces_rather_than_accumulates() {
+        let mut engine = screen(10, 2);
+        feed(&mut engine, b"\x1b[4m\x1b[4:3mA");
+        let cell = engine.screen.grid.get(0, 0);
+        assert_eq!(cell.attr & attr::ALL_UNDERSCORE, attr::UNDERSCORE_3);
+    }
+
+    #[test]
+    fn erasing_uses_the_current_background() {
+        let mut engine = screen(6, 2);
+        feed(&mut engine, b"\x1b[41m\x1b[2K");
+        assert_eq!(engine.screen.grid.get(5, 0).bg, 1);
+    }
+
+    #[test]
+    fn insert_mode_shifts_the_rest_of_the_row_along() {
+        let mut engine = screen(10, 2);
+        feed(&mut engine, b"abcd\x1b[1;2H\x1b[4hXY");
+        assert_eq!(text(&engine, 0), "aXYbcd");
+    }
+
+    #[test]
+    fn the_scroll_region_confines_a_linefeed() {
+        let mut engine = screen(6, 4);
+        feed(&mut engine, b"r0\r\nr1\r\nr2\r\nr3");
+        feed(&mut engine, b"\x1b[2;3r\x1b[3;1H\n");
+        assert_eq!(text(&engine, 0), "r0");
+        assert_eq!(text(&engine, 1), "r2");
+        assert_eq!(text(&engine, 2), "");
+        assert_eq!(text(&engine, 3), "r3");
+    }
+
+    #[test]
+    fn origin_mode_makes_addressing_relative_to_the_region() {
+        let mut engine = screen(8, 6);
+        feed(&mut engine, b"\x1b[3;5r\x1b[?6h\x1b[1;1Hx");
+        assert_eq!(engine.screen.grid.get(0, 2).data.text(), "x");
+    }
+
+    #[test]
+    fn rep_repeats_the_last_character_and_only_then() {
+        let mut engine = screen(10, 2);
+        feed(&mut engine, b"a\x1b[3b");
+        assert_eq!(text(&engine, 0), "aaaa");
+
+        let mut engine = screen(10, 2);
+        feed(&mut engine, b"a\x1b[H\x1b[3b");
+        assert_eq!(
+            text(&engine, 0),
+            "a",
+            "a cursor move invalidates the repeat"
+        );
+    }
+
+    #[test]
+    fn tab_stops_can_be_set_cleared_and_walked_backwards() {
+        let mut engine = screen(40, 2);
+        feed(&mut engine, b"\x1b[1;5H\x1bH");
+        assert!(engine.screen.tabs.contains(&4));
+        feed(&mut engine, b"\x1b[1;1H\t");
+        assert_eq!(engine.screen.cx, 4, "the new stop comes first");
+        feed(&mut engine, b"\x1b[1;20H\x1b[Z");
+        assert_eq!(engine.screen.cx, 16, "back to the previous default stop");
+        feed(&mut engine, b"\x1b[3g\x1b[1;1H\t");
+        assert_eq!(engine.screen.cx, 39, "with no stops left, the last column");
+    }
+
+    #[test]
+    fn the_alternate_screen_switches_and_comes_back() {
+        let mut engine = screen(10, 2);
+        feed(&mut engine, b"primary\x1b[?1049h");
+        assert!(engine.screen.is_alternate());
+        assert_eq!(text(&engine, 0), "");
+        feed(&mut engine, b"alt\x1b[?1049l");
+        assert!(!engine.screen.is_alternate());
+        assert_eq!(text(&engine, 0), "primary");
+        assert_eq!(engine.screen.cx, 7);
+    }
+
+    #[test]
+    fn save_and_restore_carry_the_pen_with_the_cursor() {
+        let mut engine = screen(10, 3);
+        feed(&mut engine, b"\x1b[2;3H\x1b[31m\x1b7\x1b[1;1H\x1b[0m\x1b8X");
+        assert_eq!((engine.screen.cx, engine.screen.cy), (3, 1));
+        assert_eq!(engine.screen.grid.get(2, 1).fg, 1, "the colour came back");
+    }
+
+    #[test]
+    fn the_line_drawing_set_marks_cells_rather_than_replacing_them() {
+        let mut engine = screen(10, 2);
+        feed(&mut engine, b"\x1b(0q\x1b(Bq");
+        assert_eq!(
+            engine.screen.grid.get(0, 0).attr & attr::CHARSET,
+            attr::CHARSET
+        );
+        assert_eq!(engine.screen.grid.get(1, 0).attr & attr::CHARSET, 0);
+    }
+
+    #[test]
+    fn scroll_up_and_down_move_the_region() {
+        let mut engine = screen(6, 3);
+        feed(&mut engine, b"a\r\nb\r\nc\x1b[2S");
+        assert_eq!(text(&engine, 0), "c");
+        assert_eq!(text(&engine, 1), "");
+
+        let mut engine = screen(6, 3);
+        feed(&mut engine, b"a\r\nb\r\nc\x1b[1T");
+        assert_eq!(text(&engine, 0), "");
+        assert_eq!(text(&engine, 1), "a");
+    }
+
+    #[test]
+    fn a_reset_puts_everything_back() {
+        let mut engine = screen(8, 3);
+        feed(&mut engine, b"\x1b[31mtext\x1b[2;3r\x1b(0\x1bc");
+        assert_eq!(text(&engine, 0), "");
+        assert_eq!(engine.screen.cell.fg, colour::DEFAULT);
+        assert_eq!((engine.screen.rupper, engine.screen.rlower), (0, 2));
+        feed(&mut engine, b"q");
+        assert_eq!(
+            engine.screen.grid.get(0, 0).attr & attr::CHARSET,
+            0,
+            "the character set went back to ASCII too"
+        );
+    }
+
+    #[test]
+    fn shell_integration_marks_the_rows_it_names() {
+        let mut engine = screen(10, 3);
+        feed(&mut engine, b"\x1b]133;A\x07$ ls\r\n\x1b]133;C\x07out");
+        let grid = &engine.screen.grid;
+        assert_eq!(
+            grid.line(0).expect("row").flags & line_flag::START_PROMPT,
+            line_flag::START_PROMPT
+        );
+        assert_eq!(
+            grid.line(1).expect("row").flags & line_flag::START_OUTPUT,
+            line_flag::START_OUTPUT
+        );
+    }
+}

@@ -13,6 +13,7 @@ use super::style::{self, CellPresentation, CellStyle, Colour, TerminalStyleWrite
 use super::term::{terminal_acs, terminal_utf8, TerminalCapabilities};
 use crate::integration::status::{PaneAgents, StatusSnapshot};
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
+use crate::vt::width::codepoint_width;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -1881,7 +1882,7 @@ fn draw_row(expanded: &str, cols: usize, base: &CellStyle) -> StatusRow {
         if ch.is_control() {
             continue;
         }
-        let width = ghostty_sys::codepoint_width(ch as u32) as u8;
+        let width = codepoint_width(ch as u32) as u8;
         if width == 0 {
             if let Some(cell) = sections.cells_mut(state.section).last_mut() {
                 cell.text.push(ch);
