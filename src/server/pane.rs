@@ -1027,6 +1027,11 @@ impl NativePaneObservation {
                     replies.push(reply);
                 }
             }
+            VtEvent::WindowSizeReport(operation) => {
+                if let Some(reply) = window_size_report(terminal, operation) {
+                    replies.push(reply);
+                }
+            }
             VtEvent::DecPrivateModeReport(mode) => {
                 let status = dec_mode_status(terminal.modes(), self.alternate_on.get(), mode);
                 replies.push(format!("\x1b[?{mode};{status}$y").into_bytes());
@@ -2566,6 +2571,25 @@ pub(crate) enum MouseTrackingMode {
 fn cursor_position_report(terminal: &PaneScreen) -> Option<Vec<u8>> {
     let (x, y) = terminal.cursor_position().ok()?;
     Some(format!("\x1b[{};{}R", y.saturating_add(1), x.saturating_add(1)).into_bytes())
+}
+
+/// tmux's default window pixel geometry when no attached client reports one.
+const DEFAULT_CELL_WIDTH: u32 = 16;
+const DEFAULT_CELL_HEIGHT: u32 = 32;
+
+fn window_size_report(terminal: &PaneScreen, operation: u32) -> Option<Vec<u8>> {
+    let dims = terminal.grid_dims().ok()?;
+    let columns = u32::from(dims.cols);
+    let rows = u32::from(dims.viewport_rows);
+    let (report, height, width) = match operation {
+        14 => (4, rows * DEFAULT_CELL_HEIGHT, columns * DEFAULT_CELL_WIDTH),
+        15 => (5, rows * DEFAULT_CELL_HEIGHT, columns * DEFAULT_CELL_WIDTH),
+        16 => (6, DEFAULT_CELL_HEIGHT, DEFAULT_CELL_WIDTH),
+        18 => (8, rows, columns),
+        19 => (9, rows, columns),
+        _ => return None,
+    };
+    Some(format!("\x1b[{report};{height};{width}t").into_bytes())
 }
 
 /// Upper bound on bytes buffered for a child that is not reading its stdin. A

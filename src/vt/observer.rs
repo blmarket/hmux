@@ -166,6 +166,9 @@ pub(crate) enum Event {
     SaveAlternateCursor,
     /// DSR 6n: answer with where the cursor is now.
     CursorPositionReport,
+    /// CSI window operation: answer a terminal size query from the pane's
+    /// current dimensions.
+    WindowSizeReport(u32),
     /// DECRQM: answer whether this private mode is set, as the screen has it
     /// at this point in the stream.
     DecPrivateModeReport(u32),
@@ -391,6 +394,18 @@ impl Observer {
                 6 => out.event(Event::CursorPositionReport),
                 _ => {}
             },
+            // CSI window operations that report the pane's dimensions. The
+            // pixel geometry uses tmux's default cell size when no attached
+            // terminal has supplied one.
+            (None, [], b't') => {
+                for param in params {
+                    if let Some(operation) = param.value {
+                        if matches!(operation, 14 | 15 | 16 | 18 | 19) {
+                            out.event(Event::WindowSizeReport(operation));
+                        }
+                    }
+                }
+            }
             // TBC.
             (None, [], b'g') => match params.first().map_or(0, |param| param.or(0)) {
                 0 => out.event(Event::ClearTabStop),
