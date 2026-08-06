@@ -2310,13 +2310,17 @@ fn default_tab_stops(columns: u16) -> BTreeSet<u16> {
         .collect()
 }
 
-/// tmux's DECRQM answer for a private mode: 1 set, 2 reset, 0 unrecognized.
+/// tmux's DECRQM answer for a private mode: 1 set, 2 reset, 0 unrecognized,
+/// or 4 permanently reset.
 ///
 /// The alternate-screen aliases are state rather than bits in the screen's
 /// mode word, so their status comes from the pane's screen-tracking state.
 fn dec_mode_status(modes: u32, alternate_on: bool, mode: u32) -> u8 {
     let reports = |bit: u32| Some(modes & bit != 0);
     let set = match mode {
+        // DECCOLM is recognized by tmux but permanently reset: hmux has no
+        // 132-column screen mode to enable either.
+        3 => return 4,
         1 => reports(mode::KCURSOR),
         6 => reports(mode::ORIGIN),
         7 => reports(mode::WRAP),
@@ -2329,6 +2333,7 @@ fn dec_mode_status(modes: u32, alternate_on: bool, mode: u32) -> u8 {
         1004 => reports(mode::FOCUSON),
         1005 => reports(mode::MOUSE_UTF8),
         1006 => reports(mode::MOUSE_SGR),
+        2004 => reports(mode::BRACKETPASTE),
         2026 => reports(mode::SYNC),
         2031 => reports(mode::THEME_UPDATES),
         _ => None,
