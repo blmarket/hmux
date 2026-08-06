@@ -1028,7 +1028,7 @@ impl NativePaneObservation {
                 }
             }
             VtEvent::DecPrivateModeReport(mode) => {
-                let status = dec_mode_status(terminal.modes(), mode);
+                let status = dec_mode_status(terminal.modes(), self.alternate_on.get(), mode);
                 replies.push(format!("\x1b[?{mode};{status}$y").into_bytes());
             }
             VtEvent::StatusReport(request) => replies.push(decrqss_reply(
@@ -2301,16 +2301,19 @@ fn default_tab_stops(columns: u16) -> BTreeSet<u16> {
         .collect()
 }
 
-/// The DECRQM answer for one private mode: 1 set, 2 reset, 0 unrecognized.
+/// tmux's DECRQM answer for a private mode: 1 set, 2 reset, 0 unrecognized.
 ///
-/// tmux answers more modes than this — DECCKM, DECOM, DECAWM, the alternate
-/// screen, and the cursor blink whose unset answer comes from the
-/// `cursor-style` option. Those stay unrecognized here, as they were before the
-/// screen started answering.
-fn dec_mode_status(modes: u32, mode: u32) -> u8 {
+/// The alternate-screen aliases are state rather than bits in the screen's
+/// mode word, so their status comes from the pane's screen-tracking state.
+fn dec_mode_status(modes: u32, alternate_on: bool, mode: u32) -> u8 {
     let reports = |bit: u32| Some(modes & bit != 0);
     let set = match mode {
+        1 => reports(mode::KCURSOR),
+        6 => reports(mode::ORIGIN),
+        7 => reports(mode::WRAP),
+        12 => reports(mode::CURSOR_BLINKING),
         25 => reports(mode::CURSOR),
+        47 | 1047 | 1049 => Some(alternate_on),
         1000 => reports(mode::MOUSE_STANDARD),
         1002 => reports(mode::MOUSE_BUTTON),
         1003 => reports(mode::MOUSE_ALL),
