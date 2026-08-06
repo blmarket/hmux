@@ -31,6 +31,7 @@ pub(crate) mod observer;
 pub(crate) mod parser;
 pub(crate) mod screen;
 pub(crate) mod width;
+mod x11_colour;
 
 /// The screen implementation this build ships.
 pub(crate) type PaneScreen = engine::backend::EngineScreen;

@@ -22,7 +22,7 @@ use std::collections::VecDeque;
 
 use super::parser::{Param, Parser, StringEnd, Token, TokenKind};
 use crate::server::pane::{PaneClipboardEvent, PaneCursorShape, PaneOutputPolicy};
-use crate::server::x11_colour;
+use super::x11_colour;
 
 /// The OSC 11 question hmux forwards to the client's own terminal, because only
 /// the outer terminal knows the answer.
