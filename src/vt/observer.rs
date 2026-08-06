@@ -356,11 +356,7 @@ impl Observer {
             }
             (Some(b'>'), [], b'q') if first_is_zero(params) => {
                 out.event(Event::Reply(
-                    format!(
-                        "\x1bP>|{XTVERSION_NAME} {}\x1b\\",
-                        crate::TMUX_VERSION
-                    )
-                    .into_bytes(),
+                    format!("\x1bP>|{XTVERSION_NAME} {}\x1b\\", crate::TMUX_VERSION).into_bytes(),
                 ));
             }
             // DSR ?996: which theme is this terminal using?

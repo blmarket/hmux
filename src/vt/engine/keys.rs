@@ -399,7 +399,10 @@ mod tests {
         let normal = screen(b"");
         assert_eq!(encode_key(normal.screen.mode, event), b"\x1b[A".to_vec());
         let application = screen(b"\x1b[?1h");
-        assert_eq!(encode_key(application.screen.mode, event), b"\x1bOA".to_vec());
+        assert_eq!(
+            encode_key(application.screen.mode, event),
+            b"\x1bOA".to_vec()
+        );
     }
 
     #[test]
