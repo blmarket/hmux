@@ -159,19 +159,25 @@ fn template_command(template: &str, value: &str) -> Vec<String> {
 struct ChooseOptions<'a> {
     format: Option<&'a str>,
     filter: Option<&'a str>,
-    order: Option<&'a str>,
-    /// `-r`: reverse whatever the sort order produced.
+    /// `-O`, resolved through the same table the `list-*` commands use. `None`
+    /// means no `-O` at all, which leaves each mode on its own first order.
+    order: Option<ListSortOrder>,
+    /// `-r`: negate the comparison the sort order made.
     reversed: bool,
 }
 
 impl<'a> ChooseOptions<'a> {
-    fn parse(args: &'a [String]) -> Self {
-        Self {
+    /// tmux's `cmd_choose_tree_exec` runs `-O` through
+    /// `sort_order_from_string` before it enters any mode, so a name that
+    /// table does not know fails the command rather than picking an order.
+    fn parse(args: &'a [String]) -> Result<Self, CommandResult> {
+        let (order, reversed) = list_sort_criteria(args)?;
+        Ok(Self {
             format: flag_value(args, "-F"),
             filter: flag_value(args, "-f"),
-            order: flag_value(args, "-O"),
-            reversed: has_flag(args, "-r"),
-        }
+            order,
+            reversed,
+        })
     }
 
     /// Whether this row survives `-f`.
@@ -189,118 +195,69 @@ impl<'a> ChooseOptions<'a> {
         }
     }
 
-    /// Sort `rows` by `-O`, reversing for `-r`. `keys` names the variable each
-    /// order sorts on; an order the command does not know leaves the rows in
-    /// the order they were built, as tmux's default does.
-    fn sort(&self, rows: &mut [ChooseRow], keys: &[(&str, ChooseSortKey)]) {
-        if let Some(key) = self.sort_key(keys) {
-            rows.sort_by(|left, right| key.compare(&left.vars, &right.vars));
-        }
-        if self.reversed {
-            rows.reverse();
-        }
+    /// The order this mode sorts on: `-O` when it was given, and otherwise the
+    /// mode's own first order, which is what tmux's per-mode `sortcb` writes
+    /// over an unset `sort_crit->order`.
+    fn order(&self, default: ListSortOrder) -> Option<ListSortOrder> {
+        Some(self.order.unwrap_or(default))
     }
 
-    /// The key `-O` names, if this command sorts on it.
-    fn sort_key<'k>(&self, keys: &'k [(&str, ChooseSortKey)]) -> Option<&'k ChooseSortKey> {
-        let order = self.order?;
-        keys.iter()
-            .find(|(name, _)| *name == order)
-            .map(|(_, key)| key)
+    /// Sort `rows` the way tmux's `sort_qsort` sorts a flat mode: the `-O`
+    /// comparison first, ties broken by the row's name, and `-r` negating the
+    /// combined result rather than reversing the sorted list.
+    fn sort<T>(
+        &self,
+        rows: &mut [T],
+        default: ListSortOrder,
+        compare: impl Fn(ListSortOrder, &T, &T) -> std::cmp::Ordering,
+        name: impl Fn(&T) -> String,
+    ) {
+        apply_list_sort(rows, self.order(default), self.reversed, compare, name);
     }
 
     /// [`Self::sort`] for the tree, whose rows are two levels rather than one.
     ///
     /// tmux's `window_tree_build` sorts the sessions against each other and
     /// then each session's own windows within it, so a window never leaves the
-    /// session that built it however the sessions are ordered. `-r` reverses
-    /// both levels, again as tmux does by negating its comparators, which keeps
-    /// a session ahead of its windows.
+    /// session that built it however the sessions are ordered. `-r` negates
+    /// both levels, which keeps a session ahead of its windows.
     fn sort_tree(&self, groups: &mut [TreeGroup]) {
-        // tmux's `window_tree_sort`: an order the tree does not recognize —
-        // including no `-O` at all — falls back to the first of its own
-        // sequence, which is by index.
-        let order = match self.order {
-            Some(order) if TREE_SORT_ORDERS.contains(&order) => order,
-            _ => "index",
-        };
-        // `order` alone reverses the built order rather than comparing
-        // anything, as tmux's `sort_qsort` special-cases it.
-        if order != "order" {
-            let reversed = self.reversed;
-            groups.sort_by(|left, right| {
-                let primary = match order {
-                    "index" => left.id.cmp(&right.id),
-                    "creation" => sort_number(&left.session, "session_created")
-                        .cmp(&sort_number(&right.session, "session_created")),
-                    // Newest first, and against the stamps themselves rather
-                    // than the whole seconds `#{session_activity}` publishes,
-                    // so sessions started within a second of each other still
-                    // have an order.
-                    "activity" => right.activity.cmp(&left.activity),
-                    // `name` and the orders a session has no key for both fall
-                    // to the name, which is every tmux comparator's tiebreak.
-                    _ => std::cmp::Ordering::Equal,
-                };
-                let ordering = primary.then_with(|| {
-                    sort_text(&left.session, "session_name")
-                        .cmp(&sort_text(&right.session, "session_name"))
-                });
-                if reversed {
-                    ordering.reverse()
-                } else {
-                    ordering
-                }
-            });
-            for group in groups.iter_mut() {
-                group.windows.sort_by(|left, right| {
-                    let primary = match order {
-                        "index" => sort_number(&left.row.vars, "window_index")
-                            .cmp(&sort_number(&right.row.vars, "window_index")),
-                        "creation" => left.id.cmp(&right.id),
-                        "activity" => right.activity.cmp(&left.activity),
-                        "size" => sort_area(&left.row.vars).cmp(&sort_area(&right.row.vars)),
-                        _ => std::cmp::Ordering::Equal,
-                    };
-                    let ordering = primary.then_with(|| {
-                        sort_text(&left.row.vars, "window_name")
-                            .cmp(&sort_text(&right.row.vars, "window_name"))
-                    });
-                    if reversed {
-                        ordering.reverse()
-                    } else {
-                        ordering
+        // tmux's `window_tree_sort`: without `-O` the tree takes the first of
+        // its own sequence, which is by index.
+        self.sort(
+            groups,
+            ListSortOrder::Index,
+            |order, left, right| match order {
+                ListSortOrder::Index => left.id.cmp(&right.id),
+                ListSortOrder::Creation => sort_number(&left.session, "session_created")
+                    .cmp(&sort_number(&right.session, "session_created")),
+                // Newest first, and against the stamps themselves rather than
+                // the whole seconds `#{session_activity}` publishes, so
+                // sessions started within a second of each other still have an
+                // order.
+                ListSortOrder::Activity => right.activity.cmp(&left.activity),
+                // `name` and the orders a session has no key for both fall to
+                // the name, which is every tmux comparator's tiebreak.
+                _ => std::cmp::Ordering::Equal,
+            },
+            |group| sort_text(&group.session, "session_name"),
+        );
+        for group in groups.iter_mut() {
+            self.sort(
+                &mut group.windows,
+                ListSortOrder::Index,
+                |order, left, right| match order {
+                    ListSortOrder::Index => sort_number(&left.row.vars, "window_index")
+                        .cmp(&sort_number(&right.row.vars, "window_index")),
+                    ListSortOrder::Creation => left.id.cmp(&right.id),
+                    ListSortOrder::Activity => right.activity.cmp(&left.activity),
+                    ListSortOrder::Size => {
+                        sort_area(&left.row.vars).cmp(&sort_area(&right.row.vars))
                     }
-                });
-            }
-            return;
-        }
-        if self.reversed {
-            groups.reverse();
-            for group in groups {
-                group.windows.reverse();
-            }
-        }
-    }
-}
-
-/// The `-O` values tmux's `sort_order_from_string` knows. Anything else leaves
-/// the tree on its default order rather than sorting on a name hmux invented.
-const TREE_SORT_ORDERS: &[&str] = &[
-    "activity", "creation", "index", "key", "modifier", "name", "order", "size", "z",
-];
-
-/// Which variable an `-O` order compares, and how.
-enum ChooseSortKey {
-    Text(&'static str),
-    Number(&'static str),
-}
-
-impl ChooseSortKey {
-    fn compare(&self, left: &format::Vars, right: &format::Vars) -> std::cmp::Ordering {
-        match self {
-            Self::Text(name) => sort_text(left, name).cmp(&sort_text(right, name)),
-            Self::Number(name) => sort_number(left, name).cmp(&sort_number(right, name)),
+                    _ => std::cmp::Ordering::Equal,
+                },
+                |window| sort_text(&window.row.vars, "window_name"),
+            );
         }
     }
 }
@@ -350,11 +307,37 @@ struct ChooseRow {
     item: ModeItem,
 }
 
+/// A client row with the keys `sort_client_cmp` compares, kept at the
+/// resolution the state holds them rather than the whole seconds the
+/// `#{client_activity}` and `#{client_created}` formats publish.
+struct ClientRow {
+    name: String,
+    cols: u16,
+    rows: u16,
+    created: i64,
+    activity: i64,
+    row: ChooseRow,
+}
+
+/// A buffer row with the keys `sort_buffer_cmp` compares.
+struct BufferRow {
+    name: String,
+    size: usize,
+    /// Where the buffer sat in the built list. tmux walks its buffers newest
+    /// first, so a lower position is a higher `pb->order` — which is why the
+    /// creation order below compares these ascending.
+    position: usize,
+    row: ChooseRow,
+}
+
 fn choose_tree(args: &[String], state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
     let template = positionals(args, &["-F", "-f", "-K", "-O", "-t"])
         .first()
         .copied();
-    let options = ChooseOptions::parse(args);
+    let options = match ChooseOptions::parse(args) {
+        Ok(options) => options,
+        Err(error) => return error,
+    };
     // `-s` lists only sessions and `-w` only windows; without either, a session
     // is followed by its own windows.
     let sessions_only = has_flag(args, "-s");
@@ -470,7 +453,10 @@ fn choose_client(args: &[String], state: &mut ServerState, agents: &PaneAgents) 
         .first()
         .copied()
         .unwrap_or("detach-client -t '%%'");
-    let options = ChooseOptions::parse(args);
+    let options = match ChooseOptions::parse(args) {
+        Ok(options) => options,
+        Err(error) => return error,
+    };
     let mut rows = Vec::new();
     for client in state.client_snapshots() {
         let Some(vars) = client_vars(state, agents, &client) else {
@@ -479,37 +465,58 @@ fn choose_client(args: &[String], state: &mut ServerState, agents: &PaneAgents) 
         if !options.keep(state, &vars) {
             continue;
         }
-        rows.push(ChooseRow {
-            item: ModeItem {
-                label: options.label(
-                    state,
-                    &vars,
-                    format!(
-                        "{}: {}x{} {}",
-                        client.name, client.cols, client.rows, client.term
+        rows.push(ClientRow {
+            name: client.name.clone(),
+            cols: client.cols,
+            rows: client.rows,
+            created: client.created_micros,
+            activity: client.activity_micros,
+            row: ChooseRow {
+                item: ModeItem {
+                    label: options.label(
+                        state,
+                        &vars,
+                        format!(
+                            "{}: {}x{} {}",
+                            client.name, client.cols, client.rows, client.term
+                        ),
                     ),
-                ),
-                command: template_command(template, &client.name),
-                prompt_target: None,
-                edit: None,
-                tagged: false,
-                preview_target: None,
-                depth: 0,
-                expanded: None,
+                    command: template_command(template, &client.name),
+                    prompt_target: None,
+                    edit: None,
+                    tagged: false,
+                    preview_target: None,
+                    depth: 0,
+                    expanded: None,
+                },
+                vars,
             },
-            vars,
         });
     }
+    // tmux's `window_client_sort`: without `-O` the mode sorts by name.
     options.sort(
         &mut rows,
-        &[
-            ("name", ChooseSortKey::Text("client_name")),
-            ("size", ChooseSortKey::Number("client_width")),
-            ("creation", ChooseSortKey::Number("client_created")),
-            ("activity", ChooseSortKey::Number("client_activity")),
-        ],
+        ListSortOrder::Name,
+        |order, left, right| match order {
+            // Width first and then height, as `sort_client_cmp` compares the
+            // tty's `sx` before its `sy`.
+            ListSortOrder::Size => left
+                .cols
+                .cmp(&right.cols)
+                .then_with(|| left.rows.cmp(&right.rows)),
+            ListSortOrder::Creation => left.created.cmp(&right.created),
+            // Newest first, the direction `list-clients` already reads it in.
+            ListSortOrder::Activity => right.activity.cmp(&left.activity),
+            // `name` and the orders a client has no key for both fall to the
+            // name, which is every tmux comparator's tiebreak.
+            _ => std::cmp::Ordering::Equal,
+        },
+        |client| client.name.clone(),
     );
-    let items = rows.into_iter().map(|row| row.item).collect::<Vec<_>>();
+    let items = rows
+        .into_iter()
+        .map(|client| client.row.item)
+        .collect::<Vec<_>>();
     if items.is_empty() {
         return CommandResult::ok("");
     }
@@ -528,42 +535,59 @@ fn choose_buffer(args: &[String], state: &mut ServerState) -> CommandResult {
         .first()
         .copied()
         .unwrap_or("paste-buffer -p -b '%%'");
-    let options = ChooseOptions::parse(args);
+    let options = match ChooseOptions::parse(args) {
+        Ok(options) => options,
+        Err(error) => return error,
+    };
     let mut rows = Vec::new();
-    for (name, data) in state.buffers() {
+    for (position, (name, data)) in state.buffers().iter().enumerate() {
         let vars = super::buffer_vars(state, name, data);
         if !options.keep(state, &vars) {
             continue;
         }
         let preview = String::from_utf8_lossy(data).replace(['\n', '\r'], " ");
-        rows.push(ChooseRow {
-            item: ModeItem {
-                label: options.label(
-                    state,
-                    &vars,
-                    format!("{name}: {} bytes: {}", data.len(), preview),
-                ),
-                command: template_command(template, name),
-                // Buffer mode's `e` key edits the buffer this row names.
-                prompt_target: Some(name.clone()),
-                edit: None,
-                tagged: false,
-                preview_target: None,
-                depth: 0,
-                expanded: None,
+        rows.push(BufferRow {
+            name: name.clone(),
+            size: data.len(),
+            position,
+            row: ChooseRow {
+                item: ModeItem {
+                    label: options.label(
+                        state,
+                        &vars,
+                        format!("{name}: {} bytes: {}", data.len(), preview),
+                    ),
+                    command: template_command(template, name),
+                    // Buffer mode's `e` key edits the buffer this row names.
+                    prompt_target: Some(name.clone()),
+                    edit: None,
+                    tagged: false,
+                    preview_target: None,
+                    depth: 0,
+                    expanded: None,
+                },
+                vars,
             },
-            vars,
         });
     }
+    // tmux's `window_buffer_sort`: without `-O` the mode sorts by creation.
     options.sort(
         &mut rows,
-        &[
-            ("name", ChooseSortKey::Text("buffer_name")),
-            ("size", ChooseSortKey::Number("buffer_size")),
-            ("time", ChooseSortKey::Number("buffer_created")),
-        ],
+        ListSortOrder::Creation,
+        |order, left, right| match order {
+            // Newest first, which the built order already runs in.
+            ListSortOrder::Creation => left.position.cmp(&right.position),
+            ListSortOrder::Size => left.size.cmp(&right.size),
+            // `name` and the orders a buffer has no key for both fall to the
+            // name, which is every tmux comparator's tiebreak.
+            _ => std::cmp::Ordering::Equal,
+        },
+        |buffer| buffer.name.clone(),
     );
-    let items = rows.into_iter().map(|row| row.item).collect::<Vec<_>>();
+    let items = rows
+        .into_iter()
+        .map(|buffer| buffer.row.item)
+        .collect::<Vec<_>>();
     if items.is_empty() {
         return CommandResult::ok("");
     }
@@ -578,7 +602,11 @@ fn customize_mode(args: &[String], state: &mut ServerState) -> CommandResult {
     let Some(target) = mode_target(args, state) else {
         return CommandResult::err("no current session\n");
     };
-    let options = ChooseOptions::parse(args);
+    // `customize-mode` takes no `-O`, so this only ever carries `-F` and `-f`.
+    let options = match ChooseOptions::parse(args) {
+        Ok(options) => options,
+        Err(error) => return error,
+    };
     // tmux's `window_customize_build` groups the options by the table they
     // belong to, each under a heading of its own, and the keys after them.
     let mut items = Vec::new();
