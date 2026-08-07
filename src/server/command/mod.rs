@@ -7651,9 +7651,14 @@ fn capture_vt_normalize_row(
             tokens.push(CaptureToken::Osc(&bytes[content..end]));
             continue;
         }
-        if bytes.get(index + 1) == Some(&b'(') && bytes.get(index + 2) == Some(&b'0') {
+        // The grid dump selects the line-drawing set with `ESC ( 0` and ASCII
+        // back with `ESC ( B`; a capture spells the same run SO … SI, so both
+        // ends of it have to be recognized — a missed `ESC ( B` would leave the
+        // `B` in the captured text and the run open to the end of the row.
+        if bytes.get(index + 1) == Some(&b'(') && matches!(bytes.get(index + 2), Some(b'0' | b'B')) {
+            let acs = bytes[index + 2] == b'0';
             index += 3;
-            tokens.push(CaptureToken::Acs(true));
+            tokens.push(CaptureToken::Acs(acs));
         } else {
             index = (index + 2).min(bytes.len());
             tokens.push(CaptureToken::Other);
