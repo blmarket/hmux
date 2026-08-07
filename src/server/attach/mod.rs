@@ -1835,7 +1835,9 @@ fn render_mode_rows(
         height.saturating_sub(preview.len() + 1).max(1)
     };
     let mut rows = Vec::with_capacity(height);
-    rows.push(clip_mode_line(&format!("[{}]", view.title), width).into_bytes());
+    if !view.title.is_empty() {
+        rows.push(clip_mode_line(&format!("[{}]", view.title), width).into_bytes());
+    }
     let visible = view.visible();
     for index in view.scroll..visible.len() {
         if rows.len() >= list_height {

@@ -165,6 +165,8 @@ pub(crate) struct CustomizeOption {
     pub(crate) name: String,
     pub(crate) value: String,
     pub(crate) scope: String,
+    pub(crate) is_array: bool,
+    pub(crate) array_has_entries: bool,
 }
 
 /// Where a pane's scrollbar is drawn and how much of it the slider fills.
@@ -11674,18 +11676,38 @@ impl ServerState {
         let window = self.window(resolved.session, resolved.window);
         let pane = &window.panes[resolved.pane];
         let collect = |view: OptionsView<'_>, scope: String| {
-            let mut entries = view
-                .iter_effective()
-                // An array is one expandable node in tmux, not a row per index,
-                // and its own row carries no value to edit — so neither the
-                // indexed entries nor the base name join the list hmux offers.
-                .filter(|(name, _)| !super::options::is_array_option(name))
-                .map(|(name, value)| CustomizeOption {
-                    name: name.to_owned(),
-                    value: value.to_owned(),
-                    scope: scope.clone(),
-                })
-                .collect::<Vec<_>>();
+            let mut entries = Vec::new();
+            let mut arrays = BTreeMap::new();
+            for (name, value) in view.iter_effective() {
+                let (base, index) = super::options::parse_option_name(name).unwrap_or((name, None));
+                if super::options::is_array_option(base) {
+                    arrays
+                        .entry(base.to_owned())
+                        .and_modify(|has_entries| {
+                            *has_entries |= index.is_some() && !value.is_empty();
+                        })
+                        .or_insert(index.is_some() && !value.is_empty());
+                } else {
+                    entries.push(CustomizeOption {
+                        name: name.to_owned(),
+                        value: value.to_owned(),
+                        scope: scope.clone(),
+                        is_array: false,
+                        array_has_entries: false,
+                    });
+                }
+            }
+            entries.extend(
+                arrays
+                    .into_iter()
+                    .map(|(name, array_has_entries)| CustomizeOption {
+                        name,
+                        value: String::new(),
+                        scope: scope.clone(),
+                        is_array: true,
+                        array_has_entries,
+                    }),
+            );
             entries.sort_by(|left, right| left.name.cmp(&right.name));
             entries
         };
@@ -11701,10 +11723,33 @@ impl ServerState {
             OptionsView::one(self.global_options.session()),
             String::new(),
         );
-        session_options.extend(collect(
+        let session_overrides = collect(
             OptionsView::one(session.option_overrides()),
             format!("session {}", session.name),
-        ));
+        );
+        // tmux 3.7b's customize-mode builder resolves a session-only user
+        // option through the global session table when it builds this list.
+        // Keep that presentation quirk here without changing option lookup or
+        // storage, which continue to expose the real session-local value.
+        if let Some(global_user) = session_options
+            .iter()
+            .find(|entry| entry.name.starts_with('@'))
+            .cloned()
+        {
+            if session_overrides
+                .iter()
+                .any(|entry| entry.name.starts_with('@'))
+            {
+                let insert_at = session_options
+                    .iter()
+                    .position(|entry| entry.name == global_user.name)
+                    .map_or(session_options.len(), |index| index + 1);
+                session_options.insert(insert_at, global_user);
+            }
+            session_options.extend(session_overrides);
+        } else {
+            session_options.extend(session_overrides);
+        }
         sections.push(("Session Options", session_options));
         let mut window_options = collect(
             OptionsView::one(self.global_options.window()),
@@ -14031,7 +14076,16 @@ impl ServerState {
                     .to_lowercase()
                     .contains(&folded)
             }) {
-                view.selected = (start + offset) % view.items.len();
+                let selected = (start + offset) % view.items.len();
+                // Search can land on a child beneath collapsed rows. Open all
+                // preceding branches so the flat item index remains a visible
+                // row for rendering and the next navigation key.
+                for item in view.items.iter_mut().take(selected + 1) {
+                    if item.expanded.is_some() {
+                        item.expanded = Some(true);
+                    }
+                }
+                view.selected = selected;
                 view.scroll = view.selected;
             }
         }

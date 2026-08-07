@@ -623,7 +623,8 @@ fn customize_mode(args: &[String], state: &mut ServerState) -> CommandResult {
             tagged: false,
             preview_target: None,
             depth: 0,
-            expanded: Some(true),
+            // `M-+` expands the complete tree after the initial screen.
+            expanded: Some(false),
         });
         for entry in entries {
             let mut vars = format::Vars::new();
@@ -635,24 +636,31 @@ fn customize_mode(args: &[String], state: &mut ServerState) -> CommandResult {
                     "option_is_global",
                     if entry.scope.is_empty() { "1" } else { "0" },
                 )
-                .set("option_is_array", "0")
+                .set("option_is_array", if entry.is_array { "1" } else { "0" })
                 .set("is_option", "1")
                 .set("is_key", "0");
             if !options.keep(state, &vars) {
                 continue;
             }
             items.push(ModeItem {
-                label: options.label(state, &vars, format!("{} {}", entry.name, entry.value)),
+                label: if entry.is_array {
+                    entry.name.clone()
+                } else {
+                    options.label(state, &vars, format!("{} {}", entry.name, entry.value))
+                },
                 command: Vec::new(),
                 prompt_target: None,
-                edit: Some(ModeEdit::Option {
+                edit: (!entry.is_array).then_some(ModeEdit::Option {
                     name: entry.name,
                     value: entry.value,
                 }),
                 tagged: false,
                 preview_target: None,
                 depth: 1,
-                expanded: None,
+                expanded: entry
+                    .is_array
+                    .then_some(entry.array_has_entries)
+                    .and_then(|has_entries| has_entries.then_some(false)),
             });
         }
     }
@@ -705,7 +713,8 @@ fn customize_mode(args: &[String], state: &mut ServerState) -> CommandResult {
             expanded: None,
         });
     }
-    let mut view = ModeView::list(ModeKind::Customize, "Customize", items);
+    // tmux's options mode has no title row above its section tree.
+    let mut view = ModeView::list(ModeKind::Customize, "", items);
     view.preview = !has_flag(args, "-N");
     enter_mode(args, state, view)
 }
