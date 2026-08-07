@@ -12,7 +12,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, VecDeque};
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::io::{self, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
 use std::os::raw::{c_int, c_void};
@@ -1449,6 +1449,20 @@ impl Pane {
     /// The pid of the process the pane forked for its pty (`#{pane_pid}`).
     pub(crate) fn child_pid(&self) -> Option<pid_t> {
         self.child.as_ref().map(|child| child.pid)
+    }
+
+    /// The slave device for the pane's live PTY (`#{pane_tty}`).
+    pub(crate) fn tty_name(&self) -> Option<String> {
+        let master = self.child.as_ref()?.master.as_raw_fd();
+        let name = unsafe { libc::ptsname(master) };
+        if name.is_null() {
+            return None;
+        }
+        Some(
+            unsafe { CStr::from_ptr(name) }
+                .to_string_lossy()
+                .into_owned(),
+        )
     }
 
     /// The `pipe-pane` child's pid (`#{pane_pipe_pid}`), while the pipe is open.

@@ -4763,6 +4763,7 @@ pub(super) fn vars_full(
                         .map(|pid| pid.to_string())
                         .unwrap_or_default(),
                 )
+                .set("pane_tty", p.pane.tty_name().unwrap_or_default())
                 // State flags not derived from the terminal grid. A pane is
                 // dead once its child has been waited for and the pane is
                 // still here — tmux's `wp->fd == -1 && PANE_STATUSREADY`,
