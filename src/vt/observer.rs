@@ -364,15 +364,15 @@ impl Observer {
             // it is ordered into the stream like the cursor report: what the
             // pane asked about is what the screen has *here*.
             (Some(b'?'), [b'$'], b'p') => {
-                out.event(Event::DecPrivateModeReport(
-                    params.first().map_or(0, |param| param.or(0)),
-                ));
+                if let Some(mode) = params.first().map_or(Some(0), |param| param.get(0)) {
+                    out.event(Event::DecPrivateModeReport(mode));
+                }
             }
             // ANSI DECRQM for a standard mode.
             (None, [b'$'], b'p') => {
-                out.event(Event::DecModeReport(
-                    params.first().map_or(0, |param| param.or(0)),
-                ));
+                if let Some(mode) = params.first().map_or(Some(0), |param| param.get(0)) {
+                    out.event(Event::DecModeReport(mode));
+                }
             }
             // Secondary DA and XTVERSION.
             (Some(b'>'), [], b'c') if first_is_zero(params) => {
@@ -388,12 +388,14 @@ impl Observer {
             // image payloads, but tmux answers this capability query locally
             // and applications use it independently of image rendering.
             (Some(b'?'), [], b'S')
-                if params.len() == 2 && params[0].or(0) == 1 && params[1].or(0) == 1 =>
+                if params.len() == 2
+                    && params[0].get(0) == Some(1)
+                    && params[1].get(0) == Some(1) =>
             {
                 out.event(Event::Reply(b"\x1b[?1;0;1024S".to_vec()));
             }
             // DSR ?996: which theme is this terminal using?
-            (Some(b'?'), [], b'n') if params.first().is_some_and(|p| p.or(0) == 996) => {
+            (Some(b'?'), [], b'n') if params.first().is_some_and(|p| p.get(0) == Some(996)) => {
                 out.event(Event::ThemeQuery);
             }
             // Primary DA.
@@ -402,17 +404,17 @@ impl Observer {
                 // puts the `4` in its answer.
                 out.event(Event::Reply(b"\x1b[?1;2;4c".to_vec()));
             }
-            (None, [], b'n') => match params.first().map_or(0, |param| param.or(0)) {
+            (None, [], b'n') => match params.first().map_or(Some(0), |param| param.get(0)) {
                 // DSR 5n: no malfunction — and the outer terminal is asked the
                 // same question, so a pane waiting on the round trip is
                 // released in stream order.
-                5 => {
+                Some(5) => {
                     out.event(Event::Reply(b"\x1b[0n".to_vec()));
                     out.event(Event::ForwardQuery(DEVICE_STATUS_REPORT_QUERY));
                 }
                 // DSR 6n is answered with the cursor as it stands here, which
                 // is why the event is ordered inside the stream at all.
-                6 => out.event(Event::CursorPositionReport),
+                Some(6) => out.event(Event::CursorPositionReport),
                 _ => {}
             },
             // CSI window operations that report the pane's dimensions. The
@@ -428,16 +430,17 @@ impl Observer {
                 }
             }
             // TBC.
-            (None, [], b'g') => match params.first().map_or(0, |param| param.or(0)) {
-                0 => out.event(Event::ClearTabStop),
-                3 => out.event(Event::ClearAllTabStops),
+            (None, [], b'g') => match params.first().map_or(Some(0), |param| param.get(0)) {
+                Some(0) => out.event(Event::ClearTabStop),
+                Some(3) => out.event(Event::ClearAllTabStops),
                 _ => {}
             },
             // DECSCUSR.
             (None, [b' '], b'q') => {
-                let shape = params.first().map_or(0, |param| param.or(0));
-                if shape <= 6 {
-                    out.event(Event::CursorShape(shape as u8));
+                if let Some(shape) = params.first().map_or(Some(0), |param| param.get(0)) {
+                    if shape <= 6 {
+                        out.event(Event::CursorShape(shape as u8));
+                    }
                 }
             }
             _ => {}
@@ -709,7 +712,7 @@ impl Observed {
 /// Whether the sequence's first parameter is absent or zero — the only forms
 /// tmux's device-attribute handlers answer.
 fn first_is_zero(params: &[Param]) -> bool {
-    params.first().is_none_or(|param| param.or(0) == 0)
+    params.first().map_or(Some(0), |param| param.get(0)) == Some(0)
 }
 
 /// tmux's `input_handle_decrqss` reply. The only setting it reports is the

@@ -74,10 +74,25 @@ pub(crate) struct Param {
 }
 
 impl Param {
-    /// The parameter, or `default` when the position was empty — the reading
-    /// every CSI handler in `input.c` performs through `input_get`.
-    pub(crate) fn or(&self, default: u32) -> u32 {
-        self.value.unwrap_or(default)
+    /// The reading every CSI handler in `input.c` performs through `input_get`:
+    /// the parameter, `default` when the position was left empty, and `None` —
+    /// tmux's -1 — when it carries sub-parameters.
+    ///
+    /// `input_split` types a position with a colon in it as `INPUT_STRING`
+    /// rather than as a number, and a handler that reads one abandons its
+    /// operation instead of acting on the part before the colon. Only SGR looks
+    /// past that, through [`Param::subs`].
+    pub(crate) fn get(&self, default: u32) -> Option<u32> {
+        if self.is_string() {
+            return None;
+        }
+        Some(self.value.unwrap_or(default))
+    }
+
+    /// Whether the position carried sub-parameters — `input_split`'s
+    /// `INPUT_STRING`.
+    pub(crate) fn is_string(&self) -> bool {
+        !self.subs.is_empty()
     }
 }
 

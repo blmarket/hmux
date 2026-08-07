@@ -181,78 +181,147 @@ impl Engine {
     #[allow(clippy::too_many_lines)]
     fn csi(&mut self, private: Option<u8>, params: &[Param], intermediates: &[u8], final_byte: u8) {
         let bg = self.bg();
-        let get = |index: usize, default: u32| -> usize {
-            params.get(index).map_or(default, |param| param.or(default)) as usize
+        // tmux's `input_get`. `None` is its -1, which a position carrying
+        // sub-parameters answers with; every handler below skips its operation
+        // rather than acting on the part before the colon.
+        let get = |index: usize, default: u32| -> Option<usize> {
+            params
+                .get(index)
+                .map_or(Some(default), |param| param.get(default))
+                .map(|value| value as usize)
         };
-        // tmux's `input_get` with a minimum of one: a zero parameter is read as
+        // The same reading with a minimum of one: a zero parameter is read as
         // one for every operation that counts something.
-        let count = |index: usize| -> usize { get(index, 1).max(1) };
+        let count = |index: usize| -> Option<usize> { get(index, 1).map(|value| value.max(1)) };
 
         match (private, intermediates, final_byte) {
             // ICH.
-            (None, [], b'@') => self.screen.insert_character(count(0), bg),
+            (None, [], b'@') => {
+                if let Some(n) = count(0) {
+                    self.screen.insert_character(n, bg);
+                }
+            }
             // CUU / CUD / CUF / CUB.
-            (None, [], b'A') => self.screen.cursor_up(count(0)),
-            (None, [], b'B') => self.screen.cursor_down(count(0)),
-            (None, [], b'C') => self.screen.cursor_right(count(0)),
-            (None, [], b'D') => self.screen.cursor_left(count(0)),
+            (None, [], b'A') => {
+                if let Some(n) = count(0) {
+                    self.screen.cursor_up(n);
+                }
+            }
+            (None, [], b'B') => {
+                if let Some(n) = count(0) {
+                    self.screen.cursor_down(n);
+                }
+            }
+            (None, [], b'C') => {
+                if let Some(n) = count(0) {
+                    self.screen.cursor_right(n);
+                }
+            }
+            (None, [], b'D') => {
+                if let Some(n) = count(0) {
+                    self.screen.cursor_left(n);
+                }
+            }
             // CNL / CPL.
             (None, [], b'E') => {
-                self.screen.carriage_return();
-                self.screen.cursor_down(count(0));
+                if let Some(n) = count(0) {
+                    self.screen.carriage_return();
+                    self.screen.cursor_down(n);
+                }
             }
             (None, [], b'F') => {
-                self.screen.carriage_return();
-                self.screen.cursor_up(count(0));
+                if let Some(n) = count(0) {
+                    self.screen.carriage_return();
+                    self.screen.cursor_up(n);
+                }
             }
             // HPA (both spellings).
             (None, [], b'G' | b'`') => {
-                self.screen.cursor_move(Some(count(0) - 1), None, true);
+                if let Some(n) = count(0) {
+                    self.screen.cursor_move(Some(n - 1), None, true);
+                }
             }
             // CUP / HVP.
             (None, [], b'H' | b'f') => {
-                let (row, column) = (count(0) - 1, count(1) - 1);
-                self.screen.cursor_move(Some(column), Some(row), true);
+                if let (Some(row), Some(column)) = (count(0), count(1)) {
+                    self.screen.cursor_move(Some(column - 1), Some(row - 1), true);
+                }
             }
             // ED.
             (None, [], b'J') => match get(0, 0) {
-                0 => self.screen.clear_end_of_screen(bg),
-                1 => self.screen.clear_start_of_screen(bg),
-                2 => self.screen.clear_screen(bg),
+                Some(0) => self.screen.clear_end_of_screen(bg),
+                Some(1) => self.screen.clear_start_of_screen(bg),
+                Some(2) => self.screen.clear_screen(bg),
                 // A Linux console extension: drop the history.
-                3 if get(1, 0) == 0 => self.screen.clear_history(),
+                Some(3) if get(1, 0) == Some(0) => self.screen.clear_history(),
                 _ => {}
             },
             // EL.
             (None, [], b'K') => match get(0, 0) {
-                0 => self.screen.clear_end_of_line(bg),
-                1 => self.screen.clear_start_of_line(bg),
-                2 => self.screen.clear_line(bg),
+                Some(0) => self.screen.clear_end_of_line(bg),
+                Some(1) => self.screen.clear_start_of_line(bg),
+                Some(2) => self.screen.clear_line(bg),
                 _ => {}
             },
             // IL / DL.
-            (None, [], b'L') => self.screen.insert_line(count(0), bg),
-            (None, [], b'M') => self.screen.delete_line(count(0), bg),
+            (None, [], b'L') => {
+                if let Some(n) = count(0) {
+                    self.screen.insert_line(n, bg);
+                }
+            }
+            (None, [], b'M') => {
+                if let Some(n) = count(0) {
+                    self.screen.delete_line(n, bg);
+                }
+            }
             // DCH.
-            (None, [], b'P') => self.screen.delete_character(count(0), bg),
+            (None, [], b'P') => {
+                if let Some(n) = count(0) {
+                    self.screen.delete_character(n, bg);
+                }
+            }
             // SU / SD.
-            (None, [], b'S') => self.screen.scroll_up(count(0), bg),
-            (None, [], b'T') => self.screen.scroll_down(count(0), bg),
+            (None, [], b'S') => {
+                if let Some(n) = count(0) {
+                    self.screen.scroll_up(n, bg);
+                }
+            }
+            (None, [], b'T') => {
+                if let Some(n) = count(0) {
+                    self.screen.scroll_down(n, bg);
+                }
+            }
             // ECH.
-            (None, [], b'X') => self.screen.clear_character(count(0), bg),
+            (None, [], b'X') => {
+                if let Some(n) = count(0) {
+                    self.screen.clear_character(n, bg);
+                }
+            }
             // CBT: back to the previous tab stop, n times.
-            (None, [], b'Z') => self.cursor_back_tab(count(0)),
+            (None, [], b'Z') => {
+                if let Some(n) = count(0) {
+                    self.cursor_back_tab(n);
+                }
+            }
             // REP: repeat the last printable character.
-            (None, [], b'b') => self.repeat(count(0)),
+            (None, [], b'b') => {
+                if let Some(n) = count(0) {
+                    self.repeat(n);
+                }
+            }
             // VPA.
-            (None, [], b'd') => self.screen.cursor_move(None, Some(count(0) - 1), true),
+            (None, [], b'd') => {
+                if let Some(n) = count(0) {
+                    self.screen.cursor_move(None, Some(n - 1), true);
+                }
+            }
             // TBC.
             (None, [], b'g') => match get(0, 0) {
-                0 => {
+                Some(0) => {
                     let cx = self.screen.cx;
                     self.screen.tabs.remove(&cx);
                 }
-                3 => self.screen.tabs.clear(),
+                Some(3) => self.screen.tabs.clear(),
                 _ => {}
             },
             // SM / RM.
@@ -266,11 +335,11 @@ impl Engine {
             // DECSTBM.
             (None, [], b'r') => {
                 let sy = self.screen.sy();
-                let upper = count(0) - 1;
-                let lower = get(1, sy as u32).max(1) - 1;
-                self.screen.set_scroll_region(upper, lower);
-                // tmux homes the cursor after setting the region.
-                self.screen.cursor_move(Some(0), Some(0), true);
+                if let (Some(upper), Some(lower)) = (count(0), get(1, sy as u32)) {
+                    self.screen.set_scroll_region(upper - 1, lower.max(1) - 1);
+                    // tmux homes the cursor after setting the region.
+                    self.screen.cursor_move(Some(0), Some(0), true);
+                }
             }
             // SCP / RCP, the CSI spellings of DECSC and DECRC.
             (None, [], b's') => self.screen.save_cursor(),
@@ -279,24 +348,25 @@ impl Engine {
             // the pane wants. Only the two bits are recorded here; whether the
             // pane actually gets them is `extended-keys`'s decision, made where
             // the key is encoded.
-            (Some(b'>'), [], b'm') if params.first().is_none_or(|param| param.or(4) == 4) => {
+            (Some(b'>'), [], b'm') if params.first().is_none_or(|param| param.get(4) == Some(4)) => {
                 self.screen.mode_clear(mode::ALL_KEYS_EXTENDED);
-                match params.get(1).map_or(0, |param| param.or(0)) {
-                    1 => self.screen.mode_set(mode::KEYS_EXTENDED),
-                    2 => self.screen.mode_set(mode::KEYS_EXTENDED_2),
+                match get(1, 0) {
+                    Some(1) => self.screen.mode_set(mode::KEYS_EXTENDED),
+                    Some(2) => self.screen.mode_set(mode::KEYS_EXTENDED_2),
                     _ => {}
                 }
             }
             // `CSI > 4 n`, tmux's MODOFF: withdraw the request.
-            (Some(b'>'), [], b'n') if params.first().is_some_and(|param| param.or(0) == 4) => {
+            (Some(b'>'), [], b'n') if get(0, 0) == Some(4) => {
                 self.screen.mode_clear(mode::ALL_KEYS_EXTENDED);
             }
             // DECSCUSR. The style itself is the server's to report; what the
             // screen keeps is the blink every style but the default decides.
             (None, [b' '], b'q') => {
-                let style = get(0, 0);
-                if (1..=6).contains(&style) {
-                    self.toggle(mode::CURSOR_BLINKING, style % 2 == 1);
+                if let Some(style) = get(0, 0) {
+                    if (1..=6).contains(&style) {
+                        self.toggle(mode::CURSOR_BLINKING, style % 2 == 1);
+                    }
                 }
             }
             _ => {}
@@ -347,7 +417,7 @@ impl Engine {
     /// SM / RM, the non-private modes. tmux implements only IRM.
     fn set_modes(&mut self, params: &[Param], set: bool) {
         for param in params {
-            if param.or(0) == 4 {
+            if param.get(0) == Some(4) {
                 if set {
                     self.screen.mode_set(mode::INSERT);
                 } else {
@@ -364,6 +434,12 @@ impl Engine {
     /// them: one sequence writes a mode and one word holds it.
     fn set_private_modes(&mut self, params: &[Param], set: bool) {
         for param in params {
+            // tmux reads each position with a default of -1, so an empty one is
+            // skipped rather than defaulted — and so is one carrying
+            // sub-parameters, which `input_get` answers -1 for.
+            if param.is_string() {
+                continue;
+            }
             let Some(mode) = param.value else { continue };
             match mode {
                 // DECCKM.
@@ -458,22 +534,22 @@ impl Engine {
                 index += 1;
                 continue;
             }
-            let n = param.or(0);
+            let n = param.value.unwrap_or(0);
             if matches!(n, 38 | 48 | 58) {
                 index += 1;
-                let kind = params.get(index).map_or(0, |param| param.or(0));
+                let kind = params.get(index).map_or(0, |param| param.value.unwrap_or(0));
                 match kind {
                     // Direct colour: three more parameters.
                     2 => {
-                        let red = params.get(index + 1).map_or(0, |p| p.or(0));
-                        let green = params.get(index + 2).map_or(0, |p| p.or(0));
-                        let blue = params.get(index + 3).map_or(0, |p| p.or(0));
+                        let red = params.get(index + 1).map_or(0, |p| p.value.unwrap_or(0));
+                        let green = params.get(index + 2).map_or(0, |p| p.value.unwrap_or(0));
+                        let blue = params.get(index + 3).map_or(0, |p| p.value.unwrap_or(0));
                         self.set_sgr_colour(n, colour::rgb(red as u8, green as u8, blue as u8));
                         index += 4;
                     }
                     // Palette colour: one more.
                     5 => {
-                        let value = params.get(index + 1).map_or(0, |p| p.or(0));
+                        let value = params.get(index + 1).map_or(0, |p| p.value.unwrap_or(0));
                         self.set_sgr_colour(n, colour::indexed(value as u8));
                         index += 2;
                     }
@@ -1026,6 +1102,25 @@ mod tests {
             engine.screen.grid.get(0, 0).attr & attr::CHARSET,
             0,
             "the character set went back to ASCII too"
+        );
+    }
+
+    #[test]
+    fn a_colon_parameter_abandons_the_operation_outside_sgr() {
+        // `input_split` types a position with a colon in it as `INPUT_STRING`,
+        // `input_get` answers -1 for one, and the handler skips its operation
+        // rather than acting on the part before the colon.
+        let mut engine = screen(10, 5);
+        feed(&mut engine, b"ab\x1b[4:E");
+        assert_eq!((engine.screen.cx, engine.screen.cy), (2, 0));
+        // The position a handler does not read is not the one that stops it.
+        feed(&mut engine, b"\x1b[2;3:4H");
+        assert_eq!((engine.screen.cx, engine.screen.cy), (2, 0));
+        // SGR is the one operation that reads past the colon.
+        feed(&mut engine, b"\x1b[4:3m");
+        assert_eq!(
+            engine.screen.cell.attr & attr::ALL_UNDERSCORE,
+            attr::UNDERSCORE_3
         );
     }
 
