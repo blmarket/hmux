@@ -13608,7 +13608,7 @@ impl ServerState {
         Ok(input_keys::encode(
             key,
             self.pane_key_modes(state),
-            self.pane_key_options(),
+            self.pane_key_options(target),
         ))
     }
 
@@ -13651,7 +13651,7 @@ impl ServerState {
         }
     }
 
-    fn pane_key_options(&self) -> PaneKeyOptions {
+    fn pane_key_options(&self, target: &str) -> PaneKeyOptions {
         let options = self.server_options();
         let backspace = match options.get("backspace") {
             // tmux's stored default is the bare `DEL` code; `C-?` is only how
@@ -13667,9 +13667,18 @@ impl ServerState {
             Some("csi-u") => ExtendedKeysFormat::CsiU,
             _ => ExtendedKeysFormat::Xterm,
         };
+        // tmux 3.7b retains this window option in its catalog, but its input
+        // key path no longer consults it. Resolve it here so the no-op
+        // compatibility behavior is explicit in the runtime path.
+        let xterm_keys = self
+            .window_options(target)
+            .ok()
+            .and_then(|options| options.get("xterm-keys"))
+            .is_none_or(|value| value != "off");
         PaneKeyOptions {
             backspace,
             extended_keys_format,
+            xterm_keys,
         }
     }
 
