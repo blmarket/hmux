@@ -3126,6 +3126,54 @@ impl ClientRenderRegistry {
         ClientActionResult::Queued
     }
 
+    /// tmux's `switch-client -r`: flip the target client's read-only bit,
+    /// carrying `ignore-size` with it. This is the path that can clear a
+    /// read-only client, so it moves the flag state directly instead of going
+    /// through a `refresh-client -f` value, which refuses to clear it.
+    ///
+    /// Returns the client the toggle landed on, so the session change that
+    /// follows moves the same client.
+    fn toggle_client_read_only(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+    ) -> Result<String, ClientActionResult> {
+        let mut inner = self.inner.borrow_mut();
+        let id = match Self::client_id_for(&inner, target, invoking_tty) {
+            Ok(id) => id,
+            // A plain command client owns no terminal of its own; tmux's
+            // `cmd_find_current_client` resolves that to the sole attached
+            // client, the same fallback the selection path takes.
+            Err(ClientActionResult::NoCurrentClient) if inner.clients.len() == 1 => {
+                *inner.clients.keys().next().expect("one client present")
+            }
+            Err(result) => return Err(result),
+        };
+        let entry = inner.clients.get_mut(&id).expect("selected client present");
+        let enable = !entry.flag_state.read_only;
+        entry.flag_state.read_only = enable;
+        entry.flag_state.ignore_size = enable;
+        entry.read_only = enable;
+        entry.ignore_size = enable;
+        entry.flags =
+            entry
+                .flag_state
+                .display_flags_full(entry.identified, entry.control_mode, entry.focused);
+        {
+            // The attached client re-reads the registry view rather than the
+            // values themselves; a control client, which keeps its own flag
+            // state, applies them the way `refresh-client -f` does.
+            let mut pending = entry.slot.flag_updates.borrow_mut();
+            pending.push(if enable {
+                "read-only,ignore-size".to_owned()
+            } else {
+                "!read-only,!ignore-size".to_owned()
+            });
+        }
+        let _ = entry.slot.wakeup.wake();
+        Ok(entry.name.clone())
+    }
+
     fn send_message(
         &self,
         target: Option<&str>,
@@ -6297,6 +6345,16 @@ impl ServerState {
     ) -> ClientActionResult {
         self.client_renders
             .switch_client(target, invoking_tty, session_id)
+    }
+
+    /// Toggle `switch-client -r` on the target client, reporting its name.
+    pub(crate) fn toggle_client_read_only(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+    ) -> Result<String, ClientActionResult> {
+        self.client_renders
+            .toggle_client_read_only(target, invoking_tty)
     }
 
     pub(crate) fn session_id(&self, name: &str) -> Option<u32> {

@@ -1001,33 +1001,41 @@ fn switch_client(
     // mouse's — as a pane target and makes that window current before moving
     // the client, which is what the default `MouseDown1Status` binding relies
     // on to turn the status line into a window switcher.
-    if target_session == "=" || target_session.contains([':', '.', '%']) {
-        if let Some(resolved) = state.resolve(target_session) {
-            let session = &state.sessions()[resolved.session];
-            let session_id = session.id;
-            let window_target = format!(
-                "{}:{}",
-                session.name, session.windows[resolved.window].index
-            );
-            let pane_id = state.window(resolved.session, resolved.window).panes[resolved.pane].id;
-            let _ = state.select_pane(&format!("%{pane_id}"));
-            let _ = state.select_window(&window_target);
-            return match state.switch_client(
-                flag_value(args, "-c"),
-                client.tty_name.as_deref(),
-                session_id,
-            ) {
-                ClientActionResult::Queued => CommandResult::ok(""),
-                ClientActionResult::NoCurrentClient => CommandResult::err("no current client\n"),
-                ClientActionResult::TargetNotFound => CommandResult::err("can't find client\n"),
-            };
+    let resolved_pane_target = (target_session == "=" || target_session.contains([':', '.', '%']))
+        .then(|| state.resolve(target_session))
+        .flatten();
+    let session_id = if let Some(resolved) = resolved_pane_target {
+        let session = &state.sessions()[resolved.session];
+        let session_id = session.id;
+        let window_target = format!(
+            "{}:{}",
+            session.name, session.windows[resolved.window].index
+        );
+        let pane_id = state.window(resolved.session, resolved.window).panes[resolved.pane].id;
+        let _ = state.select_pane(&format!("%{pane_id}"));
+        let _ = state.select_window(&window_target);
+        session_id
+    } else {
+        let Some(session_id) = state.session_id(target_session) else {
+            return CommandResult::err(format!("can't find session: {target_session}\n"));
+        };
+        session_id
+    };
+    // tmux toggles the target client's read-only state — and `ignore-size`
+    // with it — once the target has resolved, then moves that same client.
+    let toggled = if has_flag(args, "-r") {
+        match state.toggle_client_read_only(flag_value(args, "-c"), client.tty_name.as_deref()) {
+            Ok(name) => Some(name),
+            Err(ClientActionResult::NoCurrentClient) => {
+                return CommandResult::err("no current client\n");
+            }
+            Err(_) => return CommandResult::err("can't find client\n"),
         }
-    }
-    let Some(session_id) = state.session_id(target_session) else {
-        return CommandResult::err(format!("can't find session: {target_session}\n"));
+    } else {
+        None
     };
     match state.switch_client(
-        flag_value(args, "-c"),
+        flag_value(args, "-c").or(toggled.as_deref()),
         client.tty_name.as_deref(),
         session_id,
     ) {
