@@ -662,7 +662,8 @@ impl Expander<'_> {
                 return value;
             }
         }
-        // `e|OP:a,b` — integer arithmetic (`+ - * / m %`).
+        // `e|OP:a,b` — arithmetic (`+ - * / m %`) and numeric comparison
+        // (`== != < > <= >=`) expressions.
         if let Some(rest) = content.strip_prefix("e|") {
             return self.eval_arith(rest, vars, depth);
         }
@@ -1558,13 +1559,15 @@ impl Expander<'_> {
         })
     }
 
-    /// `OP:a,b` (following the `e|` prefix): integer arithmetic over two operands.
-    /// Operands are format-expanded then parsed as numbers; the result is truncated
-    /// toward zero (tmux's default, no `f` flag). A parse error, wrong operand count,
-    /// unknown operator, or divide-by-zero yields empty, matching real tmux.
+    /// `OP[|FLAGS[|PRECISION]]:a,b` (following the `e|` prefix): arithmetic and
+    /// numeric comparison over two operands. Operands are format-expanded then
+    /// parsed as numbers; without the `f` flag both operands are truncated to
+    /// integers before the operator runs and the result prints as an integer,
+    /// with it the whole computation is floating point. The precision argument
+    /// applies in either mode (`f` alone implies 2). A parse error, wrong
+    /// operand count, unknown operator, or invalid precision yields empty,
+    /// matching real tmux.
     fn eval_arith(&self, rest: &str, vars: &Vars, depth: usize) -> String {
-        // Strip any `|flags|precision` between the operator and the `:` (we only model
-        // the default integer form). The operator is the text up to the first `|`.
         let (spec, body) = match rest.split_once(':') {
             Some(x) => x,
             None => return String::new(),
@@ -1572,26 +1575,46 @@ impl Expander<'_> {
         let mut spec_parts = spec.split('|');
         let op = spec_parts.next().unwrap_or(spec);
         let flags = spec_parts.next().unwrap_or_default();
-        let precision = spec_parts
-            .next()
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(2)
-            .min(50);
+        let use_fp = flags.contains('f');
+        let precision = match spec_parts.next() {
+            Some(text) => match text.parse::<i64>() {
+                // tmux accepts -100..=100 and hands the value to printf's
+                // `%.*f`, where a negative precision means the default of 6.
+                Ok(value) if (-100..=100).contains(&value) => {
+                    if value < 0 { 6 } else { value as usize }
+                }
+                _ => return String::new(),
+            },
+            None => {
+                if use_fp {
+                    2
+                } else {
+                    0
+                }
+            }
+        };
         let parts = split_top_level(body, b',');
         if parts.len() != 2 {
             return String::new();
         }
-        let a: f64 = match self.expand(&parts[0], vars, depth).trim().parse() {
-            Ok(v) => v,
-            Err(_) => return String::new(),
+        // strtod semantics: an empty operand is zero, anything else must parse
+        // fully as a number.
+        let operand = |text: &String| -> Option<f64> {
+            let expanded = self.expand(text, vars, depth);
+            let trimmed = expanded.trim();
+            if trimmed.is_empty() { Some(0.0) } else { trimmed.parse().ok() }
         };
-        let b: f64 = match self.expand(&parts[1], vars, depth).trim().parse() {
-            Ok(v) => v,
-            Err(_) => return String::new(),
+        let (Some(mut a), Some(mut b)) = (operand(&parts[0]), operand(&parts[1])) else {
+            return String::new();
         };
+        if !use_fp {
+            a = a.trunc();
+            b = b.trunc();
+        }
         // Division/modulo by zero: real tmux computes with a long double, so the
         // result is a NaN/inf that casts to `INT64_MIN`. We reproduce that exact
         // value rather than erroring, so conformance matches.
+        let truth = |value: bool| if value { 1.0 } else { 0.0 };
         let result = match op {
             "+" => a + b,
             "-" => a - b,
@@ -1608,12 +1631,19 @@ impl Expander<'_> {
                 }
                 a % b
             }
+            // Equality within tmux's 1e-9 epsilon.
+            "==" => truth((a - b).abs() < 1e-9),
+            "!=" => truth((a - b).abs() > 1e-9),
+            ">" => truth(a > b),
+            "<" => truth(a < b),
+            ">=" => truth(a >= b),
+            "<=" => truth(a <= b),
             _ => return String::new(),
         };
-        if flags.contains('f') {
+        if use_fp {
             format!("{result:.precision$}")
         } else {
-            (result.trunc() as i64).to_string()
+            format!("{:.precision$}", (result as i64) as f64)
         }
     }
 
