@@ -9,7 +9,8 @@ Pacing comes from the same `QuotaService` the dashboard shows. A window is
 "on pace" while the share of it spent is no larger than the share of it
 elapsed; over pace, the loop sleeps until an even burn would have caught up,
 which for an exhausted window is its reset. Only the agent's own provider
-gates it — a spent Claude subscription has no bearing on a codex loop.
+gates it — a spent Claude subscription has no bearing on a codex loop. `-f`
+drops the gate entirely and runs the budget back to back.
 """
 
 from __future__ import annotations
@@ -134,6 +135,8 @@ class LooperConfig:
     quota_poll_seconds: float = 300.0
     commit: bool = True
     devshell: bool = False
+    # Run back to back without consulting quota at all.
+    ignore_pacing: bool = False
 
 
 class Looper:
@@ -200,6 +203,9 @@ class Looper:
 
     def await_pacing(self) -> None:
         """Block until every gating quota window is at or under its pace."""
+        if self.config.ignore_pacing:
+            self.log("pacing ignored (-f): starting the run now")
+            return
         while True:
             report = self.quota_service.report()
             self.report_errors(report)
@@ -317,6 +323,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="stop after this many runs (default: keep going)",
     )
     parser.add_argument(
+        "-f", "--force", action="store_true",
+        help="run regardless of quota pacing, without waiting between runs",
+    )
+    parser.add_argument(
         "--run-timeout", type=float, default=0.0, metavar="SECONDS",
         help="end a run that has not finished in this long (default: no limit)",
     )
@@ -372,6 +382,7 @@ def main(argv: list[str] | None = None) -> int:
         agent_size_percent=args.size,
         commit=not args.no_commit,
         devshell=args.devshell,
+        ignore_pacing=args.force,
     )
     # The prompt is kept outside the worktree so auto-commit never picks it up.
     directory = Path(tempfile.mkdtemp(prefix="looper-"))

@@ -38,6 +38,10 @@ a long wait rather than a new run. Every window must be on pace before a run
 starts, and only the agent's own provider gates it: a spent Claude
 subscription has no bearing on a codex loop.
 
+`-f` skips pacing altogether: quota is never consulted and the runs go back to
+back, so `cat prompt.md | looper -f -n 2` gives exactly two runs no matter what
+the windows say.
+
 Two deliberate non-blockers: a window the provider left undated cannot be
 paced, and a provider that reported nothing at all (expired credentials, say)
 leaves nothing to pace against. Both are passed over with a note in the log

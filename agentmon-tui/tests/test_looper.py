@@ -308,6 +308,23 @@ def test_loop_naps_no_longer_than_the_catch_up_itself(tmp_path: Path) -> None:
     assert naps and naps[0] < 300.0
 
 
+def test_loop_runs_its_budget_back_to_back_when_pacing_is_ignored(
+    tmp_path: Path,
+) -> None:
+    # A spent window would otherwise hold every run back until its reset.
+    quota_service = FakeQuotaService(report(codex_window(100.0)))
+    service = FakeService("idle", "idle")
+    looper, lines, naps = build(
+        service, quota_service, tmp_path, max_runs=2, ignore_pacing=True
+    )
+
+    assert looper.run() == 0
+    assert len(service.splits) == 2
+    assert naps == []
+    assert quota_service.calls == 0
+    assert any("pacing ignored" in line for line in lines)
+
+
 def test_loop_names_a_quota_lookup_failure_once(tmp_path: Path) -> None:
     quota_service = FakeQuotaService(
         report(codex_window(60.0), errors=("Codex auth unavailable",)),
