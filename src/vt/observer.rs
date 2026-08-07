@@ -379,6 +379,14 @@ impl Observer {
                     format!("\x1bP>|{XTVERSION_NAME} {}\x1b\\", crate::TMUX_VERSION).into_bytes(),
                 ));
             }
+            // Sixel graphics attributes. The daemon does not render sixel
+            // image payloads, but tmux answers this capability query locally
+            // and applications use it independently of image rendering.
+            (Some(b'?'), [], b'S')
+                if params.len() == 2 && params[0].or(0) == 1 && params[1].or(0) == 1 =>
+            {
+                out.event(Event::Reply(b"\x1b[?1;0;1024S".to_vec()));
+            }
             // DSR ?996: which theme is this terminal using?
             (Some(b'?'), [], b'n') if params.first().is_some_and(|p| p.or(0) == 996) => {
                 out.event(Event::ThemeQuery);
@@ -1035,6 +1043,10 @@ mod tests {
                 Event::Reply(b"\x1b[0n".to_vec()),
                 Event::ForwardQuery(DEVICE_STATUS_REPORT_QUERY),
             ]
+        );
+        assert_eq!(
+            events(b"\x1b[?1;1S"),
+            vec![Event::Reply(b"\x1b[?1;0;1024S".to_vec())]
         );
     }
 
