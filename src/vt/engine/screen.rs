@@ -46,9 +46,14 @@ struct SavedState {
 /// One pane's screen.
 pub(crate) struct Screen {
     pub(crate) grid: Grid,
-    /// The alternate screen's grid while it is in use, and the primary's while
-    /// it is not. tmux keeps the displaced grid in `saved_grid`.
+    /// The primary screen's visible rows while the alternate screen is up, and
+    /// `None` while it is not. tmux's `saved_grid`, which holds those rows only
+    /// — the grid itself never changes hands, so the history stays under the
+    /// alternate screen where a copy-mode scroll can still reach it.
     saved_grid: Option<Grid>,
+    /// tmux's `saved_flags`: whether the grid was keeping history before the
+    /// alternate screen took it away.
+    saved_history: bool,
     saved_state: Option<SavedState>,
     /// DECSC's own save, which is separate from the alternate screen's.
     saved_cursor: Option<SavedState>,
@@ -76,6 +81,7 @@ impl Screen {
         Screen {
             grid: Grid::new(sx, sy, hlimit),
             saved_grid: None,
+            saved_history: hlimit != 0,
             saved_state: None,
             saved_cursor: None,
             cx: 0,
@@ -103,9 +109,10 @@ impl Screen {
         self.grid.hsize + py
     }
 
-    /// Whether this screen keeps history. The alternate screen does not.
+    /// Whether this screen keeps history, tmux's `GRID_HISTORY`. The alternate
+    /// screen does not.
     fn has_history(&self) -> bool {
-        self.grid.hlimit != 0
+        self.grid.history && self.grid.hlimit != 0
     }
 
     // ---- cursor ----------------------------------------------------------
@@ -124,15 +131,10 @@ impl Screen {
         }
     }
 
-    /// Apply a session's history limit to the primary grid. While the
-    /// alternate screen is active, its zero-history grid is untouched and the
-    /// displaced primary grid is trimmed instead.
+    /// Apply a session's history limit. There is one grid to apply it to: the
+    /// alternate screen borrows the primary's rather than bringing its own.
     pub(crate) fn set_history_limit(&mut self, limit: usize) {
-        if let Some(saved) = self.saved_grid.as_mut() {
-            saved.set_history_limit(limit);
-        } else {
-            self.grid.set_history_limit(limit);
-        }
+        self.grid.set_history_limit(limit);
     }
 
     /// tmux's `screen_write_cursormove`: absolute addressing, which origin mode
@@ -726,12 +728,21 @@ impl Screen {
         }
     }
 
-    /// tmux's `screen_alternate_on`. The alternate screen keeps no history, and
-    /// the primary's grid is put aside untouched.
+    /// tmux's `screen_alternate_on`.
+    ///
+    /// The grid does not change hands. The visible rows are copied aside and
+    /// then blanked where they stand, so the history the primary screen built
+    /// up stays under the alternate screen — `history_size` still counts it and
+    /// a copy-mode scroll still reaches it. What the alternate screen loses is
+    /// the ability to *add* to that history, which is `GRID_HISTORY` going out.
     pub(crate) fn alternate_on(&mut self, save_cursor: bool) {
         if self.saved_grid.is_some() {
             return;
         }
+        let (sx, sy) = (self.grid.sx, self.grid.sy);
+        let mut saved = Grid::new(sx, sy, 0);
+        saved.duplicate_lines(0, &self.grid, self.grid.hsize, sy);
+        self.saved_grid = Some(saved);
         if save_cursor {
             self.saved_state = Some(SavedState {
                 cx: self.cx,
@@ -740,35 +751,50 @@ impl Screen {
                 mode: self.mode,
             });
         }
-        let (sx, sy) = (self.grid.sx, self.grid.sy);
-        self.saved_grid = Some(std::mem::replace(&mut self.grid, Grid::new(sx, sy, 0)));
-        self.clear_screen(colour::DEFAULT);
+        // `grid_view_clear`, not the clear an `ED 2` performs: the rows are
+        // blanked where they stand rather than scrolled anywhere.
+        let py = self.grid.hsize;
+        self.grid.clear(0, py, sx, sy, colour::DEFAULT);
+        self.saved_history = self.grid.history;
+        self.grid.history = false;
     }
 
     /// tmux's `screen_alternate_off`.
     pub(crate) fn alternate_off(&mut self, restore_cursor: bool) {
-        let Some(mut grid) = self.saved_grid.take() else {
+        let Some(saved) = self.saved_grid.take() else {
             return;
         };
-        // The pane may have been resized while the alternate screen was up.
-        grid.reflow(self.grid.sx);
-        let cursor = grid.hsize + self.cy.min(grid.sy - 1);
-        grid.resize_y(self.grid.sy, cursor, colour::DEFAULT);
-        self.grid = grid;
+        let (sx, sy) = (self.grid.sx, self.grid.sy);
+        // The pane may have been resized while the alternate screen was up, and
+        // the copy back goes row for row: the screen returns to the size the
+        // rows were saved at, takes them, and comes back to the current one.
+        if (saved.sx, saved.sy) != (sx, sy) {
+            self.resize(saved.sx, saved.sy);
+        }
         if restore_cursor {
             if let Some(state) = self.saved_state.take() {
                 self.cell = state.cell;
-                self.set_cursor(Some(state.cx), Some(state.cy));
-                return;
+                self.cx = state.cx;
+                self.cy = state.cy;
             }
         }
         self.saved_state = None;
-        self.set_cursor(Some(self.cx), Some(self.cy));
+        let py = self.grid.hsize;
+        let ny = saved.sy;
+        self.grid.duplicate_lines(py, &saved, 0, ny);
+        // History comes back on before the resize, so the resize may use it.
+        self.grid.history = self.saved_history;
+        if (saved.sx, saved.sy) != (sx, sy) {
+            self.resize(sx, sy);
+        }
+        self.cx = self.cx.min(self.sx() - 1);
+        self.cy = self.cy.min(self.sy() - 1);
     }
 
-    /// The grid the alternate-screen switch displaced, or `None` when no
-    /// alternate screen is in use. tmux's `saved_grid`, which `capture-pane -a`
-    /// reads; its presence is also what "the alternate screen is up" means.
+    /// The primary screen's visible rows, put aside when the alternate screen
+    /// went up, or `None` when no alternate screen is in use. tmux's
+    /// `saved_grid`, which `capture-pane -a` reads; its presence is also what
+    /// "the alternate screen is up" means.
     pub(crate) fn saved_grid(&self) -> Option<&Grid> {
         self.saved_grid.as_ref()
     }
@@ -812,9 +838,6 @@ impl Screen {
             self.cx = if px > sx { sx - 1 } else { px };
             self.cy = py.saturating_sub(self.grid.hsize).min(self.grid.sy - 1);
             self.reset_tabs();
-            if let Some(grid) = self.saved_grid.as_mut() {
-                grid.reflow(sx);
-            }
         }
         if sy != self.grid.sy {
             // tmux carries the cursor through a resize as an absolute row and
@@ -1128,6 +1151,24 @@ mod tests {
         screen.alternate_off(true);
         assert_eq!(text(&screen, 0), "primary");
         assert_eq!((screen.cx, screen.cy), (7, 0), "the cursor came back");
+    }
+
+    #[test]
+    fn the_alternate_screen_leaves_the_history_it_found() {
+        let mut screen = Screen::new(8, 2, 100);
+        put(&mut screen, "one");
+        screen.linefeed(false, colour::DEFAULT);
+        screen.linefeed(false, colour::DEFAULT);
+        assert_eq!(screen.grid.hsize, 1, "the primary screen built history");
+        screen.alternate_on(false);
+        assert_eq!(
+            screen.grid.hsize, 1,
+            "which the alternate screen does not take with it"
+        );
+        assert_eq!(history(&screen, 0), "one");
+        screen.alternate_off(false);
+        assert_eq!(screen.grid.hsize, 1);
+        assert_eq!(history(&screen, 0), "one");
     }
 
     #[test]

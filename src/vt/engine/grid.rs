@@ -128,9 +128,11 @@ pub(crate) struct Grid {
     pub(crate) sy: usize,
     /// How many history rows are stored, tmux's `hsize`.
     pub(crate) hsize: usize,
-    /// The history cap. Zero means this grid keeps no history at all, which is
-    /// what the alternate screen does.
+    /// The history cap. Zero means this grid keeps no history at all.
     pub(crate) hlimit: usize,
+    /// tmux's `GRID_HISTORY`. Cleared while the alternate screen is up, so
+    /// scrolling there adds nothing to the scrollback the primary screen built.
+    pub(crate) history: bool,
     /// How far the history has scrolled, tmux's `hscrolled`. Only the
     /// `history_bytes`-style accounting reads it.
     pub(crate) hscrolled: usize,
@@ -138,15 +140,28 @@ pub(crate) struct Grid {
 }
 
 impl Grid {
-    /// tmux's `grid_create`. `hlimit` of zero means no history.
+    /// tmux's `grid_create`. `hlimit` of zero means no history, which is also
+    /// what leaves `GRID_HISTORY` clear.
     pub(crate) fn new(sx: usize, sy: usize, hlimit: usize) -> Grid {
         Grid {
             sx,
             sy,
             hsize: 0,
             hlimit,
+            history: hlimit != 0,
             hscrolled: 0,
             lines: vec![Line::default(); sy],
+        }
+    }
+
+    /// tmux's `grid_duplicate_lines`: copy `ny` rows out of `src` at row `sy`
+    /// over this grid's rows from `dy`, clipped to what either grid holds.
+    pub(crate) fn duplicate_lines(&mut self, dy: usize, src: &Grid, sy: usize, ny: usize) {
+        let ny = ny
+            .min(self.total().saturating_sub(dy))
+            .min(src.total().saturating_sub(sy));
+        for offset in 0..ny {
+            self.lines[dy + offset] = src.lines[sy + offset].clone();
         }
     }
 
