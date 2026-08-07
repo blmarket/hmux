@@ -31,7 +31,7 @@ use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 use crate::server::input_keys::ExtendedKeys;
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
 use crate::vt::observer::{decrqss_reply, Event as VtEvent, Observer, OscUpdate};
-use crate::vt::parser::{Param, Token, TokenKind};
+use crate::vt::parser::{Param, StringEnd, Token, TokenKind};
 
 use crate::vt::input::{InputEncoder, MouseEvent};
 pub(crate) use crate::vt::observer::parse_packed_colour;
@@ -1067,6 +1067,11 @@ impl NativePaneObservation {
             VtEvent::ClearAllTabStops => self.update_tab_stops(BTreeSet::clear),
             VtEvent::CursorShape(shape) => self.cursor_shape.set(shape),
             VtEvent::Reply(reply) => replies.push(reply),
+            VtEvent::CursorColourQuery(end) => {
+                if let Some(reply) = cursor_colour_query_reply(&self.cursor_colour.borrow(), end) {
+                    replies.push(reply);
+                }
+            }
             VtEvent::ForwardQuery(query) => queries.push(query),
             VtEvent::Osc(update) => {
                 let slot_value = match update {
@@ -2742,6 +2747,22 @@ impl PaneProcessProbe {
     }
 }
 
+/// Build tmux's OSC 12 reply from the pane-local colour state. Unset cursor
+/// colour is represented by `none` and has no reply, matching tmux's silent
+/// response for an unset local value.
+fn cursor_colour_query_reply(colour: &str, end: StringEnd) -> Option<Vec<u8>> {
+    let packed = parse_packed_colour(colour)?;
+    let (r, g, b) = ((packed >> 16) as u8, (packed >> 8) as u8, packed as u8);
+    let terminator = match end {
+        StringEnd::StringTerminator => "\x1b\\",
+        StringEnd::Bell => "\x07",
+    };
+    Some(
+        format!("\x1b]12;rgb:{r:02x}{r:02x}/{g:02x}{g:02x}/{b:02x}{b:02x}{terminator}")
+            .into_bytes(),
+    )
+}
+
 /// Render a pane's argument vector the way tmux's `cmd_stringify_argv` does,
 /// for the callers that reduce the result with [`parse_window_name`].
 ///
@@ -3063,5 +3084,13 @@ mod tests {
         assert!(replies.is_empty(), "got {replies:?}");
         let (replies, _) = observation.observe_output(b"\x1b[6n");
         assert_eq!(replies, vec![b"\x1b[1;7R".to_vec()]);
+    }
+
+    #[test]
+    fn pane_cursor_colour_query_uses_the_stored_colour_and_terminator() {
+        let observation = inert_observation();
+        let (replies, queries) = observation.observe_output(b"\x1b]12;#00ff00\x07\x1b]12;?\x07");
+        assert!(queries.is_empty(), "got forwarded queries: {queries:?}");
+        assert_eq!(replies, vec![b"\x1b]12;rgb:0000/ffff/0000\x07".to_vec()]);
     }
 }

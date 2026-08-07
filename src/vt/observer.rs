@@ -193,6 +193,10 @@ pub(crate) enum Event {
     CursorShape(u8),
     /// Bytes to write back to the pane's own input.
     Reply(Vec<u8>),
+    /// OSC 12 asked the pane for its stored cursor colour. The pane owns the
+    /// colour value; this event preserves the query's position and terminator
+    /// until that state is reached.
+    CursorColourQuery(StringEnd),
     /// Bytes to forward to the client's terminal, whose answer comes back to
     /// the pane.
     ForwardQuery(&'static [u8]),
@@ -545,10 +549,14 @@ impl Observer {
             }
             10..=12 => {
                 if text == "?" {
-                    // Only the background question has an answer worth asking
-                    // the outer terminal for; tmux answers neither itself.
-                    if number == 11 {
-                        out.event(Event::ForwardQuery(BACKGROUND_COLOR_QUERY));
+                    match number {
+                        // A stored cursor colour is pane-local, so the pane
+                        // answers this at the same point in the stream.
+                        12 => out.event(Event::CursorColourQuery(end)),
+                        // The background question is answered by the outer
+                        // terminal when no pane-local value is available.
+                        11 => out.event(Event::ForwardQuery(BACKGROUND_COLOR_QUERY)),
+                        _ => {}
                     }
                 } else if let Some(colour) = parse_colour(&text) {
                     out.event(Event::Osc(match number {
