@@ -262,6 +262,9 @@ impl Parser {
         if anywhere {
             match byte {
                 0x18 | 0x1a => {
+                    // CAN and SUB reach `input_c0_dispatch`, which stops UTF-8
+                    // collection before the transition takes the parser home.
+                    self.stop_utf8(emit);
                     self.leave_state(emit);
                     self.raw.push(byte);
                     self.dispatch(TokenKind::Control(byte), emit);
@@ -315,9 +318,11 @@ impl Parser {
     /// even though no table entry matches ST: the ESC leaves the state, and
     /// leaving is what dispatches the string.
     ///
-    /// A partly-collected UTF-8 character is resolved here too: the bytes seen
-    /// so far can no longer complete, so they become one replacement character
-    /// rather than being held across the interruption.
+    /// A partly-collected UTF-8 character survives this. `input_stop_utf8` is
+    /// reached from `input_print`, `input_c0_dispatch` and `input_top_bit_set`
+    /// and from nowhere else, so an escape sequence that interrupts a UTF-8
+    /// character does not resolve it — the replacement lands where the stream
+    /// next reaches ground, carrying whatever cell the sequence left behind.
     fn leave_state(&mut self, emit: &mut impl FnMut(Token)) {
         match self.state {
             State::OscString => self.finish_string(
@@ -329,15 +334,6 @@ impl Parser {
             ),
             State::ApcString => self.finish_string(|data| TokenKind::Apc { data }, emit),
             State::RenameString => self.finish_string(|data| TokenKind::Rename { data }, emit),
-            State::Ground => {
-                if let Some(character) = self.utf8.flush() {
-                    let raw = std::mem::take(&mut self.raw);
-                    emit(Token {
-                        kind: TokenKind::Print(character),
-                        raw,
-                    });
-                }
-            }
             _ => {}
         }
         self.raw.clear();
@@ -345,8 +341,19 @@ impl Parser {
         self.intermediate.clear();
         self.string.clear();
         self.string_overflow = false;
-        self.utf8.reset();
         self.state = State::Ground;
+    }
+
+    /// `input_stop_utf8`: give up on a part-collected UTF-8 character and enter
+    /// the replacement it decodes to.
+    fn stop_utf8(&mut self, emit: &mut impl FnMut(Token)) {
+        if let Some(character) = self.utf8.flush() {
+            let raw = std::mem::take(&mut self.raw);
+            emit(Token {
+                kind: TokenKind::Print(character),
+                raw,
+            });
+        }
     }
 
     /// Execute a C0 control that arrived part-way through a sequence.
@@ -358,7 +365,8 @@ impl Parser {
     /// which is what tmux's `since_ground` holds.
     fn execute_c0(&mut self, byte: u8, emit: &mut impl FnMut(Token)) {
         // `input_c0_dispatch` stops UTF-8 collection before it looks at the
-        // byte, the same as `input_print` does.
+        // byte, the same as `input_print` does. The bytes it resolves belong to
+        // the sequence in progress, so they stay in its accumulated bytes.
         if let Some(character) = self.utf8.flush() {
             emit(Token {
                 kind: TokenKind::Print(character),
@@ -393,13 +401,7 @@ impl Parser {
             }
             return;
         }
-        if let Some(character) = self.utf8.flush() {
-            let raw = std::mem::take(&mut self.raw);
-            emit(Token {
-                kind: TokenKind::Print(character),
-                raw,
-            });
-        }
+        self.stop_utf8(emit);
         self.raw.push(byte);
         match byte {
             0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.dispatch(TokenKind::Control(byte), emit),
@@ -952,10 +954,6 @@ impl Utf8Collector {
             REPLACEMENT
         })
     }
-
-    fn reset(&mut self) {
-        self.bytes.clear();
-    }
 }
 
 #[cfg(test)]
@@ -1175,6 +1173,40 @@ mod tests {
         assert!(out.is_empty());
         parser.parse("界".as_bytes()[2..].as_ref(), |token| out.push(token.kind));
         assert_eq!(out, vec![TokenKind::Print('界')]);
+    }
+
+    #[test]
+    fn an_interrupted_utf8_character_resolves_at_ground() {
+        // `input_stop_utf8` is reached from the print and C0 handlers and from
+        // nowhere else, so the sequence in between passes first and the
+        // replacement lands after it.
+        assert_eq!(
+            tokens(b"\xe0\x1b[31mZ"),
+            vec![
+                TokenKind::Csi {
+                    private: None,
+                    params: vec![Param {
+                        value: Some(31),
+                        subs: Vec::new()
+                    }],
+                    intermediates: Vec::new(),
+                    final_byte: b'm',
+                },
+                TokenKind::Print('\u{fffd}'),
+                TokenKind::Print('Z'),
+            ]
+        );
+        // A continuation byte after the sequence still continues the character
+        // the sequence interrupted: nothing stopped it.
+        assert_eq!(
+            tokens("\u{754c}".as_bytes()[..1].iter().copied()
+                .chain(b"\x1b[m".iter().copied())
+                .chain("\u{754c}".as_bytes()[1..].iter().copied())
+                .collect::<Vec<u8>>()
+                .as_slice())
+                .last(),
+            Some(&TokenKind::Print('\u{754c}'))
+        );
     }
 
     #[test]
