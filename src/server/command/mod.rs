@@ -46,8 +46,8 @@ use super::registry::{self, CommandSpec, Resolution, SpecResolution};
 use super::state::{
     BackgroundJobRegistry, ClientActionResult, ClientMessage, ClientMessageResult, MenuItem,
     MenuRequest, ModeEdit, ModeItem, ModeKind, ModeView, OverlayRequest, PaneSpec, PopupRequest,
-    PromptCompletion, PromptReply, ServerState, Session, SharedState, SplitDirection, Target,
-    WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
+    PromptCompletion, PromptReply, ServerState, Session, SharedState, SpawnSession, SplitDirection,
+    Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
 };
 use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
 use super::task::{
@@ -3561,7 +3561,7 @@ fn new_session_pane_spec(args: &[String], st: &ServerState, context: &ClientCont
     let command = trailing_command(args, NEW_SESSION_VALUE_FLAGS);
     let argv = pane_command_argv(command.as_slice(), st, None);
     let spawn_environment = flag_values(args, "-e");
-    let argv = pane_argv(argv, context, &spawn_environment, st, None);
+    let argv = pane_argv(argv, context, &spawn_environment, st, SpawnSession::Pending);
     match command_option_value(args, "-c", NEW_SESSION_VALUE_FLAGS)
         .map(PathBuf::from)
         .or_else(|| context.cwd.clone())
@@ -3580,7 +3580,8 @@ fn pane_command_argv(command: &[&str], st: &ServerState, target: Option<&str>) -
             .and_then(|target| st.option_for_target(target, name))
             .or_else(|| st.global_options().session().get(name))
     };
-    let shell = option("default-shell").unwrap_or("/bin/sh").to_string();
+    // The same shell the pane's `SHELL` names, so the two cannot drift.
+    let shell = st.default_shell(target).to_string();
     match command {
         [] => match option("default-command").filter(|command| !command.is_empty()) {
             Some(command) => vec![shell, "-c".to_string(), command.to_string()],
@@ -3664,7 +3665,7 @@ fn new_window(args: &[String], st: &mut ServerState, context: &ClientContext) ->
     let command = trailing_command(args, VALUE_FLAGS);
     let argv = pane_command_argv(command.as_slice(), st, Some(&session));
     let spawn_environment = flag_values(args, "-e");
-    let argv = pane_argv(argv, context, &spawn_environment, st, Some(&session));
+    let argv = pane_argv(argv, context, &spawn_environment, st, SpawnSession::Existing(&session));
     let result = if relative {
         match anchor_window_index(&session, explicit, st) {
             Some(anchor) => st.new_window_relative_with_spawn(
@@ -5503,7 +5504,7 @@ fn split_window(args: &[String], st: &mut ServerState, context: &ClientContext) 
     }
     let argv = pane_command_argv(command.as_slice(), st, Some(&target));
     let spawn_environment = flag_values(args, "-e");
-    let argv = pane_argv(argv, context, &spawn_environment, st, Some(&target));
+    let argv = pane_argv(argv, context, &spawn_environment, st, SpawnSession::Existing(&target));
     let created = if empty {
         st.split_window_direction_with_spec(
             &target,
@@ -5645,7 +5646,7 @@ fn new_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -> C
             .collect(),
     };
     let spawn_environment = flag_values(args, "-e");
-    let argv = pane_argv(argv, context, &spawn_environment, st, Some(&target));
+    let argv = pane_argv(argv, context, &spawn_environment, st, SpawnSession::Existing(&target));
     let select = !has_flag(args, "-d");
     let created = if has_flag(args, "-L") {
         let direction = if has_flag(args, "-h") {
@@ -5922,7 +5923,7 @@ fn respawn_pane(args: &[String], st: &mut ServerState, context: &ClientContext) 
             }
             Some(saved.argv)
         });
-        base.map(|argv| pane_argv(argv, context, &environment, st, Some(&target)))
+        base.map(|argv| pane_argv(argv, context, &environment, st, SpawnSession::Existing(&target)))
     };
     match st.respawn_pane_process(&target, argv, cwd) {
         Ok(()) => CommandResult::ok(""),
@@ -5969,7 +5970,7 @@ fn respawn_window(args: &[String], st: &mut ServerState, context: &ClientContext
     let argv = if environment.is_empty() {
         argv
     } else {
-        argv.map(|argv| pane_argv(argv, context, &environment, st, Some(&target)))
+        argv.map(|argv| pane_argv(argv, context, &environment, st, SpawnSession::Existing(&target)))
     };
     let cwd = command_option_value(args, "-c", &["-c", "-e", "-t"]).map(PathBuf::from);
     match st.respawn_window_process(&target, argv, cwd) {
@@ -9580,12 +9581,21 @@ fn pane_argv(
     context: &ClientContext,
     extra_environment: &[&str],
     st: &ServerState,
-    session: Option<&str>,
+    session: SpawnSession<'_>,
 ) -> Vec<String> {
     if context.environment.is_empty() && extra_environment.is_empty() {
         return argv;
     }
-    let environment = st.spawn_environment(session, &context.environment, extra_environment);
+    let environment = st.pane_environment(
+        session,
+        &context.environment,
+        // tmux's "only unattached clients": a command client is the one with no
+        // session of its own, so its `PATH` is what the pane should run with.
+        // hmux's control clients carry the session they attached to, so they
+        // take the attached path here as an attached client does.
+        matches!(context.kind, ClientKind::Command),
+        extra_environment,
+    );
     let mut wrapped = Vec::with_capacity(argv.len() + environment.len() + 2);
     wrapped.push("/usr/bin/env".to_string());
     wrapped.push("-i".to_string());

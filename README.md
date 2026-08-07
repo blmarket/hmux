@@ -33,6 +33,15 @@ control. See ./agentmon/ to see an example agent integration.
   starts with no session, so we keep it alive until the first one is created.
 - `hmux` does not have client, so launching it will create daemon and
   immediately exit. You may want to run `tmux attach` to start using it.
+- **A pane's environment starts from the requesting client's.** tmux's server is
+  forked from its first client, so its global environment is that client's;
+  hmux's daemon starts on its own, so the base for a spawned pane is the
+  environment of the client that asked for the spawn. The `set-environment`
+  layers and everything tmux sets on top of them — `TERM`, `TERM_PROGRAM`,
+  `TERM_PROGRAM_VERSION`, `COLORTERM`, `TMUX`, `TMUX_PANE`, `PATH`, `SHELL`,
+  `PWD` — then apply as tmux's do. hmux also always drops the systemd
+  socket-activation variables (`LISTEN_PID`, `LISTEN_FDS`, `LISTEN_FDNAMES`),
+  which tmux drops only when it was built with systemd support.
 
 ## Usage
 

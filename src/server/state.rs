@@ -59,6 +59,62 @@ pub enum PaneSpec {
     Existing(Box<Pane>),
 }
 
+/// The session a pane's `TMUX` variable names.
+///
+/// `new-session` spawns its first pane before the session exists, so that
+/// session's id can only be filled in at the spawn site — which is where tmux's
+/// `spawn_pane` reads it, since tmux creates the session first.
+pub(crate) enum SpawnSession<'a> {
+    Existing(&'a str),
+    Pending,
+}
+
+/// Stands in for an id [`ServerState::pane_environment`] cannot know yet.
+///
+/// hmux freezes a pane's environment into its argv (`env -i NAME=VALUE …`)
+/// before the pane exists, so the pane id — and, for `new-session`, the session
+/// id — are written as these placeholders and [`fill_spawn_ids`] replaces them
+/// at the spawn, where tmux sets them directly.
+const SPAWN_ID_MARK: char = '\u{1}';
+const PANE_ID_PLACEHOLDER: &str = "\u{1}pane-id\u{1}";
+const SESSION_ID_PLACEHOLDER: &str = "\u{1}session-id\u{1}";
+
+/// `_PATH_DEFPATH`: the path tmux gives a pane whose environment supplies none.
+const DEFAULT_PATH: &str = "/usr/bin:/bin";
+
+/// Resolve the placeholders a pane's frozen environment carries.
+fn fill_spawn_ids(argv: &[String], pane_id: u32, session_id: u32) -> Vec<String> {
+    argv.iter()
+        .map(|argument| {
+            if !argument.contains(SPAWN_ID_MARK) {
+                return argument.clone();
+            }
+            argument
+                .replace(PANE_ID_PLACEHOLDER, &format!("%{pane_id}"))
+                .replace(SESSION_ID_PLACEHOLDER, &session_id.to_string())
+        })
+        .collect()
+}
+
+/// Flatten a built environment into the `NAME=VALUE` entries a spawn takes.
+fn environment_entries(environment: BTreeMap<String, String>) -> Vec<String> {
+    environment
+        .into_iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect()
+}
+
+/// [`fill_spawn_ids`] for a spec that has not been taken apart yet.
+fn fill_spec_spawn_ids(spec: PaneSpec, pane_id: u32, session_id: u32) -> PaneSpec {
+    match spec {
+        PaneSpec::Command(argv) => PaneSpec::Command(fill_spawn_ids(&argv, pane_id, session_id)),
+        PaneSpec::CommandIn(argv, cwd) => {
+            PaneSpec::CommandIn(fill_spawn_ids(&argv, pane_id, session_id), cwd)
+        }
+        spec @ (PaneSpec::Inert | PaneSpec::Existing(_)) => spec,
+    }
+}
+
 fn pane_start_command(spec: &PaneSpec) -> String {
     let argv = match spec {
         PaneSpec::Inert | PaneSpec::Existing(_) => return String::new(),
@@ -7249,6 +7305,11 @@ impl ServerState {
             .get("default-size")
             .and_then(parse_size_pair)
             .map_or((self.default_cols, self.default_rows), clamp_window_size);
+        // tmux creates the session and the pane before spawning the pane's
+        // process, so both ids are in its environment. hmux allocates them once
+        // the spawn has succeeded, so their values are peeked here and consumed
+        // unchanged below.
+        let spec = fill_spec_spawn_ids(spec, self.next_pane_id, self.next_session_id);
         let start_command = pane_start_command(&spec);
         let pane = match spec {
             PaneSpec::Inert => Pane::inert(cols, rows)?,
@@ -7640,7 +7701,8 @@ impl ServerState {
         let session_pos = session_pos.expect("session presence checked above");
         let (cols, rows) = self.default_window_size(session_pos, None, None);
         // Spawn the pane before mutating counters so a spawn failure leaves state
-        // untouched.
+        // untouched; the id the pane will take is peeked for its environment.
+        let argv = fill_spawn_ids(argv, self.next_pane_id, session_id);
         let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
         let pane = Pane::spawn(&refs, cwd, cols, rows)?;
 
@@ -7794,8 +7856,10 @@ impl ServerState {
         }
 
         // tmux's `default_window_size`, as for an appended window. Spawn before
-        // mutating counters so a failure leaves state untouched.
+        // mutating counters so a failure leaves state untouched; the id the pane
+        // will take is peeked for its environment.
         let (cols, rows) = self.default_window_size(session_pos, None, None);
+        let argv = fill_spawn_ids(argv, self.next_pane_id, session_id);
         let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
         let pane = Pane::spawn(&refs, cwd, cols, rows)?;
 
@@ -9651,6 +9715,9 @@ impl ServerState {
         let session_id = self.sessions[t.session].id;
         let window = self.window(t.session, t.window);
         let (cols, rows) = (window.cols, window.rows);
+        // The id the pane will take, peeked for its environment; the allocation
+        // below consumes it.
+        let spec = fill_spec_spawn_ids(spec, self.next_pane_id, session_id);
         let pane = match spec {
             PaneSpec::Inert => Pane::inert(cols, rows)?,
             PaneSpec::Command(argv) => {
@@ -9760,6 +9827,7 @@ impl ServerState {
         let height = height
             .unwrap_or(rows / 4)
             .clamp(1, rows.saturating_sub(1).max(1));
+        let argv = fill_spawn_ids(argv, self.next_pane_id, session_id);
         let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
         let pane = Pane::spawn(&refs, cwd, width, height)?;
         let pane_id = self.next_pane_id;
@@ -11348,6 +11416,82 @@ impl ServerState {
         client_environment: &[String],
         extra: &[&str],
     ) -> Vec<String> {
+        environment_entries(self.session_environment(session, client_environment, extra))
+    }
+
+    /// The `TMUX` variable's value for a session named by `session` — the
+    /// socket, the server's pid, and the session id, as `environ_for_session`
+    /// formats them.
+    fn tmux_variable(&self, session: &str) -> String {
+        format!(
+            "{},{},{}",
+            self.socket_path.display(),
+            std::process::id(),
+            session,
+        )
+    }
+
+    /// The environment tmux's `spawn_pane` gives a pane: everything
+    /// [`Self::spawn_environment`] builds, plus the pane's own name, the `PATH`
+    /// an unattached client would have run with, and the session's shell.
+    ///
+    /// `unattached_client` is tmux's `c != NULL && c->session == NULL` — a
+    /// command client, which is why `tmux new myprogram` finds `myprogram` on
+    /// the caller's path rather than the session's.
+    pub(crate) fn pane_environment(
+        &self,
+        session: SpawnSession<'_>,
+        client_environment: &[String],
+        unattached_client: bool,
+        extra: &[&str],
+    ) -> Vec<String> {
+        let target = match session {
+            SpawnSession::Existing(target) => Some(target),
+            SpawnSession::Pending => None,
+        };
+        let mut environment = self.session_environment(target, client_environment, extra);
+        if matches!(session, SpawnSession::Pending) {
+            // The session is created before its pane is spawned, so its id
+            // replaces the placeholder rather than staying at the `-1` a
+            // sessionless `environ_for_session` would report.
+            environment.insert(
+                "TMUX".to_owned(),
+                self.tmux_variable(SESSION_ID_PLACEHOLDER),
+            );
+        }
+        environment.insert("TMUX_PANE".to_owned(), PANE_ID_PLACEHOLDER.to_owned());
+        if unattached_client {
+            if let Some(path) = client_environment
+                .iter()
+                .filter_map(|entry| entry.split_once('='))
+                .find_map(|(name, value)| (name == "PATH").then_some(value))
+            {
+                environment.insert("PATH".to_owned(), path.to_owned());
+            }
+        }
+        environment
+            .entry("PATH".to_owned())
+            .or_insert_with(|| DEFAULT_PATH.to_owned());
+        environment.insert("SHELL".to_owned(), self.default_shell(target).to_owned());
+        environment_entries(environment)
+    }
+
+    /// The shell a pane spawned for `target` runs: the `default-shell` option,
+    /// which is both the program a command-less pane execs and the `SHELL` its
+    /// process is given.
+    pub(crate) fn default_shell(&self, target: Option<&str>) -> &str {
+        target
+            .and_then(|target| self.option_for_target(target, "default-shell"))
+            .or_else(|| self.global_options().session().get("default-shell"))
+            .unwrap_or("/bin/sh")
+    }
+
+    fn session_environment(
+        &self,
+        session: Option<&str>,
+        client_environment: &[String],
+        extra: &[&str],
+    ) -> BTreeMap<String, String> {
         // The daemon's own environment is the base, as tmux's `global_environ`
         // is; the requesting client's overrides it, and an explicit
         // `set-environment -g` overrides that in turn.
@@ -11402,14 +11546,14 @@ impl ServerState {
             super::TMUX_VERSION.to_owned(),
         );
         environment.insert("COLORTERM".to_owned(), "truecolor".to_owned());
+        // A systemd build clears the socket-activation variables, so a pane
+        // never inherits fds the server was handed.
+        for name in ["LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"] {
+            environment.remove(name);
+        }
         environment.insert(
             "TMUX".to_owned(),
-            format!(
-                "{},{},{}",
-                self.socket_path.display(),
-                std::process::id(),
-                session.map_or(-1, |session| session.id as i64),
-            ),
+            self.tmux_variable(&session.map_or(-1, |session| session.id as i64).to_string()),
         );
         for entry in extra {
             if let Some((name, value)) = entry.split_once('=') {
@@ -11417,9 +11561,6 @@ impl ServerState {
             }
         }
         environment
-            .into_iter()
-            .map(|(name, value)| format!("{name}={value}"))
-            .collect()
     }
 
     /// The environment a process started by the server — a `#()` job, a
@@ -15108,13 +15249,18 @@ impl ServerState {
     ) -> io::Result<()> {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let session_id = self.sessions[resolved.session].id;
-        let (cols, rows, saved) = {
+        let (cols, rows, saved, pane_id) = {
             let node = &self.window(resolved.session, resolved.window).panes[resolved.pane];
             let (cols, rows) = node.pane.size();
-            (cols, rows, node.pane.spawn_spec())
+            (cols, rows, node.pane.spawn_spec(), node.id)
         };
         let spec = match argv {
-            Some(argv) if !argv.is_empty() => PaneSpawnSpec { argv, cwd },
+            // The pane keeps its id across a respawn, so a saved spec already
+            // names it and only a rebuilt argv has a placeholder to fill.
+            Some(argv) if !argv.is_empty() => PaneSpawnSpec {
+                argv: fill_spawn_ids(&argv, pane_id, session_id),
+                cwd,
+            },
             _ => match saved {
                 Some(spec) => spec,
                 None => return Ok(()),
@@ -15185,10 +15331,17 @@ impl ServerState {
             return Ok(());
         }
         let argv = argv.expect("nonempty argv checked above");
+        let session_id = self.sessions[resolved.session].id;
         let pane = {
             let window = self.window(resolved.session, resolved.window);
             let (cols, rows) = (window.cols, window.rows);
-            let spec = PaneSpawnSpec { argv, cwd };
+            // The surviving pane keeps its id, which its rebuilt environment
+            // still has to be told.
+            let id = window.panes[resolved.pane].id;
+            let spec = PaneSpawnSpec {
+                argv: fill_spawn_ids(&argv, id, session_id),
+                cwd,
+            };
             Pane::spawn_from_spec(&spec, cols, rows)?
         };
         let window = self.window_mut(resolved.session, resolved.window);
