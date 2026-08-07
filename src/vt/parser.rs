@@ -538,6 +538,16 @@ impl Parser {
             self.state = State::Ground;
             return;
         }
+        // A parameter list `input_split` refuses drops the sequence too:
+        // `input_csi_dispatch` splits before it looks a handler up, and returns
+        // where the split fails.
+        let Some(params) = split_params(&self.param) else {
+            self.raw.clear();
+            self.param.clear();
+            self.intermediate.clear();
+            self.state = State::Ground;
+            return;
+        };
         // The private marker is an intermediate in `0x3c..=0x3f` collected
         // before the parameters; anything else stays an ordinary intermediate.
         let private = self
@@ -550,7 +560,6 @@ impl Parser {
         } else {
             std::mem::take(&mut self.intermediate)
         };
-        let params = split_params(&self.param);
         self.dispatch(
             TokenKind::Csi {
                 private,
@@ -657,7 +666,9 @@ impl Parser {
         let mut data = std::mem::take(&mut self.string);
         // The first collected byte is the sequence's final byte, not payload.
         let final_byte = if data.is_empty() { 0 } else { data.remove(0) };
-        let params = split_params(&self.param);
+        // Only the sixel branch of `input_dcs_dispatch` splits at all, and a
+        // split it refuses stops that branch rather than the sequence.
+        let params = split_params(&self.param).unwrap_or_default();
         let intermediates = std::mem::take(&mut self.intermediate);
         self.dispatch(
             TokenKind::Dcs {
@@ -804,22 +815,46 @@ impl Parser {
     }
 }
 
+/// tmux's `param_list` holds this many positions, and `input_split` gives up on
+/// the sequence — not on the excess — once they are all used.
+const PARAM_LIMIT: usize = 24;
+
 /// tmux splits `param_buf` on `;`, reads each position as a number, and treats
 /// an empty position as "not given". A position may carry colon-separated
 /// sub-parameters, which SGR 38/48 use for direct colours.
-fn split_params(buffer: &[u8]) -> Vec<Param> {
+///
+/// `None` is `input_split` returning -1: the sequence is abandoned before any
+/// handler sees it, which is what a position too large for an `int` and a
+/// twenty-fifth position both do.
+fn split_params(buffer: &[u8]) -> Option<Vec<Param>> {
     if buffer.is_empty() {
-        return Vec::new();
+        return Some(Vec::new());
     }
-    buffer
-        .split(|byte| *byte == b';')
-        .map(|position| {
+    let mut params = Vec::new();
+    for position in buffer.split(|byte| *byte == b';') {
+        let param = if position.is_empty() {
+            // INPUT_MISSING: the position was left for the handler's default.
+            Param::default()
+        } else if position.contains(&b':') {
+            // INPUT_STRING: never read as a number, so its size is nobody's
+            // business until SGR takes the sub-parameters apart.
             let mut parts = position.split(|byte| *byte == b':');
-            let value = parts.next().map(parse_number).unwrap_or(None);
+            let value = parts.next().and_then(parse_number);
             let subs = parts.map(parse_number).collect();
             Param { value, subs }
-        })
-        .collect()
+        } else {
+            // INPUT_NUMBER.
+            Param {
+                value: parse_number(position),
+                subs: Vec::new(),
+            }
+        };
+        params.push(param);
+        if params.len() == PARAM_LIMIT {
+            return None;
+        }
+    }
+    Some(params)
 }
 
 fn parse_number(digits: &[u8]) -> Option<u32> {
@@ -1198,6 +1233,24 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_twenty_fourth_parameter_abandons_the_sequence() {
+        // `param_list` holds 24 positions and `input_split` gives up once they
+        // are all used, so the sequence goes rather than the excess.
+        let mut payload = b"\x1b[".to_vec();
+        payload.extend(std::iter::repeat_n(&b"1;"[..], 22).flatten().copied());
+        payload.extend_from_slice(b"5B");
+        assert_eq!(
+            tokens(&payload).len(),
+            1,
+            "23 positions still dispatch: {payload:?}"
+        );
+        let mut payload = b"\x1b[".to_vec();
+        payload.extend(std::iter::repeat_n(&b"1;"[..], 23).flatten().copied());
+        payload.extend_from_slice(b"5B");
+        assert!(tokens(&payload).is_empty(), "24 positions drop the sequence");
     }
 
     #[test]
