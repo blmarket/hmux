@@ -6520,7 +6520,10 @@ impl ServerState {
         self.client_renders.publish_all(reason);
     }
 
-    pub(crate) fn option_changed(&self, name: &str) {
+    pub(crate) fn option_changed(&mut self, name: &str) {
+        if name == "monitor-silence" {
+            self.reset_silence_timers();
+        }
         if option_affects_render(name) {
             self.invalidate_all_clients(option_invalidation(name));
         }
@@ -8138,6 +8141,22 @@ impl ServerState {
         let session_id = self.sessions[session_pos].id;
         self.invalidate_session(session_id, RenderInvalidation::STATUS);
         Ok(())
+    }
+
+    /// tmux's `alerts_reset_all`, which `options_push_changes` runs whenever
+    /// `monitor-silence` is set. Every window drops its raised silence
+    /// condition and restarts its timer from the option change, so a window
+    /// that has been quiet since before the change is not alerted for the
+    /// silence that preceded it.
+    fn reset_silence_timers(&mut self) {
+        let now = std::time::Instant::now();
+        for window in self.windows.values_mut() {
+            window.pending_alerts &= !ALERT_SILENCE;
+        }
+        for window_id in self.windows.keys().copied().collect::<Vec<_>>() {
+            self.window_last_activity.insert(window_id, now);
+        }
+        self.silence_alerted.clear();
     }
 
     pub(crate) fn alert_poll_timeout(&self) -> Option<std::time::Duration> {
