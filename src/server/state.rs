@@ -5572,6 +5572,286 @@ impl ServerState {
                 self.bind_key("copy-mode", meta, repeat, false, None);
             }
         }
+
+        // The prefix table is also a user-visible catalog: `list-keys -F`
+        // exposes these notes and repeat flags even when a client never
+        // exercises the corresponding binding. Keep the catalog complete so
+        // listing it has the same shape as tmux's default table.
+        const PREFIX_DEFAULTS: &[(&str, bool, &str, &str)] = &[
+            ("Space", false, "Select next layout", "next-layout"),
+            ("!", false, "Break pane to a new window", "break-pane"),
+            ("\"", false, "Split window vertically", "split-window"),
+            ("#", false, "List all paste buffers", "list-buffers"),
+            ("$", false, "Rename current session", "rename-session"),
+            ("%", false, "Split window horizontally", "split-window -h"),
+            ("&", false, "Kill current window", "kill-window"),
+            (
+                "'",
+                false,
+                "Prompt for window index to select",
+                "select-window",
+            ),
+            ("(", false, "Switch to previous client", "switch-client -p"),
+            (")", false, "Switch to next client", "switch-client -n"),
+            ("*", false, "New floating pane", "new-window"),
+            (",", false, "Rename current window", "rename-window"),
+            (
+                "-",
+                false,
+                "Delete the most recent paste buffer",
+                "delete-buffer",
+            ),
+            (".", false, "Move the current window", "move-window"),
+            ("/", false, "Describe key binding", "list-keys"),
+            ("0", false, "Select window 0", "select-window -t :=0"),
+            ("1", false, "Select window 1", "select-window -t :=1"),
+            ("2", false, "Select window 2", "select-window -t :=2"),
+            ("3", false, "Select window 3", "select-window -t :=3"),
+            ("4", false, "Select window 4", "select-window -t :=4"),
+            ("5", false, "Select window 5", "select-window -t :=5"),
+            ("6", false, "Select window 6", "select-window -t :=6"),
+            ("7", false, "Select window 7", "select-window -t :=7"),
+            ("8", false, "Select window 8", "select-window -t :=8"),
+            ("9", false, "Select window 9", "select-window -t :=9"),
+            (":", false, "Prompt for a command", "command-prompt"),
+            (
+                ";",
+                false,
+                "Move to the previously active pane",
+                "last-pane",
+            ),
+            ("<", false, "Display window menu", "display-menu"),
+            (
+                "=",
+                false,
+                "Choose a paste buffer from a list",
+                "choose-buffer -Z",
+            ),
+            (">", false, "Display pane menu", "display-menu"),
+            ("?", false, "List key bindings", "list-keys -N"),
+            ("C", false, "Customize options", "customize-mode -Z"),
+            (
+                "D",
+                false,
+                "Choose and detach a client from a list",
+                "choose-client -Z",
+            ),
+            ("E", false, "Spread panes out evenly", "select-layout -E"),
+            ("L", false, "Switch to the last client", "switch-client -l"),
+            ("M", false, "Clear the marked pane", "select-pane -M"),
+            ("[", false, "Enter copy mode", "copy-mode"),
+            (
+                "]",
+                false,
+                "Paste the most recent paste buffer",
+                "paste-buffer -p",
+            ),
+            ("c", false, "Create a new window", "new-window"),
+            ("d", false, "Detach the current client", "detach-client"),
+            ("f", false, "Search for a pane", "find-window"),
+            ("i", false, "Display window information", "display-message"),
+            (
+                "l",
+                false,
+                "Select the previously current window",
+                "last-window",
+            ),
+            ("m", false, "Toggle the marked pane", "select-pane -m"),
+            ("n", false, "Select the next window", "next-window"),
+            ("o", false, "Select the next pane", "select-pane -t :.+"),
+            ("p", false, "Select the previous window", "previous-window"),
+            ("q", false, "Display pane numbers", "display-panes"),
+            ("r", false, "Redraw the current client", "refresh-client"),
+            (
+                "s",
+                false,
+                "Choose a session from a list",
+                "choose-tree -Zs",
+            ),
+            ("t", false, "Show a clock", "clock-mode"),
+            ("w", false, "Choose a window from a list", "choose-tree -Zw"),
+            ("x", false, "Kill the active pane", "kill-pane"),
+            ("z", false, "Zoom the active pane", "resize-pane -Z"),
+            (
+                "{",
+                false,
+                "Swap the active pane with the pane above",
+                "swap-pane -U",
+            ),
+            (
+                "}",
+                false,
+                "Swap the active pane with the pane below",
+                "swap-pane -D",
+            ),
+            ("~", false, "Show messages", "show-messages"),
+            (
+                "DC",
+                true,
+                "Reset so the visible part of the window follows the cursor",
+                "refresh-client -c",
+            ),
+            (
+                "PPage",
+                false,
+                "Enter copy mode and scroll up",
+                "copy-mode -u",
+            ),
+            (
+                "Up",
+                true,
+                "Select the pane above the active pane",
+                "select-pane -U",
+            ),
+            (
+                "Down",
+                true,
+                "Select the pane below the active pane",
+                "select-pane -D",
+            ),
+            (
+                "Left",
+                true,
+                "Select the pane to the left of the active pane",
+                "select-pane -L",
+            ),
+            (
+                "Right",
+                true,
+                "Select the pane to the right of the active pane",
+                "select-pane -R",
+            ),
+            (
+                "M-1",
+                false,
+                "Set the even-horizontal layout",
+                "select-layout even-horizontal",
+            ),
+            (
+                "M-2",
+                false,
+                "Set the even-vertical layout",
+                "select-layout even-vertical",
+            ),
+            (
+                "M-3",
+                false,
+                "Set the main-horizontal layout",
+                "select-layout main-horizontal",
+            ),
+            (
+                "M-4",
+                false,
+                "Set the main-vertical layout",
+                "select-layout main-vertical",
+            ),
+            (
+                "M-5",
+                false,
+                "Select the tiled layout",
+                "select-layout tiled",
+            ),
+            (
+                "M-6",
+                false,
+                "Set the main-horizontal-mirrored layout",
+                "select-layout main-horizontal-mirrored",
+            ),
+            (
+                "M-7",
+                false,
+                "Set the main-vertical-mirrored layout",
+                "select-layout main-vertical-mirrored",
+            ),
+            (
+                "M-n",
+                false,
+                "Select the next window with an alert",
+                "next-window -a",
+            ),
+            (
+                "M-o",
+                false,
+                "Rotate through the panes in reverse",
+                "rotate-window -D",
+            ),
+            (
+                "M-p",
+                false,
+                "Select the previous window with an alert",
+                "previous-window -a",
+            ),
+            ("M-Up", true, "Resize the pane up by 5", "resize-pane -U 5"),
+            (
+                "M-Down",
+                true,
+                "Resize the pane down by 5",
+                "resize-pane -D 5",
+            ),
+            (
+                "M-Left",
+                true,
+                "Resize the pane left by 5",
+                "resize-pane -L 5",
+            ),
+            (
+                "M-Right",
+                true,
+                "Resize the pane right by 5",
+                "resize-pane -R 5",
+            ),
+            ("C-b", false, "Send the prefix key", "send-prefix"),
+            ("C-o", false, "Rotate through the panes", "rotate-window"),
+            ("C-z", false, "Suspend the current client", "suspend-client"),
+            ("C-Up", true, "Resize the pane up", "resize-pane -U"),
+            ("C-Down", true, "Resize the pane down", "resize-pane -D"),
+            ("C-Left", true, "Resize the pane left", "resize-pane -L"),
+            ("C-Right", true, "Resize the pane right", "resize-pane -R"),
+            (
+                "S-Up",
+                true,
+                "Move the visible part of the window up",
+                "refresh-client -U 10",
+            ),
+            (
+                "S-Down",
+                true,
+                "Move the visible part of the window down",
+                "refresh-client -D 10",
+            ),
+            (
+                "S-Left",
+                true,
+                "Move the visible part of the window left",
+                "refresh-client -L 10",
+            ),
+            (
+                "S-Right",
+                true,
+                "Move the visible part of the window right",
+                "refresh-client -R 10",
+            ),
+        ];
+        for &(name, repeat, note, command) in PREFIX_DEFAULTS {
+            let key =
+                parse_key_name(name).unwrap_or_else(|| panic!("invalid default key name: {name}"));
+            if let Some(binding) = self
+                .key_tables
+                .get_mut("prefix")
+                .and_then(|bindings| bindings.get_mut(&key))
+            {
+                binding.repeat = repeat;
+                binding.note = Some(note.to_string());
+            } else {
+                self.bind_key(
+                    "prefix",
+                    key,
+                    super::command::binding_words(command),
+                    repeat,
+                    Some(note.to_string()),
+                );
+            }
+        }
     }
 
     pub fn sessions(&self) -> &[Session] {
