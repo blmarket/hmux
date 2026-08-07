@@ -128,12 +128,15 @@ pub(crate) enum ExtendedKeysFormat {
     Xterm,
 }
 
-/// Server options that change how a key is encoded.
+/// Options carried into the pane key encoder.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct PaneKeyOptions {
     /// The `backspace` option: what `BSpace` is actually sent as.
     pub(crate) backspace: KeyCode,
     pub(crate) extended_keys_format: ExtendedKeysFormat,
+    /// The retained window option. tmux 3.7b accepts it but no longer uses it
+    /// while encoding keys, so the encoder deliberately ignores this value.
+    pub(crate) xterm_keys: bool,
 }
 
 impl Default for PaneKeyOptions {
@@ -147,6 +150,7 @@ impl Default for PaneKeyOptions {
             // alone.
             backspace: KeyCode::new(KeyBase::Char('\u{7f}'), Modifiers::default()),
             extended_keys_format: ExtendedKeysFormat::default(),
+            xterm_keys: true,
         }
     }
 }
@@ -196,6 +200,13 @@ pub(crate) fn encode(
         mut keypad,
         mut implied_meta,
     } = key;
+    // tmux 3.7b accepts `xterm-keys` but no longer uses it in `input_key`.
+    let _ = options.xterm_keys;
+    let PaneKeyOptions {
+        backspace,
+        extended_keys_format,
+        ..
+    } = options;
 
     if matches!(
         code.base,
@@ -222,7 +233,7 @@ pub(crate) fn encode(
     // Backspace is whatever the `backspace` option says it is, which is how
     // tmux lets a terminal whose `kbs` is `^H` reach programs unmangled.
     if code.base == KeyBase::Special(SpecialKey::Backspace) {
-        let replacement = options.backspace;
+        let replacement = backspace;
         if code.modifiers == Modifiers::default() {
             return PaneKeyEncoding::encoded(
                 backspace_byte(replacement).map_or_else(Vec::new, |byte| vec![byte]),
@@ -298,15 +309,14 @@ pub(crate) fn encode(
         return PaneKeyEncoding::handled();
     }
 
-    let format = options.extended_keys_format;
     match modes.extended {
-        ExtendedKeys::All => append_extended(Vec::new(), code, format),
+        ExtendedKeys::All => append_extended(Vec::new(), code, extended_keys_format),
         ExtendedKeys::Standard => {
             let attempt = mode1(code);
             if attempt.complete {
                 attempt
             } else {
-                append_extended(attempt.bytes, code, format)
+                append_extended(attempt.bytes, code, extended_keys_format)
             }
         }
         ExtendedKeys::Off => vt10x(code),
