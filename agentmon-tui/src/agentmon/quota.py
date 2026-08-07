@@ -23,6 +23,8 @@ from pathlib import Path
 CODEX_USAGE_URL = "https://chatgpt.com/backend-api/codex/usage"
 CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 DEFAULT_TTL_SECONDS = 300.0
+CLAUDE_SESSION_SECONDS = 5 * 3600.0
+CLAUDE_WEEKLY_SECONDS = 7 * 86400.0
 
 Fetcher = Callable[[str, dict[str, str]], dict]
 
@@ -37,10 +39,25 @@ class QuotaWindow:
     label: str
     used_percent: float
     resets_at: datetime | None = None
+    window_seconds: float | None = None
 
     @property
     def remaining_percent(self) -> float:
         return max(0.0, 100.0 - self.used_percent)
+
+    def pace_percent(self, now: datetime) -> float | None:
+        """Percentage of the window that has elapsed, or None if unknown.
+
+        Providers report when a window resets but not when it started, so the
+        start is derived by subtracting the window length from the reset time.
+        Comparing this against `used_percent` says whether spending is ahead of
+        or behind an even burn across the window.
+        """
+        if self.resets_at is None or not self.window_seconds:
+            return None
+        remaining = (self.resets_at - now).total_seconds()
+        elapsed = self.window_seconds - remaining
+        return max(0.0, min(100.0, elapsed / self.window_seconds * 100.0))
 
 
 @dataclass(frozen=True)
@@ -82,6 +99,12 @@ def _window_span(seconds: object) -> str:
     return f"{round(seconds / 3600)}h"
 
 
+def _window_seconds(value: object) -> float | None:
+    if not isinstance(value, (int, float)) or value <= 0:
+        return None
+    return float(value)
+
+
 def _epoch_datetime(value: object) -> datetime | None:
     if not isinstance(value, (int, float)):
         return None
@@ -114,6 +137,7 @@ def parse_codex_usage(payload: dict) -> list[QuotaWindow]:
                 label=f"Codex {span}",
                 used_percent=float(window.get("used_percent") or 0.0),
                 resets_at=_epoch_datetime(window.get("reset_at")),
+                window_seconds=_window_seconds(window.get("limit_window_seconds")),
             )
         )
     return quotas
@@ -133,6 +157,16 @@ def _claude_limit_label(limit: dict) -> str:
     return f"Claude {kind}" if isinstance(kind, str) else "Claude"
 
 
+def _claude_limit_seconds(limit: dict) -> float | None:
+    """Window length for a Claude limit, which the API states only by kind."""
+    kind = limit.get("kind")
+    if kind == "session":
+        return CLAUDE_SESSION_SECONDS
+    if kind in ("weekly_all", "weekly_scoped"):
+        return CLAUDE_WEEKLY_SECONDS
+    return None
+
+
 def parse_claude_usage(payload: dict) -> list[QuotaWindow]:
     """Extract session/weekly windows from the Claude OAuth usage response."""
     limits = payload.get("limits")
@@ -147,13 +181,17 @@ def parse_claude_usage(payload: dict) -> list[QuotaWindow]:
                     label=_claude_limit_label(limit),
                     used_percent=float(limit.get("percent") or 0.0),
                     resets_at=_iso_datetime(limit.get("resets_at")),
+                    window_seconds=_claude_limit_seconds(limit),
                 )
             )
         if quotas:
             return quotas
 
     quotas = []
-    for key, label in (("five_hour", "Claude 5h"), ("seven_day", "Claude weekly")):
+    for key, label, seconds in (
+        ("five_hour", "Claude 5h", CLAUDE_SESSION_SECONDS),
+        ("seven_day", "Claude weekly", CLAUDE_WEEKLY_SECONDS),
+    ):
         window = payload.get(key)
         if isinstance(window, dict):
             quotas.append(
@@ -162,6 +200,7 @@ def parse_claude_usage(payload: dict) -> list[QuotaWindow]:
                     label=label,
                     used_percent=float(window.get("utilization") or 0.0),
                     resets_at=_iso_datetime(window.get("resets_at")),
+                    window_seconds=seconds,
                 )
             )
     if not quotas:
@@ -290,6 +329,7 @@ class QuotaService:
                         label=str(quota["label"]),
                         used_percent=float(quota["used_percent"]),
                         resets_at=_epoch_datetime(quota.get("resets_at")),
+                        window_seconds=_window_seconds(quota.get("window_seconds")),
                     )
                     for quota in raw["quotas"]
                 ),
@@ -309,6 +349,7 @@ class QuotaService:
                     "resets_at": (
                         quota.resets_at.timestamp() if quota.resets_at else None
                     ),
+                    "window_seconds": quota.window_seconds,
                 }
                 for quota in report.quotas
             ],

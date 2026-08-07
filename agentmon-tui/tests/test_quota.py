@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -101,6 +101,49 @@ def test_parses_claude_legacy_fields_without_limits() -> None:
     payload = {key: CLAUDE_PAYLOAD[key] for key in ("five_hour", "seven_day")}
     quotas = parse_claude_usage(payload)
     assert [quota.label for quota in quotas] == ["Claude 5h", "Claude weekly"]
+
+
+def test_parsed_windows_carry_their_length_for_pacing() -> None:
+    codex = parse_codex_usage(CODEX_PAYLOAD)
+    assert codex[0].window_seconds == 604800.0
+    claude = parse_claude_usage(CLAUDE_PAYLOAD)
+    assert [quota.window_seconds for quota in claude] == [18000.0, 604800.0, 604800.0]
+    legacy = parse_claude_usage(
+        {key: CLAUDE_PAYLOAD[key] for key in ("five_hour", "seven_day")}
+    )
+    assert [quota.window_seconds for quota in legacy] == [18000.0, 604800.0]
+
+
+def test_unknown_claude_limit_kind_has_no_window_length() -> None:
+    quotas = parse_claude_usage({"limits": [{"kind": "monthly", "percent": 3}]})
+    assert quotas[0].window_seconds is None
+    assert quotas[0].pace_percent(datetime.now(timezone.utc)) is None
+
+
+def test_pace_percent_tracks_elapsed_share_of_the_window() -> None:
+    now = datetime(2026, 8, 6, 12, tzinfo=timezone.utc)
+    quota = QuotaWindow(
+        "claude",
+        "Claude 5h",
+        20.0,
+        resets_at=now + timedelta(hours=1),
+        window_seconds=5 * 3600.0,
+    )
+    assert quota.pace_percent(now) == pytest.approx(80.0)
+
+
+def test_pace_percent_is_unavailable_without_a_reset_time() -> None:
+    quota = QuotaWindow("codex", "Codex weekly", 20.0, window_seconds=604800.0)
+    assert quota.pace_percent(datetime.now(timezone.utc)) is None
+
+
+def test_pace_percent_clamps_outside_the_window() -> None:
+    now = datetime(2026, 8, 6, 12, tzinfo=timezone.utc)
+    window = 5 * 3600.0
+    stale = QuotaWindow("claude", "Claude 5h", 20.0, now - timedelta(hours=2), window)
+    assert stale.pace_percent(now) == 100.0
+    early = QuotaWindow("claude", "Claude 5h", 20.0, now + timedelta(hours=9), window)
+    assert early.pace_percent(now) == 0.0
 
 
 def test_claude_payload_without_data_is_an_error() -> None:
@@ -220,6 +263,7 @@ def test_report_reuses_disk_cache_across_instances(
     assert second_calls == []
     assert [quota.label for quota in report.quotas][0] == "Codex weekly"
     assert report.quotas[0].resets_at is not None
+    assert report.quotas[0].window_seconds == 604800.0
 
 
 def test_provider_failure_is_reported_not_raised(

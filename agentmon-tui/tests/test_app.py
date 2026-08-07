@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import nullcontext
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -36,7 +36,7 @@ from agentmon.app import (
     agent_badge,
     main,
 )
-from agentmon.quota import QuotaReport
+from agentmon.quota import QuotaReport, QuotaWindow
 from agentmon.model import AgentRun, LaunchDraft, PromptHistory, Repository
 from agentmon.services import AgentmonService, CommandError, SocketSelection
 from agentmon.transcript import Transcript, TranscriptMessage
@@ -1554,6 +1554,55 @@ def test_quota_dialog_toggles_and_shows_all_subscription_windows() -> None:
             assert not isinstance(app.screen, QuotaScreen)
 
     asyncio.run(exercise())
+
+
+def test_quota_rows_pair_the_usage_bar_with_a_pacing_bar() -> None:
+    now = datetime(2026, 8, 6, 12, tzinfo=timezone.utc)
+    report = QuotaReport(
+        fetched_at=now,
+        quotas=(
+            # 20% of the quota spent 80% of the way through the window.
+            QuotaWindow("claude", "Claude 5h", 20.0, now + timedelta(hours=1), 18000.0),
+            QuotaWindow("codex", "Codex weekly", 60.0, now + timedelta(days=1)),
+        ),
+    )
+    rendered = QuotaScreen._render_report(report, now)
+    header, paced, unpaced = str(rendered).splitlines()
+
+    # The column names live in the header, not repeated on every row.
+    assert header.split() == ["used", "pace", "left"]
+
+    assert "    20%" in paced and "   -60%" in paced
+    assert paced.endswith("1h00m")
+    # Both bars share one row of half blocks: foreground is usage, background
+    # is pacing, so the 20%/80% split shows up as three styled runs.
+    plain = str(rendered)
+    bar = [span for span in rendered.spans if "▀" in plain[span.start : span.end]]
+    assert len(bar) == 3
+    assert bar[0].end - bar[0].start == round(0.2 * QuotaScreen.BAR_WIDTH)
+    assert bar[1].end - bar[1].start == round(0.6 * QuotaScreen.BAR_WIDTH)
+
+    # A window of unknown length keeps the plain full-height usage bar.
+    assert "    60%" in unpaced
+    assert "%" not in unpaced.split("60%", 1)[1]
+    assert "█" in unpaced
+    # An unknown window length falls back to the remaining time for granularity.
+    assert unpaced.endswith("1d0h")
+
+
+def test_quota_reset_countdown_granularity_follows_the_window() -> None:
+    now = datetime(2026, 8, 6, 12, tzinfo=timezone.utc)
+    week, session = 604800.0, 18000.0
+
+    def countdown(delta: timedelta, window: float | None) -> str:
+        quota = QuotaWindow("claude", "w", 1.0, now + delta, window)
+        return QuotaScreen._reset_countdown(quota, now)
+
+    assert countdown(timedelta(days=3, hours=4, minutes=30), week) == "3d4h"
+    assert countdown(timedelta(hours=20, minutes=30), week) == "20h"
+    assert countdown(timedelta(hours=2, minutes=5), session) == "2h05m"
+    assert countdown(timedelta(minutes=9, seconds=59), session) == "9m"
+    assert countdown(timedelta(seconds=-1), week) == "now"
 
 
 def test_quota_dialog_reports_provider_errors() -> None:
