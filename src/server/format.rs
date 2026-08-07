@@ -739,9 +739,15 @@ impl Expander<'_> {
         if let Some(rest) = content.strip_prefix("c:") {
             return colour_rgb(&self.expand(rest, vars, depth));
         }
-        // `q:BODY` — quote shell metacharacters in the resolved value.
-        if let Some(rest) = content.strip_prefix("q:") {
-            return quote_shell(&self.resolve_body(rest, vars, depth));
+        // `q[:/h|/e|/a]:BODY` — quote shell metacharacters, format-style
+        // hashes, or a command argument in the resolved value.
+        if let Some((style, body)) = parse_quote_modifier(content) {
+            let value = self.resolve_body(body, vars, depth);
+            return match style {
+                QuoteStyle::Shell => quote_shell(&value),
+                QuoteStyle::Style => quote_style(&value),
+                QuoteStyle::Arguments => quote_argument(&value),
+            };
         }
         // `=N:BODY` / `=-N:BODY` — truncate the resolved body to N display columns
         // from the start (N>0) or the end (N<0).
@@ -1375,6 +1381,84 @@ fn quote_shell(value: &str) -> String {
     quoted
 }
 
+fn quote_style(value: &str) -> String {
+    let mut quoted = String::with_capacity(value.len());
+    for character in value.chars() {
+        if character == '#' {
+            quoted.push('#');
+        }
+        quoted.push(character);
+    }
+    quoted
+}
+
+fn quote_argument(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_string();
+    }
+
+    let quote = if value
+        .chars()
+        .any(|character| " #';${}%".contains(character))
+    {
+        Some('"')
+    } else if value.chars().any(|character| " \"".contains(character)) {
+        Some('\'')
+    } else {
+        None
+    };
+
+    if value.len() == 1 && value != " " && (quote.is_some() || value == "~") {
+        return format!("\\{value}");
+    }
+
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            '\u{1b}' => escaped.push_str("\\e"),
+            '\\' => escaped.push_str("\\\\"),
+            '"' if quote == Some('"') => escaped.push_str("\\\""),
+            character if character.is_control() => {
+                escaped.push_str(&format!("\\{:03o}", character as u32));
+            }
+            character => escaped.push(character),
+        }
+    }
+
+    match quote {
+        Some(quote) => format!("{quote}{escaped}{quote}"),
+        None if escaped.starts_with('~') => format!("\\{escaped}"),
+        None => escaped,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum QuoteStyle {
+    Shell,
+    Style,
+    Arguments,
+}
+
+fn parse_quote_modifier(content: &str) -> Option<(QuoteStyle, &str)> {
+    if let Some(body) = content.strip_prefix("q:") {
+        return Some((QuoteStyle::Shell, body));
+    }
+
+    let rest = content.strip_prefix("q/")?;
+    let (flags, body) = rest.split_once(':')?;
+    let style = if flags.contains('e') || flags.contains('h') {
+        QuoteStyle::Style
+    } else if flags.contains('a') {
+        QuoteStyle::Arguments
+    } else {
+        return None;
+    };
+    Some((style, body))
+}
+
 fn colour_rgb(value: &str) -> String {
     let Some(colour) = parse_colour(value) else {
         return String::new();
@@ -2003,6 +2087,16 @@ mod tests {
     #[test]
     fn literal_is_not_expanded() {
         assert_eq!(expand("#{l:#{session_name}}", &vars()), "#{session_name}");
+    }
+
+    #[test]
+    fn quote_modifiers_escape_styles_and_arguments() {
+        let mut v = vars();
+        v.set("value", "hash#value with spaces");
+        assert_eq!(expand("#{q:value}", &v), "hash\\#value\\ with\\ spaces");
+        assert_eq!(expand("#{q/h:value}", &v), "hash##value with spaces");
+        assert_eq!(expand("#{q/e:value}", &v), "hash##value with spaces");
+        assert_eq!(expand("#{q/a:value}", &v), "\"hash#value with spaces\"");
     }
 
     #[test]
