@@ -38,7 +38,7 @@ from agentmon.app import (
 )
 from agentmon.quota import QuotaReport, QuotaWindow
 from agentmon.model import AgentRun, LaunchDraft, PromptHistory, Repository
-from agentmon.services import AgentmonService, CommandError, SocketSelection
+from agentmon.services import AgentmonContext, AgentmonService
 from agentmon.transcript import Transcript, TranscriptMessage
 
 
@@ -662,13 +662,8 @@ def test_main_does_not_require_cwd_to_be_a_git_repository(
 
     monkeypatch.setattr(
         app_module,
-        "discover_repository",
-        lambda: (_ for _ in ()).throw(CommandError("not a Git repository")),
-    )
-    monkeypatch.setattr(
-        app_module,
-        "discover_socket",
-        lambda **_kwargs: SocketSelection("/tmp/hmux.sock"),
+        "discover_context",
+        lambda **_kwargs: AgentmonContext(repository=None, socket="/tmp/hmux.sock"),
     )
     monkeypatch.setattr(app_module, "AgentmonApp", FakeApp)
 

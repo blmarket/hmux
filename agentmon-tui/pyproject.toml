@@ -15,6 +15,7 @@ dev = [
 
 [project.scripts]
 agentmon = "agentmon.app:main"
+looper = "agentmon.looper:main"
 demo = "agentmon.transcript_demo:main"
 
 [build-system]

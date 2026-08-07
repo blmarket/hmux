@@ -13,6 +13,8 @@ from agentmon.model import AgentRun, LaunchDraft, Repository
 from agentmon.services import (
     AgentmonService,
     CommandError,
+    PaneStatus,
+    SocketSelection,
     discover_repository,
     discover_socket,
     is_claude_rate_limit_options_dialog,
@@ -1449,3 +1451,232 @@ def test_restart_launch_recreates_existing_branch_from_dashboard_branch(
     add = next(call for call in calls if "worktree" in call and "add" in call)
     assert "--force" not in remove
     assert add[-4:] == ["add", "-B", "restart-me", str(worktree)]
+
+
+def _pane_rows(*panes: tuple[str, str, str]) -> str:
+    return "".join(f"{pane}\t{agent}\t{state}\n" for pane, agent, state in panes)
+
+
+def test_pane_status_picks_one_pane_out_of_the_server_listing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agentmon import services
+
+    rows = _pane_rows(("%1", "", ""), ("%2", "codex", "working"))
+    monkeypatch.setattr(
+        services,
+        "_run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, rows, ""),
+    )
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+
+    assert service.pane_status("%2") == PaneStatus("%2", "codex", "working")
+    # An agentless pane keeps a readable state rather than an empty string.
+    assert service.pane_status("%1") == PaneStatus("%1", "", "none")
+    assert service.pane_status("%9") is None
+
+
+def test_pane_status_reports_a_dead_server_as_a_gone_pane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agentmon import services
+
+    monkeypatch.setattr(
+        services,
+        "_run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 1, "", "no server"),
+    )
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+
+    assert service.pane_status("%2") is None
+
+
+def test_wait_for_pane_state_returns_the_state_it_was_asked_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+    states = iter(["working", "working", "idle"])
+    monkeypatch.setattr(
+        service, "pane_status", lambda pane: PaneStatus(pane, "codex", next(states))
+    )
+
+    assert service.wait_for_pane_state("%2", ("idle", "blocked"), poll=0.001) == "idle"
+
+
+def test_wait_for_pane_state_ends_when_the_pane_disappears(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+    monkeypatch.setattr(service, "pane_status", lambda _pane: None)
+
+    assert service.wait_for_pane_state("%2", ("idle",), timeout=5, poll=0.001) == "exited"
+
+
+def test_wait_for_pane_state_gives_up_at_the_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+    monkeypatch.setattr(
+        service, "pane_status", lambda pane: PaneStatus(pane, "codex", "working")
+    )
+
+    assert service.wait_for_pane_state("%2", ("idle",), timeout=0.01, poll=0.005) is None
+
+
+def test_split_agent_pane_starts_the_agent_below_the_caller(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import services
+
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "%7\n", "")
+
+    monkeypatch.setattr(services, "_run", fake_run)
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+
+    pane = service.split_agent_pane(
+        target="%1",
+        worktree=tmp_path,
+        agent="codex",
+        model="gpt-5.6-luna",
+        effort="max",
+        instruction_file=tmp_path / "prompt.md",
+        size_percent=75,
+    )
+
+    assert pane == "%7"
+    assert calls[0][:9] == [
+        "tmux", "-S", "/tmp/hmux.sock", "split-window", "-d", "-v",
+        "-t", "%1", "-l",
+    ]
+    assert calls[0][9] == "75%"
+    assert calls[0][-4:-1] == ["-P", "-F", "#{pane_id}"]
+    assert calls[0][-1] == (
+        "exec codex --yolo -m gpt-5.6-luna -c model_reasoning_effort=max "
+        f'"$(cat {tmp_path / "prompt.md"})"'
+    )
+
+
+def test_split_agent_pane_requires_a_pane_id_back(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import services
+
+    monkeypatch.setattr(
+        services,
+        "_run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, "\n", ""),
+    )
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+
+    with pytest.raises(CommandError):
+        service.split_agent_pane(target="%1", worktree=tmp_path, agent="codex")
+
+
+def test_exit_agent_pane_asks_the_agent_to_quit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agentmon import services
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        services,
+        "_run",
+        lambda args, **kwargs: (
+            calls.append(args), subprocess.CompletedProcess(args, 0, "", "")
+        )[1],
+    )
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+    monkeypatch.setattr(service, "pane_status", lambda _pane: None)
+
+    assert service.exit_agent_pane("%7") is True
+    assert calls == [
+        ["tmux", "-S", "/tmp/hmux.sock", "send-keys", "-t", "%7", "-l", "/exit"],
+        ["tmux", "-S", "/tmp/hmux.sock", "send-keys", "-t", "%7", "Enter"],
+    ]
+
+
+def test_exit_agent_pane_kills_a_pane_that_ignores_the_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agentmon import services
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        services,
+        "_run",
+        lambda args, **kwargs: (
+            calls.append(args), subprocess.CompletedProcess(args, 0, "", "")
+        )[1],
+    )
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+    monkeypatch.setattr(
+        service, "pane_status", lambda pane: PaneStatus(pane, "codex", "idle")
+    )
+
+    assert service.exit_agent_pane("%7", timeout=0.01, poll=0.005) is False
+    assert calls[-1] == ["tmux", "-S", "/tmp/hmux.sock", "kill-pane", "-t", "%7"]
+
+
+def test_commit_all_changes_harvests_a_dirty_worktree(
+    repository: Repository,
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    (repository.root / "notes.md").write_text("agent output\n")
+
+    commit = service.commit_all_changes(repository.root, "looper: auto-commit run 1")
+
+    assert commit
+    subject = git(repository.root, "log", "-1", "--format=%s").stdout.strip()
+    assert subject == "looper: auto-commit run 1"
+    assert git(repository.root, "status", "--porcelain").stdout == ""
+
+
+def test_commit_all_changes_leaves_a_clean_worktree_alone(
+    repository: Repository,
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+    before = git(repository.root, "rev-parse", "HEAD").stdout
+
+    assert service.commit_all_changes(repository.root, "looper: run 1") is None
+    assert git(repository.root, "rev-parse", "HEAD").stdout == before
+
+
+def test_agent_command_keeps_the_worktree_instruction_by_default() -> None:
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+
+    assert service._agent_command("codex") == 'exec codex --yolo "$(cat instruction.md)"'
+
+
+def test_discover_context_pairs_the_repository_with_a_socket(
+    monkeypatch: pytest.MonkeyPatch, repository: Repository
+) -> None:
+    from agentmon import services
+
+    monkeypatch.setattr(
+        services, "discover_socket", lambda **_kwargs: SocketSelection("/tmp/hmux.sock", "old server")
+    )
+
+    context = services.discover_context(start=repository.root)
+
+    assert context.repository == repository
+    assert context.warning == "old server"
+    assert context.service().socket == "/tmp/hmux.sock"
+
+
+def test_discover_context_tolerates_a_directory_outside_any_repository(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import services
+
+    monkeypatch.setattr(
+        services, "discover_socket", lambda **_kwargs: SocketSelection("/tmp/hmux.sock")
+    )
+
+    context = services.discover_context(start=tmp_path)
+
+    assert context.repository is None
+    assert context.service().repo is None

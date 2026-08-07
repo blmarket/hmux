@@ -23,36 +23,7 @@
           # remove patches specified in pkgs.tmux
           patches = [ ];
         };
-      agentmonFor = pkgs:
-        pkgs.python3Packages.buildPythonApplication {
-          pname = "hmux-agentmon";
-          version = "0.1.0";
-          pyproject = true;
-          src = ./agentmon-tui;
-
-          build-system = with pkgs.python3Packages; [
-            hatchling
-          ];
-          dependencies = with pkgs.python3Packages; [
-            textual
-          ];
-          nativeCheckInputs = [
-            pkgs.git
-            pkgs.python3Packages.pytestCheckHook
-          ];
-          pythonImportsCheck = [ "agentmon" ];
-          makeWrapperArgs = [
-            "--prefix"
-            "PATH"
-            ":"
-            (pkgs.lib.makeBinPath [
-              pkgs.git
-              pkgs.tmux
-            ])
-          ];
-
-          meta.mainProgram = "agentmon";
-        };
+      agentmonFor = pkgs: pkgs.callPackage ./agentmon-tui/package.nix { };
     in
     {
       packages = forAllSystems (system:
@@ -114,6 +85,7 @@
         let
           pkgs = import nixpkgs { inherit system; };
           tmux37b = tmux37bFor pkgs;
+          agentmon = agentmonFor pkgs;
         in
         {
           default = pkgs.mkShell {
@@ -125,6 +97,7 @@
               pkgs.clippy
               pkgs.cargo
               pkgs.cargo-nextest
+              agentmon # the `agentmon` dashboard and the `looper` loop runner
             ];
           };
         });

@@ -266,6 +266,40 @@ def test_report_reuses_disk_cache_across_instances(
     assert report.quotas[0].window_seconds == 604800.0
 
 
+def test_report_prefers_a_fresher_disk_cache_over_refetching(
+    tmp_path: Path, credential_paths: tuple[Path, Path]
+) -> None:
+    """A long-lived client must not refetch what a sibling already refreshed."""
+    calls: list[str] = []
+    clock = FakeClock(1000.0)
+    service = make_service(tmp_path, credential_paths, clock, calls)
+    service.report()
+
+    # Another process refreshes the shared cache while this one waits out its TTL.
+    other = make_service(tmp_path, credential_paths, FakeClock(1400.0), [])
+    other.report(force=True)
+
+    clock.now = 1500.0
+    report = service.report()
+
+    assert calls == [CODEX_USAGE_URL, CLAUDE_USAGE_URL]
+    assert report.fetched_at.timestamp() == 1400.0
+
+
+def test_report_refetches_when_the_disk_cache_is_stale_too(
+    tmp_path: Path, credential_paths: tuple[Path, Path]
+) -> None:
+    calls: list[str] = []
+    clock = FakeClock(1000.0)
+    service = make_service(tmp_path, credential_paths, clock, calls)
+    service.report()
+
+    clock.now = 2000.0
+    service.report()
+
+    assert calls.count(CODEX_USAGE_URL) == 2
+
+
 def test_provider_failure_is_reported_not_raised(
     tmp_path: Path, credential_paths: tuple[Path, Path]
 ) -> None:

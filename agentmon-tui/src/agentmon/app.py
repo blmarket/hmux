@@ -52,8 +52,8 @@ from .services import (
     CommandError,
     WorktreeOverview,
     devshell_available,
+    discover_context,
     discover_repository,
-    discover_socket,
 )
 from .transcript import Transcript, TranscriptError, TranscriptMessage
 
@@ -2273,25 +2273,24 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    try:
-        repo = discover_repository()
-    except CommandError:
-        repo = None
-    if args.demo and repo is None:
-        root = Path.cwd().resolve()
-        repo = Repository(root=root, common_dir=root / ".git", branch="demo")
     service_type = DemoService if args.demo else AgentmonService
     if args.demo:
+        try:
+            repo = discover_repository()
+        except CommandError:
+            root = Path.cwd().resolve()
+            repo = Repository(root=root, common_dir=root / ".git", branch="demo")
         socket = args.socket or "/tmp/agentmon-demo.sock"
         warning = ""
     else:
         try:
-            selection = discover_socket(requested=args.socket, tmux=args.tmux)
+            context = discover_context(socket=args.socket, tmux=args.tmux)
         except CommandError as exc:
             print(f"agentmon: {exc}")
             return 1
-        socket = selection.path
-        warning = selection.warning
+        repo = context.repository
+        socket = context.socket
+        warning = context.warning
     AgentmonApp(
         service_type(repo, socket=socket, tmux=args.tmux),
         startup_warning=warning,

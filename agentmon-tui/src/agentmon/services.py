@@ -9,7 +9,7 @@ import stat
 import subprocess
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,6 +49,9 @@ DEVSHELL_PROBE = f"{DEVSHELL_PREFIX} true >/dev/null 2>&1"
 
 CLAUDE_RATE_LIMIT_COMMAND = "/rate-limit-options"
 CLAUDE_RATE_LIMIT_OPTION_ONE = "Stop and wait for limit to reset"
+
+# Both claude and codex quit on `/exit` typed at their prompt.
+AGENT_EXIT_COMMAND = "/exit"
 _ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 
@@ -110,6 +113,12 @@ RUN_FORMAT = "\t".join(
         "#{pane_active}",
         "#{pane_current_command}",
     )
+)
+
+# Single-pane status is read from the same server-wide listing as RUN_FORMAT:
+# `list-panes -t` targets a pane's whole window, so the pane is picked out here.
+PANE_STATUS_FORMAT = "\t".join(
+    ("#{pane_id}", "#{pane_agent}", "#{pane_agent_state}")
 )
 
 _SUBSCRIPTION_NAME = "agentmon"
@@ -242,6 +251,59 @@ def discover_socket(
         f"({detail}); use --socket PATH, set HMUX_SOCKET, or start hmux at a "
         "tmux-discoverable socket"
     )
+
+
+@dataclass(frozen=True)
+class AgentmonContext:
+    """Everything a client needs to talk to one hmux server about one repo.
+
+    Repository and socket discovery used to live inside the dashboard's
+    `main()`, which left scripts with no way to reach it. This bundles both
+    lookups so any entry point can go from "a working directory" to a usable
+    service in one call.
+    """
+
+    repository: Repository | None
+    socket: str
+    tmux: str = "tmux"
+    warning: str = ""
+
+    def service(self) -> AgentmonService:
+        return AgentmonService(self.repository, socket=self.socket, tmux=self.tmux)
+
+
+def discover_context(
+    *,
+    socket: str | None = None,
+    tmux: str = "tmux",
+    start: Path | None = None,
+) -> AgentmonContext:
+    """Locate the repository around `start` and a reachable hmux socket.
+
+    A missing repository is reported as None rather than raised: panes outside
+    a checkout are still worth monitoring. An unreachable socket raises, since
+    nothing works without one.
+    """
+    try:
+        repository = discover_repository(start or Path.cwd())
+    except CommandError:
+        repository = None
+    selection = discover_socket(requested=socket, tmux=tmux)
+    return AgentmonContext(
+        repository=repository,
+        socket=selection.path,
+        tmux=tmux,
+        warning=selection.warning,
+    )
+
+
+@dataclass(frozen=True)
+class PaneStatus:
+    """The agent identity and state hmux reports for a single pane."""
+
+    pane_id: str
+    agent: str
+    state: str
 
 
 @dataclass(frozen=True)
@@ -937,6 +999,146 @@ class AgentmonService:
         )
         return result.returncode == 0
 
+    def pane_status(self, pane: str) -> PaneStatus | None:
+        """Return one pane's agent status, or None once the pane is gone.
+
+        A dead server is reported the same way as a closed pane: either way the
+        pane can no longer reach a state, which is what callers are waiting on.
+        """
+        result = _run(
+            [
+                self.tmux, "-S", self.socket, "list-panes", "-a", "-F",
+                PANE_STATUS_FORMAT,
+            ],
+            check=False,
+        )
+        if result.returncode:
+            return None
+        for line in result.stdout.splitlines():
+            parts = line.split("\t", 2)
+            if len(parts) == 3 and parts[0] == pane:
+                return PaneStatus(
+                    pane_id=parts[0], agent=parts[1], state=parts[2] or "none"
+                )
+        return None
+
+    def wait_for_pane_state(
+        self,
+        pane: str,
+        states: Collection[str],
+        *,
+        timeout: float | None = None,
+        poll: float = 2.0,
+    ) -> str | None:
+        """Block until `pane` reaches one of `states`, then return that state.
+
+        A pane that disappears returns "exited" whatever `states` asked for,
+        because a closed pane can never reach them. `timeout` of None waits
+        indefinitely; when it elapses first the return is None.
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            status = self.pane_status(pane)
+            if status is None:
+                return "exited"
+            if status.state in states:
+                return status.state
+            if deadline is not None and time.monotonic() >= deadline:
+                return None
+            remaining = (
+                poll if deadline is None else min(poll, deadline - time.monotonic())
+            )
+            if remaining > 0:
+                time.sleep(remaining)
+
+    def split_agent_pane(
+        self,
+        *,
+        target: str,
+        worktree: Path,
+        agent: str,
+        model: str = "default",
+        effort: str = "default",
+        instruction_file: Path | None = None,
+        size_percent: int = 75,
+        devshell: bool = False,
+    ) -> str:
+        """Split `target`'s window and start an agent in the new bottom pane.
+
+        The split is detached so the caller — typically a loop runner printing
+        into `target` — keeps the focus it already had. Returns the new pane id.
+        """
+        command = self._agent_command(
+            agent,
+            model,
+            effort,
+            with_instruction=instruction_file is not None,
+            instruction_file=str(instruction_file) if instruction_file else "",
+            devshell=devshell,
+        )
+        result = _run(
+            [
+                self.tmux, "-S", self.socket, "split-window", "-d", "-v",
+                "-t", target, "-l", f"{size_percent}%", "-c", str(worktree),
+                "-P", "-F", "#{pane_id}", command,
+            ]
+        )
+        pane = result.stdout.strip()
+        if not pane:
+            raise CommandError("hmux did not report a pane id for the new split")
+        return pane
+
+    def exit_agent_pane(
+        self, pane: str, *, timeout: float = 15.0, poll: float = 0.5
+    ) -> bool:
+        """Ask the agent in `pane` to quit, killing the pane if it will not.
+
+        Interactive agents never exit on their own, so a loop that decides a
+        run is done has to end it. Panes started with `exec agent…` close when
+        the agent quits, which is the confirmation waited on here. Returns
+        whether `/exit` was enough, as opposed to the kill-pane fallback.
+        """
+        _run(
+            [
+                self.tmux, "-S", self.socket, "send-keys", "-t", pane, "-l",
+                AGENT_EXIT_COMMAND,
+            ],
+            check=False,
+        )
+        _run(
+            [self.tmux, "-S", self.socket, "send-keys", "-t", pane, "Enter"],
+            check=False,
+        )
+        if self.wait_for_pane_state(pane, ("exited",), timeout=timeout, poll=poll):
+            return True
+        _run(
+            [self.tmux, "-S", self.socket, "kill-pane", "-t", pane], check=False
+        )
+        return False
+
+    def commit_all_changes(self, worktree: Path, message: str) -> str | None:
+        """Stage and commit everything in `worktree`; None when nothing changed.
+
+        Used to harvest an agent run that left work uncommitted. The staged
+        check after `add -A` covers dirt that stages to nothing, which would
+        otherwise make `git commit` fail.
+        """
+        status = _run(
+            ["git", "-C", str(worktree), "status", "--porcelain"], check=False
+        )
+        if status.returncode or not status.stdout.strip():
+            return None
+        _run(["git", "-C", str(worktree), "add", "-A"])
+        staged = _run(
+            ["git", "-C", str(worktree), "diff", "--cached", "--quiet"], check=False
+        )
+        if staged.returncode == 0:
+            return None
+        _run(["git", "-C", str(worktree), "commit", "-m", message])
+        return _run(
+            ["git", "-C", str(worktree), "rev-parse", "--short", "HEAD"]
+        ).stdout.strip()
+
     def open_shell_window(self, run: AgentRun) -> str:
         """Create and select a shell window in the agent's current directory."""
         session = run.location.split(":", 1)[0]
@@ -1133,6 +1335,7 @@ class AgentmonService:
         effort: str = "default",
         *,
         with_instruction: bool = True,
+        instruction_file: str = "",
         devshell: bool = False,
     ) -> str:
         if agent == "codex":
@@ -1149,7 +1352,11 @@ class AgentmonService:
             raise CommandError(f"Unsupported launch agent: {agent}")
         invocation = shlex.join(parts)
         if with_instruction:
-            invocation += ' "$(cat instruction.md)"'
+            # The instruction normally travels with the worktree, so the
+            # relative default resolves against the pane's start directory. A
+            # loop runner's prompt lives outside the worktree instead.
+            source = shlex.quote(instruction_file or "instruction.md")
+            invocation += f' "$(cat {source})"'
         if not devshell:
             return "exec " + invocation
         # Probe separately rather than falling back on the agent's own exit

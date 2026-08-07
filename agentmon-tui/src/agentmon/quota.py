@@ -236,7 +236,16 @@ class QuotaService:
         """Return quota usage, refreshing only when the cache has expired."""
         with self._lock:
             if not force:
-                cached = self._cached or self._load_disk_cache()
+                cached = self._cached
+                if cached is None or self._expired(cached):
+                    # A long-lived process must recheck the disk before going
+                    # back to the network: another agentmon client may have
+                    # refreshed the shared cache since this one last fetched.
+                    on_disk = self._load_disk_cache()
+                    if on_disk is not None and (
+                        cached is None or on_disk.fetched_at > cached.fetched_at
+                    ):
+                        cached = on_disk
                 if cached is not None and not self._expired(cached):
                     self._cached = cached
                     return cached
