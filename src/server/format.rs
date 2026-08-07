@@ -22,6 +22,7 @@ use std::ffi::{CStr, CString};
 use regex::RegexBuilder;
 
 use super::style::{parse_colour, Colour};
+use crate::vt::width::codepoint_width;
 
 /// One variable's value: either materialized, or a deferred computation that
 /// runs (once) only if a format actually looks the variable up. The deferred
@@ -66,7 +67,8 @@ impl Vars {
         };
         // The daemon's uid cannot change, and resolving the name walks NSS
         // (sockets to nscd, /etc/passwd) — worth doing exactly once.
-        static USER: std::sync::OnceLock<(libc::uid_t, Option<String>)> = std::sync::OnceLock::new();
+        static USER: std::sync::OnceLock<(libc::uid_t, Option<String>)> =
+            std::sync::OnceLock::new();
         let (uid, user) = USER.get_or_init(|| {
             let uid = unsafe { libc::getuid() };
             (uid, username(uid))
@@ -426,7 +428,15 @@ pub(super) fn expand_with_jobs(
     jobs: Option<&dyn FormatJobs>,
     tree: Option<&dyn FormatTree>,
 ) -> String {
-    expand_with_context(template, vars, &BasicContext { loops: ls, jobs, tree })
+    expand_with_context(
+        template,
+        vars,
+        &BasicContext {
+            loops: ls,
+            jobs,
+            tree,
+        },
+    )
 }
 
 /// [`expand_with_jobs`], but applying current-time directives first.
@@ -440,7 +450,15 @@ pub(super) fn expand_time_with_jobs(
     jobs: Option<&dyn FormatJobs>,
     tree: Option<&dyn FormatTree>,
 ) -> String {
-    expand_time_with_context(template, vars, &BasicContext { loops: ls, jobs, tree })
+    expand_time_with_context(
+        template,
+        vars,
+        &BasicContext {
+            loops: ls,
+            jobs,
+            tree,
+        },
+    )
 }
 
 pub(super) fn expand_with_context(
@@ -692,7 +710,7 @@ impl Expander<'_> {
             return bool01(self.context.name_exists(vars, scope, &name));
         }
         // `w:BODY` — the display width of the resolved body, using the same
-        // libghostty-vt codepoint-width table as the native terminal grid.
+        // codepoint-width policy as the terminal grid.
         if let Some(rest) = content.strip_prefix("w:") {
             return display_width(&self.resolve_body(rest, vars, depth)).to_string();
         }
@@ -721,9 +739,15 @@ impl Expander<'_> {
         if let Some(rest) = content.strip_prefix("c:") {
             return colour_rgb(&self.expand(rest, vars, depth));
         }
-        // `q:BODY` — quote shell metacharacters in the resolved value.
-        if let Some(rest) = content.strip_prefix("q:") {
-            return quote_shell(&self.resolve_body(rest, vars, depth));
+        // `q[:/h|/e|/a]:BODY` — quote shell metacharacters, format-style
+        // hashes, or a command argument in the resolved value.
+        if let Some((style, body)) = parse_quote_modifier(content) {
+            let value = self.resolve_body(body, vars, depth);
+            return match style {
+                QuoteStyle::Shell => quote_shell(&value),
+                QuoteStyle::Style => quote_style(&value),
+                QuoteStyle::Arguments => quote_argument(&value),
+            };
         }
         // `=N:BODY` / `=-N:BODY` — truncate the resolved body to N display columns
         // from the start (N>0) or the end (N<0).
@@ -1153,7 +1177,8 @@ pub(crate) fn display_width(s: &str) -> usize {
 /// Tokenize format display content into borrowed source spans and widths.
 ///
 /// Literal hashes are grouped as escaped `##` pairs and style directives are
-/// zero-width. Ordinary codepoints use libghostty-vt's terminal width table.
+/// zero-width. Ordinary codepoints use the terminal width policy in
+/// [`crate::vt::width`].
 pub(crate) fn display_tokens(s: &str) -> DisplayTokens<'_> {
     DisplayTokens {
         source: s,
@@ -1188,7 +1213,7 @@ impl<'a> Iterator for DisplayTokens<'a> {
             let end = self.index + ch.len_utf8();
             let token = (
                 &self.source[self.index..end],
-                ghostty_sys::codepoint_width(ch as u32) as usize,
+                codepoint_width(ch as u32) as usize,
             );
             self.index = end;
             return Some(token);
@@ -1354,6 +1379,84 @@ fn quote_shell(value: &str) -> String {
         quoted.push(ch);
     }
     quoted
+}
+
+fn quote_style(value: &str) -> String {
+    let mut quoted = String::with_capacity(value.len());
+    for character in value.chars() {
+        if character == '#' {
+            quoted.push('#');
+        }
+        quoted.push(character);
+    }
+    quoted
+}
+
+fn quote_argument(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_string();
+    }
+
+    let quote = if value
+        .chars()
+        .any(|character| " #';${}%".contains(character))
+    {
+        Some('"')
+    } else if value.chars().any(|character| " \"".contains(character)) {
+        Some('\'')
+    } else {
+        None
+    };
+
+    if value.len() == 1 && value != " " && (quote.is_some() || value == "~") {
+        return format!("\\{value}");
+    }
+
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            '\u{1b}' => escaped.push_str("\\e"),
+            '\\' => escaped.push_str("\\\\"),
+            '"' if quote == Some('"') => escaped.push_str("\\\""),
+            character if character.is_control() => {
+                escaped.push_str(&format!("\\{:03o}", character as u32));
+            }
+            character => escaped.push(character),
+        }
+    }
+
+    match quote {
+        Some(quote) => format!("{quote}{escaped}{quote}"),
+        None if escaped.starts_with('~') => format!("\\{escaped}"),
+        None => escaped,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum QuoteStyle {
+    Shell,
+    Style,
+    Arguments,
+}
+
+fn parse_quote_modifier(content: &str) -> Option<(QuoteStyle, &str)> {
+    if let Some(body) = content.strip_prefix("q:") {
+        return Some((QuoteStyle::Shell, body));
+    }
+
+    let rest = content.strip_prefix("q/")?;
+    let (flags, body) = rest.split_once(':')?;
+    let style = if flags.contains('e') || flags.contains('h') {
+        QuoteStyle::Style
+    } else if flags.contains('a') {
+        QuoteStyle::Arguments
+    } else {
+        return None;
+    };
+    Some((style, body))
 }
 
 fn colour_rgb(value: &str) -> String {
@@ -1987,6 +2090,16 @@ mod tests {
     }
 
     #[test]
+    fn quote_modifiers_escape_styles_and_arguments() {
+        let mut v = vars();
+        v.set("value", "hash#value with spaces");
+        assert_eq!(expand("#{q:value}", &v), "hash\\#value\\ with\\ spaces");
+        assert_eq!(expand("#{q/h:value}", &v), "hash##value with spaces");
+        assert_eq!(expand("#{q/e:value}", &v), "hash##value with spaces");
+        assert_eq!(expand("#{q/a:value}", &v), "\"hash#value with spaces\"");
+    }
+
+    #[test]
     fn basename_and_dirname_of_variable_value() {
         let mut v = vars();
         v.set("pane_current_path", "/usr/local/bin");
@@ -2094,7 +2207,7 @@ mod tests {
     }
 
     #[test]
-    fn truncate_obeys_ghostty_codepoint_width_boundaries() {
+    fn truncate_obeys_codepoint_width_boundaries() {
         let mut v = vars();
         v.set("value", "a界b");
         assert_eq!(expand("#{=2:value}", &v), "a");
@@ -2146,7 +2259,7 @@ mod tests {
     }
 
     #[test]
-    fn pad_uses_ghostty_display_columns() {
+    fn pad_uses_display_columns() {
         let mut v = vars();
         v.set("value", "界");
         assert_eq!(expand("[#{p3:value}]", &v), "[界 ]");
@@ -2173,7 +2286,7 @@ mod tests {
     }
 
     #[test]
-    fn width_modifier_uses_ghosttys_scalar_widths() {
+    fn width_modifier_uses_scalar_widths() {
         let mut v = vars();
         v.set("value", "界");
         assert_eq!(expand("#{w:value}", &v), "2");
@@ -2184,9 +2297,11 @@ mod tests {
         v.set("value", "👩‍💻");
         assert_eq!(expand("#{w:value}", &v), "4");
 
-        // Conjoining Jamo is a documented Ghostty-vs-tmux width difference.
+        // A conjoining jamo is one column, as tmux's width tables say. What
+        // makes it disappear into the syllable before it is the screen's
+        // combining rule, which a format expansion never runs.
         v.set("value", "\u{1161}");
-        assert_eq!(expand("#{w:value}", &v), "0");
+        assert_eq!(expand("#{w:value}", &v), "1");
     }
 
     #[test]

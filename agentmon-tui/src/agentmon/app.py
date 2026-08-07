@@ -8,7 +8,7 @@ import tempfile
 import threading
 from collections.abc import Iterable
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from rich.console import Console
@@ -1782,14 +1782,32 @@ class QuotaScreen(ModalScreen):
         ("r", "refresh", "Refresh now"),
     ]
 
-    BAR_WIDTH = 24
+    BAR_WIDTH = 40
+    USED_WIDTH = 7
+    PACE_WIDTH = 7
+    RESET_WIDTH = 8  # 2-column gutter plus the widest countdown, 23h59m
+    TRACK_COLOR = "#33414f"
+    PACE_COLOR = "#4d7fa8"
 
     def compose(self) -> ComposeResult:
         with Vertical(id="quota-dialog"):
             yield Label("Subscription quotas", classes="dialog-title")
             yield Static("Loading quota usage…", id="quota-content")
+            yield Static(self._legend(), id="quota-legend")
             yield Static("", id="quota-meta")
             yield Static("r refresh  ·  Esc close", classes="key-hint")
+
+    @classmethod
+    def _legend(cls) -> Text:
+        legend = Text()
+        legend.append("▀", style=f"#7ec97e on {cls.TRACK_COLOR}")
+        legend.append(" used   ", style="#8492a0")
+        legend.append("▀", style=f"{cls.TRACK_COLOR} on {cls.PACE_COLOR}")
+        legend.append(
+            " window elapsed · pace is used minus elapsed, so + runs ahead",
+            style="#8492a0",
+        )
+        return legend
 
     def on_mount(self) -> None:
         self._load_report(False)
@@ -1809,13 +1827,15 @@ class QuotaScreen(ModalScreen):
         )
 
     @classmethod
-    def _render_report(cls, report: QuotaReport) -> Text:
+    def _render_report(cls, report: QuotaReport, now: datetime | None = None) -> Text:
+        now = now or datetime.now(timezone.utc)
         rendered = Text()
         label_width = max((len(quota.label) for quota in report.quotas), default=0) + 2
-        for index, quota in enumerate(report.quotas):
-            if index:
-                rendered.append("\n")
-            rendered.append_text(cls._render_quota(quota, label_width))
+        if report.quotas:
+            rendered.append_text(cls._render_header(label_width))
+        for quota in report.quotas:
+            rendered.append("\n")
+            rendered.append_text(cls._render_quota(quota, label_width, now))
         if report.errors:
             if report.quotas:
                 rendered.append("\n\n")
@@ -1828,24 +1848,92 @@ class QuotaScreen(ModalScreen):
         return rendered
 
     @classmethod
-    def _render_quota(cls, quota: QuotaWindow, label_width: int) -> Text:
+    def _render_header(cls, label_width: int) -> Text:
+        """Name the value columns once so the rows can stay bare numbers."""
+        header = Text(" " * (label_width + cls.BAR_WIDTH), style="#8492a0")
+        header.append("used".rjust(cls.USED_WIDTH), style="#8492a0")
+        header.append("pace".rjust(cls.PACE_WIDTH), style="#8492a0")
+        header.append("left".rjust(cls.RESET_WIDTH), style="#8492a0")
+        return header
+
+    @classmethod
+    def _render_quota(
+        cls, quota: QuotaWindow, label_width: int, now: datetime
+    ) -> Text:
         used = max(0.0, min(100.0, quota.used_percent))
-        filled = round(used / 100 * cls.BAR_WIDTH)
+        used_cells = round(used / 100 * cls.BAR_WIDTH)
         if used >= 90:
-            color = "#ff6b6b"
+            used_color = "#ff6b6b"
         elif used >= 70:
-            color = "#ffcb6b"
+            used_color = "#ffcb6b"
         else:
-            color = "#7ec97e"
+            used_color = "#7ec97e"
         row = Text()
         row.append(quota.label.ljust(label_width))
-        row.append("█" * filled, style=color)
-        row.append("░" * (cls.BAR_WIDTH - filled), style="#33414f")
-        row.append(f"{used:4.0f}% used")
-        if quota.resets_at is not None:
-            resets = quota.resets_at.astimezone().strftime("%m-%d %H:%M")
-            row.append(f"  resets {resets}", style="#8492a0")
+        pace = quota.pace_percent(now)
+        if pace is None:
+            row.append("█" * used_cells, style=used_color)
+            row.append("░" * (cls.BAR_WIDTH - used_cells), style=cls.TRACK_COLOR)
+        else:
+            pace_cells = round(pace / 100 * cls.BAR_WIDTH)
+            row.append_text(cls._render_split_bar(used_cells, used_color, pace_cells))
+        row.append(f"{used:.0f}%".rjust(cls.USED_WIDTH))
+        if pace is None:
+            row.append(" " * cls.PACE_WIDTH)
+        else:
+            row.append(
+                f"{used - pace:+.0f}%".rjust(cls.PACE_WIDTH), style=cls.PACE_COLOR
+            )
+        countdown = "" if quota.resets_at is None else cls._reset_countdown(quota, now)
+        row.append(countdown.rjust(cls.RESET_WIDTH), style="#8492a0")
         return row
+
+    @staticmethod
+    def _reset_countdown(quota: QuotaWindow, now: datetime) -> str:
+        """Time left in the window, coarse for long windows and fine for short.
+
+        A weekly window only needs hours to be actionable, while the minutes
+        matter on a 5h one; the window length picks the granularity so a fresh
+        weekly reset does not read as a wall of minutes.
+        """
+        remaining = int((quota.resets_at - now).total_seconds())
+        if remaining <= 0:
+            return "now"
+        coarse = (
+            quota.window_seconds >= 86400
+            if quota.window_seconds
+            else remaining >= 86400
+        )
+        if coarse:
+            days, hours = divmod(remaining // 3600, 24)
+            return f"{days}d{hours}h" if days else f"{hours}h"
+        hours, minutes = divmod(remaining // 60, 60)
+        return f"{hours}h{minutes:02d}m" if hours else f"{minutes}m"
+
+    @classmethod
+    def _render_split_bar(
+        cls, used_cells: int, used_color: str, pace_cells: int
+    ) -> Text:
+        """Stack the usage and pacing bars into one row of half-block cells.
+
+        Every cell is an upper half block, so its foreground draws the usage
+        bar and its background draws the pacing bar underneath. The two bars
+        share a left edge and a scale, making over- and under-pacing readable
+        as the overhang of one half past the other.
+        """
+        both = min(used_cells, pace_cells)
+        longer = max(used_cells, pace_cells)
+        overhang_color = (
+            f"{used_color} on {cls.TRACK_COLOR}"
+            if used_cells > pace_cells
+            else f"{cls.TRACK_COLOR} on {cls.PACE_COLOR}"
+        )
+        bar = Text()
+        bar.append("▀" * both, style=f"{used_color} on {cls.PACE_COLOR}")
+        bar.append("▀" * (longer - both), style=overhang_color)
+        empty = f"{cls.TRACK_COLOR} on {cls.TRACK_COLOR}"
+        bar.append("▀" * (cls.BAR_WIDTH - longer), style=empty)
+        return bar
 
     def action_close(self) -> None:
         self.dismiss()
@@ -2012,14 +2100,28 @@ class DemoService(AgentmonService):
 class DemoQuotaService(QuotaService):
     def report(self, *, force: bool = False) -> QuotaReport:
         now = datetime.now(timezone.utc)
+        week = 7 * 86400.0
+        session = 5 * 3600.0
         return QuotaReport(
             fetched_at=now,
             quotas=(
-                QuotaWindow("codex", "Codex weekly", 37.0, now),
-                QuotaWindow("codex", "Codex 5h", 12.0, now),
-                QuotaWindow("claude", "Claude 5h", 41.0, now),
-                QuotaWindow("claude", "Claude weekly", 9.0, now),
-                QuotaWindow("claude", "Fable weekly", 14.0, now),
+                # Reset times are spread across each window so the demo shows
+                # both over-pacing and under-pacing rows.
+                QuotaWindow(
+                    "codex", "Codex weekly", 37.0, now + timedelta(days=5), week
+                ),
+                QuotaWindow(
+                    "codex", "Codex 5h", 12.0, now + timedelta(hours=4), session
+                ),
+                QuotaWindow(
+                    "claude", "Claude 5h", 41.0, now + timedelta(hours=2), session
+                ),
+                QuotaWindow(
+                    "claude", "Claude weekly", 9.0, now + timedelta(days=3.5), week
+                ),
+                QuotaWindow(
+                    "claude", "Fable weekly", 14.0, now + timedelta(days=1), week
+                ),
             ),
         )
 
@@ -2068,9 +2170,10 @@ class AgentmonApp(App):
     #progress { min-height: 8; padding: 1; background: #202832; }
     Footer { background: #202832; }
     QuotaScreen { align: center middle; background: transparent; }
-    #quota-dialog { width: 84; height: auto; max-width: 100%; max-height: 100%;
+    #quota-dialog { width: 88; height: auto; max-width: 100%; max-height: 100%;
                     padding: 1 2; border: round #6aa9d8; background: #171d24; }
     #quota-content { min-height: 5; text-wrap: nowrap; text-overflow: ellipsis; }
+    #quota-legend { margin-top: 1; text-wrap: nowrap; text-overflow: ellipsis; }
     #quota-meta { margin-top: 1; }
     """.replace("RUNS_PANE_FR", str(RUNS_PANE_FRACTION)).replace(
         "TRANSCRIPT_PANE_FR", str(TRANSCRIPT_PANE_FRACTION)

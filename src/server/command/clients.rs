@@ -196,9 +196,9 @@ impl<'a> ChooseOptions<'a> {
         if let Some(order) = self.order {
             if let Some((_, key)) = keys.iter().find(|(name, _)| *name == order) {
                 match key {
-                    ChooseSortKey::Text(name) => rows.sort_by(|left, right| {
-                        left.sort_text(name).cmp(&right.sort_text(name))
-                    }),
+                    ChooseSortKey::Text(name) => {
+                        rows.sort_by(|left, right| left.sort_text(name).cmp(&right.sort_text(name)))
+                    }
                     ChooseSortKey::Number(name) => rows.sort_by(|left, right| {
                         left.sort_number(name).cmp(&right.sort_number(name))
                     }),
@@ -365,9 +365,9 @@ fn choose_client(args: &[String], state: &mut ServerState, agents: &PaneAgents) 
                 prompt_target: None,
                 edit: None,
                 tagged: false,
-            preview_target: None,
-            depth: 0,
-            expanded: None,
+                preview_target: None,
+                depth: 0,
+                expanded: None,
             },
             vars,
         });
@@ -420,9 +420,9 @@ fn choose_buffer(args: &[String], state: &mut ServerState) -> CommandResult {
                 prompt_target: Some(name.clone()),
                 edit: None,
                 tagged: false,
-            preview_target: None,
-            depth: 0,
-            expanded: None,
+                preview_target: None,
+                depth: 0,
+                expanded: None,
             },
             vars,
         });
@@ -486,11 +486,7 @@ fn customize_mode(args: &[String], state: &mut ServerState) -> CommandResult {
                 continue;
             }
             items.push(ModeItem {
-                label: options.label(
-                    state,
-                    &vars,
-                    format!("{} {}", entry.name, entry.value),
-                ),
+                label: options.label(state, &vars, format!("{} {}", entry.name, entry.value)),
                 command: Vec::new(),
                 prompt_target: None,
                 edit: Some(ModeEdit::Option {
@@ -791,8 +787,27 @@ fn list_clients(args: &[String], state: &ServerState, agents: &PaneAgents) -> Co
         ));
     }
     let filter = flag_value(args, "-f");
+    let (sort_order, reversed) = match super::list_sort_criteria(args) {
+        Ok(criteria) => criteria,
+        Err(error) => return error,
+    };
+    let mut clients = state.client_snapshots();
+    super::apply_list_sort(
+        &mut clients,
+        sort_order,
+        reversed,
+        |key, a, b| match key {
+            super::ListSortOrder::Name => a.name.cmp(&b.name),
+            super::ListSortOrder::Size => a.cols.cmp(&b.cols).then(a.rows.cmp(&b.rows)),
+            super::ListSortOrder::Creation => a.created_micros.cmp(&b.created_micros),
+            // Most recent activity first, as tmux inverts this comparison.
+            super::ListSortOrder::Activity => b.activity_micros.cmp(&a.activity_micros),
+            _ => std::cmp::Ordering::Equal,
+        },
+        |client| client.name.clone(),
+    );
     let mut output = String::new();
-    for client in state.client_snapshots() {
+    for client in clients {
         let Some(session) = state
             .sessions()
             .iter()
@@ -815,6 +830,42 @@ fn list_clients(args: &[String], state: &ServerState, agents: &PaneAgents) -> Co
     CommandResult::ok(output)
 }
 
+/// The client-entry format variables shared by the `list-clients` context and
+/// the client a `display-message` resolves (tmux's `format_defaults_client`).
+pub(super) fn set_client_entry_vars(
+    state: &ServerState,
+    client: &super::super::state::ClientSnapshot,
+    vars: &mut format::Vars,
+) {
+    let last_session = client.last_session_id.and_then(|id| {
+        state
+            .sessions()
+            .iter()
+            .find(|session| session.id == id)
+            .map(|session| session.name.clone())
+    });
+    vars.set(
+        "client_activity",
+        (client.activity_micros / 1_000_000).to_string(),
+    )
+    .set(
+        "client_created",
+        (client.created_micros / 1_000_000).to_string(),
+    )
+    // hmux never learns the terminal's pixel size; tmux without one reports
+    // zero cell dimensions the same way.
+    .set("client_cell_width", "0")
+    .set("client_cell_height", "0")
+    .set("client_termfeatures", client.termfeatures.clone())
+    // The secondary-DA terminal type: empty until the terminal answers a
+    // query the attach flow does not send.
+    .set("client_termtype", "")
+    .set("client_written", client.written.to_string())
+    // hmux never discards output the way tmux's backoff does.
+    .set("client_discarded", "0")
+    .set("client_last_session", last_session.unwrap_or_default());
+}
+
 /// The format variables one attached client answers to, shared by
 /// `list-clients` and `choose-client`. `None` when the client's session has
 /// gone away underneath it.
@@ -829,6 +880,9 @@ fn client_vars(
         .find(|session| session.id == client.session_id)?;
     let client_utf8 = client.flags.split(',').any(|flag| flag == "UTF-8");
     let mut vars = super::vars_for(state, session, session.active, agents, state.marked_pane());
+    set_client_entry_vars(state, client, &mut vars);
+    // The format's session here is the client's own session.
+    vars.set("session_active", "1");
     vars.set("client_name", client.name.clone())
         .set("client_tty", client.name.clone())
         .set("client_termname", client.term.clone())
@@ -866,7 +920,11 @@ fn suspend_client(args: &[String], state: &ServerState, client: &ClientContext) 
     )
 }
 
-fn refresh_client(args: &[String], state: &mut ServerState, client: &ClientContext) -> CommandResult {
+fn refresh_client(
+    args: &[String],
+    state: &mut ServerState,
+    client: &ClientContext,
+) -> CommandResult {
     let target = flag_value(args, "-t");
     // `-c` and the four pan directions are handled first and alone, as tmux's
     // `cmd_refresh_client_exec` returns straight after them.
@@ -926,7 +984,11 @@ fn refresh_client(args: &[String], state: &mut ServerState, client: &ClientConte
     )
 }
 
-fn switch_client(args: &[String], state: &mut ServerState, client: &ClientContext) -> CommandResult {
+fn switch_client(
+    args: &[String],
+    state: &mut ServerState,
+    client: &ClientContext,
+) -> CommandResult {
     let Some(target_session) = flag_value(args, "-t") else {
         return CommandResult::err("no current client\n");
     };
@@ -938,7 +1000,10 @@ fn switch_client(args: &[String], state: &mut ServerState, client: &ClientContex
         if let Some(resolved) = state.resolve(target_session) {
             let session = &state.sessions()[resolved.session];
             let session_id = session.id;
-            let window_target = format!("{}:{}", session.name, session.windows[resolved.window].index);
+            let window_target = format!(
+                "{}:{}",
+                session.name, session.windows[resolved.window].index
+            );
             let pane_id = state.window(resolved.session, resolved.window).panes[resolved.pane].id;
             let _ = state.select_pane(&format!("%{pane_id}"));
             let _ = state.select_window(&window_target);

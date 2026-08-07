@@ -214,9 +214,7 @@ fn reap_protocol_clients(clients: &mut Vec<ProtocolHandle>) {
             return true;
         }
         match client.close_reason() {
-            Some(
-                ProtocolCloseReason::Completed | ProtocolCloseReason::PeerClosed,
-            ) => {}
+            Some(ProtocolCloseReason::Completed | ProtocolCloseReason::PeerClosed) => {}
             Some(ProtocolCloseReason::Error(kind)) => {
                 warn!(?kind, "event-loop protocol client ended with an I/O error");
             }

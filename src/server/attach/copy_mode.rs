@@ -1,6 +1,5 @@
 //! Copy-mode input actions and viewport rendering for attached clients.
 
-
 use super::super::mouse::MouseEvent;
 use super::super::state::{
     copy_search_segments, copy_selection_segments, CopyState, ServerState, SharedState,
@@ -8,6 +7,7 @@ use super::super::state::{
 use super::super::term::TerminalCapabilities;
 use super::super::{format, options, status};
 use super::append_terminal_style_reset;
+use crate::vt::screen::{CellWidth, GridCell};
 
 pub(super) struct CopyModeAction {
     page_up: bool,
@@ -54,7 +54,10 @@ impl CopyModeAction {
             };
             let _ = state.position_copy_cursor_from_mouse(target, start.x, start.y, vi);
             if self.slider {
-                let grab = mouse.target.as_ref().and_then(|target| target.slider_offset);
+                let grab = mouse
+                    .target
+                    .as_ref()
+                    .and_then(|target| target.slider_offset);
                 let _ = state.scroll_copy_to_mouse(
                     target,
                     if grab.is_some() {
@@ -395,10 +398,7 @@ fn render_mark_and_position(
                 .map_or(0, |last| last + 1);
             out.extend_from_slice(&style);
             for (column, cell) in cells.iter().take(width as usize).enumerate() {
-                if matches!(
-                    cell.width,
-                    ghostty_sys::GridCellWidth::SpacerTail | ghostty_sys::GridCellWidth::SpacerHead
-                ) {
+                if matches!(cell.width, CellWidth::SpacerTail | CellWidth::SpacerHead) {
                     continue;
                 }
                 if column == used {
@@ -542,12 +542,9 @@ fn render_search(
     }
 }
 
-fn render_cells(out: &mut Vec<u8>, cells: &[ghostty_sys::GridCellSnapshot]) {
+fn render_cells(out: &mut Vec<u8>, cells: &[GridCell]) {
     for cell in cells {
-        if matches!(
-            cell.width,
-            ghostty_sys::GridCellWidth::SpacerTail | ghostty_sys::GridCellWidth::SpacerHead
-        ) {
+        if matches!(cell.width, CellWidth::SpacerTail | CellWidth::SpacerHead) {
             continue;
         }
         if cell.text.is_empty() {

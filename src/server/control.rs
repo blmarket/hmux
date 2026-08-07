@@ -196,10 +196,7 @@ impl EventControlClient {
             "%session-changed ${} {}",
             snapshot.session_id, snapshot.session_name
         ));
-        for error in state
-            .borrow_mut()
-            .take_config_errors()
-        {
+        for error in state.borrow_mut().take_config_errors() {
             control_writer.enqueue_line(format!("%config-error {error}"));
         }
         let format_cache = status::RenderCache::for_client(
@@ -710,10 +707,7 @@ impl EventControlClient {
             if line.is_empty() {
                 continue;
             }
-            let aliases = self
-                .state
-                .borrow_mut()
-                .command_aliases();
+            let aliases = self.state.borrow_mut().command_aliases();
             match command::command_string_groups_with_aliases(&line, &aliases) {
                 Ok(groups) if !groups.is_empty() => self.command_queue.push_back_group(
                     groups
@@ -1045,11 +1039,7 @@ impl EventControlClient {
     }
 
     fn enqueue_config_errors(&mut self) -> io::Result<()> {
-        for error in self
-            .state
-            .borrow_mut()
-            .take_config_errors()
-        {
+        for error in self.state.borrow_mut().take_config_errors() {
             self.control_writer
                 .enqueue_line(format!("%config-error {error}"));
         }

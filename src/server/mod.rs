@@ -34,7 +34,6 @@ pub mod status;
 pub(crate) mod style;
 pub(crate) mod task;
 pub(crate) mod term;
-pub(crate) mod x11_colour;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -44,17 +43,13 @@ use std::rc::Rc;
 use crate::integration::status::StatusHub;
 use crate::observability::v1::{PaneId as PublicPaneId, PaneObservability, ServerObservability};
 
+use crate::server::state::SharedState;
 use pane::PaneIo;
 use state::ServerState;
-use crate::server::state::SharedState;
 
 type EventPaneSnapshot = (Vec<(u64, PaneIo)>, Vec<u64>);
 
-/// The tmux release whose behavior this server implements, as `#{version}`
-/// reports it and as XTVERSION answers a pane. Conformance is pinned to this
-/// version, so an application that special-cases a terminal by version has to
-/// see the same answer the command language claims to implement.
-pub(crate) const TMUX_VERSION: &str = "3.7b";
+pub(crate) use crate::TMUX_VERSION;
 
 /// Runtime-independent tmux server state and behavior.
 ///
@@ -129,9 +124,7 @@ impl Server {
     /// Record the pathname this server listens on, which `#{socket_path}` and
     /// the `TMUX` variable of a spawned process both name.
     pub fn set_socket_path(&self, path: impl Into<std::path::PathBuf>) -> io::Result<()> {
-        self.state
-            .borrow_mut()
-            .set_socket_path(path);
+        self.state.borrow_mut().set_socket_path(path);
         Ok(())
     }
 
@@ -216,14 +209,13 @@ impl Server {
         // — the window it sized has to be re-derived from the clients left.
         let _ = state.recalculate_sizes();
         // A pane created since the last pass has never been told its options.
-        state.refresh_pane_output_policies();
+        state.refresh_pane_options();
         let _ = state.refresh_pane_scrollbars();
         state.process_pane_passthrough();
         state.process_pane_clipboard();
         state.process_pane_themes();
         Ok(command::take_deferred_notification_hooks(&mut state))
     }
-
 
     pub(crate) fn try_event_pane_snapshot(&self) -> io::Result<Option<EventPaneSnapshot>> {
         let Ok(mut state) = self.state.try_borrow_mut() else {
@@ -525,10 +517,7 @@ mod tests {
             PaneEvent::Removed(_)
         ));
         assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
-        assert_eq!(
-            handle.terminal_tail(1).expect("retained tail"),
-            "second"
-        );
+        assert_eq!(handle.terminal_tail(1).expect("retained tail"), "second");
     }
 
     #[test]

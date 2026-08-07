@@ -9,9 +9,8 @@ impl AttachSession {
     /// leaving a session behind; running the same test up front is what keeps
     /// the interactive create path from leaking one.
     pub(crate) fn check_terminal(client_tty: &ClientTty) -> Result<(), AttachStartFailure> {
-        let failure = || {
-            AttachStartFailure::Client("open terminal failed: not a terminal\n".to_string())
-        };
+        let failure =
+            || AttachStartFailure::Client("open terminal failed: not a terminal\n".to_string());
         let render = client_tty.render_fd().or_else(|| client_tty.input_fd());
         let input = client_tty.input_fd().or_else(|| client_tty.render_fd());
         let (Some(render), Some(input)) = (render, input) else {
@@ -210,9 +209,7 @@ impl AttachSession {
                 status_cache,
                 output_refresh: OutputStatusRefresh::default(),
             },
-            pane_io: AttachPaneIo {
-                latmon,
-            },
+            pane_io: AttachPaneIo { latmon },
             commands: AttachCommands {
                 pending: VecDeque::new(),
                 deferred_prompts: VecDeque::new(),
@@ -514,13 +511,13 @@ impl AttachSession {
 
         let target_exists = {
             let mut st = state.borrow_mut();
-                if st.reap_exited_panes() {
-                    let _ = st.resize_session(target, self.viewport.cols, self.viewport.pane_rows);
-                    self.compositor.render.last_render.clear();
-                    self.compositor.render.force_clear = true;
-                    self.status.status_cache.invalidate();
-                }
-                st.find(target).is_some()
+            if st.reap_exited_panes() {
+                let _ = st.resize_session(target, self.viewport.cols, self.viewport.pane_rows);
+                self.compositor.render.last_render.clear();
+                self.compositor.render.force_clear = true;
+                self.status.status_cache.invalidate();
+            }
+            st.find(target).is_some()
         };
         if !target_exists {
             self.begin_finish(AttachFinishReason::SessionEnded);
@@ -611,10 +608,8 @@ impl AttachSession {
             timeout,
             deadline_poll_timeout(self.compositor.input.key_prompt.deadline(), now),
         );
-        let timeout = minimum_poll_timeout(
-            timeout,
-            deadline_poll_timeout(self.repeat_deadline(), now),
-        );
+        let timeout =
+            minimum_poll_timeout(timeout, deadline_poll_timeout(self.repeat_deadline(), now));
         let timeout =
             minimum_poll_timeout(timeout, deadline_poll_timeout(self.click_deadline(), now));
         let timeout = minimum_poll_timeout(
@@ -700,6 +695,9 @@ impl AttachSession {
         if ready.tty_output {
             self.tty.output.flush(self.tty.render_fd.as_raw_fd())?;
         }
+        self.attachments
+            .render_attachment
+            .publish_written(self.tty.output.total_written());
         if self.tty.output.has_pending() {
             return Ok(AttachDrive::Continue);
         }
@@ -815,12 +813,17 @@ impl AttachSession {
                 .is_empty()
             {
                 let (flags, read_only) = self.attachments.render_attachment.client_flags_view();
-                self.status.status_cache.update_client_flags(flags, read_only);
+                self.status
+                    .status_cache
+                    .update_client_flags(flags, read_only);
                 self.compositor.target.context.read_only = read_only;
             }
             for message in self.attachments.render_attachment.take_messages() {
                 if message.bell {
-                    let _ = self.tty.output.queue(self.tty.render_fd.as_raw_fd(), b"\x07");
+                    let _ = self
+                        .tty
+                        .output
+                        .queue(self.tty.render_fd.as_raw_fd(), b"\x07");
                 }
                 if message.text.is_empty() {
                     continue;
@@ -931,7 +934,7 @@ impl AttachSession {
                                 reply,
                                 self.viewport.cols,
                                 self.viewport.rows,
-                                    )
+                            )
                             .ok()
                             .flatten();
                         }
@@ -1128,7 +1131,10 @@ impl AttachSession {
                     }
                     Message::Unlock if self.compositor.io_state == ClientIoState::Locked => {
                         let _ = make_raw(self.tty.input_fd.as_raw_fd());
-                        let start = tty_start_sequence(&self.tty.terminal, Self::focus_events(&state.borrow_mut()));
+                        let start = tty_start_sequence(
+                            &self.tty.terminal,
+                            Self::focus_events(&state.borrow_mut()),
+                        );
                         let _ = self
                             .tty
                             .output
@@ -1154,7 +1160,10 @@ impl AttachSession {
                     }
                     Message::Wakeup if self.compositor.io_state == ClientIoState::Suspended => {
                         let _ = make_raw(self.tty.input_fd.as_raw_fd());
-                        let start = tty_start_sequence(&self.tty.terminal, Self::focus_events(&state.borrow_mut()));
+                        let start = tty_start_sequence(
+                            &self.tty.terminal,
+                            Self::focus_events(&state.borrow_mut()),
+                        );
                         let _ = self
                             .tty
                             .output

@@ -12,7 +12,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, VecDeque};
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::io::{self, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
 use std::os::raw::{c_int, c_void};
@@ -26,12 +26,21 @@ use std::time::{Duration, Instant, SystemTime};
 
 use libc::pid_t;
 
-use crate::ghostty::Terminal;
 use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, ScreenTail};
-use crate::server::input_keys::ExtendedKeys;
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
+use crate::server::input_keys::ExtendedKeys;
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
+use crate::vt::observer::{decrqss_reply, Event as VtEvent, Observer, OscUpdate};
+use crate::vt::parser::{Param, StringEnd, Token, TokenKind};
 
+use crate::vt::input::{InputEncoder, MouseEvent};
+pub(crate) use crate::vt::observer::parse_packed_colour;
+pub(crate) use crate::vt::observer::{
+    ClipboardEvent as PaneClipboardEvent, CursorShape as PaneCursorShape,
+    OutputPolicy as PaneOutputPolicy, PassthroughPolicy,
+};
+use crate::vt::screen::{mode, CaptureExtent, Grid, GridDims, ScreenOptions, VtScreen};
+use crate::vt::PaneScreen;
 
 /// A single pane. Holds the emulated screen and, if live, the child on its pty.
 pub struct Pane {
@@ -39,23 +48,13 @@ pub struct Pane {
     /// from the PTY owner lets consumers inspect a resolved pane without
     /// retaining the native server's global state lock.
     observation: Rc<NativePaneObservation>,
-    /// Terminal queries emitted by the child which must be relayed to an
-    /// attached outer terminal. Ghostty consumes OSC sequences while updating
-    /// the grid, so they need a separate side channel to reach the compositor.
-    terminal_queries: Rc<RefCell<VecDeque<Vec<u8>>>>,
     /// The running child + pty, or `None` for an inert (process-less) pane.
     child: Option<Child>,
-    /// Bytes queued to be written to the child's pty (keystrokes and terminal-
-    /// query replies) that have not yet been accepted by the child. The pty
-    /// master is non-blocking, so a child that stops reading its stdin (a stalled
-    /// full-screen app) can never block a server thread writing to it — pending
-    /// bytes wait here and are flushed by the active I/O driver on writability. The
-    /// buffer is bounded; once full, further input is dropped rather than allowed
-    /// to stall the shared server, matching how tmux tolerates an unresponsive
-    /// pane. Shared with the active I/O driver.
+    /// Bytes pending to be written to the child's pty (keystrokes and terminal-
+    /// query replies).
     pending_input: Rc<RefCell<VecDeque<u8>>>,
-    /// Original process specification retained for command-less respawns.
-    spawn_spec: Option<PaneSpawnSpec>,
+    /// Messages queried from child
+    terminal_queries: Rc<RefCell<VecDeque<Vec<u8>>>>,
     /// Buffer the PTY reader appends to when `pipe-pane -O` is active.
     pipe_output: Rc<RefCell<PanePipeOutbound>>,
     pipe_output_active: Rc<Cell<bool>>,
@@ -283,6 +282,8 @@ static NEXT_PANE_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 struct Child {
     pid: pid_t,
     master: OwnedFd,
+    /// Original process specification retained for command-less respawns.
+    spawn_spec: PaneSpawnSpec,
     alive: Rc<Cell<bool>>,
     reaped: bool,
     termination_requested: bool,
@@ -313,13 +314,13 @@ struct ObservedChild {
 /// State which remains valid for the lifetime of a resolved observation
 /// handle, even if the pane is subsequently removed from the server tree.
 pub(crate) struct NativePaneObservation {
-    term: Rc<RefCell<Terminal>>,
+    term: Rc<RefCell<PaneScreen>>,
     revision: Cell<u64>,
     /// Revision of the latest scroll operation whose vertical region is large
     /// enough for tmux to prefer one deferred repaint over immediate row draws.
     /// This is monotonic so each attached client can observe it independently.
     large_scroll_revision: Cell<u64>,
-    redraw_detector: RefCell<ScrollRedrawDetector>,
+    redraw_detector: RefCell<ScrollRedraw>,
     control_output: RefCell<ControlOutputJournal>,
     /// Last DECSCUSR parameter emitted by the pane (0..=6). The VT formatter
     /// restores cursor position but does not serialize this terminal state.
@@ -369,43 +370,16 @@ pub(crate) struct NativePaneObservation {
     /// here rather than read back from Ghostty because tmux's limit on it is
     /// `input-buffer-size`, and Ghostty's is its own.
     announced_title: RefCell<Option<String>>,
+    /// The title the pane last set with the screen-family `ESC k … ST` control.
+    /// Nothing downstream recognizes that sequence, so it is reported straight
+    /// out of the tokenizer; `#{pane_title}` prefers it over an OSC title.
+    screen_title: RefCell<Option<String>>,
     /// The options that decide what the pane's own output is allowed to do.
     output_policy: PaneOutputPolicyCell,
-}
-
-/// The options a pane's *own output* has to be parsed against.
-///
-/// tmux reads these from `wp->options` inside `input_parse`, which runs with the
-/// whole server in reach. hmux parses a pane's bytes away from the server state,
-/// so the resolved values are pushed to the pane instead and re-pushed whenever
-/// they can have changed.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PaneOutputPolicy {
-    /// `alternate-screen`: whether smcup and rmcup switch screens at all.
-    pub(crate) alternate_screen: bool,
-    /// `allow-set-title`: whether the pane may retitle itself.
-    pub(crate) allow_set_title: bool,
-    /// `allow-passthrough`: how far a `DCS tmux;` payload reaches.
-    pub(crate) passthrough: PassthroughPolicy,
-    /// `input-buffer-size`: how long a terminal string may grow before the
-    /// parser abandons it.
-    pub(crate) input_buffer_size: u32,
-    /// `pane-colours`, packed as `0xrrggbb` by index — the palette a query
-    /// falls back to when the pane has set nothing itself.
-    pub(crate) palette: Vec<Option<u32>>,
-}
-
-/// `allow-passthrough`: whether a pane may write to a client's terminal
-/// directly, and whether it has to be the pane on screen to do so.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) enum PassthroughPolicy {
-    #[default]
-    Off,
-    /// `on`: only clients whose current window holds the pane.
-    Visible,
-    /// `all`: also clients that merely have the window linked, which is tmux's
-    /// `TTY_CTX_INVISIBLE_PANES`.
-    Always,
+    /// The pane's one tokenizer. Every query reply, OSC state change, mode
+    /// change, bell, clipboard event, passthrough payload and title comes out
+    /// of this single parse of the byte stream.
+    observer: RefCell<Observer>,
 }
 
 /// [`PaneOutputPolicy`] as the pane's parser reads it: shared with the server,
@@ -415,6 +389,7 @@ struct PaneOutputPolicyCell {
     allow_set_title: Cell<bool>,
     passthrough: Cell<u8>,
     input_buffer_size: Cell<u32>,
+    cursor_style: Cell<u8>,
     /// Read only where a pane's bytes are parsed, so a plain mutex is enough.
     palette: RefCell<Vec<Option<u32>>>,
 }
@@ -430,22 +405,21 @@ impl PaneOutputPolicyCell {
                 _ => PassthroughPolicy::Off,
             },
             input_buffer_size: self.input_buffer_size.get(),
+            cursor_style: self.cursor_style.get(),
             palette: self.palette.borrow().clone(),
         }
     }
 
     fn store(&self, policy: PaneOutputPolicy) {
-        self.alternate_screen
-            .set(policy.alternate_screen);
-        self.allow_set_title
-            .set(policy.allow_set_title);
+        self.alternate_screen.set(policy.alternate_screen);
+        self.allow_set_title.set(policy.allow_set_title);
         self.passthrough.set(match policy.passthrough {
-                PassthroughPolicy::Off => 0,
-                PassthroughPolicy::Visible => 1,
-                PassthroughPolicy::Always => 2,
-            });
-        self.input_buffer_size
-            .set(policy.input_buffer_size);
+            PassthroughPolicy::Off => 0,
+            PassthroughPolicy::Visible => 1,
+            PassthroughPolicy::Always => 2,
+        });
+        self.input_buffer_size.set(policy.input_buffer_size);
+        self.cursor_style.set(policy.cursor_style);
         {
             let mut palette = self.palette.borrow_mut();
             *palette = policy.palette;
@@ -454,16 +428,20 @@ impl PaneOutputPolicyCell {
 }
 
 /// The options' own defaults, which a pane parses against until the server's
-/// first refresh reaches it.
+/// first refresh reaches it. The values themselves live in
+/// [`PaneOutputPolicy`]'s `Default`.
 impl Default for PaneOutputPolicyCell {
     fn default() -> Self {
-        Self {
-            alternate_screen: Cell::new(true),
-            allow_set_title: Cell::new(true),
-            passthrough: Cell::new(0),
-            input_buffer_size: Cell::new(INPUT_BUFFER_DEFAULT_SIZE),
-            palette: RefCell::new(Vec::new()),
-        }
+        let cell = Self {
+            alternate_screen: Cell::default(),
+            allow_set_title: Cell::default(),
+            passthrough: Cell::default(),
+            input_buffer_size: Cell::default(),
+            cursor_style: Cell::default(),
+            palette: RefCell::default(),
+        };
+        cell.store(PaneOutputPolicy::default());
+        cell
     }
 }
 
@@ -478,23 +456,6 @@ pub(crate) struct PanePassthrough {
     pub(crate) invisible_panes: bool,
 }
 
-/// One OSC 52 sequence seen in a pane's output.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum PaneClipboardEvent {
-    /// `OSC 52 ; <selection> ; <base64>` — an application setting the
-    /// clipboard, already decoded.
-    Set { data: Vec<u8> },
-    /// `OSC 52 ; <selection> ; ?` — an application asking for it.
-    Query {
-        /// The selection character echoed back in the reply; empty when the
-        /// request named none that tmux recognises.
-        selection: String,
-        /// Whether the request ended with ST rather than BEL, which the reply
-        /// mirrors.
-        string_terminator: bool,
-    },
-}
-
 struct OutputEvent {
     wakeup: <CurrentPlatform as Platform>::OutputWakeup,
 }
@@ -505,23 +466,31 @@ struct ScrollRegion {
     bottom: u16,
 }
 
+/// Where in its scrolling region an operation moves rows, which decides whether
+/// the cursor has to be inside it for the move to be visible.
 #[derive(Clone, Copy)]
 enum ScrollEdge {
+    /// Reverse index: only at the region's top row.
     Top,
+    /// Line feed and index: only at the region's bottom row.
     Bottom,
+    /// Insert/delete line: anywhere inside the region.
     Inside,
+    /// Scroll up/down: the whole region moves regardless of the cursor.
     Any,
 }
 
 #[derive(Clone, Copy)]
 struct ScrollAction {
-    byte_index: usize,
     region: ScrollRegion,
     edge: ScrollEdge,
     rows: u16,
 }
 
 impl ScrollAction {
+    /// Whether tmux would prefer one deferred repaint of the pane over drawing
+    /// the moved rows: the region has to be at least half the pane, and the
+    /// cursor has to be somewhere the operation actually moves rows.
     fn needs_large_redraw(self, cursor_y: u16) -> bool {
         if self.region.bottom.saturating_sub(self.region.top) < self.rows / 2 {
             return false;
@@ -535,49 +504,22 @@ impl ScrollAction {
     }
 }
 
-#[derive(Default)]
-struct CsiState {
-    params: [u16; 2],
-    present: [bool; 2],
-    index: usize,
-    private: bool,
-    intermediate: Option<u8>,
-}
-
-impl CsiState {
-    fn parameter(&self, index: usize, default: u16) -> u16 {
-        self.present[index]
-            .then_some(self.params[index])
-            .filter(|value| *value != 0)
-            .unwrap_or(default)
-    }
-}
-
-#[derive(Default)]
-enum RedrawParserState {
-    #[default]
-    Ground,
-    Escape,
-    Csi(CsiState),
-    String,
-    StringEscape,
-}
-
-/// Minimal streaming VT parser for operations which can scroll a vertical
-/// region. Ghostty remains the terminal parser and source of truth; this only
-/// retains enough metadata to choose between row and pane repainting.
-struct ScrollRedrawDetector {
+/// Recognizes the operations that scroll a vertical region, so the compositor
+/// can choose between repainting rows and repainting the pane.
+///
+/// This reads the pane's tokens rather than its bytes: the framing is already
+/// settled by the time it sees them, so all that is left is the scrolling
+/// region, which is screen state the tokens change.
+struct ScrollRedraw {
     rows: u16,
     explicit_region: Option<ScrollRegion>,
-    state: RedrawParserState,
 }
 
-impl ScrollRedrawDetector {
+impl ScrollRedraw {
     fn new(rows: u16) -> Self {
         Self {
             rows: rows.max(1),
             explicit_region: None,
-            state: RedrawParserState::Ground,
         }
     }
 
@@ -593,148 +535,69 @@ impl ScrollRedrawDetector {
         })
     }
 
-    fn scan(&mut self, bytes: &[u8]) -> Vec<ScrollAction> {
-        let mut actions = Vec::new();
-        for (byte_index, &byte) in bytes.iter().enumerate() {
-            if let Some(edge) = self.feed_byte(byte) {
-                actions.push(ScrollAction {
-                    byte_index,
-                    region: self.region(),
-                    edge,
-                    rows: self.rows,
-                });
-            }
-        }
-        actions
-    }
-
-    fn feed_byte(&mut self, byte: u8) -> Option<ScrollEdge> {
-        let state = std::mem::take(&mut self.state);
-        match state {
-            RedrawParserState::Ground => match byte {
-                b'\n' | 0x0b | 0x0c => Some(ScrollEdge::Bottom),
-                0x1b => {
-                    self.state = RedrawParserState::Escape;
-                    None
-                }
-                0x9b => {
-                    self.state = RedrawParserState::Csi(CsiState::default());
-                    None
-                }
-                0x90 | 0x98 | 0x9d | 0x9e | 0x9f => {
-                    self.state = RedrawParserState::String;
-                    None
-                }
-                _ => None,
-            },
-            RedrawParserState::Escape => match byte {
-                b'[' => {
-                    self.state = RedrawParserState::Csi(CsiState::default());
-                    None
-                }
-                b'P' | b'X' | b']' | b'^' | b'_' => {
-                    self.state = RedrawParserState::String;
-                    None
-                }
-                b'D' => Some(ScrollEdge::Bottom),
-                b'M' => Some(ScrollEdge::Top),
+    /// Classify one token, applying any change it makes to the region first.
+    fn scan(&mut self, token: &Token) -> Option<ScrollAction> {
+        let edge = match &token.kind {
+            TokenKind::Control(0x0a..=0x0c) => ScrollEdge::Bottom,
+            TokenKind::Esc {
+                intermediates,
+                final_byte,
+            } if intermediates.is_empty() => match final_byte {
+                b'D' => ScrollEdge::Bottom,
+                b'M' => ScrollEdge::Top,
+                // RIS puts the region back to the whole screen.
                 b'c' => {
                     self.explicit_region = None;
-                    None
+                    return None;
                 }
-                0x1b => {
-                    self.state = RedrawParserState::Escape;
-                    None
-                }
-                _ => None,
+                _ => return None,
             },
-            RedrawParserState::Csi(mut csi) => match byte {
-                b'0'..=b'9' => {
-                    if csi.index < csi.params.len() {
-                        csi.present[csi.index] = true;
-                        csi.params[csi.index] = csi.params[csi.index]
-                            .saturating_mul(10)
-                            .saturating_add(u16::from(byte - b'0'));
-                    }
-                    self.state = RedrawParserState::Csi(csi);
-                    None
+            TokenKind::Csi {
+                private: None,
+                params,
+                intermediates,
+                final_byte,
+            } => match (intermediates.as_slice(), final_byte) {
+                // DECSTR, which also resets the region.
+                ([b'!'], b'p') => {
+                    self.explicit_region = None;
+                    return None;
                 }
-                b';' => {
-                    csi.index = csi.index.saturating_add(1);
-                    self.state = RedrawParserState::Csi(csi);
-                    None
+                ([], b'r') => {
+                    self.set_region(params);
+                    return None;
                 }
-                0x20..=0x2f => {
-                    csi.intermediate = Some(byte);
-                    self.state = RedrawParserState::Csi(csi);
-                    None
-                }
-                0x3c..=0x3f => {
-                    csi.private = true;
-                    self.state = RedrawParserState::Csi(csi);
-                    None
-                }
-                0x40..=0x7e => self.finish_csi(byte, &csi),
-                b'\n' | 0x0b | 0x0c => {
-                    self.state = RedrawParserState::Csi(csi);
-                    Some(ScrollEdge::Bottom)
-                }
-                0x1b => {
-                    self.state = RedrawParserState::Escape;
-                    None
-                }
-                _ => {
-                    self.state = RedrawParserState::Csi(csi);
-                    None
-                }
+                ([], b'S' | b'T') => ScrollEdge::Any,
+                ([], b'L' | b'M') => ScrollEdge::Inside,
+                _ => return None,
             },
-            RedrawParserState::String => match byte {
-                0x07 | 0x9c => None,
-                0x1b => {
-                    self.state = RedrawParserState::StringEscape;
-                    None
-                }
-                _ => {
-                    self.state = RedrawParserState::String;
-                    None
-                }
-            },
-            RedrawParserState::StringEscape => {
-                if byte != b'\\' && byte != 0x9c {
-                    self.state = if byte == 0x1b {
-                        RedrawParserState::StringEscape
-                    } else {
-                        RedrawParserState::String
-                    };
-                }
-                None
-            }
-        }
+            _ => return None,
+        };
+        Some(ScrollAction {
+            region: self.region(),
+            edge,
+            rows: self.rows,
+        })
     }
 
-    fn finish_csi(&mut self, final_byte: u8, csi: &CsiState) -> Option<ScrollEdge> {
-        if final_byte == b'p' && csi.intermediate == Some(b'!') {
-            self.explicit_region = None;
-            return None;
-        }
-        if csi.private || csi.intermediate.is_some() {
-            return None;
-        }
-        match final_byte {
-            b'r' => {
-                let top = csi.parameter(0, 1);
-                let bottom = csi.parameter(1, self.rows);
-                if top < bottom && bottom <= self.rows {
-                    self.explicit_region = Some(ScrollRegion {
-                        top: top - 1,
-                        bottom: bottom - 1,
-                    });
-                }
-                None
-            }
-            b'S' | b'T' => Some(ScrollEdge::Any),
-            b'L' | b'M' => Some(ScrollEdge::Inside),
-            _ => None,
+    /// DECSTBM. A region that is empty or runs off the screen is refused, as
+    /// tmux refuses it.
+    fn set_region(&mut self, params: &[Param]) {
+        let read = |index: usize, default: u16| -> u16 {
+            params
+                .get(index)
+                .and_then(|param: &Param| param.value)
+                .and_then(|value| u16::try_from(value).ok())
+                .filter(|value| *value != 0)
+                .unwrap_or(default)
+        };
+        let top = read(0, 1);
+        let bottom = read(1, self.rows);
+        if top < bottom && bottom <= self.rows {
+            self.explicit_region = Some(ScrollRegion {
+                top: top - 1,
+                bottom: bottom - 1,
+            });
         }
     }
 }
@@ -895,8 +758,37 @@ impl OutputSubscription {
 }
 
 impl NativePaneObservation {
+    /// `#{history_bytes}` and `#{history_all_bytes}`: the byte totals of the C
+    /// structures tmux would allocate for this grid. The struct sizes are
+    /// tmux's on LP64 — `grid_line` (40), packed `grid_cell_entry` (5) and
+    /// packed `grid_extd_entry` (23) — because the variables report those
+    /// allocations, not hmux's own storage.
+    pub(crate) fn history_byte_formats(&self) -> io::Result<(String, String)> {
+        const GRID_LINE_BYTES: usize = 40;
+        const GRID_CELL_ENTRY_BYTES: usize = 5;
+        const GRID_EXTD_ENTRY_BYTES: usize = 23;
+        let term = self.term.borrow_mut();
+        let dims = term.grid_dims()?;
+        let grid = term.grid_snapshot_range(0, dims.total_rows)?;
+        let lines = dims.total_rows;
+        let cells: usize = grid.rows.iter().map(|row| row.size).sum();
+        let extended: usize = grid.rows.iter().map(|row| row.extd).sum();
+        let total = lines * GRID_LINE_BYTES
+            + cells * GRID_CELL_ENTRY_BYTES
+            + extended * GRID_EXTD_ENTRY_BYTES;
+        Ok((
+            total.to_string(),
+            format!(
+                "{lines},{},{cells},{},{extended},{}",
+                lines * GRID_LINE_BYTES,
+                cells * GRID_CELL_ENTRY_BYTES,
+                extended * GRID_EXTD_ENTRY_BYTES,
+            ),
+        ))
+    }
+
     fn new(
-        term: Rc<RefCell<Terminal>>,
+        term: Rc<RefCell<PaneScreen>>,
         child: Option<ObservedChild>,
         cols: u16,
         rows: u16,
@@ -909,7 +801,7 @@ impl NativePaneObservation {
             term,
             revision: Cell::new(0),
             large_scroll_revision: Cell::new(0),
-            redraw_detector: RefCell::new(ScrollRedrawDetector::new(rows)),
+            redraw_detector: RefCell::new(ScrollRedraw::new(rows)),
             control_output: RefCell::new(ControlOutputJournal::default()),
             cursor_shape: Cell::new(0),
             modes: Cell::new(PaneModeSnapshot::default()),
@@ -937,6 +829,8 @@ impl NativePaneObservation {
             clipboard_events: RefCell::new(VecDeque::new()),
             passthrough: RefCell::new(VecDeque::new()),
             announced_title: RefCell::new(None),
+            screen_title: RefCell::new(None),
+            observer: RefCell::new(Observer::default()),
             output_policy: PaneOutputPolicyCell::default(),
         }
     }
@@ -992,11 +886,7 @@ impl NativePaneObservation {
             .borrow()
             .as_ref()
             .map(|stops| stops.iter().copied().collect())
-            .unwrap_or_else(|| {
-                default_tab_stops(self.columns.get())
-                    .into_iter()
-                    .collect()
-            })
+            .unwrap_or_else(|| default_tab_stops(self.columns.get()).into_iter().collect())
     }
 
     /// The pane's scroll region, as `#{scroll_region_upper}`/`#{lower}` report
@@ -1066,16 +956,155 @@ impl NativePaneObservation {
         self.clipboard_events.borrow_mut().drain(..).collect()
     }
 
-    fn record_output(&self, bytes: &[u8], large_scroll: bool) {
-        self.append_control_output(bytes);
-        let mut detector = BellDetector::default();
-        self.note_bells(bytes.iter().filter(|byte| detector.feed(**byte)).count() as u64);
-        self.record_change(large_scroll);
+    /// Feed one chunk of the pane's output through its tokenizer and apply
+    /// everything the parse reports.
+    ///
+    /// Returns what only the caller can deliver: bytes to write back to the
+    /// pane's own input, and questions to forward to the client's terminal.
+    ///
+    /// Each event is applied at exactly its point in the byte stream, so an
+    /// event that reads the cursor — a DSR reply, a tab stop, the cursor DECSET
+    /// 1049 saves — sees the screen as it stands there and not as it ends up.
+    fn observe_output(&self, pending: &[u8]) -> (Vec<Vec<u8>>, Vec<&'static [u8]>) {
+        self.append_control_output(pending);
+        let policy = self.output_policy();
+        let observed = self.observer.borrow_mut().feed(pending, &policy);
+        let tokens = &observed.screen[..];
+
+        let mut replies: Vec<Vec<u8>> = Vec::new();
+        let mut queries: Vec<&'static [u8]> = Vec::new();
+        {
+            let mut terminal = self.term.borrow_mut();
+            let mut segment_start = 0usize;
+            let mut large_scroll = false;
+            for (split_at, event) in observed.events {
+                while segment_start < split_at {
+                    large_scroll |= self.write_terminal(&mut terminal, &tokens[segment_start]);
+                    segment_start += 1;
+                }
+                self.apply_event(event, &terminal, &policy, &mut replies, &mut queries);
+            }
+            for token in &tokens[segment_start..] {
+                large_scroll |= self.write_terminal(&mut terminal, token);
+            }
+            self.record_change(large_scroll);
+            // The modes are republished from the screen once the whole batch
+            // has reached it. Reading them before would report what the pane
+            // asked for a read ago, and there is nothing else holding them:
+            // the screen's mode word is the only copy.
+            self.modes.set(PaneModeSnapshot::of(terminal.modes()));
+        }
+        (replies, queries)
+    }
+
+    /// Apply one parse event against the screen as it stands at that point in
+    /// the stream. Anything the caller has to deliver is collected instead.
+    fn apply_event(
+        &self,
+        event: VtEvent,
+        terminal: &PaneScreen,
+        policy: &PaneOutputPolicy,
+        replies: &mut Vec<Vec<u8>>,
+        queries: &mut Vec<&'static [u8]>,
+    ) {
+        match event {
+            VtEvent::Bell => self.note_bells(1),
+            VtEvent::Title(title) => {
+                let mut announced = self.announced_title.borrow_mut();
+                *announced = Some(title);
+            }
+            // tmux's `ESC k` renames the window; hmux has always reported it as
+            // the pane's own title instead.
+            VtEvent::Rename(title) => {
+                let mut screen_title = self.screen_title.borrow_mut();
+                *screen_title = Some(title);
+            }
+            VtEvent::AlternateScreen(on) => self.alternate_on.set(on),
+            VtEvent::SaveAlternateCursor => {
+                if let Ok((x, y)) = terminal.cursor_position() {
+                    self.alternate_saved_x.set(u32::from(x));
+                    self.alternate_saved_y.set(u32::from(y));
+                }
+            }
+            VtEvent::CursorPositionReport => {
+                if let Some(reply) = cursor_position_report(terminal) {
+                    replies.push(reply);
+                }
+            }
+            VtEvent::WindowSizeReport(operation) => {
+                if let Some(reply) = window_size_report(terminal, operation) {
+                    replies.push(reply);
+                }
+            }
+            VtEvent::DecPrivateModeReport(mode) => {
+                let status = dec_mode_status(terminal.modes(), self.alternate_on.get(), mode);
+                replies.push(format!("\x1b[?{mode};{status}$y").into_bytes());
+            }
+            VtEvent::DecModeReport(mode) => {
+                let status = ansi_mode_status(terminal.modes(), mode);
+                replies.push(format!("\x1b[{mode};{status}$y").into_bytes());
+            }
+            VtEvent::StatusReport(request) => replies.push(decrqss_reply(
+                &request,
+                PaneCursorShape::from_parameter(self.cursor_shape.get()),
+                terminal.modes() & mode::CURSOR_BLINKING != 0,
+                policy.cursor_style,
+            )),
+            VtEvent::SetTabStop => {
+                if let Ok((x, _)) = terminal.cursor_position() {
+                    self.update_tab_stops(|stops| {
+                        stops.insert(x);
+                    });
+                }
+            }
+            VtEvent::ClearTabStop => {
+                if let Ok((x, _)) = terminal.cursor_position() {
+                    self.update_tab_stops(|stops| {
+                        stops.remove(&x);
+                    });
+                }
+            }
+            VtEvent::ClearAllTabStops => self.update_tab_stops(BTreeSet::clear),
+            VtEvent::CursorShape(shape) => self.cursor_shape.set(shape),
+            VtEvent::Reply(reply) => replies.push(reply),
+            VtEvent::CursorColourQuery(end) => {
+                if let Some(reply) = cursor_colour_query_reply(&self.cursor_colour.borrow(), end) {
+                    replies.push(reply);
+                }
+            }
+            VtEvent::ForwardQuery(query) => queries.push(query),
+            VtEvent::Osc(update) => {
+                let slot_value = match update {
+                    OscUpdate::Background(colour) => Some((&self.background, colour)),
+                    OscUpdate::Foreground(colour) => Some((&self.foreground, colour)),
+                    OscUpdate::CursorColour(colour) => Some((&self.cursor_colour, colour)),
+                    OscUpdate::Path(path) => Some((&self.path, path)),
+                    OscUpdate::ProgressBar { state, progress } => {
+                        self.progress_state.set(state);
+                        if let Some(progress) = progress {
+                            self.progress_value.set(progress);
+                        }
+                        None
+                    }
+                };
+                if let Some((slot, value)) = slot_value {
+                    let mut current = slot.borrow_mut();
+                    *current = value;
+                }
+            }
+            VtEvent::Clipboard(event) => self.note_clipboard_event(event),
+            VtEvent::Passthrough(data) => self.note_passthrough(PanePassthrough {
+                data,
+                invisible_panes: policy.passthrough == PassthroughPolicy::Always,
+            }),
+            VtEvent::ThemeQuery => self.theme_query.set(true),
+        }
     }
 
     fn note_bells(&self, count: u64) {
         if count != 0 {
-            self.bell_count.set(self.bell_count.get().wrapping_add(count));
+            self.bell_count
+                .set(self.bell_count.get().wrapping_add(count));
         }
     }
 
@@ -1102,34 +1131,25 @@ impl NativePaneObservation {
         let revision = self.revision.get().wrapping_add(1);
         self.revision.set(revision);
         if large_scroll {
-            self.large_scroll_revision
-                .set(revision);
+            self.large_scroll_revision.set(revision);
         }
         self.notify_output();
     }
 
-    fn write_terminal(&self, terminal: &mut Terminal, bytes: &[u8]) -> bool {
-        let actions = self.redraw_detector.borrow_mut().scan(bytes);
-        if actions.is_empty() {
-            terminal.write(bytes);
-            return false;
-        }
-
-        let mut large_scroll = false;
-        let mut start = 0;
-        for action in actions {
-            terminal.write(&bytes[start..action.byte_index]);
-            if terminal
+    /// Apply one token to the screen, reporting whether it scrolled enough of
+    /// the pane that the compositor should repaint the whole thing.
+    ///
+    /// The cursor is read *before* the token applies, because a scroll is only
+    /// visible where the cursor already was.
+    fn write_terminal(&self, terminal: &mut PaneScreen, token: &Token) -> bool {
+        let action = self.redraw_detector.borrow_mut().scan(token);
+        let large_scroll = action.is_some_and(|action| {
+            terminal
                 .cursor_position()
                 .ok()
                 .is_some_and(|(_, y)| action.needs_large_redraw(y))
-            {
-                large_scroll = true;
-            }
-            terminal.write(&bytes[action.byte_index..=action.byte_index]);
-            start = action.byte_index + 1;
-        }
-        terminal.write(&bytes[start..]);
+        });
+        terminal.apply(token);
         large_scroll
     }
 
@@ -1203,10 +1223,7 @@ impl NativePaneObservation {
     #[allow(dead_code)]
     pub(crate) fn contract_terminal_tail(&self, max_rows: usize) -> io::Result<String> {
         let terminal = self.term.borrow_mut();
-        Ok(trailing_lines(
-            &terminal.dump_plain().map_err(ghostty_err)?,
-            max_rows,
-        ))
+        Ok(trailing_lines(&terminal.dump_plain()?, max_rows))
     }
 }
 
@@ -1231,14 +1248,14 @@ impl PaneObservability for NativePaneObservation {
     fn screen(&self, source: ScreenSource, lines: usize) -> io::Result<ScreenTail> {
         let term = self.term.borrow_mut();
         let text = match source {
-            ScreenSource::Recent => term.dump_plain().map_err(ghostty_err)?,
-            ScreenSource::RecentUnwrapped => term.dump_plain_unwrapped().map_err(ghostty_err)?,
+            ScreenSource::Recent => term.dump_plain()?,
+            ScreenSource::RecentUnwrapped => term.dump_plain_unwrapped()?,
             ScreenSource::Visible => {
                 // The plain dump is history-first; the viewport is the tail after
                 // the scrollback rows. Drop history so only the on-screen rows
                 // remain (see report.md).
-                let dump = term.dump_plain().map_err(ghostty_err)?;
-                let history = term.scrollback_rows().map_err(ghostty_err)?;
+                let dump = term.dump_plain()?;
+                let history = term.scrollback_rows()?;
                 drop_leading_lines(&dump, history)
             }
         };
@@ -1246,7 +1263,7 @@ impl PaneObservability for NativePaneObservation {
         // so the formatted text, cursor state, and revision form one coherent
         // snapshot.
         let revision = self.revision.get();
-        let cursor_visible = term.cursor_visible().map_err(ghostty_err)?;
+        let cursor_visible = term.cursor_visible()?;
         let cursor_shape = self.cursor_shape.get();
         Ok(ScreenTail {
             revision,
@@ -1257,10 +1274,7 @@ impl PaneObservability for NativePaneObservation {
     }
 
     fn scrollback_rows(&self) -> io::Result<usize> {
-        self.term
-            .borrow_mut()
-            .scrollback_rows()
-            .map_err(ghostty_err)
+        self.term.borrow_mut().scrollback_rows()
     }
 
     fn title(&self) -> io::Result<Option<String>> {
@@ -1272,7 +1286,7 @@ impl Pane {
     /// A pane with a screen but no process. Useful as a lightweight session
     /// placeholder and for feeding synthetic bytes in tests.
     pub fn inert(cols: u16, rows: u16) -> io::Result<Pane> {
-        let term = Terminal::new(cols, rows).map_err(ghostty_err)?;
+        let term = PaneScreen::new(cols, rows);
         Ok(Pane {
             observation: Rc::new(NativePaneObservation::new(
                 Rc::new(RefCell::new(term)),
@@ -1283,7 +1297,6 @@ impl Pane {
             terminal_queries: Rc::new(RefCell::new(VecDeque::new())),
             child: None,
             pending_input: Rc::new(RefCell::new(VecDeque::new())),
-            spawn_spec: None,
             pipe_output: Rc::new(RefCell::new(PanePipeOutbound::default())),
             pipe_output_active: Rc::new(Cell::new(false)),
             pipe: None,
@@ -1303,7 +1316,7 @@ impl Pane {
     ) -> io::Result<Pane> {
         assert!(!argv.is_empty(), "argv must have at least the program");
 
-        let term = Terminal::new(cols, rows).map_err(ghostty_err)?;
+        let term = PaneScreen::new(cols, rows);
         let term = Rc::new(RefCell::new(term));
         let terminal_queries = Rc::new(RefCell::new(VecDeque::new()));
 
@@ -1393,6 +1406,10 @@ impl Pane {
             child: Some(Child {
                 pid,
                 master,
+                spawn_spec: PaneSpawnSpec {
+                    argv: argv.iter().map(|arg| (*arg).to_string()).collect(),
+                    cwd: cwd.map(Path::to_path_buf),
+                },
                 alive,
                 reaped: false,
                 termination_requested: false,
@@ -1400,10 +1417,6 @@ impl Pane {
                 death: None,
             }),
             pending_input,
-            spawn_spec: Some(PaneSpawnSpec {
-                argv: argv.iter().map(|arg| (*arg).to_string()).collect(),
-                cwd: cwd.map(Path::to_path_buf),
-            }),
             pipe_output,
             pipe_output_active,
             pipe: None,
@@ -1416,21 +1429,17 @@ impl Pane {
     }
 
     pub(crate) fn spawn_spec(&self) -> Option<PaneSpawnSpec> {
-        self.spawn_spec.clone()
+        self.child.as_ref().map(|child| child.spawn_spec.clone())
     }
 
     /// The directory the pane was spawned in (`#{pane_start_path}`), when one
     /// was chosen explicitly. `None` means the pane inherited the server's own
     /// working directory, which is what the caller reports instead.
     pub(crate) fn start_path(&self) -> Option<&Path> {
-        self.spawn_spec.as_ref()?.cwd.as_deref()
+        self.child.as_ref()?.spawn_spec.cwd.as_deref()
     }
 
-    pub(crate) fn spawn_from_spec(
-        spec: &PaneSpawnSpec,
-        cols: u16,
-        rows: u16,
-    ) -> io::Result<Pane> {
+    pub(crate) fn spawn_from_spec(spec: &PaneSpawnSpec, cols: u16, rows: u16) -> io::Result<Pane> {
         let argv = spec.argv.iter().map(String::as_str).collect::<Vec<_>>();
         Self::spawn(&argv, spec.cwd.as_deref(), cols, rows)
     }
@@ -1444,14 +1453,26 @@ impl Pane {
     }
 
     pub(crate) fn pipe_active(&self) -> bool {
-        self.pipe
-            .as_ref()
-            .is_some_and(|pipe| pipe.alive.get())
+        self.pipe.as_ref().is_some_and(|pipe| pipe.alive.get())
     }
 
     /// The pid of the process the pane forked for its pty (`#{pane_pid}`).
     pub(crate) fn child_pid(&self) -> Option<pid_t> {
         self.child.as_ref().map(|child| child.pid)
+    }
+
+    /// The slave device for the pane's live PTY (`#{pane_tty}`).
+    pub(crate) fn tty_name(&self) -> Option<String> {
+        let master = self.child.as_ref()?.master.as_raw_fd();
+        let name = unsafe { libc::ptsname(master) };
+        if name.is_null() {
+            return None;
+        }
+        Some(
+            unsafe { CStr::from_ptr(name) }
+                .to_string_lossy()
+                .into_owned(),
+        )
     }
 
     /// The `pipe-pane` child's pid (`#{pane_pipe_pid}`), while the pipe is open.
@@ -1566,19 +1587,9 @@ impl Pane {
         if bytes.is_empty() {
             return;
         }
-        {
-            let mut t = self.observation.term.borrow_mut();
-            let large_scroll = self.observation.write_terminal(&mut t, bytes);
-            let mut detector = CursorShapeDetector::default();
-            for &byte in bytes {
-                if let Some(shape) = detector.feed_byte(byte) {
-                    self.observation
-                        .cursor_shape
-                        .set(shape);
-                }
-            }
-            self.observation.record_output(bytes, large_scroll);
-        }
+        // An inert pane has no child to answer, so the replies and forwarded
+        // questions the parse produces have nowhere to go.
+        let _ = self.observation.observe_output(bytes);
     }
 
     /// Return the stable read-only handle associated with this pane.
@@ -1591,7 +1602,6 @@ impl Pane {
     pub(crate) fn observation_state(&self) -> Rc<NativePaneObservation> {
         Rc::clone(&self.observation)
     }
-
 
     #[cfg(test)]
     pub(crate) fn subscribe_output(&self) -> io::Result<OutputSubscription> {
@@ -1611,18 +1621,16 @@ impl Pane {
         self.input_with_stats(bytes).map(|_| ())
     }
 
-    pub(crate) fn encode_mouse(&self, event: ghostty_sys::MouseEvent) -> io::Result<Vec<u8>> {
-        self.observation
-            .term
-            .borrow_mut()
-            .encode_mouse(event)
-            .map_err(ghostty_err)
+    pub(crate) fn encode_mouse(&self, event: MouseEvent) -> io::Result<Vec<u8>> {
+        self.observation.term.borrow_mut().encode_mouse(event)
     }
 
     /// Reset the emulated terminal state without sending bytes to the child.
     pub(crate) fn reset_terminal(&self) -> io::Result<()> {
         let mut terminal = self.observation.term.borrow_mut();
-        self.observation.write_terminal(&mut terminal, b"\x1bc");
+        for token in crate::vt::parser::tokenize(b"\x1bc") {
+            self.observation.write_terminal(&mut terminal, &token);
+        }
         self.observation.record_change(false);
         Ok(())
     }
@@ -1634,8 +1642,7 @@ impl Pane {
             return Ok(PaneInputStats::default());
         };
         let stats = enqueue_pane_input(child.master.as_raw_fd(), &self.pending_input, bytes);
-        if stats.queued != 0 {
-        }
+        if stats.queued != 0 {}
         Ok(stats)
     }
 
@@ -1668,10 +1675,7 @@ impl Pane {
         Some(PaneProcessProbe {
             foreground: (foreground > 0).then_some(foreground),
             session_leader: (session_leader > 0).then_some(session_leader),
-            fallback_command: self
-                .spawn_spec
-                .as_ref()
-                .map(|spec| stringify_argv(&spec.argv)),
+            fallback_command: Some(stringify_argv(&child.spawn_spec.argv)),
         })
     }
 
@@ -1694,6 +1698,18 @@ impl Pane {
     /// [`Pane::input`], completing the same exchange real tmux provides.
     pub fn take_terminal_queries(&self) -> Vec<Vec<u8>> {
         self.terminal_queries.borrow_mut().drain(..).collect()
+    }
+
+    /// Publish the options the pane's *screen* consults; see [`ScreenOptions`].
+    /// Like the output policy, these are pushed rather than looked up, and for
+    /// the same reason: the screen has no view of the option tables.
+    pub(crate) fn set_screen_options(&self, options: ScreenOptions) {
+        self.observation.term.borrow_mut().set_options(options);
+    }
+
+    /// Apply the session's history cap to the pane's primary scrollback.
+    pub(crate) fn set_history_limit(&self, limit: usize) {
+        self.observation.term.borrow_mut().set_history_limit(limit);
     }
 
     /// Publish the options the pane's output is parsed against. The server
@@ -1719,7 +1735,7 @@ impl Pane {
         self.rows = rows;
         {
             let mut t = self.observation.term.borrow_mut();
-            t.resize(cols, rows).map_err(ghostty_err)?;
+            t.resize(cols, rows)?;
             {
                 let mut detector = self.observation.redraw_detector.borrow_mut();
                 detector.resize(rows);
@@ -1727,9 +1743,7 @@ impl Pane {
         }
         // tmux's screen_resize lays the default tab stops out afresh, dropping
         // whatever the pane had set.
-        self.observation
-            .columns
-            .set(cols);
+        self.observation.columns.set(cols);
         {
             let mut stops = self.observation.tab_stops.borrow_mut();
             *stops = None;
@@ -1752,11 +1766,7 @@ impl Pane {
 
     /// The current screen as plain text.
     pub fn dump(&self) -> io::Result<String> {
-        self.observation
-            .term
-            .borrow_mut()
-            .dump_plain()
-            .map_err(ghostty_err)
+        self.observation.term.borrow_mut().dump_plain()
     }
 
     /// The visible screen as plain text, without scrollback — what tmux's
@@ -1770,82 +1780,90 @@ impl Pane {
     }
 
     pub(crate) fn cursor_position(&self) -> io::Result<(u16, u16)> {
-        self.observation
-            .term
-            .borrow_mut()
-            .cursor_position()
-            .map_err(ghostty_err)
+        self.observation.term.borrow_mut().cursor_position()
     }
 
-    pub(crate) fn copy_snapshot(
-        &self,
-    ) -> io::Result<(ghostty_sys::GridSnapshot, Vec<u8>, (u16, u16))> {
+    pub(crate) fn copy_snapshot(&self) -> io::Result<(Grid, Vec<u8>, (u16, u16))> {
         let terminal = self.observation.term.borrow_mut();
-        let grid = terminal.grid_snapshot().map_err(ghostty_err)?;
-        let vt = terminal.dump_vt().map_err(ghostty_err)?;
-        let cursor = terminal.cursor_position().map_err(ghostty_err)?;
+        let grid = terminal.grid_snapshot()?;
+        let vt = terminal.dump_vt()?;
+        let cursor = terminal.cursor_position()?;
         Ok((grid, vt, cursor))
     }
 
     /// Row geometry of the grid without the per-cell snapshot walk.
-    pub(crate) fn grid_dims(&self) -> io::Result<ghostty_sys::GridDims> {
-        self.observation
-            .term
-            .borrow_mut()
-            .grid_dims()
-            .map_err(ghostty_err)
+    pub(crate) fn grid_dims(&self) -> io::Result<GridDims> {
+        self.observation.term.borrow_mut().grid_dims()
     }
 
     /// Snapshot only physical rows `[start, start + count)`; see
-    /// [`ghostty_sys::Terminal::grid_snapshot_range`].
-    pub(crate) fn grid_snapshot_range(
-        &self,
-        start: usize,
-        count: usize,
-    ) -> io::Result<ghostty_sys::GridSnapshot> {
+    /// [`PaneScreen::grid_snapshot_range`].
+    pub(crate) fn grid_snapshot_range(&self, start: usize, count: usize) -> io::Result<Grid> {
         self.observation
             .term
             .borrow_mut()
             .grid_snapshot_range(start, count)
-            .map_err(ghostty_err)
+    }
+
+    /// `resize-pane -T`; see
+    /// [`crate::vt::screen::VtScreen::trim_history_below_cursor`].
+    pub(crate) fn trim_history_below_cursor(&self) -> io::Result<()> {
+        self.observation
+            .term
+            .borrow_mut()
+            .trim_history_below_cursor()
+    }
+
+    /// The screen the alternate-screen switch displaced, which
+    /// `capture-pane -a` reads, or `None` when the pane is not on an alternate
+    /// screen. The VT half is the `-e` serialization of the same rows.
+    pub(crate) fn inactive_snapshot(&self) -> io::Result<Option<(Grid, Vec<u8>)>> {
+        self.observation.term.borrow_mut().inactive_snapshot()
+    }
+
+    /// Bytes of an escape sequence the pane's tokenizer has not finished, which
+    /// `capture-pane -P` returns. This is the pane's one parser, so the answer
+    /// is the same framing everything else on this pane was decided by.
+    pub(crate) fn pending_input(&self) -> Vec<u8> {
+        self.observation.observer.borrow().pending().to_vec()
     }
 
     pub(crate) fn background_color(&self) -> String {
         self.observation.background.borrow().clone()
     }
 
-    /// Latest title advertised by the child. Ghostty handles OSC titles; the
-    /// screen/tmux `ESC k ... ST` form is consumed before reaching Ghostty, so
-    /// recover that form from the bounded raw-output journal.
+    /// Latest title advertised by the child, preferring the screen/tmux
+    /// `ESC k … ST` form over an OSC title, as this pane has always reported.
+    /// Both come out of the tokenizer rather than being read back from the
+    /// screen backend, which does not recognize the former and applies its own
+    /// length limit to the latter.
     pub(crate) fn title(&self) -> Option<String> {
-        let legacy = latest_screen_title(
-            self.observation
-                .control_output
-                .borrow()
-                .bytes
-                .iter()
-                .copied(),
-        );
-        legacy.or_else(|| self.observation.announced_title())
+        self.observation
+            .screen_title
+            .borrow()
+            .clone()
+            .or_else(|| self.observation.announced_title())
     }
 
     /// The current screen as VT escape sequences, suitable for writing to a
     /// client tty. This is the compositor primitive: the pane's grid is
     /// formatted as VT and sent to the attached client's terminal.
     pub fn dump_vt(&self) -> io::Result<Vec<u8>> {
-        self.observation
-            .term
-            .borrow_mut()
-            .dump_vt()
-            .map_err(ghostty_err)
+        self.observation.term.borrow_mut().dump_vt()
     }
 
-    pub(crate) fn dump_rows_vt(&self, start: usize, rows: usize) -> io::Result<Vec<u8>> {
+    /// Rows as `capture-pane -e` wants them, which is not the same read as the
+    /// compositor's: see [`crate::vt::screen::VtScreen::dump_vt_capture_rows`].
+    pub(crate) fn dump_rows_vt(
+        &self,
+        start: usize,
+        rows: usize,
+        extent: CaptureExtent,
+    ) -> io::Result<Vec<u8>> {
         self.observation
             .term
             .borrow_mut()
-            .dump_vt_rows(start, rows, self.cols)
-            .map_err(ghostty_err)
+            .dump_vt_capture_rows(start, rows, self.cols, extent)
     }
 
     /// One physical row as trimmed plain text, without formatting the rest of
@@ -1855,7 +1873,6 @@ impl Pane {
             .term
             .borrow_mut()
             .dump_plain_rows(row, 1, self.cols)
-            .map_err(ghostty_err)
     }
 
     /// Format only the rows visible at a copy-mode scroll offset. Returning
@@ -1867,7 +1884,7 @@ impl Pane {
         visible_rows: usize,
     ) -> io::Result<(Vec<u8>, usize)> {
         let terminal = self.observation.term.borrow_mut();
-        let scrollback = terminal.scrollback_rows().map_err(ghostty_err)?;
+        let scrollback = terminal.scrollback_rows()?;
         let scroll = scroll_offset.min(scrollback);
         let start = scrollback - scroll;
         // A client whose terminal is taller than this pane asks for rows the
@@ -1877,9 +1894,7 @@ impl Pane {
         // the rest, so the window is drawn at the top as tmux draws it. tmux
         // pads the remainder with the pane-border fill rather than blanks.
         let available = scroll.saturating_add(usize::from(self.rows));
-        let vt = terminal
-            .dump_vt_rows(start, visible_rows.min(available), self.cols)
-            .map_err(ghostty_err)?;
+        let vt = terminal.dump_vt_rows(start, visible_rows.min(available), self.cols)?;
         Ok((vt, scroll))
     }
 
@@ -1887,11 +1902,7 @@ impl Pane {
     /// viewport. Consumers that render only the on-screen rows (the compositor,
     /// `capture-pane -p`) skip this many leading rows of a dump.
     pub fn scrollback_rows(&self) -> io::Result<usize> {
-        self.observation
-            .term
-            .borrow_mut()
-            .scrollback_rows()
-            .map_err(ghostty_err)
+        self.observation.term.borrow_mut().scrollback_rows()
     }
 
     /// Clear scrollback while preserving the visible viewport.
@@ -1901,7 +1912,9 @@ impl Pane {
     /// in hmux.
     pub fn clear_history(&self) -> io::Result<()> {
         let mut terminal = self.observation.term.borrow_mut();
-        self.observation.write_terminal(&mut terminal, b"\x1b[3J");
+        for token in crate::vt::parser::tokenize(b"\x1b[3J") {
+            self.observation.write_terminal(&mut terminal, &token);
+        }
         self.observation.record_change(false);
         Ok(())
     }
@@ -1910,11 +1923,7 @@ impl Pane {
     /// mirrors this onto the client tty so a TUI that hides the cursor and
     /// paints its own doesn't leave the client's real cursor lit on top.
     pub fn cursor_visible(&self) -> io::Result<bool> {
-        self.observation
-            .term
-            .borrow_mut()
-            .cursor_visible()
-            .map_err(ghostty_err)
+        self.observation.term.borrow_mut().cursor_visible()
     }
 
     /// Current DECSCUSR parameter (0/default, 1..=6 block/underline/bar with
@@ -1991,9 +2000,7 @@ impl Pane {
     }
 
     pub fn is_live(&self) -> bool {
-        self.child
-            .as_ref()
-            .is_some_and(|child| child.alive.get())
+        self.child.as_ref().is_some_and(|child| child.alive.get())
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -2007,9 +2014,7 @@ impl Pane {
     /// lifecycle without deleting deterministic panes used by conformance
     /// fixtures.
     pub fn has_exited(&self) -> bool {
-        self.child
-            .as_ref()
-            .is_some_and(|child| !child.alive.get())
+        self.child.as_ref().is_some_and(|child| !child.alive.get())
     }
 
     /// Reap an exited child without blocking and return its shell-style status.
@@ -2073,38 +2078,6 @@ impl Pane {
     pub(crate) fn child_reaped(&self) -> bool {
         self.child.as_ref().is_none_or(|child| child.reaped)
     }
-
-}
-
-fn latest_screen_title(bytes: impl Iterator<Item = u8>) -> Option<String> {
-    let bytes = bytes.collect::<Vec<_>>();
-    let mut latest = None;
-    let mut index = 0;
-    while index + 1 < bytes.len() {
-        if bytes[index] != 0x1b || bytes[index + 1] != b'k' {
-            index += 1;
-            continue;
-        }
-        let start = index + 2;
-        let mut end = start;
-        while end < bytes.len() {
-            if bytes[end] == 0x07 {
-                latest = String::from_utf8(bytes[start..end].to_vec()).ok();
-                index = end + 1;
-                break;
-            }
-            if end + 1 < bytes.len() && bytes[end] == 0x1b && bytes[end + 1] == b'\\' {
-                latest = String::from_utf8(bytes[start..end].to_vec()).ok();
-                index = end + 2;
-                break;
-            }
-            end += 1;
-        }
-        if end == bytes.len() {
-            break;
-        }
-    }
-    latest
 }
 
 impl Drop for Child {
@@ -2199,22 +2172,6 @@ pub(crate) struct PaneIo {
     pipe_output: Rc<RefCell<PanePipeOutbound>>,
     pipe_output_active: Rc<Cell<bool>>,
     alive: Rc<Cell<bool>>,
-    query_detector: BackgroundColorQueryDetector,
-    dsr_detector: DeviceStatusReportQueryDetector,
-    cursor_report_detector: CursorPositionReportQueryDetector,
-    cursor_shape_detector: CursorShapeDetector,
-    mode_query_detector: ModeQueryDetector,
-    osc_detector: OscStateDetector,
-    decrqss_detector: DecrqssDetector,
-    tab_stop_detector: TabStopDetector,
-    alternate_detector: AlternateScreenDetector,
-    alternate_stripper: AlternateScreenStripper,
-    title_filter: SetTitleFilter,
-    passthrough_detector: PassthroughDetector,
-    clipboard_detector: Osc52Detector,
-    utf8_sanitizer: Utf8Sanitizer,
-    title_stripper: ScreenTitleStripper,
-    bell_detector: BellDetector,
     closed: bool,
 }
 
@@ -2236,22 +2193,6 @@ impl PaneIo {
             pipe_output,
             pipe_output_active,
             alive,
-            query_detector: BackgroundColorQueryDetector::default(),
-            dsr_detector: DeviceStatusReportQueryDetector::default(),
-            cursor_report_detector: CursorPositionReportQueryDetector::default(),
-            cursor_shape_detector: CursorShapeDetector::default(),
-            mode_query_detector: ModeQueryDetector::default(),
-            osc_detector: OscStateDetector::default(),
-            decrqss_detector: DecrqssDetector::default(),
-            tab_stop_detector: TabStopDetector::default(),
-            alternate_detector: AlternateScreenDetector::default(),
-            alternate_stripper: AlternateScreenStripper::default(),
-            title_filter: SetTitleFilter::default(),
-            passthrough_detector: PassthroughDetector::default(),
-            clipboard_detector: Osc52Detector::default(),
-            utf8_sanitizer: Utf8Sanitizer::default(),
-            title_stripper: ScreenTitleStripper::default(),
-            bell_detector: BellDetector::default(),
             closed: false,
         })
     }
@@ -2336,211 +2277,18 @@ impl PaneIo {
             }
         }
 
-        self.observation.append_control_output(&pending);
-        let policy = self.observation.output_policy();
-        for (index, colour) in policy.palette.iter().enumerate().take(256) {
-            self.osc_detector.option_palette[index] = *colour;
-        }
-        let sanitized = self.utf8_sanitizer.filter(&pending);
-        let filtered = self.title_stripper.filter(&sanitized);
-        let filtered = self
-            .alternate_stripper
-            .filter(&filtered, policy.alternate_screen);
-        let filtered = self.title_filter.filter(
-            &filtered,
-            policy.allow_set_title,
-            input_buffer_capacity(policy.input_buffer_size),
-        );
-        if let Some(title) = self.title_filter.accepted.pop() {
-            self.title_filter.accepted.clear();
-            {
-                let mut announced = self.observation.announced_title.borrow_mut();
-                *announced = Some(title);
-            }
-        }
-        let bytes = &filtered[..];
-        self.observation.note_bells(
-            bytes
-                .iter()
-                .filter(|byte| self.bell_detector.feed(**byte))
-                .count() as u64,
-        );
-        let mut queries = Vec::new();
-        let mut cursor_events: Vec<(usize, PaneCursorEvent)> = Vec::new();
-        let mut mode_replies = Vec::new();
-        for (index, &byte) in bytes.iter().enumerate() {
-            if self.query_detector.feed_byte(byte) {
-                queries.push(BACKGROUND_COLOR_QUERY);
-            }
-            if self.dsr_detector.feed_byte(byte) {
-                queries.push(DEVICE_STATUS_REPORT_QUERY);
-            }
-            if self.cursor_report_detector.feed_byte(byte) {
-                cursor_events.push((index + 1, PaneCursorEvent::PositionReport));
-            }
-            if let Some(event) = self.tab_stop_detector.feed_byte(byte) {
-                cursor_events.push((index + 1, event));
-            }
-            if let Some(change) = self.alternate_detector.feed_byte(byte) {
-                self.observation.alternate_on.set(!matches!(change, AlternateScreenChange::Leave));
-                if let AlternateScreenChange::EnterSavingCursor { sequence_len } = change {
-                    // The save has to happen before the sequence runs, since
-                    // switching screens is what moves the cursor away. A
-                    // sequence split across two reads saturates to 0, which is
-                    // still before it — nothing after its ESC has been applied.
-                    cursor_events.push((
-                        (index + 1).saturating_sub(sequence_len),
-                        PaneCursorEvent::SaveCursor,
-                    ));
-                }
-            }
-            if let Some(shape) = self.cursor_shape_detector.feed_byte(byte) {
-                self.observation
-                    .cursor_shape
-                    .set(shape);
-                // tmux's screen_set_cursor_style: every style but the default
-                // one also decides whether the cursor blinks, odd styles
-                // blinking and even ones steady.
-                if shape != 0 {
-                    self.mode_query_detector.modes.cursor_blinking = !shape.is_multiple_of(2);
-                }
-            }
-            if let Some(reply) = self.mode_query_detector.feed_byte(byte) {
-                mode_replies.push(reply);
-            }
-            if let Some(request) = self.decrqss_detector.feed_byte(byte) {
-                mode_replies.push(decrqss_reply(
-                    &request,
-                    PaneCursorShape::from_parameter(
-                        self.observation.cursor_shape.get(),
-                    ),
-                    self.mode_query_detector.modes.cursor_blinking,
-                ));
-            }
-            if let Some(update) = self.osc_detector.feed_byte(byte) {
-                let slot_value = match update {
-                    PaneOscUpdate::Background(color) => Some((&self.observation.background, color)),
-                    PaneOscUpdate::Foreground(color) => Some((&self.observation.foreground, color)),
-                    PaneOscUpdate::CursorColour(color) => {
-                        Some((&self.observation.cursor_colour, color))
-                    }
-                    PaneOscUpdate::Path(path) => Some((&self.observation.path, path)),
-                    PaneOscUpdate::Reply(reply) => {
-                        mode_replies.push(reply);
-                        None
-                    }
-                    PaneOscUpdate::ProgressBar { state, progress } => {
-                        self.observation
-                            .progress_state
-                            .set(state);
-                        if let Some(progress) = progress {
-                            self.observation
-                                .progress_value
-                                .set(progress);
-                        }
-                        None
-                    }
-                };
-                if let Some((slot, value)) = slot_value {
-                    {
-                        let mut current = slot.borrow_mut();
-                        *current = value;
-                    }
-                }
-            }
-            if let Some(event) = self.clipboard_detector.feed_byte(byte) {
-                self.observation.note_clipboard_event(event);
-            }
-            // tmux reads `allow-passthrough` when the string terminator
-            // arrives and drops the payload where it is off.
-            if let Some(data) = self.passthrough_detector.feed_byte(byte) {
-                match policy.passthrough {
-                    PassthroughPolicy::Off => {}
-                    reach => self.observation.note_passthrough(PanePassthrough {
-                        data,
-                        invisible_panes: reach == PassthroughPolicy::Always,
-                    }),
-                }
-            }
-        }
-        self.observation.modes.set(self.mode_query_detector.modes);
-        if std::mem::take(&mut self.mode_query_detector.theme_query) {
-            self.observation.theme_query.set(true);
-        }
-        if !queries.is_empty() {
-            {
-                let mut queued = self.terminal_queries.borrow_mut();
-                for query in queries {
-                    if queued.len() == 16 {
-                        break;
-                    }
-                    queued.push_back(query.to_vec());
-                }
-            }
-        }
+        let (replies, queries) = self.observation.observe_output(&pending);
 
-        let mut cursor_replies = Vec::new();
-        {
-            let mut terminal = self.observation.term.borrow_mut();
-            let mut segment_start = 0usize;
-            let mut large_scroll = false;
-            // A save-cursor event splits ahead of its own sequence, so the list
-            // is not necessarily in stream order; sorting keeps every split
-            // point ascending, which is what the segment walk below assumes.
-            cursor_events.sort_by_key(|(split_at, _)| *split_at);
-            for (split_at, event) in cursor_events {
-                large_scroll |= self
-                    .observation
-                    .write_terminal(&mut terminal, &bytes[segment_start..split_at]);
-                // The cursor now reflects exactly the bytes this event needs to
-                // have been applied, and none of the ones it does not.
-                match event {
-                    PaneCursorEvent::PositionReport => {
-                        if let Some(response) = cursor_position_report(&terminal) {
-                            cursor_replies.push(response);
-                        }
-                    }
-                    PaneCursorEvent::SaveCursor => {
-                        if let Ok((x, y)) = terminal.cursor_position() {
-                            self.observation
-                                .alternate_saved_x
-                                .set(u32::from(x));
-                            self.observation
-                                .alternate_saved_y
-                                .set(u32::from(y));
-                        }
-                    }
-                    PaneCursorEvent::SetTabStop => {
-                        if let Ok((x, _)) = terminal.cursor_position() {
-                            self.observation.update_tab_stops(|stops| {
-                                stops.insert(x);
-                            });
-                        }
-                    }
-                    PaneCursorEvent::ClearTabStop => {
-                        if let Ok((x, _)) = terminal.cursor_position() {
-                            self.observation.update_tab_stops(|stops| {
-                                stops.remove(&x);
-                            });
-                        }
-                    }
-                    PaneCursorEvent::ClearAllTabStops => {
-                        self.observation.update_tab_stops(BTreeSet::clear);
-                    }
+        if !queries.is_empty() {
+            let mut queued = self.terminal_queries.borrow_mut();
+            for query in queries {
+                if queued.len() == 16 {
+                    break;
                 }
-                segment_start = split_at;
+                queued.push_back(query.to_vec());
             }
-            if segment_start < bytes.len() {
-                large_scroll |= self
-                    .observation
-                    .write_terminal(&mut terminal, &bytes[segment_start..]);
-            }
-            self.observation.record_change(large_scroll);
         }
-        for reply in cursor_replies {
-            enqueue_pane_input(self.fd.as_raw_fd(), &self.pending_input, &reply);
-        }
-        for reply in mode_replies {
+        for reply in replies {
             enqueue_pane_input(self.fd.as_raw_fd(), &self.pending_input, &reply);
         }
     }
@@ -2583,278 +2331,6 @@ fn drop_leading_lines(text: &str, n: usize) -> String {
     rows[n.min(rows.len())..].join("\n")
 }
 
-/// Neovim's default-background request. OSC allows either BEL or ST as its
-/// terminator; queries relayed outward are normalized to ST.
-const BACKGROUND_COLOR_QUERY_PREFIX: &[u8] = b"\x1b]11;?";
-const BACKGROUND_COLOR_QUERY: &[u8] = b"\x1b]11;?\x1b\\";
-const DEVICE_STATUS_REPORT_QUERY: &[u8] = b"\x1b[5n";
-
-#[derive(Default)]
-struct Utf8Sanitizer {
-    pending: Vec<u8>,
-}
-
-impl Utf8Sanitizer {
-    fn filter(&mut self, input: &[u8]) -> Vec<u8> {
-        self.pending.extend_from_slice(input);
-        let mut out = Vec::with_capacity(self.pending.len());
-        let mut index = 0usize;
-        while index < self.pending.len() {
-            let first = self.pending[index];
-            if first < 0x80 {
-                // DEL is a control character in tmux, not a printable glyph.
-                if first != 0x7f {
-                    out.push(first);
-                }
-                index += 1;
-                continue;
-            }
-            let width = match first {
-                0xc2..=0xdf => 2,
-                0xe0..=0xef => 3,
-                0xf0..=0xf4 => 4,
-                _ => {
-                    out.extend_from_slice("\u{fffd}".as_bytes());
-                    index += 1;
-                    continue;
-                }
-            };
-            let available = self.pending.len() - index;
-            let continuation_count = self.pending[index + 1..]
-                .iter()
-                .take_while(|byte| (0x80..=0xbf).contains(*byte))
-                .take(width - 1)
-                .count();
-            if available < width && continuation_count == available - 1 {
-                break;
-            }
-            let consumed = 1 + continuation_count;
-            if consumed == width && std::str::from_utf8(&self.pending[index..index + width]).is_ok()
-            {
-                out.extend_from_slice(&self.pending[index..index + width]);
-            } else {
-                // Collapse one malformed legacy sequence to the single
-                // replacement cell tmux records, instead of one cell per byte.
-                out.extend_from_slice("\u{fffd}".as_bytes());
-            }
-            index += consumed;
-        }
-        self.pending.drain(..index);
-        out
-    }
-}
-
-/// Streaming detector for OSC 11 queries. PTY reads can split an escape
-/// sequence at any byte, so matching each read independently is insufficient.
-#[derive(Default)]
-struct BackgroundColorQueryDetector {
-    /// Bytes matched in `BACKGROUND_COLOR_QUERY_PREFIX`, followed by one extra
-    /// state when an ESC terminator has begun.
-    matched: usize,
-}
-
-/// Collects the OSC sequences whose effect tmux publishes as a format variable
-/// rather than as grid content: the pane's colours and its reported path.
-struct OscStateDetector {
-    sequence: Vec<u8>,
-    in_osc: bool,
-    escaped: bool,
-    /// The pane's `OSC 4` palette, as packed `0xrrggbb`. tmux keeps one per
-    /// pane so a query is answered from what that pane set, not the client's.
-    palette: Box<[Option<u32>; 256]>,
-    /// The palette `pane-colours` seeds, which a query falls back to — tmux's
-    /// `colour_palette_from_option`. Pushed by the server, since the option is
-    /// out of reach where a pane's bytes are parsed.
-    option_palette: Box<[Option<u32>; 256]>,
-}
-
-impl Default for OscStateDetector {
-    fn default() -> Self {
-        Self {
-            sequence: Vec::new(),
-            in_osc: false,
-            escaped: false,
-            palette: Box::new([None; 256]),
-            option_palette: Box::new([None; 256]),
-        }
-    }
-}
-
-/// One OSC sequence that changed a pane's reported state.
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum PaneOscUpdate {
-    /// OSC 11 / 111: `#{pane_bg}`.
-    Background(String),
-    /// OSC 10 / 110: `#{pane_fg}`.
-    Foreground(String),
-    /// OSC 12 / 112: `#{cursor_colour}`.
-    CursorColour(String),
-    /// OSC 7: `#{pane_path}`, kept verbatim as tmux keeps it.
-    Path(String),
-    /// Bytes to write back to the querying pane.
-    Reply(Vec<u8>),
-    /// OSC 9;4: `#{pane_pb_state}` and `#{pane_pb_progress}`. The progress is
-    /// absent when the report named only a state, which leaves the old value.
-    ProgressBar { state: u8, progress: Option<u8> },
-}
-
-impl OscStateDetector {
-    fn feed_byte(&mut self, byte: u8) -> Option<PaneOscUpdate> {
-        if !self.in_osc {
-            self.sequence.push(byte);
-            if self.sequence.ends_with(b"\x1b]") {
-                self.sequence.clear();
-                self.in_osc = true;
-            } else if self.sequence.len() > 2 {
-                self.sequence.remove(0);
-            }
-            return None;
-        }
-        if self.escaped {
-            self.escaped = false;
-            if byte == b'\\' {
-                return self.finish(true);
-            }
-            self.sequence.push(0x1b);
-        }
-        match byte {
-            0x07 => self.finish(false),
-            0x9c => self.finish(true),
-            0x1b => {
-                self.escaped = true;
-                None
-            }
-            _ => {
-                if self.sequence.len() < 256 {
-                    self.sequence.push(byte);
-                }
-                None
-            }
-        }
-    }
-
-    fn finish(&mut self, string_terminator: bool) -> Option<PaneOscUpdate> {
-        self.in_osc = false;
-        self.escaped = false;
-        let sequence = std::mem::take(&mut self.sequence);
-        let text = std::str::from_utf8(&sequence).ok()?;
-        // The reset forms. tmux spells an unset cursor colour `none` but an
-        // unset foreground or background `default`.
-        match text {
-            "110" => return Some(PaneOscUpdate::Foreground("default".to_string())),
-            "111" => return Some(PaneOscUpdate::Background("default".to_string())),
-            "112" => return Some(PaneOscUpdate::CursorColour("none".to_string())),
-            // OSC 104 with no index clears the whole palette.
-            "104" => {
-                *self.palette = [None; 256];
-                return None;
-            }
-            _ => {}
-        }
-        let (number, payload) = text.split_once(';')?;
-        // OSC 7 carries a URL, not a colour, and tmux stores it unparsed.
-        if number == "7" {
-            return Some(PaneOscUpdate::Path(payload.to_string()));
-        }
-        if number == "4" {
-            return self.palette_request(payload, string_terminator);
-        }
-        if number == "9" {
-            return progress_bar_report(payload);
-        }
-        // OSC 104 with indices clears just those entries.
-        if number == "104" {
-            for index in payload.split(';') {
-                match index.parse::<u8>() {
-                    Ok(index) => self.palette[usize::from(index)] = None,
-                    // tmux stops at the first index it cannot read.
-                    Err(_) => break,
-                }
-            }
-            return None;
-        }
-        // A `?` is the application asking rather than setting.
-        if payload == "?" {
-            return None;
-        }
-        let colour = parse_background_color(payload)?;
-        match number {
-            "10" => Some(PaneOscUpdate::Foreground(colour)),
-            "11" => Some(PaneOscUpdate::Background(colour)),
-            "12" => Some(PaneOscUpdate::CursorColour(colour)),
-            _ => None,
-        }
-    }
-
-    /// Apply one `OSC 4` body, which is a run of `index ; value` pairs.
-    ///
-    /// A `?` value asks for the entry back. tmux answers from its own palette
-    /// when the entry has been set and otherwise forwards the question to the
-    /// client's terminal; with nothing stored here the question is dropped,
-    /// which is what keeps an unset entry silent.
-    fn palette_request(&mut self, body: &str, string_terminator: bool) -> Option<PaneOscUpdate> {
-        let mut reply = Vec::new();
-        let mut rest = body;
-        while !rest.is_empty() {
-            let (index, tail) = rest.split_once(';')?;
-            // tmux stops at the first unparseable index rather than skipping it.
-            let index = index.parse::<u8>().ok()?;
-            let (value, tail) = match tail.split_once(';') {
-                Some((value, tail)) => (value, tail),
-                None => (tail, ""),
-            };
-            if value == "?" {
-                if let Some(colour) = self.palette[usize::from(index)]
-                    .or(self.option_palette[usize::from(index)])
-                {
-                    let (r, g, b) = (
-                        (colour >> 16) as u8,
-                        (colour >> 8) as u8,
-                        colour as u8,
-                    );
-                    let end = if string_terminator { "\x1b\\" } else { "\x07" };
-                    // tmux answers in 16-bit components, each byte doubled.
-                    reply.extend_from_slice(
-                        format!("\x1b]4;{index};rgb:{r:02x}{r:02x}/{g:02x}{g:02x}/{b:02x}{b:02x}{end}")
-                            .as_bytes(),
-                    );
-                }
-            } else if let Some(packed) = parse_packed_colour(value) {
-                self.palette[usize::from(index)] = Some(packed);
-            }
-            rest = tail;
-        }
-        (!reply.is_empty()).then_some(PaneOscUpdate::Reply(reply))
-    }
-}
-
-/// Parse an `OSC 9` body as tmux's `input_osc_9` does.
-///
-/// Only the `4` subcommand — the ConEmu progress report — means anything to
-/// tmux. A report naming just a state leaves the previous progress in place,
-/// which is why the value is optional.
-fn progress_bar_report(body: &str) -> Option<PaneOscUpdate> {
-    let rest = body.strip_prefix('4')?;
-    // `9;4` and `9;4;` carry no state and are dropped rather than reset.
-    let rest = rest.strip_prefix(';').filter(|rest| !rest.is_empty())?;
-    let (state, rest) = rest.split_at_checked(1)?;
-    let state = state.parse::<u8>().ok().filter(|state| *state <= 4)?;
-    let Some(progress) = rest.strip_prefix(';').filter(|rest| !rest.is_empty()) else {
-        // Anything other than a clean end here is malformed, not a bare state.
-        return rest
-            .is_empty()
-            .then_some(PaneOscUpdate::ProgressBar {
-                state,
-                progress: None,
-            });
-    };
-    let progress = progress.parse::<u8>().ok().filter(|value| *value <= 100)?;
-    Some(PaneOscUpdate::ProgressBar {
-        state,
-        progress: Some(progress),
-    })
-}
-
 /// tmux's `screen_reset_tabs`: a stop every eight columns, skipping column 0.
 fn default_tab_stops(columns: u16) -> BTreeSet<u16> {
     (1..)
@@ -2863,510 +2339,133 @@ fn default_tab_stops(columns: u16) -> BTreeSet<u16> {
         .collect()
 }
 
-/// An X11 colour payload as a packed `0xrrggbb`, for the palette store.
-pub(crate) fn parse_packed_colour(value: &str) -> Option<u32> {
-    let text = parse_background_color(value)?;
-    u32::from_str_radix(text.strip_prefix('#')?, 16).ok()
-}
-
-/// Collects `OSC 52 ; selection ; payload` sequences out of a pane's output.
+/// tmux's DECRQM answer for a private mode: 1 set, 2 reset, 0 unrecognized,
+/// or 4 permanently reset.
 ///
-/// The grid parser consumes the sequence too, but hmux needs the payload at the
-/// server layer to apply `set-clipboard`/`get-clipboard`, so it is recognised
-/// here rather than read back out of the terminal.
-#[derive(Default)]
-struct Osc52Detector {
-    prefix: Vec<u8>,
-    body: Vec<u8>,
-    in_osc: bool,
-    escaped: bool,
-}
-
-impl Osc52Detector {
-    fn feed_byte(&mut self, byte: u8) -> Option<PaneClipboardEvent> {
-        if !self.in_osc {
-            self.prefix.push(byte);
-            if self.prefix.ends_with(b"\x1b]52;") {
-                self.prefix.clear();
-                self.body.clear();
-                self.in_osc = true;
-            } else if self.prefix.len() > 5 {
-                self.prefix.remove(0);
-            }
-            return None;
-        }
-        if self.escaped {
-            self.escaped = false;
-            if byte == b'\\' {
-                return self.finish(true);
-            }
-            self.body.push(0x1b);
-        }
-        match byte {
-            0x07 | 0x9c => self.finish(false),
-            0x1b => {
-                self.escaped = true;
-                None
-            }
-            _ => {
-                // A payload longer than this is not a clipboard update worth
-                // buffering; drop the sequence rather than grow without bound.
-                if self.body.len() < 1024 * 1024 {
-                    self.body.push(byte);
-                    None
-                } else {
-                    self.in_osc = false;
-                    self.body.clear();
-                    None
-                }
-            }
-        }
-    }
-
-    fn finish(&mut self, string_terminator: bool) -> Option<PaneClipboardEvent> {
-        self.in_osc = false;
-        self.escaped = false;
-        let body = std::mem::take(&mut self.body);
-        let text = String::from_utf8(body).ok()?;
-        // A sequence with no `;` at all names no payload and is dropped.
-        let (selection, payload) = text.split_once(';')?;
-        if payload == "?" {
-            return Some(PaneClipboardEvent::Query {
-                selection: osc52_reply_selection(selection),
-                string_terminator,
-            });
-        }
-        // Empty or undecodable data is dropped, as tmux drops it.
-        if payload.is_empty() {
-            return None;
-        }
-        base64_decode_strict(payload).map(|data| PaneClipboardEvent::Set { data })
-    }
-}
-
-/// The selection tmux echoes back in an OSC 52 reply: the first character it
-/// recognises, or nothing when the request named none.
-fn osc52_reply_selection(selection: &str) -> String {
-    selection
-        .chars()
-        .find(|character| "cpqs01234567".contains(*character))
-        .map(String::from)
-        .unwrap_or_default()
-}
-
-/// Decode standard base64, rejecting anything that is not fully padded — which
-/// is what makes tmux drop `aGk` where it accepts `aGk=`.
-fn base64_decode_strict(text: &str) -> Option<Vec<u8>> {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let bytes = text.as_bytes();
-    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
-        return None;
-    }
-    let padding = bytes.iter().rev().take_while(|byte| **byte == b'=').count();
-    if padding > 2 {
-        return None;
-    }
-    let data = &bytes[..bytes.len() - padding];
-    let mut out = Vec::with_capacity(data.len() / 4 * 3);
-    let (mut accumulator, mut bits) = (0u32, 0u32);
-    for byte in data {
-        let position = ALPHABET.iter().position(|candidate| candidate == byte)?;
-        accumulator = (accumulator << 6) | position as u32;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push(((accumulator >> bits) & 0xff) as u8);
-        }
-    }
-    Some(out)
-}
-
-fn parse_background_color(value: &str) -> Option<String> {
-    let value = value.trim();
-    let rgb = if let Some(parts) = value.strip_prefix("rgb:") {
-        let parts: Vec<_> = parts.split('/').collect();
-        if parts.len() != 3 {
-            return None;
-        }
-        (
-            scale_hex(parts[0])?,
-            scale_hex(parts[1])?,
-            scale_hex(parts[2])?,
-        )
-    } else if let Some(parts) = value.strip_prefix("cmy:") {
-        let parts: Vec<_> = parts.split('/').collect();
-        if parts.len() != 3 {
-            return None;
-        }
-        (
-            ((1.0 - parts[0].parse::<f64>().ok()?) * 255.0) as u8,
-            ((1.0 - parts[1].parse::<f64>().ok()?) * 255.0) as u8,
-            ((1.0 - parts[2].parse::<f64>().ok()?) * 255.0) as u8,
-        )
-    } else if let Some(parts) = value.strip_prefix("cmyk:") {
-        let parts: Vec<_> = parts.split('/').collect();
-        if parts.len() != 4 {
-            return None;
-        }
-        let k = parts[3].parse::<f64>().ok()?;
-        (
-            ((1.0 - parts[0].parse::<f64>().ok()?) * (1.0 - k) * 255.0) as u8,
-            ((1.0 - parts[1].parse::<f64>().ok()?) * (1.0 - k) * 255.0) as u8,
-            ((1.0 - parts[2].parse::<f64>().ok()?) * (1.0 - k) * 255.0) as u8,
-        )
-    } else if let Some(hex) = value.strip_prefix('#') {
-        match hex.len() {
-            6 => (
-                u8::from_str_radix(&hex[0..2], 16).ok()?,
-                u8::from_str_radix(&hex[2..4], 16).ok()?,
-                u8::from_str_radix(&hex[4..6], 16).ok()?,
-            ),
-            12 => (
-                scale_hex(&hex[0..4])?,
-                scale_hex(&hex[4..8])?,
-                scale_hex(&hex[8..12])?,
-            ),
-            _ => return None,
-        }
-    } else if value.contains(',') {
-        let parts: Vec<_> = value.split(',').collect();
-        if parts.len() != 3 {
-            return None;
-        }
-        (
-            parts[0].parse().ok()?,
-            parts[1].parse().ok()?,
-            parts[2].parse().ok()?,
-        )
-    } else {
-        // Anything left is a name, which tmux resolves against X11's table
-        // rather than the terminal palette — so `red` is #ff0000, not colour 1.
-        let packed = super::x11_colour::colour_by_name(value)?;
-        (
-            (packed >> 16) as u8,
-            (packed >> 8) as u8,
-            packed as u8,
-        )
+/// The alternate-screen aliases are state rather than bits in the screen's
+/// mode word, so their status comes from the pane's screen-tracking state.
+fn dec_mode_status(modes: u32, alternate_on: bool, mode: u32) -> u8 {
+    let reports = |bit: u32| Some(modes & bit != 0);
+    let set = match mode {
+        // DECCOLM is recognized by tmux but permanently reset: hmux has no
+        // 132-column screen mode to enable either.
+        3 => return 4,
+        1 => reports(mode::KCURSOR),
+        6 => reports(mode::ORIGIN),
+        7 => reports(mode::WRAP),
+        12 => reports(mode::CURSOR_BLINKING),
+        25 => reports(mode::CURSOR),
+        47 | 1047 | 1049 => Some(alternate_on),
+        1000 => reports(mode::MOUSE_STANDARD),
+        1002 => reports(mode::MOUSE_BUTTON),
+        1003 => reports(mode::MOUSE_ALL),
+        1004 => reports(mode::FOCUSON),
+        1005 => reports(mode::MOUSE_UTF8),
+        1006 => reports(mode::MOUSE_SGR),
+        2004 => reports(mode::BRACKETPASTE),
+        2026 => reports(mode::SYNC),
+        2031 => reports(mode::THEME_UPDATES),
+        _ => None,
     };
-    Some(format!("#{:02x}{:02x}{:02x}", rgb.0, rgb.1, rgb.2))
-}
-
-fn scale_hex(component: &str) -> Option<u8> {
-    if component.is_empty() || component.len() > 4 {
-        return None;
-    }
-    let value = u32::from_str_radix(component, 16).ok()?;
-    if component.len() == 4 {
-        return Some((value >> 8) as u8);
-    }
-    let maximum = 16u32.pow(component.len() as u32) - 1;
-    Some(((value * 255 + maximum / 2) / maximum) as u8)
-}
-
-impl BackgroundColorQueryDetector {
-    fn feed_byte(&mut self, byte: u8) -> bool {
-        let prefix_len = BACKGROUND_COLOR_QUERY_PREFIX.len();
-        if self.matched < prefix_len {
-            if byte == BACKGROUND_COLOR_QUERY_PREFIX[self.matched] {
-                self.matched += 1;
-            } else {
-                self.matched = usize::from(byte == BACKGROUND_COLOR_QUERY_PREFIX[0]);
-            }
-            return false;
-        }
-
-        if self.matched == prefix_len {
-            match byte {
-                b'\x07' | b'\x9c' => {
-                    self.matched = 0;
-                    return true;
-                }
-                b'\x1b' => self.matched += 1,
-                _ => self.matched = 0,
-            }
-            return false;
-        }
-
-        // `matched == prefix_len + 1`: ESC must be followed by `\` for ST.
-        if byte == b'\\' {
-            self.matched = 0;
-            true
-        } else {
-            if byte != b'\x1b' {
-                self.matched = 0;
-            }
-            false
-        }
+    match set {
+        Some(true) => 1,
+        Some(false) => 2,
+        None => 0,
     }
 }
 
-/// Streaming detector for `CSI 5 n`, the DSR synchronization request Neovim
-/// appends to terminal capability queries. The corresponding outer-terminal
-/// response (`CSI 0 n`) tells Neovim that all preceding replies have arrived.
-#[derive(Default)]
-struct DeviceStatusReportQueryDetector {
-    matched: usize,
-}
-
-impl DeviceStatusReportQueryDetector {
-    fn feed_byte(&mut self, byte: u8) -> bool {
-        if byte == DEVICE_STATUS_REPORT_QUERY[self.matched] {
-            self.matched += 1;
-            if self.matched == DEVICE_STATUS_REPORT_QUERY.len() {
-                self.matched = 0;
-                return true;
-            }
-        } else {
-            self.matched = usize::from(byte == DEVICE_STATUS_REPORT_QUERY[0]);
-        }
-        false
+/// tmux's DECRQM answer for a standard mode: 1 set, 2 reset, 0 unrecognized.
+fn ansi_mode_status(modes: u32, mode: u32) -> u8 {
+    match mode {
+        4 if modes & mode::INSERT != 0 => 1,
+        4 => 2,
+        _ => 0,
     }
 }
 
-/// Something in a pane's output that can only be handled at an exact point in
-/// the byte stream, because it reads the cursor the surrounding bytes move.
-///
-/// Each is paired with the number of bytes to write to the terminal first.
-/// Most sit *after* their own sequence; [`PaneCursorEvent::SaveCursor`] sits
-/// before it, since the sequence it belongs to moves the cursor it must save.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PaneCursorEvent {
-    /// DSR 6n: report where the cursor is.
-    PositionReport,
-    /// DECSET 1049: remember the cursor for the eventual return to the primary
-    /// screen.
-    SaveCursor,
-    /// HTS: set a tab stop in the cursor's column.
-    SetTabStop,
-    /// TBC 0: clear the tab stop in the cursor's column.
-    ClearTabStop,
-    /// TBC 3: clear every tab stop. Listed here so it stays ordered with the
-    /// others even though it does not read the cursor.
-    ClearAllTabStops,
-}
-
-/// Recognizes the DEC modes that switch a pane to and from the alternate
-/// screen, which is what `#{alternate_on}` reports.
-#[derive(Default)]
-struct AlternateScreenDetector {
-    tail: VecDeque<u8>,
-}
-
-/// A switch between a pane's primary and alternate screens.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AlternateScreenChange {
-    /// DECSET 47 or 1047, which do not save the cursor.
-    Enter,
-    /// DECSET 1049, which saves the cursor before switching. Carries the
-    /// sequence's own length so the save can be placed ahead of it.
-    EnterSavingCursor { sequence_len: usize },
-    /// DECRST 47, 1047 or 1049.
-    Leave,
-}
-
-impl AlternateScreenDetector {
-    fn feed_byte(&mut self, byte: u8) -> Option<AlternateScreenChange> {
-        if self.tail.len() == 8 {
-            self.tail.pop_front();
-        }
-        self.tail.push_back(byte);
-        let tail: Vec<u8> = self.tail.iter().copied().collect();
-
-        if tail.ends_with(b"\x1b[?1049h") {
-            return Some(AlternateScreenChange::EnterSavingCursor { sequence_len: 8 });
-        }
-        if tail.ends_with(b"\x1b[?47h") || tail.ends_with(b"\x1b[?1047h") {
-            return Some(AlternateScreenChange::Enter);
-        }
-        if tail.ends_with(b"\x1b[?47l")
-            || tail.ends_with(b"\x1b[?1047l")
-            || tail.ends_with(b"\x1b[?1049l")
-        {
-            return Some(AlternateScreenChange::Leave);
-        }
-        None
-    }
-}
-
-/// The DEC modes that switch a pane between its primary and alternate screens.
-const ALTERNATE_SCREEN_SWITCHES: [&[u8]; 6] = [
-    b"\x1b[?47h",
-    b"\x1b[?47l",
-    b"\x1b[?1047h",
-    b"\x1b[?1047l",
-    b"\x1b[?1049h",
-    b"\x1b[?1049l",
-];
-
-/// Drops those switches from a pane's output while `alternate-screen` is off.
-///
-/// tmux parses the sequence and then returns early from
-/// `screen_write_alternateon`/`_alternateoff`, so the switch has no effect at
-/// all — including on the cursor 1049 would have saved. Removing the bytes
-/// before anything sees them is the same observable, and keeps the option out of
-/// every detector downstream.
-#[derive(Default)]
-struct AlternateScreenStripper {
-    /// Bytes held back because they are a prefix of one of the switches. A
-    /// partial sequence at the end of a read is no more applied than it would be
-    /// inside a terminal parser, so holding it until the rest arrives is safe.
-    pending: Vec<u8>,
-}
-
-impl AlternateScreenStripper {
-    fn filter(&mut self, input: &[u8], allowed: bool) -> Vec<u8> {
-        // Whatever is held was never a complete switch, so re-enabling the
-        // option releases it unchanged.
-        if allowed {
-            let mut out = std::mem::take(&mut self.pending);
-            out.extend_from_slice(input);
-            return out;
-        }
-        let mut out = Vec::with_capacity(self.pending.len() + input.len());
-        for &byte in input {
-            self.pending.push(byte);
-            if ALTERNATE_SCREEN_SWITCHES
-                .iter()
-                .any(|switch| self.pending == *switch)
-            {
-                self.pending.clear();
-                continue;
-            }
-            // Not a switch: give back the longest head that cannot start one,
-            // which leaves any genuine prefix still pending.
-            while !self.pending.is_empty()
-                && !ALTERNATE_SCREEN_SWITCHES
-                    .iter()
-                    .any(|switch| switch.starts_with(&self.pending))
-            {
-                out.push(self.pending.remove(0));
-            }
-        }
-        out
-    }
-}
-
-/// Recognizes HTS (`ESC H`) and TBC (`CSI Ps g`), which together decide what
-/// `#{pane_tabs}` reports.
-#[derive(Default)]
-struct TabStopDetector {
-    state: TabStopState,
-    parameter: u16,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-enum TabStopState {
-    #[default]
-    Ground,
-    Esc,
-    Csi,
-}
-
-impl TabStopDetector {
-    fn feed_byte(&mut self, byte: u8) -> Option<PaneCursorEvent> {
-        use TabStopState::{Csi, Esc, Ground};
-
-        self.state = match (self.state, byte) {
-            (Ground, b'\x1b') => Esc,
-            (Ground, _) => Ground,
-            (Esc, b'H') => {
-                self.state = Ground;
-                return Some(PaneCursorEvent::SetTabStop);
-            }
-            (Esc, b'[') => {
-                self.parameter = 0;
-                Csi
-            }
-            (Esc, b'\x1b') => Esc,
-            (Esc, _) => Ground,
-            (Csi, b'0'..=b'9') => {
-                self.parameter = self
-                    .parameter
-                    .saturating_mul(10)
-                    .saturating_add(u16::from(byte - b'0'));
-                Csi
-            }
-            (Csi, b'g') => {
-                self.state = Ground;
-                // tmux honours only the clear-here and clear-all forms.
-                return match self.parameter {
-                    0 => Some(PaneCursorEvent::ClearTabStop),
-                    3 => Some(PaneCursorEvent::ClearAllTabStops),
-                    _ => None,
-                };
-            }
-            (Csi, b'\x1b') => Esc,
-            (Csi, _) => Ground,
-        };
-        None
-    }
-}
-
-#[derive(Default)]
-struct CursorPositionReportQueryDetector {
-    state: CursorPositionReportState,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-enum CursorPositionReportState {
-    #[default]
-    Ground,
-    Esc,
-    Csi,
-    SawSix,
-}
-
-/// Streaming recognizer for DECSCUSR (`CSI Ps SP q`). Applications such as
-/// Neovim use 2 for a steady block and 6 for a steady bar. PTY reads may split
-/// the sequence, so the state is retained across output bursts.
-#[derive(Default)]
-struct CursorShapeDetector {
-    state: CursorShapeState,
-    parameter: u8,
-}
-
-/// Track the DEC modes tmux answers locally and recognize DECRQM queries.
 /// The reportable VT modes a pane's byte stream has set, in their own types.
-/// The detector mutates them in place; the observation republishes the whole
-/// snapshot at the end of each output batch.
+///
+/// This is a *reading* of the screen's mode word, not a second copy of it: the
+/// screen applies every DECSET the pane sends and this projects the bits the
+/// server cares about into the shapes it wants them in. The observation
+/// republishes it at the end of each output batch.
 #[derive(Clone, Copy)]
-struct PaneModeSnapshot {
-    cursor_visible: bool,
+pub(crate) struct PaneModeSnapshot {
+    pub(crate) cursor_visible: bool,
     /// DECSET 2004: the pane wants the paste markers.
-    bracketed_paste: bool,
+    pub(crate) bracketed_paste: bool,
     /// DECSET 1004: the pane asked to be told when focus moves.
-    focus_reporting: bool,
+    pub(crate) focus_reporting: bool,
     /// DECSET 2031: the pane asked to be told when the theme changes.
-    theme_updates: bool,
+    pub(crate) theme_updates: bool,
     /// The pane program's mouse reporting mode, if any. tmux keeps 1000/1002/
     /// 1003 mutually exclusive — each one clears the others — and tracks the
     /// two encoding modes independently.
-    mouse_tracking: Option<MouseTrackingMode>,
+    pub(crate) mouse_tracking: Option<MouseTrackingMode>,
     /// DECSET 1005: UTF-8 coordinate encoding.
-    mouse_utf8: bool,
+    pub(crate) mouse_utf8: bool,
     /// DECSET 1006: SGR encoding.
-    mouse_sgr: bool,
+    pub(crate) mouse_sgr: bool,
     /// IRM (`CSI 4 h`): typed cells shift the rest of the line right.
-    insert_mode: bool,
+    pub(crate) insert_mode: bool,
     /// DECOM (DECSET 6): cursor addressing is relative to the scroll region.
-    origin_mode: bool,
+    pub(crate) origin_mode: bool,
     /// DECAWM (DECSET 7): text wraps at the right margin. On by default.
-    wrap_mode: bool,
+    pub(crate) wrap_mode: bool,
     /// tmux's `MODE_CURSOR_BLINKING`, written both by DECSET/DECRST 12 and, as
     /// a side effect, by every DECSCUSR style except the default one.
-    cursor_blinking: bool,
+    pub(crate) cursor_blinking: bool,
     /// DECCKM (DECSET 1): the pane wants the application cursor key forms.
-    cursor_keys: bool,
+    pub(crate) cursor_keys: bool,
     /// DECKPAM (`ESC =`): the pane wants the application keypad forms.
-    application_keypad: bool,
+    pub(crate) application_keypad: bool,
     /// The `modifyOtherKeys` level the pane asked for with `CSI > 4 ; n m`.
     /// What it *gets* also depends on the `extended-keys` option, which is
     /// applied where the key is encoded rather than here.
-    extended_keys_request: ExtendedKeys,
+    pub(crate) extended_keys_request: ExtendedKeys,
     /// DECSET 2026, tmux's `MODE_SYNC`: the pane asked for its output to be
     /// held back until it says the frame is done.
-    synchronized_output: bool,
+    pub(crate) synchronized_output: bool,
+}
+
+impl PaneModeSnapshot {
+    /// Read a screen's mode word.
+    pub(crate) fn of(modes: u32) -> PaneModeSnapshot {
+        let on = |bit: u32| modes & bit != 0;
+        PaneModeSnapshot {
+            cursor_visible: on(mode::CURSOR),
+            bracketed_paste: on(mode::BRACKETPASTE),
+            focus_reporting: on(mode::FOCUSON),
+            theme_updates: on(mode::THEME_UPDATES),
+            // The three tracking modes are mutually exclusive in the word, so
+            // at most one of these matches.
+            mouse_tracking: if on(mode::MOUSE_ALL) {
+                Some(MouseTrackingMode::All)
+            } else if on(mode::MOUSE_BUTTON) {
+                Some(MouseTrackingMode::Button)
+            } else if on(mode::MOUSE_STANDARD) {
+                Some(MouseTrackingMode::Standard)
+            } else {
+                None
+            },
+            mouse_utf8: on(mode::MOUSE_UTF8),
+            mouse_sgr: on(mode::MOUSE_SGR),
+            insert_mode: on(mode::INSERT),
+            origin_mode: on(mode::ORIGIN),
+            wrap_mode: on(mode::WRAP),
+            cursor_blinking: on(mode::CURSOR_BLINKING),
+            cursor_keys: on(mode::KCURSOR),
+            application_keypad: on(mode::KKEYPAD),
+            extended_keys_request: if on(mode::KEYS_EXTENDED_2) {
+                ExtendedKeys::All
+            } else if on(mode::KEYS_EXTENDED) {
+                ExtendedKeys::Standard
+            } else {
+                ExtendedKeys::Off
+            },
+            synchronized_output: on(mode::SYNC),
+        }
+    }
 }
 
 impl Default for PaneModeSnapshot {
@@ -3391,14 +2490,6 @@ impl Default for PaneModeSnapshot {
             synchronized_output: false,
         }
     }
-}
-
-struct ModeQueryDetector {
-    tail: VecDeque<u8>,
-    /// Whether the pane asked which theme it is under (DSR ?996) and has
-    /// not been answered yet.
-    theme_query: bool,
-    modes: PaneModeSnapshot,
 }
 
 /// A pane's own key-output modes, before the `extended-keys` option decides how
@@ -3475,38 +2566,6 @@ pub(crate) struct PaneOscState {
     pub(crate) progress_value: u8,
 }
 
-/// The cursor style a pane asked for with DECSCUSR.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) enum PaneCursorShape {
-    #[default]
-    Default,
-    Block,
-    Underline,
-    Bar,
-}
-
-impl PaneCursorShape {
-    /// tmux's `screen_set_cursor_style` mapping of a DECSCUSR parameter.
-    fn from_parameter(parameter: u8) -> Self {
-        match parameter {
-            1 | 2 => Self::Block,
-            3 | 4 => Self::Underline,
-            5 | 6 => Self::Bar,
-            _ => Self::Default,
-        }
-    }
-
-    /// The name `#{cursor_shape}` reports.
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Self::Default => "default",
-            Self::Block => "block",
-            Self::Underline => "underline",
-            Self::Bar => "bar",
-        }
-    }
-}
-
 /// A pane's DECSET mouse state, as `#{mouse_*_flag}` reports it.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct PaneMouseModes {
@@ -3533,795 +2592,28 @@ pub(crate) enum MouseTrackingMode {
     All,
 }
 
-impl Default for ModeQueryDetector {
-    fn default() -> Self {
-        Self {
-            tail: VecDeque::with_capacity(16),
-            theme_query: false,
-            modes: PaneModeSnapshot::default(),
-        }
-    }
-}
-
-impl ModeQueryDetector {
-    fn mouse_mode_status(&self, mode: MouseTrackingMode) -> u8 {
-        if self.modes.mouse_tracking == Some(mode) {
-            1
-        } else {
-            2
-        }
-    }
-
-    fn feed_byte(&mut self, byte: u8) -> Option<Vec<u8>> {
-        if self.tail.len() == 16 {
-            self.tail.pop_front();
-        }
-        self.tail.push_back(byte);
-        let tail: Vec<u8> = self.tail.iter().copied().collect();
-
-        if tail.ends_with(b"\x1b[?2026h") {
-            self.modes.synchronized_output = true;
-        } else if tail.ends_with(b"\x1b[?2026l") {
-            self.modes.synchronized_output = false;
-        } else if tail.ends_with(b"\x1b[?25h") {
-            self.modes.cursor_visible = true;
-        } else if tail.ends_with(b"\x1b[?25l") {
-            self.modes.cursor_visible = false;
-        } else if tail.ends_with(b"\x1b[?2004h") {
-            self.modes.bracketed_paste = true;
-        } else if tail.ends_with(b"\x1b[?2004l") {
-            self.modes.bracketed_paste = false;
-        } else if tail.ends_with(b"\x1b[?1004h") {
-            self.modes.focus_reporting = true;
-        } else if tail.ends_with(b"\x1b[?1004l") {
-            self.modes.focus_reporting = false;
-        } else if tail.ends_with(b"\x1b[?2031h") {
-            self.modes.theme_updates = true;
-        } else if tail.ends_with(b"\x1b[?2031l") {
-            self.modes.theme_updates = false;
-        } else if tail.ends_with(b"\x1b[?1000h") {
-            self.modes.mouse_tracking = Some(MouseTrackingMode::Standard);
-        } else if tail.ends_with(b"\x1b[?1002h") {
-            self.modes.mouse_tracking = Some(MouseTrackingMode::Button);
-        } else if tail.ends_with(b"\x1b[?1003h") {
-            self.modes.mouse_tracking = Some(MouseTrackingMode::All);
-        } else if tail.ends_with(b"\x1b[?1000l")
-            || tail.ends_with(b"\x1b[?1001l")
-            || tail.ends_with(b"\x1b[?1002l")
-            || tail.ends_with(b"\x1b[?1003l")
-        {
-            self.modes.mouse_tracking = None;
-        } else if tail.ends_with(b"\x1b[?1005h") {
-            self.modes.mouse_utf8 = true;
-        } else if tail.ends_with(b"\x1b[?1005l") {
-            self.modes.mouse_utf8 = false;
-        } else if tail.ends_with(b"\x1b[?1006h") {
-            self.modes.mouse_sgr = true;
-        } else if tail.ends_with(b"\x1b[?1006l") {
-            self.modes.mouse_sgr = false;
-        } else if tail.ends_with(b"\x1b[4h") {
-            self.modes.insert_mode = true;
-        } else if tail.ends_with(b"\x1b[4l") {
-            self.modes.insert_mode = false;
-        } else if tail.ends_with(b"\x1b[?6h") {
-            self.modes.origin_mode = true;
-        } else if tail.ends_with(b"\x1b[?6l") {
-            self.modes.origin_mode = false;
-        } else if tail.ends_with(b"\x1b[?7h") {
-            self.modes.wrap_mode = true;
-        } else if tail.ends_with(b"\x1b[?7l") {
-            self.modes.wrap_mode = false;
-        } else if tail.ends_with(b"\x1b[?12h") {
-            self.modes.cursor_blinking = true;
-        } else if tail.ends_with(b"\x1b[?12l") {
-            self.modes.cursor_blinking = false;
-        } else if tail.ends_with(b"\x1b[?1h") {
-            self.modes.cursor_keys = true;
-        } else if tail.ends_with(b"\x1b[?1l") {
-            self.modes.cursor_keys = false;
-        } else if tail.ends_with(b"\x1b=") {
-            self.modes.application_keypad = true;
-        } else if tail.ends_with(b"\x1b>") {
-            self.modes.application_keypad = false;
-        } else if tail.ends_with(b"\x1b[>4;2m") {
-            self.modes.extended_keys_request = ExtendedKeys::All;
-        } else if tail.ends_with(b"\x1b[>4;1m") {
-            self.modes.extended_keys_request = ExtendedKeys::Standard;
-        } else if tail.ends_with(b"\x1b[>4;0m")
-            || tail.ends_with(b"\x1b[>4m")
-            || tail.ends_with(b"\x1b[>4n")
-        {
-            // `CSI > 4 m` with no level, and `CSI > 4 n`, both put the keyboard
-            // back to the standard forms.
-            self.modes.extended_keys_request = ExtendedKeys::Off;
-        } else if tail.ends_with(b"\x1b[?996n") {
-            // DSR ?996: the pane is asking which theme it is running under.
-            self.theme_query = true;
-        }
-
-        if let Some(reply) = device_attributes_reply(&tail) {
-            return Some(reply);
-        }
-
-        let private = tail
-            .windows(3)
-            .rposition(|window| window == b"\x1b[?")
-            .and_then(|start| tail.get(start + 3..));
-        if let Some(body) = private {
-            if body.last() == Some(&b'p') && body.get(body.len().saturating_sub(2)) == Some(&b'$') {
-                let digits = &body[..body.len() - 2];
-                if let Ok(mode) = std::str::from_utf8(digits).unwrap_or("").parse::<u32>() {
-                    let status = match mode {
-                        2026 => {
-                            if self.modes.synchronized_output {
-                                1
-                            } else {
-                                2
-                            }
-                        }
-                        25 => {
-                            if self.modes.cursor_visible {
-                                1
-                            } else {
-                                2
-                            }
-                        }
-                        1004 => {
-                            if self.modes.focus_reporting {
-                                1
-                            } else {
-                                2
-                            }
-                        }
-                        2031 => {
-                            if self.modes.theme_updates {
-                                1
-                            } else {
-                                2
-                            }
-                        }
-                        1000 => self.mouse_mode_status(MouseTrackingMode::Standard),
-                        1002 => self.mouse_mode_status(MouseTrackingMode::Button),
-                        1003 => self.mouse_mode_status(MouseTrackingMode::All),
-                        1005 => {
-                            if self.modes.mouse_utf8 {
-                                1
-                            } else {
-                                2
-                            }
-                        }
-                        1006 => {
-                            if self.modes.mouse_sgr {
-                                1
-                            } else {
-                                2
-                            }
-                        }
-                        _ => 0,
-                    };
-                    return Some(format!("\x1b[?{mode};{status}$y").into_bytes());
-                }
-            }
-        }
-        None
-    }
-}
-
-/// Collects `DCS $ q Pt ST` (DECRQSS), the request for a setting's current
-/// value.
-///
-/// tmux recognizes only the cursor-style request and answers everything else
-/// with the "invalid request" form, so that is all this reproduces.
-#[derive(Default)]
-struct DecrqssDetector {
-    prefix: Vec<u8>,
-    body: Vec<u8>,
-    in_dcs: bool,
-    escaped: bool,
-}
-
-impl DecrqssDetector {
-    /// Returns the DECRQSS payload once a complete request has been read.
-    fn feed_byte(&mut self, byte: u8) -> Option<Vec<u8>> {
-        if !self.in_dcs {
-            self.prefix.push(byte);
-            if self.prefix.ends_with(b"\x1bP$q") {
-                self.prefix.clear();
-                self.body.clear();
-                self.in_dcs = true;
-            } else if self.prefix.len() > 4 {
-                self.prefix.remove(0);
-            }
-            return None;
-        }
-        if self.escaped {
-            self.escaped = false;
-            if byte == b'\\' {
-                return self.finish();
-            }
-            self.body.push(0x1b);
-        }
-        match byte {
-            0x9c => self.finish(),
-            0x1b => {
-                self.escaped = true;
-                None
-            }
-            _ => {
-                if self.body.len() < 64 {
-                    self.body.push(byte);
-                    None
-                } else {
-                    self.in_dcs = false;
-                    self.body.clear();
-                    None
-                }
-            }
-        }
-    }
-
-    fn finish(&mut self) -> Option<Vec<u8>> {
-        self.in_dcs = false;
-        self.escaped = false;
-        Some(std::mem::take(&mut self.body))
-    }
-}
-
-/// tmux's `input_handle_decrqss` reply. The only setting it reports is the
-/// cursor style; anything else gets `DCS 0 $ r ST`, its "invalid request" form.
-///
-/// Divergence: with no DECSCUSR applied tmux falls back to the `cursor-style`
-/// option, which the pane's reader has no view of, so hmux always reports the
-/// default 0 there. Both agree once a pane has set a style itself.
-fn decrqss_reply(request: &[u8], shape: PaneCursorShape, blinking: bool) -> Vec<u8> {
-    if request != b" q" {
-        return b"\x1bP0$r\x1b\\".to_vec();
-    }
-    let ps = match shape {
-        PaneCursorShape::Default => 0,
-        PaneCursorShape::Block if blinking => 1,
-        PaneCursorShape::Block => 2,
-        PaneCursorShape::Underline if blinking => 3,
-        PaneCursorShape::Underline => 4,
-        PaneCursorShape::Bar if blinking => 5,
-        PaneCursorShape::Bar => 6,
-    };
-    format!("\x1bP1$r q{ps} q\x1b\\").into_bytes()
-}
-
-/// The version XTVERSION reports. hmux presents a tmux-compatible surface, and
-/// an application that special-cases a terminal by name has to see the same
-/// answer the daemon's command language claims to implement.
-const XTVERSION_NAME: &str = "tmux";
-
-/// The device queries tmux answers out of its own state rather than the grid.
-///
-/// Each is only answered with parameter 0 or none, as tmux's `input_get`
-/// default does; any other parameter is silently ignored there and here.
-fn device_attributes_reply(tail: &[u8]) -> Option<Vec<u8>> {
-    // Primary DA. The pinned tmux is built with sixel support, which is what
-    // puts the `4` in its answer.
-    if tail.ends_with(b"\x1b[c") || tail.ends_with(b"\x1b[0c") {
-        return Some(b"\x1b[?1;2;4c".to_vec());
-    }
-    // Secondary DA. 84 is `T`, tmux's terminal identifier.
-    if tail.ends_with(b"\x1b[>c") || tail.ends_with(b"\x1b[>0c") {
-        return Some(b"\x1b[>84;0;0c".to_vec());
-    }
-    if tail.ends_with(b"\x1b[>q") || tail.ends_with(b"\x1b[>0q") {
-        return Some(
-            format!(
-                "\x1bP>|{XTVERSION_NAME} {}\x1b\\",
-                crate::server::TMUX_VERSION
-            )
-            .into_bytes(),
-        );
-    }
-    // DSR 5n: the terminal is operating with no malfunction.
-    if tail.ends_with(b"\x1b[5n") {
-        return Some(b"\x1b[0n".to_vec());
-    }
-    None
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-enum CursorShapeState {
-    #[default]
-    Ground,
-    Esc,
-    Csi,
-    Parameter,
-    Space,
-}
-
-impl CursorShapeDetector {
-    fn feed_byte(&mut self, byte: u8) -> Option<u8> {
-        use CursorShapeState::*;
-        self.state = match (self.state, byte) {
-            (Ground, b'\x1b') => Esc,
-            (Ground, _) => Ground,
-            (Esc, b'[') => {
-                self.parameter = 0;
-                Csi
-            }
-            (Esc, b'\x1b') => Esc,
-            (Esc, _) => Ground,
-            (Csi | Parameter, b'0'..=b'9') => {
-                self.parameter = self
-                    .parameter
-                    .saturating_mul(10)
-                    .saturating_add(byte - b'0');
-                Parameter
-            }
-            (Csi | Parameter, b' ') => Space,
-            (Csi | Parameter, b'\x1b') => Esc,
-            (Csi | Parameter, _) => Ground,
-            (Space, b'q') if self.parameter <= 6 => {
-                let shape = self.parameter;
-                self.state = Ground;
-                return Some(shape);
-            }
-            (Space, b'\x1b') => Esc,
-            (Space, _) => Ground,
-        };
-        None
-    }
-}
-
-impl CursorPositionReportQueryDetector {
-    /// Recognize DSR 6n. The private form `CSI ? 6 n` (DECXCPR) is deliberately
-    /// not recognized: tmux's private-DSR handler answers only the theme
-    /// question, so a reply hmux sent there would be a divergence of its own.
-    fn feed_byte(&mut self, byte: u8) -> bool {
-        use CursorPositionReportState::{Csi, Esc, Ground, SawSix};
-
-        let next = match (self.state, byte) {
-            (Ground, b'\x1b') => Esc,
-            (Ground, _) => Ground,
-            (Esc, b'[') => Csi,
-            (Esc, b'\x1b') => Esc,
-            (Esc, _) => Ground,
-            (Csi, b'6') => SawSix,
-            (Csi, b'\x1b') => Esc,
-            (Csi, _) => Ground,
-            (SawSix, b'n') => {
-                self.state = Ground;
-                return true;
-            }
-            (SawSix, b'\x1b') => Esc,
-            (SawSix, _) => Ground,
-        };
-        self.state = next;
-        false
-    }
-}
-
-#[derive(Default)]
-struct BellDetector {
-    state: BellState,
-}
-
-#[derive(Clone, Copy, Default)]
-enum BellState {
-    #[default]
-    Ground,
-    Escape,
-    Osc,
-    OscEscape,
-}
-
-impl BellDetector {
-    fn feed(&mut self, byte: u8) -> bool {
-        use BellState::{Escape, Ground, Osc, OscEscape};
-        match self.state {
-            Ground if byte == 0x1b => self.state = Escape,
-            Ground => return byte == 0x07,
-            Escape if byte == b']' => self.state = Osc,
-            Escape if byte == 0x1b => self.state = Escape,
-            Escape => {
-                self.state = Ground;
-                return byte == 0x07;
-            }
-            Osc if byte == 0x07 => self.state = Ground,
-            Osc if byte == 0x1b => self.state = OscEscape,
-            Osc => {}
-            OscEscape if byte == b'\\' || byte == 0x07 => self.state = Ground,
-            OscEscape => self.state = Osc,
-        }
-        false
-    }
-}
-
-/// Streaming remover for the screen/tmux window-title control, `ESC k <title>
-/// ST`, where the string terminator is either `ESC \` (ST) or a bare `BEL`.
-///
-/// This is terminfo's `tsl`/`fsl` pair for the `screen`/`tmux` terminal types.
-/// Shells and prompt frameworks emit it to advertise the running command in the
-/// window title; under a `screen`-family `$TERM` that is what zsh's default
-/// `precmd`/`preexec` title hooks use. libghostty-vt (the native grid) does not
-/// recognize `ESC k`, so its bytes would otherwise be printed literally into the
-/// screen. Real tmux parses and consumes the sequence, so to match it we drop
-/// the whole thing from the byte stream before it reaches the grid.
-///
-/// State is retained across calls so a sequence split across PTY reads is still
-/// removed. A held `ESC` at end of input (state [`ScreenTitleState::Esc`]) is
-/// carried into the next call and only emitted once we know it does not begin
-/// `ESC k` — this delays a lone `ESC` by at most one burst, harmless for a grid
-/// that is repainted after each burst anyway.
-#[derive(Default)]
-struct ScreenTitleStripper {
-    state: ScreenTitleState,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-enum ScreenTitleState {
-    /// Passing bytes through.
-    #[default]
-    Ground,
-    /// Saw an `ESC` in ground state; it is held pending the next byte.
-    Esc,
-    /// Inside `ESC k …`; dropping the title text until the terminator.
-    Title,
-    /// Inside the title and saw an `ESC`; a following `\` ends it (ST).
-    TitleEsc,
-}
-
-impl ScreenTitleStripper {
-    /// Return `input` with any `ESC k … ST/BEL` sequences removed, resuming from
-    /// the state left by the previous call.
-    fn filter(&mut self, input: &[u8]) -> Vec<u8> {
-        use ScreenTitleState::{Esc, Ground, Title, TitleEsc};
-        let mut out = Vec::with_capacity(input.len());
-        for &byte in input {
-            match self.state {
-                Ground => {
-                    if byte == 0x1b {
-                        self.state = Esc; // hold the ESC
-                    } else {
-                        out.push(byte);
-                    }
-                }
-                Esc => match byte {
-                    b'k' => self.state = Title, // ESC k → begin title, drop both
-                    0x1b => out.push(0x1b),     // ESC ESC → emit one, hold the new
-                    _ => {
-                        // Some other escape (`ESC [`, `ESC ]`, …): pass through
-                        // unchanged so the query detectors still see it.
-                        out.push(0x1b);
-                        out.push(byte);
-                        self.state = Ground;
-                    }
-                },
-                Title => match byte {
-                    0x07 => self.state = Ground, // BEL terminator
-                    0x1b => self.state = TitleEsc,
-                    _ => {} // title text: drop
-                },
-                TitleEsc => match byte {
-                    b'\\' => self.state = Ground, // ST terminator, drop both
-                    0x1b => {}                    // another ESC: stay pending
-                    _ => self.state = Title,      // not a terminator: still title
-                },
-            }
-        }
-        out
-    }
-}
-
-/// tmux's `INPUT_BUF_DEFAULT_SIZE`, the `input-buffer-size` default.
-const INPUT_BUFFER_DEFAULT_SIZE: u32 = 1_048_576;
-
-/// tmux's `INPUT_BUF_START`: the parser's string buffer starts here and doubles.
-const INPUT_BUFFER_START: usize = 32;
-
-/// How long a terminal string may actually grow under `input-buffer-size`.
-///
-/// tmux's `input_input` doubles the buffer from [`INPUT_BUFFER_START`] and
-/// abandons the string once the next doubling would pass the option, so the
-/// usable capacity is the largest such power of two that fits — and a string
-/// is discarded as soon as it would fill it.
-fn input_buffer_capacity(limit: u32) -> usize {
-    let limit = limit as usize;
-    let mut capacity = INPUT_BUFFER_START;
-    while capacity.saturating_mul(2) <= limit {
-        capacity *= 2;
-    }
-    capacity
-}
-
-/// The only DCS tmux forwards: everything after this prefix and before the
-/// string terminator is what `allow-passthrough` puts on a client's tty.
-const PASSTHROUGH_INTRO: &[u8] = b"\x1bPtmux;";
-
-/// How much of one payload is kept. tmux abandons an input string that outgrows
-/// `INPUT_BUF_LIMIT`; the cap here is smaller because a payload is held in the
-/// server until the loop comes round rather than written straight out.
-const PASSTHROUGH_LIMIT: usize = 64 * 1024;
-
-/// Collects the payloads of `DCS tmux; … ST` out of a pane's output.
-///
-/// Ghostty already consumes the sequence, so nothing here has to remove it —
-/// only to read it, as tmux's `input_dcs_dispatch` does. Inside the string an
-/// `ESC` that is not the terminator is dropped and the byte after it kept,
-/// which is why applications double the escapes in a passthrough payload.
-#[derive(Default)]
-struct PassthroughDetector {
-    state: PassthroughState,
-    /// How much of [`PASSTHROUGH_INTRO`] has matched so far.
-    matched: usize,
-    payload: Vec<u8>,
-    overflowed: bool,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-enum PassthroughState {
-    #[default]
-    Ground,
-    /// Part-way through the introducer.
-    Intro,
-    /// Inside the payload.
-    Payload,
-    /// Saw an `ESC` inside the payload; a following `\` ends it (ST).
-    PayloadEsc,
-}
-
-impl PassthroughDetector {
-    /// The completed payload, once the string terminator arrives.
-    fn feed_byte(&mut self, byte: u8) -> Option<Vec<u8>> {
-        use PassthroughState::{Ground, Intro, Payload, PayloadEsc};
-        match self.state {
-            Ground | Intro => {
-                if byte == PASSTHROUGH_INTRO[self.matched] {
-                    self.matched += 1;
-                    if self.matched == PASSTHROUGH_INTRO.len() {
-                        self.matched = 0;
-                        self.payload.clear();
-                        self.overflowed = false;
-                        self.state = Payload;
-                    } else {
-                        self.state = Intro;
-                    }
-                } else {
-                    // A mismatch can itself be the start of the next attempt.
-                    self.matched = usize::from(byte == PASSTHROUGH_INTRO[0]);
-                    self.state = if self.matched == 0 { Ground } else { Intro };
-                }
-                None
-            }
-            Payload => {
-                if byte == 0x1b {
-                    self.state = PayloadEsc;
-                } else {
-                    self.push(byte);
-                }
-                None
-            }
-            PayloadEsc => {
-                self.state = Payload;
-                if byte != b'\\' {
-                    self.push(byte);
-                    return None;
-                }
-                self.state = Ground;
-                let payload = std::mem::take(&mut self.payload);
-                (!std::mem::take(&mut self.overflowed)).then_some(payload)
-            }
-        }
-    }
-
-    fn push(&mut self, byte: u8) {
-        if self.payload.len() == PASSTHROUGH_LIMIT {
-            self.overflowed = true;
-            return;
-        }
-        self.payload.push(byte);
-    }
-}
-
-/// Applies `allow-set-title` to the sequences that retitle a pane, and rewrites
-/// an APC title as the OSC 2 that means the same thing.
-///
-/// tmux gates OSC 0, OSC 2 and APC on the one option and hands all three to the
-/// same `screen_set_title`. Ghostty owns the title here and does not recognize
-/// APC, so an allowed OSC passes through untouched, an allowed APC passes
-/// through as its OSC 2 equivalent — which keeps the two in stream order, since
-/// the last one to arrive is the one that wins — and a refused sequence is
-/// removed before the emulator can apply it.
-///
-/// Like [`ScreenTitleStripper`], state is retained across calls so a sequence
-/// split across PTY reads is still recognized.
-#[derive(Default)]
-struct SetTitleFilter {
-    /// The titles accepted since the last drain, in stream order.
-    accepted: Vec<String>,
-    state: SetTitleState,
-    /// The escape bytes seen so far: the prefix of a sequence that may yet turn
-    /// out not to be a title, or an APC payload waiting for its terminator.
-    held: Vec<u8>,
-    /// Set when the string outgrew the `input-buffer-size` capacity.
-    overflowed: bool,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-enum SetTitleState {
-    #[default]
-    Ground,
-    /// Saw an `ESC` in ground state; it is held pending the next byte.
-    Esc,
-    /// Inside `ESC ]`, reading the OSC number.
-    OscNumber,
-    /// Inside an allowed OSC 0/2, collecting the title so its length can be
-    /// held against `input-buffer-size` before the emulator sees it.
-    OscTitle,
-    /// Saw an `ESC` while collecting; a following `\` ends it (ST).
-    OscTitleEsc,
-    /// Inside a refused OSC 0/2, dropping the rest of the string.
-    OscDrop,
-    /// Saw an `ESC` while dropping; a following `\` ends the string (ST).
-    OscDropEsc,
-    /// Inside `ESC _`, collecting the APC payload.
-    Apc,
-    /// Saw an `ESC` inside the payload; a following `\` ends it (ST).
-    ApcEsc,
-}
-
-impl SetTitleFilter {
-    fn filter(&mut self, input: &[u8], allowed: bool, capacity: usize) -> Vec<u8> {
-        use SetTitleState::{
-            Apc, ApcEsc, Esc, Ground, OscDrop, OscDropEsc, OscNumber, OscTitle, OscTitleEsc,
-        };
-        let mut out = Vec::with_capacity(input.len());
-        for &byte in input {
-            match self.state {
-                Ground => {
-                    if byte == 0x1b {
-                        self.held.clear();
-                        self.held.push(byte);
-                        self.state = Esc;
-                    } else {
-                        out.push(byte);
-                    }
-                }
-                Esc => match byte {
-                    b']' => {
-                        self.held.push(byte);
-                        self.state = OscNumber;
-                    }
-                    b'_' => {
-                        self.held.clear();
-                        self.overflowed = false;
-                        self.state = Apc;
-                    }
-                    0x1b => out.push(0x1b), // ESC ESC → emit one, hold the new
-                    _ => {
-                        out.append(&mut self.held);
-                        out.push(byte);
-                        self.state = Ground;
-                    }
-                },
-                // Only `0` and `2` are titles; every other OSC — including the
-                // ones with a digit in common, like 04 or 52 — is released as
-                // soon as it can no longer be one.
-                OscNumber => match byte {
-                    b'0' | b'2' if self.held.len() == 2 => self.held.push(byte),
-                    b';' if self.held.len() == 3 => {
-                        if allowed {
-                            self.held.push(byte);
-                            self.overflowed = false;
-                            self.state = OscTitle;
-                        } else {
-                            self.held.clear();
-                            self.state = OscDrop;
-                        }
-                    }
-                    _ => {
-                        out.append(&mut self.held);
-                        out.push(byte);
-                        self.state = Ground;
-                    }
-                },
-                OscTitle => match byte {
-                    0x07 => {
-                        out.extend_from_slice(&self.finish_osc_title(&[0x07], capacity));
-                        self.state = Ground;
-                    }
-                    0x1b => self.state = OscTitleEsc,
-                    _ => self.push(byte, capacity),
-                },
-                OscTitleEsc => {
-                    if byte == b'\\' {
-                        out.extend_from_slice(&self.finish_osc_title(b"\x1b\\", capacity));
-                        self.state = Ground;
-                    } else {
-                        self.push(0x1b, capacity);
-                        self.push(byte, capacity);
-                        self.state = OscTitle;
-                    }
-                }
-                OscDrop => match byte {
-                    0x07 => self.state = Ground, // BEL terminator
-                    0x1b => self.state = OscDropEsc,
-                    _ => {} // title text: drop
-                },
-                OscDropEsc => match byte {
-                    b'\\' => self.state = Ground, // ST terminator
-                    0x1b => {}                    // another ESC: stay pending
-                    _ => self.state = OscDrop,
-                },
-                Apc => match byte {
-                    0x07 => {
-                        out.extend_from_slice(&self.finish_apc(allowed));
-                        self.state = Ground;
-                    }
-                    0x1b => self.state = ApcEsc,
-                    _ => self.push(byte, capacity),
-                },
-                ApcEsc => match byte {
-                    b'\\' => {
-                        out.extend_from_slice(&self.finish_apc(allowed));
-                        self.state = Ground;
-                    }
-                    _ => {
-                        // Not a terminator, so the ESC was payload after all.
-                        self.push(0x1b, capacity);
-                        self.push(byte, capacity);
-                        self.state = Apc;
-                    }
-                },
-            }
-        }
-        out
-    }
-
-    /// Collect one byte of the string, abandoning it once it would fill the
-    /// parser's buffer — tmux's `input_input`.
-    fn push(&mut self, byte: u8, capacity: usize) {
-        if self.held.len() + 1 >= capacity {
-            self.overflowed = true;
-            return;
-        }
-        self.held.push(byte);
-    }
-
-    /// The OSC title as the emulator should see it: the whole sequence, or
-    /// nothing when it outgrew the parser's buffer.
-    fn finish_osc_title(&mut self, terminator: &[u8], capacity: usize) -> Vec<u8> {
-        let mut sequence = std::mem::take(&mut self.held);
-        // The four introducer bytes are not part of tmux's string buffer.
-        let overflowed = std::mem::take(&mut self.overflowed)
-            || sequence.len().saturating_sub(4) + 1 >= capacity;
-        if overflowed {
-            return Vec::new();
-        }
-        self.note_title(&sequence[4..]);
-        sequence.extend_from_slice(terminator);
-        sequence
-    }
-
-    /// Record an accepted title, as tmux's `screen_set_title` does.
-    fn note_title(&mut self, title: &[u8]) {
-        self.accepted
-            .push(String::from_utf8_lossy(title).into_owned());
-    }
-
-    /// The bytes an APC title leaves behind: the OSC 2 it is equivalent to, or
-    /// nothing when the option refuses it or the payload ran away.
-    fn finish_apc(&mut self, allowed: bool) -> Vec<u8> {
-        let payload = std::mem::take(&mut self.held);
-        if !allowed || std::mem::take(&mut self.overflowed) {
-            return Vec::new();
-        }
-        self.note_title(&payload);
-        let mut osc = b"\x1b]2;".to_vec();
-        osc.extend_from_slice(&payload);
-        osc.extend_from_slice(b"\x1b\\");
-        osc
-    }
-}
-
-fn cursor_position_report(terminal: &Terminal) -> Option<Vec<u8>> {
+fn cursor_position_report(terminal: &PaneScreen) -> Option<Vec<u8>> {
     let (x, y) = terminal.cursor_position().ok()?;
     Some(format!("\x1b[{};{}R", y.saturating_add(1), x.saturating_add(1)).into_bytes())
+}
+
+/// tmux's default window pixel geometry when no attached client reports one.
+const DEFAULT_CELL_WIDTH: u32 = 16;
+const DEFAULT_CELL_HEIGHT: u32 = 32;
+
+fn window_size_report(terminal: &PaneScreen, operation: u32) -> Option<Vec<u8>> {
+    let dims = terminal.grid_dims().ok()?;
+    let columns = u32::from(dims.cols);
+    let rows = u32::from(dims.viewport_rows);
+    let (report, height, width) = match operation {
+        14 => (4, rows * DEFAULT_CELL_HEIGHT, columns * DEFAULT_CELL_WIDTH),
+        15 => (5, rows * DEFAULT_CELL_HEIGHT, columns * DEFAULT_CELL_WIDTH),
+        16 => (6, DEFAULT_CELL_HEIGHT, DEFAULT_CELL_WIDTH),
+        18 => (8, rows, columns),
+        19 => (9, rows, columns),
+        _ => return None,
+    };
+    Some(format!("\x1b[{report};{height};{width}t").into_bytes())
 }
 
 /// Upper bound on bytes buffered for a child that is not reading its stdin. A
@@ -4394,10 +2686,6 @@ fn flush_pane_input(fd: c_int, queued: &mut VecDeque<u8>) {
     }
 }
 
-fn ghostty_err(e: crate::ghostty::Error) -> io::Error {
-    io::Error::other(format!("ghostty: {e}"))
-}
-
 /// A pane's foreground-process identity, captured while the pane was at hand.
 ///
 /// Holds only owned data (pids and the spawn command line), so a deferred
@@ -4459,6 +2747,22 @@ impl PaneProcessProbe {
     }
 }
 
+/// Build tmux's OSC 12 reply from the pane-local colour state. Unset cursor
+/// colour is represented by `none` and has no reply, matching tmux's silent
+/// response for an unset local value.
+fn cursor_colour_query_reply(colour: &str, end: StringEnd) -> Option<Vec<u8>> {
+    let packed = parse_packed_colour(colour)?;
+    let (r, g, b) = ((packed >> 16) as u8, (packed >> 8) as u8, packed as u8);
+    let terminator = match end {
+        StringEnd::StringTerminator => "\x1b\\",
+        StringEnd::Bell => "\x07",
+    };
+    Some(
+        format!("\x1b]12;rgb:{r:02x}{r:02x}/{g:02x}{g:02x}/{b:02x}{b:02x}{terminator}")
+            .into_bytes(),
+    )
+}
+
 /// Render a pane's argument vector the way tmux's `cmd_stringify_argv` does,
 /// for the callers that reduce the result with [`parse_window_name`].
 ///
@@ -4506,16 +2810,16 @@ fn parse_window_name(input: &str) -> String {
 mod tests {
     use super::*;
 
+    /// A pty read can end anywhere, including in the middle of a sequence. The
+    /// tokenizer retains its state across reads, so the pane still sees one
+    /// DECSCUSR rather than two fragments of one.
     #[test]
-    fn cursor_shape_detector_handles_split_decscusr() {
-        let mut detector = CursorShapeDetector::default();
-        for &byte in b"noise\x1b[" {
-            assert_eq!(detector.feed_byte(byte), None);
-        }
-        assert_eq!(detector.feed_byte(b'6'), None);
-        assert_eq!(detector.feed_byte(b' '), None);
-        assert_eq!(detector.feed_byte(b'q'), Some(6));
-        assert_eq!(detector.feed_byte(b'x'), None);
+    fn a_decscusr_split_across_reads_still_sets_the_shape() {
+        let pane = Pane::inert(20, 4).expect("inert pane");
+        pane.feed(b"noise\x1b[");
+        assert_eq!(pane.cursor_shape(), 0);
+        pane.feed(b"6 q");
+        assert_eq!(pane.cursor_shape(), 6);
     }
 
     #[test]
@@ -4741,35 +3045,52 @@ mod tests {
         assert_eq!(output.chunk(5, 3), (6, 6, b"f".to_vec()));
     }
 
-    #[test]
-    fn bell_detector_ignores_osc_terminators() {
-        let mut detector = BellDetector::default();
-        let bytes = b"before\x07\x1b]0;title\x07after\x1b]1;title\x1b\\\x07";
-        assert_eq!(bytes.iter().filter(|byte| detector.feed(**byte)).count(), 2);
+    /// A BEL that terminates an OSC string is a terminator, not a bell.
+    fn inert_observation() -> NativePaneObservation {
+        let term = PaneScreen::new(20, 4);
+        NativePaneObservation::new(Rc::new(RefCell::new(term)), None, 20, 4)
     }
 
     #[test]
-    fn terminal_query_detectors_handle_pty_boundaries_and_terminators() {
-        let mut background = BackgroundColorQueryDetector::default();
-        let found = b"before\x1b]11;?\x1b\\after\x1b]11;?\x07\x1b]11;?\x9c"
-            .iter()
-            .filter(|&&byte| background.feed_byte(byte))
-            .count();
-        assert_eq!(found, 3);
+    fn only_bells_outside_a_string_are_counted() {
+        let pane = Pane::inert(20, 4).expect("inert pane");
+        pane.feed(b"before\x07\x1b]0;title\x07after\x1b]1;title\x1b\\\x07");
+        assert_eq!(pane.observation.bell_count.get(), 2);
+    }
 
-        let mut dsr = DeviceStatusReportQueryDetector::default();
-        assert!(!b"before\x1b[5".iter().any(|&byte| dsr.feed_byte(byte)));
-        assert!(dsr.feed_byte(b'n'));
+    /// The questions only the client's terminal can answer are recognized
+    /// whatever terminator they use and wherever the read boundaries fall.
+    #[test]
+    fn forwarded_queries_survive_pty_boundaries_and_every_terminator() {
+        let observation = inert_observation();
+        let mut forwarded = 0;
+        for chunk in [
+            &b"before\x1b]11;?\x1b"[..],
+            b"\\after\x1b]11;?\x07",
+            b"\x1b[5",
+            b"n",
+        ] {
+            forwarded += observation.observe_output(chunk).1.len();
+        }
+        assert_eq!(forwarded, 3, "two OSC 11 questions and one DSR");
+    }
 
-        let mut cpr = CursorPositionReportQueryDetector::default();
-        assert!(!b"before\x1b[6".iter().any(|&byte| cpr.feed_byte(byte)));
-        assert!(cpr.feed_byte(b'n'));
+    /// DECXCPR is not a cursor report tmux answers, so the private form must
+    /// pass through without one.
+    #[test]
+    fn the_private_cursor_report_is_not_answered() {
+        let observation = inert_observation();
+        let (replies, _) = observation.observe_output(b"before\x1b[?6n");
+        assert!(replies.is_empty(), "got {replies:?}");
+        let (replies, _) = observation.observe_output(b"\x1b[6n");
+        assert_eq!(replies, vec![b"\x1b[1;7R".to_vec()]);
+    }
 
-        // DECXCPR is not a cursor report tmux answers, so the private form must
-        // pass through without one.
-        let mut private_cpr = CursorPositionReportQueryDetector::default();
-        assert!(!b"before\x1b[?6n"
-            .iter()
-            .any(|&byte| private_cpr.feed_byte(byte)));
+    #[test]
+    fn pane_cursor_colour_query_uses_the_stored_colour_and_terminator() {
+        let observation = inert_observation();
+        let (replies, queries) = observation.observe_output(b"\x1b]12;#00ff00\x07\x1b]12;?\x07");
+        assert!(queries.is_empty(), "got forwarded queries: {queries:?}");
+        assert_eq!(replies, vec![b"\x1b]12;rgb:0000/ffff/0000\x07".to_vec()]);
     }
 }

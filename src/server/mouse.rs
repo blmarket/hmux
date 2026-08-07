@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use super::key::{KeyBase, KeyCode, Modifiers, MouseKey, MouseKind, MouseLocation};
 use super::state::{PaneNode, PaneRect, ServerState, Session, Window};
 use super::status::{self, RenderedStatus, StatusRangeKind};
+use crate::vt::input::{MouseAction, MouseButton as EncoderButton, MouseEvent as EncoderEvent};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MouseProtocol {
@@ -227,12 +228,16 @@ impl MouseEvent {
         let last = self.last_position?;
         let local = self.target.as_ref()?.local_position?;
         Some(MousePosition {
-            x: last.x.saturating_sub(self.position.x.saturating_sub(local.x)),
-            y: last.y.saturating_sub(self.position.y.saturating_sub(local.y)),
+            x: last
+                .x
+                .saturating_sub(self.position.x.saturating_sub(local.x)),
+            y: last
+                .y
+                .saturating_sub(self.position.y.saturating_sub(local.y)),
         })
     }
 
-    pub(crate) fn pane_input_event(&self) -> Option<(u32, ghostty_sys::MouseEvent)> {
+    pub(crate) fn pane_input_event(&self) -> Option<(u32, EncoderEvent)> {
         if self.ignore {
             return None;
         }
@@ -240,39 +245,36 @@ impl MouseEvent {
         let pane_id = target.pane_id?;
         let position = target.local_position?;
         let action = match self.kind {
-            MouseEventKind::Up | MouseEventKind::DragEnd => ghostty_sys::MouseAction::Release,
-            MouseEventKind::Move | MouseEventKind::Drag => ghostty_sys::MouseAction::Motion,
+            MouseEventKind::Up | MouseEventKind::DragEnd => MouseAction::Release,
+            MouseEventKind::Move | MouseEventKind::Drag => MouseAction::Motion,
             MouseEventKind::Down
             | MouseEventKind::WheelUp
             | MouseEventKind::WheelDown
             | MouseEventKind::SecondClick
             | MouseEventKind::DoubleClick
-            | MouseEventKind::TripleClick => ghostty_sys::MouseAction::Press,
+            | MouseEventKind::TripleClick => MouseAction::Press,
         };
         let button = self.button.and_then(|button| match button {
-            MouseButton::One => Some(ghostty_sys::MouseButton::Left),
-            MouseButton::Two => Some(ghostty_sys::MouseButton::Middle),
-            MouseButton::Three => Some(ghostty_sys::MouseButton::Right),
-            MouseButton::WheelUp => Some(ghostty_sys::MouseButton::WheelUp),
-            MouseButton::WheelDown => Some(ghostty_sys::MouseButton::WheelDown),
-            MouseButton::Six => Some(ghostty_sys::MouseButton::Six),
-            MouseButton::Seven => Some(ghostty_sys::MouseButton::Seven),
-            MouseButton::Eight => Some(ghostty_sys::MouseButton::Eight),
-            MouseButton::Nine => Some(ghostty_sys::MouseButton::Nine),
-            MouseButton::Ten => Some(ghostty_sys::MouseButton::Ten),
-            MouseButton::Eleven => Some(ghostty_sys::MouseButton::Eleven),
+            MouseButton::One => Some(EncoderButton::Left),
+            MouseButton::Two => Some(EncoderButton::Middle),
+            MouseButton::Three => Some(EncoderButton::Right),
+            MouseButton::WheelUp => Some(EncoderButton::WheelUp),
+            MouseButton::WheelDown => Some(EncoderButton::WheelDown),
+            MouseButton::Six => Some(EncoderButton::Six),
+            MouseButton::Seven => Some(EncoderButton::Seven),
+            MouseButton::Eight => Some(EncoderButton::Eight),
+            MouseButton::Nine => Some(EncoderButton::Nine),
+            MouseButton::Ten => Some(EncoderButton::Ten),
+            MouseButton::Eleven => Some(EncoderButton::Eleven),
             MouseButton::Unknown(_) => None,
         });
-        let any_button_pressed = action != ghostty_sys::MouseAction::Release
+        let any_button_pressed = action != MouseAction::Release
             && button.is_some_and(|button| {
-                !matches!(
-                    button,
-                    ghostty_sys::MouseButton::WheelUp | ghostty_sys::MouseButton::WheelDown
-                )
+                !matches!(button, EncoderButton::WheelUp | EncoderButton::WheelDown)
             });
         Some((
             pane_id,
-            ghostty_sys::MouseEvent {
+            EncoderEvent {
                 action,
                 button,
                 shift: self.modifiers.shift,
@@ -338,6 +340,20 @@ pub(crate) fn grid_word_and_line(
         _ => String::new(),
     };
     (word, line.to_string())
+}
+
+/// The OSC 8 hyperlink under the mouse, tmux's `#{mouse_hyperlink}` — read
+/// from the clicked cell's link metadata, empty when the cell has none.
+pub(crate) fn grid_hyperlink(pane: &super::pane::Pane, position: MousePosition) -> String {
+    let history = pane.scrollback_rows().unwrap_or(0);
+    let Ok(grid) = pane.grid_snapshot_range(history + usize::from(position.y), 1) else {
+        return String::new();
+    };
+    grid.rows
+        .first()
+        .and_then(|row| row.cells.get(usize::from(position.x)))
+        .and_then(|cell| cell.hyperlink.clone())
+        .unwrap_or_default()
 }
 
 /// tmux's `KEYC_CLICK_TIMEOUT`.
@@ -441,9 +457,10 @@ impl MouseInputState {
             // A repeat click that moved, changed button, or landed somewhere
             // else is not a repeat at all: the sequence restarts here.
             if event.kind != MouseEventKind::Down
-                && self.click.as_ref().is_none_or(|click| {
-                    click.button != event.button || click.identity != identity
-                })
+                && self
+                    .click
+                    .as_ref()
+                    .is_none_or(|click| click.button != event.button || click.identity != identity)
             {
                 event.kind = MouseEventKind::Down;
                 self.expect_third = false;
@@ -843,6 +860,7 @@ mod tests {
                 false,
                 SplitDirection::LeftRight,
                 PaneSpec::Inert,
+                None,
             )
             .expect("split");
         let mut cache = RenderCache::default();
@@ -885,9 +903,9 @@ mod tests {
         assert_eq!(pane_id, 7);
         assert_eq!(
             event,
-            ghostty_sys::MouseEvent {
-                action: ghostty_sys::MouseAction::Release,
-                button: Some(ghostty_sys::MouseButton::Middle),
+            EncoderEvent {
+                action: MouseAction::Release,
+                button: Some(EncoderButton::Middle),
                 shift: true,
                 control: true,
                 alt: true,

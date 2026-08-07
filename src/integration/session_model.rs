@@ -168,7 +168,8 @@ mod tests {
 
     #[test]
     fn finds_the_last_model_in_a_transcript() {
-        let content = br#"{"type":"assistant","message":{"model":"claude-opus-5","role":"assistant"}}
+        let content =
+            br#"{"type":"assistant","message":{"model":"claude-opus-5","role":"assistant"}}
 {"type":"assistant","message":{"model":"claude-fable-5","role":"assistant"}}
 "#;
         let source = FileSource::new("/s.jsonl", content);

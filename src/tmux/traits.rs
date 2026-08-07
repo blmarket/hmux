@@ -108,4 +108,3 @@ pub trait NonblockingFrameWriter {
     /// Whether any output remains queued.
     fn has_pending(&self) -> bool;
 }
-

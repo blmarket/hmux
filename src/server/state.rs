@@ -22,19 +22,21 @@ use super::input_keys::{
 use super::key::{parse_key_name, KeyCode};
 use super::options::{GlobalOptions, OptionSet, OptionsView};
 use super::pane::{
-    NativePaneObservation, Pane, PaneClipboardEvent, PaneIo, PaneKeyState,
-    PaneOutputPolicy, PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
+    NativePaneObservation, Pane, PaneClipboardEvent, PaneIo, PaneKeyState, PaneOutputPolicy,
+    PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
 };
 use super::task::{completion_pair, Completion, CompletionSender};
 use super::term::ResolvedTerm;
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
+use crate::vt::input::MouseEvent;
+use crate::vt::parser::tokenize;
+use crate::vt::screen::{
+    CellSemantic, CellWidth, Grid, GridCell, GridRow, ScreenOptions, VtScreen,
+};
+use crate::vt::width;
+use crate::vt::PaneScreen;
 
 /// The server state, shared by everything running on the loop.
-///
-/// One owner would be simpler, but the state outlives any single command: the
-/// protocol drivers, the attach compositors and the command queues all hold it
-/// across suspensions of their own. They all run on the loop, so the sharing is
-/// ownership, not concurrency.
 pub(crate) type SharedState = Rc<RefCell<ServerState>>;
 
 /// Wrap a fresh [`ServerState`] in the handle everything on the loop shares.
@@ -432,10 +434,7 @@ impl BackgroundJobRegistry {
         let mut inner = self.inner.borrow_mut();
         let id = inner.next_id;
         inner.next_id = inner.next_id.wrapping_add(1);
-        inner.jobs.insert(
-            id,
-            BackgroundJob { command, fd, pid },
-        );
+        inner.jobs.insert(id, BackgroundJob { command, fd, pid });
         id
     }
 
@@ -630,7 +629,7 @@ pub(crate) struct CopyState {
     pub(crate) prefix: u32,
     pub(crate) scroll_exit: bool,
     pub(crate) recentre: CopyRecentre,
-    pub(crate) grid: ghostty_sys::GridSnapshot,
+    pub(crate) grid: Grid,
     /// Frozen styled VT serialization captured with `grid`.
     pub(crate) vt: Vec<u8>,
     /// Byte ranges for the content of each row in `vt`, excluding CR and the
@@ -1100,9 +1099,22 @@ impl LayoutCell {
         direction: SplitDirection,
         before: bool,
     ) -> bool {
+        self.split_sized(target_id, new_id, direction, before, None)
+    }
+
+    /// [`Self::split`] with an explicit size for the *new* pane on the split
+    /// axis (`split-window -l`/`-p`); `None` keeps the even split.
+    fn split_sized(
+        &mut self,
+        target_id: u32,
+        new_id: u32,
+        direction: SplitDirection,
+        before: bool,
+        new_size: Option<u16>,
+    ) -> bool {
         if matches!(self, Self::Pane { pane_id, .. } if *pane_id == target_id) {
             let old = self.rect();
-            let (first, second) = split_axis(old.axis(direction));
+            let (first, second) = split_axis_sized(old.axis(direction), new_size, before);
             let mut old_rect = old;
             old_rect.set_axis(direction, if before { second } else { first });
             let mut new_rect = old;
@@ -1143,7 +1155,7 @@ impl LayoutCell {
             && matches!(children[index], Self::Pane { pane_id, .. } if pane_id == target_id)
         {
             let old = children[index].rect();
-            let (first, second) = split_axis(old.axis(direction));
+            let (first, second) = split_axis_sized(old.axis(direction), new_size, before);
             let mut old_rect = old;
             old_rect.set_axis(direction, if before { second } else { first });
             let mut new_rect = old;
@@ -1162,12 +1174,73 @@ impl LayoutCell {
             self.fix_offsets();
             true
         } else {
-            let changed = children[index].split(target_id, new_id, direction, before);
+            let changed =
+                children[index].split_sized(target_id, new_id, direction, before, new_size);
             if changed {
                 self.fix_offsets();
             }
             changed
         }
+    }
+
+    /// tmux's `layout_spread_out`: climb from the pane's innermost parent
+    /// outward until one level's children can be evened out.
+    fn spread_pane(&mut self, pane_id: u32) -> bool {
+        let Self::Split { children, .. } = self else {
+            return false;
+        };
+        let Some(index) = children.iter().position(|child| child.contains(pane_id)) else {
+            return false;
+        };
+        if children[index].spread_pane(pane_id) {
+            return true;
+        }
+        self.spread_cell()
+    }
+
+    /// tmux's `layout_spread_cell`: give every child `(size - borders) /
+    /// children` cells on the split axis, the first children absorbing the
+    /// remainder.
+    fn spread_cell(&mut self) -> bool {
+        let Self::Split {
+            direction,
+            children,
+            rect,
+        } = self
+        else {
+            return false;
+        };
+        let direction = *direction;
+        let number = children.len() as u16;
+        if number <= 1 {
+            return false;
+        }
+        let size = rect.axis(direction);
+        if size < number - 1 {
+            return false;
+        }
+        let each = (size - (number - 1)) / number;
+        if each == 0 {
+            return false;
+        }
+        let mut remainder = i32::from(size) - i32::from(number) * (i32::from(each) + 1) + 1;
+        let mut changed = false;
+        for child in children.iter_mut() {
+            let mut target = each;
+            if remainder > 0 {
+                target += 1;
+                remainder -= 1;
+            }
+            let change = i32::from(target) - i32::from(child.rect().axis(direction));
+            if change != 0 {
+                changed = true;
+            }
+            child.resize_axis(direction, change);
+        }
+        if changed {
+            self.fix_offsets();
+        }
+        changed
     }
 
     fn resize(&mut self, width: u16, height: u16) {
@@ -1482,6 +1555,32 @@ fn split_axis(size: u16) -> (u16, u16) {
     (size.saturating_sub(second).saturating_sub(1).max(1), second)
 }
 
+/// [`split_axis`] with the *new* pane pinned at `new_size` cells; the border
+/// line takes one cell and the target keeps the rest. The new pane is the
+/// first child when the split inserts before, the second otherwise.
+fn split_axis_sized(size: u16, new_size: Option<u16>, before: bool) -> (u16, u16) {
+    let Some(new) = new_size else {
+        return split_axis(size);
+    };
+    let new = new.clamp(1, size.saturating_sub(2).max(1));
+    let old = size.saturating_sub(new).saturating_sub(1).max(1);
+    if before {
+        (new, old)
+    } else {
+        (old, new)
+    }
+}
+
+/// The layout as a `select-layout`-consumable custom string: the dump body
+/// behind tmux's 4-hex rotate-and-add checksum prefix.
+pub(crate) fn checksummed_layout_dump(layout: &LayoutCell) -> String {
+    let body = layout.dump();
+    let checksum = body.bytes().fold(0u16, |sum, byte| {
+        sum.rotate_right(1).wrapping_add(u16::from(byte))
+    });
+    format!("{checksum:04x},{body}")
+}
+
 fn parse_custom_layout(value: &str) -> io::Result<LayoutCell> {
     let (checksum, body) = value
         .split_once(',')
@@ -1736,8 +1835,17 @@ fn scrollbar_style_columns(style: Option<&str>) -> u16 {
 }
 
 fn resize_panes_to_layout(window: &mut Window) -> io::Result<()> {
-    for pane in &mut window.panes {
-        if let Some(rect) = pane.floating.or_else(|| window.layout.pane_rect(pane.id)) {
+    // The grid has to match the rect the pane is drawn in — `Window::pane_rect`
+    // takes the scrollbar columns and the border-status row off the layout cell
+    // — or the compositor dumps more rows than the pane has on screen and the
+    // reserved row never fits in the frame.
+    let rects = window
+        .panes
+        .iter()
+        .map(|pane| window.pane_rect(pane.id))
+        .collect::<Vec<_>>();
+    for (pane, rect) in window.panes.iter_mut().zip(rects) {
+        if let Some(rect) = rect {
             if let Some(copy) = pane.copy.as_mut() {
                 reflow_copy_snapshot(copy, rect.width.max(1), rect.height.max(1))?;
             }
@@ -1758,7 +1866,7 @@ fn reflow_copy_snapshot(state: &mut CopyState, cols: u16, rows: u16) -> io::Resu
     let mut metadata = Vec::new();
     for (row, line) in state.grid.rows.iter().enumerate() {
         for (col, cell) in line.cells.iter().enumerate() {
-            if cell.semantic != ghostty_sys::GridCellSemantic::Output || cell.hyperlink.is_some() {
+            if cell.semantic != CellSemantic::Output || cell.hyperlink.is_some() {
                 metadata.push((
                     copy_point_offset(&state.grid, (row, col)),
                     cell.semantic,
@@ -1767,9 +1875,10 @@ fn reflow_copy_snapshot(state: &mut CopyState, cols: u16, rows: u16) -> io::Resu
             }
         }
     }
-    let mut terminal = ghostty_sys::Terminal::new(state.grid.cols, state.grid.viewport_rows)
-        .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
-    terminal.write(&copy_reflow_vt(state));
+    let mut terminal = PaneScreen::new(state.grid.cols, state.grid.viewport_rows);
+    for token in tokenize(&copy_reflow_vt(state)) {
+        terminal.apply(&token);
+    }
     terminal
         .resize(cols, rows)
         .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
@@ -1822,9 +1931,10 @@ fn view_output_vt(output: &[u8]) -> Vec<u8> {
 }
 
 fn view_copy_state(output: Vec<u8>, cols: u16, rows: u16) -> io::Result<CopyState> {
-    let mut terminal = ghostty_sys::Terminal::new(cols.max(1), rows.max(1))
-        .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
-    terminal.write(&view_output_vt(&output));
+    let mut terminal = PaneScreen::new(cols.max(1), rows.max(1));
+    for token in tokenize(&view_output_vt(&output)) {
+        terminal.apply(&token);
+    }
     let grid = terminal
         .grid_snapshot()
         .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
@@ -1865,7 +1975,7 @@ fn view_copy_state(output: Vec<u8>, cols: u16, rows: u16) -> io::Result<CopyStat
     })
 }
 
-fn copy_point_offset(grid: &ghostty_sys::GridSnapshot, point: (usize, usize)) -> usize {
+fn copy_point_offset(grid: &Grid, point: (usize, usize)) -> usize {
     let mut offset = 0;
     for row in 0..point.0.min(grid.rows.len()) {
         offset += copy_line_length(grid, row);
@@ -1876,7 +1986,7 @@ fn copy_point_offset(grid: &ghostty_sys::GridSnapshot, point: (usize, usize)) ->
     offset + point.1.min(copy_line_length(grid, point.0))
 }
 
-fn copy_point_at_offset(grid: &ghostty_sys::GridSnapshot, mut offset: usize) -> (usize, usize) {
+fn copy_point_at_offset(grid: &Grid, mut offset: usize) -> (usize, usize) {
     for row in 0..grid.rows.len() {
         let length = copy_line_length(grid, row);
         if offset <= length {
@@ -1957,6 +2067,9 @@ pub struct Window {
     pub(crate) pending_size: Option<(u16, u16)>,
     pub(crate) layout: LayoutCell,
     pub(crate) last_layout: Option<usize>,
+    /// The layout string before the last `select-layout`-family command —
+    /// tmux's `w->old_layout`, which `select-layout -o` restores.
+    pub(crate) old_layout: Option<String>,
     pub(crate) last_new_pane_x: u16,
     pub(crate) last_new_pane_y: u16,
     /// Conditions raised for this window and not yet turned into alerts, as
@@ -2275,6 +2388,14 @@ struct ClientRenderEntry {
     /// When this client last sent a key, in microseconds since the epoch —
     /// tmux's `c->activity_time`, which orders `cmd_find_best_client`.
     activity_micros: i64,
+    /// When this client attached, in microseconds since the epoch — tmux's
+    /// `c->creation_time`, which `#{client_created}` reports.
+    created_micros: i64,
+    /// The session this client showed before its last switch — tmux's
+    /// `c->last_session`, cleared when a switch lands on the same session.
+    last_session_id: Option<u32>,
+    /// Bytes written to this client's terminal — tmux's `c->written`.
+    written: u64,
     /// When a clipboard query was last sent to this client's terminal.
     clipboard_query_at: Option<Instant>,
     flag_state: ClientFlagState,
@@ -2293,9 +2414,9 @@ impl ClientRenderEntry {
         self.flag_state.apply_flags(value);
         self.ignore_size = self.flag_state.ignore_size;
         self.read_only = self.flag_state.read_only;
-        self.flags = self
-            .flag_state
-            .display_flags_full(self.identified, self.control_mode, self.focused);
+        self.flags =
+            self.flag_state
+                .display_flags_full(self.identified, self.control_mode, self.focused);
     }
 
     /// Whether this client's terminal size constrains window sizing: a
@@ -2343,6 +2464,15 @@ pub(crate) struct ClientSnapshot {
     pub(crate) key_table: String,
     /// When this client last sent a key, in microseconds since the epoch.
     pub(crate) activity_micros: i64,
+    /// When this client attached, in microseconds since the epoch.
+    pub(crate) created_micros: i64,
+    /// The session this client showed before its last switch, if any.
+    pub(crate) last_session_id: Option<u32>,
+    /// The features resolved for this client's terminal, in tmux's
+    /// feature-bit order — `#{client_termfeatures}`.
+    pub(crate) termfeatures: String,
+    /// Bytes written to this client's terminal — `#{client_written}`.
+    pub(crate) written: u64,
 }
 
 /// The client-side inputs of the oversized-window viewport calculation.
@@ -2674,6 +2804,9 @@ impl ClientRenderRegistry {
                 theme: String::new(),
                 key_table: DEFAULT_KEY_TABLE.to_string(),
                 activity_micros: now_micros(),
+                created_micros: now_micros(),
+                last_session_id: None,
+                written: 0,
                 clipboard_query_at: None,
                 flag_state,
                 terminal: None,
@@ -2721,6 +2854,14 @@ impl ClientRenderRegistry {
                 theme: entry.theme.clone(),
                 key_table: entry.key_table.clone(),
                 activity_micros: entry.activity_micros,
+                created_micros: entry.created_micros,
+                last_session_id: entry.last_session_id,
+                termfeatures: entry
+                    .terminal
+                    .as_ref()
+                    .map(|terminal| terminal.feature_list())
+                    .unwrap_or_default(),
+                written: entry.written,
             })
             .collect()
     }
@@ -2936,16 +3077,13 @@ impl ClientRenderRegistry {
                         .is_some_and(|tty| tty == target)
             })
         } else {
-            invoking_tty
-                .and_then(|tty| inner.clients.iter().find(|(_, entry)| entry.name == tty))
+            invoking_tty.and_then(|tty| inner.clients.iter().find(|(_, entry)| entry.name == tty))
         };
-        selected
-            .map(|(id, _)| *id)
-            .ok_or(if explicit.is_some() {
-                ClientActionResult::TargetNotFound
-            } else {
-                ClientActionResult::NoCurrentClient
-            })
+        selected.map(|(id, _)| *id).ok_or(if explicit.is_some() {
+            ClientActionResult::TargetNotFound
+        } else {
+            ClientActionResult::NoCurrentClient
+        })
     }
 
     /// Queue `refresh-client -f` values for a client other than the one running
@@ -3165,9 +3303,11 @@ impl ClientRenderRegistry {
             return false;
         }
         entry.focused = focused;
-        entry.flags = entry
-            .flag_state
-            .display_flags_full(entry.identified, entry.control_mode, entry.focused);
+        entry.flags = entry.flag_state.display_flags_full(
+            entry.identified,
+            entry.control_mode,
+            entry.focused,
+        );
         true
     }
 
@@ -3192,7 +3332,11 @@ impl ClientRenderRegistry {
     /// Stamp a client's activity time, tmux's `c->activity_time`.
     fn touch_client_activity(&self, client: &str, at: i64) {
         let mut inner = self.inner.borrow_mut();
-        if let Some(entry) = inner.clients.values_mut().find(|entry| entry.name == client) {
+        if let Some(entry) = inner
+            .clients
+            .values_mut()
+            .find(|entry| entry.name == client)
+        {
             entry.activity_micros = at;
         }
     }
@@ -3200,7 +3344,11 @@ impl ClientRenderRegistry {
     /// Record the key table a client moved into.
     fn set_client_key_table(&self, client: &str, table: &str) {
         let mut inner = self.inner.borrow_mut();
-        let Some(entry) = inner.clients.values_mut().find(|entry| entry.name == client) else {
+        let Some(entry) = inner
+            .clients
+            .values_mut()
+            .find(|entry| entry.name == client)
+        else {
             return;
         };
         if entry.key_table != table {
@@ -3299,6 +3447,9 @@ impl ClientRenderRegistry {
             .clients
             .get_mut(&id)
             .expect("selected client disappeared");
+        // tmux's `server_client_set_session`: a switch that lands on a
+        // different session remembers the one it left; anything else clears it.
+        entry.last_session_id = (entry.session_id != session_id).then_some(entry.session_id);
         entry.session_id = session_id;
         {
             let mut action = entry.slot.action.borrow_mut();
@@ -3317,12 +3468,7 @@ impl ClientRenderRegistry {
     /// `from_session_id` moves to `to`, except that a client carrying
     /// `no-detach-on-destroy` falls back to `no_detach_to` when `to` is `None`.
     /// A client with no destination is left alone and exits on its own.
-    fn reassign_session(
-        &self,
-        from_session_id: u32,
-        to: Option<u32>,
-        no_detach_to: Option<u32>,
-    ) {
+    fn reassign_session(&self, from_session_id: u32, to: Option<u32>, no_detach_to: Option<u32>) {
         let mut inner = self.inner.borrow_mut();
         for entry in inner
             .clients
@@ -3338,6 +3484,7 @@ impl ClientRenderRegistry {
             }) else {
                 continue;
             };
+            entry.last_session_id = (entry.session_id != target).then_some(entry.session_id);
             entry.session_id = target;
             {
                 let mut action = entry.slot.action.borrow_mut();
@@ -3376,6 +3523,15 @@ impl ClientRenderRegistry {
 impl ClientRenderAttachment {
     pub(crate) fn as_raw_fd(&self) -> RawFd {
         self.slot.wakeup.as_fd().as_raw_fd()
+    }
+
+    /// Publish the running total of bytes the attach loop has written to this
+    /// client's terminal, backing `#{client_written}`.
+    pub(crate) fn publish_written(&self, total: u64) {
+        let mut inner = self.registry.inner.borrow_mut();
+        if let Some(entry) = inner.clients.get_mut(&self.id) {
+            entry.written = total;
+        }
     }
 
     /// This client's `#()` job tree, so its status renderer and the commands it
@@ -3641,8 +3797,7 @@ impl ClientPromptAttachment {
     }
 
     pub(crate) fn note_activity(&self) {
-        self.activity
-            .set(self.registry.next_activity());
+        self.activity.set(self.registry.next_activity());
     }
 }
 
@@ -3739,6 +3894,15 @@ impl Window {
 
     pub(crate) fn option_overrides_mut(&mut self) -> &mut OptionSet {
         &mut self.options
+    }
+
+    /// The pane `last-pane` and `select-pane -l` act on: the recorded
+    /// previously-active pane, or — as tmux's `cmd-select-pane.c` falls back —
+    /// the only other pane when the window holds exactly two.
+    pub(crate) fn last_pane_index(&self) -> Option<usize> {
+        self.last_pane
+            .filter(|&pane| pane < self.panes.len())
+            .or_else(|| (self.panes.len() == 2).then_some(1 - self.active))
     }
 
     /// The window's pane indices front to back, tmux's `w->z_index` order:
@@ -4103,8 +4267,9 @@ pub(crate) fn now_micros() -> i64 {
     // SAFETY: `gettimeofday` fills the caller-owned `timeval` and the null
     // timezone pointer is the documented way to skip the obsolete second arg.
     unsafe { libc::gettimeofday(&mut tv, std::ptr::null_mut()) };
-    // `timeval`'s fields are already `i64` on the supported platforms.
-    tv.tv_sec * 1_000_000 + tv.tv_usec
+    // `tv_sec` is `i64` everywhere we support, but `tv_usec` is `i32` on
+    // Darwin and `i64` on Linux; `i64::from` covers both widths.
+    tv.tv_sec * 1_000_000 + i64::from(tv.tv_usec)
 }
 
 /// The whole server's state. Guarded by a mutex at the connection layer.
@@ -4113,6 +4278,8 @@ pub struct ServerState {
     /// first session. An untargeted attach may consume this state by creating
     /// session 0; becoming empty later must not repeat that bootstrap behavior.
     initial_attach_pending: bool,
+    /// When this server state was created, as `#{start_time}` reports it.
+    started_epoch: i64,
     /// The pathname this server listens on, as `#{socket_path}` reports it and
     /// as `TMUX` names it in a spawned process. Empty in the unit tests and in
     /// any embedding that never binds a socket.
@@ -4264,6 +4431,7 @@ impl ServerState {
         let client_renders = Rc::new(ClientRenderRegistry::new());
         let mut state = ServerState {
             initial_attach_pending: true,
+            started_epoch: now_epoch(),
             socket_path: PathBuf::new(),
             new_pipes: Vec::new(),
             sessions: Vec::new(),
@@ -4401,7 +4569,6 @@ impl ServerState {
             .map(|node| node.pane.runtime_id())
             .collect()
     }
-
 
     /// tmux 3.7b's `root` mouse table, in the same order and shape as
     /// `key_bindings_init`.
@@ -4542,8 +4709,11 @@ impl ServerState {
                  'display-menu -t = -x M -y M \
                  -T \"#[align=centre]#{pane_index} (#{pane_id})\" {PANE_MENU}'",
             ),
-            ("M-MouseDown3Pane", "display-menu -t = -x M -y M \
-                 -T '#[align=centre]#{pane_index} (#{pane_id})' {PANE_MENU}"),
+            (
+                "M-MouseDown3Pane",
+                "display-menu -t = -x M -y M \
+                 -T '#[align=centre]#{pane_index} (#{pane_id})' {PANE_MENU}",
+            ),
             (
                 "MouseDown3Status",
                 "display-menu -t = -x W -y W \
@@ -5372,6 +5542,28 @@ impl ServerState {
             .names_for_sessions(&BTreeSet::from([session.id]))
     }
 
+    /// When this server state was created (`#{start_time}`).
+    pub(crate) fn started_epoch(&self) -> i64 {
+        self.started_epoch
+    }
+
+    /// The clients whose session currently shows `window_id` — tmux's
+    /// `#{window_active_clients}` walk over `c->session->curw`.
+    pub(crate) fn window_active_client_names(&self, window_id: u32) -> Vec<String> {
+        let showing = self
+            .sessions
+            .iter()
+            .filter(|session| {
+                session
+                    .windows
+                    .get(session.active)
+                    .is_some_and(|link| self.window_for_link(link).id == window_id)
+            })
+            .map(|session| session.id)
+            .collect::<BTreeSet<u32>>();
+        self.client_renders.names_for_sessions(&showing)
+    }
+
     pub(crate) fn session_group_attached_client_names(&self, session: &Session) -> Vec<String> {
         if !self.is_grouped(session) {
             return Vec::new();
@@ -5433,6 +5625,19 @@ impl ServerState {
         if session.active != previous {
             let session_id = session.id;
             self.notify_session("session-window-changed", session_id);
+            // tmux's `session_select` tail: a selection runs
+            // `window_update_activity`, so the alert check fires again and an
+            // unattached session's monitor-activity re-flags even the winlink
+            // it just selected.
+            let window_id = self.sessions[session_pos].windows[position].id;
+            let monitor_activity = self.windows.get(&window_id).is_some_and(|window| {
+                window.options(&self.global_options).get("monitor-activity") == Some("on")
+            });
+            self.window_last_activity
+                .insert(window_id, std::time::Instant::now());
+            if monitor_activity {
+                self.deliver_alert(window_id, ALERT_ACTIVITY);
+            }
         }
     }
 
@@ -5596,8 +5801,7 @@ impl ServerState {
             .collect::<BTreeSet<_>>();
         self.session_groups
             .retain(|link_set_id, _| live_link_sets.contains(link_set_id));
-        if self.windows.len() != window_count {
-        }
+        if self.windows.len() != window_count {}
     }
 
     pub(crate) fn client_prompt_registry(&self) -> Rc<ClientPromptRegistry> {
@@ -6240,9 +6444,26 @@ impl ServerState {
         }
         if matches!(
             name,
-            "alternate-screen" | "allow-set-title" | "allow-passthrough" | "input-buffer-size"
+            "alternate-screen"
+                | "allow-set-title"
+                | "allow-passthrough"
+                | "history-limit"
+                | "input-buffer-size"
+                | "scroll-on-clear"
         ) {
-            self.refresh_pane_output_policies();
+            self.refresh_pane_options();
+        }
+        // The width policy is server-wide in tmux — one cache, rebuilt whenever
+        // either option is set — so it is pushed rather than looked up. Only
+        // characters written after this see the change, as in tmux: a cell
+        // already in the grid keeps the width it was placed with.
+        if name == "codepoint-widths" {
+            let options = OptionsView::one(self.global_options.server());
+            width::set_codepoint_widths(options.array_values(name));
+        }
+        if name == "variation-selector-always-wide" {
+            let options = OptionsView::one(self.global_options.server());
+            width::set_variation_selector_always_wide(options.get(name) != Some("off"));
         }
     }
 
@@ -6270,11 +6491,20 @@ impl ServerState {
             .values()
             .flat_map(|window| {
                 window.panes.iter().filter_map(|pane| {
-                    (pane
+                    // `on` and `key` keep the dead pane; `failed` keeps it
+                    // only when the child exited non-zero (or to a signal).
+                    let keep = match pane
                         .options(window, &self.global_options)
                         .get("remain-on-exit")
-                        == Some("on"))
-                    .then_some(pane.id)
+                    {
+                        Some("on") | Some("key") => true,
+                        Some("failed") => pane
+                            .pane
+                            .death()
+                            .is_some_and(|death| death.status != Some(0)),
+                        _ => false,
+                    };
+                    keep.then_some(pane.id)
                 })
             })
             .collect::<BTreeSet<_>>();
@@ -6291,6 +6521,63 @@ impl ServerState {
                 pane.id
             })
             .collect::<Vec<_>>();
+        // tmux's `server_destroy_pane` paints the expanded remain-on-exit-format
+        // onto a pane it keeps: full scroll region, cursor to the bottom-left,
+        // one linefeed, then the text — and the cursor is hidden.
+        for &pane_id in newly_exited.iter().filter(|id| retained.contains(id)) {
+            let Some((window, pane)) = self.windows.values().find_map(|window| {
+                window
+                    .panes
+                    .iter()
+                    .find(|pane| pane.id == pane_id)
+                    .map(|pane| (window, pane))
+            }) else {
+                continue;
+            };
+            let template = pane
+                .options(window, &self.global_options)
+                .get("remain-on-exit-format")
+                .unwrap_or_default()
+                .to_string();
+            if template.is_empty() {
+                continue;
+            }
+            let death = pane.pane.death();
+            let mut vars = super::format::Vars::new();
+            vars.set("pane_id", format!("%{pane_id}"))
+                .set("pane_dead", "1")
+                .set(
+                    "pane_dead_status",
+                    death
+                        .and_then(|death| death.status)
+                        .map(|status| status.to_string())
+                        .unwrap_or_default(),
+                )
+                .set(
+                    "pane_dead_signal",
+                    death
+                        .and_then(|death| death.signal)
+                        .map(|signal| signal.to_string())
+                        .unwrap_or_default(),
+                )
+                .set(
+                    "pane_dead_time",
+                    death
+                        .map(|death| {
+                            death
+                                .at
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs()
+                                .to_string()
+                        })
+                        .unwrap_or_default(),
+                );
+            let expanded = super::format::expand(&template, &vars);
+            let (_, rows) = pane.pane.size();
+            pane.pane
+                .feed(format!("\x1b[r\x1b[{rows};1H\n\x1b[?25l{expanded}").as_bytes());
+        }
         self.deferred_notifications(|state| {
             for pane_id in newly_exited {
                 let name = if retained.contains(&pane_id) {
@@ -6319,9 +6606,7 @@ impl ServerState {
                 .collect::<Vec<_>>();
             let before = window.panes.len();
             window.panes.retain(|pane| {
-                !pane.pane.has_exited()
-                    || !pane.pane.child_reaped()
-                    || retained.contains(&pane.id)
+                !pane.pane.has_exited() || !pane.pane.child_reaped() || retained.contains(&pane.id)
             });
             let panes_removed = window.panes.len() != before;
             removed |= panes_removed;
@@ -6373,8 +6658,7 @@ impl ServerState {
         if had_sessions && self.sessions.is_empty() && self.exit_empty_policy() != ExitEmpty::Off {
             self.shutdown_requested = true;
         }
-        if removed {
-        }
+        if removed {}
         removed
     }
 
@@ -6477,9 +6761,9 @@ impl ServerState {
                     search_string: None,
                     search_regex: false,
                     floating: None,
-                scrollbar_columns: 0,
-                border_status: None,
-                unseen_changes: false,
+                    scrollbar_columns: 0,
+                    border_status: None,
+                    unseen_changes: false,
                     options: OptionSet::default(),
                 }],
                 active: 0,
@@ -6494,6 +6778,7 @@ impl ServerState {
                 pending_size: None,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
+                old_layout: None,
                 last_new_pane_x: 0,
                 last_new_pane_y: 0,
                 // tmux's `window_create` raises activity, so a monitor turned on
@@ -6867,9 +7152,9 @@ impl ServerState {
                     search_string: None,
                     search_regex: false,
                     floating: None,
-                scrollbar_columns: 0,
-                border_status: None,
-                unseen_changes: false,
+                    scrollbar_columns: 0,
+                    border_status: None,
+                    unseen_changes: false,
                     options: OptionSet::default(),
                 }],
                 active: 0,
@@ -6884,6 +7169,7 @@ impl ServerState {
                 pending_size: None,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
+                old_layout: None,
                 last_new_pane_x: 0,
                 last_new_pane_y: 0,
                 // tmux's `window_create` raises activity, so a monitor turned on
@@ -7016,9 +7302,9 @@ impl ServerState {
                     search_string: None,
                     search_regex: false,
                     floating: None,
-                scrollbar_columns: 0,
-                border_status: None,
-                unseen_changes: false,
+                    scrollbar_columns: 0,
+                    border_status: None,
+                    unseen_changes: false,
                     options: OptionSet::default(),
                 }],
                 active: 0,
@@ -7033,6 +7319,7 @@ impl ServerState {
                 pending_size: None,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
+                old_layout: None,
                 last_new_pane_x: 0,
                 last_new_pane_y: 0,
                 // tmux's `window_create` raises activity, so a monitor turned on
@@ -7848,8 +8135,8 @@ impl ServerState {
         // Leaving the last mode drops the flag, exactly as tmux's
         // `window_pane_reset_mode` does.
         for pane in self.windows.values_mut().flat_map(|w| &mut w.panes) {
-            pane.unseen_changes = pane.mode.is_some()
-                && (pane.unseen_changes || unseen_changes.contains(&pane.id));
+            pane.unseen_changes =
+                pane.mode.is_some() && (pane.unseen_changes || unseen_changes.contains(&pane.id));
         }
 
         // Windows whose whole condition set is re-examined this pass because a
@@ -8007,16 +8294,39 @@ impl ServerState {
         Ok(())
     }
 
-    /// Push each pane the options its own output has to be parsed against.
+    /// Push each pane the options it has to consult about its own output: how
+    /// the bytes are parsed, and what an operation on the grid does.
     ///
-    /// tmux reads them from `wp->options` at the moment the sequence is parsed.
-    /// hmux parses a pane's bytes off the state lock, so the resolved values are
-    /// pushed to the pane instead — once per server loop, and again as soon as a
-    /// `set-option` touches one of them.
-    pub(crate) fn refresh_pane_output_policies(&self) {
+    /// tmux reads them from `wp->options` at the moment they matter, with the
+    /// whole server in reach. hmux runs both the tokenizer and the screen off
+    /// the state lock, so the resolved values are pushed to the pane instead —
+    /// once per server loop, and again as soon as a `set-option` touches one of
+    /// them.
+    pub(crate) fn refresh_pane_options(&self) {
+        // `history-limit` is a session option, but the rows live in panes.
+        // Apply each session's effective value to the panes in its windows so
+        // lowering it trims already populated grids, as tmux does.
+        for session in &self.sessions {
+            let history_limit = session
+                .options(&self.global_options)
+                .get("history-limit")
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(2000);
+            for link in &session.windows {
+                let Some(window) = self.windows.get(&link.id) else {
+                    continue;
+                };
+                for node in &window.panes {
+                    node.pane.set_history_limit(history_limit);
+                }
+            }
+        }
         for window in self.windows.values() {
             for node in &window.panes {
                 let options = node.options(window, &self.global_options);
+                node.pane.set_screen_options(ScreenOptions {
+                    scroll_on_clear: options.get("scroll-on-clear") != Some("off"),
+                });
                 node.pane.set_output_policy(PaneOutputPolicy {
                     alternate_screen: options.get("alternate-screen") != Some("off"),
                     allow_set_title: options.get("allow-set-title") != Some("off"),
@@ -8031,6 +8341,9 @@ impl ServerState {
                         .get("input-buffer-size")
                         .and_then(|value| value.parse().ok())
                         .unwrap_or(1_048_576),
+                    cursor_style: cursor_style_parameter(
+                        options.get("cursor-style").unwrap_or("default"),
+                    ),
                     // The index an entry is stored at *is* the palette slot it
                     // fills, so the array is read with its indexes rather than
                     // as a list.
@@ -8120,7 +8433,10 @@ impl ServerState {
             .map(|node| (node.id, node.pane.observation_state()))
             .collect::<Vec<_>>();
         let allow_applications = self.server_options().get("set-clipboard") == Some("on");
-        let get_clipboard = self.server_options().get("get-clipboard").unwrap_or("buffer");
+        let get_clipboard = self
+            .server_options()
+            .get("get-clipboard")
+            .unwrap_or("buffer");
         let answer_from_buffer = get_clipboard == "buffer";
         let forward_to_terminal = matches!(get_clipboard, "request" | "both");
         for (pane_id, observation) in panes {
@@ -8258,7 +8574,12 @@ impl ServerState {
                 "visual-activity",
                 "alert-activity",
             ),
-            _ => ("Silence", "silence-action", "visual-silence", "alert-silence"),
+            _ => (
+                "Silence",
+                "silence-action",
+                "visual-silence",
+                "alert-silence",
+            ),
         };
         let attached = self.attached_session_ids();
         let links = self
@@ -8434,7 +8755,15 @@ impl ServerState {
         direction: SplitDirection,
     ) -> io::Result<usize> {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-        self.split_window_direction_with_spawn(target, select, before, direction, &[shell], None)
+        self.split_window_direction_with_spawn(
+            target,
+            select,
+            before,
+            direction,
+            &[shell],
+            None,
+            None,
+        )
     }
 
     pub(crate) fn split_window_direction_with_spawn(
@@ -8445,12 +8774,13 @@ impl ServerState {
         direction: SplitDirection,
         argv: &[String],
         cwd: Option<&Path>,
+        new_size: Option<u16>,
     ) -> io::Result<usize> {
         let spec = match cwd {
             Some(cwd) => PaneSpec::CommandIn(argv.to_vec(), cwd.to_path_buf()),
             None => PaneSpec::Command(argv.to_vec()),
         };
-        self.split_window_direction_with_spec(target, select, before, direction, spec)
+        self.split_window_direction_with_spec(target, select, before, direction, spec, new_size)
     }
 
     pub(crate) fn split_window_direction_with_spec(
@@ -8460,6 +8790,7 @@ impl ServerState {
         before: bool,
         direction: SplitDirection,
         spec: PaneSpec,
+        new_size: Option<u16>,
     ) -> io::Result<usize> {
         let (_, pane_part) = split_pane_target(target);
         let t = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
@@ -8494,7 +8825,10 @@ impl ServerState {
         let old_active = win.active;
         let target_index = t.pane;
         let target_id = win.panes[target_index].id;
-        if !win.layout.split(target_id, pane_id, direction, before) {
+        if !win
+            .layout
+            .split_sized(target_id, pane_id, direction, before, new_size)
+        {
             return Err(io::Error::other("target pane is absent from layout"));
         }
         win.panes.insert(
@@ -9309,7 +9643,7 @@ impl ServerState {
         let t = self.resolve_window_target(target)?;
         let session_id = self.sessions[t.session].id;
         let win = self.window_mut(t.session, t.window);
-        match win.last_pane.filter(|&p| p < win.panes.len()) {
+        match win.last_pane_index() {
             Some(lp) => {
                 win.last_pane = Some(win.active);
                 win.active = lp;
@@ -9317,6 +9651,28 @@ impl ServerState {
                     session_id,
                     RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
                 );
+                Ok(())
+            }
+            None => Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "no last pane".to_string(),
+            )),
+        }
+    }
+
+    /// `last-pane -d`/`-e` (and `select-pane -l` with those flags): set or
+    /// clear the input-off flag on the previously-active pane. tmux toggles
+    /// the flag without switching to the pane.
+    pub(crate) fn set_last_pane_input_off(
+        &mut self,
+        target: &str,
+        input_off: bool,
+    ) -> io::Result<()> {
+        let t = self.resolve_window_target(target)?;
+        let win = self.window_mut(t.session, t.window);
+        match win.last_pane_index() {
+            Some(lp) => {
+                win.panes[lp].input_off = input_off;
                 Ok(())
             }
             None => Err(io::Error::new(
@@ -9894,6 +10250,7 @@ impl ServerState {
                 pending_size: None,
                 layout: LayoutCell::pane(node_id, source_size.0, source_size.1),
                 last_layout: None,
+                old_layout: None,
                 last_new_pane_x: 0,
                 last_new_pane_y: 0,
                 // tmux's `window_create` raises activity, so a monitor turned on
@@ -10250,9 +10607,7 @@ impl ServerState {
             let matched = client_env
                 .iter()
                 .filter_map(|entry| entry.split_once('='))
-                .filter(|(name, _)| {
-                    super::format::glob_match(pattern.as_bytes(), name.as_bytes())
-                })
+                .filter(|(name, _)| super::format::glob_match(pattern.as_bytes(), name.as_bytes()))
                 .map(|(name, value)| (name.to_owned(), value.to_owned()))
                 .collect::<Vec<_>>();
             if matched.is_empty() {
@@ -10478,7 +10833,10 @@ impl ServerState {
         let mut sections = Vec::new();
         sections.push((
             "Server Options",
-            collect(OptionsView::one(self.global_options.server()), String::new()),
+            collect(
+                OptionsView::one(self.global_options.server()),
+                String::new(),
+            ),
         ));
         let mut session_options = collect(
             OptionsView::one(self.global_options.session()),
@@ -10679,6 +11037,57 @@ impl ServerState {
         Ok(())
     }
 
+    /// Snapshot the target window's layout into tmux's `w->old_layout` slot,
+    /// returning the value it replaces — what `select-layout -o` restores.
+    pub(crate) fn snapshot_window_layout(&mut self, target: &str) -> io::Result<Option<String>> {
+        let resolved = self.resolve_window_target(target)?;
+        let window = self.window_mut(resolved.session, resolved.window);
+        let dump = checksummed_layout_dump(&window.layout);
+        Ok(window.old_layout.replace(dump))
+    }
+
+    /// Put a previously snapshot `old_layout` back, for a failed
+    /// `select-layout` (tmux's error path restores `w->old_layout`).
+    pub(crate) fn restore_window_old_layout(&mut self, target: &str, value: Option<String>) {
+        if let Ok(resolved) = self.resolve_window_target(target) {
+            self.window_mut(resolved.session, resolved.window)
+                .old_layout = value;
+        }
+    }
+
+    /// The last preset layout applied to the target window, which a bare
+    /// `select-layout` reapplies (tmux's `w->lastlayout`).
+    pub(crate) fn window_last_preset_layout(&self, target: &str) -> io::Result<Option<usize>> {
+        let resolved = self.resolve_window_target(target)?;
+        Ok(self.window(resolved.session, resolved.window).last_layout)
+    }
+
+    /// `select-layout -E`: spread the target pane's siblings evenly, climbing
+    /// outward from its innermost split (tmux's `layout_spread_out`).
+    pub(crate) fn spread_window_layout(&mut self, target: &str) -> io::Result<()> {
+        let t = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
+        let window_id = self.sessions[t.session].windows[t.window].id;
+        let affected_sessions = self
+            .sessions
+            .iter()
+            .filter(|session| session.windows.iter().any(|link| link.id == window_id))
+            .map(|session| session.id)
+            .collect::<Vec<_>>();
+        let win = self.window_mut(t.session, t.window);
+        let pane_id = win.panes[t.pane].id;
+        if win.layout.spread_pane(pane_id) {
+            resize_panes_to_layout(win)?;
+            for session_id in affected_sessions {
+                self.invalidate_session(
+                    session_id,
+                    RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
+                );
+            }
+            self.notify_window("window-layout-changed", window_id);
+        }
+        Ok(())
+    }
+
     pub(crate) fn cycle_layout(&mut self, target: &str, forward: bool) -> io::Result<()> {
         let resolved = self.resolve_window_target(target)?;
         let current = self.window(resolved.session, resolved.window).last_layout;
@@ -10747,11 +11156,7 @@ impl ServerState {
     /// finally switches the window's own `window-size` option to `manual` so the
     /// pinned size survives later client resizes. A shrink wider than the
     /// current size is a no-op rather than a clamp.
-    pub fn resize_window(
-        &mut self,
-        target: &str,
-        request: WindowResizeRequest,
-    ) -> io::Result<()> {
+    pub fn resize_window(&mut self, target: &str, request: WindowResizeRequest) -> io::Result<()> {
         let t = self.resolve_window_target(target)?;
         let window_id = self.sessions[t.session].windows[t.window].id;
         let window = self.window(t.session, t.window);
@@ -11557,7 +11962,12 @@ impl ServerState {
     fn sync_client_notifications(&mut self) {
         let current = self.client_renders.with_entries(|entries| {
             entries
-                .map(|entry| (entry.name.clone(), (entry.session_id, entry.cols, entry.rows)))
+                .map(|entry| {
+                    (
+                        entry.name.clone(),
+                        (entry.session_id, entry.cols, entry.rows),
+                    )
+                })
                 .collect::<BTreeMap<_, _>>()
         });
         let previous = std::mem::replace(&mut self.known_clients, current.clone());
@@ -11619,7 +12029,8 @@ impl ServerState {
     /// arrives; it is what orders `cmd_find_best_client`.
     pub(crate) fn touch_client_activity(&mut self, client: &str, session_id: u32) {
         self.touch_session_activity(session_id, false);
-        self.client_renders.touch_client_activity(client, now_micros());
+        self.client_renders
+            .touch_client_activity(client, now_micros());
     }
 
     /// tmux's `session_lock_timer`: lock every client of a session whose
@@ -11728,7 +12139,11 @@ impl ServerState {
     /// about to disappear, according to that session's `detach-on-destroy`.
     /// Clients with no destination are left in place and exit themselves.
     fn apply_detach_on_destroy(&mut self, session_id: u32) {
-        let Some(session) = self.sessions.iter().find(|session| session.id == session_id) else {
+        let Some(session) = self
+            .sessions
+            .iter()
+            .find(|session| session.id == session_id)
+        else {
             return;
         };
         let policy = session
@@ -12170,11 +12585,7 @@ impl ServerState {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let node = &self.window(resolved.session, resolved.window).panes[resolved.pane];
         let text = node.pane.visible_screen()?;
-        Ok(text
-            .lines()
-            .take(rows)
-            .collect::<Vec<_>>()
-            .join("\n"))
+        Ok(text.lines().take(rows).collect::<Vec<_>>().join("\n"))
     }
 
     /// tmux's `window_pane_search`: the 1-based row of a pane's visible screen
@@ -12260,11 +12671,7 @@ impl ServerState {
         }
     }
 
-    pub(crate) fn input_mouse_to_pane(
-        &self,
-        target: &str,
-        event: ghostty_sys::MouseEvent,
-    ) -> io::Result<()> {
+    pub(crate) fn input_mouse_to_pane(&self, target: &str, event: MouseEvent) -> io::Result<()> {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let pane = &self.window(resolved.session, resolved.window).panes[resolved.pane];
         if pane.input_off {
@@ -12285,7 +12692,11 @@ impl ServerState {
 
     /// Spell one key the way the pane's own terminal type and modes describe
     /// it, per [`super::input_keys`].
-    pub(crate) fn encode_pane_key(&self, target: &str, key: PaneKey) -> io::Result<PaneKeyEncoding> {
+    pub(crate) fn encode_pane_key(
+        &self,
+        target: &str,
+        key: PaneKey,
+    ) -> io::Result<PaneKeyEncoding> {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let state = self.window(resolved.session, resolved.window).panes[resolved.pane]
             .pane
@@ -12573,7 +12984,11 @@ impl ServerState {
     /// in a temporary file, the `editor` option run on it, and the load that
     /// reads it back once the editor exits.
     fn buffer_editor_popup(&self, name: &str) -> Option<PopupRequest> {
-        let editor = self.server_options().get("editor").unwrap_or("vi").to_owned();
+        let editor = self
+            .server_options()
+            .get("editor")
+            .unwrap_or("vi")
+            .to_owned();
         if editor.is_empty() {
             return None;
         }
@@ -12588,8 +13003,7 @@ impl ServerState {
             .chars()
             .map(|glyph| if glyph.is_alphanumeric() { glyph } else { '_' })
             .collect::<String>();
-        let path =
-            std::env::temp_dir().join(format!("hmux-editor-{}-{safe}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("hmux-editor-{}-{safe}", std::process::id()));
         std::fs::write(&path, &data).ok()?;
         // tmux hands `editor path` to the shell, so a configured editor with
         // its own arguments works.
@@ -13037,12 +13451,7 @@ impl ServerState {
     /// `screen_row` is where the pointer is now and `grab` where inside the
     /// slider it took hold, so the grabbed row stays under the pointer; the
     /// view then moves by the inverse of the formula that drew the slider.
-    fn slide_copy_scroll(
-        &mut self,
-        target: &str,
-        screen_row: u16,
-        grab: u16,
-    ) -> io::Result<()> {
+    fn slide_copy_scroll(&mut self, target: &str, screen_row: u16, grab: u16) -> io::Result<()> {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let window = self.window(resolved.session, resolved.window);
         let node = &window.panes[resolved.pane];
@@ -14177,14 +14586,11 @@ fn pane_pos_in(win: &Window, spec: &str, base: usize) -> Option<usize> {
     (idx < n).then_some(idx)
 }
 
-fn copy_cell_is_padding(cell: &ghostty_sys::GridCellSnapshot) -> bool {
-    matches!(
-        cell.width,
-        ghostty_sys::GridCellWidth::SpacerTail | ghostty_sys::GridCellWidth::SpacerHead
-    )
+fn copy_cell_is_padding(cell: &GridCell) -> bool {
+    matches!(cell.width, CellWidth::SpacerTail | CellWidth::SpacerHead)
 }
 
-fn copy_line_length(grid: &ghostty_sys::GridSnapshot, row: usize) -> usize {
+fn copy_line_length(grid: &Grid, row: usize) -> usize {
     let Some(row) = grid.rows.get(row) else {
         return 0;
     };
@@ -14197,28 +14603,64 @@ fn copy_line_length(grid: &ghostty_sys::GridSnapshot, row: usize) -> usize {
     length.min(grid.cols as usize)
 }
 
-fn copy_cell_in_set(grid: &ghostty_sys::GridSnapshot, cursor: &CopyCursor, set: &str) -> bool {
-    let Some(cell) = grid
-        .rows
-        .get(cursor.row)
-        .and_then(|row| row.cells.get(cursor.col))
-    else {
-        return set.contains(' ');
+/// tmux's `grid_in_set`: whether the cell under the cursor is one of `set`, and
+/// how many columns of it are.
+///
+/// The answer is a column count rather than a flag because of tabs. A set that
+/// contains `\t` matches a tab cell whole — and matches a cell inside the run
+/// the tab painted, counting the columns that are left — so a caller stepping
+/// over whitespace crosses the tab in one move instead of landing inside it.
+/// Everything else is one column, and nothing is zero.
+fn copy_cell_set_width(grid: &Grid, cursor: &CopyCursor, set: &str) -> usize {
+    let Some(row) = grid.rows.get(cursor.row) else {
+        return usize::from(set.contains(' '));
     };
+    let Some(cell) = row.cells.get(cursor.col) else {
+        return usize::from(set.contains(' '));
+    };
+    if set.contains('\t') {
+        if copy_cell_is_padding(cell) {
+            // Walk back to whatever owns this padding; only a tab's counts.
+            let start = row.cells[..cursor.col]
+                .iter()
+                .rposition(|cell| !copy_cell_is_padding(cell));
+            if let Some(start) = start {
+                if row.cells[start].tab {
+                    let width = copy_cell_columns(row, start);
+                    return width.saturating_sub(cursor.col - start);
+                }
+            }
+        } else if cell.tab {
+            return copy_cell_columns(row, cursor.col);
+        }
+    }
     if copy_cell_is_padding(cell) {
-        return false;
+        return 0;
     }
     if cell.text.is_empty() {
-        return set.contains(' ');
+        return usize::from(set.contains(' '));
     }
     let mut chars = cell.text.chars();
     let Some(ch) = chars.next() else {
-        return set.contains(' ');
+        return usize::from(set.contains(' '));
     };
-    chars.next().is_none() && set.chars().any(|candidate| candidate == ch)
+    usize::from(chars.next().is_none() && set.chars().any(|candidate| candidate == ch))
 }
 
-fn copy_cursor_limit(grid: &ghostty_sys::GridSnapshot, row: usize, vi: bool) -> usize {
+/// How many columns the cell at `col` covers: itself plus the padding that
+/// follows it. tmux reads this off `gc.data.width`.
+fn copy_cell_columns(row: &GridRow, col: usize) -> usize {
+    1 + row.cells[col + 1..]
+        .iter()
+        .take_while(|cell| copy_cell_is_padding(cell))
+        .count()
+}
+
+fn copy_cell_in_set(grid: &Grid, cursor: &CopyCursor, set: &str) -> bool {
+    copy_cell_set_width(grid, cursor, set) != 0
+}
+
+fn copy_cursor_limit(grid: &Grid, row: usize, vi: bool) -> usize {
     let length = copy_line_length(grid, row);
     if vi && length != 0 {
         length - 1
@@ -14227,12 +14669,12 @@ fn copy_cursor_limit(grid: &ghostty_sys::GridSnapshot, row: usize, vi: bool) -> 
     }
 }
 
-fn clamp_copy_cursor(cursor: &mut CopyCursor, grid: &ghostty_sys::GridSnapshot, vi: bool) {
+fn clamp_copy_cursor(cursor: &mut CopyCursor, grid: &Grid, vi: bool) {
     cursor.row = cursor.row.min(grid.rows.len().saturating_sub(1));
     cursor.col = cursor.col.min(copy_cursor_limit(grid, cursor.row, vi));
 }
 
-fn clamp_copy_point(point: &mut (usize, usize), grid: &ghostty_sys::GridSnapshot, vi: bool) {
+fn clamp_copy_point(point: &mut (usize, usize), grid: &Grid, vi: bool) {
     point.0 = point.0.min(grid.rows.len().saturating_sub(1));
     point.1 = point.1.min(copy_cursor_limit(grid, point.0, vi));
 }
@@ -14497,7 +14939,7 @@ fn recentre_copy_cursor(state: &mut CopyState) {
     align_copy_cursor_in_view(state, target);
 }
 
-fn copy_ascii_cell(grid: &ghostty_sys::GridSnapshot, row: usize, col: usize) -> Option<u8> {
+fn copy_ascii_cell(grid: &Grid, row: usize, col: usize) -> Option<u8> {
     let cell = grid.rows.get(row)?.cells.get(col)?;
     if copy_cell_is_padding(cell) || cell.text.len() != 1 {
         return None;
@@ -14524,7 +14966,7 @@ fn matching_close(open: u8) -> Option<u8> {
 }
 
 fn find_previous_matching_bracket(
-    grid: &ghostty_sys::GridSnapshot,
+    grid: &Grid,
     row: usize,
     col: usize,
     close: u8,
@@ -14561,7 +15003,7 @@ fn find_previous_matching_bracket(
 }
 
 fn find_next_matching_bracket(
-    grid: &ghostty_sys::GridSnapshot,
+    grid: &Grid,
     row: usize,
     col: usize,
     open: u8,
@@ -14684,7 +15126,7 @@ fn move_copy_matching_bracket(state: &mut CopyState, backward: bool, vi: bool) {
     }
 }
 
-fn copy_first_nonblank(grid: &ghostty_sys::GridSnapshot, row: usize) -> usize {
+fn copy_first_nonblank(grid: &Grid, row: usize) -> usize {
     let limit = copy_line_length(grid, row);
     (0..limit)
         .find(|&col| {
@@ -14699,7 +15141,7 @@ fn move_copy_prompt(state: &mut CopyState, forward: bool, output: bool) {
         state.grid.rows[row]
             .cells
             .iter()
-            .any(|cell| cell.semantic == ghostty_sys::GridCellSemantic::Prompt)
+            .any(|cell| cell.semantic == CellSemantic::Prompt)
     };
     let mut candidates = Vec::new();
     for row in 0..state.grid.rows.len() {
@@ -14788,7 +15230,7 @@ fn select_copy_line(state: &mut CopyState, vi: bool) {
     });
 }
 
-fn copy_word_class(grid: &ghostty_sys::GridSnapshot, cursor: &CopyCursor, separators: &str) -> u8 {
+fn copy_word_class(grid: &Grid, cursor: &CopyCursor, separators: &str) -> u8 {
     if copy_cell_in_set(grid, cursor, " \t") {
         0
     } else if copy_cell_in_set(grid, cursor, separators) {
@@ -14926,11 +15368,7 @@ fn search_uses_posix_regex(pattern: &str) -> bool {
     pattern.bytes().any(|byte| b"^$*+()?[].\\".contains(&byte))
 }
 
-fn copy_search_matches(
-    grid: &ghostty_sys::GridSnapshot,
-    pattern: &str,
-    regex: bool,
-) -> Vec<CopySearchMatch> {
+fn copy_search_matches(grid: &Grid, pattern: &str, regex: bool) -> Vec<CopySearchMatch> {
     if pattern.is_empty() || grid.rows.is_empty() {
         return Vec::new();
     }
@@ -14975,7 +15413,7 @@ fn copy_search_matches(
                 } else {
                     text.push_str(&cell.text);
                 }
-                let width = usize::from(matches!(cell.width, ghostty_sys::GridCellWidth::Wide)) + 1;
+                let width = usize::from(matches!(cell.width, CellWidth::Wide)) + 1;
                 cells.push(CopySearchCell {
                     row,
                     col,
@@ -15326,11 +15764,7 @@ pub(crate) fn copy_search_segments(
         .collect()
 }
 
-fn copy_reader_handle_wrap(
-    cursor: &mut CopyCursor,
-    grid: &ghostty_sys::GridSnapshot,
-    line_end: &mut usize,
-) -> bool {
+fn copy_reader_handle_wrap(cursor: &mut CopyCursor, grid: &Grid, line_end: &mut usize) -> bool {
     let last_row = grid.rows.len().saturating_sub(1);
     while cursor.col > *line_end {
         if cursor.row == last_row {
@@ -15347,7 +15781,7 @@ fn copy_reader_handle_wrap(
     true
 }
 
-fn copy_reader_cursor_right(cursor: &mut CopyCursor, grid: &ghostty_sys::GridSnapshot) {
+fn copy_reader_cursor_right(cursor: &mut CopyCursor, grid: &Grid) {
     let end = copy_line_length(grid, cursor.row).saturating_sub(1);
     if cursor.col < end {
         cursor.col += 1;
@@ -15363,7 +15797,7 @@ fn copy_reader_cursor_right(cursor: &mut CopyCursor, grid: &ghostty_sys::GridSna
     }
 }
 
-fn copy_reader_cursor_left(cursor: &mut CopyCursor, grid: &ghostty_sys::GridSnapshot, wrap: bool) {
+fn copy_reader_cursor_left(cursor: &mut CopyCursor, grid: &Grid, wrap: bool) {
     while cursor.col > 0
         && grid.rows[cursor.row]
             .cells
@@ -15380,12 +15814,7 @@ fn copy_reader_cursor_left(cursor: &mut CopyCursor, grid: &ghostty_sys::GridSnap
     }
 }
 
-fn move_previous(
-    cursor: &mut CopyCursor,
-    grid: &ghostty_sys::GridSnapshot,
-    vi: bool,
-    separators: &str,
-) {
+fn move_previous(cursor: &mut CopyCursor, grid: &Grid, vi: bool, separators: &str) {
     if grid.rows.is_empty() {
         return;
     }
@@ -15440,12 +15869,7 @@ fn move_previous(
     clamp_copy_cursor(cursor, grid, vi);
 }
 
-fn move_next_start(
-    cursor: &mut CopyCursor,
-    grid: &ghostty_sys::GridSnapshot,
-    vi: bool,
-    separators: &str,
-) {
+fn move_next_start(cursor: &mut CopyCursor, grid: &Grid, vi: bool, separators: &str) {
     if grid.rows.is_empty() {
         return;
     }
@@ -15480,19 +15904,19 @@ fn move_next_start(
             }
         }
     }
-    while copy_reader_handle_wrap(cursor, grid, &mut line_end)
-        && copy_cell_in_set(grid, cursor, " \t")
-    {
-        cursor.col += 1;
+    // A tab is crossed in one step: its whole run is whitespace, and stopping
+    // inside it would leave the cursor on padding.
+    while copy_reader_handle_wrap(cursor, grid, &mut line_end) {
+        let width = copy_cell_set_width(grid, cursor, " \t");
+        if width == 0 {
+            break;
+        }
+        cursor.col += width;
     }
     clamp_copy_cursor(cursor, grid, vi);
 }
 
-fn copy_reader_next_word_end(
-    cursor: &mut CopyCursor,
-    grid: &ghostty_sys::GridSnapshot,
-    separators: &str,
-) {
+fn copy_reader_next_word_end(cursor: &mut CopyCursor, grid: &Grid, separators: &str) {
     let mut line_end = if grid.rows[cursor.row].wrapped {
         grid.cols.saturating_sub(1) as usize
     } else {
@@ -15525,12 +15949,7 @@ fn copy_reader_next_word_end(
     }
 }
 
-fn move_next_end(
-    cursor: &mut CopyCursor,
-    grid: &ghostty_sys::GridSnapshot,
-    vi: bool,
-    separators: &str,
-) {
+fn move_next_end(cursor: &mut CopyCursor, grid: &Grid, vi: bool, separators: &str) {
     if grid.rows.is_empty() {
         return;
     }
@@ -15594,26 +16013,24 @@ pub(crate) fn copy_selection_segments(state: &CopyState, vi: bool) -> Vec<(usize
         .collect()
 }
 
-fn append_copy_cells(
-    output: &mut String,
-    grid: &ghostty_sys::GridSnapshot,
-    row: usize,
-    from: usize,
-    to: usize,
-) {
+fn append_copy_cells(output: &mut String, grid: &Grid, row: usize, from: usize, to: usize) {
     if from >= to {
         return;
     }
     for cell in &grid.rows[row].cells[from..to] {
         match cell.width {
-            ghostty_sys::GridCellWidth::SpacerTail => continue,
-            ghostty_sys::GridCellWidth::SpacerHead => {
+            CellWidth::SpacerTail => continue,
+            CellWidth::SpacerHead => {
                 output.push(' ');
                 continue;
             }
-            ghostty_sys::GridCellWidth::Narrow | ghostty_sys::GridCellWidth::Wide => {}
+            CellWidth::Narrow | CellWidth::Wide => {}
         }
-        if cell.text.is_empty() {
+        // tmux's `window_copy_copy_line` puts the tab back rather than copying
+        // the blanks it painted, so what is yanked is what was typed.
+        if cell.tab {
+            output.push('\t');
+        } else if cell.text.is_empty() {
             output.push(' ');
         } else {
             output.push_str(&cell.text);
@@ -15729,6 +16146,7 @@ fn session_not_found(part: &str) -> io::Error {
 mod tests {
     use super::*;
     use crate::event_loop::test_driver::run_on_loop;
+    use crate::vt::screen::RowFlags;
 
     #[test]
     fn copy_vt_rows_exclude_crlf_and_trailing_cursor() {
@@ -15759,31 +16177,38 @@ mod tests {
         let text = "        Indented";
         let mut cells = text
             .chars()
-            .map(|ch| ghostty_sys::GridCellSnapshot {
+            .map(|ch| GridCell {
                 text: ch.to_string(),
-                width: ghostty_sys::GridCellWidth::Narrow,
-                semantic: ghostty_sys::GridCellSemantic::Output,
+                width: CellWidth::Narrow,
+                semantic: CellSemantic::Output,
                 hyperlink: None,
                 hyperlink_id: None,
+                tab: false,
             })
             .collect::<Vec<_>>();
         cells.resize(
             20,
-            ghostty_sys::GridCellSnapshot {
+            GridCell {
                 text: String::new(),
-                width: ghostty_sys::GridCellWidth::Narrow,
-                semantic: ghostty_sys::GridCellSemantic::Output,
+                width: CellWidth::Narrow,
+                semantic: CellSemantic::Output,
                 hyperlink: None,
                 hyperlink_id: None,
+                tab: false,
             },
         );
-        let grid = ghostty_sys::GridSnapshot {
+        let size = cells.len();
+        let grid = Grid {
             cols: 20,
             viewport_rows: 1,
             scrollback_rows: 0,
-            rows: vec![ghostty_sys::GridRowSnapshot {
+            rows: vec![GridRow {
                 cells,
                 wrapped: false,
+                used: text.chars().count(),
+                size,
+                extd: 0,
+                flags: RowFlags::default(),
             }],
         };
         let state = CopyState {

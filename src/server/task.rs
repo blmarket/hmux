@@ -1,9 +1,9 @@
 //! Runtime-neutral resumable tasks and any-of wait descriptions.
 
+use std::cell::RefCell;
 use std::io::{self, Read, Write};
 use std::os::fd::{AsFd, BorrowedFd};
 use std::os::unix::net::UnixStream;
-use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 

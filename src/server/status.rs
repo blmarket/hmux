@@ -13,6 +13,7 @@ use super::style::{self, CellPresentation, CellStyle, Colour, TerminalStyleWrite
 use super::term::{terminal_acs, terminal_utf8, TerminalCapabilities};
 use crate::integration::status::{PaneAgents, StatusSnapshot};
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
+use crate::vt::width::codepoint_width;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -357,7 +358,10 @@ impl FormatJobRegistry {
 /// contributes its own working directory only while it has no session, so a
 /// format expanded by an attached client runs in that client's *session*
 /// directory.
-pub(crate) fn job_cwd(session: Option<&Session>, client_cwd: Option<&std::path::Path>) -> Option<PathBuf> {
+pub(crate) fn job_cwd(
+    session: Option<&Session>,
+    client_cwd: Option<&std::path::Path>,
+) -> Option<PathBuf> {
     match session {
         Some(session) => session
             .cwd()
@@ -558,7 +562,10 @@ impl Coroutine for FormatJob {
     }
 
     fn resume(&mut self, _ready: &ReadySet) -> TaskPoll<Self::Output> {
-        if let FormatJobStage::Reading { stdout, partial, .. } = &mut self.stage {
+        if let FormatJobStage::Reading {
+            stdout, partial, ..
+        } = &mut self.stage
+        {
             let mut bytes = [0u8; 4096];
             let ended = loop {
                 match stdout.read(&mut bytes) {
@@ -822,7 +829,10 @@ impl RenderCache {
     /// Render for one registered client, sharing that client's `#()` job tree
     /// so a command it runs and its status line reach one cache — tmux's
     /// per-client `c->jobs`.
-    pub(crate) fn for_client(client: RenderClientContext, format_jobs: Rc<FormatJobRegistry>) -> Self {
+    pub(crate) fn for_client(
+        client: RenderClientContext,
+        format_jobs: Rc<FormatJobRegistry>,
+    ) -> Self {
         Self {
             client,
             format_jobs: Some(format_jobs),
@@ -1030,7 +1040,14 @@ pub(crate) fn option_style_escape_for(
     fallback: &str,
     terminal: &dyn TerminalCapabilities,
 ) -> Vec<u8> {
-    option_style_escape_inner(state, target, option, fallback, terminal, StyleVariant::Plain)
+    option_style_escape_inner(
+        state,
+        target,
+        option,
+        fallback,
+        terminal,
+        StyleVariant::Plain,
+    )
 }
 
 /// How a style option is rendered when it is not applied as written.
@@ -1865,7 +1882,7 @@ fn draw_row(expanded: &str, cols: usize, base: &CellStyle) -> StatusRow {
         if ch.is_control() {
             continue;
         }
-        let width = ghostty_sys::codepoint_width(ch as u32) as u8;
+        let width = codepoint_width(ch as u32) as u8;
         if width == 0 {
             if let Some(cell) = sections.cells_mut(state.section).last_mut() {
                 cell.text.push(ch);

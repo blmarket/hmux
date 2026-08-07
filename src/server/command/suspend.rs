@@ -20,8 +20,8 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use crate::platform::{CurrentPlatform, Platform};
@@ -125,12 +125,8 @@ impl Coroutine for SuspensionJob {
 
     fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
         match self {
-            Self::BackgroundShell(job) => {
-                job.resume(ready).map(CommandSuspensionResult::Completed)
-            }
-            Self::RunShell(job) => job
-                .resume(ready)
-                .map(CommandSuspensionResult::RunShell),
+            Self::BackgroundShell(job) => job.resume(ready).map(CommandSuspensionResult::Completed),
+            Self::RunShell(job) => job.resume(ready).map(CommandSuspensionResult::RunShell),
             Self::IfShell(job) => job.resume(ready).map(CommandSuspensionResult::IfShell),
             Self::SourceFile(job) => job.resume(ready).map(CommandSuspensionResult::SourceFile),
             Self::LoadBuffer(job) => job.resume(ready).map(CommandSuspensionResult::LoadBuffer),
@@ -214,9 +210,8 @@ impl Coroutine for BackgroundShellJob {
         // The child exists from the first resume that gets past `-d`, and
         // `list-jobs` has to see it for as long as it runs.
         if self.registered.is_none() {
-            if let Some((jobs, command)) = self
-                .pending
-                .take_if(|_| process.child_stdout().is_some())
+            if let Some((jobs, command)) =
+                self.pending.take_if(|_| process.child_stdout().is_some())
             {
                 let fd = process.child_stdout().map_or(-1, AsRawFd::as_raw_fd);
                 let pid = process.child_pid().unwrap_or(0);
@@ -877,22 +872,20 @@ impl ClientPromptJob {
         tty_name: Option<String>,
         wait: bool,
     ) -> Self {
-        let result = match registry.request_command(
-            target.as_deref(),
-            tty_name.as_deref(),
-            args,
-            wait,
-        ) {
-            CommandPromptRequestResult::Waiting(completion) => return Self::Prompt(completion),
-            CommandPromptRequestResult::Queued | CommandPromptRequestResult::Busy => {
-                CommandResult::ok("")
-            }
-            CommandPromptRequestResult::NoCurrentClient => CommandResult::err("no current client\n"),
-            CommandPromptRequestResult::TargetNotFound => CommandResult::err(format!(
-                "can't find client: {}\n",
-                target.unwrap_or_default()
-            )),
-        };
+        let result =
+            match registry.request_command(target.as_deref(), tty_name.as_deref(), args, wait) {
+                CommandPromptRequestResult::Waiting(completion) => return Self::Prompt(completion),
+                CommandPromptRequestResult::Queued | CommandPromptRequestResult::Busy => {
+                    CommandResult::ok("")
+                }
+                CommandPromptRequestResult::NoCurrentClient => {
+                    CommandResult::err("no current client\n")
+                }
+                CommandPromptRequestResult::TargetNotFound => CommandResult::err(format!(
+                    "can't find client: {}\n",
+                    target.unwrap_or_default()
+                )),
+            };
         Self::Done(Some(result))
     }
 
@@ -1223,9 +1216,9 @@ fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob, WaitForJob};
+    use crate::event_loop::test_driver::{finish_on_loop, run_on_loop};
     use crate::server::command::{ClientContext, ClientFileWrite};
     use crate::server::state::WaitRegistry;
-    use crate::event_loop::test_driver::{finish_on_loop, run_on_loop};
     use crate::server::task::{ReadySet, TaskState};
     use std::fs;
     use std::io;

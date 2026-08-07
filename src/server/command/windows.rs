@@ -57,7 +57,7 @@ impl Command {
             Self::Move => move_window(args, st),
             Self::Link => link_window(args, st),
             Self::Unlink => unlink_window(args, st),
-            Self::Respawn => respawn_window(args, st),
+            Self::Respawn => respawn_window(args, st, context.client),
         }
     }
 }
@@ -85,9 +85,9 @@ fn find_window(args: &[String], state: &mut ServerState) -> CommandResult {
             }
             items.push(ModeItem {
                 tagged: false,
-            preview_target: None,
-            depth: 0,
-            expanded: None,
+                preview_target: None,
+                depth: 0,
+                expanded: None,
                 label: format!("{}:{} {}", session.name, link.index, window.name),
                 command: vec![
                     "select-window".to_string(),

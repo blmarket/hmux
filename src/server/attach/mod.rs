@@ -46,16 +46,16 @@ use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 use crate::tmux::traits::NonblockingFrameReader;
 
 use super::cmd_send_keys::base64_encode;
-use super::input_keys::PaneKey;
 use super::command;
 use super::format;
+use super::input_keys::PaneKey;
 use super::key::{key_from_byte, parse_key_name, KeyBase, KeyCode, SpecialKey};
 use super::latmon::LatMon;
+#[cfg(test)]
+use super::mouse::MouseButton;
 use super::mouse::{
     self, MouseEvent, MouseEventKind, MouseInputState, MousePosition, MouseProtocol,
 };
-#[cfg(test)]
-use super::mouse::MouseButton;
 use super::pane::{OutputSubscription, Pane, PaneInputStats, PaneIo};
 use super::state::{
     ClientAction, ClientKey, MenuRequest, ModeKind, ModeView, ModeViewKeyResult, OverlayRequest,
@@ -528,6 +528,9 @@ impl From<io::Error> for AttachStartFailure {
 struct TtyOutput {
     bytes: Vec<u8>,
     written: usize,
+    /// Lifetime total of bytes written to the terminal — tmux's `c->written`,
+    /// which `#{client_written}` reports.
+    total: u64,
 }
 
 impl TtyOutput {
@@ -535,7 +538,12 @@ impl TtyOutput {
         TtyOutput {
             bytes: Vec::new(),
             written: 0,
+            total: 0,
         }
+    }
+
+    fn total_written(&self) -> u64 {
+        self.total
     }
 
     fn has_pending(&self) -> bool {
@@ -566,6 +574,7 @@ impl TtyOutput {
             };
             if written > 0 {
                 self.written += written as usize;
+                self.total += written as u64;
                 continue;
             }
             if written == 0 {
@@ -1669,14 +1678,7 @@ where
             )));
         }
     };
-    AttachSession::start_in_mode(
-        &target,
-        client_tty,
-        state,
-        hub,
-        context,
-        writer,
-    )
+    AttachSession::start_in_mode(&target, client_tty, state, hub, context, writer)
 }
 
 /// The interactive `new-session` (and bare-`tmux`) path: create — or, with `-A`,
@@ -2141,20 +2143,104 @@ fn clock_rows(
 /// tmux's `window_clock_table`: one 5x5 bitmap per glyph the clock can draw —
 /// the ten digits, the colon, and the `A`, `P` and `M` the 12-hour style adds.
 const CLOCK_GLYPHS: [[[u8; 5]; 5]; 14] = [
-    [[1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1]],
-    [[0, 0, 0, 0, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1]],
-    [[1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [1, 1, 1, 1, 1], [1, 0, 0, 0, 0], [1, 1, 1, 1, 1]],
-    [[1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [1, 1, 1, 1, 1]],
-    [[1, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1]],
-    [[1, 1, 1, 1, 1], [1, 0, 0, 0, 0], [1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [1, 1, 1, 1, 1]],
-    [[1, 1, 1, 1, 1], [1, 0, 0, 0, 0], [1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1]],
-    [[1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1]],
-    [[1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1]],
-    [[1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [1, 1, 1, 1, 1]],
-    [[0, 0, 0, 0, 0], [0, 0, 1, 0, 0], [0, 0, 0, 0, 0], [0, 0, 1, 0, 0], [0, 0, 0, 0, 0]],
-    [[1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1]],
-    [[1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1], [1, 0, 0, 0, 0], [1, 0, 0, 0, 0]],
-    [[1, 0, 0, 0, 1], [1, 1, 0, 1, 1], [1, 0, 1, 0, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1]],
+    [
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 1],
+        [1, 0, 0, 0, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+    ],
+    [
+        [0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 1],
+    ],
+    [
+        [1, 1, 1, 1, 1],
+        [0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0],
+        [1, 1, 1, 1, 1],
+    ],
+    [
+        [1, 1, 1, 1, 1],
+        [0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+        [0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+    ],
+    [
+        [1, 0, 0, 0, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+        [0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 1],
+    ],
+    [
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0],
+        [1, 1, 1, 1, 1],
+        [0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+    ],
+    [
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0],
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+    ],
+    [
+        [1, 1, 1, 1, 1],
+        [0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 1],
+    ],
+    [
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+    ],
+    [
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+        [0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+    ],
+    [
+        [0, 0, 0, 0, 0],
+        [0, 0, 1, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 1, 0, 0],
+        [0, 0, 0, 0, 0],
+    ],
+    [
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 1],
+        [1, 0, 0, 0, 1],
+    ],
+    [
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0],
+        [1, 0, 0, 0, 0],
+    ],
+    [
+        [1, 0, 0, 0, 1],
+        [1, 1, 0, 1, 1],
+        [1, 0, 1, 0, 1],
+        [1, 0, 0, 0, 1],
+        [1, 0, 0, 0, 1],
+    ],
 ];
 
 /// Which bitmap a character of the clock's time string draws, or `None` for one
@@ -2447,8 +2533,7 @@ fn compose_frame_cached(
                 "bg=yellow,fg=black",
                 terminal,
             );
-            let preview =
-                mode_preview_rows(st, status_cache, view, cols, pane_height, terminal);
+            let preview = mode_preview_rows(st, status_cache, view, cols, pane_height, terminal);
             (
                 render_mode_rows(
                     view,
@@ -2952,8 +3037,7 @@ fn compose_split_frame(
                 "bg=yellow,fg=black",
                 terminal,
             );
-            let preview =
-                mode_preview_rows(st, status_cache, view, width, height, terminal);
+            let preview = mode_preview_rows(st, status_cache, view, width, height, terminal);
             (
                 render_mode_rows(
                     view,
@@ -3269,11 +3353,7 @@ fn add_input_stats(total: &mut PaneInputStats, batch: PaneInputStats) {
     total.dropped += batch.dropped;
 }
 
-fn forward_input(
-    state: &ServerState,
-    session: &str,
-    bytes: &[u8],
-) -> io::Result<PaneInputStats> {
+fn forward_input(state: &ServerState, session: &str, bytes: &[u8]) -> io::Result<PaneInputStats> {
     state.input_to_active_pane_with_stats(session, bytes)
 }
 
@@ -3435,7 +3515,9 @@ mod tests {
     /// The length of a leading `CSI … m` sequence, if the slice starts with one.
     fn sgr_prefix_len(bytes: &[u8]) -> Option<usize> {
         let body = bytes.strip_prefix(b"\x1b[")?;
-        let end = body.iter().position(|byte| !byte.is_ascii_digit() && *byte != b';')?;
+        let end = body
+            .iter()
+            .position(|byte| !byte.is_ascii_digit() && *byte != b';')?;
         (body[end] == b'm').then_some(2 + end + 1)
     }
 
@@ -3997,11 +4079,8 @@ mod tests {
     // session is "0" with one window (index 0) holding one pane.
 
     fn fresh_state() -> SharedState {
-        crate::server::state::shared_state(
-            ServerState::with_test_session().expect("build state"),
-        )
+        crate::server::state::shared_state(ServerState::with_test_session().expect("build state"))
     }
-
 
     fn replace_active_pane_with_inert(st: &mut ServerState) {
         let pane = st.active_pane_mut("0").expect("active pane");
@@ -4115,6 +4194,7 @@ mod tests {
                 false,
                 super::super::state::SplitDirection::TopBottom,
                 PaneSpec::Inert,
+                None,
             )
             .expect("split inactive pane");
 

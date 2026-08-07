@@ -15,9 +15,6 @@ use super::job::{BackgroundCommands, JobEvent};
 use super::listener::{AcceptedClients, Listener, ListenerEvent};
 use super::pane::{EventPane, PaneEvent, PaneInterest};
 use super::process::{ChildSignal, ChildSignalEvent};
-use crate::server::pane::PanePipeIo;
-use crate::server::status::FormatJob;
-use super::term_signal::{TermSignal, TermSignalEvent};
 use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
 };
@@ -25,7 +22,10 @@ use super::reactor::{Interest, MioReactor, PollResult, Reactor, Ready};
 use super::suspend::{
     ExecutorEvent, JobRegistration, SuspensionExecutor, SuspensionExecutorHandle,
 };
+use super::term_signal::{TermSignal, TermSignalEvent};
 use super::timer::{ExpiredTimer, TimerQueue};
+use crate::server::pane::PanePipeIo;
+use crate::server::status::FormatJob;
 
 /// One queued event with a direct reference to its destination.
 pub(crate) enum Envelope {
@@ -1422,7 +1422,9 @@ mod tests {
             std::thread::sleep(Duration::from_millis(100));
             let flags = unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_GETFL) };
             assert_eq!(
-                unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_SETFL, flags & !libc::O_NONBLOCK) },
+                unsafe {
+                    libc::fcntl(reader.as_raw_fd(), libc::F_SETFL, flags & !libc::O_NONBLOCK)
+                },
                 0
             );
             let mut contents = Vec::new();

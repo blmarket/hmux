@@ -17,6 +17,7 @@ use super::input_keys::{PaneKey, PaneKeyEncoding};
 use super::key::{parse_key_name, KeyBase, KeyCode, Modifiers, SpecialKey};
 use super::options;
 use super::state::{ClientKey, KeyBinding, ServerState};
+use crate::vt::input::{encode_key_default_modes, Key, KeyEvent};
 
 const VALUE_FLAGS: &[&str] = &["-c", "-N", "-t"];
 
@@ -300,7 +301,10 @@ fn send_copy_mode_command(
                     // The slider drag works in screen rows, since the grab
                     // offset it holds on to is measured against the pane.
                     mouse.position.y,
-                    mouse.target.as_ref().and_then(|target| target.slider_offset),
+                    mouse
+                        .target
+                        .as_ref()
+                        .and_then(|target| target.slider_offset),
                     vi,
                     copy_args.contains(&"-e"),
                 )
@@ -731,23 +735,19 @@ fn encode_parsed_key_for_pane(state: &ServerState, target: &str, code: KeyCode) 
 }
 
 fn encode_parsed_key_for_client(code: KeyCode) -> Option<ClientKey> {
-    let terminal = ghostty_sys::Terminal::new(80, 24).ok()?;
-    let bytes = with_ghostty_key_event(code, |event| terminal.encode_key(event).ok()).flatten()?;
+    let bytes = with_ghostty_key_event(code, encode_key_default_modes)?;
     Some(ClientKey {
         bytes,
         forward_unbound: matches!(code.base, KeyBase::Char(_)),
     })
 }
 
-fn with_ghostty_key_event<T>(
-    code: KeyCode,
-    encode: impl FnOnce(ghostty_sys::KeyEvent<'_>) -> T,
-) -> Option<T> {
+fn with_ghostty_key_event<T>(code: KeyCode, encode: impl FnOnce(KeyEvent<'_>) -> T) -> Option<T> {
     let mut shift = code.modifiers.shift();
     let (key, text, unshifted) = match code.base {
-        KeyBase::Char('\u{1b}') => (ghostty_sys::Key::ESCAPE, None, None),
-        KeyBase::Char('\t') => (ghostty_sys::Key::TAB, None, None),
-        KeyBase::Char('\r' | '\n') => (ghostty_sys::Key::ENTER, None, None),
+        KeyBase::Char('\u{1b}') => (Key::ESCAPE, None, None),
+        KeyBase::Char('\t') => (Key::TAB, None, None),
+        KeyBase::Char('\r' | '\n') => (Key::ENTER, None, None),
         KeyBase::Char(ch) => {
             let text = if shift && ch.is_ascii_alphabetic() {
                 ch.to_ascii_uppercase().to_string()
@@ -755,49 +755,43 @@ fn with_ghostty_key_event<T>(
                 ch.to_string()
             };
             (
-                ghostty_sys::Key::from_ascii(ch),
+                Key::from_ascii(ch),
                 Some(text),
                 Some(ch.to_ascii_lowercase()),
             )
         }
-        KeyBase::Special(SpecialKey::F(number)) => {
-            (ghostty_sys::Key::function(number)?, None, None)
-        }
-        KeyBase::Special(SpecialKey::Insert) => (ghostty_sys::Key::INSERT, None, None),
-        KeyBase::Special(SpecialKey::Delete) => (ghostty_sys::Key::DELETE, None, None),
-        KeyBase::Special(SpecialKey::Home) => (ghostty_sys::Key::HOME, None, None),
-        KeyBase::Special(SpecialKey::End) => (ghostty_sys::Key::END, None, None),
-        KeyBase::Special(SpecialKey::PageDown) => (ghostty_sys::Key::PAGE_DOWN, None, None),
-        KeyBase::Special(SpecialKey::PageUp) => (ghostty_sys::Key::PAGE_UP, None, None),
+        KeyBase::Special(SpecialKey::F(number)) => (Key::function(number)?, None, None),
+        KeyBase::Special(SpecialKey::Insert) => (Key::INSERT, None, None),
+        KeyBase::Special(SpecialKey::Delete) => (Key::DELETE, None, None),
+        KeyBase::Special(SpecialKey::Home) => (Key::HOME, None, None),
+        KeyBase::Special(SpecialKey::End) => (Key::END, None, None),
+        KeyBase::Special(SpecialKey::PageDown) => (Key::PAGE_DOWN, None, None),
+        KeyBase::Special(SpecialKey::PageUp) => (Key::PAGE_UP, None, None),
         KeyBase::Special(SpecialKey::BackTab) => {
             shift = true;
-            (ghostty_sys::Key::TAB, None, None)
+            (Key::TAB, None, None)
         }
-        KeyBase::Special(SpecialKey::Backspace) => (ghostty_sys::Key::BACKSPACE, None, None),
-        KeyBase::Special(SpecialKey::Up) => (ghostty_sys::Key::ARROW_UP, None, None),
-        KeyBase::Special(SpecialKey::Down) => (ghostty_sys::Key::ARROW_DOWN, None, None),
-        KeyBase::Special(SpecialKey::Left) => (ghostty_sys::Key::ARROW_LEFT, None, None),
-        KeyBase::Special(SpecialKey::Right) => (ghostty_sys::Key::ARROW_RIGHT, None, None),
+        KeyBase::Special(SpecialKey::Backspace) => (Key::BACKSPACE, None, None),
+        KeyBase::Special(SpecialKey::Up) => (Key::ARROW_UP, None, None),
+        KeyBase::Special(SpecialKey::Down) => (Key::ARROW_DOWN, None, None),
+        KeyBase::Special(SpecialKey::Left) => (Key::ARROW_LEFT, None, None),
+        KeyBase::Special(SpecialKey::Right) => (Key::ARROW_RIGHT, None, None),
         KeyBase::Special(SpecialKey::Keypad(ch)) if ch.is_ascii_digit() => {
-            (ghostty_sys::Key::numpad_digit(ch)?, None, None)
+            (Key::numpad_digit(ch)?, None, None)
         }
-        KeyBase::Special(SpecialKey::Keypad('/')) => (ghostty_sys::Key::NUMPAD_DIVIDE, None, None),
-        KeyBase::Special(SpecialKey::Keypad('*')) => {
-            (ghostty_sys::Key::NUMPAD_MULTIPLY, None, None)
-        }
-        KeyBase::Special(SpecialKey::Keypad('-')) => {
-            (ghostty_sys::Key::NUMPAD_SUBTRACT, None, None)
-        }
-        KeyBase::Special(SpecialKey::Keypad('+')) => (ghostty_sys::Key::NUMPAD_ADD, None, None),
-        KeyBase::Special(SpecialKey::Keypad('.')) => (ghostty_sys::Key::NUMPAD_DECIMAL, None, None),
+        KeyBase::Special(SpecialKey::Keypad('/')) => (Key::NUMPAD_DIVIDE, None, None),
+        KeyBase::Special(SpecialKey::Keypad('*')) => (Key::NUMPAD_MULTIPLY, None, None),
+        KeyBase::Special(SpecialKey::Keypad('-')) => (Key::NUMPAD_SUBTRACT, None, None),
+        KeyBase::Special(SpecialKey::Keypad('+')) => (Key::NUMPAD_ADD, None, None),
+        KeyBase::Special(SpecialKey::Keypad('.')) => (Key::NUMPAD_DECIMAL, None, None),
         KeyBase::Special(SpecialKey::Keypad(_)) => return None,
-        KeyBase::Special(SpecialKey::KeypadEnter) => (ghostty_sys::Key::NUMPAD_ENTER, None, None),
+        KeyBase::Special(SpecialKey::KeypadEnter) => (Key::NUMPAD_ENTER, None, None),
         // The paste markers are bracketing, not characters: nothing in a copy
         // mode or a mode tree has a key for them.
         KeyBase::Special(SpecialKey::PasteStart | SpecialKey::PasteEnd) => return None,
         KeyBase::User(_) | KeyBase::Mouse(_) | KeyBase::Any | KeyBase::None => return None,
     };
-    Some(encode(ghostty_sys::KeyEvent {
+    Some(encode(KeyEvent {
         key,
         shift,
         control: code.modifiers.ctrl(),
