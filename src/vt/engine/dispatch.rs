@@ -444,6 +444,15 @@ impl Engine {
             match mode {
                 // DECCKM.
                 1 => self.toggle(mode::KCURSOR, set),
+                // DECCOLM. A pane's width is the layout's to decide, so the
+                // column count has nowhere to land — but the clear the mode
+                // implies still happens, either way round, with the cursor
+                // brought home first.
+                3 => {
+                    self.screen.cursor_move(Some(0), Some(0), true);
+                    let bg = self.bg();
+                    self.screen.clear_screen(bg);
+                }
                 // DECOM. Setting or clearing it homes the cursor.
                 6 => {
                     self.toggle(mode::ORIGIN, set);
