@@ -552,12 +552,17 @@ fn write_capture_style(out: &mut Vec<u8>, old: &CellStyle, new: &CellStyle) {
         || (old.underline != Underline::None && new.underline != old.underline)
         || (old.underline_colour != Colour::Default && new.underline_colour == Colour::Default);
     let baseline = if reset {
-        push_sgr(out, &["0".into()]);
         CellStyle::default()
     } else {
         *old
     };
+    // `grid_string_cells_code` collects the reset and every attribute that has
+    // to be set again into one parameter list, so a capture that has to reset
+    // before it can set writes `ESC [ 0 ; 7 m` rather than two sequences.
     let mut attrs = Vec::new();
+    if reset {
+        attrs.push("0".to_string());
+    }
     for (flag, code) in [
         (Attributes::BOLD, "1"),
         (Attributes::DIM, "2"),

@@ -9652,7 +9652,7 @@ mod tests {
             rows[0],
             concat!(
                 "\x1b[1;3m\x1b[31mA",
-                "\x1b[0m\x1b[1m\x1b[31mB",
+                "\x1b[0;1m\x1b[31mB",
                 "\x1b]8;id=link;https://example.test\x1b\\C",
                 // The row closes the link it opened, as `grid_string_cells`
                 // does, and leaves the style open for whatever follows.
