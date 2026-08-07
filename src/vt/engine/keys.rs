@@ -10,6 +10,10 @@ use super::screen::Screen;
 use crate::vt::input::{Key, KeyEvent, MouseAction, MouseButton, MouseEvent};
 use crate::vt::screen::mode;
 
+/// The largest offset field the UTF-8 mouse form carries: a two-byte UTF-8
+/// sequence. A report with a field past this is not sent at all.
+const MOUSE_UTF8_PARAM_MAX: u32 = 0x7ff;
+
 /// The wire button number, before the modifier and motion bits.
 ///
 /// The three ordinary buttons are 0–2; the wheel is 64 upwards; the extra
@@ -96,7 +100,15 @@ pub(crate) fn encode_mouse(screen: &Screen, mouse: MouseEvent) -> Vec<u8> {
     let mut out = b"\x1b[M".to_vec();
     if screen.mode & mode::MOUSE_UTF8 != 0 {
         // The UTF-8 form encodes each field as a character rather than a byte,
-        // which is what lets it address past column 223.
+        // which is what lets it address past column 223. Its own ceiling is a
+        // two-byte sequence: a field that would not fit drops the whole report
+        // rather than sending a coordinate the program cannot read back.
+        if [code, column, row]
+            .iter()
+            .any(|value| value + 32 > MOUSE_UTF8_PARAM_MAX)
+        {
+            return Vec::new();
+        }
         let mut buffer = [0u8; 4];
         for value in [code, column, row] {
             let character = char::from_u32(value + 32).unwrap_or('\u{fffd}');
@@ -324,6 +336,25 @@ mod tests {
         assert_eq!(
             encode_mouse(&engine.screen, press(2, 3)),
             vec![0x1b, b'[', b'M', 32, 35, 36]
+        );
+    }
+
+    #[test]
+    fn the_utf8_form_drops_a_report_past_the_protocol_limit() {
+        let engine = screen(b"\x1b[?1000h\x1b[?1005h");
+        // 0x7ff - 32 is the last column the two-byte form can name.
+        assert_eq!(
+            encode_mouse(&engine.screen, press(0x7ff - 33, 3)),
+            "\x1b[M\u{20}\u{7ff}\u{24}".as_bytes(),
+            "the last addressable column is still reported"
+        );
+        assert!(
+            encode_mouse(&engine.screen, press(0x7ff - 32, 3)).is_empty(),
+            "one column past it drops the whole report"
+        );
+        assert!(
+            encode_mouse(&engine.screen, press(3, 0x7ff - 32)).is_empty(),
+            "the row has the same ceiling"
         );
     }
 
