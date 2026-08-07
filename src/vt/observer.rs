@@ -420,15 +420,7 @@ impl Observer {
             // CSI window operations that report the pane's dimensions. The
             // pixel geometry uses tmux's default cell size when no attached
             // terminal has supplied one.
-            (None, [], b't') => {
-                for param in params {
-                    if let Some(operation) = param.value {
-                        if matches!(operation, 14 | 15 | 16 | 18 | 19) {
-                            out.event(Event::WindowSizeReport(operation));
-                        }
-                    }
-                }
-            }
+            (None, [], b't') => window_operations(params, out),
             // TBC.
             (None, [], b'g') => match params.first().map_or(Some(0), |param| param.get(0)) {
                 Some(0) => out.event(Event::ClearTabStop),
@@ -706,6 +698,58 @@ impl Observed {
     /// that parses for itself would need to see.
     fn rewrite(&mut self, kind: TokenKind, raw: Vec<u8>) {
         self.screen.push(Token { kind, raw });
+    }
+}
+
+/// XTWINOPS, as tmux's `input_csi_dispatch_winops` walks it.
+///
+/// The parameters are a stream of operations rather than a list of them: an
+/// operation that takes arguments consumes the positions after it, and a
+/// position that is not there — or is empty, or carries sub-parameters — ends
+/// the walk where it stands. Everything tmux does not implement is read and
+/// dropped, silently: only the geometry reports answer, so a resize request
+/// like `CSI 8 ; rows ; cols t` writes nothing back to the pane.
+fn window_operations(params: &[Param], out: &mut Observed) {
+    // `input_get(ictx, m, 0, -1)`: an absent, empty or sub-parametered position
+    // is the -1 that stops the loop, not a defaulted zero.
+    let read = |index: usize| -> Option<u32> {
+        params
+            .get(index)
+            .filter(|param| !param.is_string())
+            .and_then(|param| param.value)
+    };
+    let mut index = 0;
+    while let Some(operation) = read(index) {
+        match operation {
+            // Implemented as "understood, and nothing to do".
+            1 | 2 | 5 | 6 | 7 | 11 | 13 | 20 | 21 | 24 => {}
+            // Two arguments: move, resize in pixels, resize in cells.
+            3 | 4 | 8 => {
+                index += 2;
+                if read(index - 1).is_none() || read(index).is_none() {
+                    return;
+                }
+            }
+            // One argument: raise/lower, refresh.
+            9 | 10 => {
+                index += 1;
+                if read(index).is_none() {
+                    return;
+                }
+            }
+            // The geometry reports, which are all this answers.
+            14 | 15 | 16 | 18 | 19 => out.event(Event::WindowSizeReport(operation)),
+            // Push and pop the title, one argument. hmux keeps no title stack,
+            // so the argument is read for its position and nothing else.
+            22 | 23 => {
+                index += 1;
+                if read(index).is_none() {
+                    return;
+                }
+            }
+            _ => {}
+        }
+        index += 1;
     }
 }
 
