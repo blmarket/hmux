@@ -819,6 +819,10 @@ impl Parser {
 /// the sequence — not on the excess — once they are all used.
 const PARAM_LIMIT: usize = 24;
 
+/// The largest value `strtonum(out, 0, INT_MAX, &errstr)` converts. A position
+/// that does not fit fails the split, and the sequence goes with it.
+const PARAM_MAX: u32 = i32::MAX as u32;
+
 /// tmux splits `param_buf` on `;`, reads each position as a number, and treats
 /// an empty position as "not given". A position may carry colon-separated
 /// sub-parameters, which SGR 38/48 use for direct colours.
@@ -843,9 +847,11 @@ fn split_params(buffer: &[u8]) -> Option<Vec<Param>> {
             let subs = parts.map(parse_number).collect();
             Param { value, subs }
         } else {
-            // INPUT_NUMBER.
+            // INPUT_NUMBER, through a `strtonum` that will not take a value
+            // wider than an `int`.
+            let value = parse_number(position).filter(|value| *value <= PARAM_MAX)?;
             Param {
-                value: parse_number(position),
+                value: Some(value),
                 subs: Vec::new(),
             }
         };
@@ -1251,6 +1257,18 @@ mod tests {
         payload.extend(std::iter::repeat_n(&b"1;"[..], 23).flatten().copied());
         payload.extend_from_slice(b"5B");
         assert!(tokens(&payload).is_empty(), "24 positions drop the sequence");
+    }
+
+    #[test]
+    fn a_parameter_too_wide_for_an_int_abandons_the_sequence() {
+        // `strtonum(out, 0, INT_MAX, &errstr)` fails, and `input_split` returns
+        // -1 the moment one position does not convert.
+        assert!(tokens(b"\x1b[99999999999999999999B").is_empty());
+        assert!(tokens(b"\x1b[2147483648B").is_empty());
+        assert_eq!(tokens(b"\x1b[2147483647B").len(), 1, "INT_MAX still fits");
+        // A position with sub-parameters is never read as a number, so its
+        // width is nobody's business here.
+        assert_eq!(tokens(b"\x1b[99999999999999999999:1B").len(), 1);
     }
 
     #[test]
