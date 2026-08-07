@@ -668,6 +668,10 @@ pub(crate) struct RenderClientContext {
     pub(crate) term: Option<String>,
     pub(crate) tty: Option<String>,
     pub(crate) pid: Option<i32>,
+    /// The client's peer uid and the login name it maps to, resolved once at
+    /// attach — `#{client_uid}` and `#{client_user}`.
+    pub(crate) uid: Option<u32>,
+    pub(crate) user: String,
     pub(crate) cwd: Option<PathBuf>,
     pub(crate) control_mode: bool,
     pub(crate) read_only: bool,
@@ -682,6 +686,8 @@ impl Default for RenderClientContext {
             term: None,
             tty: None,
             pid: None,
+            uid: None,
+            user: String::new(),
             cwd: None,
             control_mode: false,
             read_only: false,
@@ -1500,6 +1506,14 @@ impl<'a> StatusContext<'a> {
                 "client_pid",
                 self.client.pid.unwrap_or_default().to_string(),
             )
+            .set(
+                "client_uid",
+                self.client
+                    .uid
+                    .map(|uid| uid.to_string())
+                    .unwrap_or_default(),
+            )
+            .set("client_user", self.client.user.clone())
             .set("client_utf8", "1")
             .set(
                 "client_control_mode",

@@ -432,6 +432,7 @@ where
         reader: ImsgReader,
         writer: NonblockingImsgWriter,
         server: Server,
+        peer_uid: Option<u32>,
     ) -> ProtocolHandle {
         let executor_handle = self.executor_handle.clone();
         let background_commands = self
@@ -445,8 +446,14 @@ where
                 ))
             })
             .clone();
-        let (protocol, status) =
-            ProtocolClient::new(reader, writer, server, background_commands, executor_handle);
+        let (protocol, status) = ProtocolClient::new(
+            reader,
+            writer,
+            server,
+            background_commands,
+            executor_handle,
+            peer_uid,
+        );
         let protocol = ActorRef::new(protocol);
         self.events.push_back(Envelope::Protocol {
             target: protocol.clone(),

@@ -156,7 +156,9 @@ pub(super) fn hostname_short() -> String {
     h.split('.').next().unwrap_or(&h).to_string()
 }
 
-fn username(uid: libc::uid_t) -> Option<String> {
+/// The login name `uid` maps to, when the password database has one. Walks
+/// NSS, so callers cache the answer rather than resolving it per expansion.
+pub(crate) fn username(uid: libc::uid_t) -> Option<String> {
     let suggested = unsafe { libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) };
     let size = usize::try_from(suggested)
         .ok()

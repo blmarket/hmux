@@ -135,6 +135,21 @@ impl Platform for Linux {
         read_cwd(foreground_pgrp).or_else(|| read_cwd(unsafe { libc::tcgetsid(pty.as_raw_fd()) }))
     }
 
+    fn peer_uid(socket: BorrowedFd<'_>) -> Option<u32> {
+        let mut credentials = unsafe { std::mem::zeroed::<libc::ucred>() };
+        let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+        let status = unsafe {
+            libc::getsockopt(
+                socket.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_PEERCRED,
+                (&mut credentials as *mut libc::ucred).cast(),
+                &mut length,
+            )
+        };
+        (status == 0).then_some(credentials.uid)
+    }
+
     fn process_open_files(pid: u32) -> Vec<PathBuf> {
         let Ok(entries) = fs::read_dir(format!("/proc/{pid}/fd")) else {
             return Vec::new();

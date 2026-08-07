@@ -188,6 +188,7 @@ impl ProtocolClient {
         server: Server,
         background_commands: ActorRef<BackgroundCommands>,
         executor: SuspensionExecutorHandle,
+        peer_uid: Option<u32>,
     ) -> (Self, ProtocolStatus) {
         let status = ProtocolStatus::new();
         let state = server.state();
@@ -203,6 +204,7 @@ impl ProtocolClient {
                 protocol_state: ProtocolState::Identifying(IdentifyingState {
                     context: ClientContext {
                         kind: ClientKind::Command,
+                        peer_uid,
                         ..ClientContext::default()
                     },
                     client_tty: ClientTty::new(),

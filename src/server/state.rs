@@ -2357,6 +2357,11 @@ struct ClientRenderEntry {
     name: String,
     term: String,
     pid: Option<i32>,
+    /// The uid of the process on the other end of this client's socket, and
+    /// the login name it maps to — tmux's `proc_get_peer_uid` and the `c->user`
+    /// it caches from it. Empty until the attach path reports them.
+    uid: Option<u32>,
+    user: String,
     cols: u16,
     rows: u16,
     flags: String,
@@ -2448,6 +2453,10 @@ pub(crate) struct ClientSnapshot {
     pub(crate) name: String,
     pub(crate) term: String,
     pub(crate) pid: Option<i32>,
+    /// The client's peer uid and the login name it maps to — `#{client_uid}`
+    /// and `#{client_user}`.
+    pub(crate) uid: Option<u32>,
+    pub(crate) user: String,
     pub(crate) cols: u16,
     pub(crate) rows: u16,
     pub(crate) flags: String,
@@ -2788,6 +2797,8 @@ impl ClientRenderRegistry {
                 name,
                 term,
                 pid,
+                uid: None,
+                user: String::new(),
                 cols,
                 rows,
                 flags,
@@ -2843,6 +2854,8 @@ impl ClientRenderRegistry {
                 name: entry.name.clone(),
                 term: entry.term.clone(),
                 pid: entry.pid,
+                uid: entry.uid,
+                user: entry.user.clone(),
                 cols: entry.cols,
                 rows: entry.rows,
                 flags: entry.flags.clone(),
@@ -3636,6 +3649,17 @@ impl ClientRenderAttachment {
             if let Some(entry) = inner.clients.get_mut(&self.id) {
                 entry.terminal = Some(terminal.clone());
             }
+        }
+    }
+
+    /// Record the peer identity of the client this attachment renders for.
+    /// The login name is resolved by the caller, which already pays the NSS
+    /// lookup once for its own format context.
+    pub(crate) fn set_peer_identity(&self, uid: Option<u32>, user: String) {
+        let mut inner = self.registry.inner.borrow_mut();
+        if let Some(entry) = inner.clients.get_mut(&self.id) {
+            entry.uid = uid;
+            entry.user = user;
         }
     }
 

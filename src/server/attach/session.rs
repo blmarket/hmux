@@ -114,6 +114,11 @@ impl AttachSession {
             Default::default(),
             false,
         )?;
+        let peer_uid = context.peer_uid;
+        let peer_user = peer_uid
+            .and_then(super::super::format::username)
+            .unwrap_or_default();
+        render_attachment.set_peer_identity(peer_uid, peer_user.clone());
 
         let stable_target = format!("${session_id}");
         let mut attached_context = context.clone();
@@ -148,6 +153,8 @@ impl AttachSession {
                 term: (!terminal.name().is_empty()).then(|| terminal.name().to_string()),
                 tty: client_tty.tty_name.clone(),
                 pid: client_tty.client_pid,
+                uid: peer_uid,
+                user: peer_user,
                 cwd: context.cwd.clone(),
                 ..status::RenderClientContext::default()
             },

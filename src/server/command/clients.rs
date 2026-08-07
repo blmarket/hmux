@@ -890,6 +890,11 @@ fn client_vars(
             "client_pid",
             client.pid.map(|pid| pid.to_string()).unwrap_or_default(),
         )
+        .set(
+            "client_uid",
+            client.uid.map(|uid| uid.to_string()).unwrap_or_default(),
+        )
+        .set("client_user", client.user.clone())
         .set("client_width", client.cols.to_string())
         .set("client_height", client.rows.to_string())
         .set("client_session", session.name.clone())

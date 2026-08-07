@@ -186,6 +186,13 @@ impl Platform for Darwin {
         process_vnode_cwd(foreground_pgrp)
     }
 
+    fn peer_uid(socket: BorrowedFd<'_>) -> Option<u32> {
+        let mut uid: libc::uid_t = 0;
+        let mut gid: libc::gid_t = 0;
+        let status = unsafe { libc::getpeereid(socket.as_raw_fd(), &mut uid, &mut gid) };
+        (status == 0).then_some(uid)
+    }
+
     fn process_table() -> Option<Vec<ProcessInfo>> {
         const PROC_ALL_PIDS: u32 = 1;
 

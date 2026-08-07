@@ -151,6 +151,11 @@ impl EventControlClient {
             options.clone(),
             true,
         )?;
+        let peer_uid = context.peer_uid;
+        let peer_user = peer_uid
+            .and_then(super::format::username)
+            .unwrap_or_default();
+        render_attachment.set_peer_identity(peer_uid, peer_user.clone());
         let stdin = client_tty
             .stdin
             .as_ref()
@@ -204,6 +209,8 @@ impl EventControlClient {
                 term: client_tty.term.clone(),
                 tty: client_tty.tty_name.clone(),
                 pid: client_tty.client_pid,
+                uid: peer_uid,
+                user: peer_user,
                 cwd: context.cwd.clone(),
                 control_mode: true,
                 read_only: options.read_only,

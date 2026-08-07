@@ -6,6 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
+use std::os::fd::AsFd;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::time::Instant;
@@ -15,6 +16,7 @@ use tracing::{info, warn};
 use crate::event_loop::driver::{EventLoop, ListenerHandle, PaneHandle, ProtocolHandle};
 use crate::event_loop::protocol::ProtocolCloseReason;
 use crate::integration::AgentObserver;
+use crate::platform::{CurrentPlatform, Platform};
 use crate::server::Server;
 use crate::tmux::codec::{split_nonblocking_stream_with_queue_limit, MAX_IMSGSIZE};
 
@@ -182,9 +184,12 @@ fn add_protocol_client(
     server: &Server,
     event_loop: &mut ReadinessEventLoop,
 ) -> io::Result<ProtocolHandle> {
+    // The peer's uid is a property of the connection, so it is read while the
+    // socket is still whole — tmux's `proc_add_peer` does the same at accept.
+    let peer_uid = CurrentPlatform::peer_uid(client.as_fd());
     let (reader, writer) =
         split_nonblocking_stream_with_queue_limit(client, PROTOCOL_WRITE_QUEUE_LIMIT)?;
-    Ok(event_loop.add_protocol(reader, writer, server.clone()))
+    Ok(event_loop.add_protocol(reader, writer, server.clone(), peer_uid))
 }
 
 fn dispatch_event_loop_events(
@@ -339,7 +344,8 @@ mod tests {
         let (protocol_reader, protocol_writer) =
             split_nonblocking_stream_with_queue_limit(endpoint, 1).unwrap();
         let mut event_loop = EventLoop::new().unwrap();
-        let client = event_loop.add_protocol(protocol_reader, protocol_writer, server.clone());
+        let client =
+            event_loop.add_protocol(protocol_reader, protocol_writer, server.clone(), None);
 
         writer
             .send(Frame::new(Message::Command(vec![

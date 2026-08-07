@@ -133,6 +133,10 @@ pub struct ClientContext {
     pub environment: Vec<String>,
     pub tty_name: Option<String>,
     pub client_pid: Option<i32>,
+    /// The uid the kernel reports for the far end of this client's socket —
+    /// what tmux's `#{client_uid}` and `#{client_user}` answer from. `None`
+    /// when the platform did not report one.
+    pub peer_uid: Option<u32>,
     pub(crate) input_file: Option<Result<Vec<u8>, i32>>,
     pub(crate) current_session_id: Option<u32>,
     pub(crate) read_only: bool,

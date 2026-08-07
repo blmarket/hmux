@@ -75,6 +75,10 @@ pub(crate) trait Platform {
     /// the pane represented by `pty`.
     fn pane_cwd(pty: BorrowedFd<'_>) -> Option<PathBuf>;
 
+    /// Return the effective user id the kernel reports for the far end of the
+    /// connected Unix socket `socket`, when it reports one.
+    fn peer_uid(socket: BorrowedFd<'_>) -> Option<u32>;
+
     /// Return the visible `(pid, parent pid)` process table, when available.
     fn process_table() -> Option<Vec<ProcessInfo>> {
         None
