@@ -3155,10 +3155,11 @@ impl ClientRenderRegistry {
         entry.flag_state.ignore_size = enable;
         entry.read_only = enable;
         entry.ignore_size = enable;
-        entry.flags =
-            entry
-                .flag_state
-                .display_flags_full(entry.identified, entry.control_mode, entry.focused);
+        entry.flags = entry.flag_state.display_flags_full(
+            entry.identified,
+            entry.control_mode,
+            entry.focused,
+        );
         {
             // The attached client re-reads the registry view rather than the
             // values themselves; a control client, which keeps its own flag

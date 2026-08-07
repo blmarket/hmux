@@ -30,7 +30,9 @@ use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, Scr
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 use crate::server::input_keys::ExtendedKeys;
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
-use crate::vt::observer::{decrqss_reply, Event as VtEvent, Observer, OscUpdate};
+use crate::vt::observer::{
+    decrqss_reply, Event as VtEvent, Observer, OscUpdate, BACKGROUND_COLOR_QUERY,
+};
 use crate::vt::parser::{Param, StringEnd, Token, TokenKind};
 
 use crate::vt::input::{InputEncoder, MouseEvent};
@@ -1067,9 +1069,21 @@ impl NativePaneObservation {
             VtEvent::ClearAllTabStops => self.update_tab_stops(BTreeSet::clear),
             VtEvent::CursorShape(shape) => self.cursor_shape.set(shape),
             VtEvent::Reply(reply) => replies.push(reply),
-            VtEvent::CursorColourQuery(end) => {
-                if let Some(reply) = cursor_colour_query_reply(&self.cursor_colour.borrow(), end) {
-                    replies.push(reply);
+            VtEvent::ColourQuery { number, end } => {
+                let stored = match number {
+                    10 => &self.foreground,
+                    11 => &self.background,
+                    _ => &self.cursor_colour,
+                };
+                match colour_query_reply(number, &stored.borrow(), end) {
+                    Some(reply) => replies.push(reply),
+                    // With no colour of its own, tmux answers a background
+                    // question from the attached terminal's; ask it. An unset
+                    // foreground or cursor colour has no such fallback here, so
+                    // the question goes unanswered as tmux leaves it when no
+                    // client offers one.
+                    None if number == 11 => queries.push(BACKGROUND_COLOR_QUERY),
+                    None => {}
                 }
             }
             VtEvent::ForwardQuery(query) => queries.push(query),
@@ -2747,10 +2761,11 @@ impl PaneProcessProbe {
     }
 }
 
-/// Build tmux's OSC 12 reply from the pane-local colour state. Unset cursor
-/// colour is represented by `none` and has no reply, matching tmux's silent
-/// response for an unset local value.
-fn cursor_colour_query_reply(colour: &str, end: StringEnd) -> Option<Vec<u8>> {
+/// Build tmux's OSC 10 / 11 / 12 reply from the pane-local colour state. An
+/// unset colour — spelled `default` for the foreground and background, `none`
+/// for the cursor — parses as no colour and so has no reply, which is where
+/// tmux's own fallbacks take over.
+fn colour_query_reply(number: u32, colour: &str, end: StringEnd) -> Option<Vec<u8>> {
     let packed = parse_packed_colour(colour)?;
     let (r, g, b) = ((packed >> 16) as u8, (packed >> 8) as u8, packed as u8);
     let terminator = match end {
@@ -2758,7 +2773,7 @@ fn cursor_colour_query_reply(colour: &str, end: StringEnd) -> Option<Vec<u8>> {
         StringEnd::Bell => "\x07",
     };
     Some(
-        format!("\x1b]12;rgb:{r:02x}{r:02x}/{g:02x}{g:02x}/{b:02x}{b:02x}{terminator}")
+        format!("\x1b]{number};rgb:{r:02x}{r:02x}/{g:02x}{g:02x}/{b:02x}{b:02x}{terminator}")
             .into_bytes(),
     )
 }
@@ -3092,5 +3107,28 @@ mod tests {
         let (replies, queries) = observation.observe_output(b"\x1b]12;#00ff00\x07\x1b]12;?\x07");
         assert!(queries.is_empty(), "got forwarded queries: {queries:?}");
         assert_eq!(replies, vec![b"\x1b]12;rgb:0000/ffff/0000\x07".to_vec()]);
+    }
+
+    #[test]
+    fn pane_colour_queries_answer_from_the_stored_foreground_and_background() {
+        let observation = inert_observation();
+        let (replies, queries) = observation
+            .observe_output(b"\x1b]10;#ff0000\x07\x1b]11;#104e8b\x07\x1b]10;?\x07\x1b]11;?\x1b\\");
+        assert!(queries.is_empty(), "got forwarded queries: {queries:?}");
+        assert_eq!(
+            replies,
+            vec![
+                b"\x1b]10;rgb:ffff/0000/0000\x07".to_vec(),
+                b"\x1b]11;rgb:1010/4e4e/8b8b\x1b\\".to_vec(),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unset_background_question_still_goes_out_to_the_terminal() {
+        let observation = inert_observation();
+        let (replies, queries) = observation.observe_output(b"\x1b]10;?\x07\x1b]11;?\x07");
+        assert!(replies.is_empty(), "got pane replies: {replies:?}");
+        assert_eq!(queries, vec![BACKGROUND_COLOR_QUERY]);
     }
 }

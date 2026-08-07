@@ -193,10 +193,10 @@ pub(crate) enum Event {
     CursorShape(u8),
     /// Bytes to write back to the pane's own input.
     Reply(Vec<u8>),
-    /// OSC 12 asked the pane for its stored cursor colour. The pane owns the
-    /// colour value; this event preserves the query's position and terminator
-    /// until that state is reached.
-    CursorColourQuery(StringEnd),
+    /// OSC 10 / 11 / 12 asked the pane for a colour it stores. The pane owns
+    /// the colour values; this event preserves the query's number, position
+    /// and terminator until that state is reached.
+    ColourQuery { number: u32, end: StringEnd },
     /// Bytes to forward to the client's terminal, whose answer comes back to
     /// the pane.
     ForwardQuery(&'static [u8]),
@@ -557,15 +557,11 @@ impl Observer {
             }
             10..=12 => {
                 if text == "?" {
-                    match number {
-                        // A stored cursor colour is pane-local, so the pane
-                        // answers this at the same point in the stream.
-                        12 => out.event(Event::CursorColourQuery(end)),
-                        // The background question is answered by the outer
-                        // terminal when no pane-local value is available.
-                        11 => out.event(Event::ForwardQuery(BACKGROUND_COLOR_QUERY)),
-                        _ => {}
-                    }
+                    // These colours are pane-local, so the pane answers at the
+                    // same point in the stream. Only it can tell whether it has
+                    // a value stored, so the fallback for an unset background —
+                    // asking the outer terminal — is left to it too.
+                    out.event(Event::ColourQuery { number, end });
                 } else if let Some(colour) = parse_colour(&text) {
                     out.event(Event::Osc(match number {
                         10 => OscUpdate::Foreground(colour),
@@ -1051,11 +1047,16 @@ mod tests {
     }
 
     #[test]
-    fn the_background_question_is_forwarded_to_the_outer_terminal() {
-        assert_eq!(
-            events(b"\x1b]11;?\x07"),
-            vec![Event::ForwardQuery(BACKGROUND_COLOR_QUERY)]
-        );
+    fn a_colour_question_is_handed_to_the_pane_that_stores_the_colour() {
+        for number in [10, 11, 12] {
+            assert_eq!(
+                events(format!("\x1b]{number};?\x07").as_bytes()),
+                vec![Event::ColourQuery {
+                    number,
+                    end: StringEnd::Bell
+                }]
+            );
+        }
     }
 
     #[test]
