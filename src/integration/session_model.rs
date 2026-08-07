@@ -53,6 +53,12 @@ impl ModelScan {
         &self.path
     }
 
+    /// Bytes scanned so far. Because [`advance`](Self::advance) reads to end of
+    /// file, comparing this across polls tells whether the file grew.
+    pub(crate) fn offset(&self) -> u64 {
+        self.offset
+    }
+
     /// Scan bytes appended since the last call and return the newest model
     /// they name, or `None` when nothing new names one. The first call reads
     /// the whole file, so attaching to a long-running session still finds the

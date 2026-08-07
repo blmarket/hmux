@@ -124,6 +124,12 @@ impl ProcessSource for FakeProcessSource {
         let end = (start + max_len).min(content.len());
         Some(content[start..end].to_vec())
     }
+
+    fn file_len(&self, path: &Path) -> Option<u64> {
+        self.file_contents
+            .get(path)
+            .map(|content| content.len() as u64)
+    }
 }
 
 /// One replayed observation: an optional window title and a screen tail.
@@ -451,6 +457,168 @@ fn claude_session_id_is_read_from_the_newest_cwd_transcript() {
         Some("claude-fable-5"),
         "the model last named in the session transcript should be published"
     );
+}
+
+/// Two panes running the same agent in the same working directory share one
+/// project transcript directory, so "newest transcript" alone would flip both
+/// panes to whichever session wrote last. A pane whose own transcript keeps
+/// growing — or that is not even working — must keep its attribution when a
+/// sibling pane's newer session appears and streams.
+#[test]
+fn same_cwd_sibling_transcript_does_not_steal_attribution() {
+    let mine = "11111111-1111-4111-8111-111111111111";
+    let sibling = "22222222-2222-4222-8222-222222222222";
+    let cwd = PathBuf::from("/work/proj");
+    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
+    let sibling_path = transcript_dir.join(format!("{sibling}.jsonl"));
+
+    let mut source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100)],
+        HashMap::from([
+            (100u32, vec![OsString::from("zsh")]),
+            (200u32, vec![OsString::from("claude")]),
+        ]),
+        HashMap::new(),
+        true,
+    )
+    .with_cwd(200, cwd)
+    .with_files(transcript_dir.clone(), vec![mine_path.clone()])
+    .with_file_content(
+        mine_path.clone(),
+        br#"{"type":"assistant","message":{"model":"claude-opus-5","role":"assistant"}}
+"#,
+    );
+
+    // The pane rests at its prompt, then works, then rests again.
+    let idle = frame(Some("\u{2733} hmux"), "earlier output\n──────────\n❯ ");
+    let working = frame(Some("⠹ hmux"), "some streamed output");
+    let mut frames = vec![idle.clone()];
+    frames.extend(std::iter::repeat_n(working, 8));
+    frames.push(idle);
+    let pane = ScriptedPane::new(100, frames);
+    let server = FakeServer { pane: pane.clone() };
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+
+    capture_logs(|| {
+        let mut panes = HashMap::new();
+        // First poll attributes this pane's own (only) transcript.
+        poll(&server, &detectors, &source, Some(&hub), &mut panes);
+        // A sibling pane's session appears newer and streams on every poll
+        // while this pane works; this pane's own transcript also advances with
+        // its turns.
+        source.files.insert(
+            transcript_dir.clone(),
+            vec![sibling_path.clone(), mine_path.clone()],
+        );
+        source
+            .file_contents
+            .insert(sibling_path.clone(), Vec::new());
+        for round in 0..(pane.frames.len() - 1) {
+            source
+                .file_contents
+                .get_mut(&sibling_path)
+                .unwrap()
+                .extend_from_slice(
+                    br#"{"type":"assistant","message":{"model":"claude-fable-5"}}
+"#,
+                );
+            if round % 2 == 0 {
+                source
+                    .file_contents
+                    .get_mut(&mine_path)
+                    .unwrap()
+                    .extend_from_slice(
+                        br#"{"type":"progress"}
+"#,
+                    );
+            }
+            pane.step();
+            poll(&server, &detectors, &source, Some(&hub), &mut panes);
+        }
+    });
+
+    let snap = hub.snapshot();
+    let status = snap.panes.get(&PaneId(0)).expect("status published");
+    assert_eq!(
+        status.session_id.as_deref(),
+        Some(mine),
+        "a growing attributed transcript must not be displaced by a sibling"
+    );
+    assert_eq!(status.model.as_deref(), Some("claude-opus-5"));
+}
+
+/// The counterpart: when the pane's own agent starts a new session in the same
+/// process (its old transcript goes permanently silent while the new one grows
+/// with the pane's turns), correlation must adopt the new transcript.
+#[test]
+fn silent_transcript_yields_to_newer_one_growing_while_pane_works() {
+    let old = "11111111-1111-4111-8111-111111111111";
+    let new = "22222222-2222-4222-8222-222222222222";
+    let cwd = PathBuf::from("/work/proj");
+    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let old_path = transcript_dir.join(format!("{old}.jsonl"));
+    let new_path = transcript_dir.join(format!("{new}.jsonl"));
+
+    let mut source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100)],
+        HashMap::from([
+            (100u32, vec![OsString::from("zsh")]),
+            (200u32, vec![OsString::from("claude")]),
+        ]),
+        HashMap::new(),
+        true,
+    )
+    .with_cwd(200, cwd)
+    .with_files(transcript_dir.clone(), vec![old_path.clone()])
+    .with_file_content(
+        old_path.clone(),
+        br#"{"type":"assistant","message":{"model":"claude-opus-5","role":"assistant"}}
+"#,
+    );
+
+    let idle = frame(Some("\u{2733} hmux"), "earlier output\n──────────\n❯ ");
+    let working = frame(Some("⠹ hmux"), "some streamed output");
+    let mut frames = vec![idle];
+    frames.extend(std::iter::repeat_n(working, 12));
+    let pane = ScriptedPane::new(100, frames);
+    let server = FakeServer { pane: pane.clone() };
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+
+    capture_logs(|| {
+        let mut panes = HashMap::new();
+        // First poll attributes the old transcript.
+        poll(&server, &detectors, &source, Some(&hub), &mut panes);
+        // The agent switches sessions: the old transcript never grows again,
+        // and the new one grows on every poll while the pane works.
+        source
+            .files
+            .insert(transcript_dir.clone(), vec![new_path.clone(), old_path]);
+        source.file_contents.insert(new_path.clone(), Vec::new());
+        for _ in 0..(pane.frames.len() - 1) {
+            source
+                .file_contents
+                .get_mut(&new_path)
+                .unwrap()
+                .extend_from_slice(
+                    br#"{"type":"assistant","message":{"model":"claude-fable-5"}}
+"#,
+                );
+            pane.step();
+            poll(&server, &detectors, &source, Some(&hub), &mut panes);
+        }
+    });
+
+    let snap = hub.snapshot();
+    let status = snap.panes.get(&PaneId(0)).expect("status published");
+    assert_eq!(
+        status.session_id.as_deref(),
+        Some(new),
+        "sustained correlated growth must re-attribute the pane"
+    );
+    assert_eq!(status.model.as_deref(), Some("claude-fable-5"));
 }
 
 /// Pi keeps one static title across its lifecycle, so its current TUI controls

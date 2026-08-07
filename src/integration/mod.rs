@@ -289,14 +289,40 @@ struct TrackedPane {
     /// Session id resolved from the matched agent. Lookup retains the last known
     /// id when a poll's inspection is temporarily unavailable and replaces it
     /// when the agent's live session changes (a new Codex rollout, or a newer
-    /// Claude transcript in the same project directory).
+    /// cwd-scoped transcript adopted after activity correlation — see
+    /// [`should_adopt_transcript`]).
     agent_session_id: Option<String>,
+    /// A newer transcript observed in the pane's session directory, held while
+    /// activity correlation gathers evidence that it belongs to this pane
+    /// rather than to another pane running in the same working directory.
+    session_candidate: Option<SessionCandidate>,
     /// Incremental scanner over the resolved session file, keyed on its path so
     /// a session switch restarts the scan from the new file's beginning.
     model_scan: Option<ModelScan>,
     /// The model the session file most recently named, as published on the
     /// pane's status.
     agent_model: Option<String>,
+}
+
+/// Correlated-evidence polls required before a cwd-attributed pane adopts a
+/// newer transcript from its session directory: polls in which the pane's agent
+/// is working, its attributed transcript is silent, and the candidate is
+/// growing. Session directories are keyed by working directory, so two panes
+/// running the same agent in the same directory share one; newest-by-mtime
+/// alone would flip both panes to whichever session wrote last. Correlation
+/// still follows a genuine in-pane session switch (a new session started in the
+/// same process) within a few active polls, since the old transcript then goes
+/// permanently silent while the new one grows with the pane's own turns.
+const TRANSCRIPT_ADOPTION_POLLS: u32 = 5;
+
+/// Evidence gathered about a possible replacement session file.
+struct SessionCandidate {
+    path: PathBuf,
+    /// Last observed byte length of the candidate file.
+    len: u64,
+    /// Polls of correlated evidence accumulated so far (see
+    /// [`TRANSCRIPT_ADOPTION_POLLS`]).
+    correlated_polls: u32,
 }
 
 fn poll<O: ServerObservability>(
@@ -351,6 +377,7 @@ fn poll<O: ServerObservability>(
                         agent: None,
                         agent_pid: None,
                         agent_session_id: None,
+                        session_candidate: None,
                         model_scan: None,
                         agent_model: None,
                     });
@@ -412,6 +439,7 @@ fn inspect(
     if process.exited {
         tracked.agent_pid = None;
         tracked.agent_session_id = None;
+        tracked.session_candidate = None;
         tracked.model_scan = None;
         tracked.agent_model = None;
         publish(
@@ -453,6 +481,7 @@ fn inspect(
         tracked.agent = None;
         tracked.agent_pid = None;
         tracked.agent_session_id = None;
+        tracked.session_candidate = None;
         tracked.model_scan = None;
         tracked.agent_model = None;
         tracked.revision = Some(revision);
@@ -485,9 +514,15 @@ fn inspect(
             let agent_changed = tracked.agent != Some(detector) || tracked.agent_pid != Some(pid);
             if agent_changed {
                 tracked.agent_session_id = None;
+                tracked.session_candidate = None;
                 tracked.model_scan = None;
                 tracked.agent_model = None;
             }
+            // Read any bytes the agent appended to its session file since the
+            // last poll; the newest model named there replaces the published
+            // one. No new mention retains the current value. Growth doubles as
+            // the liveness signal for adoption correlation below.
+            let session_file_grew = advance_model_scan(tracked, snapshot);
             if let Some(source) = detectors[detector].session_id_source() {
                 // Both sources are rechecked every poll so switching threads or
                 // sessions within one agent process replaces the cached id. Each
@@ -502,22 +537,32 @@ fn inspect(
                     }
                 };
                 if let Some((session_id, session_file)) = resolved {
-                    tracked.agent_session_id = Some(session_id);
-                    // A new session file restarts the model scan from its
-                    // beginning; the model belongs to the session, so the value
-                    // read from the previous file is dropped with it.
-                    if tracked.model_scan.as_ref().map(ModelScan::path) != Some(&*session_file) {
-                        tracked.model_scan = Some(ModelScan::new(session_file));
-                        tracked.agent_model = None;
+                    let adopt = match source {
+                        // An open descriptor names its owning process; no
+                        // correlation is needed.
+                        SessionIdSource::ProcessTreeOpenFiles => true,
+                        // The newest transcript in a cwd-keyed directory may
+                        // belong to another pane in the same working directory.
+                        SessionIdSource::AgentCwdTranscript => should_adopt_transcript(
+                            tracked,
+                            &session_file,
+                            session_file_grew,
+                            snapshot,
+                        ),
+                    };
+                    if adopt {
+                        tracked.agent_session_id = Some(session_id);
+                        tracked.session_candidate = None;
+                        // A new session file restarts the model scan from its
+                        // beginning; the model belongs to the session, so the
+                        // value read from the previous file is dropped with it.
+                        if tracked.model_scan.as_ref().map(ModelScan::path) != Some(&*session_file)
+                        {
+                            tracked.model_scan = Some(ModelScan::new(session_file));
+                            tracked.agent_model = None;
+                            advance_model_scan(tracked, snapshot);
+                        }
                     }
-                }
-            }
-            // Read any bytes the agent appended to its session file since the
-            // last poll; the newest model named there replaces the published
-            // one. No new mention retains the current value.
-            if let Some(scan) = tracked.model_scan.as_mut() {
-                if let Some(model) = scan.advance(snapshot.source) {
-                    tracked.agent_model = Some(model);
                 }
             }
             tracked.agent = Some(detector);
@@ -526,6 +571,7 @@ fn inspect(
         TreeScan::NoProcessTable => {
             tracked.agent_pid = None;
             tracked.agent_session_id = None;
+            tracked.session_candidate = None;
             tracked.model_scan = None;
             tracked.agent_model = None;
         }
@@ -628,6 +674,90 @@ fn inspect(
             hub,
         ),
         Detection::KeepPrevious => {}
+    }
+}
+
+/// Read bytes appended to the pane's attributed session file since the last
+/// poll, publishing any newer model named there. Returns whether the file grew.
+fn advance_model_scan(tracked: &mut TrackedPane, snapshot: &ProcessSnapshot) -> bool {
+    let Some(scan) = tracked.model_scan.as_mut() else {
+        return false;
+    };
+    let before = scan.offset();
+    if let Some(model) = scan.advance(snapshot.source) {
+        tracked.agent_model = Some(model);
+    }
+    scan.offset() != before
+}
+
+/// Decide whether a cwd-attributed pane should adopt `candidate` — the newest
+/// recognized transcript in its session directory — as its own live session.
+///
+/// The session directory is keyed by working directory, so every pane running
+/// the same agent in the same directory resolves the same "newest" file, and
+/// only one of them can be its writer. mtime order alone cannot say which, so a
+/// pane with an attributed transcript adopts a different one only on correlated
+/// evidence that its own attribution is dead: over several polls the pane's
+/// agent is working and the candidate grows while the attributed transcript
+/// stays silent (see [`TRANSCRIPT_ADOPTION_POLLS`]). Any growth of the
+/// attributed transcript re-confirms it and discards the gathered evidence.
+///
+/// This is deliberately biased toward keeping the current attribution: a pane
+/// mid-turn whose transcript pauses (a long tool call) while a same-directory
+/// sibling streams can accumulate spurious evidence, but adopting wrongly is
+/// self-healing — the pane's real transcript becomes the newest candidate as
+/// soon as it grows again, while flipping on bare mtime was wrong immediately
+/// and stayed wrong.
+fn should_adopt_transcript(
+    tracked: &mut TrackedPane,
+    candidate: &Path,
+    session_file_grew: bool,
+    snapshot: &ProcessSnapshot,
+) -> bool {
+    let (attributed, is_current) = match tracked.model_scan.as_ref().map(ModelScan::path) {
+        Some(current) => (true, current == candidate),
+        None => (false, false),
+    };
+    // Nothing attributed yet: first attribution stays best-effort newest.
+    if !attributed {
+        return true;
+    }
+    // The newest transcript is already ours; nothing to correlate.
+    if is_current {
+        tracked.session_candidate = None;
+        return true;
+    }
+    // Our transcript is still being written: whatever else appeared in the
+    // shared directory belongs to another pane.
+    if session_file_grew {
+        tracked.session_candidate = None;
+        return false;
+    }
+    let len = snapshot.source.file_len(candidate);
+    let working = matches!(
+        tracked.reported.as_ref().map(|reported| reported.state),
+        Some(AgentState::Working)
+    );
+    match tracked.session_candidate.as_mut() {
+        Some(evidence) if evidence.path == *candidate => {
+            if working && len.is_some_and(|len| len > evidence.len) {
+                evidence.correlated_polls += 1;
+            }
+            if let Some(len) = len {
+                evidence.len = len;
+            }
+            evidence.correlated_polls >= TRANSCRIPT_ADOPTION_POLLS
+        }
+        // A new candidate (or none yet): start gathering evidence from its
+        // current size, so only growth observed from here on counts.
+        _ => {
+            tracked.session_candidate = Some(SessionCandidate {
+                path: candidate.to_path_buf(),
+                len: len.unwrap_or(0),
+                correlated_polls: 0,
+            });
+            false
+        }
     }
 }
 
@@ -739,6 +869,12 @@ pub(crate) trait ProcessSource {
         Vec::new()
     }
 
+    /// The current byte length of the file at `path`, used to watch a candidate
+    /// session file for growth. `None` when unreadable or unsupported.
+    fn file_len(&self, _path: &Path) -> Option<u64> {
+        None
+    }
+
     /// Up to `max_len` bytes of the file at `path` starting at byte `offset`,
     /// used to scan agent session files incrementally. An empty vector means
     /// end of file; `None` means the file is unreadable or the platform does
@@ -790,6 +926,10 @@ impl ProcessSource for SystemProcesses {
 
     fn open_files(&self, pid: u32) -> Vec<PathBuf> {
         CurrentPlatform::process_open_files(pid)
+    }
+
+    fn file_len(&self, path: &Path) -> Option<u64> {
+        std::fs::metadata(path).ok().map(|metadata| metadata.len())
     }
 
     fn read_span(&self, path: &Path, offset: u64, max_len: usize) -> Option<Vec<u8>> {
