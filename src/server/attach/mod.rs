@@ -272,6 +272,11 @@ struct AttachInputState {
     mouse: MouseInputState,
     key_prompt: KeyPromptState,
     terminal_reply: Option<PendingTerminalReply>,
+    /// The head of an OSC answer to a question the server put to this terminal
+    /// on a pane's behalf, held over a read boundary until its terminator
+    /// arrives. It is the server's answer, not the pane's input, so it is kept
+    /// apart from `terminal_reply`.
+    terminal_answer: Vec<u8>,
     injected: VecDeque<ClientKey>,
 }
 
@@ -629,6 +634,7 @@ impl AttachCompositorState {
                 mouse: MouseInputState::default(),
                 key_prompt: KeyPromptState::Idle,
                 terminal_reply: None,
+                terminal_answer: Vec::new(),
                 injected: VecDeque::new(),
             },
             io_state: ClientIoState::Active,
@@ -1678,7 +1684,19 @@ where
             )));
         }
     };
-    AttachSession::start_in_mode(&target, client_tty, state, hub, context, writer)
+    // tmux's `cmd_attach_session` applies the client's `-f` flags as it
+    // attaches, which is what puts an `ignore-size` client outside the window
+    // sizing.
+    let client_flags = super::state::ClientFlagState::from_attach_args(args);
+    AttachSession::start_in_mode(
+        &target,
+        client_tty,
+        client_flags,
+        state,
+        hub,
+        context,
+        writer,
+    )
 }
 
 /// The interactive `new-session` (and bare-`tmux`) path: create — or, with `-A`,

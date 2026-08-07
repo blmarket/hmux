@@ -1581,7 +1581,11 @@ impl Expander<'_> {
                 // tmux accepts -100..=100 and hands the value to printf's
                 // `%.*f`, where a negative precision means the default of 6.
                 Ok(value) if (-100..=100).contains(&value) => {
-                    if value < 0 { 6 } else { value as usize }
+                    if value < 0 {
+                        6
+                    } else {
+                        value as usize
+                    }
                 }
                 _ => return String::new(),
             },
@@ -1602,7 +1606,11 @@ impl Expander<'_> {
         let operand = |text: &String| -> Option<f64> {
             let expanded = self.expand(text, vars, depth);
             let trimmed = expanded.trim();
-            if trimmed.is_empty() { Some(0.0) } else { trimmed.parse().ok() }
+            if trimmed.is_empty() {
+                Some(0.0)
+            } else {
+                trimmed.parse().ok()
+            }
         };
         let (Some(mut a), Some(mut b)) = (operand(&parts[0]), operand(&parts[1])) else {
             return String::new();

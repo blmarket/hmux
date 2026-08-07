@@ -200,6 +200,11 @@ pub(crate) enum Event {
     /// Bytes to forward to the client's terminal, whose answer comes back to
     /// the pane.
     ForwardQuery(&'static [u8]),
+    /// OSC 4 asked for a palette entry neither the pane nor `pane-colours`
+    /// has. tmux asks the attached terminal instead and answers the pane with
+    /// what comes back, so the index and the query's terminator are carried
+    /// until the server can route it.
+    PaletteQuery { index: u8, end: StringEnd },
     /// A pane colour or path the formats report.
     Osc(OscUpdate),
     /// An OSC 52 clipboard set or query.
@@ -545,9 +550,7 @@ impl Observer {
                 return;
             }
             4 => {
-                if let Some(reply) = self.palette_request(&text, end, policy) {
-                    out.event(Event::Reply(reply));
-                }
+                self.palette_request(&text, end, policy, out);
             }
             7 => out.event(Event::Osc(OscUpdate::Path(text.into_owned()))),
             9 => {
@@ -609,13 +612,18 @@ impl Observer {
         body: &str,
         end: StringEnd,
         policy: &OutputPolicy,
-    ) -> Option<Vec<u8>> {
+        out: &mut Observed,
+    ) {
         let mut reply = Vec::new();
         let mut rest = body;
         while !rest.is_empty() {
-            let (index, tail) = rest.split_once(';')?;
+            let Some((index, tail)) = rest.split_once(';') else {
+                break;
+            };
             // tmux stops at the first unparseable index rather than skipping it.
-            let index = index.parse::<u8>().ok()?;
+            let Ok(index) = index.parse::<u8>() else {
+                break;
+            };
             let (value, tail) = match tail.split_once(';') {
                 Some((value, tail)) => (value, tail),
                 None => (tail, ""),
@@ -636,13 +644,19 @@ impl Observer {
                         )
                         .as_bytes(),
                     );
+                } else {
+                    // Nothing here holds this entry: the question is for the
+                    // terminal, and its answer for the pane.
+                    out.event(Event::PaletteQuery { index, end });
                 }
             } else if let Some(packed) = parse_packed_colour(value) {
                 self.palette[usize::from(index)] = Some(packed);
             }
             rest = tail;
         }
-        (!reply.is_empty()).then_some(reply)
+        if !reply.is_empty() {
+            out.event(Event::Reply(reply));
+        }
     }
 
     fn dcs(
@@ -776,7 +790,7 @@ fn osc52_reply_selection(selection: &str) -> String {
 
 /// Decode standard base64, rejecting anything that is not fully padded — which
 /// is what makes tmux drop `aGk` where it accepts `aGk=`.
-fn base64_decode_strict(text: &str) -> Option<Vec<u8>> {
+pub(crate) fn base64_decode_strict(text: &str) -> Option<Vec<u8>> {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let bytes = text.as_bytes();
     if bytes.is_empty() || !bytes.len().is_multiple_of(4) {

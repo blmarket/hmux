@@ -3853,8 +3853,9 @@ fn list_panes(args: &[String], st: &ServerState, agents: &PaneAgents) -> Command
                     area(win_a, pane_a.id).cmp(&area(win_b, pane_b.id))
                 }
                 ListSortOrder::Name => std::cmp::Ordering::Equal,
-                // tmux's activity key is the pane's `active_point`, an
-                // ordering hmux does not track; ties fall to the title.
+                // tmux's activity key is the pane's `active_point`: least
+                // recently active first, with ties falling to the title.
+                ListSortOrder::Activity => pane_a.active_point.cmp(&pane_b.active_point),
                 _ => std::cmp::Ordering::Equal,
             }
         },
@@ -4261,53 +4262,6 @@ fn set_current_client_vars(
         );
 }
 
-/// The value `#{window_name}` will resolve to. Under `automatic-rename` the
-/// name comes from the active pane's current command — a `/proc` walk — so
-/// that case stays a deferred computation until a format asks for it.
-enum LazyWindowName {
-    Ready(String),
-    AutomaticRename {
-        fallback: String,
-        probe: Option<crate::server::pane::PaneProcessProbe>,
-        source: String,
-        in_mode: bool,
-    },
-}
-
-impl LazyWindowName {
-    fn set_into(self, vars: &mut Vars) {
-        match self {
-            Self::Ready(name) => {
-                vars.set("window_name", name);
-            }
-            Self::AutomaticRename {
-                fallback,
-                probe,
-                source,
-                in_mode,
-            } => {
-                vars.set_lazy("window_name", move || {
-                    let current = probe
-                        .as_ref()
-                        .and_then(|probe| probe.current_command())
-                        .unwrap_or_default();
-                    let mut rename_vars = format::Vars::new();
-                    rename_vars
-                        .set("pane_current_command", current)
-                        .set("pane_in_mode", if in_mode { "1" } else { "0" })
-                        .set("pane_dead", "0");
-                    let expanded = format::expand(&source, &rename_vars);
-                    if expanded.is_empty() {
-                        fallback.clone()
-                    } else {
-                        expanded
-                    }
-                });
-            }
-        }
-    }
-}
-
 // The `*_mode_format` variables report each choose mode's default line
 // format; tmux exposes them as constant server-wide strings.
 const BUFFER_MODE_DEFAULT_FORMAT: &str = "#{t/p:buffer_created}: #{buffer_sample}";
@@ -4476,43 +4430,17 @@ pub(super) fn vars_full(
     }
     if let Some(link) = sess.windows.get(win_idx) {
         let win = st.window_for_link(link);
-        let window_options = win.options(st.global_options());
-        let active_pane = win.panes.get(win.active);
-        let automatic_rename = window_options
-            .get("automatic-rename")
-            .is_some_and(|value| value == "on" || value == "1");
-        let mut displayed_window_name = LazyWindowName::Ready(win.name.clone());
-        if automatic_rename {
-            if let Some(pane) = active_pane {
-                // Resolving the automatic name walks `/proc` for the pane's
-                // current command, so it is deferred until a format actually
-                // asks for `#{window_name}`.
-                displayed_window_name = LazyWindowName::AutomaticRename {
-                    fallback: win.name.clone(),
-                    probe: pane.pane.process_probe(),
-                    source: window_options
-                        .get("automatic-rename-format")
-                        .unwrap_or("#{pane_current_command}")
-                        .to_string(),
-                    in_mode: pane.mode.is_some(),
-                };
-            }
-        } else if window_options
-            .get("allow-rename")
-            .is_some_and(|value| value == "on" || value == "1")
-        {
-            if let Some(title) = active_pane.and_then(|pane| pane.pane.title()) {
-                if !title.is_empty() {
-                    displayed_window_name = LazyWindowName::Ready(title);
-                }
-            }
-        }
+        // Neither `automatic-rename` nor `allow-rename` is consulted here. Both
+        // are applied to the window when the thing that renames it happens — a
+        // pane's `ESC k`, or the automatic-rename pass — so the stored name is
+        // already what the options made of it, and, as in tmux, does not move
+        // again until something wakes those paths.
         let is_active = win_idx == sess.active;
         let is_last = Some(win_idx) == sess.last_active;
         let active_sessions = st.window_active_session_list(win.id);
         let window_flags = st.printable_window_flags(sess, win_idx, true);
         let window_raw_flags = st.printable_window_flags(sess, win_idx, false);
-        displayed_window_name.set_into(&mut v);
+        v.set("window_name", win.name.clone());
         v.set("window_index", link.index.to_string())
             .set("window_id", format!("@{}", win.id))
             .set("window_panes", win.panes.len().to_string())
@@ -12822,7 +12750,7 @@ mod tests {
                 assert_eq!(cwd, PathBuf::from("/tmp"));
                 assert_eq!(argv, ["/bin/sh", "-c", "sleep 30"]);
             }
-            PaneSpec::Inert | PaneSpec::Command(_) => {
+            PaneSpec::Inert | PaneSpec::Command(_) | PaneSpec::Existing(_) => {
                 panic!("explicit -c must produce a cwd-aware command pane")
             }
         }

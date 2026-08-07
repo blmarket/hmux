@@ -30,6 +30,7 @@ impl AttachSession {
     pub(crate) fn start_in_mode<W>(
         target: &str,
         client_tty: ClientTty,
+        client_flags: super::super::state::ClientFlagState,
         state: &SharedState,
         hub: &StatusHub,
         context: &command::ClientContext,
@@ -105,13 +106,9 @@ impl AttachSession {
             client_tty.client_pid,
             cols,
             rows,
-            super::super::state::ClientFlagState::default().display_flags_full(
-                client_tty.flags,
-                false,
-                true,
-            ),
+            client_flags.display_flags_full(client_tty.flags, false, true),
             client_tty.flags,
-            Default::default(),
+            client_flags,
             false,
         )?;
         let peer_uid = context.peer_uid;

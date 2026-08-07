@@ -1243,22 +1243,7 @@ impl ControlSubscriptions {
 }
 
 fn control_client_options(args: &[String]) -> ControlClientOptions {
-    let mut options = ControlClientOptions::default();
-    let mut index = 0;
-    while index < args.len() {
-        let value = if args[index] == "-f" {
-            index += 1;
-            args.get(index).map(String::as_str)
-        } else {
-            args[index]
-                .strip_prefix("-f")
-                .filter(|value| !value.is_empty())
-        };
-        if let Some(value) = value {
-            options.apply_flags(value);
-        }
-        index += 1;
-    }
+    let mut options = ControlClientOptions::from_attach_args(args);
     if attach_command_has_flag(args, 'r') {
         options.read_only = true;
         options.ignore_size = true;

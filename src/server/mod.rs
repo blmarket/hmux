@@ -213,6 +213,10 @@ impl Server {
         let _ = state.refresh_pane_scrollbars();
         state.process_pane_passthrough();
         state.process_pane_clipboard();
+        state.process_pane_palette_queries();
+        state.expire_terminal_requests();
+        state.process_pane_renames();
+        state.process_window_names();
         state.process_pane_themes();
         Ok(command::take_deferred_notification_hooks(&mut state))
     }

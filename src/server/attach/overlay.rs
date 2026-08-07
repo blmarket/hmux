@@ -35,6 +35,9 @@ struct PopupOverlay {
     /// The popup's own menu, opened by a right-click on its border. It is
     /// drawn over the popup and takes its keys, as tmux's `pd->md` does.
     menu: Option<MenuOverlay>,
+    /// tmux's `pd->close`, set by a menu item that ends the popup rather than
+    /// changing it — the pane conversions, which leave nothing behind to draw.
+    closing: bool,
 }
 
 /// The item list tmux's `popup_menu_items` offers, keyed as it keys them. The
@@ -205,6 +208,7 @@ impl ActiveOverlay {
                         dragging: None,
                         last_pointer: None,
                         menu: None,
+                        closing: false,
                     }),
                     reply,
                 })
@@ -302,7 +306,9 @@ impl ActiveOverlay {
                 Some(mouse) => overlay.handle_mouse(mouse, cols, rows),
                 None => overlay.handle_key(key),
             },
-            OverlayState::Popup(overlay) => overlay.handle_key(key, raw, mouse, cols, rows),
+            OverlayState::Popup(overlay) => {
+                overlay.handle_key(key, raw, mouse, cols, rows, state, target)
+            }
             OverlayState::DisplayPanes(overlay) => overlay.handle_key(key, state, target),
         }
     }
@@ -559,7 +565,14 @@ impl PopupOverlay {
     /// tmux's `popup_key_cb` mouse half and `popup_handle_drag`: a drag that
     /// starts on the border moves the popup with button 1 and resizes it with
     /// button 3. Everything else is the popup program's own.
-    fn handle_mouse(&mut self, mouse: &MouseEvent, cols: u16, rows: u16) -> bool {
+    fn handle_mouse(
+        &mut self,
+        mouse: &MouseEvent,
+        cols: u16,
+        rows: u16,
+        state: &SharedState,
+        target: &str,
+    ) -> bool {
         let place = self.geometry(cols, rows);
         let (x, y) = (mouse.position.x, mouse.position.y);
         let dragging = mouse.kind == MouseEventKind::Drag;
@@ -570,7 +583,13 @@ impl PopupOverlay {
             if outcome.close {
                 let command = outcome.command.unwrap_or_default();
                 self.menu = None;
-                self.run_menu_item(command.get(1).map(String::as_str), cols, rows);
+                self.run_menu_item(
+                    command.get(1).map(String::as_str),
+                    cols,
+                    rows,
+                    state,
+                    target,
+                );
             }
             return true;
         }
@@ -673,10 +692,48 @@ impl PopupOverlay {
     }
 
     /// Run a popup menu item, keyed as tmux keys it.
-    fn run_menu_item(&mut self, key: Option<&str>, cols: u16, rows: u16) {
+    fn run_menu_item(
+        &mut self,
+        key: Option<&str>,
+        cols: u16,
+        rows: u16,
+        state: &SharedState,
+        target: &str,
+    ) {
         let place = self.geometry(cols, rows);
         match key {
             Some("q") => self.exit_status = Some(0),
+            // tmux's `popup_make_pane`: the popup's running child moves into a
+            // new pane split from the window's active one, and the popup is
+            // done — there is nothing left in it to draw.
+            Some(key @ ("h" | "v")) => {
+                let direction = if key == "h" {
+                    super::super::state::SplitDirection::LeftRight
+                } else {
+                    super::super::state::SplitDirection::TopBottom
+                };
+                let Ok(emptied) = Pane::inert(1, 1) else {
+                    return;
+                };
+                let mut pane = std::mem::replace(&mut *self.pane, emptied);
+                // The overlay drove this pane's I/O itself; the loop takes it
+                // back over as soon as the pane is in a window.
+                if let Some(io) = self.io.take() {
+                    pane.restore_event_io(*io);
+                }
+                let inserted = state.borrow_mut().split_window_direction_with_spec(
+                    target,
+                    true,
+                    false,
+                    direction,
+                    super::super::state::PaneSpec::Existing(Box::new(pane)),
+                    None,
+                );
+                if inserted.is_ok() {
+                    self.closing = true;
+                    self.exit_status = Some(0);
+                }
+            }
             Some("F") => {
                 self.placement = Some(PopupPlacement {
                     left: 0,
@@ -739,6 +796,7 @@ impl PopupOverlay {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_key(
         &mut self,
         key: &str,
@@ -746,9 +804,14 @@ impl PopupOverlay {
         mouse: Option<&MouseEvent>,
         cols: u16,
         rows: u16,
+        state: &SharedState,
+        target: &str,
     ) -> OverlayInputOutcome {
         if let Some(mouse) = mouse {
-            if self.handle_mouse(mouse, cols, rows) {
+            if self.handle_mouse(mouse, cols, rows, state, target) {
+                if self.closing {
+                    return OverlayInputOutcome::close(0, None);
+                }
                 return OverlayInputOutcome::stay();
             }
         }
@@ -757,7 +820,16 @@ impl PopupOverlay {
             if outcome.close {
                 let command = outcome.command.unwrap_or_default();
                 self.menu = None;
-                self.run_menu_item(command.get(1).map(String::as_str), cols, rows);
+                self.run_menu_item(
+                    command.get(1).map(String::as_str),
+                    cols,
+                    rows,
+                    state,
+                    target,
+                );
+            }
+            if self.closing {
+                return OverlayInputOutcome::close(0, None);
             }
             return OverlayInputOutcome::stay();
         }

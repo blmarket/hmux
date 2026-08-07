@@ -193,23 +193,102 @@ impl<'a> ChooseOptions<'a> {
     /// order sorts on; an order the command does not know leaves the rows in
     /// the order they were built, as tmux's default does.
     fn sort(&self, rows: &mut [ChooseRow], keys: &[(&str, ChooseSortKey)]) {
-        if let Some(order) = self.order {
-            if let Some((_, key)) = keys.iter().find(|(name, _)| *name == order) {
-                match key {
-                    ChooseSortKey::Text(name) => {
-                        rows.sort_by(|left, right| left.sort_text(name).cmp(&right.sort_text(name)))
-                    }
-                    ChooseSortKey::Number(name) => rows.sort_by(|left, right| {
-                        left.sort_number(name).cmp(&right.sort_number(name))
-                    }),
-                }
-            }
+        if let Some(key) = self.sort_key(keys) {
+            rows.sort_by(|left, right| key.compare(&left.vars, &right.vars));
         }
         if self.reversed {
             rows.reverse();
         }
     }
+
+    /// The key `-O` names, if this command sorts on it.
+    fn sort_key<'k>(&self, keys: &'k [(&str, ChooseSortKey)]) -> Option<&'k ChooseSortKey> {
+        let order = self.order?;
+        keys.iter()
+            .find(|(name, _)| *name == order)
+            .map(|(_, key)| key)
+    }
+
+    /// [`Self::sort`] for the tree, whose rows are two levels rather than one.
+    ///
+    /// tmux's `window_tree_build` sorts the sessions against each other and
+    /// then each session's own windows within it, so a window never leaves the
+    /// session that built it however the sessions are ordered. `-r` reverses
+    /// both levels, again as tmux does by negating its comparators, which keeps
+    /// a session ahead of its windows.
+    fn sort_tree(&self, groups: &mut [TreeGroup]) {
+        // tmux's `window_tree_sort`: an order the tree does not recognize —
+        // including no `-O` at all — falls back to the first of its own
+        // sequence, which is by index.
+        let order = match self.order {
+            Some(order) if TREE_SORT_ORDERS.contains(&order) => order,
+            _ => "index",
+        };
+        // `order` alone reverses the built order rather than comparing
+        // anything, as tmux's `sort_qsort` special-cases it.
+        if order != "order" {
+            let reversed = self.reversed;
+            groups.sort_by(|left, right| {
+                let primary = match order {
+                    "index" => left.id.cmp(&right.id),
+                    "creation" => sort_number(&left.session, "session_created")
+                        .cmp(&sort_number(&right.session, "session_created")),
+                    // Newest first, and against the stamps themselves rather
+                    // than the whole seconds `#{session_activity}` publishes,
+                    // so sessions started within a second of each other still
+                    // have an order.
+                    "activity" => right.activity.cmp(&left.activity),
+                    // `name` and the orders a session has no key for both fall
+                    // to the name, which is every tmux comparator's tiebreak.
+                    _ => std::cmp::Ordering::Equal,
+                };
+                let ordering = primary.then_with(|| {
+                    sort_text(&left.session, "session_name")
+                        .cmp(&sort_text(&right.session, "session_name"))
+                });
+                if reversed {
+                    ordering.reverse()
+                } else {
+                    ordering
+                }
+            });
+            for group in groups.iter_mut() {
+                group.windows.sort_by(|left, right| {
+                    let primary = match order {
+                        "index" => sort_number(&left.row.vars, "window_index")
+                            .cmp(&sort_number(&right.row.vars, "window_index")),
+                        "creation" => left.id.cmp(&right.id),
+                        "activity" => right.activity.cmp(&left.activity),
+                        "size" => sort_area(&left.row.vars).cmp(&sort_area(&right.row.vars)),
+                        _ => std::cmp::Ordering::Equal,
+                    };
+                    let ordering = primary.then_with(|| {
+                        sort_text(&left.row.vars, "window_name")
+                            .cmp(&sort_text(&right.row.vars, "window_name"))
+                    });
+                    if reversed {
+                        ordering.reverse()
+                    } else {
+                        ordering
+                    }
+                });
+            }
+            return;
+        }
+        if self.reversed {
+            groups.reverse();
+            for group in groups {
+                group.windows.reverse();
+            }
+        }
+    }
 }
+
+/// The `-O` values tmux's `sort_order_from_string` knows. Anything else leaves
+/// the tree on its default order rather than sorting on a name hmux invented.
+const TREE_SORT_ORDERS: &[&str] = &[
+    "activity", "creation", "index", "key", "modifier", "name", "order", "size", "z",
+];
 
 /// Which variable an `-O` order compares, and how.
 enum ChooseSortKey {
@@ -217,24 +296,58 @@ enum ChooseSortKey {
     Number(&'static str),
 }
 
+impl ChooseSortKey {
+    fn compare(&self, left: &format::Vars, right: &format::Vars) -> std::cmp::Ordering {
+        match self {
+            Self::Text(name) => sort_text(left, name).cmp(&sort_text(right, name)),
+            Self::Number(name) => sort_number(left, name).cmp(&sort_number(right, name)),
+        }
+    }
+}
+
+fn sort_text(vars: &format::Vars, name: &str) -> String {
+    vars.lookup(name).unwrap_or_default().to_owned()
+}
+
+fn sort_number(vars: &format::Vars, name: &str) -> i64 {
+    vars.lookup(name)
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0)
+}
+
+/// The window area tmux's `SORT_SIZE` compares.
+fn sort_area(vars: &format::Vars) -> i64 {
+    sort_number(vars, "window_width") * sort_number(vars, "window_height")
+}
+
+/// One session's rows on their way into the tree: the session's own row, when
+/// the scope keeps it, and the window rows built underneath it.
+struct TreeGroup {
+    /// The session's variables, which order the group even when `-w` dropped
+    /// the session's own row.
+    session: format::Vars,
+    /// The session id, which tmux's `SORT_INDEX` compares for sessions.
+    id: u32,
+    /// When the session was last active, at the resolution the state keeps it
+    /// rather than the whole seconds the format publishes.
+    activity: i64,
+    session_row: Option<ChooseRow>,
+    windows: Vec<TreeWindow>,
+}
+
+/// A window row with the keys that order it inside its session.
+struct TreeWindow {
+    /// The window id, allocated in creation order as tmux's is.
+    id: u32,
+    activity: i64,
+    row: ChooseRow,
+}
+
 /// One row on its way into a mode tree, with the variables its format, filter
 /// and sort order are all resolved against.
 struct ChooseRow {
     vars: format::Vars,
     item: ModeItem,
-}
-
-impl ChooseRow {
-    fn sort_text(&self, name: &str) -> String {
-        self.vars.lookup(name).unwrap_or_default().to_owned()
-    }
-
-    fn sort_number(&self, name: &str) -> i64 {
-        self.vars
-            .lookup(name)
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(0)
-    }
 }
 
 fn choose_tree(args: &[String], state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
@@ -247,11 +360,18 @@ fn choose_tree(args: &[String], state: &mut ServerState, agents: &PaneAgents) ->
     let sessions_only = has_flag(args, "-s");
     let windows_only = has_flag(args, "-w");
     let marked = state.marked_pane();
-    let mut rows = Vec::new();
+    let mut groups = Vec::new();
     for session in state.sessions() {
         let session_vars = super::vars_for(state, session, session.active, agents, marked);
+        let mut group = TreeGroup {
+            session: session_vars.clone(),
+            id: session.id,
+            activity: session.activity_micros,
+            session_row: None,
+            windows: Vec::new(),
+        };
         if !windows_only && options.keep(state, &session_vars) {
-            rows.push(ChooseRow {
+            group.session_row = Some(ChooseRow {
                 item: ModeItem {
                     label: options.label(
                         state,
@@ -273,6 +393,7 @@ fn choose_tree(args: &[String], state: &mut ServerState, agents: &PaneAgents) ->
             });
         }
         if sessions_only {
+            groups.push(group);
             continue;
         }
         for (position, link) in session.windows.iter().enumerate() {
@@ -282,52 +403,59 @@ fn choose_tree(args: &[String], state: &mut ServerState, agents: &PaneAgents) ->
             if !options.keep(state, &window_vars) {
                 continue;
             }
-            rows.push(ChooseRow {
-                item: ModeItem {
-                    label: options.label(
-                        state,
-                        &window_vars,
-                        format!(
-                            "  {}: {} ({} panes)",
-                            link.index,
-                            window.name,
-                            window.panes.len()
+            group.windows.push(TreeWindow {
+                id: window.id,
+                activity: window.activity_epoch,
+                row: ChooseRow {
+                    item: ModeItem {
+                        label: options.label(
+                            state,
+                            &window_vars,
+                            format!(
+                                "  {}: {} ({} panes)",
+                                link.index,
+                                window.name,
+                                window.panes.len()
+                            ),
                         ),
-                    ),
-                    command: template.map_or_else(
-                        || {
-                            vec![
-                                "select-window".to_string(),
-                                "-t".to_string(),
-                                target.clone(),
-                                ";".to_string(),
-                                "switch-client".to_string(),
-                                "-t".to_string(),
-                                session.name.clone(),
-                            ]
-                        },
-                        |template| template_command(template, &target),
-                    ),
-                    prompt_target: Some(format!("={}:{}.", session.name, link.index)),
-                    edit: None,
-                    tagged: false,
-                    preview_target: Some(format!("={}:{}.", session.name, link.index)),
-                    depth: 0,
-                    expanded: None,
+                        command: template.map_or_else(
+                            || {
+                                vec![
+                                    "select-window".to_string(),
+                                    "-t".to_string(),
+                                    target.clone(),
+                                    ";".to_string(),
+                                    "switch-client".to_string(),
+                                    "-t".to_string(),
+                                    session.name.clone(),
+                                ]
+                            },
+                            |template| template_command(template, &target),
+                        ),
+                        prompt_target: Some(format!("={}:{}.", session.name, link.index)),
+                        edit: None,
+                        tagged: false,
+                        preview_target: Some(format!("={}:{}.", session.name, link.index)),
+                        depth: 0,
+                        expanded: None,
+                    },
+                    vars: window_vars,
                 },
-                vars: window_vars,
             });
         }
+        groups.push(group);
     }
-    options.sort(
-        &mut rows,
-        &[
-            ("name", ChooseSortKey::Text("session_name")),
-            ("index", ChooseSortKey::Number("window_index")),
-            ("time", ChooseSortKey::Number("session_activity")),
-        ],
-    );
-    let items = rows.into_iter().map(|row| row.item).collect();
+    options.sort_tree(&mut groups);
+    let items = groups
+        .into_iter()
+        .flat_map(|group| {
+            group
+                .session_row
+                .into_iter()
+                .chain(group.windows.into_iter().map(|window| window.row))
+        })
+        .map(|row| row.item)
+        .collect();
     let mut view = ModeView::list(ModeKind::Tree, "Tree", items);
     // tmux shows the preview unless `-N` asks it not to.
     view.preview = !has_flag(args, "-N");

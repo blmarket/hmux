@@ -53,11 +53,15 @@ pub enum PaneSpec {
     Command(Vec<String>),
     /// Spawn this argv with an explicit working directory.
     CommandIn(Vec<String>, std::path::PathBuf),
+    /// A pane that already exists, with its child still running, moving into
+    /// the layout — tmux's `job_transfer` out of a popup into a new pane. Its
+    /// previous owner restores the loop registration before handing it over.
+    Existing(Box<Pane>),
 }
 
 fn pane_start_command(spec: &PaneSpec) -> String {
     let argv = match spec {
-        PaneSpec::Inert => return String::new(),
+        PaneSpec::Inert | PaneSpec::Existing(_) => return String::new(),
         PaneSpec::Command(argv) | PaneSpec::CommandIn(argv, _) => argv,
     };
     if let Some(command) = argv
@@ -120,6 +124,11 @@ pub struct PaneNode {
     /// so the grid the mode froze is behind the pane. Cleared when the mode
     /// goes, which is why the format reads it together with `mode`.
     pub(crate) unseen_changes: bool,
+    /// tmux's `wp->active_point`: when this pane was last made the active one,
+    /// on a server-wide counter. It is what `-O activity` orders panes by, and
+    /// the only record of how recently a pane was looked at — a pane that has
+    /// never been selected keeps the initial 0.
+    pub(crate) active_point: u64,
     options: OptionSet,
 }
 
@@ -2041,6 +2050,15 @@ pub struct Window {
     /// tmux's `w->activity_time`, which `#{window_activity}` reports. Written
     /// once, by `window_create`, so it is the window's creation time.
     pub(crate) activity_epoch: i64,
+    /// tmux's `w->name_time`: when `automatic-rename` last re-derived this
+    /// window's name. It rate-limits the re-derivation to one per
+    /// `NAME_INTERVAL`.
+    pub(crate) name_time_micros: i64,
+    /// Whether the active pane was in a mode when the name was last derived.
+    /// tmux flags the pane changed as it enters and leaves a mode, since
+    /// `automatic-rename-format` reads `#{pane_in_mode}`; hmux compares the
+    /// value instead, so every path in and out of a mode is covered.
+    pub(crate) name_in_mode: bool,
     /// Which side `pane-scrollbars-position` puts a scrollbar on, cached
     /// alongside the per-pane reservation it applies to.
     pub(crate) scrollbars_on_left: bool,
@@ -2484,6 +2502,47 @@ pub(crate) struct ClientSnapshot {
     pub(crate) written: u64,
 }
 
+/// A question a pane asked that only the attached terminal can answer, waiting
+/// for the answer to come back through that client's input — tmux's
+/// `input_request`.
+#[derive(Clone, Debug)]
+pub(crate) struct TerminalRequest {
+    /// The client the question went to. Its input is the only place the answer
+    /// can arrive, so an answer from any other client is not this one's.
+    client: String,
+    /// The pane that asked, which is where the answer is written. It is not
+    /// necessarily the client's active pane — that is the whole point of
+    /// remembering the request.
+    pane_id: u32,
+    kind: TerminalRequestKind,
+    at: Instant,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TerminalRequestKind {
+    /// OSC 4: the palette entry asked about, and whether the pane's question
+    /// ended with BEL, which is how its answer ends too.
+    Palette { index: u8, bel: bool },
+    /// OSC 52: a clipboard read. `bel` again mirrors the pane's question.
+    Clipboard { bel: bool },
+}
+
+/// What an attached terminal answered, as the client's input parser recovered
+/// it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum TerminalReply {
+    Palette {
+        index: u8,
+        /// The colour packed as `0xrrggbb`.
+        colour: u32,
+    },
+    Clipboard {
+        /// The selection letter the terminal named, if it named one.
+        selection: Option<u8>,
+        data: Vec<u8>,
+    },
+}
+
 /// The client-side inputs of the oversized-window viewport calculation.
 #[derive(Clone, Copy)]
 pub(crate) struct ViewportClient {
@@ -2585,6 +2644,29 @@ pub(crate) struct ClientFlagState {
 }
 
 impl ClientFlagState {
+    /// The flags an attach command's `-f` carries, in either of the spellings
+    /// the option parser accepts. tmux hands the value straight to
+    /// `server_client_set_flags` as the client attaches.
+    pub(crate) fn from_attach_args(args: &[String]) -> Self {
+        let mut flags = Self::default();
+        let mut index = 0;
+        while index < args.len() {
+            let value = if args[index] == "-f" {
+                index += 1;
+                args.get(index).map(String::as_str)
+            } else {
+                args[index]
+                    .strip_prefix("-f")
+                    .filter(|value| !value.is_empty())
+            };
+            if let Some(value) = value {
+                flags.apply_flags(value);
+            }
+            index += 1;
+        }
+        flags
+    }
+
     pub(crate) fn apply_flags(&mut self, value: &str) {
         for flag in value.split(',') {
             let (clear, flag) = flag
@@ -2954,6 +3036,45 @@ impl ClientRenderRegistry {
     /// Queue bytes an application wrote for the terminals of every non-control
     /// client of `sessions`. tmux's `tty_client_ready` skips a client with no
     /// terminal of its own, which is what leaves control clients out.
+    /// Write straight to one named client's terminal, for the questions a pane
+    /// asks that only that client can answer.
+    fn write_client_output_named(&self, client: &str, bytes: &[u8]) {
+        let inner = self.inner.borrow();
+        let Some(entry) = inner
+            .clients
+            .values()
+            .find(|entry| entry.name == client && !entry.control_mode)
+        else {
+            return;
+        };
+        {
+            let mut queued = entry.slot.client_output.borrow_mut();
+            queued.push_back(bytes.to_vec());
+        }
+        let _ = entry.slot.wakeup.wake();
+    }
+
+    /// Whether a `refresh-client -l` question to this client is still waiting
+    /// for its answer — tmux's `TTY_OSC52QUERY`.
+    fn clipboard_query_outstanding(&self, client: &str) -> bool {
+        self.inner
+            .borrow()
+            .clients
+            .values()
+            .any(|entry| entry.name == client && entry.clipboard_query_at.is_some())
+    }
+
+    /// Clear that flag, reporting whether it was set, so the answer is turned
+    /// into a paste buffer exactly once.
+    fn take_clipboard_query(&self, client: &str) -> bool {
+        let mut inner = self.inner.borrow_mut();
+        inner
+            .clients
+            .values_mut()
+            .find(|entry| entry.name == client)
+            .is_some_and(|entry| entry.clipboard_query_at.take().is_some())
+    }
+
     fn write_client_output(&self, sessions: &BTreeSet<u32>, bytes: &[u8]) {
         let inner = self.inner.borrow();
         for entry in inner
@@ -3956,9 +4077,38 @@ impl Session {
     }
 }
 
+/// tmux's `next_active_point`, a counter shared by every window on the server:
+/// each pane that becomes active takes the next value, so the numbers order the
+/// panes by how recently they were active.
+fn next_active_point() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 impl Window {
     pub(crate) fn options<'a>(&'a self, globals: &'a GlobalOptions) -> OptionsView<'a> {
         OptionsView::two(&self.options, globals.window())
+    }
+
+    /// tmux's `window_set_active_pane`: make `index` the active pane and stamp
+    /// it with the moment it became active. A pane that was already active is
+    /// left alone, as tmux's early return leaves it — re-selecting the pane you
+    /// are in does not move it up the activity order.
+    ///
+    /// Paths that merely re-point `active` at the same pane after the indexes
+    /// around it shifted assign the field directly instead; nothing became
+    /// active there.
+    pub(crate) fn set_active_pane(&mut self, index: usize) {
+        if self.active == index {
+            return;
+        }
+        self.active = index;
+        if let Some(node) = self.panes.get_mut(index) {
+            node.active_point = next_active_point();
+            // tmux flags the pane it just made active as changed, so the window
+            // takes its name from whatever is running in the new pane.
+            node.pane.observation_state().note_changed();
+        }
     }
 
     pub(crate) fn option_overrides(&self) -> &OptionSet {
@@ -4375,6 +4525,9 @@ pub struct ServerState {
     alert_check_sessions: BTreeSet<u32>,
     /// The theme last announced to each pane subscribed with DECSET 2031.
     pane_theme_pushed: BTreeMap<u32, String>,
+    /// Questions put to an attached terminal on a pane's behalf and still
+    /// waiting for it to answer — tmux's `input_request` list.
+    terminal_requests: Vec<TerminalRequest>,
     /// Panes currently holding focus, so the focus hooks fire only on a change.
     focused_panes: BTreeSet<u32>,
     /// Event notifications raised by mutations since the command queue last
@@ -4515,6 +4668,7 @@ impl ServerState {
             alert_check_sessions: BTreeSet::new(),
             focused_panes: BTreeSet::new(),
             pane_theme_pushed: BTreeMap::new(),
+            terminal_requests: Vec::new(),
             pending_notifications: Vec::new(),
             notifications_are_deferred: false,
             known_clients: BTreeMap::new(),
@@ -6525,6 +6679,15 @@ impl ServerState {
         if name == "monitor-silence" {
             self.reset_silence_timers();
         }
+        if name == "automatic-rename" {
+            // tmux's `options_push_changes`: turning the option on has to name
+            // the window even though nothing in the pane moved.
+            for window in self.windows.values() {
+                if let Some(node) = window.panes.get(window.active) {
+                    node.pane.observation_state().note_changed();
+                }
+            }
+        }
         if option_affects_render(name) {
             self.invalidate_all_clients(option_invalidation(name));
         }
@@ -6815,6 +6978,9 @@ impl ServerState {
                 let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
                 Pane::spawn(&refs, Some(&cwd), cols, rows)?
             }
+            // Only the popup conversion produces one of these, and it splits an
+            // existing window rather than creating a session.
+            PaneSpec::Existing(pane) => *pane,
         };
 
         let session_id = self.next_session_id;
@@ -6850,12 +7016,15 @@ impl ServerState {
                     scrollbar_columns: 0,
                     border_status: None,
                     unseen_changes: false,
+                    active_point: 0,
                     options: OptionSet::default(),
                 }],
                 active: 0,
                 last_pane: None,
                 zoomed: false,
                 activity_epoch: now_epoch(),
+                name_time_micros: 0,
+                name_in_mode: false,
                 scrollbars_on_left: false,
                 cols,
                 rows,
@@ -7241,12 +7410,15 @@ impl ServerState {
                     scrollbar_columns: 0,
                     border_status: None,
                     unseen_changes: false,
+                    active_point: 0,
                     options: OptionSet::default(),
                 }],
                 active: 0,
                 last_pane: None,
                 zoomed: false,
                 activity_epoch: now_epoch(),
+                name_time_micros: 0,
+                name_in_mode: false,
                 scrollbars_on_left: false,
                 cols,
                 rows,
@@ -7391,12 +7563,15 @@ impl ServerState {
                     scrollbar_columns: 0,
                     border_status: None,
                     unseen_changes: false,
+                    active_point: 0,
                     options: OptionSet::default(),
                 }],
                 active: 0,
                 last_pane: None,
                 zoomed: false,
                 activity_epoch: now_epoch(),
+                name_time_micros: 0,
+                name_in_mode: false,
                 scrollbars_on_left: false,
                 cols,
                 rows,
@@ -8524,9 +8699,9 @@ impl ServerState {
     ///
     /// Applications may only touch the clipboard under `set-clipboard on`; the
     /// sequence is not even parsed otherwise. A query is then answered from the
-    /// newest paste buffer when `get-clipboard` is `buffer`, and forwarded to
-    /// the client's terminal under `request`/`both` — which hmux does not do
-    /// yet, so those requests go unanswered exactly as they do with no client.
+    /// newest paste buffer when `get-clipboard` is `buffer`, and put to the
+    /// client's own terminal under `request`/`both`, whose answer comes back
+    /// through [`Self::deliver_terminal_reply`].
     pub(crate) fn process_pane_clipboard(&mut self) {
         let panes = self
             .windows
@@ -8561,11 +8736,23 @@ impl ServerState {
                         if forward_to_terminal {
                             // tmux's `input_add_request`: ask the client's own
                             // terminal instead, with the `Ms` capability the
-                            // clipboard writes already use. Turning its answer
-                            // back into a paste buffer needs the reply path,
-                            // which is still missing, so the pane goes
-                            // unanswered exactly as it does with no client.
-                            self.set_client_selection(None, None, None);
+                            // clipboard writes already use, and remember which
+                            // pane is owed the answer. With no client to ask,
+                            // the pane goes unanswered as it does in tmux.
+                            let Some(client) = self.request_client_for_pane(pane_id) else {
+                                continue;
+                            };
+                            if self.set_client_selection(Some(&client), None, None)
+                                == ClientActionResult::Queued
+                            {
+                                self.add_terminal_request(
+                                    client,
+                                    pane_id,
+                                    TerminalRequestKind::Clipboard {
+                                        bel: !string_terminator,
+                                    },
+                                );
+                            }
                             continue;
                         }
                         if !answer_from_buffer {
@@ -8588,6 +8775,289 @@ impl ServerState {
                     }
                 }
             }
+        }
+    }
+
+    /// Put each pane's OSC 4 questions about palette entries it does not hold
+    /// to an attached terminal, mirroring tmux's `input_osc_4` falling through
+    /// to `input_add_request`.
+    pub(crate) fn process_pane_palette_queries(&mut self) {
+        let panes = self
+            .windows
+            .values()
+            .flat_map(|window| window.panes.iter())
+            .map(|node| (node.id, node.pane.observation_state()))
+            .collect::<Vec<_>>();
+        for (pane_id, observation) in panes {
+            for (index, bel) in observation.take_palette_queries() {
+                let Some(client) = self.request_client_for_pane(pane_id) else {
+                    continue;
+                };
+                // tmux asks with a string terminator whatever the pane used;
+                // only the answer it writes back mirrors the pane's own.
+                self.client_renders.write_client_output_named(
+                    &client,
+                    format!("\x1b]4;{index};?\x1b\\").as_bytes(),
+                );
+                self.add_terminal_request(
+                    client,
+                    pane_id,
+                    TerminalRequestKind::Palette { index, bel },
+                );
+            }
+        }
+    }
+
+    /// Write `data` to the terminal selection of every client showing this
+    /// window, which is the client walk `tty_write` does for any other pane
+    /// output.
+    fn write_window_selection(&self, window_id: u32, data: Vec<u8>) {
+        let sessions = self
+            .sessions
+            .iter()
+            .filter(|session| {
+                session
+                    .windows
+                    .get(session.active)
+                    .is_some_and(|link| link.id == window_id)
+            })
+            .map(|session| session.id)
+            .collect::<BTreeSet<_>>();
+        for client in self
+            .client_snapshots()
+            .into_iter()
+            .filter(|client| !client.control_mode && sessions.contains(&client.session_id))
+        {
+            self.set_client_selection(Some(&client.name), None, Some(data.clone()));
+        }
+    }
+
+    /// The client tmux's `input_add_request` would ask on this pane's behalf:
+    /// the most recently active attached client whose session can see the
+    /// pane's window.
+    fn request_client_for_pane(&self, pane_id: u32) -> Option<String> {
+        let window_id = self
+            .windows
+            .values()
+            .find(|window| window.panes.iter().any(|node| node.id == pane_id))
+            .map(|window| window.id)?;
+        let sessions = self
+            .sessions
+            .iter()
+            .filter(|session| session.windows.iter().any(|link| link.id == window_id))
+            .map(|session| session.id)
+            .collect::<BTreeSet<_>>();
+        self.client_snapshots()
+            .into_iter()
+            .filter(|client| !client.control_mode && sessions.contains(&client.session_id))
+            .max_by_key(|client| client.activity_micros)
+            .map(|client| client.name)
+    }
+
+    fn add_terminal_request(&mut self, client: String, pane_id: u32, kind: TerminalRequestKind) {
+        self.terminal_requests.push(TerminalRequest {
+            client,
+            pane_id,
+            kind,
+            at: Instant::now(),
+        });
+    }
+
+    /// Whether anything is still owed an answer from this client's terminal,
+    /// which is what makes its input worth scanning for one.
+    pub(crate) fn client_awaits_terminal_reply(&self, client: &str) -> bool {
+        self.terminal_requests
+            .iter()
+            .any(|request| request.client == client)
+            || self.client_renders.clipboard_query_outstanding(client)
+    }
+
+    /// tmux's `input_request_timer_callback`: a question the terminal never
+    /// answered stops being owed an answer.
+    pub(crate) fn expire_terminal_requests(&mut self) {
+        /// tmux's `INPUT_REQUEST_TIMEOUT`.
+        const TIMEOUT: Duration = Duration::from_millis(500);
+        let now = Instant::now();
+        self.terminal_requests
+            .retain(|request| now.saturating_duration_since(request.at) < TIMEOUT);
+    }
+
+    /// Route what an attached terminal answered, mirroring tmux's
+    /// `input_request_reply`.
+    ///
+    /// The answer goes to the pane that asked, not to the client's active pane:
+    /// the request records which one that was. A clipboard answer additionally
+    /// becomes a paste buffer when `get-clipboard both` asked for one, or when
+    /// the question came from `refresh-client -l` rather than from a pane.
+    pub(crate) fn deliver_terminal_reply(&mut self, client: &str, reply: TerminalReply) {
+        if let TerminalReply::Clipboard { data, .. } = &reply {
+            // tmux's `TTY_OSC52QUERY`: `refresh-client -l` keeps its own
+            // outstanding-query flag, and the answer both fills a buffer and
+            // releases the flag so the next `-l` can ask again.
+            if self.client_renders.take_clipboard_query(client) && !data.is_empty() {
+                let data = data.clone();
+                self.set_buffer(None, &data);
+            }
+        }
+        let matching = self.terminal_requests.iter().position(|request| {
+            request.client == client
+                && match (&request.kind, &reply) {
+                    (
+                        TerminalRequestKind::Palette { index, .. },
+                        TerminalReply::Palette { index: replied, .. },
+                    ) => index == replied,
+                    (TerminalRequestKind::Clipboard { .. }, TerminalReply::Clipboard { .. }) => {
+                        true
+                    }
+                    _ => false,
+                }
+        });
+        let Some(matching) = matching else {
+            return;
+        };
+        let request = self.terminal_requests.remove(matching);
+        match (request.kind, reply) {
+            (
+                TerminalRequestKind::Palette { index, bel },
+                TerminalReply::Palette { colour, .. },
+            ) => {
+                let (r, g, b) = ((colour >> 16) as u8, (colour >> 8) as u8, colour as u8);
+                let terminator = if bel { "\x07" } else { "\x1b\\" };
+                let answer = format!(
+                    "\x1b]4;{index};rgb:{r:02x}{r:02x}/{g:02x}{g:02x}/{b:02x}{b:02x}{terminator}"
+                );
+                let _ = self.write_pane_input(request.pane_id, answer.as_bytes());
+            }
+            (
+                TerminalRequestKind::Clipboard { bel },
+                TerminalReply::Clipboard { selection, data },
+            ) => {
+                // tmux re-reads `get-clipboard` when the answer lands: `both`
+                // keeps a copy for itself as well as answering the pane.
+                match self
+                    .server_options()
+                    .get("get-clipboard")
+                    .unwrap_or("buffer")
+                {
+                    "both" => self.set_buffer(None, &data),
+                    "request" => {}
+                    // `off` and `buffer` never asked the terminal anything.
+                    _ => return,
+                }
+                let selection = selection.map(char::from).unwrap_or('c');
+                let mut answer = format!(
+                    "\x1b]52;{selection};{}",
+                    super::cmd_send_keys::base64_encode(&data)
+                )
+                .into_bytes();
+                answer.extend_from_slice(if bel { b"\x07" } else { b"\x1b\\" });
+                let _ = self.write_pane_input(request.pane_id, &answer);
+            }
+            _ => {}
+        }
+    }
+
+    /// Apply the `allow-rename` policy to the `ESC k … ST` renames panes
+    /// emitted since the last pass, mirroring tmux's `input_exit_rename`.
+    ///
+    /// The option decides a rename once, when it is drained, and a refused
+    /// rename is dropped: turning `allow-rename` on later does not replay a
+    /// name the pane sent while it was off. An empty payload is tmux's request
+    /// to fall back to the automatic name, which hmux resolves from the pane's
+    /// command whenever `automatic-rename` is on, so there is nothing to store.
+    pub(crate) fn process_pane_renames(&mut self) {
+        let mut renamed = Vec::new();
+        for window in self.windows.values() {
+            for node in &window.panes {
+                let allowed = node
+                    .options(window, &self.global_options)
+                    .get("allow-rename")
+                    .is_some_and(|value| value == "on" || value == "1");
+                // Drained either way: a refused rename must not outlive the
+                // option that refused it.
+                let queued = node.pane.observation_state().take_renames();
+                let Some(name) = queued.into_iter().next_back() else {
+                    continue;
+                };
+                if allowed && !name.is_empty() {
+                    renamed.push((window.id, name));
+                }
+            }
+        }
+        for (window_id, name) in renamed {
+            // tmux also clears `automatic-rename` here; hmux does not, which is
+            // the difference gap07's rename test records.
+            let _ = self.set_window_name(&format!("@{window_id}"), &name, false);
+        }
+    }
+
+    /// tmux's `check_window_name`, run once per server loop: re-derive the name
+    /// of every `automatic-rename` window whose active pane has changed since
+    /// the last pass, and store it.
+    ///
+    /// The name is stored rather than resolved whenever a format asks for it,
+    /// because that is what makes it lag: a pane that execs a different command
+    /// without printing anything keeps the name it already had, since nothing
+    /// tells the server to look again. One re-derivation per `NAME_INTERVAL`
+    /// keeps a chatty pane from walking `/proc` on every pass.
+    pub(crate) fn process_window_names(&mut self) {
+        /// tmux's `NAME_INTERVAL`.
+        const NAME_INTERVAL_MICROS: i64 = 500_000;
+        let now = now_micros();
+        let mut pending = Vec::new();
+        for window in self.windows.values() {
+            let options = window.options(&self.global_options);
+            if !options
+                .get("automatic-rename")
+                .is_some_and(|value| value == "on" || value == "1")
+            {
+                continue;
+            }
+            let Some(node) = window.panes.get(window.active) else {
+                continue;
+            };
+            let observation = node.pane.observation_state();
+            let in_mode = node.mode.is_some();
+            if (!observation.changed() && in_mode == window.name_in_mode)
+                || now.saturating_sub(window.name_time_micros) < NAME_INTERVAL_MICROS
+            {
+                continue;
+            }
+            pending.push((
+                window.id,
+                observation,
+                options
+                    .get("automatic-rename-format")
+                    .unwrap_or("#{pane_current_command}")
+                    .to_string(),
+                node.pane.process_probe(),
+                in_mode,
+                window.name.clone(),
+            ));
+        }
+        for (window_id, observation, source, probe, in_mode, current) in pending {
+            observation.clear_changed();
+            if let Some(window) = self.windows.get_mut(&window_id) {
+                window.name_time_micros = now;
+                window.name_in_mode = in_mode;
+            }
+            let mut vars = super::format::Vars::new();
+            vars.set(
+                "pane_current_command",
+                probe
+                    .as_ref()
+                    .and_then(super::pane::PaneProcessProbe::current_command)
+                    .unwrap_or_default(),
+            )
+            .set("pane_in_mode", if in_mode { "1" } else { "0" })
+            .set("pane_dead", "0");
+            let name = super::format::expand(&source, &vars);
+            // An empty name would blank the window; tmux's `format_window_name`
+            // cannot produce one, and hmux keeps the name it has instead.
+            if name.is_empty() || name == current {
+                continue;
+            }
+            let _ = self.rename_window_automatically(&format!("@{window_id}"), &name);
         }
     }
 
@@ -8909,6 +9379,9 @@ impl ServerState {
                 let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
                 Pane::spawn(&refs, Some(&cwd), cols, rows)?
             }
+            // The child is already running and its pty already open: this pane
+            // only changes owner.
+            PaneSpec::Existing(pane) => *pane,
         };
         let pane_id = self.next_pane_id;
         self.next_pane_id += 1;
@@ -8951,6 +9424,7 @@ impl ServerState {
                 scrollbar_columns: 0,
                 border_status: None,
                 unseen_changes: false,
+                active_point: 0,
                 options: OptionSet::default(),
             },
         );
@@ -8966,7 +9440,7 @@ impl ServerState {
         let window_id = win.id;
         let active_changed = if select {
             win.last_pane = Some(shifted_old);
-            win.active = insert_at;
+            win.set_active_pane(insert_at);
             true
         } else {
             win.active = shifted_old;
@@ -9052,6 +9526,7 @@ impl ServerState {
                 scrollbar_columns: 0,
                 border_status: None,
                 unseen_changes: false,
+                active_point: 0,
                 options: OptionSet::default(),
             },
         );
@@ -9062,7 +9537,7 @@ impl ServerState {
         };
         if select {
             window.last_pane = Some(shifted_old);
-            window.active = insert_at;
+            window.set_active_pane(insert_at);
         } else {
             window.active = shifted_old;
         }
@@ -9090,7 +9565,7 @@ impl ServerState {
         let previous_active = win.active;
         if t.pane != win.active {
             win.last_pane = Some(win.active);
-            win.active = t.pane;
+            win.set_active_pane(t.pane);
             self.invalidate_session(
                 session_id,
                 RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
@@ -9195,7 +9670,7 @@ impl ServerState {
             .position(|pane| pane.id == next_id)
             .expect("layout pane belongs to window");
         win.last_pane = Some(win.active);
-        win.active = next;
+        win.set_active_pane(next);
         self.invalidate_session(
             session_id,
             RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
@@ -10344,6 +10819,8 @@ impl ServerState {
                 last_pane: None,
                 zoomed: false,
                 activity_epoch: now_epoch(),
+                name_time_micros: 0,
+                name_in_mode: false,
                 scrollbars_on_left: false,
                 cols: source_size.0,
                 rows: source_size.1,
@@ -14265,12 +14742,16 @@ impl ServerState {
         // A copy that produced data writes the terminal selection unless
         // `set-clipboard` is `off`, and tmux notifies the pane whenever it
         // does — including under `external`, where the write is the client's.
-        if result.is_some()
-            && self
-                .option_for_target(target, "set-clipboard")
+        if let Some(copied) = result.as_ref().filter(|_| {
+            self.option_for_target(target, "set-clipboard")
                 .is_none_or(|value| value != "off")
-        {
-            let pane_id = self.window(resolved.session, resolved.window).panes[resolved.pane].id;
+        }) {
+            let window = self.window(resolved.session, resolved.window);
+            let (window_id, pane_id) = (window.id, window.panes[resolved.pane].id);
+            // tmux's `screen_write_setselection` with an empty selection name,
+            // written through the same `Ms` capability and to the same clients
+            // as any other pane output: those with the window on screen.
+            self.write_window_selection(window_id, copied.clone().into_bytes());
             self.notify_pane("pane-set-clipboard", pane_id);
         }
         Ok(result)
@@ -14386,6 +14867,7 @@ impl ServerState {
             scrollbar_columns: 0,
             border_status: None,
             unseen_changes: false,
+            active_point: 0,
             options: OptionSet::default(),
         });
         window.layout.keep_only(id);

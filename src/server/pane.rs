@@ -372,10 +372,20 @@ pub(crate) struct NativePaneObservation {
     /// here rather than read back from Ghostty because tmux's limit on it is
     /// `input-buffer-size`, and Ghostty's is its own.
     announced_title: RefCell<Option<String>>,
-    /// The title the pane last set with the screen-family `ESC k … ST` control.
-    /// Nothing downstream recognizes that sequence, so it is reported straight
-    /// out of the tokenizer; `#{pane_title}` prefers it over an OSC title.
-    screen_title: RefCell<Option<String>>,
+    /// OSC 4 questions about palette entries the pane does not hold, waiting
+    /// for the server to put them to an attached terminal. Each carries the
+    /// terminator the pane asked with, because that is what its answer uses.
+    palette_queries: RefCell<VecDeque<(u8, bool)>>,
+    /// tmux's `PANE_CHANGED`: something happened in this pane that could change
+    /// the name `automatic-rename` derives from it — output arrived, or the
+    /// pane became the active one. Cleared by the pass that re-derives the name.
+    changed: Cell<bool>,
+    /// `ESC k … ST` renames the pane's window emitted, waiting for the server
+    /// to apply the `allow-rename` policy to them. Queued like the clipboard
+    /// events so the option decides each rename once, as tmux's
+    /// `input_exit_rename` does, instead of being consulted afresh every time a
+    /// format asks for the window's name.
+    renames: RefCell<VecDeque<String>>,
     /// The options that decide what the pane's own output is allowed to do.
     output_policy: PaneOutputPolicyCell,
     /// The pane's one tokenizer. Every query reply, OSC state change, mode
@@ -831,7 +841,10 @@ impl NativePaneObservation {
             clipboard_events: RefCell::new(VecDeque::new()),
             passthrough: RefCell::new(VecDeque::new()),
             announced_title: RefCell::new(None),
-            screen_title: RefCell::new(None),
+            palette_queries: RefCell::new(VecDeque::new()),
+            // A pane that has produced nothing yet still needs naming once.
+            changed: Cell::new(true),
+            renames: RefCell::new(VecDeque::new()),
             observer: RefCell::new(Observer::default()),
             output_policy: PaneOutputPolicyCell::default(),
         }
@@ -958,6 +971,33 @@ impl NativePaneObservation {
         self.clipboard_events.borrow_mut().drain(..).collect()
     }
 
+    pub(crate) fn take_renames(&self) -> Vec<String> {
+        self.renames.borrow_mut().drain(..).collect()
+    }
+
+    /// The palette questions this pane has for the attached terminal, as
+    /// `(index, answer with BEL)` pairs.
+    pub(crate) fn take_palette_queries(&self) -> Vec<(u8, bool)> {
+        self.palette_queries.borrow_mut().drain(..).collect()
+    }
+
+    /// tmux's `wp->flags |= PANE_CHANGED`, for the changes the pane itself does
+    /// not see: it became the active pane, or entered a mode.
+    pub(crate) fn note_changed(&self) {
+        self.changed.set(true);
+    }
+
+    /// Whether anything has happened in this pane since the last automatic
+    /// rename. Peeked rather than taken, because a rename the interval defers
+    /// still has to happen on a later pass.
+    pub(crate) fn changed(&self) -> bool {
+        self.changed.get()
+    }
+
+    pub(crate) fn clear_changed(&self) {
+        self.changed.set(false);
+    }
+
     /// Feed one chunk of the pane's output through its tokenizer and apply
     /// everything the parse reports.
     ///
@@ -1015,11 +1055,16 @@ impl NativePaneObservation {
                 let mut announced = self.announced_title.borrow_mut();
                 *announced = Some(title);
             }
-            // tmux's `ESC k` renames the window; hmux has always reported it as
-            // the pane's own title instead.
+            // `ESC k` renames the window rather than retitling the pane, so it
+            // is queued for the server instead of touching `announced_title`.
             VtEvent::Rename(title) => {
-                let mut screen_title = self.screen_title.borrow_mut();
-                *screen_title = Some(title);
+                let mut renames = self.renames.borrow_mut();
+                // As with the clipboard queue, an application that outruns the
+                // server loop loses the excess rather than growing the server.
+                // Only the last rename is observable anyway.
+                if renames.len() < 16 {
+                    renames.push_back(title);
+                }
             }
             VtEvent::AlternateScreen(on) => self.alternate_on.set(on),
             VtEvent::SaveAlternateCursor => {
@@ -1087,6 +1132,14 @@ impl NativePaneObservation {
                 }
             }
             VtEvent::ForwardQuery(query) => queries.push(query),
+            VtEvent::PaletteQuery { index, end } => {
+                let mut queued = self.palette_queries.borrow_mut();
+                // Bounded like the clipboard queue: a pane that outruns the
+                // server loop loses the excess rather than growing the server.
+                if queued.len() < 16 {
+                    queued.push_back((index, end == StringEnd::Bell));
+                }
+            }
             VtEvent::Osc(update) => {
                 let slot_value = match update {
                     OscUpdate::Background(colour) => Some((&self.background, colour)),
@@ -1136,6 +1189,7 @@ impl NativePaneObservation {
             let mut at = self.last_output_at.borrow_mut();
             *at = Some(Instant::now());
         }
+        self.changed.set(true);
         if let Some(timing) = self.output_timing.as_ref() {
             {
                 let mut at = timing.last_at.borrow_mut();
@@ -1464,6 +1518,12 @@ impl Pane {
 
     pub(crate) fn take_event_io(&mut self) -> Option<PaneIo> {
         self.event_io.take()
+    }
+
+    /// Give back the loop registration [`Self::take_event_io`] handed out, for
+    /// a pane that changes owner without its child restarting.
+    pub(crate) fn restore_event_io(&mut self, io: PaneIo) {
+        self.event_io = Some(io);
     }
 
     pub(crate) fn pipe_active(&self) -> bool {
@@ -1844,19 +1904,6 @@ impl Pane {
 
     pub(crate) fn background_color(&self) -> String {
         self.observation.background.borrow().clone()
-    }
-
-    /// Latest title advertised by the child, preferring the screen/tmux
-    /// `ESC k … ST` form over an OSC title, as this pane has always reported.
-    /// Both come out of the tokenizer rather than being read back from the
-    /// screen backend, which does not recognize the former and applies its own
-    /// length limit to the latter.
-    pub(crate) fn title(&self) -> Option<String> {
-        self.observation
-            .screen_title
-            .borrow()
-            .clone()
-            .or_else(|| self.observation.announced_title())
     }
 
     /// The current screen as VT escape sequences, suitable for writing to a

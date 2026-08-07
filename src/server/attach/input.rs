@@ -1,3 +1,4 @@
+use super::super::state::TerminalReply;
 use super::*;
 
 /// The terminal reports hmux acts on itself rather than forwarding.
@@ -5,6 +6,109 @@ const FOCUS_IN_REPORT: &[u8] = b"\x1b[I";
 const FOCUS_OUT_REPORT: &[u8] = b"\x1b[O";
 const DARK_THEME_REPORT: &[u8] = b"\x1b[?997;1n";
 const LIGHT_THEME_REPORT: &[u8] = b"\x1b[?997;2n";
+
+/// The most an unfinished terminal answer may hold before it is given back to
+/// the pane as ordinary input. A terminal that starts an answer and never
+/// finishes it must not swallow what the user types after it.
+const TERMINAL_ANSWER_LIMIT: usize = 512;
+
+/// How far [`parse_terminal_answer`] got with the head of a tty read.
+enum TerminalAnswer {
+    /// Not the start of an answer the server is waiting for.
+    None,
+    /// The start of one, but the terminator has not arrived yet.
+    Partial,
+    /// A whole answer, and how many bytes of the input it took.
+    Complete(TerminalReply, usize),
+}
+
+/// Recognize an OSC 4 or OSC 52 answer at the head of `data`, mirroring tmux's
+/// `tty_keys_palette` and `tty_keys_clipboard`.
+///
+/// These are the only two terminal answers the server routes itself; every
+/// other byte belongs to whoever is reading the client's input.
+fn parse_terminal_answer(data: &[u8]) -> TerminalAnswer {
+    let Some(rest) = data.strip_prefix(b"\x1b]") else {
+        return TerminalAnswer::None;
+    };
+    let (palette, body) = if let Some(body) = rest.strip_prefix(b"4;") {
+        (true, body)
+    } else if let Some(body) = rest.strip_prefix(b"52;") {
+        (false, body)
+    } else {
+        // A prefix of either introducer is still worth waiting on.
+        return if b"4;".starts_with(rest) || b"52;".starts_with(rest) {
+            TerminalAnswer::Partial
+        } else {
+            TerminalAnswer::None
+        };
+    };
+    let Some((end, terminator)) = body
+        .iter()
+        .position(|byte| *byte == 0x07)
+        .map(|end| (end, 1))
+        .or_else(|| {
+            body.windows(2)
+                .position(|window| window == b"\x1b\\")
+                .map(|end| (end, 2))
+        })
+    else {
+        return TerminalAnswer::Partial;
+    };
+    let consumed = data.len() - body.len() + end + terminator;
+    let payload = &body[..end];
+    if palette {
+        let Some((index, colour)) = std::str::from_utf8(payload)
+            .ok()
+            .and_then(|text| text.split_once(';'))
+        else {
+            return TerminalAnswer::Complete(
+                TerminalReply::Palette {
+                    index: 0,
+                    colour: 0,
+                },
+                consumed,
+            );
+        };
+        let parsed = index
+            .parse::<u8>()
+            .ok()
+            .zip(super::super::pane::parse_packed_colour(colour));
+        return match parsed {
+            // An answer that parses to nothing still belongs to the server: it
+            // answered a question no pane should see.
+            None => TerminalAnswer::Complete(
+                TerminalReply::Palette {
+                    index: u8::MAX,
+                    colour: 0,
+                },
+                consumed,
+            ),
+            Some((index, colour)) => {
+                TerminalAnswer::Complete(TerminalReply::Palette { index, colour }, consumed)
+            }
+        };
+    }
+    // `\033]52;<selection>;<base64>`. tmux takes the selection only when it is
+    // a single letter before the second `;`.
+    let (selection, encoded) = match payload.iter().position(|byte| *byte == b';') {
+        Some(split) => (
+            (split == 1).then(|| payload[0]),
+            &payload[split.saturating_add(1)..],
+        ),
+        None => (None, &[][..]),
+    };
+    TerminalAnswer::Complete(
+        TerminalReply::Clipboard {
+            selection,
+            data: std::str::from_utf8(encoded)
+                .ok()
+                .and_then(crate::vt::observer::base64_decode_strict)
+                .unwrap_or_default(),
+        },
+        consumed,
+    )
+}
 
 /// Whether a binding's outcome ended this pass over the input buffer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -90,6 +194,8 @@ impl AttachSession {
             DARK_THEME_REPORT,
             LIGHT_THEME_REPORT,
         ];
+        let data = self.take_terminal_answers(data, state);
+        let data = data.as_slice();
         if !REPORTS
             .iter()
             .any(|report| data.windows(report.len()).any(|window| window == *report))
@@ -109,6 +215,43 @@ impl AttachSession {
                 }
                 None => {
                     kept.push(data[index]);
+                    index += 1;
+                }
+            }
+        }
+        kept
+    }
+
+    /// Take the answers to questions the server put to this terminal out of one
+    /// tty read and route them, mirroring tmux's `tty_keys_palette` and
+    /// `tty_keys_clipboard`.
+    ///
+    /// Unlike the focus and theme reports, these are only looked for while
+    /// something is actually waiting for one: outside that window an
+    /// application's own OSC 4 or OSC 52 reply is just bytes on the way to a
+    /// pane, and taking it would break the pane that asked for it directly.
+    fn take_terminal_answers(&mut self, data: &[u8], state: &SharedState) -> Vec<u8> {
+        let client = self.attachments.render_attachment.client_name();
+        let held = !self.compositor.input.terminal_answer.is_empty();
+        if !held && !state.borrow_mut().client_awaits_terminal_reply(&client) {
+            return data.to_vec();
+        }
+        let mut buffered = std::mem::take(&mut self.compositor.input.terminal_answer);
+        buffered.extend_from_slice(data);
+        let mut kept = Vec::with_capacity(buffered.len());
+        let mut index = 0;
+        while index < buffered.len() {
+            match parse_terminal_answer(&buffered[index..]) {
+                TerminalAnswer::Complete(reply, consumed) => {
+                    index += consumed;
+                    state.borrow_mut().deliver_terminal_reply(&client, reply);
+                }
+                TerminalAnswer::Partial if buffered.len() - index < TERMINAL_ANSWER_LIMIT => {
+                    self.compositor.input.terminal_answer = buffered[index..].to_vec();
+                    return kept;
+                }
+                TerminalAnswer::None | TerminalAnswer::Partial => {
+                    kept.push(buffered[index]);
                     index += 1;
                 }
             }
