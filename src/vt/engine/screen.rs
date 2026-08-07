@@ -773,21 +773,26 @@ impl Screen {
         self.saved_grid.as_ref()
     }
 
-    /// RIS: back to a screen that has been sent nothing.
+    /// RIS, as tmux's `screen_write_reset` performs it.
+    ///
+    /// The grid is not replaced: the reset ends in the same clear an `ED 2`
+    /// ends in, so the visible screen goes into the history rather than being
+    /// discarded with it. `MODE_CRLF` is the one mode a reset leaves alone.
     pub(crate) fn reset(&mut self) {
-        let (sx, sy) = (self.grid.sx, self.grid.sy);
-        let hlimit = self.grid.hlimit;
-        self.saved_grid = None;
+        self.reset_tabs();
+        let sy = self.sy();
+        self.set_scroll_region(0, sy - 1);
+        self.mode = mode::CURSOR | mode::WRAP | (self.mode & mode::CRLF);
+        if self.saved_grid.is_some() {
+            self.alternate_off(false);
+        }
+        self.clear_screen(colour::DEFAULT);
+        self.set_cursor(Some(0), Some(0));
+        // `input_reset_cell`: the cell the pane draws with, and the one DECSC
+        // would restore, both go back to the default.
+        self.cell = Cell::default();
         self.saved_state = None;
         self.saved_cursor = None;
-        self.grid = Grid::new(sx, sy, hlimit);
-        self.cx = 0;
-        self.cy = 0;
-        self.rupper = 0;
-        self.rlower = sy - 1;
-        self.mode = mode::CURSOR | mode::WRAP;
-        self.cell = Cell::default();
-        self.reset_tabs();
     }
 
     /// Resize the screen, as tmux's `screen_resize` does: the width first, then
