@@ -312,9 +312,9 @@ pub(crate) fn number_capability(terminal: &dyn TerminalCapabilities, name: &str)
 ///
 /// This engine is stricter than ncurses `tparm` about malformed format strings:
 /// ncurses silently ignores a `%;` that closes no open `%?`, whereas the crate
-/// rejects the whole string. We accept that discrepancy rather than adding a
-/// leniency shim; the one affected tmux default (`Setulc`) is characterized by
-/// the ignored `setulc_stray_conditional_*` conformance test below.
+/// rejects the whole string. Normalize those unmatched terminators before
+/// expansion so the terminal adapter has tmux's leniency without weakening the
+/// parser for balanced conditionals.
 pub(crate) fn expand_capability(
     terminal: &dyn TerminalCapabilities,
     name: &str,
@@ -332,9 +332,57 @@ pub(crate) fn expand_capability(
         .collect::<Vec<_>>();
 
     let mut context = Context::default();
+    let normalized = strip_unmatched_conditional_ends(value);
     let mut expanded = Vec::new();
-    value.expand(&mut expanded, &arguments, &mut context).ok()?;
+    normalized
+        .as_slice()
+        .expand(&mut expanded, &arguments, &mut context)
+        .ok()?;
     Some(expanded)
+}
+
+/// Remove only conditional terminators that have no matching `%?` opener.
+///
+/// ncurses treats those stray `%;` sequences as no-ops. Keeping balanced
+/// conditionals intact lets the stricter Rust expander continue to validate
+/// the rest of the capability string.
+fn strip_unmatched_conditional_ends(value: &[u8]) -> Vec<u8> {
+    let mut normalized = Vec::with_capacity(value.len());
+    let mut conditional_depth = 0usize;
+    let mut index = 0;
+    while index < value.len() {
+        if value[index] == b'%' {
+            if let Some(operator) = value.get(index + 1).copied() {
+                match operator {
+                    b'%' => {
+                        normalized.extend_from_slice(&value[index..=index + 1]);
+                        index += 2;
+                        continue;
+                    }
+                    b'?' => {
+                        conditional_depth += 1;
+                        normalized.extend_from_slice(&value[index..=index + 1]);
+                        index += 2;
+                        continue;
+                    }
+                    b';' if conditional_depth == 0 => {
+                        index += 2;
+                        continue;
+                    }
+                    b';' => {
+                        conditional_depth -= 1;
+                        normalized.extend_from_slice(&value[index..=index + 1]);
+                        index += 2;
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        normalized.push(value[index]);
+        index += 1;
+    }
+    normalized
 }
 
 /// Immutable identify data retained so configured features and overrides can
@@ -1311,25 +1359,7 @@ mod tests {
         );
     }
 
-    // tmux's `Setulc` default ends with a `%;` that closes no `%?`. ncurses
-    // `tparm` tolerates the stray closer, but our `terminfo::expand` engine
-    // rejects the string. We deliberately accept this leniency discrepancy
-    // rather than adding a normalization shim (see `expand_capability`), so the
-    // capability yields no expansion instead of tmux's sequence.
     #[test]
-    fn setulc_stray_conditional_yields_no_expansion() {
-        let term = ResolvedTerm::resolve(
-            identity("modern", &[]),
-            [("terminal-features", "modern:RGB:hyperlinks:sync:usstyle")],
-        );
-        assert_eq!(
-            expand_capability(&term, "Setulc", &[CapabilityParameter::Number(0x11_22_33)]),
-            None
-        );
-    }
-
-    #[test]
-    #[ignore = "terminfo::expand rejects tmux's Setulc stray `%;`; ncurses tparm ignores it. Accepted leniency discrepancy, not a shimmable conformance."]
     fn setulc_stray_conditional_matches_tmux() {
         let term = ResolvedTerm::resolve(
             identity("modern", &[]),
@@ -1338,6 +1368,18 @@ mod tests {
         assert_eq!(
             expand_capability(&term, "Setulc", &[CapabilityParameter::Number(0x11_22_33)]),
             Some(b"\x1b[58:2:17:34:51m".to_vec())
+        );
+    }
+
+    #[test]
+    fn conditional_normalization_preserves_escaped_percent_sequences() {
+        assert_eq!(
+            strip_unmatched_conditional_ends(b"%%?literal%%;%;"),
+            b"%%?literal%%;"
+        );
+        assert_eq!(
+            strip_unmatched_conditional_ends(b"%?%p1%ttrue%;%;"),
+            b"%?%p1%ttrue%;"
         );
     }
 
