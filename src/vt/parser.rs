@@ -334,6 +334,28 @@ impl Parser {
         self.state = State::Ground;
     }
 
+    /// Execute a C0 control that arrived part-way through a sequence.
+    ///
+    /// `input.c` reaches `input_c0_dispatch` from table entries whose target
+    /// state is NULL, so the control runs where it stands and neither the state
+    /// nor the collected parameters move: `CSI 2 BEL ; 3 H` rings the bell and
+    /// then runs `CUP(2,3)`. The byte stays in the sequence's accumulated bytes,
+    /// which is what tmux's `since_ground` holds.
+    fn execute_c0(&mut self, byte: u8, emit: &mut impl FnMut(Token)) {
+        // `input_c0_dispatch` stops UTF-8 collection before it looks at the
+        // byte, the same as `input_print` does.
+        if let Some(character) = self.utf8.flush() {
+            emit(Token {
+                kind: TokenKind::Print(character),
+                raw: Vec::new(),
+            });
+        }
+        emit(Token {
+            kind: TokenKind::Control(byte),
+            raw: vec![byte],
+        });
+    }
+
     /// Emit a token and start the next one.
     fn dispatch(&mut self, kind: TokenKind, emit: &mut impl FnMut(Token)) {
         let raw = std::mem::take(&mut self.raw);
@@ -380,7 +402,7 @@ impl Parser {
     fn esc_enter(&mut self, byte: u8, emit: &mut impl FnMut(Token)) {
         self.raw.push(byte);
         match byte {
-            0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.dispatch(TokenKind::Control(byte), emit),
+            0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.execute_c0(byte, emit),
             0x20..=0x2f => {
                 self.push_intermediate(byte);
                 self.state = State::EscIntermediate;
@@ -411,7 +433,7 @@ impl Parser {
     fn esc_intermediate(&mut self, byte: u8, emit: &mut impl FnMut(Token)) {
         self.raw.push(byte);
         match byte {
-            0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.dispatch(TokenKind::Control(byte), emit),
+            0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.execute_c0(byte, emit),
             0x20..=0x2f => self.push_intermediate(byte),
             0x30..=0x7e => {
                 let intermediates = std::mem::take(&mut self.intermediate);
@@ -430,7 +452,7 @@ impl Parser {
     fn csi_enter(&mut self, byte: u8, emit: &mut impl FnMut(Token)) {
         self.raw.push(byte);
         match byte {
-            0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.dispatch(TokenKind::Control(byte), emit),
+            0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.execute_c0(byte, emit),
             0x20..=0x2f => {
                 self.push_intermediate(byte);
                 self.state = State::CsiIntermediate;
@@ -451,7 +473,7 @@ impl Parser {
     fn csi_parameter(&mut self, byte: u8, emit: &mut impl FnMut(Token)) {
         self.raw.push(byte);
         match byte {
-            0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.dispatch(TokenKind::Control(byte), emit),
+            0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.execute_c0(byte, emit),
             0x20..=0x2f => {
                 self.push_intermediate(byte);
                 self.state = State::CsiIntermediate;
@@ -466,7 +488,7 @@ impl Parser {
     fn csi_intermediate(&mut self, byte: u8, emit: &mut impl FnMut(Token)) {
         self.raw.push(byte);
         match byte {
-            0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.dispatch(TokenKind::Control(byte), emit),
+            0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.execute_c0(byte, emit),
             0x20..=0x2f => self.push_intermediate(byte),
             0x30..=0x3f => self.state = State::CsiIgnore,
             0x40..=0x7e => self.csi_dispatch(byte, emit),
@@ -477,7 +499,7 @@ impl Parser {
     fn csi_ignore(&mut self, byte: u8, emit: &mut impl FnMut(Token)) {
         self.raw.push(byte);
         match byte {
-            0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.dispatch(TokenKind::Control(byte), emit),
+            0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.execute_c0(byte, emit),
             // The sequence is abandoned: the final byte ends it and nothing is
             // reported, but the bytes still belong to it.
             0x40..=0x7e => {
@@ -1117,6 +1139,50 @@ mod tests {
         let mut out = Vec::new();
         parser.parse(&input, |token| out.push(token.kind));
         assert!(out.is_empty(), "the sequence is dropped, got {out:?}");
+    }
+
+    #[test]
+    fn a_c0_inside_a_sequence_runs_without_ending_it() {
+        // `input_c0_dispatch` is reached from a table entry with a NULL target
+        // state, so neither the state nor `param_buf` moves: the bell rings and
+        // the CSI carries on collecting across it.
+        assert_eq!(
+            tokens(b"\x1b[2\x07;3H"),
+            vec![
+                TokenKind::Control(0x07),
+                TokenKind::Csi {
+                    private: None,
+                    params: vec![
+                        Param {
+                            value: Some(2),
+                            subs: Vec::new()
+                        },
+                        Param {
+                            value: Some(3),
+                            subs: Vec::new()
+                        },
+                    ],
+                    intermediates: Vec::new(),
+                    final_byte: b'H',
+                },
+            ]
+        );
+        // The parameter digits either side of the control join into one value.
+        assert_eq!(
+            tokens(b"\x1b[1\x082C"),
+            vec![
+                TokenKind::Control(0x08),
+                TokenKind::Csi {
+                    private: None,
+                    params: vec![Param {
+                        value: Some(12),
+                        subs: Vec::new()
+                    }],
+                    intermediates: Vec::new(),
+                    final_byte: b'C',
+                },
+            ]
+        );
     }
 
     #[test]
