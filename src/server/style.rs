@@ -12,7 +12,14 @@ use super::term::{
 pub(crate) enum Colour {
     #[default]
     Default,
+    /// One of the sixteen colours in its own SGR spelling — 30–37 and 90–97,
+    /// or their background counterparts.
     Palette(u8),
+    /// A palette index that arrived through the 256-colour form, tmux's
+    /// `COLOUR_FLAG_256`. It is kept apart from [`Colour::Palette`] because a
+    /// capture reproduces the spelling a colour arrived in rather than picking
+    /// one: `38;5;1` comes back as `38;5;1`, not as `31`.
+    Indexed(u8),
     Rgb(u8, u8, u8),
 }
 
@@ -243,7 +250,7 @@ pub(crate) fn colour_theme(colour: Colour) -> Option<&'static str> {
     let (red, green, blue) = match colour {
         Colour::Default => return None,
         Colour::Rgb(red, green, blue) => (red, green, blue),
-        Colour::Palette(index) => palette_rgb(index),
+        Colour::Palette(index) | Colour::Indexed(index) => palette_rgb(index),
     };
     let brightness = u32::from(red) + u32::from(green) + u32::from(blue);
     Some(if brightness > 382 { "light" } else { "dark" })
@@ -412,7 +419,7 @@ impl SgrDecoder {
                     .iter()
                     .flatten()
                     .next()
-                    .map(|value| Colour::Palette(*value as u8)),
+                    .map(|value| Colour::Indexed(*value as u8)),
                 Some(2) => {
                     let rgb = components
                         .iter()
@@ -484,7 +491,7 @@ impl SgrDecoder {
 fn parse_semicolon_colour(fields: &[&str]) -> Option<(Colour, usize)> {
     let mode = fields.first()?.parse::<u8>().ok()?;
     match mode {
-        5 => Some((Colour::Palette(fields.get(1)?.parse().ok()?), 2)),
+        5 => Some((Colour::Indexed(fields.get(1)?.parse().ok()?), 2)),
         2 => {
             let skip = usize::from(fields.first().is_some_and(|_| fields.get(1) == Some(&"")));
             let start = 1 + skip;
@@ -607,7 +614,9 @@ fn colour_codes(colour: Colour, prefix: u8) -> Vec<String> {
         Colour::Palette(index) if prefix != 58 && index < 16 => {
             vec![((if prefix == 48 { 100 } else { 90 }) + index - 8).to_string()]
         }
-        Colour::Palette(index) => vec![prefix.to_string(), "5".into(), index.to_string()],
+        Colour::Palette(index) | Colour::Indexed(index) => {
+            vec![prefix.to_string(), "5".into(), index.to_string()]
+        }
         Colour::Rgb(red, green, blue) => vec![
             prefix.to_string(),
             "2".into(),
@@ -768,7 +777,7 @@ impl<'a> TerminalStyleWriter<'a> {
         if old.underline_colour != new.underline_colour {
             match new.underline_colour {
                 Colour::Default => append_capability(out, self.terminal, "ol", &[]),
-                Colour::Palette(index) => append_capability(
+                Colour::Palette(index) | Colour::Indexed(index) => append_capability(
                     out,
                     self.terminal,
                     "Setulc1",
@@ -792,7 +801,7 @@ impl<'a> TerminalStyleWriter<'a> {
                 out.extend_from_slice(if background { b"\x1b[49m" } else { b"\x1b[39m" });
             }
             Colour::Default => {}
-            Colour::Palette(index) => append_capability(
+            Colour::Palette(index) | Colour::Indexed(index) => append_capability(
                 out,
                 self.terminal,
                 if background { "setab" } else { "setaf" },
@@ -895,7 +904,7 @@ fn terminal_colour(terminal: &dyn TerminalCapabilities, colour: Colour) -> Colou
         Colour::Rgb(red, green, blue) => {
             terminal_colour(terminal, Colour::Palette(rgb_to_256(red, green, blue)))
         }
-        Colour::Palette(index) if u16::from(index) >= colours => {
+        Colour::Palette(index) | Colour::Indexed(index) if u16::from(index) >= colours => {
             Colour::Palette(colour_256_to_16(index, colours >= 16))
         }
         value => value,
@@ -994,7 +1003,11 @@ mod tests {
         assert!(decoder.style.attributes.has(Attributes::BOLD));
         assert_eq!(decoder.style.underline, Underline::Curly);
         assert_eq!(decoder.style.fg, Colour::Rgb(1, 2, 3));
-        assert_eq!(decoder.style.bg, Colour::Palette(17));
+        assert_eq!(
+            decoder.style.bg,
+            Colour::Indexed(17),
+            "an index that arrived through the 256-colour form stays one"
+        );
         assert_eq!(decoder.style.underline_colour, Colour::Rgb(4, 5, 6));
     }
 

@@ -1469,7 +1469,7 @@ fn colour_rgb(value: &str) -> String {
     let (red, green, blue) = match colour {
         Colour::Default => return String::new(),
         Colour::Rgb(red, green, blue) => (red, green, blue),
-        Colour::Palette(index) => palette_rgb(index),
+        Colour::Palette(index) | Colour::Indexed(index) => palette_rgb(index),
     };
     format!("{red:02x}{green:02x}{blue:02x}")
 }
