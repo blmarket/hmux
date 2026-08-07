@@ -389,6 +389,7 @@ struct PaneOutputPolicyCell {
     allow_set_title: Cell<bool>,
     passthrough: Cell<u8>,
     input_buffer_size: Cell<u32>,
+    cursor_style: Cell<u8>,
     /// Read only where a pane's bytes are parsed, so a plain mutex is enough.
     palette: RefCell<Vec<Option<u32>>>,
 }
@@ -404,6 +405,7 @@ impl PaneOutputPolicyCell {
                 _ => PassthroughPolicy::Off,
             },
             input_buffer_size: self.input_buffer_size.get(),
+            cursor_style: self.cursor_style.get(),
             palette: self.palette.borrow().clone(),
         }
     }
@@ -417,6 +419,7 @@ impl PaneOutputPolicyCell {
             PassthroughPolicy::Always => 2,
         });
         self.input_buffer_size.set(policy.input_buffer_size);
+        self.cursor_style.set(policy.cursor_style);
         {
             let mut palette = self.palette.borrow_mut();
             *palette = policy.palette;
@@ -434,6 +437,7 @@ impl Default for PaneOutputPolicyCell {
             allow_set_title: Cell::default(),
             passthrough: Cell::default(),
             input_buffer_size: Cell::default(),
+            cursor_style: Cell::default(),
             palette: RefCell::default(),
         };
         cell.store(PaneOutputPolicy::default());
@@ -1044,6 +1048,7 @@ impl NativePaneObservation {
                 &request,
                 PaneCursorShape::from_parameter(self.cursor_shape.get()),
                 terminal.modes() & mode::CURSOR_BLINKING != 0,
+                policy.cursor_style,
             )),
             VtEvent::SetTabStop => {
                 if let Ok((x, _)) = terminal.cursor_position() {

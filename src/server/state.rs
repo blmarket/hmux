@@ -5630,12 +5630,9 @@ impl ServerState {
             // unattached session's monitor-activity re-flags even the winlink
             // it just selected.
             let window_id = self.sessions[session_pos].windows[position].id;
-            let monitor_activity = self
-                .windows
-                .get(&window_id)
-                .is_some_and(|window| {
-                    window.options(&self.global_options).get("monitor-activity") == Some("on")
-                });
+            let monitor_activity = self.windows.get(&window_id).is_some_and(|window| {
+                window.options(&self.global_options).get("monitor-activity") == Some("on")
+            });
             self.window_last_activity
                 .insert(window_id, std::time::Instant::now());
             if monitor_activity {
@@ -8344,6 +8341,9 @@ impl ServerState {
                         .get("input-buffer-size")
                         .and_then(|value| value.parse().ok())
                         .unwrap_or(1_048_576),
+                    cursor_style: cursor_style_parameter(
+                        options.get("cursor-style").unwrap_or("default"),
+                    ),
                     // The index an entry is stored at *is* the palette slot it
                     // fills, so the array is read with its indexes rather than
                     // as a list.
@@ -11050,7 +11050,8 @@ impl ServerState {
     /// `select-layout` (tmux's error path restores `w->old_layout`).
     pub(crate) fn restore_window_old_layout(&mut self, target: &str, value: Option<String>) {
         if let Ok(resolved) = self.resolve_window_target(target) {
-            self.window_mut(resolved.session, resolved.window).old_layout = value;
+            self.window_mut(resolved.session, resolved.window)
+                .old_layout = value;
         }
     }
 

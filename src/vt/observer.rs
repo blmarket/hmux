@@ -53,6 +53,9 @@ pub(crate) struct OutputPolicy {
     /// `input-buffer-size`: how long a terminal string may grow before the
     /// parser abandons it.
     pub(crate) input_buffer_size: u32,
+    /// The resolved `cursor-style` option, as a DECSCUSR parameter. A pane
+    /// that has not sent DECSCUSR uses this as its DECRQSS answer.
+    pub(crate) cursor_style: u8,
     /// `pane-colours`, packed as `0xrrggbb` by index — the palette a query
     /// falls back to when the pane has set nothing itself.
     pub(crate) palette: Vec<Option<u32>>,
@@ -67,6 +70,7 @@ impl Default for OutputPolicy {
             allow_set_title: true,
             passthrough: PassthroughPolicy::Off,
             input_buffer_size: INPUT_BUFFER_DEFAULT_SIZE,
+            cursor_style: 0,
             palette: Vec::new(),
         }
     }
@@ -684,16 +688,17 @@ fn first_is_zero(params: &[Param]) -> bool {
 
 /// tmux's `input_handle_decrqss` reply. The only setting it reports is the
 /// cursor style; anything else gets `DCS 0 $ r ST`, its "invalid request" form.
-///
-/// Divergence: with no DECSCUSR applied tmux falls back to the `cursor-style`
-/// option, which the pane's reader has no view of, so hmux always reports the
-/// default 0 there. Both agree once a pane has set a style itself.
-pub(crate) fn decrqss_reply(request: &[u8], shape: CursorShape, blinking: bool) -> Vec<u8> {
+pub(crate) fn decrqss_reply(
+    request: &[u8],
+    shape: CursorShape,
+    blinking: bool,
+    configured_style: u8,
+) -> Vec<u8> {
     if request != b" q" {
         return b"\x1bP0$r\x1b\\".to_vec();
     }
     let ps = match shape {
-        CursorShape::Default => 0,
+        CursorShape::Default => configured_style,
         CursorShape::Block if blinking => 1,
         CursorShape::Block => 2,
         CursorShape::Underline if blinking => 3,
@@ -1104,13 +1109,17 @@ mod tests {
     #[test]
     fn a_decrqss_reply_reports_the_style_and_its_blink() {
         assert_eq!(
-            decrqss_reply(b" q", CursorShape::Underline, false),
+            decrqss_reply(b" q", CursorShape::Underline, false, 0),
             b"\x1bP1$r q4 q\x1b\\".to_vec()
         );
         assert_eq!(
-            decrqss_reply(b"m", CursorShape::Default, false),
+            decrqss_reply(b"m", CursorShape::Default, false, 0),
             b"\x1bP0$r\x1b\\".to_vec(),
             "a setting hmux does not report is refused, not guessed at"
+        );
+        assert_eq!(
+            decrqss_reply(b" q", CursorShape::Default, false, 6),
+            b"\x1bP1$r q6 q\x1b\\".to_vec()
         );
     }
 

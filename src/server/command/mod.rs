@@ -5479,14 +5479,14 @@ fn split_window(args: &[String], st: &mut ServerState, context: &ClientContext) 
         let axis_total = {
             let sess = &st.sessions()[resolved.session];
             let win = st.window_for_link(&sess.windows[resolved.window]);
-            let rect = win
-                .pane_rect(win.panes[resolved.pane].id)
-                .unwrap_or(super::state::PaneRect {
-                    top: 0,
-                    left: 0,
-                    height: win.rows,
-                    width: win.cols,
-                });
+            let rect =
+                win.pane_rect(win.panes[resolved.pane].id)
+                    .unwrap_or(super::state::PaneRect {
+                        top: 0,
+                        left: 0,
+                        height: win.rows,
+                        width: win.cols,
+                    });
             match direction {
                 SplitDirection::LeftRight => rect.width,
                 SplitDirection::TopBottom => rect.height,
@@ -8679,9 +8679,7 @@ fn finish_run_shell(completion: RunShellCompletion, state: &mut ServerState) -> 
         // gone by then the output falls back to the invoking client, the way
         // `cmdq_print` does without a pane to draw into.
         if state.append_view_output(&target, &output).is_err() {
-            result
-                .stdout
-                .push_str(&String::from_utf8_lossy(&output));
+            result.stdout.push_str(&String::from_utf8_lossy(&output));
         }
     }
     result
