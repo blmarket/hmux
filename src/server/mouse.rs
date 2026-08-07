@@ -364,6 +364,10 @@ const CLICK_TIMEOUT: Duration = Duration::from_millis(300);
 struct ClickState {
     event: MouseEvent,
     button: Option<MouseButton>,
+    /// Part of the click's identity: tmux compares the whole reported button
+    /// byte (`m->b`), which carries the modifier bits, so a press held with a
+    /// different modifier is a new sequence rather than a repeat.
+    modifiers: MouseModifiers,
     identity: Option<(u32, Option<u32>, Option<u32>, MouseLocation)>,
     deadline: Instant,
 }
@@ -454,13 +458,14 @@ impl MouseInputState {
             MouseEventKind::Down | MouseEventKind::SecondClick | MouseEventKind::TripleClick
         ) {
             let identity = click_identity(event.target.as_ref());
-            // A repeat click that moved, changed button, or landed somewhere
-            // else is not a repeat at all: the sequence restarts here.
+            // A repeat click that moved, changed button or modifier, or landed
+            // somewhere else is not a repeat at all: the sequence restarts here.
             if event.kind != MouseEventKind::Down
-                && self
-                    .click
-                    .as_ref()
-                    .is_none_or(|click| click.button != event.button || click.identity != identity)
+                && self.click.as_ref().is_none_or(|click| {
+                    click.button != event.button
+                        || click.modifiers != event.modifiers
+                        || click.identity != identity
+                })
             {
                 event.kind = MouseEventKind::Down;
                 self.expect_third = false;
@@ -470,6 +475,7 @@ impl MouseInputState {
                 self.click = Some(ClickState {
                     event: event.clone(),
                     button: event.button,
+                    modifiers: event.modifiers,
                     identity,
                     deadline: now + CLICK_TIMEOUT,
                 });
@@ -1051,6 +1057,41 @@ mod tests {
         }
         assert_eq!(state.click_deadline(), None);
         assert_eq!(state.expire_click(start + Duration::from_secs(1)), None);
+    }
+
+    #[test]
+    fn a_repeat_click_with_another_modifier_restarts_the_sequence() {
+        let mut state = MouseInputState::default();
+        let now = Instant::now();
+        let mut shifted = MouseEvent::from_terminal_report(
+            MouseProtocol::Sgr,
+            4,
+            false,
+            MousePosition { x: 2, y: 3 },
+        );
+        state.observe(&mut shifted, now);
+        assert_eq!(shifted.kind, MouseEventKind::Down);
+
+        // Same button and pane, different modifier: tmux compares the whole
+        // reported button byte, so this press is a fresh `MouseDown`.
+        let mut metaed = MouseEvent::from_terminal_report(
+            MouseProtocol::Sgr,
+            8,
+            false,
+            MousePosition { x: 2, y: 3 },
+        );
+        state.observe(&mut metaed, now + Duration::from_millis(10));
+        assert_eq!(metaed.kind, MouseEventKind::Down);
+
+        // Repeating the same modified press is still a repeat click.
+        let mut again = MouseEvent::from_terminal_report(
+            MouseProtocol::Sgr,
+            8,
+            false,
+            MousePosition { x: 2, y: 3 },
+        );
+        state.observe(&mut again, now + Duration::from_millis(20));
+        assert_eq!(again.kind, MouseEventKind::SecondClick);
     }
 
     #[test]
