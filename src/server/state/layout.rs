@@ -8,7 +8,8 @@
 use std::io;
 
 use super::copy::reflow_copy_snapshot;
-use super::Window;
+use super::target::pane_not_found;
+use super::{RenderInvalidation, ServerState, Window};
 
 /// Direction used by the attach compositor for an evenly divided window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -963,4 +964,210 @@ pub(super) fn resize_panes_to_layout(window: &mut Window) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+impl ServerState {
+    pub(crate) fn select_named_layout(&mut self, target: &str, layout: usize) -> io::Result<()> {
+        let resolved = self.resolve_window(target)?;
+        let main_height = self
+            .option_for_target(target, "main-pane-height")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(24);
+        let main_width = self
+            .option_for_target(target, "main-pane-width")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(80);
+        let other_height = self
+            .option_for_target(target, "other-pane-height")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0);
+        let other_width = self
+            .option_for_target(target, "other-pane-width")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0);
+        let max_columns = self
+            .option_for_target(target, "tiled-layout-max-columns")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0);
+        let window_id = self.sessions[resolved.session].windows[resolved.window].id;
+        let affected_sessions = self
+            .sessions
+            .iter()
+            .filter(|session| session.windows.iter().any(|link| link.id == window_id))
+            .map(|session| session.id)
+            .collect::<Vec<_>>();
+        let window = self.window_mut(resolved.session, resolved.window);
+        let pane_ids = window
+            .panes
+            .iter()
+            .filter(|pane| pane.floating.is_none())
+            .map(|pane| pane.id)
+            .collect::<Vec<_>>();
+        if pane_ids.len() > 1 {
+            let rect = window.layout.rect();
+            window.layout = match layout {
+                0 => LayoutCell::even(&pane_ids, SplitDirection::LeftRight, rect),
+                1 => LayoutCell::even(&pane_ids, SplitDirection::TopBottom, rect),
+                2 => LayoutCell::main(
+                    &pane_ids,
+                    SplitDirection::TopBottom,
+                    rect,
+                    main_height,
+                    other_height,
+                    false,
+                ),
+                3 => LayoutCell::main(
+                    &pane_ids,
+                    SplitDirection::TopBottom,
+                    rect,
+                    main_height,
+                    other_height,
+                    true,
+                ),
+                4 => LayoutCell::main(
+                    &pane_ids,
+                    SplitDirection::LeftRight,
+                    rect,
+                    main_width,
+                    other_width,
+                    false,
+                ),
+                5 => LayoutCell::main(
+                    &pane_ids,
+                    SplitDirection::LeftRight,
+                    rect,
+                    main_width,
+                    other_width,
+                    true,
+                ),
+                6 => LayoutCell::tiled(&pane_ids, rect, max_columns),
+                _ => return Err(io::Error::other("invalid layout")),
+            };
+            resize_panes_to_layout(window)?;
+        }
+        window.last_layout = Some(layout);
+        window.zoomed = false;
+        for session_id in affected_sessions {
+            self.invalidate_session(
+                session_id,
+                RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
+            );
+        }
+        // tmux notifies twice for a named layout: once from `layout_set_*` when
+        // the cells are rebuilt, and once from the command itself.
+        self.notify_window("window-layout-changed", window_id);
+        self.notify_window("window-layout-changed", window_id);
+        Ok(())
+    }
+
+    /// Snapshot the target window's layout into tmux's `w->old_layout` slot,
+    /// returning the value it replaces — what `select-layout -o` restores.
+    pub(crate) fn snapshot_window_layout(&mut self, target: &str) -> io::Result<Option<String>> {
+        let resolved = self.resolve_window_target(target)?;
+        let window = self.window_mut(resolved.session, resolved.window);
+        let dump = checksummed_layout_dump(&window.layout);
+        Ok(window.old_layout.replace(dump))
+    }
+
+    /// Put a previously snapshot `old_layout` back, for a failed
+    /// `select-layout` (tmux's error path restores `w->old_layout`).
+    pub(crate) fn restore_window_old_layout(&mut self, target: &str, value: Option<String>) {
+        if let Ok(resolved) = self.resolve_window_target(target) {
+            self.window_mut(resolved.session, resolved.window)
+                .old_layout = value;
+        }
+    }
+
+    /// The last preset layout applied to the target window, which a bare
+    /// `select-layout` reapplies (tmux's `w->lastlayout`).
+    pub(crate) fn window_last_preset_layout(&self, target: &str) -> io::Result<Option<usize>> {
+        let resolved = self.resolve_window_target(target)?;
+        Ok(self.window(resolved.session, resolved.window).last_layout)
+    }
+
+    /// `select-layout -E`: spread the target pane's siblings evenly, climbing
+    /// outward from its innermost split (tmux's `layout_spread_out`).
+    pub(crate) fn spread_window_layout(&mut self, target: &str) -> io::Result<()> {
+        let t = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
+        let window_id = self.sessions[t.session].windows[t.window].id;
+        let affected_sessions = self
+            .sessions
+            .iter()
+            .filter(|session| session.windows.iter().any(|link| link.id == window_id))
+            .map(|session| session.id)
+            .collect::<Vec<_>>();
+        let win = self.window_mut(t.session, t.window);
+        let pane_id = win.panes[t.pane].id;
+        if win.layout.spread_pane(pane_id) {
+            resize_panes_to_layout(win)?;
+            for session_id in affected_sessions {
+                self.invalidate_session(
+                    session_id,
+                    RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
+                );
+            }
+            self.notify_window("window-layout-changed", window_id);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn cycle_layout(&mut self, target: &str, forward: bool) -> io::Result<()> {
+        let resolved = self.resolve_window_target(target)?;
+        let current = self.window(resolved.session, resolved.window).last_layout;
+        let next = match (current, forward) {
+            (None, true) => 0,
+            (None, false) => 6,
+            (Some(6), true) => 0,
+            (Some(0), false) => 6,
+            (Some(value), true) => value + 1,
+            (Some(value), false) => value - 1,
+        };
+        self.select_named_layout(target, next)
+    }
+
+    pub(crate) fn select_custom_layout(&mut self, target: &str, value: &str) -> io::Result<()> {
+        let mut layout = parse_custom_layout(value)?;
+        let resolved = self.resolve_window(target)?;
+        let window_id = self.sessions[resolved.session].windows[resolved.window].id;
+        let affected_sessions = self
+            .sessions
+            .iter()
+            .filter(|session| session.windows.iter().any(|link| link.id == window_id))
+            .map(|session| session.id)
+            .collect::<Vec<_>>();
+        let pane_ids = self
+            .window(resolved.session, resolved.window)
+            .panes
+            .iter()
+            .filter(|pane| pane.floating.is_none())
+            .map(|pane| pane.id)
+            .collect::<Vec<_>>();
+        if layout.panes().len() != pane_ids.len() {
+            return Err(io::Error::other(format!(
+                "have {} panes but need {}",
+                pane_ids.len(),
+                layout.panes().len()
+            )));
+        }
+        layout.assign_panes(&mut pane_ids.into_iter());
+        let size = (layout.rect().width, layout.rect().height);
+        let window = self.window_mut(resolved.session, resolved.window);
+        window.layout = layout;
+        // tmux's `layout_parse` resizes the window to the layout it just parsed,
+        // then runs `recalculate_sizes` — so on an attached window the client
+        // set wins straight back, and only a clientless one keeps this size.
+        window.cols = size.0;
+        window.rows = size.1;
+        window.last_layout = None;
+        window.zoomed = false;
+        resize_panes_to_layout(window)?;
+        for session_id in affected_sessions {
+            self.invalidate_session(
+                session_id,
+                RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
+            );
+        }
+        self.notify_window("window-layout-changed", window_id);
+        Ok(())
+    }
 }
