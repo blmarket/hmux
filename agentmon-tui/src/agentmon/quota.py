@@ -21,6 +21,7 @@ from pathlib import Path
 
 
 CODEX_USAGE_URL = "https://chatgpt.com/backend-api/codex/usage"
+CODEX_ORIGINATOR = "codex_cli_rs"
 CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 DEFAULT_TTL_SECONDS = 300.0
 CLAUDE_SESSION_SECONDS = 5 * 3600.0
@@ -287,6 +288,9 @@ class QuotaService:
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",
             "User-Agent": "agentmon",
+            # The usage endpoint rejects callers that do not declare the Codex
+            # CLI originator with HTTP 403, regardless of the OAuth token.
+            "originator": CODEX_ORIGINATOR,
         }
         account_id = tokens.get("account_id")
         if account_id:

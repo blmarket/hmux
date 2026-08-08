@@ -183,6 +183,8 @@ def make_service(
         if url == CODEX_USAGE_URL:
             assert headers["Authorization"] == "Bearer codex-token"
             assert headers["chatgpt-account-id"] == "acct"
+            # Without the originator header the endpoint answers HTTP 403.
+            assert headers["originator"] == "codex_cli_rs"
             return CODEX_PAYLOAD
         if url == CLAUDE_USAGE_URL:
             assert headers["Authorization"] == "Bearer claude-token"
