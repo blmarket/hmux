@@ -278,6 +278,10 @@ impl Coroutine for PanePipeIo {
 /// exited. Nothing portable makes a child's exit readable.
 const PIPE_REAP_RETRY: Duration = Duration::from_millis(50);
 
+/// How deep `CSI 22 t` may stack pane titles, tmux's limit in
+/// `screen_push_title`.
+const TITLE_STACK_LIMIT: usize = 10;
+
 static NEXT_PANE_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 
 /// The live half of a pane: the child pid and the pty master.
@@ -372,6 +376,10 @@ pub(crate) struct NativePaneObservation {
     /// here rather than read back from Ghostty because tmux's limit on it is
     /// `input-buffer-size`, and Ghostty's is its own.
     announced_title: RefCell<Option<String>>,
+    /// tmux's `screen->titles`, the stack `CSI 22 t` pushes onto and
+    /// `CSI 23 t` pops from. It lives beside the title rather than in the
+    /// screen because that is where the title itself lives.
+    title_stack: RefCell<Vec<Option<String>>>,
     /// OSC 4 questions about palette entries the pane does not hold, waiting
     /// for the server to put them to an attached terminal. Each carries the
     /// terminator the pane asked with, because that is what its answer uses.
@@ -841,6 +849,7 @@ impl NativePaneObservation {
             clipboard_events: RefCell::new(VecDeque::new()),
             passthrough: RefCell::new(VecDeque::new()),
             announced_title: RefCell::new(None),
+            title_stack: RefCell::new(Vec::new()),
             palette_queries: RefCell::new(VecDeque::new()),
             // A pane that has produced nothing yet still needs naming once.
             changed: Cell::new(true),
@@ -1054,6 +1063,23 @@ impl NativePaneObservation {
             VtEvent::Title(title) => {
                 let mut announced = self.announced_title.borrow_mut();
                 *announced = Some(title);
+            }
+            VtEvent::TitlePush => {
+                let title = self.announced_title.borrow().clone();
+                let mut stack = self.title_stack.borrow_mut();
+                // tmux's `screen_push_title` keeps ten and evicts the oldest to
+                // make room, so a pane that pushes without popping loses the
+                // bottom of its stack rather than the top.
+                while stack.len() >= TITLE_STACK_LIMIT {
+                    stack.remove(0);
+                }
+                stack.push(title);
+            }
+            // `screen_pop_title` on an empty stack leaves the title alone.
+            VtEvent::TitlePop => {
+                if let Some(title) = self.title_stack.borrow_mut().pop() {
+                    *self.announced_title.borrow_mut() = title;
+                }
             }
             // `ESC k` renames the window rather than retitling the pane, so it
             // is queued for the server instead of touching `announced_title`.

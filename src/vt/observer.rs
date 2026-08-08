@@ -21,6 +21,7 @@
 use std::collections::VecDeque;
 
 use super::parser::{Param, Parser, StringEnd, Token, TokenKind, INPUT_BUFFER_DEFAULT_SIZE};
+use super::vis;
 use super::x11_colour;
 
 /// The OSC 11 question hmux forwards to the client's own terminal, because only
@@ -161,6 +162,14 @@ pub(crate) enum Event {
     Bell,
     /// The pane retitled itself (OSC 0/2 or APC), and the option allowed it.
     Title(String),
+    /// `CSI 22 ; 0|2 t`: put the title as it stands on the title stack.
+    /// Unlike [`Event::Title`] this is not gated on `allow-set-title` — tmux's
+    /// `screen_push_title` is reached without consulting the option, and the
+    /// pane is only saving a title it is already allowed to have.
+    TitlePush,
+    /// `CSI 23 ; 0|2 t`: take the title back off the stack. An empty stack
+    /// leaves the title alone.
+    TitlePop,
     /// `ESC k … ST`: the screen-family window rename control.
     Rename(String),
     /// The pane switched screens (DECSET 47 / 1047 / 1049).
@@ -310,7 +319,9 @@ impl Observer {
                 // it. Rewriting it as the OSC 2 it means keeps the two in
                 // stream order, so the last one to arrive still wins.
                 if policy.allow_set_title {
-                    out.event(Event::Title(String::from_utf8_lossy(&data).into_owned()));
+                    if let Some(title) = vis::clean_name(&data) {
+                        out.event(Event::Title(title));
+                    }
                     let mut body = b"2;".to_vec();
                     body.extend_from_slice(&data);
                     let mut raw = b"\x1b]".to_vec();
@@ -538,7 +549,11 @@ impl Observer {
         match number {
             0 | 2 => {
                 if policy.allow_set_title {
-                    out.event(Event::Title(text.into_owned()));
+                    // `screen_set_title` refuses a name it cannot clean, and a
+                    // refused one leaves the title that was already set.
+                    if let Some(title) = vis::clean_name(body) {
+                        out.event(Event::Title(title));
+                    }
                     out.keep(token);
                 }
                 // Refused: the sequence never reaches the screen at all.
@@ -547,7 +562,12 @@ impl Observer {
             4 => {
                 self.palette_request(&text, end, policy, out);
             }
-            7 => out.event(Event::Osc(OscUpdate::Path(text.into_owned()))),
+            // `screen_set_path` cleans a path by the same rule as a title.
+            7 => {
+                if let Some(path) = vis::clean_name(body) {
+                    out.event(Event::Osc(OscUpdate::Path(path)));
+                }
+            }
             9 => {
                 if let Some(update) = progress_bar_report(&text) {
                     out.event(Event::Osc(update));
@@ -739,12 +759,17 @@ fn window_operations(params: &[Param], out: &mut Observed) {
             }
             // The geometry reports, which are all this answers.
             14 | 15 | 16 | 18 | 19 => out.event(Event::WindowSizeReport(operation)),
-            // Push and pop the title, one argument. hmux keeps no title stack,
-            // so the argument is read for its position and nothing else.
+            // Push and pop the title, one argument saying which title. Only
+            // the window title and the "both" spelling reach the stack; the
+            // icon-name-only form is understood and does nothing. A missing
+            // argument abandons the rest of the sequence, as `case -1` does.
             22 | 23 => {
                 index += 1;
-                if read(index).is_none() {
-                    return;
+                match read(index) {
+                    None => return,
+                    Some(0 | 2) if operation == 22 => out.event(Event::TitlePush),
+                    Some(0 | 2) => out.event(Event::TitlePop),
+                    Some(_) => {}
                 }
             }
             _ => {}

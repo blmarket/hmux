@@ -204,6 +204,23 @@ impl Cell {
         }
         (self.flags & !(flag::CLEARED | flag::TAB)) == (other.flags & !(flag::CLEARED | flag::TAB))
     }
+
+    /// tmux's `grid_cells_equal`: the same appearance and the same content.
+    ///
+    /// This does not go through [`Cell::looks_equal`], because the two ask
+    /// different questions. `grid_cells_look_equal` masks only the cleared
+    /// flag, so a cell a tab produced is *not* equal to one holding a typed
+    /// space — a distinction `capture-pane -e` depends on. It also never
+    /// compares the underline colour, which is tmux's and stays tmux's.
+    pub(crate) fn equals(&self, other: &Cell) -> bool {
+        self.fg == other.fg
+            && self.bg == other.bg
+            && self.attr == other.attr
+            && self.link == other.link
+            && (self.flags & !flag::CLEARED) == (other.flags & !flag::CLEARED)
+            && self.data.width == other.data.width
+            && self.data.bytes == other.data.bytes
+    }
 }
 
 #[cfg(test)]

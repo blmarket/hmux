@@ -41,6 +41,12 @@ impl Charsets {
 pub(crate) struct Engine {
     pub(crate) screen: Screen,
     charsets: Charsets,
+    /// The charset half of tmux's `old_cell`. DECSC saves the whole
+    /// `input_cell` — the pen *and* which sets G0/G1 hold — so DECRC puts the
+    /// pane back into line drawing if that is where it was. There is no
+    /// "nothing saved yet" state: `input_reset` zeroes `old_cell` along with
+    /// `cell`, so an unpaired DECRC restores the defaults.
+    saved_charsets: Charsets,
     /// tmux's `ictx->last`: the character REP repeats.
     last: Option<CellData>,
     /// tmux's `INPUT_LAST`: whether `last` is still the most recent thing
@@ -53,6 +59,7 @@ impl Engine {
         Engine {
             screen: Screen::new(sx, sy, hlimit),
             charsets: Charsets::default(),
+            saved_charsets: Charsets::default(),
             last: None,
             last_valid: false,
         }
@@ -60,6 +67,12 @@ impl Engine {
 
     /// Apply one token.
     pub(crate) fn apply(&mut self, kind: &TokenKind) {
+        // "input_parse will end the collection when anything that isn't a plain
+        // character is encountered" — the comment in `screen_write_collect_add`,
+        // and the reason a run's extent stops where the next sequence begins.
+        if !matches!(kind, TokenKind::Print(_)) {
+            self.screen.end_run();
+        }
         match kind {
             TokenKind::Print(character) => self.print(*character),
             TokenKind::Control(byte) => self.control(*byte),
@@ -127,6 +140,20 @@ impl Engine {
         self.last_valid = false;
     }
 
+    // ---- saved state ------------------------------------------------------
+
+    /// tmux's `input_save_state`, behind DECSC and SCP.
+    fn save_state(&mut self) {
+        self.saved_charsets = self.charsets;
+        self.screen.save_cursor();
+    }
+
+    /// tmux's `input_restore_state`, behind DECRC and RCP.
+    fn restore_state(&mut self) {
+        self.charsets = self.saved_charsets;
+        self.screen.restore_cursor();
+    }
+
     // ---- escape sequences -------------------------------------------------
 
     /// tmux's `input_esc_dispatch`.
@@ -135,6 +162,7 @@ impl Engine {
             // RIS.
             ([], b'c') => {
                 self.charsets = Charsets::default();
+                self.saved_charsets = Charsets::default();
                 self.screen.reset();
             }
             // IND.
@@ -162,8 +190,8 @@ impl Engine {
             ([], b'=') => self.screen.mode_set(mode::KKEYPAD),
             ([], b'>') => self.screen.mode_clear(mode::KKEYPAD),
             // DECSC / DECRC.
-            ([], b'7') => self.screen.save_cursor(),
-            ([], b'8') => self.screen.restore_cursor(),
+            ([], b'7') => self.save_state(),
+            ([], b'8') => self.restore_state(),
             // DECALN.
             ([b'#'], b'8') => self.screen.alignment_test(),
             // SCS: select the line-drawing set into G0 or G1, or ASCII back.
@@ -336,14 +364,20 @@ impl Engine {
             (None, [], b'r') => {
                 let sy = self.screen.sy();
                 if let (Some(upper), Some(lower)) = (count(0), get(1, sy as u32)) {
-                    self.screen.set_scroll_region(upper - 1, lower.max(1) - 1);
-                    // tmux homes the cursor after setting the region.
-                    self.screen.cursor_move(Some(0), Some(0), true);
+                    // tmux homes the cursor from inside `screen_write_scrollregion`,
+                    // so a refused region leaves it where it was. The home is
+                    // `screen_write_set_cursor`, which is absolute: the region
+                    // has only just been named and origin mode does not bend
+                    // this move into it. DECOM's own home does that, when it
+                    // arrives.
+                    if self.screen.set_scroll_region(upper - 1, lower.max(1) - 1) {
+                        self.screen.set_cursor(Some(0), Some(0));
+                    }
                 }
             }
             // SCP / RCP, the CSI spellings of DECSC and DECRC.
-            (None, [], b's') => self.screen.save_cursor(),
-            (None, [], b'u') => self.screen.restore_cursor(),
+            (None, [], b's') => self.save_state(),
+            (None, [], b'u') => self.restore_state(),
             // `CSI > 4 ; n m`, tmux's MODKEYS: which `modifyOtherKeys` level
             // the pane wants. Only the two bits are recorded here; whether the
             // pane actually gets them is `extended-keys`'s decision, made where
@@ -546,24 +580,29 @@ impl Engine {
             let n = param.value.unwrap_or(0);
             if matches!(n, 38 | 48 | 58) {
                 index += 1;
-                let kind = params.get(index).map_or(0, |param| param.value.unwrap_or(0));
-                match kind {
-                    // Direct colour: three more parameters.
-                    2 => {
-                        let red = params.get(index + 1).map_or(0, |p| p.value.unwrap_or(0));
-                        let green = params.get(index + 2).map_or(0, |p| p.value.unwrap_or(0));
-                        let blue = params.get(index + 3).map_or(0, |p| p.value.unwrap_or(0));
-                        self.set_sgr_colour(n, colour::rgb(red as u8, green as u8, blue as u8));
-                        index += 4;
+                let at = |offset: usize| params.get(index + offset).and_then(|param| param.get(0));
+                // `input_get(ictx, i, 0, -1)`: a position left empty and one
+                // carrying sub-parameters both read as -1 and select neither
+                // arm, leaving the introducer to be skipped on its own.
+                match at(0) {
+                    // Direct colour: three more parameters — but only if the
+                    // colour is accepted. tmux advances past them from inside
+                    // `input_csi_dispatch_sgr_rgb`, so a rejected colour leaves
+                    // them to be read as ordinary SGR parameters.
+                    Some(2) => {
+                        let applied = self.sgr_rgb(n, at(1), at(2), at(3));
+                        if applied {
+                            index += 3;
+                        }
                     }
-                    // Palette colour: one more.
-                    5 => {
-                        let value = params.get(index + 1).map_or(0, |p| p.value.unwrap_or(0));
-                        self.set_sgr_colour(n, colour::indexed(value as u8));
-                        index += 2;
+                    // Palette colour: one more, consumed either way.
+                    Some(5) => {
+                        self.sgr_indexed(n, at(1));
+                        index += 1;
                     }
-                    _ => index += 1,
+                    _ => {}
                 }
+                index += 1;
                 continue;
             }
             self.sgr_one(n);
@@ -593,27 +632,54 @@ impl Engine {
             }
             Some(n @ (38 | 48 | 58)) => match read(0) {
                 // `38:2::r:g:b` has an empty colour-space id; `38:2:r:g:b`
-                // does not. Both are in use, so the triple is taken from the
-                // end rather than from a fixed offset.
+                // does not. Both are in use, and tmux tells them apart by the
+                // count of positions rather than by looking for the gap.
                 Some(2) => {
-                    let len = param.subs.len();
-                    if len < 4 {
-                        return;
-                    }
-                    let red = read(len - 3).unwrap_or(0);
-                    let green = read(len - 2).unwrap_or(0);
-                    let blue = read(len - 1).unwrap_or(0);
-                    self.set_sgr_colour(n, colour::rgb(red as u8, green as u8, blue as u8));
-                }
-                Some(5) => {
-                    if let Some(value) = read(1) {
-                        self.set_sgr_colour(n, colour::indexed(value as u8));
+                    let count = 1 + param.subs.len();
+                    let first = if count == 5 { 2 } else { 3 };
+                    if count >= first + 3 {
+                        self.sgr_rgb(n, read(first - 1), read(first), read(first + 1));
                     }
                 }
+                // tmux's `n < 3`: the palette index is the third position, so
+                // a shorter list names no colour at all.
+                Some(5) if param.subs.len() >= 2 => self.sgr_indexed(n, read(1)),
                 _ => {}
             },
             _ => {}
         }
+    }
+
+    /// tmux's `input_csi_dispatch_sgr_256_do`. An index past 255 is not a
+    /// palette entry, and neither is a position left empty; tmux resets the
+    /// colour to the default rather than folding the value into a byte.
+    ///
+    /// The reset arm covers only 38 and 48 — tmux has no 58 case on that side
+    /// of the test, so an out-of-range underline colour leaves the pen alone.
+    fn sgr_indexed(&mut self, which: u32, value: Option<u32>) {
+        match value.filter(|value| *value <= 255) {
+            Some(value) => self.set_sgr_colour(which, colour::indexed(value as u8)),
+            None if which != 58 => self.set_sgr_colour(which, colour::DEFAULT),
+            None => {}
+        }
+    }
+
+    /// tmux's `input_csi_dispatch_sgr_rgb_do`. The colour is applied only when
+    /// all three components are present and fit a byte; the answer is also what
+    /// tells the semicolon form whether those positions were arguments at all.
+    fn sgr_rgb(
+        &mut self,
+        which: u32,
+        red: Option<u32>,
+        green: Option<u32>,
+        blue: Option<u32>,
+    ) -> bool {
+        let byte = |value: Option<u32>| value.filter(|value| *value <= 255);
+        let (Some(red), Some(green), Some(blue)) = (byte(red), byte(green), byte(blue)) else {
+            return false;
+        };
+        self.set_sgr_colour(which, colour::rgb(red as u8, green as u8, blue as u8));
+        true
     }
 
     fn set_sgr_colour(&mut self, which: u32, value: i32) {
@@ -677,18 +743,18 @@ impl Engine {
     /// and the hyperlink one. Everything else the observer already turned into
     /// server state.
     fn osc(&mut self, data: &[u8]) {
-        let Ok(text) = std::str::from_utf8(data) else {
-            return;
-        };
-        if let Some(body) = text.strip_prefix("8;") {
+        // A hyperlink is read as bytes: tmux never asks whether the URI is text
+        // before storing it, so a byte that is not valid UTF-8 does not cost
+        // the pane its link.
+        if let Some(body) = data.strip_prefix(b"8;") {
             self.osc_8(body);
             return;
         }
-        let Some(body) = text.strip_prefix("133;") else {
+        let Some(body) = data.strip_prefix(b"133;") else {
             return;
         };
         let row = self.screen.grid.hsize + self.screen.cy;
-        match body.chars().next() {
+        match body.first().copied().map(char::from) {
             // A prompt starts here.
             Some('A') => self
                 .screen
@@ -705,14 +771,14 @@ impl Engine {
 
     /// tmux's `input_osc_8`: open or close a hyperlink on the pen, so the cells
     /// written after it belong to that link.
-    fn osc_8(&mut self, body: &str) {
+    fn osc_8(&mut self, body: &[u8]) {
         // A malformed sequence leaves whatever link is open alone, as tmux's
         // `bad` path does.
         let Some((id, uri)) = hyperlinks::parse(body) else {
             return;
         };
         self.screen.cell.link = match uri {
-            Some(uri) => self.screen.hyperlinks.put(&uri, id.as_deref()),
+            Some(uri) => self.screen.hyperlinks.put(uri, id),
             // An empty URI closes the open link.
             None => 0,
         };

@@ -5,17 +5,25 @@
 //! lands: the cursor, the scrolling region, the modes, the tab stops. The
 //! operations below are the ones `input.c` calls, ported one for one.
 //!
-//! tmux's `screen_write_collect_*` batching is deliberately not ported. It
-//! exists to coalesce writes to a real tty; it changes *when* tmux draws, never
-//! what the grid holds, and hmux composites from the grid rather than from the
-//! write stream. Dropping it removes a whole class of ordering subtleties that
-//! would have no observable effect here.
+//! tmux's `screen_write_collect_*` batching is not ported as batching. It
+//! exists to coalesce writes to a real tty, and hmux composites from the grid
+//! rather than from the write stream, so the *ordering* half of it has no
+//! observable effect here and dropping it removes a class of subtleties with
+//! it. Cells therefore go down one at a time.
+//!
+//! One half of it does have to be here, because it is not about drawing at
+//! all: a collected run reaches the grid through `grid_set_cells`, which
+//! expands the row once for the whole run, and `grid_expand_line` rounds that
+//! request up. A row written a cell at a time stops at the first rounding step
+//! and never allocates the rest — and `capture-pane` reads a row to its
+//! allocated extent, so the difference is visible in the captured bytes. See
+//! [`Run`], which carries just enough of the batching to get the extent right.
 
 use std::collections::BTreeSet;
 
-use super::cell::{colour, Cell, CellData, UTF8_SIZE};
+use super::cell::{attr, colour, flag, Cell, CellData, UTF8_SIZE};
 use super::combine;
-use super::grid::{colour_is_default, line_flag, Grid};
+use super::grid::{colour_is_default, line_flag, needs_extended, Grid, Line};
 use super::hyperlinks::Hyperlinks;
 use crate::vt::screen::{mode, ScreenOptions};
 use crate::vt::width;
@@ -41,6 +49,29 @@ struct SavedState {
     cy: usize,
     cell: Cell,
     mode: u32,
+}
+
+/// The run of plain characters currently being written, tmux's
+/// `screen_write_citem`.
+///
+/// tmux collects consecutive plain characters and puts them on the grid in one
+/// `grid_set_cells`, which expands the row once for the whole run. That is the
+/// one part of `screen_write_collect_*` a grid-only port cannot skip: the
+/// rounding `grid_expand_line` applies is computed from the length of the whole
+/// run, so a row written a cell at a time stops short of the step the run
+/// would have reached, and `capture-pane -e` reads to exactly that extent.
+///
+/// Only the extent is deferred here. The cells themselves still go down one at
+/// a time, because nothing between them can observe the difference.
+#[derive(Clone, Copy)]
+struct Run {
+    /// The grid row, so a wrap or a cursor move starts a new run.
+    row: usize,
+    /// The column the run has reached, tmux's `ci->x + ci->used`.
+    end: usize,
+    /// The row's allocated extent when the run opened. `grid_expand_line`
+    /// compares against the extent it finds, and for a run it finds this one.
+    opened_at: usize,
 }
 
 /// One pane's screen.
@@ -71,6 +102,8 @@ pub(crate) struct Screen {
     pub(crate) hyperlinks: Hyperlinks,
     /// The pane options this screen consults, as the server last resolved them.
     pub(crate) options: ScreenOptions,
+    /// The run of plain characters in progress; see [`Run`].
+    run: Option<Run>,
 }
 
 impl Screen {
@@ -93,6 +126,39 @@ impl Screen {
             cell: Cell::default(),
             hyperlinks: Hyperlinks::default(),
             options: ScreenOptions::default(),
+            run: None,
+        }
+    }
+
+    /// End the run of plain characters, tmux's `screen_write_collect_end`.
+    ///
+    /// Anything that is not another plain character in the next column closes
+    /// the run, because tmux writes it to the grid at that point and the next
+    /// run's expansion starts from the extent this one left.
+    pub(crate) fn end_run(&mut self) {
+        self.run = None;
+    }
+
+    /// Record that a run of plain characters has reached column `end` on `row`,
+    /// and give the row the allocated extent `grid_expand_line` would have
+    /// given it for the run so far.
+    ///
+    /// Applying this on every character rather than once at the end reaches the
+    /// same extent — the rounding never shrinks as the run grows — and saves
+    /// having to find a moment to flush.
+    fn extend_run(&mut self, row: usize, end: usize) {
+        let opened_at = match self.run {
+            Some(run) if run.row == row && run.end + 1 == end => run.opened_at,
+            _ => self.grid.line(row).map_or(0, Line::size),
+        };
+        self.run = Some(Run {
+            row,
+            end,
+            opened_at,
+        });
+        if end > opened_at {
+            let extent = self.grid.rounded_extent(end);
+            self.grid.grow_line(row, extent, colour::DEFAULT);
         }
     }
 
@@ -473,6 +539,14 @@ impl Screen {
         let sx = self.sx();
         let wrap = self.mode & mode::WRAP != 0;
 
+        // tmux's `screen_write_collect_add` takes only plain characters into a
+        // run; anything else it hands straight to `screen_write_cell`, which
+        // expands the row for that one cell.
+        let collected = self.collects(cell);
+        if !collected {
+            self.end_run();
+        }
+
         // A wide character that cannot fit and cannot wrap is dropped whole.
         if !wrap && width > 1 && (width > sx || (self.cx != sx && self.cx > sx - width)) {
             return;
@@ -481,6 +555,9 @@ impl Screen {
             self.insert_character(width, colour::DEFAULT);
         }
         if wrap && self.cx > sx - width {
+            // The run is written out before the wrap, so the row it lands on is
+            // the one it was collected against.
+            self.end_run();
             self.linefeed(true, colour::DEFAULT);
             self.set_cursor(Some(0), None);
         }
@@ -490,12 +567,27 @@ impl Screen {
 
         // Overwriting the left half of a wide character has to erase its
         // right half too, and vice versa, or a stale padding cell is left.
-        self.overwrite(width);
+        let erased = self.overwrite(width);
 
+        // tmux's `skip`. A write that would leave the cell exactly as it found
+        // it does not reach the grid at all — and only the uncollected path
+        // asks: a run goes down through `grid_set_cells`, which always writes.
         let row = self.view_y(self.cy);
-        self.grid.set(self.cx, row, cell);
-        for xx in self.cx + 1..self.cx + width {
-            self.grid.set_padding(xx, row, cell);
+        let skip = !collected
+            && !erased
+            && width == 1
+            && self.mode & mode::INSERT == 0
+            && self.writing_changes_nothing(row, cell);
+        if !skip {
+            // The run claims the row's extent before the cells go down, as
+            // tmux's `grid_set_cells` expands ahead of the write it will make.
+            if collected {
+                self.extend_run(row, self.cx + width);
+            }
+            self.grid.set(self.cx, row, cell);
+            for xx in self.cx + 1..self.cx + width {
+                self.grid.set_padding(xx, row, cell);
+            }
         }
 
         // Without wrapping the cursor sticks on the last column and the next
@@ -506,6 +598,48 @@ impl Screen {
         } else {
             self.cx = sx - not_wrap;
         }
+    }
+
+    /// tmux's "if no change, do not draw" test in `screen_write_cell`.
+    ///
+    /// Past the row's allocated extent there is no cell to compare against, so
+    /// the question becomes whether writing one would show anything at all.
+    /// That is what leaves a row of plain spaces unallocated, and it is
+    /// observable: `capture-pane` reads a row to its allocated extent.
+    ///
+    /// Inside the extent tmux compares against the *packed* cell, so anything
+    /// rich enough to be stored out of line never matches. The cleared flag is
+    /// part of the comparison, which makes a space written over a cell an
+    /// erase produced a change even though the two look identical.
+    fn writing_changes_nothing(&self, row: usize, cell: &Cell) -> bool {
+        let Some(existing) = self.grid.peek(self.cx, row) else {
+            return cell.equals(&Cell::default());
+        };
+        !needs_extended(existing)
+            && cell.flags == existing.flags
+            && cell.attr == existing.attr
+            && cell.fg == existing.fg
+            && cell.bg == existing.bg
+            && cell.data.width == 1
+            && cell.data.bytes.len() == 1
+            && existing.data.bytes == cell.data.bytes
+    }
+
+    /// Whether this character joins a run, tmux's test at the top of
+    /// `screen_write_collect_add`.
+    ///
+    /// A run is plain single-byte ASCII in the ordinary writing mode. tmux also
+    /// refuses to collect while a selection is up, which has no counterpart
+    /// here: hmux's selection lives in the server's copy mode, not in the
+    /// screen, and never reaches this path.
+    fn collects(&self, cell: &Cell) -> bool {
+        cell.data.width == 1
+            && cell.data.bytes.len() == 1
+            && cell.data.bytes[0] < 0x7f
+            && cell.flags & flag::TAB == 0
+            && cell.attr & attr::CHARSET == 0
+            && self.mode & mode::WRAP != 0
+            && self.mode & mode::INSERT == 0
     }
 
     /// tmux's `screen_write_combine`: decide whether this character joins the
@@ -604,9 +738,13 @@ impl Screen {
 
     /// tmux's `screen_write_overwrite`: clear the padding around a wide
     /// character the incoming one partly covers.
-    fn overwrite(&mut self, width: usize) {
+    ///
+    /// The answer is whether anything was erased, which is what tells the
+    /// caller the write is not a no-op after all.
+    fn overwrite(&mut self, width: usize) -> bool {
         let row = self.view_y(self.cy);
         let sx = self.sx();
+        let mut erased = false;
 
         // Landing on the right half of a wide character: erase its left half.
         if self.grid.get(self.cx, row).is_padding() {
@@ -618,6 +756,7 @@ impl Screen {
                 }
             }
             self.grid.clear(xx, row, self.cx - xx, 1, colour::DEFAULT);
+            erased = true;
         }
 
         // Covering the left half of a wide character: erase the padding that
@@ -633,8 +772,10 @@ impl Screen {
                     end += 1;
                 }
                 self.grid.clear(xx, row, end - xx, 1, colour::DEFAULT);
+                erased = true;
             }
         }
+        erased
     }
 
     // ---- tabs ------------------------------------------------------------
@@ -680,15 +821,20 @@ impl Screen {
 
     // ---- modes and regions -----------------------------------------------
 
-    /// DECSTBM. A region that is empty or off the screen is refused, and a
-    /// valid one homes the cursor, as tmux's `screen_write_scrollregion` does.
-    pub(crate) fn set_scroll_region(&mut self, upper: usize, lower: usize) {
-        let sy = self.sy();
-        if upper >= lower || lower > sy - 1 {
-            return;
+    /// DECSTBM, tmux's `screen_write_scrollregion`. Both edges are pulled onto
+    /// the screen first, so a bottom past the last row keeps the region rather
+    /// than refusing it; only a region that has collapsed to one line or
+    /// inverted is refused. The answer is whether it took, which is what tells
+    /// the caller to home the cursor.
+    pub(crate) fn set_scroll_region(&mut self, upper: usize, lower: usize) -> bool {
+        let last = self.sy() - 1;
+        let (upper, lower) = (upper.min(last), lower.min(last));
+        if upper >= lower {
+            return false;
         }
         self.rupper = upper;
         self.rlower = lower;
+        true
     }
 
     /// tmux's `screen_write_mode_set`.

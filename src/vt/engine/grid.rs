@@ -68,7 +68,7 @@ fn lay_out(out: &mut Vec<Line>, cells: Vec<Cell>, sx: usize, flags: u8) {
 /// This engine stores every cell the same way, so the answer changes no storage
 /// here. It is still worth computing, because tmux lets the answer show: the
 /// line flag it sets is sticky and `capture-pane -F` prints it.
-fn needs_extended(cell: &Cell) -> bool {
+pub(crate) fn needs_extended(cell: &Cell) -> bool {
     cell.attr > 0xff
         || cell.data.bytes.len() > 1
         || cell.data.width > 1
@@ -184,6 +184,13 @@ impl Grid {
         }
     }
 
+    /// The cell as it is actually stored, or `None` past the row's allocated
+    /// extent. Unlike [`Grid::get`] this tells "a cell holding a default" apart
+    /// from "no cell at all", which is a distinction `screen_write_cell` makes.
+    pub(crate) fn peek(&self, px: usize, py: usize) -> Option<&Cell> {
+        self.lines.get(py).and_then(|line| line.cells.get(px))
+    }
+
     /// tmux's `grid_set_cell`.
     pub(crate) fn set(&mut self, px: usize, py: usize, cell: &Cell) {
         if py >= self.lines.len() {
@@ -219,24 +226,48 @@ impl Grid {
     /// The rounding is not just an allocation detail: the cells it brings into
     /// existence are *cleared* with `bg`, so how far a row grows decides what
     /// colour the space past a program's last write has.
-    pub(crate) fn expand_line(&mut self, py: usize, mut sx: usize, bg: i32) {
-        let screen_width = self.sx;
+    pub(crate) fn expand_line(&mut self, py: usize, sx: usize, bg: i32) {
+        let Some(line) = self.lines.get(py) else {
+            return;
+        };
+        if sx <= line.cells.len() {
+            return;
+        }
+        self.grow_line(py, self.rounded_extent(sx), bg);
+    }
+
+    /// The extent `grid_expand_line` rounds a request for `sx` cells up to: a
+    /// quarter of the screen width, then a half, then the width itself.
+    ///
+    /// The steps are why the size of a *write* is observable. tmux expands a
+    /// row once for the whole run it is about to put there, so a run that ends
+    /// on a step rounds past it; the same characters written a cell at a time
+    /// would stop at the first step and never allocate the rest.
+    pub(crate) fn rounded_extent(&self, sx: usize) -> usize {
+        if sx < self.sx / 4 {
+            self.sx / 4
+        } else if sx < self.sx / 2 {
+            self.sx / 2
+        } else if self.sx > sx {
+            self.sx
+        } else {
+            sx
+        }
+    }
+
+    /// Grow a row to `sx` allocated cells, clearing the new ones with `bg`.
+    /// The rounding is the caller's, so this is the half of `grid_expand_line`
+    /// a run can apply once it knows how far it reached.
+    pub(crate) fn grow_line(&mut self, py: usize, sx: usize, bg: i32) {
         let Some(line) = self.lines.get_mut(py) else {
             return;
         };
         if sx <= line.cells.len() {
             return;
         }
-        if sx < screen_width / 4 {
-            sx = screen_width / 4;
-        } else if sx < screen_width / 2 {
-            sx = screen_width / 2;
-        } else if screen_width > sx {
-            sx = screen_width;
-        }
         // An RGB background makes the fill cell itself extended, and tmux's
         // `grid_clear_cell` allocates an entry for each one it writes.
-        let grown = sx.saturating_sub(line.cells.len());
+        let grown = sx - line.cells.len();
         if needs_extended(&Cell::cleared(bg)) {
             line.extd += grown;
         }
