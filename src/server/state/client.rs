@@ -9,14 +9,15 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use super::{
-    now_micros, ClientAction, ClientActionResult, ClientKey, ClientMessage, ClientMessageResult,
-    OverlayRequest, DEFAULT_KEY_TABLE,
+    now_epoch, now_micros, ClientAction, ClientActionResult, ClientKey, ClientMessage,
+    ClientMessageResult, MessageLogEntry, OverlayRequest, ServerState, DEFAULT_KEY_TABLE,
 };
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
 use crate::server::pane::NativePaneObservation;
@@ -1893,5 +1894,481 @@ impl Drop for ActiveCommandPrompt {
             let mut state = self.slot.inner.borrow_mut();
             state.active = false;
         }
+    }
+}
+
+impl ServerState {
+    pub(crate) fn client_prompt_registry(&self) -> Rc<ClientPromptRegistry> {
+        Rc::clone(&self.client_prompts)
+    }
+
+    pub(crate) fn client_render_registry(&self) -> Rc<ClientRenderRegistry> {
+        Rc::clone(&self.client_renders)
+    }
+
+    pub(crate) fn client_snapshots(&self) -> Vec<ClientSnapshot> {
+        self.client_renders.snapshots()
+    }
+
+    /// Each attached client's resolved terminal description, for
+    /// `show-messages -T`: `(name, TERM, resolved)`. The only path that pays
+    /// for a `ResolvedTerm` clone.
+    pub(crate) fn client_terminals(&self) -> Vec<(String, String, ResolvedTerm)> {
+        self.client_renders.with_entries(|entries| {
+            entries
+                .filter_map(|entry| {
+                    let terminal = entry.terminal.clone()?;
+                    Some((entry.name.clone(), entry.term.clone(), terminal))
+                })
+                .collect()
+        })
+    }
+
+    /// Whether a client other than `client_name` holds the session's size:
+    /// tmux's `ignore_client_size` — an `ignore-size` client is ignored only
+    /// while some counted client is unflagged.
+    pub(crate) fn other_client_constrains_size(&self, session_id: u32, client_name: &str) -> bool {
+        self.client_renders.with_entries(|mut entries| {
+            entries.any(|entry| {
+                entry.session_id == session_id
+                    && entry.name != client_name
+                    && !entry.ignore_size
+                    && entry.counts_for_sizing()
+            })
+        })
+    }
+
+    pub(crate) fn send_client_message(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+        session_id: u32,
+        message: ClientMessage,
+    ) -> ClientMessageResult {
+        self.client_renders
+            .send_message(target, invoking_tty, session_id, message)
+    }
+
+    pub(crate) fn set_client_selection(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+        data: Option<Vec<u8>>,
+    ) -> ClientActionResult {
+        self.client_renders
+            .set_client_selection(target, invoking_tty, data)
+    }
+
+    /// Record a terminal focus report. The client's `focused` flag follows it
+    /// whatever `focus-events` says — the option only decides whether tmux asks
+    /// the terminal for reports at all — and the active pane's focus moves with
+    /// the client's.
+    pub(crate) fn set_client_focus(
+        &mut self,
+        client: &str,
+        session_id: u32,
+        focused: bool,
+        target: &str,
+    ) {
+        if !self.client_renders.set_client_focused(client, focused) {
+            return;
+        }
+        let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
+        self.notify_client(
+            if focused {
+                "client-focus-in"
+            } else {
+                "client-focus-out"
+            },
+            client,
+            Some(session_id),
+        );
+        self.notifications_are_deferred = was_deferred;
+        let _ = target;
+        if let Some(window_id) = self.current_window_of_session(session_id) {
+            self.update_window_focus(window_id);
+        }
+    }
+
+    /// Record the theme a client's terminal reported, firing the matching hook
+    /// when it changes.
+    pub(crate) fn set_client_theme(&mut self, client: &str, session_id: u32, theme: &str) {
+        if !self.client_renders.set_client_theme(client, theme) {
+            return;
+        }
+        let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
+        self.notify_client(
+            if theme == "dark" {
+                "client-dark-theme"
+            } else {
+                "client-light-theme"
+            },
+            client,
+            Some(session_id),
+        );
+        self.notifications_are_deferred = was_deferred;
+    }
+
+    /// Whether a clipboard query may be sent to this client now. tmux keeps one
+    /// outstanding request per terminal for `CLIPBOARD_QUERY_TIMEOUT`, so a
+    /// repeat inside the window is dropped instead of queued.
+    pub(crate) fn begin_clipboard_query(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+    ) -> bool {
+        const CLIPBOARD_QUERY_TIMEOUT: Duration = Duration::from_secs(5);
+        self.client_renders
+            .begin_clipboard_query(target, invoking_tty, CLIPBOARD_QUERY_TIMEOUT)
+    }
+
+    pub(crate) fn overlay_client(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+        request: OverlayRequest,
+        reply: Option<PromptReply>,
+    ) -> ClientActionResult {
+        self.client_renders
+            .overlay_client(target, invoking_tty, request, reply)
+    }
+
+    pub(crate) fn confirm_client(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+        prompt: String,
+        command: Vec<String>,
+        confirm_key: u8,
+        default_yes: bool,
+        reply: Option<PromptReply>,
+    ) -> ClientActionResult {
+        self.client_renders.confirm_client(
+            target,
+            invoking_tty,
+            prompt,
+            command,
+            confirm_key,
+            default_yes,
+            reply,
+        )
+    }
+
+    pub(crate) fn add_message(&mut self, text: String) {
+        let limit = self
+            .server_options()
+            .get("message-limit")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(1000);
+        self.message_log.push(MessageLogEntry {
+            time: now_epoch(),
+            text,
+        });
+        if self.message_log.len() > limit {
+            self.message_log.drain(..self.message_log.len() - limit);
+        }
+    }
+
+    pub(crate) fn messages(&self) -> &[MessageLogEntry] {
+        &self.message_log
+    }
+
+    pub(crate) fn lock_all_clients(&self) {
+        self.client_renders.lock_all(&self.lock_commands());
+    }
+
+    pub(crate) fn lock_session_clients(&self, target: &str) -> io::Result<()> {
+        let session = self.resolve_session(target).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("can't find session: {target}"),
+            )
+        })?;
+        let command = session
+            .options(&self.global_options)
+            .get("lock-command")
+            .unwrap_or("lock -np");
+        self.client_renders.lock_session(session.id, command);
+        Ok(())
+    }
+
+    pub(crate) fn lock_client(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+    ) -> ClientActionResult {
+        self.client_renders
+            .lock_client(target, invoking_tty, &self.lock_commands())
+    }
+
+    pub(crate) fn detach_client(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+        exec: Option<&str>,
+    ) -> ClientActionResult {
+        self.client_renders.detach_client(target, invoking_tty, exec)
+    }
+
+    pub(crate) fn suspend_client(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+    ) -> ClientActionResult {
+        self.client_renders.suspend_client(target, invoking_tty)
+    }
+
+    pub(crate) fn refresh_client(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+    ) -> ClientActionResult {
+        self.client_renders.refresh_client(target, invoking_tty)
+    }
+
+    /// Record `refresh-client -f` values on the target client and hand them to
+    /// it so its own flag state follows.
+    pub(crate) fn refresh_client_flags(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+        values: &[String],
+    ) -> ClientActionResult {
+        self.client_renders
+            .refresh_client_flags(target, invoking_tty, values)
+    }
+
+    pub(crate) fn client_read_only(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+    ) -> Option<bool> {
+        self.client_renders.client_read_only(target, invoking_tty)
+    }
+
+    pub(crate) fn send_client_keys(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+        keys: Vec<ClientKey>,
+    ) -> ClientActionResult {
+        self.client_renders
+            .send_client_keys(target, invoking_tty, keys)
+    }
+
+    pub(crate) fn switch_client(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+        session_id: u32,
+    ) -> ClientActionResult {
+        self.client_renders
+            .switch_client(target, invoking_tty, session_id)
+    }
+
+    /// Toggle `switch-client -r` on the target client, reporting its name.
+    pub(crate) fn toggle_client_read_only(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+    ) -> Result<String, ClientActionResult> {
+        self.client_renders
+            .toggle_client_read_only(target, invoking_tty)
+    }
+
+    /// tmux stamps `c->activity_time` alongside the session's whenever a key
+    /// arrives; it is what orders `cmd_find_best_client`.
+    pub(crate) fn touch_client_activity(&mut self, client: &str, session_id: u32) {
+        self.touch_session_activity(session_id, false);
+        self.client_renders
+            .touch_client_activity(client, now_micros());
+    }
+
+    /// tmux's `session_lock_timer`: lock every client of a session whose
+    /// clients have gone `lock-after-time` seconds without touching a key.
+    ///
+    /// tmux arms the timer from `session_update_activity` and lets libevent
+    /// fire it once; hmux polls instead, so `locked_at_activity_micros` is what
+    /// keeps an idle session from being locked again on every server loop.
+    /// Returns how long the loop may sleep before the next session is due.
+    pub(crate) fn refresh_lock_timers(&mut self) -> Option<Duration> {
+        let attached = self.attached_session_ids();
+        if attached.is_empty() {
+            return None;
+        }
+        let now = now_micros();
+        let mut due = Vec::new();
+        let mut next = None;
+        for session in self
+            .sessions
+            .iter()
+            .filter(|session| attached.contains(&session.id))
+        {
+            let seconds = session
+                .options(&self.global_options)
+                .get("lock-after-time")
+                .and_then(|value| value.parse::<i64>().ok())
+                .unwrap_or(0);
+            if seconds <= 0 || session.locked_at_activity_micros == Some(session.activity_micros) {
+                continue;
+            }
+            let deadline = session.activity_micros + seconds * 1_000_000;
+            if deadline <= now {
+                due.push(session.id);
+            } else {
+                let remaining = Duration::from_micros((deadline - now) as u64);
+                next = Some(next.map_or(remaining, |next: Duration| next.min(remaining)));
+            }
+        }
+        let commands = self.lock_commands();
+        for session_id in due {
+            if let Some(session) = self
+                .sessions
+                .iter_mut()
+                .find(|session| session.id == session_id)
+            {
+                session.locked_at_activity_micros = Some(session.activity_micros);
+            }
+            if let Some(command) = commands.get(&session_id) {
+                self.client_renders.lock_session(session_id, command);
+            }
+        }
+        next
+    }
+
+    pub(crate) fn control_snapshot(&self, session_name: &str) -> Option<ControlStateSnapshot> {
+        let session_pos = self.session_index(session_name)?;
+        let session = &self.sessions[session_pos];
+        let active_window_id = session.windows.get(session.active)?.id;
+        let mut windows = BTreeMap::new();
+        for (position, link) in session.windows.iter().enumerate() {
+            let window = self.windows.get(&link.id)?;
+            let body = window.layout.dump();
+            let checksum = body.bytes().fold(0u16, |sum, byte| {
+                sum.rotate_right(1).wrapping_add(u16::from(byte))
+            });
+            let flags = self.printable_window_flags(session, position, false);
+            windows.insert(
+                window.id,
+                ControlWindowSnapshot {
+                    id: window.id,
+                    index: link.index,
+                    name: window.name.clone(),
+                    layout: format!("{checksum:04x},{body}"),
+                    flags,
+                    active_pane_id: window.panes.get(window.active)?.id,
+                    panes: window
+                        .panes
+                        .iter()
+                        .map(|pane| ControlPaneSnapshot {
+                            id: pane.id,
+                            runtime_id: pane.pane.runtime_id(),
+                            observation: pane.pane.observation_state(),
+                        })
+                        .collect(),
+                },
+            );
+        }
+        let sessions = self
+            .sessions
+            .iter()
+            .map(|session| (session.id, session.name.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let global_windows = self
+            .windows
+            .iter()
+            .map(|(id, window)| {
+                let links = self
+                    .sessions
+                    .iter()
+                    .flat_map(|session| &session.windows)
+                    .filter(|link| link.id == *id)
+                    .count();
+                (
+                    *id,
+                    ControlGlobalWindowSnapshot {
+                        name: window.name.clone(),
+                        links,
+                    },
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let pane_modes = self
+            .windows
+            .values()
+            .flat_map(|window| &window.panes)
+            .map(|pane| (pane.id, pane.mode.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let buffers = self
+            .buffers
+            .iter()
+            .map(|(name, data)| {
+                let mut hasher = DefaultHasher::new();
+                data.hash(&mut hasher);
+                (name.clone(), hasher.finish())
+            })
+            .collect::<BTreeMap<_, _>>();
+        let clients = self.client_renders.with_entries(|entries| {
+            entries
+                .filter_map(|entry| {
+                    sessions
+                        .get(&entry.session_id)
+                        .cloned()
+                        .map(|name| (entry.name.clone(), (entry.session_id, name)))
+                })
+                .collect::<BTreeMap<_, _>>()
+        });
+        Some(ControlStateSnapshot {
+            session_id: session.id,
+            session_name: session.name.clone(),
+            active_window_id,
+            windows,
+            sessions,
+            global_windows,
+            pane_modes,
+            buffers,
+            clients,
+        })
+    }
+
+    pub(crate) fn control_checkpoint_end(&self) -> u64 {
+        self.next_control_checkpoint
+    }
+
+    pub(crate) fn record_control_checkpoint(&mut self) {
+        let session_ids = self
+            .sessions
+            .iter()
+            .map(|session| session.id)
+            .collect::<Vec<_>>();
+        let snapshots = session_ids
+            .into_iter()
+            .filter_map(|session_id| {
+                self.control_snapshot(&format!("${session_id}"))
+                    .map(|snapshot| (session_id, snapshot))
+            })
+            .collect::<BTreeMap<_, _>>();
+        self.next_control_checkpoint = self.next_control_checkpoint.saturating_add(1);
+        self.control_checkpoints.push_back(ControlCheckpoint {
+            sequence: self.next_control_checkpoint,
+            snapshots,
+        });
+        while self.control_checkpoints.len() > CONTROL_CHECKPOINT_LIMIT {
+            self.control_checkpoints.pop_front();
+        }
+    }
+
+    pub(crate) fn control_checkpoints_since(
+        &self,
+        session_id: u32,
+        sequence: u64,
+    ) -> (u64, Vec<ControlStateSnapshot>) {
+        let snapshots = self
+            .control_checkpoints
+            .iter()
+            .filter(|checkpoint| checkpoint.sequence > sequence)
+            .filter_map(|checkpoint| checkpoint.snapshots.get(&session_id).cloned())
+            .collect();
+        (self.next_control_checkpoint, snapshots)
     }
 }
