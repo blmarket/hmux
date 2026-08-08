@@ -7,6 +7,7 @@
 //! differential harness diffs against.
 
 use std::io;
+use std::sync::Arc;
 
 use super::dispatch::Engine;
 use super::dump;
@@ -14,7 +15,7 @@ use super::keys;
 use super::screen::DEFAULT_HISTORY_LIMIT;
 use crate::vt::input::{InputEncoder, MouseEvent};
 use crate::vt::parser::Token;
-use crate::vt::screen::{CaptureExtent, Grid, GridDims, ScreenOptions, VtScreen};
+use crate::vt::screen::{CaptureExtent, Grid, GridDims, ScreenImage, ScreenOptions, VtScreen};
 
 /// hmux's own screen.
 pub(crate) struct EngineScreen {
@@ -96,6 +97,23 @@ impl VtScreen for EngineScreen {
     fn grid_snapshot(&self) -> io::Result<Grid> {
         let total = self.engine.screen.grid.total();
         Ok(dump::snapshot(&self.engine.screen, 0, total))
+    }
+
+    fn images(&self) -> Vec<ScreenImage> {
+        let images = &self.engine.screen.images;
+        let revision = images.revision();
+        images
+            .live()
+            .map(|image| ScreenImage {
+                px: u16::try_from(image.px).unwrap_or(u16::MAX),
+                py: u16::try_from(image.py).unwrap_or(u16::MAX),
+                sx: u16::try_from(image.sx).unwrap_or(u16::MAX),
+                sy: u16::try_from(image.sy).unwrap_or(u16::MAX),
+                revision,
+                data: Arc::clone(&image.data),
+                fallback: Arc::clone(&image.fallback),
+            })
+            .collect()
     }
 
     fn inactive_snapshot(&self) -> io::Result<Option<(Grid, Vec<u8>)>> {

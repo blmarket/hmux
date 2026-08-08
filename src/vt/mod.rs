@@ -42,6 +42,7 @@ pub(crate) mod input;
 pub(crate) mod observer;
 pub(crate) mod parser;
 pub(crate) mod screen;
+pub(crate) mod sixel;
 mod vis;
 pub(crate) mod width;
 mod x11_colour;

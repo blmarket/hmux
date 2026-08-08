@@ -15,5 +15,6 @@ pub(crate) mod dispatch;
 pub(crate) mod dump;
 pub(crate) mod grid;
 pub(crate) mod hyperlinks;
+pub(crate) mod images;
 pub(crate) mod keys;
 pub(crate) mod screen;

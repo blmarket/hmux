@@ -31,7 +31,7 @@ use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
 use crate::vt::input::MouseEvent;
 use crate::vt::parser::tokenize;
 use crate::vt::screen::{
-    CellSemantic, CellWidth, Grid, GridCell, GridRow, ScreenOptions, VtScreen,
+    CellSemantic, CellWidth, Grid, GridCell, GridRow, ScreenImage, ScreenOptions, VtScreen,
 };
 use crate::vt::width;
 use crate::vt::PaneScreen;
@@ -1827,7 +1827,38 @@ struct SizingClient {
     session_id: u32,
     cols: u16,
     rows: u16,
+    /// The client terminal's cell size in pixels, zero when it reports none.
+    xpixel: u16,
+    ypixel: u16,
     size_seq: u64,
+}
+
+/// tmux's pixel fold in `clients_calculate_size`: the largest cell size any
+/// candidate reports, and only from a client that is larger in *both*
+/// directions — tmux compares them together, so a client with a wider cell but
+/// a shorter one does not contribute either.
+fn fold_client_pixels<'a>(clients: impl Iterator<Item = &'a SizingClient>) -> (u16, u16) {
+    clients.fold((0, 0), |(xpixel, ypixel), client| {
+        if client.xpixel > xpixel && client.ypixel > ypixel {
+            (client.xpixel, client.ypixel)
+        } else {
+            (xpixel, ypixel)
+        }
+    })
+}
+
+/// tmux's `DEFAULT_XPIXEL` and `DEFAULT_YPIXEL`: the cell size a window assumes
+/// when no attached client reports one.
+pub(crate) const DEFAULT_XPIXEL: u16 = 16;
+pub(crate) const DEFAULT_YPIXEL: u16 = 32;
+
+/// A window size as `clients_calculate_size` derives it: the cell count and the
+/// cell's pixel size, which move together.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct WindowSize {
+    pub(crate) size: (u16, u16),
+    /// Zero in either direction when no candidate client reported a pixel size.
+    pub(crate) pixels: (u16, u16),
 }
 
 /// Fold a client set into one size under `policy`, or `None` when it is empty.
@@ -2142,7 +2173,12 @@ pub struct Window {
     /// applied by `server_client_check_window_resize` once some session makes
     /// the window current, so a background window keeps the geometry its panes
     /// were last drawn at instead of churning on every client resize.
-    pub(crate) pending_size: Option<(u16, u16)>,
+    pub(crate) pending_size: Option<WindowSize>,
+    /// The window's cell size in pixels — tmux's `w->xpixel`/`w->ypixel`,
+    /// aggregated from the attached clients' terminals. Only sixel parsing
+    /// reads it, to turn an image's pixel dimensions into cells.
+    pub(crate) xpixel: u16,
+    pub(crate) ypixel: u16,
     pub(crate) layout: LayoutCell,
     pub(crate) last_layout: Option<usize>,
     /// The layout string before the last `select-layout`-family command —
@@ -2442,6 +2478,11 @@ struct ClientRenderEntry {
     user: String,
     cols: u16,
     rows: u16,
+    /// The client terminal's cell size in pixels — tmux's `tty->xpixel` and
+    /// `tty->ypixel` — or zero while the terminal has reported none. Only sixel
+    /// output reads it.
+    xpixel: u16,
+    ypixel: u16,
     flags: String,
     read_only: bool,
     control_mode: bool,
@@ -2943,6 +2984,10 @@ impl ClientRenderRegistry {
                 user: String::new(),
                 cols,
                 rows,
+                // A client reports its pixel size after the handshake, if at
+                // all; until then the window falls back to tmux's defaults.
+                xpixel: 0,
+                ypixel: 0,
                 flags,
                 read_only,
                 control_mode,
@@ -3033,6 +3078,16 @@ impl ClientRenderRegistry {
     }
 
     /// The viewport inputs of the client called `name`.
+    /// The cell size in pixels the named client's terminal reports, or zero
+    /// when it reports none.
+    fn client_cell_pixels(&self, name: &str) -> Option<(u16, u16)> {
+        self.with_entries(|mut entries| {
+            entries
+                .find(|entry| entry.name == name)
+                .map(|entry| (entry.xpixel, entry.ypixel))
+        })
+    }
+
     fn viewport_client(&self, name: &str) -> Option<ViewportClient> {
         self.with_entries(|mut entries| {
             entries
@@ -3813,6 +3868,20 @@ impl ClientRenderAttachment {
                 entry.size_changed = true;
                 // Resizing makes this the latest client, as attaching does.
                 entry.size_seq = size_seq;
+            }
+        }
+        self.registry.bump_generation();
+    }
+
+    /// Publish the client terminal's cell size in pixels, which sixel output
+    /// scales against. Separate from [`Self::update_size`] because a font
+    /// change moves it without moving the cell count.
+    pub(crate) fn update_cell_pixels(&self, xpixel: u16, ypixel: u16) {
+        {
+            let mut inner = self.registry.inner.borrow_mut();
+            if let Some(entry) = inner.clients.get_mut(&self.id) {
+                entry.xpixel = xpixel;
+                entry.ypixel = ypixel;
             }
         }
         self.registry.bump_generation();
@@ -7378,6 +7447,8 @@ impl ServerState {
                 manual_size: (cols, rows),
                 latest_client: None,
                 pending_size: None,
+                xpixel: DEFAULT_XPIXEL,
+                ypixel: DEFAULT_YPIXEL,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
                 old_layout: None,
@@ -7773,6 +7844,8 @@ impl ServerState {
                 manual_size: (cols, rows),
                 latest_client: None,
                 pending_size: None,
+                xpixel: DEFAULT_XPIXEL,
+                ypixel: DEFAULT_YPIXEL,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
                 old_layout: None,
@@ -7928,6 +8001,8 @@ impl ServerState {
                 manual_size: (cols, rows),
                 latest_client: None,
                 pending_size: None,
+                xpixel: DEFAULT_XPIXEL,
+                ypixel: DEFAULT_YPIXEL,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
                 old_layout: None,
@@ -8953,6 +9028,10 @@ impl ServerState {
                 let options = node.options(window, &self.global_options);
                 node.pane.set_screen_options(ScreenOptions {
                     scroll_on_clear: options.get("scroll-on-clear") != Some("off"),
+                    // Not an option: the window's cell size in pixels, which a
+                    // sixel payload has to be measured against as it is parsed.
+                    xpixel: u32::from(window.xpixel),
+                    ypixel: u32::from(window.ypixel),
                 });
                 node.pane.set_output_policy(PaneOutputPolicy {
                     alternate_screen: options.get("alternate-screen") != Some("off"),
@@ -11181,6 +11260,8 @@ impl ServerState {
                 manual_size: source_size,
                 latest_client: None,
                 pending_size: None,
+                xpixel: DEFAULT_XPIXEL,
+                ypixel: DEFAULT_YPIXEL,
                 layout: LayoutCell::pane(node_id, source_size.0, source_size.1),
                 last_layout: None,
                 old_layout: None,
@@ -12384,10 +12465,16 @@ impl ServerState {
         policy: WindowSizePolicy,
         aggressive: bool,
         clients: &[SizingClient],
-    ) -> Option<(u16, u16)> {
+    ) -> Option<WindowSize> {
         let window = self.windows.get(window_id)?;
         if policy == WindowSizePolicy::Manual {
-            return Some(window.manual_size);
+            // tmux skips the client loop entirely under `manual`, so no client
+            // contributes a pixel size and the window falls back to the
+            // default one.
+            return Some(WindowSize {
+                size: window.manual_size,
+                pixels: (0, 0),
+            });
         }
         // `latest` narrows to `w->latest` only once more than one client can see
         // the window; a lone client is folded as for `smallest`.
@@ -12406,12 +12493,19 @@ impl ServerState {
                     && linked > 1
                     && window.latest_client != Some(client.size_seq))
         });
-        fold_client_sizes(candidates, policy)
+        // tmux folds the size and the pixel size in one pass over the same
+        // candidates, so they are collected once and folded twice.
+        let candidates = candidates.collect::<Vec<_>>();
+        let size = fold_client_sizes(candidates.iter().copied(), policy)?;
+        Some(WindowSize {
+            size,
+            pixels: fold_client_pixels(candidates.into_iter()),
+        })
     }
 
     /// Resize one window and everything laid out inside it.
-    fn apply_window_size(&mut self, window_id: u32, size: (u16, u16)) -> io::Result<()> {
-        let (cols, rows) = clamp_window_size(size);
+    fn apply_window_size(&mut self, window_id: u32, size: WindowSize) -> io::Result<()> {
+        let (cols, rows) = clamp_window_size(size.size);
         let Some(window) = self.windows.get_mut(&window_id) else {
             return Ok(());
         };
@@ -12420,6 +12514,19 @@ impl ServerState {
         }
         window.cols = cols;
         window.rows = rows;
+        // tmux only reaches `resize_window` when the cell count moved, so the
+        // pixel size rides along with it rather than being applied on its own.
+        // `window_resize` substitutes the defaults for a size no client knew.
+        window.xpixel = if size.pixels.0 == 0 {
+            DEFAULT_XPIXEL
+        } else {
+            size.pixels.0
+        };
+        window.ypixel = if size.pixels.1 == 0 {
+            DEFAULT_YPIXEL
+        } else {
+            size.pixels.1
+        };
         window.layout.resize(cols, rows);
         let result = resize_panes_to_layout(window);
         for session_id in self.sessions_linking_window(window_id) {
@@ -12469,6 +12576,8 @@ impl ServerState {
                         session_id: entry.session_id,
                         cols: entry.cols,
                         rows,
+                        xpixel: entry.xpixel,
+                        ypixel: entry.ypixel,
                         size_seq: entry.size_seq,
                     })
                 })
@@ -12738,6 +12847,15 @@ impl ServerState {
 
     /// The viewport of the client with this name, for the render path — which
     /// knows the client it is painting for by name, not by handle.
+    /// The cell size in pixels a client's terminal reports, which sixel output
+    /// scales against. `(0, 0)` — a client that reports none — is what sends an
+    /// image out as its text placeholder instead, as it does in tmux.
+    pub(crate) fn client_cell_pixels(&self, client_name: &str) -> (u16, u16) {
+        self.client_renders
+            .client_cell_pixels(client_name)
+            .unwrap_or((0, 0))
+    }
+
     pub(crate) fn client_viewport(&self, client_name: &str) -> Option<ClientViewport> {
         let client = self.client_renders.viewport_client(client_name)?;
         self.client_window_offset(&client)
@@ -13623,7 +13741,19 @@ impl ServerState {
             if let Some(window) = self.windows.get_mut(&window_id) {
                 window.manual_size = (cols, rows);
             }
-            self.apply_window_size(window_id, (cols, rows))?;
+            // `resize-session` pins the cell count; the pixel size is the
+            // clients' to report, so it is left as it stands.
+            let pixels = self
+                .windows
+                .get(&window_id)
+                .map_or((0, 0), |window| (window.xpixel, window.ypixel));
+            self.apply_window_size(
+                window_id,
+                WindowSize {
+                    size: (cols, rows),
+                    pixels,
+                },
+            )?;
         }
         self.recalculate_sizes()
     }
@@ -15442,6 +15572,41 @@ impl ServerState {
         pane.dump_viewport_vt(scroll_offset, visible_rows)
     }
 
+    /// The images on the active pane's visible screen, for the compositor to
+    /// draw after it has painted the pane's text.
+    pub(crate) fn active_pane_images(&self, session_name: &str) -> Vec<ScreenImage> {
+        self.active_pane(session_name)
+            .map(super::pane::Pane::images)
+            .unwrap_or_default()
+    }
+
+    /// A value that changes exactly when something about the active window's
+    /// images does.
+    ///
+    /// The client's terminal needs a full repaint at that moment, and nothing
+    /// else will ask for one: an image is drawn *over* cells the server never
+    /// wrote to, so when the image goes away the text under it is unchanged and
+    /// the frame differ finds nothing to repaint — leaving the picture on the
+    /// client's screen with nothing behind it. This is what tmux reaches by
+    /// marking the pane `PANE_REDRAW` from every image operation.
+    ///
+    /// A pane's image count is folded in beside its revision because a pane
+    /// with no images has no revision to report.
+    pub(crate) fn active_window_images_signature(&self, session_name: &str) -> u64 {
+        let Ok((window, _)) = self.active_window_panes(session_name) else {
+            return 0;
+        };
+        let mut signature: u64 = 0xcbf2_9ce4_8422_2325;
+        for node in &window.panes {
+            let images = node.pane.images();
+            let revision = images.first().map_or(0, |image| image.revision);
+            for value in [images.len() as u64, revision] {
+                signature = (signature ^ value).wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        signature
+    }
+
     pub(crate) fn active_window_panes(&self, session_name: &str) -> io::Result<(&Window, usize)> {
         let session = self
             .session_index(session_name)
@@ -15766,7 +15931,6 @@ fn clamp_copy_cursor(cursor: &mut CopyCursor, grid: &Grid, vi: bool) {
     cursor.row = cursor.row.min(grid.rows.len().saturating_sub(1));
     cursor.col = cursor.col.min(copy_cursor_limit(grid, cursor.row, vi));
 }
-
 
 fn clamp_copy_state(state: &mut CopyState, vi: bool) {
     // A rectangle selection is not bound to the text. tmux lets the cursor and
