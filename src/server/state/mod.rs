@@ -48,7 +48,9 @@ pub(crate) use mode::{
     CustomizeOption, ModeBindingUpdate, ModeEdit, ModeItem, ModeKind, ModePrompt, ModeView,
     ModeViewKeyResult,
 };
-pub(crate) use sizing::{pane_slider, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy};
+pub(crate) use sizing::{
+    pane_slider, WindowResizeAdjust, WindowResizeRequest, WindowSize, WindowSizePolicy,
+};
 pub(crate) use target::Target;
 
 use std::cell::RefCell;
@@ -397,7 +399,12 @@ pub struct Window {
     /// applied by `server_client_check_window_resize` once some session makes
     /// the window current, so a background window keeps the geometry its panes
     /// were last drawn at instead of churning on every client resize.
-    pub(crate) pending_size: Option<(u16, u16)>,
+    pub(crate) pending_size: Option<WindowSize>,
+    /// The window's cell size in pixels — tmux's `w->xpixel`/`w->ypixel`,
+    /// aggregated from the attached clients' terminals. Only sixel parsing
+    /// reads it, to turn an image's pixel dimensions into cells.
+    pub(crate) xpixel: u16,
+    pub(crate) ypixel: u16,
     pub(crate) layout: LayoutCell,
     pub(crate) last_layout: Option<usize>,
     /// The layout string before the last `select-layout`-family command —

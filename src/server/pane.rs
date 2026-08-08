@@ -41,7 +41,9 @@ pub(crate) use crate::vt::observer::{
     ClipboardEvent as PaneClipboardEvent, CursorShape as PaneCursorShape,
     OutputPolicy as PaneOutputPolicy, PassthroughPolicy,
 };
-use crate::vt::screen::{mode, CaptureExtent, Grid, GridDims, ScreenOptions, VtScreen};
+use crate::vt::screen::{
+    mode, CaptureExtent, Grid, GridDims, ScreenImage, ScreenOptions, VtScreen,
+};
 use crate::vt::PaneScreen;
 
 /// A single pane. Holds the emulated screen and, if live, the child on its pty.
@@ -1983,6 +1985,15 @@ impl Pane {
         let available = scroll.saturating_add(usize::from(self.rows));
         let vt = terminal.dump_vt_rows(start, visible_rows.min(available), self.cols)?;
         Ok((vt, scroll))
+    }
+
+    /// The images anchored to this pane's visible screen, oldest first.
+    ///
+    /// Separate from [`Self::dump_viewport_vt`] because an image is drawn
+    /// *over* the cells rather than being some of them: tmux paints the pane's
+    /// text first and then walks the same list in `tty_draw_images`.
+    pub(crate) fn images(&self) -> Vec<ScreenImage> {
+        self.observation.term.borrow_mut().images()
     }
 
     /// How many scrollback (history) rows the grid holds above the visible

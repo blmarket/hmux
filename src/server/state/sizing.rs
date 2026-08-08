@@ -80,7 +80,38 @@ pub(super) struct SizingClient {
     pub(super) session_id: u32,
     pub(super) cols: u16,
     pub(super) rows: u16,
+    /// The client terminal's cell size in pixels, zero when it reports none.
+    pub(super) xpixel: u16,
+    pub(super) ypixel: u16,
     pub(super) size_seq: u64,
+}
+
+/// tmux's pixel fold in `clients_calculate_size`: the largest cell size any
+/// candidate reports, and only from a client that is larger in *both*
+/// directions — tmux compares them together, so a client with a wider cell but
+/// a shorter one does not contribute either.
+fn fold_client_pixels<'a>(clients: impl Iterator<Item = &'a SizingClient>) -> (u16, u16) {
+    clients.fold((0, 0), |(xpixel, ypixel), client| {
+        if client.xpixel > xpixel && client.ypixel > ypixel {
+            (client.xpixel, client.ypixel)
+        } else {
+            (xpixel, ypixel)
+        }
+    })
+}
+
+/// tmux's `DEFAULT_XPIXEL` and `DEFAULT_YPIXEL`: the cell size a window assumes
+/// when no attached client reports one.
+pub(crate) const DEFAULT_XPIXEL: u16 = 16;
+pub(crate) const DEFAULT_YPIXEL: u16 = 32;
+
+/// A window size as `clients_calculate_size` derives it: the cell count and the
+/// cell's pixel size, which move together.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct WindowSize {
+    pub(crate) size: (u16, u16),
+    /// Zero in either direction when no candidate client reported a pixel size.
+    pub(crate) pixels: (u16, u16),
 }
 
 /// Fold a client set into one size under `policy`, or `None` when it is empty.
@@ -423,10 +454,16 @@ impl ServerState {
         policy: WindowSizePolicy,
         aggressive: bool,
         clients: &[SizingClient],
-    ) -> Option<(u16, u16)> {
+    ) -> Option<WindowSize> {
         let window = self.windows.get(window_id)?;
         if policy == WindowSizePolicy::Manual {
-            return Some(window.manual_size);
+            // tmux skips the client loop entirely under `manual`, so no client
+            // contributes a pixel size and the window falls back to the
+            // default one.
+            return Some(WindowSize {
+                size: window.manual_size,
+                pixels: (0, 0),
+            });
         }
         // `latest` narrows to `w->latest` only once more than one client can see
         // the window; a lone client is folded as for `smallest`.
@@ -445,12 +482,19 @@ impl ServerState {
                     && linked > 1
                     && window.latest_client != Some(client.size_seq))
         });
-        fold_client_sizes(candidates, policy)
+        // tmux folds the size and the pixel size in one pass over the same
+        // candidates, so they are collected once and folded twice.
+        let candidates = candidates.collect::<Vec<_>>();
+        let size = fold_client_sizes(candidates.iter().copied(), policy)?;
+        Some(WindowSize {
+            size,
+            pixels: fold_client_pixels(candidates.into_iter()),
+        })
     }
 
     /// Resize one window and everything laid out inside it.
-    fn apply_window_size(&mut self, window_id: u32, size: (u16, u16)) -> io::Result<()> {
-        let (cols, rows) = clamp_window_size(size);
+    fn apply_window_size(&mut self, window_id: u32, size: WindowSize) -> io::Result<()> {
+        let (cols, rows) = clamp_window_size(size.size);
         let Some(window) = self.windows.get_mut(&window_id) else {
             return Ok(());
         };
@@ -459,6 +503,19 @@ impl ServerState {
         }
         window.cols = cols;
         window.rows = rows;
+        // tmux only reaches `resize_window` when the cell count moved, so the
+        // pixel size rides along with it rather than being applied on its own.
+        // `window_resize` substitutes the defaults for a size no client knew.
+        window.xpixel = if size.pixels.0 == 0 {
+            DEFAULT_XPIXEL
+        } else {
+            size.pixels.0
+        };
+        window.ypixel = if size.pixels.1 == 0 {
+            DEFAULT_YPIXEL
+        } else {
+            size.pixels.1
+        };
         window.layout.resize(cols, rows);
         let result = resize_panes_to_layout(window);
         for session_id in self.sessions_linking_window(window_id) {
@@ -508,6 +565,8 @@ impl ServerState {
                         session_id: entry.session_id,
                         cols: entry.cols,
                         rows,
+                        xpixel: entry.xpixel,
+                        ypixel: entry.ypixel,
                         size_seq: entry.size_seq,
                     })
                 })
@@ -652,6 +711,15 @@ impl ServerState {
         })
     }
 
+    /// The cell size in pixels a client's terminal reports, which sixel output
+    /// scales against. `(0, 0)` — a client that reports none — is what sends an
+    /// image out as its text placeholder instead, as it does in tmux.
+    pub(crate) fn client_cell_pixels(&self, client_name: &str) -> (u16, u16) {
+        self.client_renders
+            .client_cell_pixels(client_name)
+            .unwrap_or((0, 0))
+    }
+
     /// The viewport of the client with this name, for the render path — which
     /// knows the client it is painting for by name, not by handle.
     pub(crate) fn client_viewport(&self, client_name: &str) -> Option<ClientViewport> {
@@ -773,7 +841,19 @@ impl ServerState {
             if let Some(window) = self.windows.get_mut(&window_id) {
                 window.manual_size = (cols, rows);
             }
-            self.apply_window_size(window_id, (cols, rows))?;
+            // `resize-session` pins the cell count; the pixel size is the
+            // clients' to report, so it is left as it stands.
+            let pixels = self
+                .windows
+                .get(&window_id)
+                .map_or((0, 0), |window| (window.xpixel, window.ypixel));
+            self.apply_window_size(
+                window_id,
+                WindowSize {
+                    size: (cols, rows),
+                    pixels,
+                },
+            )?;
         }
         self.recalculate_sizes()
     }

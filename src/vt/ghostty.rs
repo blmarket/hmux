@@ -28,7 +28,7 @@ use super::input::{InputEncoder, KeyEvent, MouseAction, MouseButton, MouseEvent}
 use super::parser::Token;
 use super::screen::{
     CaptureExtent, CellSemantic, CellWidth, Grid, GridCell, GridDims, GridRow, RowFlags,
-    ScreenOptions, VtScreen,
+    ScreenImage, ScreenOptions, VtScreen,
 };
 
 /// A libghostty-vt error, wrapping the C `GhosttyResult` code.
@@ -871,6 +871,12 @@ impl VtScreen for GhosttyScreen {
 
     fn grid_snapshot(&self) -> io::Result<Grid> {
         Ok(GhosttyScreen::grid_snapshot(self)?)
+    }
+
+    /// libghostty-vt keeps no sixel images, and the DCS carrying one never
+    /// reaches it as anything it stores, so there is never anything to draw.
+    fn images(&self) -> Vec<ScreenImage> {
+        Vec::new()
     }
 
     /// libghostty-vt exposes only the screen in use. The grid the alternate

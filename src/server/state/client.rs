@@ -215,6 +215,11 @@ pub(super) struct ClientRenderEntry {
     user: String,
     pub(super) cols: u16,
     pub(super) rows: u16,
+    /// The client terminal's cell size in pixels — tmux's `tty->xpixel` and
+    /// `tty->ypixel` — or zero while the terminal has reported none. Only sixel
+    /// output reads it.
+    pub(super) xpixel: u16,
+    pub(super) ypixel: u16,
     flags: String,
     read_only: bool,
     pub(super) control_mode: bool,
@@ -719,6 +724,10 @@ impl ClientRenderRegistry {
                 user: String::new(),
                 cols,
                 rows,
+                // A client reports its pixel size after the handshake, if at
+                // all; until then the window falls back to tmux's defaults.
+                xpixel: 0,
+                ypixel: 0,
                 flags,
                 read_only,
                 control_mode,
@@ -806,6 +815,16 @@ impl ClientRenderRegistry {
     ) -> R {
         let inner = self.inner.borrow();
         f(inner.clients.values())
+    }
+
+    /// The cell size in pixels the named client's terminal reports, or zero
+    /// when it reports none.
+    pub(super) fn client_cell_pixels(&self, name: &str) -> Option<(u16, u16)> {
+        self.with_entries(|mut entries| {
+            entries
+                .find(|entry| entry.name == name)
+                .map(|entry| (entry.xpixel, entry.ypixel))
+        })
     }
 
     /// The viewport inputs of the client called `name`.
@@ -1604,6 +1623,20 @@ impl ClientRenderAttachment {
                 entry.size_changed = true;
                 // Resizing makes this the latest client, as attaching does.
                 entry.size_seq = size_seq;
+            }
+        }
+        self.registry.bump_generation();
+    }
+
+    /// Publish the client terminal's cell size in pixels, which sixel output
+    /// scales against. Separate from [`Self::update_size`] because a font
+    /// change moves it without moving the cell count.
+    pub(crate) fn update_cell_pixels(&self, xpixel: u16, ypixel: u16) {
+        {
+            let mut inner = self.registry.inner.borrow_mut();
+            if let Some(entry) = inner.clients.get_mut(&self.id) {
+                entry.xpixel = xpixel;
+                entry.ypixel = ypixel;
             }
         }
         self.registry.bump_generation();

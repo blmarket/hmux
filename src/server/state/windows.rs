@@ -10,6 +10,7 @@ use std::io;
 use std::path::Path;
 
 use super::layout::resize_panes_to_layout;
+use super::sizing::{DEFAULT_XPIXEL, DEFAULT_YPIXEL};
 use super::target::{parse_index_target, window_not_found};
 use super::{
     fill_spawn_ids, now_epoch, now_micros, LayoutCell, Pane, PaneNode, RenderInvalidation,
@@ -607,6 +608,8 @@ impl ServerState {
                 manual_size: (cols, rows),
                 latest_client: None,
                 pending_size: None,
+                xpixel: DEFAULT_XPIXEL,
+                ypixel: DEFAULT_YPIXEL,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
                 old_layout: None,
@@ -762,6 +765,8 @@ impl ServerState {
                 manual_size: (cols, rows),
                 latest_client: None,
                 pending_size: None,
+                xpixel: DEFAULT_XPIXEL,
+                ypixel: DEFAULT_YPIXEL,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
                 old_layout: None,

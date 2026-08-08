@@ -284,6 +284,13 @@ pub(crate) enum CapabilityParameter<'a> {
     String(&'a str),
 }
 
+/// tmux's sixel test in `tty_cmd_sixelimage`: the `sixel` terminal feature —
+/// which is what sets `TERM_SIXEL` — or a terminfo entry that declares `Sxl` on
+/// its own. Either is enough; a client with neither gets the text placeholder.
+pub(crate) fn supports_sixel(terminal: &dyn TerminalCapabilities) -> bool {
+    terminal.has_feature("sixel") || terminal.capability("Sxl").is_some()
+}
+
 pub(crate) fn string_capability<'a>(
     terminal: &'a dyn TerminalCapabilities,
     name: &str,

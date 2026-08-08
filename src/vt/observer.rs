@@ -312,7 +312,7 @@ impl Observer {
                 final_byte,
                 data,
                 ..
-            } => self.dcs(&intermediates, final_byte, &data, policy, out),
+            } => self.dcs(token, &intermediates, final_byte, &data, policy, out),
             TokenKind::Apc { data } => {
                 // tmux hands an APC title to the same `screen_set_title` as OSC
                 // 0/2, and an emulator that does not recognize APC would print
@@ -676,6 +676,7 @@ impl Observer {
 
     fn dcs(
         &mut self,
+        token: Token,
         intermediates: &[u8],
         final_byte: u8,
         data: &[u8],
@@ -688,6 +689,14 @@ impl Observer {
             // The cursor style and its blink are the pane's and the screen's
             // respectively, so the reply is composed where both are in reach.
             out.event(Event::StatusReport(data.to_vec()));
+            return;
+        }
+        // A sixel image is the one DCS that reaches the grid — it scrolls the
+        // screen to make room for itself and moves the cursor — so it is the
+        // one the screen is given. tmux's test is `buf[0] == 'q'` with no
+        // intermediate, which here is the final byte with no intermediate.
+        if final_byte == b'q' && intermediates.is_empty() {
+            out.keep(token);
             return;
         }
         // `DCS tmux; … ST`. The final byte is the first byte of tmux's DCS

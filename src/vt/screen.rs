@@ -15,8 +15,10 @@
 //! tmux-compatible command line and wire protocol.
 
 use std::io;
+use std::sync::Arc;
 
 use super::parser::Token;
+use super::sixel::SixelImage;
 
 /// tmux's `MODE_*`, the bits `screen->mode` carries.
 ///
@@ -160,6 +162,15 @@ pub(crate) struct ScreenOptions {
     /// `scroll-on-clear`: whether clearing the screen moves what was on it into
     /// the history instead of blanking it where it stands.
     pub(crate) scroll_on_clear: bool,
+    /// The window's cell size in pixels, tmux's `w->xpixel`/`w->ypixel`.
+    ///
+    /// Not an option — it comes from the attached clients' terminals, which
+    /// `recalculate_sizes` aggregates onto the window — but it reaches the
+    /// screen the same way an option does and for the same reason: a sixel
+    /// payload is measured in pixels and has to be converted into cells at the
+    /// moment it is parsed, with no server state in reach.
+    pub(crate) xpixel: u32,
+    pub(crate) ypixel: u32,
 }
 
 impl Default for ScreenOptions {
@@ -168,6 +179,10 @@ impl Default for ScreenOptions {
     fn default() -> Self {
         ScreenOptions {
             scroll_on_clear: true,
+            // tmux's `DEFAULT_XPIXEL` and `DEFAULT_YPIXEL`, which stand in
+            // whenever no attached client reports a pixel size.
+            xpixel: 16,
+            ypixel: 32,
         }
     }
 }
@@ -218,6 +233,32 @@ pub(crate) struct Grid {
     pub(crate) viewport_rows: u16,
     pub(crate) scrollback_rows: usize,
     pub(crate) rows: Vec<GridRow>,
+}
+
+/// One image the screen holds, as a client's frame needs it.
+///
+/// An image is not made of cells, so it cannot come back inside [`Grid`]: it is
+/// anchored to a cell and drawn over whatever is there. The compositor reads
+/// these after it has painted a pane's text, which is where tmux's
+/// `tty_draw_images` sits.
+#[derive(Clone, Debug)]
+pub(crate) struct ScreenImage {
+    /// The anchor cell, in viewport coordinates.
+    pub(crate) px: u16,
+    pub(crate) py: u16,
+    /// The size in cells.
+    pub(crate) sx: u16,
+    pub(crate) sy: u16,
+    /// The screen's image-list revision when this was read. It changes whenever
+    /// the set of images does, so a renderer can skip re-deriving bytes it has
+    /// already sent without comparing the images themselves.
+    pub(crate) revision: u64,
+    /// The decoded image, shared: every attached client re-scales the same one
+    /// for its own terminal.
+    pub(crate) data: Arc<SixelImage>,
+    /// The text a client that cannot draw sixel gets instead, already laid out
+    /// as tmux lays it out — one `\r\n`-terminated line per image row.
+    pub(crate) fallback: Arc<str>,
 }
 
 /// Row geometry of the active screen, read without walking any cells.
@@ -297,6 +338,14 @@ pub(crate) trait VtScreen {
 
     /// Snapshot every physical cell and row.
     fn grid_snapshot(&self) -> io::Result<Grid>;
+
+    /// The images anchored to the *visible* screen, oldest first.
+    ///
+    /// Separate from [`Self::grid_snapshot`] because an image is not cells: it
+    /// covers them rather than being one of them, and a caller that only wants
+    /// the text should not pay to carry pixels around. A backend with no image
+    /// support answers with an empty list.
+    fn images(&self) -> Vec<ScreenImage>;
 
     /// The *inactive* screen — the one the alternate-screen switch displaced —
     /// as its snapshot and its `capture-pane -e` serialization, or `None` when

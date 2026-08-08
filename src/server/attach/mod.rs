@@ -44,6 +44,7 @@ use std::time::{Duration, Instant};
 use crate::integration::status::StatusHub;
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 use crate::tmux::traits::NonblockingFrameReader;
+use crate::vt::screen::ScreenImage;
 
 use super::cmd_send_keys::base64_encode;
 use super::command;
@@ -235,6 +236,11 @@ struct AttachRenderState {
     output_cursor_visible: Option<bool>,
     last_title: Option<String>,
     force_clear: bool,
+    /// What the active window's images looked like when this client was last
+    /// painted — tmux's `tty_invalidate` after writing an image, in the form
+    /// hmux's whole-frame differ can use. See
+    /// [`ServerState::active_window_images_signature`].
+    last_images: Option<u64>,
 }
 
 struct StatusMessage {
@@ -410,6 +416,11 @@ struct AttachViewport {
     rows: u16,
     pane_rows: u16,
     status_height: u16,
+    /// The client terminal's cell size in pixels, tmux's `tty->xpixel` and
+    /// `tty->ypixel`. Zero when the terminal does not report one, which is what
+    /// sends an image out as its text placeholder instead.
+    xpixel: u16,
+    ypixel: u16,
 }
 
 struct AttachStatus {
@@ -622,6 +633,7 @@ impl AttachCompositorState {
             },
             render: AttachRenderState {
                 last_render: Vec::new(),
+                last_images: None,
                 seen_large_scroll: BTreeMap::new(),
                 output_cursor_visible: None,
                 last_title: None,
@@ -1458,15 +1470,45 @@ fn is_tty(fd: RawFd) -> bool {
     unsafe { libc::isatty(fd) == 1 }
 }
 
-fn get_winsize(fd: RawFd) -> io::Result<(u16, u16)> {
+/// What `TIOCGWINSZ` says about the client's terminal, as tmux's `tty_resize`
+/// reads it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ClientWinsize {
+    pub(crate) cols: u16,
+    pub(crate) rows: u16,
+    /// One cell's size in pixels — the reported pixel extent divided by the
+    /// cell count — or zero when the terminal reports no pixel size at all.
+    /// Sixel output needs it, and a client that cannot supply it gets the text
+    /// placeholder instead, exactly as in tmux.
+    pub(crate) xpixel: u16,
+    pub(crate) ypixel: u16,
+}
+
+fn get_winsize(fd: RawFd) -> io::Result<ClientWinsize> {
     let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
     let rc = unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws as *mut _) };
     if rc < 0 {
         return Err(io::Error::last_os_error());
     }
-    let cols = if ws.ws_col == 0 { 80 } else { ws.ws_col };
-    let rows = if ws.ws_row == 0 { 24 } else { ws.ws_row };
-    Ok((cols, rows))
+    // tmux substitutes its fallback size when the terminal reports none, and
+    // gives up on the pixel size in the same breath: there is nothing sound to
+    // divide the pixel extent by.
+    let (cols, xpixel) = if ws.ws_col == 0 {
+        (80, 0)
+    } else {
+        (ws.ws_col, ws.ws_xpixel / ws.ws_col)
+    };
+    let (rows, ypixel) = if ws.ws_row == 0 {
+        (24, 0)
+    } else {
+        (ws.ws_row, ws.ws_ypixel / ws.ws_row)
+    };
+    Ok(ClientWinsize {
+        cols,
+        rows,
+        xpixel,
+        ypixel,
+    })
 }
 
 fn tty_start_sequence(terminal: &ResolvedTerm, focus_events: bool) -> Vec<u8> {
@@ -2531,7 +2573,16 @@ fn compose_frame_cached(
     terminal: &dyn TerminalCapabilities,
 ) -> io::Result<Vec<u8>> {
     if st.active_window_panes(target)?.0.panes.len() > 1 {
-        return compose_split_frame(st, target, cols, rows, status_h, status_cache, terminal);
+        return compose_split_frame(
+            st,
+            target,
+            client_name,
+            cols,
+            rows,
+            status_h,
+            status_cache,
+            terminal,
+        );
     }
     let pane_height = if status_h > 0 {
         rows.saturating_sub(status_h).max(1)
@@ -2549,6 +2600,11 @@ fn compose_frame_cached(
         .then(|| st.active_copy_state(target))
         .flatten();
     let copy_view = active_copy.map(|copy| CopyModeView::new(st, target, copy, cols, terminal));
+    // Where the pane's own cells land on the client's screen, which is what the
+    // images are positioned against. `None` while something else is drawn in
+    // the pane's place: tmux's copy mode and menu screens carry no image list of
+    // their own, so the images simply are not there to draw.
+    let mut image_view: Option<PaneView> = None;
     let (all_rows, cursor, cursor_visible, restore_cursor, frame_capacity) =
         if let Some(view) = active_mode {
             let selected_style = status::option_style_escape_for(
@@ -2608,6 +2664,29 @@ fn compose_frame_cached(
                 ),
                 None => (pane_rows, cursor.to_vec()),
             };
+            // Scrolled back, the rows on screen are history and the images'
+            // anchors name the live viewport, so there is nothing to draw them
+            // against.
+            if scroll == 0 {
+                image_view = Some(match view {
+                    Some(view) => PaneView {
+                        left: 0,
+                        top: pane_top,
+                        width: view.sx,
+                        height: view.sy,
+                        ox: view.ox,
+                        oy: view.oy,
+                    },
+                    None => PaneView {
+                        left: 0,
+                        top: pane_top,
+                        width: cols,
+                        height: pane_height,
+                        ox: 0,
+                        oy: 0,
+                    },
+                });
+            }
             (
                 pane_rows,
                 cursor,
@@ -2651,8 +2730,21 @@ fn compose_frame_cached(
     let mut all_rows = all_rows;
     if let Some((side, row)) = border_status {
         match side {
-            super::state::PaneBorderStatus::Top => all_rows.insert(0, row),
-            super::state::PaneBorderStatus::Bottom => all_rows.push(row),
+            super::state::PaneBorderStatus::Top => {
+                all_rows.insert(0, row);
+                // The pane's first row is now the second row drawn, and the
+                // images anchored to it move down with it.
+                if let Some(view) = image_view.as_mut() {
+                    view.top += 1;
+                    view.height = view.height.saturating_sub(1);
+                }
+            }
+            super::state::PaneBorderStatus::Bottom => {
+                all_rows.push(row);
+                if let Some(view) = image_view.as_mut() {
+                    view.height = view.height.saturating_sub(1);
+                }
+            }
         }
     }
     let pane_rows = &all_rows[..];
@@ -2704,6 +2796,15 @@ fn compose_frame_cached(
         copy_view.render_overlays(&mut out, pane_top, 0, pane_height, cols);
     }
     out.extend_from_slice(&pane_scrollbar_frame(st, target, pane_top, terminal));
+    // tmux draws a pane's images after its text, in `screen_redraw_pane`.
+    if let Some(view) = image_view {
+        compose_pane_images(
+            &mut out,
+            &st.active_pane_images(target),
+            view,
+            ImageOutput::for_client(st, client_name, terminal),
+        );
+    }
     // Erase any pane rows the previous, taller frame left behind. Clear them one
     // at a time (not `\x1b[J`) so the status region below is never touched.
     if status_h > 0 {
@@ -2757,6 +2858,122 @@ fn compose_frame_cached(
         out.extend_from_slice(b"\x1b[?25h");
     }
     Ok(out)
+}
+
+/// What one client can do with a sixel image, tmux's test at the top of
+/// `tty_cmd_sixelimage`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ImageOutput {
+    /// The client terminal's cell size in pixels, zero when it reports none.
+    xpixel: u16,
+    ypixel: u16,
+    /// Whether the terminal draws sixel at all.
+    sixel: bool,
+}
+
+impl ImageOutput {
+    fn for_client(
+        st: &ServerState,
+        client_name: Option<&str>,
+        terminal: &dyn TerminalCapabilities,
+    ) -> ImageOutput {
+        let (xpixel, ypixel) = client_name.map_or((0, 0), |name| st.client_cell_pixels(name));
+        ImageOutput {
+            xpixel,
+            ypixel,
+            sixel: term::supports_sixel(terminal),
+        }
+    }
+
+    /// tmux falls back to the placeholder both when the terminal cannot draw
+    /// sixel and when it reports no pixel size, because there is nothing to
+    /// scale the image onto.
+    fn draws_sixel(self) -> bool {
+        self.sixel && self.xpixel != 0 && self.ypixel != 0
+    }
+}
+
+/// Where a pane's cells are on the client's screen, and which of them the
+/// client can actually see.
+///
+/// The two differ only when the window is bigger than the client and the client
+/// is looking at part of it: `ox`/`oy` are then the pane-relative cell the
+/// top-left of `left`/`top` is showing.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct PaneView {
+    /// The frame cell the visible region starts at, zero-based.
+    left: u16,
+    top: u16,
+    /// How many of the pane's cells are visible.
+    width: u16,
+    height: u16,
+    /// The pane cell the visible region starts at.
+    ox: u16,
+    oy: u16,
+}
+
+/// tmux's `tty_draw_images` and `tty_cmd_sixelimage`: the bytes a pane's images
+/// add to a client's frame, once its text has been painted.
+///
+/// Each image is clamped to the part of the pane the client can see, and then
+/// either rescaled to the client's own pixel geometry and re-serialized, or
+/// replaced by its text placeholder. tmux writes the placeholder whole — with
+/// the `\r\n`s it was built with, which return to the terminal's column zero
+/// rather than the pane's — and that is reproduced rather than clipped, so a
+/// client sees the same thing from either server.
+///
+/// Every image opens with a scrolling-region reset, as tmux's `tty_region_off`
+/// does, and re-positions afterwards because DECSTBM homes the cursor. The
+/// leading position is there so the frame differ sees a section belonging to the
+/// image's own row: it groups by the row a section is positioned at, which is
+/// what makes repainting the text under an image re-emit the image too.
+fn compose_pane_images(
+    out: &mut Vec<u8>,
+    images: &[ScreenImage],
+    view: PaneView,
+    output: ImageOutput,
+) {
+    for image in images {
+        // The intersection of the image's cells with the pane cells on screen,
+        // which is what `tty_clamp_area` works out.
+        let x0 = image.px.max(view.ox);
+        let y0 = image.py.max(view.oy);
+        let x1 = (image.px + image.sx).min(view.ox.saturating_add(view.width));
+        let y1 = (image.py + image.sy).min(view.oy.saturating_add(view.height));
+        if x1 <= x0 || y1 <= y0 {
+            continue;
+        }
+        let (i, j) = (x0 - image.px, y0 - image.py);
+        let (rx, ry) = (x1 - x0, y1 - y0);
+        let row = view.top + (y0 - view.oy) + 1;
+        let column = view.left + (x0 - view.ox) + 1;
+
+        let payload = if output.draws_sixel() {
+            // The pixels come from the rescaled crop and the palette from the
+            // original, which is why the scale does not copy the registers.
+            let scaled = image.data.scale(
+                u32::from(output.xpixel),
+                u32::from(output.ypixel),
+                u32::from(i),
+                u32::from(j),
+                u32::from(rx),
+                u32::from(ry),
+                false,
+            );
+            match scaled.and_then(|scaled| scaled.print(Some(&image.data))) {
+                Some(payload) => payload,
+                None => continue,
+            }
+        } else {
+            image.fallback.as_bytes().to_vec()
+        };
+
+        let position = format!("\x1b[{row};{column}H");
+        out.extend_from_slice(position.as_bytes());
+        out.extend_from_slice(b"\x1b[r");
+        out.extend_from_slice(position.as_bytes());
+        out.extend_from_slice(&payload);
+    }
 }
 
 const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
@@ -3016,9 +3233,11 @@ fn guard_cursor_during_repaint(frame: &[u8], visible: &mut Option<bool>) -> Vec<
 }
 
 /// Paint every pane in the active window from the preserved split tree.
+#[allow(clippy::too_many_arguments)]
 fn compose_split_frame(
     st: &ServerState,
     target: &str,
+    client_name: Option<&str>,
     cols: u16,
     rows: u16,
     status_h: u16,
@@ -3033,6 +3252,7 @@ fn compose_split_frame(
         0
     };
     let mut out = Vec::with_capacity((cols as usize) * (rows as usize) + 512);
+    let image_output = ImageOutput::for_client(st, client_name, terminal);
     let mut active_cursor = (0, 0);
     let active_id = win.panes.get(active).map(|pane| pane.id);
     let mut owners = vec![None; cols as usize * available_rows as usize];
@@ -3137,6 +3357,23 @@ fn compose_split_frame(
         }
         if let Some(copy_view) = copy_view.as_ref() {
             copy_view.render_overlays(&mut out, pane_top + top, left, height, width);
+        }
+        // As in the single-pane path, the images go on after the pane's text —
+        // and only when the pane's own screen is what was drawn.
+        if node.mode_view.is_none() && copy_view.is_none() {
+            compose_pane_images(
+                &mut out,
+                &node.pane.images(),
+                PaneView {
+                    left,
+                    top: pane_top + top,
+                    width,
+                    height,
+                    ox: 0,
+                    oy: 0,
+                },
+                image_output,
+            );
         }
     }
 

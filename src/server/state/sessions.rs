@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::PathBuf;
 
-use super::sizing::{clamp_window_size, parse_size_pair};
+use super::sizing::{clamp_window_size, parse_size_pair, DEFAULT_XPIXEL, DEFAULT_YPIXEL};
 use super::{
     created_stamp, fill_spec_spawn_ids, now_epoch, now_micros, pane_start_command, ExitEmpty,
     LayoutCell, Notification, Pane, PaneNode, PaneSpec, RenderInvalidation, ServerState, Session,
@@ -192,6 +192,8 @@ impl ServerState {
                 manual_size: (cols, rows),
                 latest_client: None,
                 pending_size: None,
+                xpixel: DEFAULT_XPIXEL,
+                ypixel: DEFAULT_YPIXEL,
                 layout: LayoutCell::pane(pane_id, cols, rows),
                 last_layout: None,
                 old_layout: None,

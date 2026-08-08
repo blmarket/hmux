@@ -76,7 +76,13 @@ impl AttachSession {
             ));
         }
 
-        let (cols, rows) = get_winsize(render_fd.as_raw_fd()).unwrap_or((80, 24));
+        let winsize = get_winsize(render_fd.as_raw_fd()).unwrap_or(ClientWinsize {
+            cols: 80,
+            rows: 24,
+            xpixel: 0,
+            ypixel: 0,
+        });
+        let (cols, rows) = (winsize.cols, winsize.rows);
         let (prompt_registry, render_registry, session_id) = {
             let mut st = state.borrow_mut();
             let session_id = st.session_id(target).ok_or_else(|| {
@@ -116,6 +122,11 @@ impl AttachSession {
             .and_then(super::super::format::username)
             .unwrap_or_default();
         render_attachment.set_peer_identity(peer_uid, peer_user.clone());
+        // The cell's pixel size arrives with the terminal size and is what
+        // decides whether this client is sent a sixel image or its placeholder,
+        // so it is published alongside — a client that reports none publishes
+        // zero, which is the answer that chooses the placeholder.
+        render_attachment.update_cell_pixels(winsize.xpixel, winsize.ypixel);
 
         let stable_target = format!("${session_id}");
         let mut attached_context = context.clone();
@@ -207,6 +218,8 @@ impl AttachSession {
                 rows,
                 pane_rows,
                 status_height: status_h,
+                xpixel: winsize.xpixel,
+                ypixel: winsize.ypixel,
             },
             status: AttachStatus {
                 status_timer,
@@ -1122,9 +1135,21 @@ impl AttachSession {
                 }
                 match frame.msg {
                     Message::Resize => {
-                        if let Ok((new_cols, new_rows)) =
-                            get_winsize(self.tty.render_fd.as_raw_fd())
-                        {
+                        if let Ok(winsize) = get_winsize(self.tty.render_fd.as_raw_fd()) {
+                            let (new_cols, new_rows) = (winsize.cols, winsize.rows);
+                            // A font change can move the cell's pixel size
+                            // without moving the cell count, and an image
+                            // already on screen has to be rescaled for it.
+                            if (winsize.xpixel, winsize.ypixel)
+                                != (self.viewport.xpixel, self.viewport.ypixel)
+                            {
+                                self.viewport.xpixel = winsize.xpixel;
+                                self.viewport.ypixel = winsize.ypixel;
+                                self.attachments
+                                    .render_attachment
+                                    .update_cell_pixels(winsize.xpixel, winsize.ypixel);
+                                self.compositor.render.force_clear = true;
+                            }
                             if new_cols != self.viewport.cols || new_rows != self.viewport.rows {
                                 self.viewport.cols = new_cols;
                                 self.viewport.rows = new_rows;
