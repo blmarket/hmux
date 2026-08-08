@@ -7,7 +7,8 @@
 
 use std::io;
 
-use super::{reflow_copy_snapshot, Window};
+use super::copy::reflow_copy_snapshot;
+use super::Window;
 
 /// Direction used by the attach compositor for an evenly divided window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
