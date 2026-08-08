@@ -6,6 +6,16 @@
 //! state. Panes hold a libghostty-backed [`Pane`], so a created session is a
 //! genuinely running terminal, not a stub.
 
+mod jobs;
+mod mode;
+
+pub(crate) use jobs::{BackgroundJobRegistry, WaitOutcome, WaitRegistry};
+use mode::update_mode_edit_item;
+pub(crate) use mode::{
+    CustomizeOption, ModeBindingUpdate, ModeEdit, ModeItem, ModeKind, ModePrompt, ModeView,
+    ModeViewKeyResult,
+};
+
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -188,43 +198,6 @@ pub struct PaneNode {
     options: OptionSet,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ModeKind {
-    Tree,
-    Client,
-    Buffer,
-    Customize,
-    Clock,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ModeItem {
-    pub(crate) label: String,
-    pub(crate) command: Vec<String>,
-    pub(crate) prompt_target: Option<String>,
-    pub(crate) edit: Option<ModeEdit>,
-    /// tmux's `mode_tree_item.tagged`, toggled by `t` and drawn as a `*`.
-    pub(crate) tagged: bool,
-    /// The pane the preview shows while this row is selected, when the mode
-    /// has one to show.
-    pub(crate) preview_target: Option<String>,
-    /// How deep this row sits in the tree — tmux's `mode_tree_item.depth`.
-    pub(crate) depth: u16,
-    /// Whether this row has children, and whether they are currently shown.
-    /// `None` for a leaf.
-    pub(crate) expanded: Option<bool>,
-}
-
-/// One option row in customize mode, with the scope text its table prints.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CustomizeOption {
-    pub(crate) name: String,
-    pub(crate) value: String,
-    pub(crate) scope: String,
-    pub(crate) is_array: bool,
-    pub(crate) array_has_entries: bool,
-}
-
 /// Where a pane's scrollbar is drawn and how much of it the slider fills.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct PaneScrollbar {
@@ -242,184 +215,6 @@ pub(crate) struct PaneScrollbar {
 pub(crate) enum PaneBorderStatus {
     Top,
     Bottom,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ModeEdit {
-    Option {
-        name: String,
-        value: String,
-    },
-    BindingCommand {
-        table: String,
-        key: String,
-        value: String,
-        note: Option<String>,
-        repeat: bool,
-    },
-    BindingNote {
-        table: String,
-        key: String,
-        value: String,
-        command: Vec<String>,
-        repeat: bool,
-    },
-}
-
-pub(crate) struct ModeBindingUpdate {
-    pub(crate) table: String,
-    pub(crate) key: String,
-    pub(crate) command_text: String,
-    pub(crate) command: Vec<String>,
-    pub(crate) note: Option<String>,
-    pub(crate) repeat: bool,
-}
-
-impl ModeEdit {
-    pub(crate) fn prompt(&self) -> String {
-        match self {
-            Self::Option { name, .. } => format!("Set option {name}:"),
-            Self::BindingCommand { table, key, .. } => {
-                format!("Set command for {table} {key}:")
-            }
-            Self::BindingNote { table, key, .. } => format!("Set note for {table} {key}:"),
-        }
-    }
-
-    pub(crate) fn initial(&self) -> &str {
-        match self {
-            Self::Option { value, .. }
-            | Self::BindingCommand { value, .. }
-            | Self::BindingNote { value, .. } => value,
-        }
-    }
-}
-
-fn update_mode_edit_item(item: &mut ModeItem, edited: &ModeEdit, value: &str) {
-    match (item.edit.as_mut(), edited) {
-        (
-            Some(ModeEdit::Option {
-                name,
-                value: current,
-            }),
-            ModeEdit::Option {
-                name: edited_name, ..
-            },
-        ) if name == edited_name => {
-            *current = value.to_string();
-            item.label = format!("{name} {value}");
-        }
-        (
-            Some(ModeEdit::BindingCommand {
-                table,
-                key,
-                value: current,
-                ..
-            }),
-            ModeEdit::BindingCommand {
-                table: edited_table,
-                key: edited_key,
-                ..
-            },
-        ) if table == edited_table && key == edited_key => {
-            *current = value.to_string();
-            item.label = format!("key {table} {key} command {value}");
-        }
-        (
-            Some(ModeEdit::BindingNote {
-                table,
-                key,
-                value: current,
-                ..
-            }),
-            ModeEdit::BindingNote {
-                table: edited_table,
-                key: edited_key,
-                ..
-            },
-        ) if table == edited_table && key == edited_key => {
-            *current = value.to_string();
-            item.label = format!("key {table} {key} note {value}");
-        }
-        _ => {}
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ModePrompt {
-    Search,
-    Filter { initial: String },
-    Command { item_target: String },
-    Edit(ModeEdit),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ModeViewKeyResult {
-    None,
-    Command(Vec<String>),
-    Prompt(ModePrompt),
-    /// An overlay the mode itself asks for — buffer mode's editor.
-    Popup(Box<PopupRequest>),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ModeView {
-    pub(crate) kind: ModeKind,
-    /// tmux's `-N`, inverted: whether the bottom of the mode shows a preview of
-    /// whatever the selected row names.
-    pub(crate) preview: bool,
-    pub(crate) title: String,
-    pub(crate) items: Vec<ModeItem>,
-    pub(crate) all_items: Vec<ModeItem>,
-    pub(crate) filter: String,
-    pub(crate) selected: usize,
-    pub(crate) scroll: usize,
-}
-
-impl ModeView {
-    /// The rows actually on screen: a row whose parent is collapsed is not.
-    /// tmux keeps the whole tree and draws the part `mode_tree_build` walked.
-    pub(crate) fn visible(&self) -> Vec<&ModeItem> {
-        let mut visible = Vec::with_capacity(self.items.len());
-        let mut hidden_below: Option<u16> = None;
-        for item in &self.items {
-            if hidden_below.is_some_and(|depth| item.depth > depth) {
-                continue;
-            }
-            hidden_below = None;
-            visible.push(item);
-            if item.expanded == Some(false) {
-                hidden_below = Some(item.depth);
-            }
-        }
-        visible
-    }
-
-    /// Set every row's expansion, as `M-+` and `M--` do.
-    pub(crate) fn expand_all(&mut self, expanded: bool) {
-        for item in &mut self.items {
-            if item.expanded.is_some() {
-                item.expanded = Some(expanded);
-            }
-        }
-    }
-
-    pub(crate) fn list(kind: ModeKind, title: impl Into<String>, items: Vec<ModeItem>) -> Self {
-        Self {
-            kind,
-            preview: false,
-            title: title.into(),
-            all_items: items.clone(),
-            items,
-            filter: String::new(),
-            selected: 0,
-            scroll: 0,
-        }
-    }
-
-    pub(crate) fn clock() -> Self {
-        Self::list(ModeKind::Clock, "Clock", Vec::new())
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -476,42 +271,6 @@ pub(crate) enum OverlayRequest {
 pub(crate) struct MessageLogEntry {
     pub(crate) time: i64,
     pub(crate) text: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct BackgroundJob {
-    pub(crate) command: String,
-    pub(crate) fd: RawFd,
-    pub(crate) pid: u32,
-}
-
-#[derive(Default)]
-struct BackgroundJobRegistryState {
-    next_id: u64,
-    jobs: BTreeMap<u64, BackgroundJob>,
-}
-
-#[derive(Default)]
-pub(crate) struct BackgroundJobRegistry {
-    inner: RefCell<BackgroundJobRegistryState>,
-}
-
-impl BackgroundJobRegistry {
-    pub(crate) fn register(&self, command: String, fd: RawFd, pid: u32) -> u64 {
-        let mut inner = self.inner.borrow_mut();
-        let id = inner.next_id;
-        inner.next_id = inner.next_id.wrapping_add(1);
-        inner.jobs.insert(id, BackgroundJob { command, fd, pid });
-        id
-    }
-
-    pub(crate) fn remove(&self, id: u64) {
-        self.inner.borrow_mut().jobs.remove(&id);
-    }
-
-    pub(crate) fn jobs(&self) -> Vec<BackgroundJob> {
-        self.inner.borrow().jobs.values().cloned().collect()
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -572,110 +331,6 @@ pub(crate) enum ClientMessageResult {
     Queued,
     NoClient,
     TargetNotFound,
-}
-
-#[derive(Default)]
-struct WaitChannel {
-    locked: bool,
-    woken: bool,
-    /// `wait-for channel` callers still waiting for a `-S`.
-    waiters: Vec<CompletionSender<()>>,
-    /// `wait-for -L` callers still waiting for the lock, in request order.
-    lock_queue: VecDeque<CompletionSender<()>>,
-}
-
-/// Whether a `wait-for` channel operation finished at once, or has to wait for
-/// another client.
-///
-/// The pending arm hands back the completion the registry will signal, so the
-/// waiting command queue is resumed by whichever driver owns it rather than
-/// parking a thread inside the registry.
-pub(crate) enum WaitOutcome {
-    Ready,
-    Pending(Completion<()>),
-}
-
-#[derive(Default)]
-pub(crate) struct WaitRegistry {
-    channels: RefCell<BTreeMap<String, WaitChannel>>,
-}
-
-impl WaitRegistry {
-    pub(crate) fn signal(&self, name: &str) {
-        let mut channels = self.channels.borrow_mut();
-        let channel = channels.entry(name.to_string()).or_default();
-        channel.woken = true;
-        // Every waiter is released together, as the condvar broadcast this
-        // replaces did; the wake is consumed as the last of them leaves.
-        let waiters = std::mem::take(&mut channel.waiters);
-        if !waiters.is_empty() {
-            if channel.locked {
-                channel.woken = false;
-            } else {
-                channels.remove(name);
-            }
-        }
-        drop(channels);
-        for waiter in waiters {
-            waiter.complete(());
-        }
-    }
-
-    pub(crate) fn wait(&self, name: &str) -> WaitOutcome {
-        let mut channels = self.channels.borrow_mut();
-        let channel = channels.entry(name.to_string()).or_default();
-        if channel.woken {
-            if channel.locked {
-                channel.woken = false;
-            } else {
-                channels.remove(name);
-            }
-            return WaitOutcome::Ready;
-        }
-        let Ok((completion, sender)) = completion_pair() else {
-            return WaitOutcome::Ready;
-        };
-        channel.waiters.push(sender);
-        WaitOutcome::Pending(completion)
-    }
-
-    pub(crate) fn lock(&self, name: &str) -> WaitOutcome {
-        let mut channels = self.channels.borrow_mut();
-        let channel = channels.entry(name.to_string()).or_default();
-        if !channel.locked {
-            channel.locked = true;
-            return WaitOutcome::Ready;
-        }
-        let Ok((completion, sender)) = completion_pair() else {
-            return WaitOutcome::Ready;
-        };
-        channel.lock_queue.push_back(sender);
-        WaitOutcome::Pending(completion)
-    }
-
-    pub(crate) fn unlock(&self, name: &str) -> bool {
-        let mut channels = self.channels.borrow_mut();
-        let Some(channel) = channels.get_mut(name) else {
-            return false;
-        };
-        if !channel.locked {
-            return false;
-        }
-        // Hand the lock straight to the next waiter instead of dropping it and
-        // letting every blocked caller race for it.
-        let next = channel.lock_queue.pop_front();
-        if next.is_none() {
-            channel.locked = false;
-            if channel.woken && channel.waiters.is_empty() {
-                channels.remove(name);
-            }
-        }
-        drop(channels);
-        if let Some(next) = next {
-            next.complete(());
-        }
-        true
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -15766,7 +15421,6 @@ fn clamp_copy_cursor(cursor: &mut CopyCursor, grid: &Grid, vi: bool) {
     cursor.row = cursor.row.min(grid.rows.len().saturating_sub(1));
     cursor.col = cursor.col.min(copy_cursor_limit(grid, cursor.row, vi));
 }
-
 
 fn clamp_copy_state(state: &mut CopyState, vi: bool) {
     // A rectangle selection is not bound to the text. tmux lets the cursor and
