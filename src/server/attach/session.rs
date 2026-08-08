@@ -220,6 +220,7 @@ impl AttachSession {
             },
             compositor,
             finish: AttachFinishState::Running,
+            pending_exec: None,
         })
     }
 
@@ -428,6 +429,13 @@ impl AttachSession {
                 self.tty.termios_guard.restore_and_disarm();
 
                 match reason {
+                    // `-E` replaces the detach message entirely: the client
+                    // execs rather than reporting a detach.
+                    AttachFinishReason::Detached if self.pending_exec.is_some() => {
+                        let (command, shell) =
+                            self.pending_exec.take().expect("exec checked above");
+                        writer.send(Frame::new(Message::Exec { command, shell }))?;
+                    }
                     AttachFinishReason::Detached => {
                         let session_name = state
                             .borrow_mut()
@@ -874,7 +882,22 @@ impl AttachSession {
                         self.compositor.render.last_render.clear();
                         self.compositor.render.force_clear = true;
                     }
-                    ClientAction::Detach => {
+                    ClientAction::Detach(exec) => {
+                        // `detach-client -E` hands the client a command to exec
+                        // in place of detaching, the way tmux's
+                        // `server_client_exec` does. The client replaces itself
+                        // with it, so nothing is drawn afterwards; the tty is
+                        // handed back first, exactly as for a lock.
+                        if let Some(command) = exec.filter(|command| !command.is_empty()) {
+                            let shell = {
+                                let state = state.borrow_mut();
+                                crate::server::command::default_shell(
+                                    &state,
+                                    Some(&format!("${}", self.compositor.target.session_id)),
+                                )
+                            };
+                            self.pending_exec = Some((command, shell));
+                        }
                         return Ok(AttachNotificationOutcome::Return(
                             self.begin_finish(AttachFinishReason::Detached),
                         ));

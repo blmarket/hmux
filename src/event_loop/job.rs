@@ -84,14 +84,23 @@ impl BackgroundCommands {
                     let command = if matched { then_command } else { else_command };
                     self.start_command(target, BackgroundCommand::Line(command), context, outbox);
                 }
-                Some(JobState::Running) => {
-                    let Some(ExecutorJobOutput::Queue(Ok(mut result))) = output else {
-                        return;
-                    };
-                    for request in result.background_commands.drain(..) {
-                        self.start(target, request, outbox);
+                Some(JobState::Running) => match output {
+                    Some(ExecutorJobOutput::Queue(Ok(mut result))) => {
+                        for request in result.background_commands.drain(..) {
+                            self.start(target, request, outbox);
+                        }
                     }
-                }
+                    // A detached `run-shell -b` child has finished; its output
+                    // goes to a pane's view mode, which needs the state handle
+                    // the job itself does not hold.
+                    Some(ExecutorJobOutput::Suspension(
+                        command::CommandSuspensionResult::RunShell(completion),
+                    )) => {
+                        let mut state = self.state.borrow_mut();
+                        completion.deliver_detached(&mut state);
+                    }
+                    _ => {}
+                },
                 None => {}
             },
         }

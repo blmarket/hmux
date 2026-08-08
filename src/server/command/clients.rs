@@ -1077,7 +1077,7 @@ fn client_vars(
 fn detach_client(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {
     let target = flag_value(args, "-t");
     overlay_result(
-        state.detach_client(target, client.tty_name.as_deref()),
+        state.detach_client(target, client.tty_name.as_deref(), flag_value(args, "-E")),
         target,
     )
 }

@@ -379,6 +379,11 @@ pub(crate) struct AttachSession {
     commands: AttachCommands,
     compositor: AttachCompositorState,
     finish: AttachFinishState,
+    /// `detach-client -E`: the command and shell to hand the client instead of
+    /// detaching it. tmux's client keeps only the *last* exit message it was
+    /// sent, so a `MSG_DETACH` after `MSG_EXEC` would discard the exec; the
+    /// finish path sends one or the other, never both.
+    pending_exec: Option<(String, String)>,
 }
 
 struct AttachTty {
