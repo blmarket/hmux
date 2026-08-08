@@ -5,6 +5,15 @@
 //! (`list-sessions`, `new-session`, `has-session`, `kill-session`) with real
 //! state. Panes hold a libghostty-backed [`Pane`], so a created session is a
 //! genuinely running terminal, not a stub.
+//!
+//! This module owns the [`ServerState`] struct and the core model types
+//! ([`Session`], [`Winlink`], [`Window`], [`PaneNode`]). Everything that
+//! operates on them is split across sibling modules, each carrying its own
+//! `impl ServerState` block: `sessions`, `windows`, `panes`, `buffers`,
+//! `environ`, `options`, `keys`, `sizing`, `layout`, `modes`, `client`, and
+//! the target parsing/lookup pair `target`/`resolve`. Private fields stay
+//! private — Rust privacy reaches descendant modules, so the split needs no
+//! accessors.
 
 mod buffers;
 mod client;
@@ -42,11 +51,10 @@ pub(crate) use mode::{
 pub(crate) use sizing::{pane_slider, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy};
 pub(crate) use target::Target;
 
-#[cfg(test)]
-use std::io;
-
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+#[cfg(test)]
+use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
