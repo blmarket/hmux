@@ -763,9 +763,13 @@ impl Expander<'_> {
             return pad(&self.resolve_body(body, vars, depth), n);
         }
         // `s/pattern/replacement/[flags]:BODY` — substitute (all occurrences) in the
-        // resolved body.
-        if let Some((pat, rep, flags, body)) = parse_subst(content) {
-            return substitute(&self.resolve_body(body, vars, depth), pat, rep, flags);
+        // resolved body. Steps joined by `;` apply left to right.
+        if let Some((steps, body)) = parse_subst(content) {
+            let mut value = self.resolve_body(body, vars, depth);
+            for step in steps {
+                value = substitute(&value, step.pattern, step.replacement, step.flags);
+            }
+            return value;
         }
         // Plain variable lookup (unknown → empty).
         self.lookup(vars, content).unwrap_or_default()
@@ -1320,56 +1324,158 @@ fn parse_count_mod(content: &str, prefix: u8) -> Option<(isize, &str)> {
     Some((n, &content[i + 1..]))
 }
 
-/// Parse an `s<delim>pattern<delim>replacement<delim>[flags]:BODY` substitution.
-/// Returns `(pattern, replacement, body)`. Only literal patterns are supported
-/// (no regex), which covers the conformance cases; `None` if the shape doesn't
-/// match (so `session_name` etc. fall through to a plain lookup).
-fn parse_subst(content: &str) -> Option<(&str, &str, &str, &str)> {
-    let bytes = content.as_bytes();
-    if bytes.first() != Some(&b's') {
-        return None;
-    }
-    let delim = *bytes.get(1)?;
-    // The delimiter must be punctuation, not part of a variable name like
-    // `session_name` (whose second byte is a letter).
-    if delim.is_ascii_alphanumeric() || delim == b'_' {
-        return None;
-    }
-    let rest = &content[2..];
-    let mut parts = rest.splitn(3, delim as char);
-    let pat = parts.next()?;
-    let rep = parts.next()?;
-    let tail = parts.next()?; // "[flags]:BODY"
-    let colon = tail.find(':')?;
-    let flags = &tail[..colon];
-    let body = &tail[colon + 1..];
-    Some((pat, rep, flags, body))
+/// One `s<delim>pattern<delim>replacement<delim>[flags]` step of a
+/// substitution modifier.
+struct Subst<'a> {
+    pattern: &'a str,
+    replacement: &'a str,
+    flags: &'a str,
 }
 
+/// Parse a chain of `s<delim>pattern<delim>replacement<delim>[flags]` steps
+/// separated by `;` and terminated by `:BODY`. Returns the steps in the order
+/// they apply plus the body; `None` if the shape doesn't match (so
+/// `session_name` etc. fall through to a plain lookup).
+fn parse_subst(content: &str) -> Option<(Vec<Subst<'_>>, &str)> {
+    let mut steps = Vec::new();
+    let mut rest = content;
+    loop {
+        if !starts_subst(rest) {
+            if steps.is_empty() {
+                return None;
+            }
+            // A chain that mixes in other modifiers (`s/o/0/;=3:BODY`): hmux
+            // does not model modifier lists yet, so drop the rest of the
+            // prefix instead of failing the whole expansion.
+            let colon = rest.find(':')?;
+            return Some((steps, &rest[colon + 1..]));
+        }
+        let delim = rest.as_bytes()[1];
+        let mut parts = rest[2..].splitn(3, delim as char);
+        let pattern = parts.next()?;
+        let replacement = parts.next()?;
+        let tail = parts.next()?; // "[flags]" then `;` (another step) or `:BODY`
+        let stop = tail.find([';', ':'])?;
+        steps.push(Subst {
+            pattern,
+            replacement,
+            flags: &tail[..stop],
+        });
+        if tail.as_bytes()[stop] == b':' {
+            return Some((steps, &tail[stop + 1..]));
+        }
+        rest = &tail[stop + 1..];
+    }
+}
+
+/// Whether `content` opens an `s<delim>…` substitution. The delimiter must be
+/// ASCII punctuation: not part of a variable name like `session_name` (whose
+/// second byte is a letter), and not a byte of a multibyte character, which
+/// would put the split off a character boundary.
+fn starts_subst(content: &str) -> bool {
+    let bytes = content.as_bytes();
+    bytes.first() == Some(&b's')
+        && bytes.get(1).is_some_and(|delim| {
+            delim.is_ascii() && !delim.is_ascii_alphanumeric() && *delim != b'_'
+        })
+}
+
+/// Substitutes every match of `pattern` in `text`, following tmux's `regsub`
+/// match loop rather than the regex crate's `replace_all`. The two disagree on
+/// the edges the conformance suite pins: an empty pattern is a no-op, an empty
+/// match only expands once the scan has moved past the previous match, and a
+/// `^`-anchored pattern substitutes at most once.
+///
+/// The pattern itself is still the regex crate's dialect, not POSIX ERE, so
+/// alternation picks the leftmost-first branch where tmux takes the longest.
 fn substitute(text: &str, pattern: &str, replacement: &str, flags: &str) -> String {
+    // tmux short-circuits both empty inputs before compiling: an empty pattern
+    // leaves the value untouched instead of matching at every boundary.
+    if text.is_empty() || pattern.is_empty() {
+        return text.to_string();
+    }
     let regex = match RegexBuilder::new(pattern)
         .case_insensitive(flags.contains('i'))
         .build()
     {
         Ok(regex) => regex,
+        // A pattern that will not compile leaves the value untouched, matching
+        // `format_sub`'s handling of a NULL `regsub` result.
         Err(_) => return text.to_string(),
     };
-    // tmux's regsub replacement uses POSIX `\1` backreferences. The regex
-    // crate uses `$1`; preserve escaped non-digits and translate only captures.
-    let mut translated = String::with_capacity(replacement.len());
-    let mut chars = replacement.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '\\' && chars.peek().is_some_and(char::is_ascii_digit) {
-            translated.push_str("${");
-            translated.push(chars.next().expect("peeked capture digit"));
-            translated.push('}');
-        } else if ch == '$' {
-            translated.push_str("$$");
+
+    let end = text.len();
+    // `start` is where the next match is searched from, `last` the end of the
+    // last expanded match — the text between them is copied through verbatim.
+    let (mut start, mut last) = (0usize, 0usize);
+    let mut empty = false;
+    let mut out = String::with_capacity(end);
+
+    while start <= end {
+        let Some(captures) = regex.captures(&text[start..]) else {
+            // Like tmux, resume the copy at `start`, not at `last`.
+            out.push_str(&text[start..end]);
+            break;
+        };
+        let whole = captures.get(0).expect("capture 0 always participates");
+        out.push_str(&text[last..start + whole.start()]);
+
+        if empty || start + whole.start() != last || !whole.is_empty() {
+            expand_replacement(&mut out, replacement, &captures);
+            last = start + whole.end();
+            start = last;
+            empty = false;
         } else {
-            translated.push(ch);
+            // An empty match butted against the previous one is skipped: move
+            // on one character and expand it on the next pass instead. tmux
+            // steps one byte, which here has to be one character to keep the
+            // slices on UTF-8 boundaries.
+            last = start + whole.end();
+            start = next_char_boundary(text, last);
+            empty = true;
+        }
+
+        // A `^`-anchored pattern would otherwise re-anchor at every restart, so
+        // tmux stops after the first match and copies the remainder.
+        if pattern.starts_with('^') {
+            out.push_str(&text[start.min(end)..end]);
+            break;
         }
     }
-    regex.replace_all(text, translated.as_str()).into_owned()
+    out
+}
+
+/// Appends `replacement` with tmux's `regsub_expand` escape rules: a backslash
+/// is always dropped, and `\N` expands the Nth capture only when that group
+/// participated *and* matched something — an unmatched or empty group leaves
+/// the bare digit behind.
+fn expand_replacement(out: &mut String, replacement: &str, captures: &regex::Captures<'_>) {
+    let mut chars = replacement.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' || chars.peek().is_none() {
+            out.push(ch);
+            continue;
+        }
+        let escaped = chars.next().expect("peeked escaped character");
+        if let Some(index) = escaped.to_digit(10) {
+            if let Some(group) = captures.get(index as usize) {
+                if !group.is_empty() {
+                    out.push_str(group.as_str());
+                    continue;
+                }
+            }
+        }
+        out.push(escaped);
+    }
+}
+
+/// The offset one character past `index`, or `index + 1` at the end of `text`
+/// (which only has to leave the scan loop).
+fn next_char_boundary(text: &str, index: usize) -> usize {
+    text[index..]
+        .chars()
+        .next()
+        .map_or(index + 1, |ch| index + ch.len_utf8())
 }
 
 fn quote_shell(value: &str) -> String {
@@ -2316,6 +2422,94 @@ mod tests {
         assert_eq!(expand("#{s/o/0/:session_name}", &v), "f00bar");
         // A trailing flag (e.g. `g`) is accepted; substitution is global anyway.
         assert_eq!(expand("#{s/o/0/g:session_name}", &v), "f00bar");
+        assert_eq!(expand("#{s/O/0/i:session_name}", &v), "f00bar");
+    }
+
+    // The expectations below are the ones tmux 3.7b prints for the same
+    // formats; they are the edges where `regsub`'s scan differs from a plain
+    // replace-all.
+    #[test]
+    fn substitute_leaves_empty_pattern_and_empty_value_alone() {
+        let mut v = vars();
+        v.set("value", "abABab");
+        assert_eq!(expand("#{s//-/:value}", &v), "abABab");
+        // An uncompilable pattern is a no-op too.
+        assert_eq!(expand("#{s/[/-/:value}", &v), "abABab");
+
+        v.set("value", "");
+        assert_eq!(expand("#{s/a/-/:value}", &v), "");
+    }
+
+    #[test]
+    fn substitute_backreference_falls_back_to_the_digit() {
+        let mut v = vars();
+        v.set("value", "abABab");
+        // No capture group at all, and a group that matched nothing: both emit
+        // the bare digit rather than dropping the backreference.
+        assert_eq!(expand("#{s/a/\\1/:value}", &v), "1bAB1b");
+        assert_eq!(expand("#{s/a/\\9/:value}", &v), "9bAB9b");
+        assert_eq!(expand("#{s/(x*)a/[\\1]/:value}", &v), "[1]bAB[1]b");
+        // A group that did match expands, and a non-digit escape just loses
+        // its backslash.
+        assert_eq!(expand("#{s/(a)(b)/[\\2\\1]/:value}", &v), "[ba]AB[ba]");
+        assert_eq!(expand("#{s/a/x\\ty/:value}", &v), "xtybABxtyb");
+        assert_eq!(expand("#{s/a/x\\\\y/:value}", &v), "x\\ybABx\\yb");
+    }
+
+    #[test]
+    fn substitute_advances_past_empty_matches() {
+        let mut v = vars();
+        v.set("value", "abc");
+        assert_eq!(expand("#{s/x*/-/:value}", &v), "a-b-c-");
+        assert_eq!(expand("#{s/$/-/:value}", &v), "abc-");
+
+        v.set("value", "abcabc");
+        assert_eq!(expand("#{s/b*/-/:value}", &v), "a-c-a-c-");
+
+        v.set("value", "aaa");
+        assert_eq!(expand("#{s/a*/-/:value}", &v), "-");
+    }
+
+    #[test]
+    fn substitute_anchored_pattern_stops_after_one_match() {
+        let mut v = vars();
+        v.set("value", "abcabc");
+        assert_eq!(expand("#{s/^abc/-/:value}", &v), "-abc");
+
+        v.set("value", "abc");
+        assert_eq!(expand("#{s/^a/-/:value}", &v), "-bc");
+        // tmux consumes the character after an anchored empty match; keep the
+        // same result rather than a more defensible one.
+        assert_eq!(expand("#{s/^/-/:value}", &v), "bc");
+    }
+
+    #[test]
+    fn substitute_ignores_a_multibyte_delimiter() {
+        // A non-ASCII byte after `s` is not a delimiter — splitting there would
+        // cut a character in half.
+        let mut v = vars();
+        v.set("value", "abc");
+        assert_eq!(expand("#{s界a界b界:value}", &v), "");
+    }
+
+    #[test]
+    fn substitute_chains_steps_left_to_right() {
+        let mut v = vars();
+        v.set("value", "abcabc");
+        assert_eq!(expand("#{s/a/b/;s/b/c/:value}", &v), "cccccc");
+        assert_eq!(expand("#{s/a/b/g;s/c/d/:value}", &v), "bbdbbd");
+        // Each step brings its own delimiter and flags.
+        assert_eq!(expand("#{s|a|b|;s/B/e/i:value}", &v), "eeceec");
+    }
+
+    #[test]
+    fn substitute_steps_over_multibyte_characters() {
+        // tmux steps a byte at a time and prints "a-\347-\225-\214-b-", which
+        // is not valid UTF-8; stepping whole characters is the documented
+        // difference (README.md).
+        let mut v = vars();
+        v.set("value", "a界b");
+        assert_eq!(expand("#{s/x*/-/:value}", &v), "a-界-b-");
     }
 
     #[test]

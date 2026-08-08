@@ -33,6 +33,15 @@ control. See ./agentmon/ to see an example agent integration.
   starts with no session, so we keep it alive until the first one is created.
 - `hmux` does not have client, so launching it will create daemon and
   immediately exit. You may want to run `tmux attach` to start using it.
+- **`#{s/…/…/:…}` matches over characters, not bytes, and uses the Rust regex
+  dialect.** The scan follows tmux's `regsub` — empty pattern is a no-op,
+  empty matches advance one position, `^` substitutes at most once, and a
+  backreference to a group that matched nothing emits the bare digit — but two
+  things follow the regex engine hmux is built on instead. A pattern that can
+  match the empty string steps a whole character where tmux steps a byte, so
+  `#{s/x*/-/:a界b}` is `a-界-b-` rather than tmux's byte-split (and invalid
+  UTF-8) output; and alternation is leftmost-first rather than POSIX
+  leftmost-longest.
 
 ## Usage
 
