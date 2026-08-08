@@ -517,7 +517,7 @@ impl EventControlClient {
                 session_id,
                 destroyed,
             }) => Some((session_id, destroyed)),
-            Some(ClientAction::Detach) => {
+            Some(ClientAction::Detach(_)) => {
                 self.lifecycle = ControlLifecycle::Draining;
                 return Ok(());
             }

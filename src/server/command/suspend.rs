@@ -125,7 +125,7 @@ impl Coroutine for SuspensionJob {
 
     fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
         match self {
-            Self::BackgroundShell(job) => job.resume(ready).map(CommandSuspensionResult::Completed),
+            Self::BackgroundShell(job) => job.resume(ready).map(CommandSuspensionResult::RunShell),
             Self::RunShell(job) => job.resume(ready).map(CommandSuspensionResult::RunShell),
             Self::IfShell(job) => job.resume(ready).map(CommandSuspensionResult::IfShell),
             Self::SourceFile(job) => job.resume(ready).map(CommandSuspensionResult::SourceFile),
@@ -138,19 +138,35 @@ impl Coroutine for SuspensionJob {
     }
 }
 
-/// `run-shell -b command`: a detached job, whose output goes nowhere but whose
-/// child has to appear in `list-jobs` for as long as it runs.
+/// `run-shell -b command`: a detached job, whose output has no client to go
+/// back to and whose child has to appear in `list-jobs` for as long as it runs.
 ///
-/// The shape is [`RunShellJob`]'s, minus the reporting: wait out `-d`, run the
-/// command, and hold the registry entry until the child is reaped.
+/// The shape is [`RunShellJob`]'s: wait out `-d`, run the command, and hold the
+/// registry entry until the child is reaped. The reporting differs only in
+/// where it lands — tmux's `cmd_run_shell_print` has no `cmdq_item` to print
+/// through for a detached job, so the output goes to a pane's view mode
+/// instead, and [`Self::VIEW_FALLBACK`] stands for the pane it picks when the
+/// job named none.
 pub(crate) struct BackgroundShellJob {
     process: Option<ShellProcess>,
     /// `(registry, command)` until the child exists to register.
     pending: Option<(Rc<BackgroundJobRegistry>, String)>,
     registered: Option<(Rc<BackgroundJobRegistry>, u64)>,
+    command: String,
+    capture_stderr: bool,
+    /// The `-t` pane, pinned to its `%id`, or [`Self::VIEW_FALLBACK`].
+    view_target: String,
 }
 
 impl BackgroundShellJob {
+    /// The target a detached job's output goes to when it named no pane.
+    ///
+    /// An empty target is the current session's active window's active pane,
+    /// which is what tmux's `cmd_find_from_nothing` resolves to. It is also the
+    /// fallback for a `-t` pane that has died by the time the child finishes:
+    /// tmux re-runs the same lookup rather than dropping the output.
+    pub(crate) const VIEW_FALLBACK: &'static str = "";
+
     pub(crate) fn new(
         args: &[String],
         context: &ClientContext,
@@ -160,6 +176,9 @@ impl BackgroundShellJob {
             process: None,
             pending: None,
             registered: None,
+            command: String::new(),
+            capture_stderr: false,
+            view_target: Self::VIEW_FALLBACK.to_string(),
         };
         let Some(command) = positionals(args, &["-t", "-c", "-d"])
             .into_iter()
@@ -186,14 +205,19 @@ impl BackgroundShellJob {
         }
         Self {
             process: Some(ShellProcess::new(shell, delay)),
-            pending: Some((jobs, command)),
+            pending: Some((jobs, command.clone())),
             registered: None,
+            command,
+            capture_stderr: has_flag(args, "-E"),
+            view_target: flag_value(args, "-t")
+                .unwrap_or(Self::VIEW_FALLBACK)
+                .to_string(),
         }
     }
 }
 
 impl Coroutine for BackgroundShellJob {
-    type Output = CommandResult;
+    type Output = RunShellCompletion;
 
     fn wait(&self) -> WaitRequest<'_> {
         match &self.process {
@@ -204,7 +228,10 @@ impl Coroutine for BackgroundShellJob {
 
     fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
         let Some(process) = self.process.as_mut() else {
-            return TaskPoll::Ready(CommandResult::ok(""));
+            return TaskPoll::Ready(RunShellCompletion {
+                result: CommandResult::ok(""),
+                view: None,
+            });
         };
         let poll = process.resume(ready);
         // The child exists from the first resume that gets past `-d`, and
@@ -220,13 +247,23 @@ impl Coroutine for BackgroundShellJob {
             }
         }
         match poll {
-            TaskPoll::Ready(_) => {
+            TaskPoll::Ready(output) => {
                 self.process = None;
                 self.pending = None;
                 if let Some((jobs, id)) = self.registered.take() {
                     jobs.remove(id);
                 }
-                TaskPoll::Ready(CommandResult::ok(""))
+                // A child that could not be run at all reports nothing: there
+                // is no client to raise the error with, and tmux's own failure
+                // path here only sets a status message on a client it has.
+                let view = output.ok().map(|output| {
+                    let text = run_shell_report(&self.command, self.capture_stderr, &output);
+                    (self.view_target.clone(), text.into_bytes())
+                });
+                TaskPoll::Ready(RunShellCompletion {
+                    result: CommandResult::ok(""),
+                    view,
+                })
             }
             TaskPoll::Pending => TaskPoll::Pending,
         }
@@ -242,6 +279,32 @@ struct ShellOutput {
 
 /// `run-shell command`, without `-b` (a background job) or `-C` (no child at
 /// all): wait out `-d`, run the command and report its output.
+/// What tmux's `cmd_run_shell_callback` renders for one finished child: the
+/// captured output, then a status line for an exit that was not a clean zero.
+///
+/// Both the waiting and the detached job report the same text; they differ only
+/// in where it is delivered.
+fn run_shell_report(command: &str, capture_stderr: bool, output: &ShellOutput) -> String {
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    if capture_stderr {
+        text.push_str(&String::from_utf8_lossy(&output.stderr));
+    }
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    if output.exit != 0 {
+        if output.exit >= 128 {
+            text.push_str(&format!(
+                "'{command}' terminated by signal {}\n",
+                output.exit - 128
+            ));
+        } else {
+            text.push_str(&format!("'{command}' returned {}\n", output.exit));
+        }
+    }
+    text
+}
+
 pub(crate) struct RunShellJob {
     /// Set when the arguments resolved before any child was needed.
     resolved: Option<RunShellCompletion>,
@@ -296,24 +359,7 @@ impl RunShellJob {
                 };
             }
         };
-        let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
-        if self.capture_stderr {
-            text.push_str(&String::from_utf8_lossy(&output.stderr));
-        }
-        if !text.is_empty() && !text.ends_with('\n') {
-            text.push('\n');
-        }
-        if output.exit != 0 {
-            if output.exit >= 128 {
-                text.push_str(&format!(
-                    "'{}' terminated by signal {}\n",
-                    self.command,
-                    output.exit - 128
-                ));
-            } else {
-                text.push_str(&format!("'{}' returned {}\n", self.command, output.exit));
-            }
-        }
+        let text = run_shell_report(&self.command, self.capture_stderr, &output);
         let view = self
             .view_target
             .as_ref()

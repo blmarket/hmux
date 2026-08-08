@@ -1344,7 +1344,10 @@ impl ResumableCommandQueue {
                 result
                     .background_commands
                     .push(BackgroundCommandRequest::RunShell {
-                        args: inflight.command.args.clone(),
+                        args: {
+                            let state = state.borrow_mut();
+                            pin_run_shell_view_target(&inflight.command.args, &state)
+                        },
                         context: self.context.clone(),
                         jobs,
                     });
@@ -1357,24 +1360,8 @@ impl ResumableCommandQueue {
             {
                 let suspension = CommandSuspension::RunShell {
                     args: {
-                        // Pin `-t` to the pane's stable `%id` now: tmux keys
-                        // the output view on the pane itself, so a pane that
-                        // dies mid-run must not let the *name* re-resolve to
-                        // a survivor — the output falls back to the client.
-                        let mut args = inflight.command.args.clone();
                         let state = state.borrow_mut();
-                        if let Some(position) = args.iter().position(|arg| arg == "-t") {
-                            if let Some(value) = args.get(position + 1) {
-                                if let Some(resolved) = state.resolve(value) {
-                                    let pane_id = state
-                                        .window(resolved.session, resolved.window)
-                                        .panes[resolved.pane]
-                                        .id;
-                                    args[position + 1] = format!("%{pane_id}");
-                                }
-                            }
-                        }
-                        args
+                        pin_run_shell_view_target(&inflight.command.args, &state)
                     },
                     context: {
                         let state = state.borrow_mut();
@@ -3472,6 +3459,20 @@ pub fn default_client_command(st: &ServerState) -> Vec<String> {
             LineToken::Separator => ";".to_string(),
         })
         .collect()
+}
+
+/// The shell a `tmux -c` client is told to exec, from `default-shell`.
+///
+/// tmux resolves it against the client's session when it has one — `tmux -c`
+/// does not, `detach-client -E` does — and falls back to the global session
+/// option, then to `_PATH_BSHELL` when neither names a usable shell.
+pub fn default_shell(st: &ServerState, session: Option<&str>) -> String {
+    session
+        .and_then(|session| st.option_for_target(session, "default-shell"))
+        .or_else(|| st.global_options().session().get("default-shell"))
+        .filter(|shell| shell.starts_with('/'))
+        .unwrap_or("/bin/sh")
+        .to_owned()
 }
 
 /// Classify a client's raw command argv into an [`Intent`]. `attach`/`new` name
@@ -8658,6 +8659,43 @@ impl RunShellCompletion {
     pub(crate) fn result(&self) -> &CommandResult {
         &self.result
     }
+
+    /// Deliver a *detached* job's output, which has no client to fall back on.
+    ///
+    /// tmux resolves the view pane when the child finishes, so a `-t` pane that
+    /// has since died sends the output through the same
+    /// `cmd_find_from_nothing` lookup a job that named no pane uses. With no
+    /// pane at all the output is dropped: `cmd_run_shell_print` returns without
+    /// an item to print through.
+    pub(crate) fn deliver_detached(self, state: &mut ServerState) {
+        let Some((target, output)) = self.view else {
+            return;
+        };
+        if state.append_view_output(&target, &output).is_err()
+            && target != suspend::BackgroundShellJob::VIEW_FALLBACK
+        {
+            let _ = state.append_view_output(suspend::BackgroundShellJob::VIEW_FALLBACK, &output);
+        }
+    }
+}
+
+/// Rewrite `run-shell`'s `-t` to the pane's stable `%id`.
+///
+/// tmux keys the output view on the pane itself, so a pane that dies mid-run
+/// must not let the *name* re-resolve to a survivor: the output falls back
+/// instead — to the client for a waiting job, and to the current pane for a
+/// detached one.
+fn pin_run_shell_view_target(args: &[String], state: &ServerState) -> Vec<String> {
+    let mut args = args.to_vec();
+    let Some(position) = args.iter().position(|arg| arg == "-t") else {
+        return args;
+    };
+    let Some(resolved) = args.get(position + 1).and_then(|value| state.resolve(value)) else {
+        return args;
+    };
+    let pane_id = state.window(resolved.session, resolved.window).panes[resolved.pane].id;
+    args[position + 1] = format!("%{pane_id}");
+    args
 }
 
 fn finish_run_shell(completion: RunShellCompletion, state: &mut ServerState) -> CommandResult {

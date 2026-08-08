@@ -148,6 +148,15 @@ pub enum Message {
     /// `MSG_RESIZE`: sent with an empty payload; the server recomputes size from
     /// the tty.
     Resize,
+    /// `MSG_SHELL`: `tmux -c command`. The client sends it with an empty payload
+    /// and does nothing else; the server answers with the `default-shell` path
+    /// and closes the peer, and the client then execs `shell -c command`
+    /// itself. The payload is the shell only on the way back, so it is optional.
+    Shell(Option<String>),
+    /// `MSG_EXEC`: server→client, `detach-client -E`. The payload is the
+    /// command and then the shell to run it with, each NUL-terminated; the
+    /// client execs `shell -c command` in place of detaching.
+    Exec { command: String, shell: String },
     Shutdown,
     /// `MSG_FLAGS`: 64-bit client flags update.
     Flags(i64),
@@ -273,6 +282,11 @@ impl Message {
             MSG_SUSPEND if payload.is_empty() => Message::Suspend,
             MSG_WAKEUP if payload.is_empty() => Message::Wakeup,
             MSG_RESIZE if payload.is_empty() => Message::Resize,
+            MSG_EXEC => decode_exec(payload).unwrap_or_else(unknown),
+            MSG_SHELL if payload.is_empty() => Message::Shell(None),
+            MSG_SHELL => cstr_body(payload)
+                .map(|shell| Message::Shell(Some(shell)))
+                .unwrap_or_else(unknown),
             MSG_SHUTDOWN if payload.is_empty() => Message::Shutdown,
             MSG_FLAGS => i64_body(payload)
                 .map(Message::Flags)
@@ -335,6 +349,13 @@ impl Message {
             Message::Suspend => (MSG_SUSPEND, Vec::new()),
             Message::Wakeup => (MSG_WAKEUP, Vec::new()),
             Message::Resize => (MSG_RESIZE, Vec::new()),
+            Message::Shell(None) => (MSG_SHELL, Vec::new()),
+            Message::Shell(Some(shell)) => (MSG_SHELL, cstr_bytes(shell)),
+            Message::Exec { command, shell } => {
+                let mut payload = cstr_bytes(command);
+                payload.extend_from_slice(&cstr_bytes(shell));
+                (MSG_EXEC, payload)
+            }
             Message::Shutdown => (MSG_SHUTDOWN, Vec::new()),
             Message::Flags(v) => (MSG_FLAGS, v.to_ne_bytes().to_vec()),
 
@@ -392,6 +413,8 @@ impl Message {
             Message::Suspend => "Suspend",
             Message::Wakeup => "Wakeup",
             Message::Resize => "Resize",
+            Message::Shell(_) => "Shell",
+            Message::Exec { .. } => "Exec",
             Message::Shutdown => "Shutdown",
             Message::Flags(_) => "Flags",
             Message::Ready => "Ready",
@@ -487,6 +510,21 @@ fn decode_command(p: &[u8]) -> Option<Message> {
     // Exactly one trailing empty piece (after the final NUL) must remain.
     match (pieces.next(), pieces.next()) {
         (Some([]), None) => Some(Message::Command(args)),
+        _ => None,
+    }
+}
+
+/// `msg_exec`: the command then the shell, each NUL-terminated.
+fn decode_exec(p: &[u8]) -> Option<Message> {
+    if p.last() != Some(&0) {
+        return None;
+    }
+    let mut pieces = p.split(|&b| b == 0);
+    let command = std::str::from_utf8(pieces.next()?).ok()?.to_owned();
+    let shell = std::str::from_utf8(pieces.next()?).ok()?.to_owned();
+    // Exactly one trailing empty piece (after the final NUL) must remain.
+    match (pieces.next(), pieces.next()) {
+        (Some([]), None) => Some(Message::Exec { command, shell }),
         _ => None,
     }
 }

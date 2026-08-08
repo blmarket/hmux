@@ -518,7 +518,9 @@ impl BackgroundJobRegistry {
 pub(crate) enum ClientAction {
     Lock(String),
     Suspend,
-    Detach,
+    /// `detach-client`; `Some` is `-E`, the command the client execs instead
+    /// of simply detaching (tmux's `server_client_exec`).
+    Detach(Option<String>),
     Switch {
         session_id: u32,
         /// Set when the move is the fallout of the client's old session being
@@ -3402,6 +3404,7 @@ impl ClientRenderRegistry {
         &self,
         target: Option<&str>,
         invoking_tty: Option<&str>,
+        exec: Option<&str>,
     ) -> ClientActionResult {
         let inner = self.inner.borrow();
         let entry = match Self::client_entry(&inner, target, invoking_tty) {
@@ -3410,7 +3413,7 @@ impl ClientRenderRegistry {
         };
         {
             let mut action = entry.slot.action.borrow_mut();
-            *action = Some(ClientAction::Detach);
+            *action = Some(ClientAction::Detach(exec.map(str::to_owned)));
             let _ = entry.slot.wakeup.wake();
         }
         ClientActionResult::Queued
@@ -6780,8 +6783,9 @@ impl ServerState {
         &self,
         target: Option<&str>,
         invoking_tty: Option<&str>,
+        exec: Option<&str>,
     ) -> ClientActionResult {
-        self.client_renders.detach_client(target, invoking_tty)
+        self.client_renders.detach_client(target, invoking_tty, exec)
     }
 
     pub(crate) fn suspend_client(
@@ -14760,8 +14764,17 @@ impl ServerState {
                             None
                         }
                         "cursor-right" => {
+                            // A rectangle selection frees the cursor from the
+                            // text, as tmux's `all` argument does.
+                            let all = state.selection.is_some() && state.rectangle;
                             for _ in 0..prefix {
-                                copy_reader_cursor_right(&mut state.cursor, &state.grid);
+                                copy_reader_cursor_right(
+                                    &mut state.cursor,
+                                    &state.grid,
+                                    true,
+                                    all,
+                                    !vi,
+                                );
                             }
                             ensure_copy_cursor_visible(state);
                             None
@@ -15754,17 +15767,29 @@ fn clamp_copy_cursor(cursor: &mut CopyCursor, grid: &Grid, vi: bool) {
     cursor.col = cursor.col.min(copy_cursor_limit(grid, cursor.row, vi));
 }
 
-fn clamp_copy_point(point: &mut (usize, usize), grid: &Grid, vi: bool) {
-    point.0 = point.0.min(grid.rows.len().saturating_sub(1));
-    point.1 = point.1.min(copy_cursor_limit(grid, point.0, vi));
-}
 
 fn clamp_copy_state(state: &mut CopyState, vi: bool) {
-    clamp_copy_cursor(&mut state.cursor, &state.grid, vi);
+    // A rectangle selection is not bound to the text. tmux lets the cursor and
+    // both corners sit anywhere within the screen — that is what its `all`
+    // argument to `grid_reader_cursor_right` is for — so clamping them to a
+    // row's length here would drag the rectangle back to the shortest row it
+    // covers, and the cursor would never get past the end of the row it is on.
+    let rectangle = state.selection.is_some() && state.rectangle;
+    let limit = |grid: &Grid, row: usize| {
+        if rectangle {
+            grid.cols as usize
+        } else {
+            copy_cursor_limit(grid, row, vi)
+        }
+    };
+    state.cursor.row = state.cursor.row.min(state.grid.rows.len().saturating_sub(1));
+    state.cursor.col = state.cursor.col.min(limit(&state.grid, state.cursor.row));
     state.desired_col = state.desired_col.min(state.grid.cols as usize);
     if let Some(selection) = state.selection.as_mut() {
-        clamp_copy_point(&mut selection.anchor, &state.grid, vi);
-        clamp_copy_point(&mut selection.end, &state.grid, vi);
+        for point in [&mut selection.anchor, &mut selection.end] {
+            point.0 = point.0.min(state.grid.rows.len().saturating_sub(1));
+            point.1 = point.1.min(limit(&state.grid, point.0));
+        }
     }
 }
 
@@ -16861,8 +16886,40 @@ fn copy_reader_handle_wrap(cursor: &mut CopyCursor, grid: &Grid, line_end: &mut 
     true
 }
 
-fn copy_reader_cursor_right(cursor: &mut CopyCursor, grid: &Grid) {
-    let end = copy_line_length(grid, cursor.row).saturating_sub(1);
+/// tmux's `grid_reader_cursor_right`.
+///
+/// How far right the cursor may go depends on the caller: `all` is a rectangle
+/// selection, which can put the cursor anywhere on the screen rather than on
+/// the text; `onemore` is emacs keys, which allow the column just past the last
+/// cell where vi keys stop on it. With `wrap`, a cursor already at that limit
+/// moves to the start of the next line instead of staying put — which is what
+/// makes `cursor-right` walk off the end of a line, and why the word-end
+/// helpers ask for the un-wrapped form.
+fn copy_reader_cursor_right(
+    cursor: &mut CopyCursor,
+    grid: &Grid,
+    wrap: bool,
+    all: bool,
+    onemore: bool,
+) {
+    let end = if all {
+        grid.cols as usize
+    } else {
+        let length = copy_line_length(grid, cursor.row);
+        if onemore {
+            length
+        } else {
+            length.saturating_sub(1)
+        }
+    };
+    if wrap && cursor.col >= end {
+        // The last row of the grid has nowhere to wrap to.
+        if cursor.row + 1 < grid.rows.len() {
+            cursor.row += 1;
+            cursor.col = 0;
+        }
+        return;
+    }
     if cursor.col < end {
         cursor.col += 1;
         while cursor.col < end {
@@ -17035,7 +17092,7 @@ fn move_next_end(cursor: &mut CopyCursor, grid: &Grid, vi: bool, separators: &st
     }
     if vi {
         if !copy_cell_in_set(grid, cursor, " \t") {
-            copy_reader_cursor_right(cursor, grid);
+            copy_reader_cursor_right(cursor, grid, false, false, false);
         }
         copy_reader_next_word_end(cursor, grid, separators);
         copy_reader_cursor_left(cursor, grid, true);
@@ -17134,12 +17191,36 @@ fn copy_selection(state: &CopyState, vi: bool) -> String {
 
     let segments = copy_selection_segments(state, vi);
     if state.rectangle {
+        // A rectangle asks every row for the same column range, so tmux's
+        // per-line rule decides the newlines exactly as it does for a linear
+        // selection: `window_copy_copy_line` ends each row, and the final one
+        // is taken back only when the range stopped inside the row's text.
+        // That is what makes a rectangle wider than its last row keep a
+        // trailing newline while one cutting through it does not.
+        let last_col = selection
+            .anchor
+            .1
+            .max(selection.end.1)
+            .saturating_add(usize::from(vi));
         let mut output = String::new();
-        for (index, (row, from, to)) in segments.into_iter().enumerate() {
-            if index != 0 {
+        for (row_index, from, to) in segments {
+            let row = &grid.rows[row_index];
+            let row_end = if row.wrapped {
+                grid.cols as usize
+            } else {
+                copy_line_length(grid, row_index)
+            };
+            append_copy_cells(&mut output, grid, row_index, from, to);
+            if !row.wrapped || last_col.min(row_end) != row_end {
                 output.push('\n');
             }
-            append_copy_cells(&mut output, grid, row, from, to);
+        }
+        let end_line_length = copy_line_length(grid, end.0);
+        if (!vi || last_col <= end_line_length)
+            && (!grid.rows[end.0].wrapped || last_col != end_line_length)
+            && output.ends_with('\n')
+        {
+            output.pop();
         }
         return output;
     }

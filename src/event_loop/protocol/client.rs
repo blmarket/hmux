@@ -521,6 +521,21 @@ impl ProtocolClient {
                 let args = args.clone();
                 self.begin_attach(target, args, outbox);
             }
+            // `tmux -c command`: the client wants the shell to exec, not a
+            // command run here. tmux answers with `default-shell` and drops the
+            // peer — the client execs it itself — so this never becomes an
+            // attach or a command client.
+            Message::Shell(None) => {
+                let shell = command::default_shell(&self.state.borrow_mut(), None);
+                if self.queue_frame(target, Frame::new(Message::Shell(Some(shell))), outbox) {
+                    // The answer has to reach the client before the peer goes:
+                    // it execs on receipt, and a close that overtook the frame
+                    // would look like the server dying. Draining closes once
+                    // the writer has flushed.
+                    self.protocol_state = ProtocolState::Draining;
+                    self.drive_output(target, outbox);
+                }
+            }
             Message::Detach(_) | Message::DetachKill(_) | Message::Exit(_) | Message::Shutdown => {
                 self.close(target, ProtocolCloseReason::Completed, outbox);
             }
