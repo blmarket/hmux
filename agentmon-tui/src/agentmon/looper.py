@@ -247,6 +247,10 @@ class Looper:
             instruction_file=self.instruction_file,
             size_percent=self.config.agent_size_percent,
             devshell=self.config.devshell,
+            # Focus the agent, not this log: status that follows the active
+            # pane only reports the run while the agent pane holds it. Focus
+            # comes back here on its own when the run's pane goes away.
+            focus=True,
         )
         self.log(
             f"run {index}: started {self.config.agent} ({self.config.model}, "

@@ -1560,6 +1560,30 @@ def test_split_agent_pane_starts_the_agent_below_the_caller(
     )
 
 
+def test_split_agent_pane_can_hand_the_focus_to_the_agent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import services
+
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "%7\n", "")
+
+    monkeypatch.setattr(services, "_run", fake_run)
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+
+    service.split_agent_pane(
+        target="%1", worktree=tmp_path, agent="codex", focus=True
+    )
+
+    assert "-d" not in calls[0]
+    assert calls[0][:8] == [
+        "tmux", "-S", "/tmp/hmux.sock", "split-window", "-v", "-t", "%1", "-l",
+    ]
+
+
 def test_split_agent_pane_requires_a_pane_id_back(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

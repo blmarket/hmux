@@ -200,6 +200,9 @@ def test_loop_runs_the_prompt_and_commits_what_it_produced(tmp_path: Path) -> No
     assert service.splits[0]["model"] == "gpt-5.6-luna"
     assert service.splits[0]["effort"] == "max"
     assert service.splits[0]["target"] == "%0"
+    # The status that follows the active pane should describe the run, so the
+    # agent pane takes the focus rather than the pane looper logs into.
+    assert service.splits[0]["focus"] is True
     assert any("committed abc1234" in line for line in lines)
 
 

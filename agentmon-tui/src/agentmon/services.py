@@ -1062,11 +1062,15 @@ class AgentmonService:
         instruction_file: Path | None = None,
         size_percent: int = 75,
         devshell: bool = False,
+        focus: bool = False,
     ) -> str:
         """Split `target`'s window and start an agent in the new bottom pane.
 
-        The split is detached so the caller — typically a loop runner printing
-        into `target` — keeps the focus it already had. Returns the new pane id.
+        The split is detached by default so the caller — typically a loop
+        runner printing into `target` — keeps the focus it already had. With
+        `focus`, the agent pane becomes the active one instead, which is what
+        window-level status such as the agent state follows. Returns the new
+        pane id.
         """
         command = self._agent_command(
             agent,
@@ -1078,8 +1082,8 @@ class AgentmonService:
         )
         result = _run(
             [
-                self.tmux, "-S", self.socket, "split-window", "-d", "-v",
-                "-t", target, "-l", f"{size_percent}%", "-c", str(worktree),
+                self.tmux, "-S", self.socket, "split-window", *([] if focus else ["-d"]),
+                "-v", "-t", target, "-l", f"{size_percent}%", "-c", str(worktree),
                 "-P", "-F", "#{pane_id}", command,
             ]
         )
