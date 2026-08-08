@@ -33,33 +33,6 @@ control. See ./agentmon/ to see an example agent integration.
   starts with no session, so we keep it alive until the first one is created.
 - `hmux` does not have client, so launching it will create daemon and
   immediately exit. You may want to run `tmux attach` to start using it.
-- **A pane's environment starts from the requesting client's.** tmux's server is
-  forked from its first client, so its global environment is that client's;
-  hmux's daemon starts on its own, so the base for a spawned pane is the
-  environment of the client that asked for the spawn. The `set-environment`
-  layers and everything tmux sets on top of them — `TERM`, `TERM_PROGRAM`,
-  `TERM_PROGRAM_VERSION`, `COLORTERM`, `TMUX`, `TMUX_PANE`, `PATH`, `SHELL`,
-  `PWD` — then apply as tmux's do. hmux also always drops the systemd
-  socket-activation variables (`LISTEN_PID`, `LISTEN_FDS`, `LISTEN_FDNAMES`),
-  which tmux drops only when it was built with systemd support.
-- **A client's cell size in pixels is read from the terminal, not asked for.**
-  Sixel images are drawn only to a client whose terminal reports a pixel
-  geometry; without one there is nothing to scale an image onto, and both
-  servers fall back to tmux's `SIXEL IMAGE (WxH)` text placeholder. hmux takes
-  that geometry from `TIOCGWINSZ` alone. tmux additionally sends `CSI 18 t` and
-  `CSI 14 t` and waits for the terminal's answer, so a terminal that answers
-  those but reports no pixel size through the ioctl gets a real image from tmux
-  and the placeholder from hmux.
-- **An image change repaints the client, not just its pane.** An image is drawn
-  over cells the server never wrote to, so when one is dropped nothing in the
-  ordinary frame comparison paints over it. tmux marks the pane for redraw;
-  hmux repaints the client's whole screen. The picture ends up the same and the
-  difference is in how many bytes reach the terminal.
-- **An image evicted by another pane stops being drawn immediately.** Both
-  servers cap the images the whole server holds and evict the oldest, but tmux
-  does not tell the losing pane, so it keeps showing an image the server has
-  forgotten until something else redraws it. hmux composes each frame from the
-  images the server still holds, so the evicted one is gone at the next frame.
 
 ## Usage
 

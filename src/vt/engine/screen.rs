@@ -390,6 +390,17 @@ impl Screen {
         let nx = nx.max(1).min(sx - self.cx);
         let cy = self.cy;
         self.images.check_line(cy, 1);
+        self.insert_cells(nx, bg);
+    }
+
+    /// tmux's `grid_view_insert_cells`, without the image check its
+    /// `screen_write_insertcharacter` caller makes.
+    ///
+    /// Insert mode's own shift reaches the grid through here rather than
+    /// through [`Screen::insert_character`], as tmux's `screen_write_cell`
+    /// calls `grid_view_insert_cells` itself; see the note at that call site.
+    fn insert_cells(&mut self, nx: usize, bg: i32) {
+        let sx = self.sx();
         let (px, py) = (self.cx, self.view_y(self.cy));
         if px >= sx - 1 {
             self.grid.clear(px, py, 1, 1, bg);
@@ -690,7 +701,11 @@ impl Screen {
             return;
         }
         if self.mode & mode::INSERT != 0 {
-            self.insert_character(width, colour::DEFAULT);
+            // tmux shifts the row with `grid_view_insert_cells` here rather
+            // than calling `screen_write_insertcharacter`, so insert mode skips
+            // that function's image check: a character written in insert mode
+            // lands on top of an image without taking it away.
+            self.insert_cells(width, colour::DEFAULT);
         }
         if wrap && self.cx > sx - width {
             // The run is written out before the wrap, so the row it lands on is
