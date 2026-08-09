@@ -502,10 +502,18 @@ impl Engine {
             return;
         };
         let n = n.min(self.screen.sx() - self.screen.cx);
-        let cell = Cell {
-            data,
-            ..self.screen.cell.clone()
-        };
+        // REP reapplies the active character set, as printing does — the
+        // repeated cell is drawn from the line-drawing set when SO is in
+        // effect, not from ASCII. Unlike `input_print`, `INPUT_CSI_REP` leaves
+        // the attribute on the pending cell rather than clearing it again, so
+        // this writes through `screen.cell` instead of a copy of it.
+        if self.charsets.acs_selected() {
+            self.screen.cell.attr |= attr::CHARSET;
+        } else {
+            self.screen.cell.attr &= !attr::CHARSET;
+        }
+        self.screen.cell.data = data;
+        let cell = self.screen.cell.clone();
         for _ in 0..n {
             self.screen.put_cell(&cell);
         }
@@ -946,6 +954,28 @@ mod tests {
         (0..grid.line_length(row))
             .map(|px| grid.get(px, row).data.text().to_string())
             .collect()
+    }
+
+    /// `INPUT_CSI_REP` reapplies the active character set before it repeats,
+    /// so a repeat under SO draws from the line-drawing set — and it leaves the
+    /// attribute on the pending cell, where `input_print` clears it again.
+    #[test]
+    fn rep_repeats_under_the_active_character_set() {
+        let mut engine = screen(10, 1);
+        feed(&mut engine, b"\x1b(0q\x1b[2b");
+        for px in 0..3 {
+            assert_eq!(
+                engine.screen.grid.get(px, 0).attr & attr::CHARSET,
+                attr::CHARSET,
+                "cell {px} is drawn from the line-drawing set"
+            );
+        }
+
+        let mut ascii = screen(10, 1);
+        feed(&mut ascii, b"q\x1b[2b");
+        for px in 0..3 {
+            assert_eq!(ascii.screen.grid.get(px, 0).attr & attr::CHARSET, 0);
+        }
     }
 
     /// The cluster in a cell and the cursor column, which together are what
