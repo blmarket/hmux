@@ -122,4 +122,16 @@ pub(crate) trait Platform {
     fn process_environ(_pid: u32) -> Vec<(OsString, OsString)> {
         Vec::new()
     }
+
+    /// Whether `pid` is asleep waiting to read from a terminal, rather than
+    /// running or waiting on something else. This separates a foreground
+    /// command that has stopped to ask the user a question from one that is
+    /// busy doing work.
+    ///
+    /// `None` means "cannot tell" — an unreadable process, or a platform with
+    /// no way to ask. Callers must treat that as indistinguishable from
+    /// running rather than inventing a wait.
+    fn process_waiting_for_tty(_pid: u32) -> Option<bool> {
+        None
+    }
 }

@@ -42,6 +42,7 @@ use super::format::{self, Vars};
 use super::key::{format_key_name, parse_key_name, KeyBase, KeyCode, SpecialKey};
 use super::mouse::MouseEvent;
 use super::options::{self, OptionScope, OptionSet, OptionsView};
+use super::pane::PaneClass;
 use super::registry::{self, CommandSpec, Resolution, SpecResolution};
 use super::state::{
     BackgroundJobRegistry, ClientActionResult, ClientMessage, ClientMessageResult, MenuItem,
@@ -4909,12 +4910,15 @@ pub(super) fn vars_full(
                         .unwrap_or_else(current_dir)
                 });
             }
-            v.set_lazy("pane_current_command", move || {
-                probe
-                    .as_ref()
-                    .and_then(|probe| probe.current_command())
-                    .unwrap_or_default()
-            });
+            {
+                let probe = probe.clone();
+                v.set_lazy("pane_current_command", move || {
+                    probe
+                        .as_ref()
+                        .and_then(|probe| probe.current_command())
+                        .unwrap_or_default()
+                });
+            }
             set_terminal_mode_vars(&p.pane, &mut v);
             if let Some(copy) = p.copy.as_ref() {
                 let view_top = copy.grid.scrollback_rows.saturating_sub(copy.scroll);
@@ -5048,7 +5052,7 @@ pub(super) fn vars_full(
             }
             // hmux-private agent status (see PROTOCOL.md). Absent from the hub
             // (no agent, or non-native engine) reads as empty metadata + "none".
-            let (agent, state, state_emoji, pid, session_id, model) =
+            let (agent, state, agent_emoji, pid, session_id, model) =
                 match agents.get(&PaneId(p.id)) {
                     Some(status) => (
                         status.agent,
@@ -5062,10 +5066,30 @@ pub(super) fn vars_full(
                 };
             v.set("pane_agent", agent)
                 .set("pane_agent_state", state)
-                .set("pane_agent_state_emoji", state_emoji)
                 .set("pane_agent_pid", pid)
                 .set("pane_agent_session_id", session_id)
                 .set("pane_agent_model", model);
+
+            // The compact glyph every pane gets. An agent pane reports its
+            // lifecycle state; any other pane reports what it is running, so
+            // this is never empty and a format need not branch on whether an
+            // agent was found. Resolved lazily because telling a command that
+            // is waiting on you from one that is working costs a `/proc` read.
+            //
+            // The agent's *label* is what decides which half applies, not its
+            // emoji. The observer reports a state for every pane it watches —
+            // an ordinary shell that exits is `exited` just as an agent is —
+            // and only a pane that named an agent should be labelled as one.
+            let alternate_on = p.pane.alternate_screen().0;
+            let dead = death.is_some();
+            v.set_lazy("pane_state_emoji", move || {
+                if !agent.is_empty() && !agent_emoji.is_empty() {
+                    return agent_emoji.to_string();
+                }
+                PaneClass::classify(probe.as_ref(), alternate_on, dead)
+                    .emoji()
+                    .to_string()
+            });
         }
     }
     // `hook*` variables of the hook body currently executing, if any.
@@ -9908,7 +9932,7 @@ mod tests {
                 "list-panes",
                 "-a",
                 "-F",
-                "#{pane_id} #{pane_agent} #{pane_agent_state} #{pane_agent_state_emoji} #{pane_agent_pid} #{pane_agent_session_id} #{pane_agent_model}",
+                "#{pane_id} #{pane_agent} #{pane_agent_state} #{pane_state_emoji} #{pane_agent_pid} #{pane_agent_session_id} #{pane_agent_model}",
             ],
         );
         assert_eq!(r.exit, 0);
@@ -9919,8 +9943,12 @@ mod tests {
         );
     }
 
+    /// Only the agent metadata empties out for a pane with no agent. The state
+    /// emoji still reports one, because it falls back to classifying whatever
+    /// the pane is actually running — here a fixture pane with no child, which
+    /// is exactly the "no live process" case.
     #[test]
-    fn list_panes_without_agent_reports_none() {
+    fn list_panes_without_agent_reports_none_but_still_a_state_emoji() {
         let st = state();
         let r = run_str(
             &st,
@@ -9928,11 +9956,11 @@ mod tests {
                 "list-panes",
                 "-a",
                 "-F",
-                "#{pane_agent}|#{pane_agent_state}|#{pane_agent_state_emoji}|#{pane_agent_pid}|#{pane_agent_model}",
+                "#{pane_agent}|#{pane_agent_state}|#{pane_state_emoji}|#{pane_agent_pid}|#{pane_agent_model}",
             ],
         );
         assert_eq!(r.exit, 0);
-        assert_eq!(r.stdout, "|none|||\n", "got {:?}", r.stdout);
+        assert_eq!(r.stdout, "|none|🛑||\n", "got {:?}", r.stdout);
     }
 
     #[test]

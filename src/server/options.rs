@@ -430,12 +430,12 @@ const OPTION_DEFAULTS: &[(&str, &str)] = &[
     ("window-status-bell-style", "reverse"),
     (
         "window-status-current-format",
-        "#I:#{?pane_agent_state_emoji,#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_agent_state_emoji}#[default] #{b:pane_current_path},#W}#{?window_flags,#{window_flags}, }",
+        "#I:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default] #{b:pane_current_path}#{?window_flags,#{window_flags}, }",
     ),
     ("window-status-current-style", "default"),
     (
         "window-status-format",
-        "#I:#{?pane_agent_state_emoji,#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_agent_state_emoji}#[default] #{b:pane_current_path},#W}#{?window_flags,#{window_flags}, }",
+        "#I:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default] #{b:pane_current_path}#{?window_flags,#{window_flags}, }",
     ),
     ("window-status-last-style", "default"),
     ("window-status-separator", " "),
@@ -1155,7 +1155,7 @@ mod tests {
         assert_eq!(option_default("status-left"), Some("[#{session_name}] "));
         assert_eq!(
             option_default("window-status-format"),
-            Some("#I:#{?pane_agent_state_emoji,#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_agent_state_emoji}#[default] #{b:pane_current_path},#W}#{?window_flags,#{window_flags}, }")
+            Some("#I:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default] #{b:pane_current_path}#{?window_flags,#{window_flags}, }")
         );
     }
 

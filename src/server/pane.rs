@@ -2842,6 +2842,165 @@ impl PaneProcessProbe {
             .map(|command| parse_window_name(&command))
             .filter(|name| !name.is_empty())
     }
+
+    /// Whether the pane's own shell holds the terminal, meaning it is sitting
+    /// at a prompt with nothing running in front of it.
+    ///
+    /// The session leader is the process the pane forked; while it is also the
+    /// foreground group, nothing it launched has taken the terminal from it.
+    /// Running a command moves the foreground group to that command, and it
+    /// moves back when the command finishes.
+    ///
+    /// That test alone is not enough, because a pane launched straight into a
+    /// program (`new-window -- tail -f log`) has that program as leader *and*
+    /// foreground group, and a prompt is the one thing it is not. So the
+    /// program has to be a shell, and a shell handed a command to run
+    /// (`sh -c 'while :; do :; done'`) is working rather than prompting.
+    ///
+    /// What this cannot do is ask the shell whether it is currently at its
+    /// prompt: bash and dash sit in a `poll` loop there, which is
+    /// indistinguishable from any other wait. Reading the invocation is what
+    /// is left, and it is right for the panes that matter — a login shell has
+    /// no `-c`, and a shell given one never returns to a prompt.
+    fn shell_at_prompt(&self) -> bool {
+        let holds_terminal = match (self.foreground, self.session_leader) {
+            (Some(foreground), Some(leader)) => foreground == leader,
+            _ => false,
+        };
+        holds_terminal
+            && self
+                .current_command()
+                .is_some_and(|command| is_shell(&command))
+            && !self.runs_a_command_string()
+    }
+
+    /// Whether the foreground process was invoked with `-c`, i.e. handed a
+    /// command to run rather than started interactively.
+    ///
+    /// An unreadable argument vector reads as no `-c`, leaving the shell to be
+    /// treated as interactive — which is what a pane's shell usually is.
+    fn runs_a_command_string(&self) -> bool {
+        let Some(pid) = self.foreground else {
+            return false;
+        };
+        let arguments = CurrentPlatform::process_arguments(pid as u32);
+        invoked_with_command_string(arguments.iter().filter_map(|argument| argument.to_str()))
+    }
+
+    /// Whether the foreground command is parked in a terminal read.
+    ///
+    /// The foreground process *group* id is a pid only while the group's
+    /// leader lives, so this answers for the leader and reads a leaderless
+    /// group — a pipeline outliving its first member — as not waiting. Which
+    /// is the conservative direction: it never claims a pane wants you.
+    fn waiting_for_tty(&self) -> bool {
+        self.foreground
+            .and_then(|pid| CurrentPlatform::process_waiting_for_tty(pid as u32))
+            .unwrap_or(false)
+    }
+}
+
+/// Whether a shell's argument vector carries `-c`.
+///
+/// Only the leading option arguments are scanned: everything from the first
+/// non-option onwards is the command string and its own arguments, which may
+/// contain anything at all. `--` ends the options.
+///
+/// Within that, only single-dash arguments are short-option bundles, so `-lc`
+/// counts while a long option merely spelled with a `c` in it — `--norc` —
+/// does not.
+fn invoked_with_command_string<'a>(arguments: impl Iterator<Item = &'a str>) -> bool {
+    arguments
+        .skip(1)
+        .take_while(|argument| argument.starts_with('-') && *argument != "--")
+        .filter(|argument| !argument.starts_with("--"))
+        .any(|argument| argument.contains('c'))
+}
+
+/// Whether a program name — as [`parse_window_name`] reduces it, so already
+/// stripped of its path and of the leading `-` a login shell carries — is an
+/// interactive shell.
+///
+/// Used only to decide whether a pane holding its own terminal is at a prompt.
+/// An unlisted shell reads as a foreground program instead, which is the same
+/// answer the pane would give while running anything else.
+fn is_shell(command: &str) -> bool {
+    const SHELLS: [&str; 13] = [
+        "sh", "bash", "zsh", "fish", "dash", "ash", "ksh", "mksh", "csh", "tcsh", "elvish", "nu",
+        "xonsh",
+    ];
+    SHELLS.contains(&command)
+}
+
+/// What a pane is doing, as the compact `#{pane_state_emoji}` label reports it.
+///
+/// This is the non-agent half of that variable: a pane running a recognized
+/// agent reports the agent's lifecycle state instead. Every other pane lands in
+/// exactly one of these, which is what keeps the variable from ever being
+/// empty.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PaneClass {
+    /// No live child: reaped with `remain-on-exit` holding the pane open, or
+    /// never started.
+    Dead,
+    /// The pane is on its alternate screen, which is what a full-screen
+    /// application switches to and an ordinary command line never does.
+    Tui,
+    /// The pane's shell is at its prompt, waiting for you.
+    ShellPrompt,
+    /// A foreground command has stopped to read from the terminal, waiting for
+    /// you.
+    WaitingForTty,
+    /// A foreground command is working.
+    Running,
+}
+
+impl PaneClass {
+    /// Classify a pane from what it is running.
+    ///
+    /// Order matters. A dead pane is dead whatever its last screen was. The
+    /// alternate screen then outranks the shell/command split, because a pane
+    /// launched straight into a full-screen application (`new-window htop`)
+    /// has that application as *both* its session leader and its foreground
+    /// group, and would otherwise read as a shell sitting at a prompt.
+    pub(crate) fn classify(
+        probe: Option<&PaneProcessProbe>,
+        alternate_on: bool,
+        dead: bool,
+    ) -> Self {
+        let Some(probe) = probe.filter(|_| !dead) else {
+            return PaneClass::Dead;
+        };
+        if alternate_on {
+            PaneClass::Tui
+        } else if probe.shell_at_prompt() {
+            PaneClass::ShellPrompt
+        } else if probe.waiting_for_tty() {
+            PaneClass::WaitingForTty
+        } else {
+            PaneClass::Running
+        }
+    }
+
+    /// The status-bar glyph for this class.
+    ///
+    /// Every glyph here — and every one [`AgentState::emoji`] returns — is a
+    /// single codepoint two columns wide. That is a hard requirement, not a
+    /// preference: the status renderer measures per codepoint, so a glyph
+    /// needing U+FE0F to reach emoji presentation would be counted as one
+    /// column while the terminal drew two, and the whole status line would
+    /// drift. Check any replacement against `codepoint_width` first.
+    ///
+    /// [`AgentState::emoji`]: crate::integration::AgentState::emoji
+    pub(crate) fn emoji(self) -> &'static str {
+        match self {
+            PaneClass::Dead => "🛑",
+            PaneClass::Tui => "🪟",
+            PaneClass::ShellPrompt => "💲",
+            PaneClass::WaitingForTty => "⌛",
+            PaneClass::Running => "🔧",
+        }
+    }
 }
 
 /// Build tmux's OSC 10 / 11 / 12 reply from the pane-local colour state. An
@@ -2907,6 +3066,130 @@ fn parse_window_name(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every glyph the status bar can put in a pane's slot has to occupy the
+    /// same two columns, or window entries stop lining up as panes change
+    /// state. Two things can break that, and this covers both: a glyph the
+    /// width table calls one column, and a glyph that only reaches emoji
+    /// presentation through U+FE0F — which the status renderer measures as
+    /// zero, leaving the cell one column wide while the terminal draws two.
+    #[test]
+    fn every_pane_state_glyph_is_exactly_two_columns() {
+        use crate::integration::AgentState;
+        use crate::vt::width::codepoint_width;
+
+        let classes = [
+            PaneClass::Dead,
+            PaneClass::Tui,
+            PaneClass::ShellPrompt,
+            PaneClass::WaitingForTty,
+            PaneClass::Running,
+        ]
+        .map(PaneClass::emoji);
+        let agents = [
+            AgentState::Idle,
+            AgentState::Working,
+            AgentState::Blocked,
+            AgentState::Exited,
+        ]
+        .map(AgentState::emoji);
+
+        for emoji in classes.iter().chain(agents.iter()) {
+            let mut codepoints = emoji.chars();
+            let first = codepoints.next().expect("a glyph");
+            assert_eq!(
+                codepoints.next(),
+                None,
+                "{emoji:?} is more than one codepoint"
+            );
+            assert_eq!(codepoint_width(first as u32), 2, "{emoji:?} is not 2 columns");
+        }
+
+        // Unknown stays empty on purpose: it is what lets the state emoji fall
+        // through to the pane's own class instead of labelling it as an agent.
+        assert_eq!(AgentState::Unknown.emoji(), "");
+    }
+
+    /// A pane with no live child has no foreground group to compare, so the
+    /// classes that describe a running process cannot apply to it.
+    #[test]
+    fn a_pane_with_no_process_is_dead_whatever_its_screen_says() {
+        assert_eq!(PaneClass::classify(None, false, false), PaneClass::Dead);
+        assert_eq!(PaneClass::classify(None, true, false), PaneClass::Dead);
+    }
+
+    #[test]
+    fn a_probed_pane_is_classified_by_what_holds_its_terminal() {
+        // The pids are deliberately ones `/proc` cannot answer for, so the
+        // program name comes from the spawn command the way it does for a
+        // leaderless group — and the tty probe reads as "cannot tell", which
+        // is also what every non-Linux platform reports.
+        let probe = |foreground, session_leader, command: &str| PaneProcessProbe {
+            foreground,
+            session_leader,
+            fallback_command: Some(command.to_string()),
+        };
+
+        // The shell still owns the terminal: nothing runs in front of it.
+        assert_eq!(
+            PaneClass::classify(Some(&probe(Some(0), Some(0), "bash")), false, false),
+            PaneClass::ShellPrompt
+        );
+        // A command took the terminal away from the shell.
+        assert_eq!(
+            PaneClass::classify(Some(&probe(Some(0), Some(1), "bash")), false, false),
+            PaneClass::Running
+        );
+        // A pane launched straight into a program is its own session leader,
+        // so the group comparison alone would call this a prompt.
+        assert_eq!(
+            PaneClass::classify(Some(&probe(Some(0), Some(0), "tail -f log")), false, false),
+            PaneClass::Running
+        );
+        // The alternate screen outranks the rest: a full-screen program is
+        // likewise both leader and foreground group.
+        assert_eq!(
+            PaneClass::classify(Some(&probe(Some(0), Some(0), "bash")), true, false),
+            PaneClass::Tui
+        );
+        // Death outranks everything, including the screen it died on.
+        assert_eq!(
+            PaneClass::classify(Some(&probe(Some(0), Some(0), "bash")), true, true),
+            PaneClass::Dead
+        );
+    }
+
+    /// A shell handed a command is working, not prompting — and the scan has
+    /// to stop before the command string, which can hold anything.
+    #[test]
+    fn a_shell_given_a_command_string_is_not_at_a_prompt() {
+        let invoked = |arguments: &[&str]| invoked_with_command_string(arguments.iter().copied());
+
+        assert!(invoked(&["sh", "-c", "while :; do :; done"]));
+        assert!(invoked(&["bash", "-lc", "make"]));
+        assert!(!invoked(&["bash", "--norc", "-i"]));
+        assert!(!invoked(&["-bash"]));
+        assert!(!invoked(&["zsh"]));
+        // The command string is not an option, so a `c` inside it is not a
+        // `-c`, and neither is anything after `--`.
+        assert!(!invoked(&["sh", "-i", "printf c"]));
+        assert!(!invoked(&["sh", "--", "-c"]));
+        // Only single-dash arguments bundle short options, so a long option
+        // that merely contains a `c` is not one.
+        assert!(!invoked(&["bash", "--noprofile", "--norc"]));
+        assert!(invoked(&["bash", "--norc", "-c", "make"]));
+    }
+
+    #[test]
+    fn a_login_shells_argv0_still_reads_as_a_shell() {
+        // A login shell is spelled `-bash`, and an absolute path is common in
+        // `default-shell`; both reduce to the bare program name.
+        assert!(is_shell(&parse_window_name("-bash")));
+        assert!(is_shell(&parse_window_name("/usr/bin/zsh")));
+        assert!(is_shell(&parse_window_name("fish")));
+        assert!(!is_shell(&parse_window_name("/usr/bin/tail -f log")));
+        assert!(!is_shell(&parse_window_name("htop")));
+    }
 
     /// A pty read can end anywhere, including in the middle of a sequence. The
     /// tokenizer retains its state across reads, so the pane still sees one

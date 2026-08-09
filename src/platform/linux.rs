@@ -236,7 +236,52 @@ impl Platform for Linux {
             })
             .collect()
     }
+
+    fn process_waiting_for_tty(pid: u32) -> Option<bool> {
+        // Two readings have to agree, because neither is conclusive alone.
+        //
+        // `/proc/PID/wchan` names the kernel function the task is parked in.
+        // A tty read parks in `wait_woken` — but so does a socket read, so the
+        // symbol only narrows the field to "asleep in a driver read".
+        //
+        // `/proc/PID/syscall` then says which descriptor that read is on: for
+        // the read-family calls a tty read can be sitting in, the first
+        // argument is the file descriptor. Resolving it through `fd/` tells a
+        // terminal apart from a socket, which is what the symbol could not.
+        //
+        // A process waiting on the terminal through `poll`/`select` instead
+        // parks in `poll_schedule_timeout` and passes a pointer rather than a
+        // descriptor, so it reads as running. That is the conservative
+        // direction: a busy pane is never mistaken for one waiting on you.
+        let wchan = fs::read_to_string(format!("/proc/{pid}/wchan")).ok()?;
+        if !TTY_READ_WCHAN.contains(&wchan.trim()) {
+            return Some(false);
+        }
+        let syscall = fs::read_to_string(format!("/proc/{pid}/syscall")).ok()?;
+        // "running" for a task on a cpu, "-1 ..." when the registers are gone.
+        let Some(descriptor) = syscall
+            .split_whitespace()
+            .nth(1)
+            .and_then(|argument| argument.strip_prefix("0x"))
+            .and_then(|argument| u32::from_str_radix(argument, 16).ok())
+        else {
+            return Some(false);
+        };
+        let Ok(target) = fs::read_link(format!("/proc/{pid}/fd/{descriptor}")) else {
+            return Some(false);
+        };
+        Some(
+            target
+                .to_str()
+                .is_some_and(|target| target.starts_with("/dev/pts/") || target.starts_with("/dev/tty")),
+        )
+    }
 }
+
+/// The `wchan` symbols a task blocked reading a terminal parks in.
+/// `wait_woken` is what current kernels report for `n_tty_read`; the two named
+/// functions are what older ones reported directly.
+const TTY_READ_WCHAN: [&str; 3] = ["wait_woken", "n_tty_read", "tty_read"];
 
 /// Seconds since the epoch at which the kernel booted, from `/proc/stat`'s
 /// `btime` line. Process start times are recorded relative to this instant.
@@ -433,5 +478,94 @@ mod tests {
             "the group id must name no process for this test to mean anything"
         );
         assert_eq!(cwd, Some(PathBuf::from("/proc")));
+    }
+
+    /// Fork a child onto the slave end of a fresh pty and run `probe` against
+    /// it once it has had a moment to reach its steady state. `body` runs in
+    /// the child and must never return.
+    fn with_pty_child(body: unsafe fn() -> !, probe: impl FnOnce(u32)) {
+        let (mut master, mut slave) = (-1, -1);
+        let opened = unsafe {
+            libc::openpty(
+                &mut master,
+                &mut slave,
+                ptr::null_mut(),
+                ptr::null(),
+                ptr::null(),
+            )
+        };
+        assert_eq!(opened, 0, "openpty: {}", io::Error::last_os_error());
+
+        // SAFETY: the child branch touches only async-signal-safe libc calls
+        // and terminates in `_exit`, which `body` is required to guarantee.
+        let child = unsafe { libc::fork() };
+        assert!(child >= 0, "fork: {}", io::Error::last_os_error());
+        if child == 0 {
+            unsafe {
+                libc::close(master);
+                libc::dup2(slave, 0);
+                libc::setsid();
+                libc::ioctl(slave, libc::TIOCSCTTY, 0);
+                body();
+            }
+        }
+
+        // The child has to reach its read (or its loop) before the probe means
+        // anything; a freshly forked task is briefly running either way.
+        std::thread::sleep(Duration::from_millis(250));
+        let observed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            probe(child as u32);
+        }));
+
+        unsafe {
+            libc::kill(child, libc::SIGKILL);
+            let mut status = 0;
+            libc::waitpid(child, &mut status, 0);
+            libc::close(slave);
+            libc::close(master);
+        }
+        if let Err(panic) = observed {
+            std::panic::resume_unwind(panic);
+        }
+    }
+
+    #[test]
+    fn a_process_parked_in_a_terminal_read_is_reported_as_waiting() {
+        unsafe fn read_stdin_forever() -> ! {
+            let mut byte = 0u8;
+            loop {
+                libc::read(0, (&mut byte as *mut u8).cast(), 1);
+            }
+        }
+
+        with_pty_child(read_stdin_forever, |pid| {
+            assert_eq!(Linux::process_waiting_for_tty(pid), Some(true));
+        });
+    }
+
+    /// The reading above is only worth anything if work does not look like it.
+    /// A spinning process is the plain case, and a process asleep on something
+    /// that is not the terminal — a timer — is the one `wchan` alone would get
+    /// wrong, since it parks in a different symbol than a terminal read does.
+    #[test]
+    fn a_busy_or_otherwise_sleeping_process_is_not_reported_as_waiting() {
+        unsafe fn spin_forever() -> ! {
+            loop {
+                std::hint::spin_loop();
+            }
+        }
+
+        unsafe fn sleep_forever() -> ! {
+            loop {
+                libc::sleep(30);
+            }
+        }
+
+        with_pty_child(spin_forever, |pid| {
+            assert_eq!(Linux::process_waiting_for_tty(pid), Some(false));
+        });
+        with_pty_child(sleep_forever, |pid| {
+            assert_eq!(Linux::process_waiting_for_tty(pid), Some(false));
+        });
     }
 }

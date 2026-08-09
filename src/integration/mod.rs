@@ -67,9 +67,16 @@ impl AgentState {
         }
     }
 
-    /// Compact status-bar representation. Unknown or absent status expands to
-    /// an empty string so format conditionals can fall back to ordinary pane or
-    /// window labels.
+    /// Compact status-bar representation, as the agent half of
+    /// `#{pane_state_emoji}`. Unknown expands to an empty string, which is what
+    /// lets that variable fall through to the pane's own class.
+    ///
+    /// Every glyph here is a single codepoint two columns wide, and a
+    /// replacement must be too: the status renderer measures per codepoint, so
+    /// one needing U+FE0F to reach emoji presentation would be counted as a
+    /// single column while the terminal drew two, and the status line would
+    /// drift. `PaneClass::emoji` carries the same requirement, and one test
+    /// covers both.
     pub fn emoji(self) -> &'static str {
         match self {
             AgentState::Unknown => "",

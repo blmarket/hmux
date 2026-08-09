@@ -31,6 +31,21 @@ control. See ./agentmon/ to see an example agent integration.
   default; the option itself stays settable the usual way. For example
   `exit-empty` takes a third value, `after-session`, and defaults to it — hmux
   starts with no session, so we keep it alive until the first one is created.
+- **The window list labels windows by state and directory, not by name.**
+  `window-status-format` defaults to `index:emoji directory` — where tmux would
+  show `#W`, hmux shows `#{pane_state_emoji}` and the basename of the pane's
+  working directory. The emoji says what the pane is doing (shell at a prompt,
+  command working, command waiting on you, full-screen app, agent state); the
+  directory tells two windows on the same host apart better than a window name
+  that is usually just the shell's. `#W` still exists and the option is still
+  settable, so `set -g window-status-format '#I:#W#{?window_flags,#{window_flags}, }'`
+  restores tmux's label. See PROTOCOL.md for the glyphs.
+- **`⌛` — "this command is waiting on you" — is Linux-only, and conservative.**
+  Telling a foreground command that has stopped to ask a question from one that
+  is working reads `/proc`. A platform that cannot answer, and a process that
+  waits through `poll`/`select` rather than a plain terminal read, both fall
+  back to `🔧` (working). The error only ever goes that way: a working pane is
+  never mistaken for one that wants your attention.
 - `hmux` does not have client, so launching it will create daemon and
   immediately exit. You may want to run `tmux attach` to start using it.
 - **`#{s/…/…/:…}` matches over characters, not bytes, and uses the Rust regex

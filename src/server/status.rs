@@ -28,13 +28,20 @@ use std::time::{Duration, Instant};
 const DEFAULT_STATUS_LEFT: &str = "[#{session_name}] ";
 const DEFAULT_STATUS_RIGHT: &str =
     "#{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}\"#{=21:pane_title}\" %H:%M %d-%b-%y";
-/// The agent emoji carries the model on its background: a fable model reads
-/// red, a luna model bright blue, and every other model keeps the surrounding
-/// window style. Only the matching branch emits a directive — `bg=default`
-/// would punch a terminal-background hole in the status bar instead of leaving
-/// it whatever `status-style` painted.
+/// Every window reads as `index:emoji directory`, whatever it is running —
+/// `#{pane_state_emoji}` classifies an ordinary shell or command just as it
+/// classifies an agent, so there is nothing to branch on. The directory is the
+/// pane's own, which distinguishes two windows on the same project better than
+/// the window name would.
+///
+/// An agent pane additionally carries its model on the emoji's background: a
+/// fable model reads red, a luna model bright blue, and every other model — as
+/// well as every non-agent pane, whose `#{pane_agent_model}` is empty — keeps
+/// the surrounding window style. Only the matching branch emits a directive:
+/// `bg=default` would punch a terminal-background hole in the status bar
+/// instead of leaving it whatever `status-style` painted.
 const DEFAULT_WINDOW_FORMAT: &str =
-    "#I:#{?pane_agent_state_emoji,#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_agent_state_emoji}#[default] #{b:pane_current_path},#W}#{?window_flags,#{window_flags}, }";
+    "#I:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default] #{b:pane_current_path}#{?window_flags,#{window_flags}, }";
 const DEFAULT_PANE_FORMAT: &str = "#P:[#T]#{?pane_flags,#{pane_flags}, }";
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -2797,8 +2804,11 @@ mod tests {
         );
     }
 
+    /// Every window reads as `index:emoji directory`, agent or not — the label
+    /// never falls back to the window name, which is the whole point of giving
+    /// non-agent panes a state emoji of their own.
     #[test]
-    fn default_window_label_shows_agent_state_and_worktree_name() {
+    fn default_window_label_shows_pane_state_and_worktree_name() {
         use crate::integration::status::{AgentStatus, StatusSnapshot};
         use crate::integration::AgentState;
         use crate::observability::v1::PaneId;
@@ -2817,11 +2827,17 @@ mod tests {
             .into_owned();
         let mut renderer = RenderCache::default();
 
-        let fallback =
+        // No agent: the pane is classified by what it runs instead. A fixture
+        // pane has no child at all, which is the "no live process" class.
+        let no_agent =
             String::from_utf8_lossy(renderer.render(&state, "0", 80, 24).row(0)).into_owned();
         assert!(
-            fallback.contains(&format!("0:{window_name}")),
-            "{fallback:?}"
+            no_agent.contains(&format!("0:🛑 {worktree_name}")),
+            "{no_agent:?}"
+        );
+        assert!(
+            !no_agent.contains(&format!("0:{window_name}")),
+            "{no_agent:?}"
         );
 
         for (revision, agent_state, emoji) in [
