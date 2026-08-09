@@ -241,6 +241,7 @@ impl Screen {
             self.rupper
         };
         self.cy = self.cy.saturating_sub(n).max(top);
+        self.leave_pending_wrap();
     }
 
     pub(crate) fn cursor_down(&mut self, n: usize) {
@@ -250,6 +251,21 @@ impl Screen {
             self.rlower
         };
         self.cy = (self.cy + n).min(bottom);
+        self.leave_pending_wrap();
+    }
+
+    /// Step off the pending-wrap column, which is one past the last real one.
+    ///
+    /// Writing into the last column leaves the cursor there rather than on the
+    /// next row, so the next character wraps. tmux's `screen_write_cursorup`
+    /// and `screen_write_cursordown` are the two moves that resolve that
+    /// position instead of carrying it: they pull the cursor back onto the last
+    /// real column, which is what `#{cursor_x}` then reports. Every other move
+    /// either lands on a column of its own or clamps in `set_cursor`.
+    fn leave_pending_wrap(&mut self) {
+        if self.cx == self.sx() {
+            self.cx -= 1;
+        }
     }
 
     pub(crate) fn cursor_left(&mut self, n: usize) {
@@ -1341,6 +1357,35 @@ mod tests {
         put(&mut screen, "abcdef");
         assert_eq!(text(&screen, 0), "abcf", "each character replaces the last");
         assert_eq!(text(&screen, 1), "");
+    }
+
+    /// tmux's `screen_write_cursorup` and `screen_write_cursordown` are the
+    /// only moves that resolve the pending-wrap column, so a pane that filled
+    /// its last column and then moved a row reports the last real column
+    /// rather than the one past it.
+    #[test]
+    fn a_vertical_move_steps_off_the_pending_wrap_column() {
+        for down in [false, true] {
+            let mut screen = Screen::new(4, 3, 100);
+            put(&mut screen, "abcd");
+            assert_eq!(screen.cx, 4, "the last column leaves the wrap pending");
+            if down {
+                screen.cursor_down(1);
+            } else {
+                screen.cursor_up(1);
+            }
+            assert_eq!(screen.cx, 3, "the move lands on the last real column");
+        }
+    }
+
+    /// The horizontal moves have a column of their own to land on, so they
+    /// clamp the way they always did rather than through the wrap.
+    #[test]
+    fn a_horizontal_move_from_the_pending_wrap_column_still_clamps() {
+        let mut screen = Screen::new(4, 3, 100);
+        put(&mut screen, "abcd");
+        screen.cursor_right(1);
+        assert_eq!(screen.cx, 3);
     }
 
     #[test]
