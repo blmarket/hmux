@@ -47,5 +47,12 @@ mod vis;
 pub(crate) mod width;
 mod x11_colour;
 
+/// The tmux release whose behavior hmux implements — product identity shared
+/// by the emulator's XTVERSION reply and, via the daemon's re-export, its
+/// command language (`#{version}`). Conformance is pinned to this version, so
+/// an application that special-cases a terminal by version has to see the
+/// same answer the command language claims to implement.
+pub(crate) const TMUX_VERSION: &str = "3.7b";
+
 /// The screen implementation this build ships.
 pub(crate) type PaneScreen = engine::backend::EngineScreen;

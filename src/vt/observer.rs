@@ -409,7 +409,7 @@ impl Observer {
             }
             (Some(b'>'), [], b'q') if first_is_zero(params) => {
                 out.event(Event::Reply(
-                    format!("\x1bP>|{XTVERSION_NAME} {}\x1b\\", crate::TMUX_VERSION).into_bytes(),
+                    format!("\x1bP>|{XTVERSION_NAME} {}\x1b\\", super::TMUX_VERSION).into_bytes(),
                 ));
             }
             // XTSMGRAPHICS, tmux's `input_csi_dispatch_sm_graphics`. The

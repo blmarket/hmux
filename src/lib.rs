@@ -27,9 +27,4 @@ pub(crate) mod vt;
 
 pub use error::{Error, Result};
 
-/// The tmux release whose behavior hmux implements — product identity shared
-/// by the daemon's command language (`#{version}`) and the emulator's
-/// XTVERSION reply. Conformance is pinned to this version, so an application
-/// that special-cases a terminal by version has to see the same answer the
-/// command language claims to implement.
-pub(crate) const TMUX_VERSION: &str = "3.7b";
+pub(crate) use vt::TMUX_VERSION;
