@@ -241,7 +241,7 @@ pub(super) fn window_special(sess: &Session, spec: &str) -> Option<usize> {
     match spec {
         "{start}" | "^" => Some(0),
         "{end}" | "$" => Some(n - 1),
-        "{last}" | "!" => sess.last_active.filter(|&p| p < n),
+        "{last}" | "!" => sess.last_active().filter(|&p| p < n),
         "{next}" | "+" => Some((sess.active + 1) % n),
         "{previous}" | "-" => Some((sess.active + n - 1) % n),
         _ => None,

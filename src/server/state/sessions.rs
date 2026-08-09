@@ -211,7 +211,6 @@ impl ServerState {
             cols,
             rows,
             active: 0,
-            last_active: None,
             last_windows: Vec::new(),
             created_epoch: now_epoch(),
             // tmux seeds activity from the creation time, so creation order is
@@ -301,7 +300,6 @@ impl ServerState {
         self.sessions[created].windows = source_windows;
         self.sessions[created].link_set_id = link_set_id;
         self.sessions[created].active = 0;
-        self.sessions[created].last_active = None;
         self.sessions[created].last_windows.clear();
         self.sessions[created].cols = source_size.0;
         self.sessions[created].rows = source_size.1;

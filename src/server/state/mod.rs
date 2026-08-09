@@ -448,10 +448,9 @@ pub struct Session {
     /// Identity of the session group synchronization domain. Grouped sessions
     /// use the same value; ungrouped sessions have unique values.
     pub(crate) link_set_id: u32,
-    pub active: usize,              // Vec position of the active window
-    pub last_active: Option<usize>, // Vec position of the previously-active window
+    pub active: usize, // Vec position of the active window
     /// MRU winlink identities excluding the current window, matching tmux's
-    /// full `lastw` stack. `last_active` is the cached first live position.
+    /// full `lastw` stack. Its head is the previously-active window.
     pub(crate) last_windows: Vec<u64>,
     pub cols: u16,
     pub rows: u16,
@@ -516,6 +515,15 @@ pub(crate) const DEFAULT_KEY_TABLE: &str = "root";
 impl Session {
     pub(crate) fn cwd(&self) -> Option<&Path> {
         self.cwd.as_deref()
+    }
+
+    /// Vec position of the previously-active window — tmux's `s->last`, the
+    /// top of the `lastw` stack that is still linked here. `None` once every
+    /// window the session came from has been unlinked.
+    pub fn last_active(&self) -> Option<usize> {
+        self.last_windows
+            .iter()
+            .find_map(|id| self.windows.iter().position(|link| link.link_id == *id))
     }
 
     pub(crate) fn options<'a>(&'a self, globals: &'a GlobalOptions) -> OptionsView<'a> {

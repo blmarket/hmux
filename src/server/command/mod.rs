@@ -4491,7 +4491,7 @@ pub(super) fn vars_full(
         // already what the options made of it, and, as in tmux, does not move
         // again until something wakes those paths.
         let is_active = win_idx == sess.active;
-        let is_last = Some(win_idx) == sess.last_active;
+        let is_last = Some(win_idx) == sess.last_active();
         let active_sessions = st.window_active_session_list(win.id);
         let window_flags = st.printable_window_flags(sess, win_idx, true);
         let window_raw_flags = st.printable_window_flags(sess, win_idx, false);

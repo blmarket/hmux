@@ -51,7 +51,7 @@ impl ServerState {
         if position == session.active {
             flags.push('*');
         }
-        if session.last_active == Some(position) {
+        if session.last_active() == Some(position) {
             flags.push('-');
         }
         if self.marked_pane_id.is_some_and(|marked| {
@@ -195,6 +195,9 @@ impl ServerState {
         self.client_renders.names_for_sessions(&showing)
     }
 
+    /// Drop the `lastw` entries that no longer name a linked window, plus the
+    /// one the session just made active, so the stack's head is the window
+    /// `last-window` goes back to.
     fn refresh_last_window(session: &mut Session) {
         let active_id = session.windows.get(session.active).map(|link| link.link_id);
         let live = session
@@ -207,10 +210,6 @@ impl ServerState {
             .retain(|id| live.contains(id) && Some(*id) != active_id);
         let mut seen = BTreeSet::new();
         session.last_windows.retain(|id| seen.insert(*id));
-        session.last_active = session
-            .last_windows
-            .first()
-            .and_then(|id| session.windows.iter().position(|link| link.link_id == *id));
     }
 
     fn select_window_position(session: &mut Session, position: usize) {
@@ -258,7 +257,8 @@ impl ServerState {
 
     pub(super) fn install_links_by_index(session: &mut Session, links: Vec<Winlink>) {
         let active_index = session.windows.get(session.active).map(|link| link.index);
-        let mut stack_indices = session
+        // Carried by index, not by position: the caller's list renumbers them.
+        let stack_indices = session
             .last_windows
             .iter()
             .filter_map(|id| {
@@ -269,19 +269,9 @@ impl ServerState {
                     .map(|link| link.index)
             })
             .collect::<Vec<_>>();
-        if stack_indices.is_empty() {
-            if let Some(index) = session
-                .last_active
-                .and_then(|position| session.windows.get(position))
-                .map(|link| link.index)
-            {
-                stack_indices.push(index);
-            }
-        }
         session.windows = links;
         if session.windows.is_empty() {
             session.active = 0;
-            session.last_active = None;
             session.last_windows.clear();
             return;
         }
@@ -327,9 +317,6 @@ impl ServerState {
         let member = &mut self.sessions[session];
         member.windows = links;
         member.active = member.active.min(member.windows.len().saturating_sub(1));
-        member.last_active = member
-            .last_active
-            .filter(|position| *position < member.windows.len());
         Self::refresh_last_window(member);
         self.synchronize_group_from(session);
     }

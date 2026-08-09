@@ -1629,7 +1629,7 @@ impl<'a> StatusContext<'a> {
             self.option("window-status-style")
         };
         let mut style = self.expand(style, &vars, 0);
-        if self.session.last_active == Some(index) {
+        if self.session.last_active() == Some(index) {
             let last = self.expand(self.option("window-status-last-style"), &vars, 0);
             if last != "default" && !last.is_empty() {
                 if !style.is_empty() {
