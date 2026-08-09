@@ -92,9 +92,11 @@ pub(crate) mod colour {
     }
 }
 
-/// The largest number of codepoints one cell holds, matching tmux's
-/// `UTF8_SIZE`. A cluster longer than this is truncated where tmux truncates.
-pub(crate) const UTF8_SIZE: usize = 21;
+/// The largest number of UTF-8 bytes one cell's cluster holds, matching tmux's
+/// `UTF8_SIZE`. A cluster that would outgrow this starts a new cell instead,
+/// which is observable: a seven-codepoint emoji ZWJ sequence is 26 bytes, so
+/// the bound decides whether it lands in one cell or two.
+pub(crate) const UTF8_SIZE: usize = 32;
 
 /// The character content of a cell: a grapheme cluster and the number of
 /// columns it occupies.
@@ -178,14 +180,19 @@ impl Cell {
     }
 
     /// The blank right half of a wide character.
-    pub(crate) fn padding(template: &Cell) -> Cell {
+    /// tmux's `grid_padding_cell`, which is a constant: the right half of a
+    /// wide character inherits nothing from the character it belongs to — not
+    /// its colours, not its attributes, not its hyperlink, not the tab flag.
+    /// That is observable wherever a padding cell outlives its character, since
+    /// what is left behind is a default cell rather than a coloured one.
+    pub(crate) fn padding() -> Cell {
         Cell {
             data: CellData {
                 bytes: Vec::new(),
                 width: 1,
             },
-            flags: template.flags | flag::PADDING,
-            ..template.clone()
+            flags: flag::PADDING,
+            ..Cell::default()
         }
     }
 
