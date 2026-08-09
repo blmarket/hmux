@@ -4997,7 +4997,7 @@ pub(super) fn vars_full(
                             selection.end.0.saturating_sub(view_top).to_string(),
                         );
                 }
-                if let Some(count) = copy.search_count {
+                if let Some(count) = copy.search_count() {
                     v.set("search_count", count.to_string());
                 }
                 if let Some(row) = copy.grid.rows.get(copy.cursor.row) {

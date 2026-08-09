@@ -431,7 +431,7 @@ fn render_mark_and_position(
         .set("copy_position_limit", copy.grid.scrollback_rows.to_string())
         .set(
             "search_count",
-            copy.search_count
+            copy.search_count()
                 .map(|count| count.to_string())
                 .unwrap_or_default(),
         )

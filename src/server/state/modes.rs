@@ -65,7 +65,7 @@ impl ServerState {
                             last_direction: CopySearchDirection::Backward,
                             matches: Vec::new(),
                         }),
-                        search_count: Some(0),
+                        search_marks: true,
                         incremental_search_origin: None,
                         prefix: 1,
                         scroll_exit,
@@ -513,7 +513,7 @@ impl ServerState {
                     last_direction: CopySearchDirection::Backward,
                     matches: Vec::new(),
                 }),
-                search_count: Some(0),
+                search_marks: true,
                 incremental_search_origin: None,
                 prefix: 1,
                 scroll_exit,
@@ -753,7 +753,7 @@ impl ServerState {
                 if let Some(search) = state.search.as_mut() {
                     search.matches.clear();
                 }
-                state.search_count = None;
+                state.search_marks = false;
                 state.incremental_search_origin = Some(CopySearchOrigin {
                     cursor: state.cursor.clone(),
                     desired_col: state.desired_col,

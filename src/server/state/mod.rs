@@ -1367,7 +1367,7 @@ mod tests {
             jump: None,
             hide_position: false,
             search: None,
-            search_count: Some(0),
+            search_marks: true,
             incremental_search_origin: None,
             prefix: 1,
             scroll_exit: false,

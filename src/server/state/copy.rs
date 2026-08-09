@@ -24,7 +24,11 @@ pub(crate) struct CopyState {
     pub(crate) jump: Option<CopyJump>,
     pub(crate) hide_position: bool,
     pub(crate) search: Option<CopySearch>,
-    pub(crate) search_count: Option<usize>,
+    /// Whether the matches are currently marked up — tmux's
+    /// `data->searchmark != NULL`, which is what gates `#{search_count}`. A
+    /// search that is cleared or re-run against a fresh grid drops the marks
+    /// without dropping the pattern.
+    pub(crate) search_marks: bool,
     /// Cursor and viewport saved when an incremental search begins.
     pub(crate) incremental_search_origin: Option<CopySearchOrigin>,
     /// Numeric prefix retained on the mode entry until its next command.
@@ -49,6 +53,13 @@ pub(crate) enum CopyBacking {
 }
 
 impl CopyState {
+    /// `#{search_count}`: how many matches are marked up, or `None` while
+    /// nothing is — tmux reports the count only alongside a live searchmark.
+    pub(crate) fn search_count(&self) -> Option<usize> {
+        self.search_marks
+            .then(|| self.search.as_ref().map_or(0, |search| search.matches.len()))
+    }
+
     pub(crate) fn vt_rows(&self) -> impl Iterator<Item = &[u8]> {
         self.vt_rows.iter().map(|range| &self.vt[range.clone()])
     }
@@ -277,7 +288,7 @@ pub(super) fn view_copy_state(output: Vec<u8>, cols: u16, rows: u16) -> io::Resu
         jump: None,
         hide_position: false,
         search: None,
-        search_count: Some(0),
+        search_marks: true,
         incremental_search_origin: None,
         prefix: 1,
         scroll_exit: false,
@@ -1303,13 +1314,7 @@ pub(super) fn start_copy_search(
         matches: copy_search_matches(&state.grid, pattern, regex),
     });
     move_to_copy_search_match(state, direction, vi, wrap, false);
-    state.search_count = Some(
-        state
-            .search
-            .as_ref()
-            .map(|search| search.matches.len())
-            .unwrap_or(0),
-    );
+    state.search_marks = true;
 }
 
 pub(super) fn incremental_search_argument(argument: &str) -> Option<(char, &str)> {
@@ -1357,7 +1362,7 @@ pub(super) fn incremental_copy_search(
         if let Some(search) = state.search.as_mut() {
             search.matches.clear();
         }
-        state.search_count = None;
+        state.search_marks = false;
         return;
     }
 
@@ -1375,7 +1380,7 @@ pub(super) fn incremental_copy_search(
         .as_ref()
         .is_none_or(|search| search.matches.is_empty())
     {
-        state.search_count = None;
+        state.search_marks = false;
     }
 }
 
@@ -1396,13 +1401,7 @@ pub(super) fn repeat_copy_search(state: &mut CopyState, reverse: bool, vi: bool,
         search.direction
     };
     move_to_copy_search_match(state, direction, vi, wrap, preserve_marks);
-    state.search_count = Some(
-        state
-            .search
-            .as_ref()
-            .map(|search| search.matches.len())
-            .unwrap_or(0),
-    );
+    state.search_marks = true;
 }
 
 fn move_to_copy_search_match(
@@ -1503,7 +1502,7 @@ pub(super) fn clear_copy_search_marks_after_command(
     if let Some(search) = state.search.as_mut() {
         search.matches.clear();
     }
-    state.search_count = None;
+    state.search_marks = false;
     state.incremental_search_origin = None;
 }
 
