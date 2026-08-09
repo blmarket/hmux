@@ -538,10 +538,12 @@ impl ServerState {
             let entries = entries.collect::<Vec<_>>();
             let any_unflagged = entries
                 .iter()
-                .any(|entry| entry.counts_for_sizing() && !entry.ignore_size);
+                .any(|entry| entry.counts_for_sizing() && !entry.ignore_size());
             entries
                 .iter()
-                .filter(|entry| entry.counts_for_sizing() && !(entry.ignore_size && any_unflagged))
+                .filter(|entry| {
+                    entry.counts_for_sizing() && !(entry.ignore_size() && any_unflagged)
+                })
                 .filter_map(|entry| {
                     let session = self
                         .sessions

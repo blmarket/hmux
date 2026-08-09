@@ -221,9 +221,7 @@ pub(super) struct ClientRenderEntry {
     pub(super) xpixel: u16,
     pub(super) ypixel: u16,
     flags: String,
-    read_only: bool,
     pub(super) control_mode: bool,
-    pub(super) ignore_size: bool,
     size_changed: bool,
     /// When this client last declared its terminal size, on the registry's
     /// monotonic sequence — tmux's `w->latest` ordering.
@@ -269,15 +267,24 @@ pub(super) struct ClientRenderEntry {
 }
 
 impl ClientRenderEntry {
-    /// Apply one `refresh-client -f` value and republish the derived views the
-    /// rest of the server reads (`#{client_flags}`, sizing, read-only checks).
+    /// Apply one `refresh-client -f` value and republish the rendered flag
+    /// string the format consumers read.
     fn apply_flag_value(&mut self, value: &str) {
         self.flag_state.apply_flags(value);
-        self.ignore_size = self.flag_state.ignore_size;
-        self.read_only = self.flag_state.read_only;
         self.flags =
             self.flag_state
                 .display_flags_full(self.identified, self.control_mode, self.focused);
+    }
+
+    /// Whether this client refuses input — tmux's `CLIENT_READONLY`.
+    pub(super) fn read_only(&self) -> bool {
+        self.flag_state.read_only
+    }
+
+    /// Whether this client's terminal size is excluded from window sizing —
+    /// tmux's `CLIENT_IGNORESIZE`.
+    pub(super) fn ignore_size(&self) -> bool {
+        self.flag_state.ignore_size
     }
 
     /// Whether this client's terminal size constrains window sizing: a
@@ -695,7 +702,6 @@ impl ClientRenderRegistry {
         flag_state: ClientFlagState,
         control_mode: bool,
     ) -> io::Result<ClientRenderAttachment> {
-        let read_only = flag_state.read_only;
         let wakeup = CurrentPlatform::new_output_wakeup()?;
         wakeup.clear()?;
         let slot = Rc::new(ClientRenderSlot {
@@ -706,7 +712,6 @@ impl ClientRenderRegistry {
             flag_updates: RefCell::new(Vec::new()),
             wakeup,
         });
-        let ignore_size = flags.split(',').any(|flag| flag == "ignore-size");
         let format_jobs = Rc::new(crate::server::status::FormatJobRegistry::new(self));
         let mut inner = self.inner.borrow_mut();
         let id = inner.next_id;
@@ -729,9 +734,7 @@ impl ClientRenderRegistry {
                 xpixel: 0,
                 ypixel: 0,
                 flags,
-                read_only,
                 control_mode,
-                ignore_size,
                 size_changed: !control_mode,
                 size_seq,
                 pan_window: None,
@@ -786,7 +789,7 @@ impl ClientRenderRegistry {
                 cols: entry.cols,
                 rows: entry.rows,
                 flags: entry.flags.clone(),
-                read_only: entry.read_only,
+                read_only: entry.read_only(),
                 control_mode: entry.control_mode,
                 pan_window: entry.pan_window,
                 pan_ox: entry.pan_ox,
@@ -1135,8 +1138,6 @@ impl ClientRenderRegistry {
         let enable = !entry.flag_state.read_only;
         entry.flag_state.read_only = enable;
         entry.flag_state.ignore_size = enable;
-        entry.read_only = enable;
-        entry.ignore_size = enable;
         entry.flags = entry.flag_state.display_flags_full(
             entry.identified,
             entry.control_mode,
@@ -1261,7 +1262,7 @@ impl ClientRenderRegistry {
         let inner = self.inner.borrow();
         Self::client_entry(&inner, target, invoking_tty)
             .ok()
-            .map(|entry| entry.read_only)
+            .map(|entry| entry.read_only())
     }
 
     pub(super) fn send_client_keys(
@@ -1655,8 +1656,6 @@ impl ClientRenderAttachment {
         {
             let mut inner = self.registry.inner.borrow_mut();
             if let Some(entry) = inner.clients.get_mut(&self.id) {
-                entry.ignore_size = flag_state.ignore_size;
-                entry.read_only = flag_state.read_only;
                 entry.flag_state = flag_state.clone();
                 entry.flags = flags;
             }
@@ -1694,7 +1693,7 @@ impl ClientRenderAttachment {
             .borrow()
             .clients
             .get(&self.id)
-            .map(|entry| (entry.flags.clone(), entry.read_only))
+            .map(|entry| (entry.flags.clone(), entry.read_only()))
             .unwrap_or_default()
     }
 
@@ -1965,7 +1964,7 @@ impl ServerState {
             entries.any(|entry| {
                 entry.session_id == session_id
                     && entry.name != client_name
-                    && !entry.ignore_size
+                    && !entry.ignore_size()
                     && entry.counts_for_sizing()
             })
         })
