@@ -37,19 +37,7 @@ enum State {
     OscString,
     ApcString,
     RenameString,
-    /// An `ESC` arrived inside a string. A following `\` is the ST that ends
-    /// it; anything else means the ESC was the start of something new and the
-    /// string ends where it stood.
-    StringEscape,
     ConsumeSt,
-}
-
-/// Which string sequence [`State::StringEscape`] is suspended inside.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum StringKind {
-    Osc,
-    Apc,
-    Rename,
 }
 
 /// How a string-carrying sequence ended. tmux answers a query with the same
@@ -215,8 +203,6 @@ pub struct Parser {
     string_capacity: usize,
     /// A UTF-8 sequence part-way through ground state.
     utf8: Utf8Collector,
-    /// Which string [`State::StringEscape`] is suspended inside.
-    string_kind: StringKind,
 }
 
 impl Default for Parser {
@@ -230,7 +216,6 @@ impl Default for Parser {
             string_overflow: false,
             string_capacity: input_buffer_capacity(INPUT_BUFFER_DEFAULT_SIZE),
             utf8: Utf8Collector::default(),
-            string_kind: StringKind::Osc,
         }
     }
 }
@@ -325,10 +310,7 @@ impl Parser {
         // `anywhere` transitions: CAN and SUB abort into ground, ESC restarts.
         // The DCS payload states opt out, which is what lets a passthrough
         // payload carry arbitrary bytes.
-        let anywhere = !matches!(
-            self.state,
-            State::DcsHandler | State::DcsEscape | State::StringEscape
-        );
+        let anywhere = !matches!(self.state, State::DcsHandler | State::DcsEscape);
         if anywhere {
             match byte {
                 0x18 | 0x1a => {
@@ -341,14 +323,14 @@ impl Parser {
                     return;
                 }
                 0x1b => {
-                    if let Some(kind) = self.string_state() {
-                        // Hold the ESC: it may be the ST that ends the string,
-                        // in which case both bytes belong to that sequence.
-                        self.string_kind = kind;
-                        self.raw.push(byte);
-                        self.state = State::StringEscape;
-                        return;
-                    }
+                    // The ESC ends a string sequence *here*, not once the byte
+                    // after it has decided whether it was an ST: `input.c` runs
+                    // osc_string's exit handler on the transition into
+                    // esc_enter, so the title an unterminated `ESC ] 0 ESC`
+                    // sets is already set when the stream stops. The `\` that
+                    // may follow is then an escape of its own — the no-op ST
+                    // `input_esc_table` carries — which is why the terminator
+                    // is not part of the string's bytes.
                     self.leave_state(emit);
                     self.raw.push(byte);
                     self.state = State::EscEnter;
@@ -375,7 +357,6 @@ impl Parser {
             State::OscString => self.osc_string(byte, emit),
             State::ApcString => self.apc_string(byte, emit),
             State::RenameString => self.rename_string(byte, emit),
-            State::StringEscape => self.string_escape(byte, emit),
             State::ConsumeSt => self.consume_st(byte),
         }
     }
@@ -812,55 +793,6 @@ impl Parser {
         self.raw.push(byte);
     }
 
-    /// Which string sequence the parser is collecting, if any.
-    fn string_state(&self) -> Option<StringKind> {
-        match self.state {
-            State::OscString => Some(StringKind::Osc),
-            State::ApcString => Some(StringKind::Apc),
-            State::RenameString => Some(StringKind::Rename),
-            _ => None,
-        }
-    }
-
-    /// Dispatch the suspended string. `terminated` says whether the held `ESC`
-    /// turned out to be the ST that ends it, and so belongs to its bytes.
-    fn finish_suspended_string(&mut self, terminated: bool, emit: &mut impl FnMut(Token)) {
-        if !terminated {
-            // The ESC starts something else; it is not part of this sequence.
-            self.raw.pop();
-        }
-        let kind = self.string_kind;
-        self.state = match kind {
-            StringKind::Osc => State::OscString,
-            StringKind::Apc => State::ApcString,
-            StringKind::Rename => State::RenameString,
-        };
-        match kind {
-            StringKind::Osc => self.finish_string(
-                |data| TokenKind::Osc {
-                    data,
-                    end: StringEnd::StringTerminator,
-                },
-                emit,
-            ),
-            StringKind::Apc => self.finish_string(|data| TokenKind::Apc { data }, emit),
-            StringKind::Rename => self.finish_string(|data| TokenKind::Rename { data }, emit),
-        }
-    }
-
-    fn string_escape(&mut self, byte: u8, emit: &mut impl FnMut(Token)) {
-        if byte == b'\\' {
-            self.raw.push(byte);
-            self.finish_suspended_string(true, emit);
-            return;
-        }
-        // Not an ST: end the string where it stood, then let the ESC and this
-        // byte go through the machine as the new sequence they are.
-        self.finish_suspended_string(false, emit);
-        self.step(0x1b, emit);
-        self.step(byte, emit);
-    }
-
     /// Complete a string sequence, or drop it when the payload ran away.
     fn finish_string(
         &mut self,
@@ -1124,6 +1056,11 @@ mod tests {
         );
     }
 
+    /// A `BEL` is the whole terminator; an `ESC \\` is not. tmux ends the string
+    /// on the `ESC` — `input_exit_osc` runs on the way into `esc_enter` — and
+    /// the `\\` then completes an escape of its own, the no-op ST that
+    /// `input_esc_table` carries. So the ST arrives as a second token, and the
+    /// string's bytes stop before it.
     #[test]
     fn osc_accepts_both_terminators() {
         assert_eq!(
@@ -1135,11 +1072,36 @@ mod tests {
         );
         assert_eq!(
             tokens(b"\x1b]2;hi\x1b\\"),
+            vec![
+                TokenKind::Osc {
+                    data: b"2;hi".to_vec(),
+                    end: StringEnd::StringTerminator,
+                },
+                TokenKind::Esc {
+                    intermediates: Vec::new(),
+                    final_byte: b'\\',
+                },
+            ]
+        );
+    }
+
+    /// The dispatch happens on the `ESC`, so a stream that stops there has
+    /// already had its effect — the title an `ESC ] 0 ESC` sets is set, not left
+    /// waiting for a byte that never comes.
+    #[test]
+    fn a_string_is_dispatched_on_the_escape_not_on_what_follows_it() {
+        let mut parser = Parser::default();
+        let mut out = Vec::new();
+        parser.parse(b"\x1b]0\x1b", |token| out.push(token.kind));
+        assert_eq!(
+            out,
             vec![TokenKind::Osc {
-                data: b"2;hi".to_vec(),
+                data: b"0".to_vec(),
                 end: StringEnd::StringTerminator,
             }]
         );
+        assert_eq!(parser.pending(), b"\x1b", "the ESC belongs to what follows");
+        assert!(!parser.awaiting_terminator());
     }
 
     #[test]
@@ -1170,17 +1132,27 @@ mod tests {
 
     #[test]
     fn rename_and_apc_strings_are_their_own_tokens() {
+        let st = TokenKind::Esc {
+            intermediates: Vec::new(),
+            final_byte: b'\\',
+        };
         assert_eq!(
             tokens(b"\x1bkname\x1b\\"),
-            vec![TokenKind::Rename {
-                data: b"name".to_vec()
-            }]
+            vec![
+                TokenKind::Rename {
+                    data: b"name".to_vec()
+                },
+                st.clone(),
+            ]
         );
         assert_eq!(
             tokens(b"\x1b_title\x1b\\"),
-            vec![TokenKind::Apc {
-                data: b"title".to_vec()
-            }]
+            vec![
+                TokenKind::Apc {
+                    data: b"title".to_vec()
+                },
+                st,
+            ]
         );
     }
 

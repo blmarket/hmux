@@ -1073,10 +1073,13 @@ mod tests {
         assert!(events(b"\x1b]2;t\x07").iter().all(|e| *e != Event::Bell));
     }
 
+    /// The `ESC \\` stays: it ends the rename by leaving the state, and what
+    /// follows the string is an escape of its own — the no-op ST — which the
+    /// screen sees as `input_esc_dispatch` sees it.
     #[test]
     fn the_screen_rename_control_is_reported_and_removed() {
         let (_, observed) = observe(b"a\x1bkname\x1b\\b");
-        assert_eq!(screen_bytes(&observed), b"ab");
+        assert_eq!(screen_bytes(&observed), b"a\x1b\\b");
         assert_eq!(
             observed.events,
             vec![(1, Event::Rename("name".to_string()))]
@@ -1086,7 +1089,7 @@ mod tests {
     #[test]
     fn an_apc_title_reaches_the_screen_as_the_osc_2_it_means() {
         let (_, observed) = observe(b"\x1b_title\x1b\\");
-        assert_eq!(screen_bytes(&observed), b"\x1b]2;title\x1b\\");
+        assert_eq!(screen_bytes(&observed), b"\x1b]2;title\x1b\\\x1b\\");
         assert_eq!(
             observed.events,
             vec![(0, Event::Title("title".to_string()))]
@@ -1101,7 +1104,7 @@ mod tests {
             ..policy()
         };
         let observed = observer.feed(b"x\x1b]2;t\x07\x1b_a\x1b\\y", &refused);
-        assert_eq!(screen_bytes(&observed), b"xy");
+        assert_eq!(screen_bytes(&observed), b"x\x1b\\y");
         assert!(observed.events.is_empty());
     }
 
