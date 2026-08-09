@@ -1141,7 +1141,13 @@ impl NativePaneObservation {
                 }
             }
             VtEvent::DecPrivateModeReport(mode) => {
-                let status = dec_mode_status(terminal.modes(), self.alternate_on.get(), mode);
+                let status = dec_mode_status(
+                    terminal.modes(),
+                    self.alternate_on.get(),
+                    PaneCursorShape::from_parameter(self.cursor_shape.get()),
+                    policy.cursor_style,
+                    mode,
+                );
                 replies.push(format!("\x1b[?{mode};{status}$y").into_bytes());
             }
             VtEvent::DecModeReport(mode) => {
@@ -2482,7 +2488,19 @@ fn default_tab_stops(columns: u16) -> BTreeSet<u16> {
 ///
 /// The alternate-screen aliases are state rather than bits in the screen's
 /// mode word, so their status comes from the pane's screen-tracking state.
-fn dec_mode_status(modes: u32, alternate_on: bool, mode: u32) -> u8 {
+///
+/// Mode 12 is the one answer that is not a mode-word read. tmux reports the
+/// blink the pane asked for only once the pane has spoken — a DECSCUSR that
+/// moved the cursor off its default style, or a DECSET/DECRST 12 — and
+/// otherwise answers from the `cursor-style` option, whose blinking choices
+/// are the odd parameters.
+fn dec_mode_status(
+    modes: u32,
+    alternate_on: bool,
+    cursor_shape: PaneCursorShape,
+    cursor_style: u8,
+    mode: u32,
+) -> u8 {
     let reports = |bit: u32| Some(modes & bit != 0);
     let set = match mode {
         // DECCOLM is recognized by tmux but permanently reset: hmux has no
@@ -2491,7 +2509,15 @@ fn dec_mode_status(modes: u32, alternate_on: bool, mode: u32) -> u8 {
         1 => reports(mode::KCURSOR),
         6 => reports(mode::ORIGIN),
         7 => reports(mode::WRAP),
-        12 => reports(mode::CURSOR_BLINKING),
+        12 => Some(
+            if cursor_shape != PaneCursorShape::Default
+                || modes & mode::CURSOR_BLINKING_SET != 0
+            {
+                modes & mode::CURSOR_BLINKING != 0
+            } else {
+                matches!(cursor_style, 1 | 3 | 5)
+            },
+        ),
         25 => reports(mode::CURSOR),
         47 | 1047 | 1049 => Some(alternate_on),
         1000 => reports(mode::MOUSE_STANDARD),
