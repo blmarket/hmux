@@ -146,7 +146,6 @@ impl EventControlClient {
             client_tty.client_pid,
             80,
             24,
-            options.display_flags(client_tty.flags),
             client_tty.flags,
             options.clone(),
             true,
@@ -582,7 +581,7 @@ impl EventControlClient {
         }
         let display_flags = self.options.display_flags(self.client_tty.flags);
         self.render_attachment
-            .update_control_flags(display_flags.clone(), &self.options);
+            .update_control_flags(&self.options);
         self.format_cache
             .update_client_flags(display_flags, self.options.read_only);
         self.context.read_only = self.options.read_only;
@@ -808,7 +807,7 @@ impl EventControlClient {
         if !refresh_flags.is_empty() || switch_read_only {
             let display_flags = self.options.display_flags(self.client_tty.flags);
             self.render_attachment
-                .update_control_flags(display_flags.clone(), &self.options);
+                .update_control_flags(&self.options);
             self.format_cache
                 .update_client_flags(display_flags, self.options.read_only);
             self.context.read_only = self.options.read_only;

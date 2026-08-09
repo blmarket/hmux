@@ -112,7 +112,6 @@ impl AttachSession {
             client_tty.client_pid,
             cols,
             rows,
-            client_flags.display_flags_full(client_tty.flags, false, true),
             client_tty.flags,
             client_flags,
             false,

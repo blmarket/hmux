@@ -10404,7 +10404,6 @@ mod tests {
                 None,
                 80,
                 24,
-                String::new(),
                 0,
                 Default::default(),
                 true,

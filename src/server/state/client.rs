@@ -220,7 +220,6 @@ pub(super) struct ClientRenderEntry {
     /// output reads it.
     pub(super) xpixel: u16,
     pub(super) ypixel: u16,
-    flags: String,
     pub(super) control_mode: bool,
     size_changed: bool,
     /// When this client last declared its terminal size, on the registry's
@@ -267,13 +266,17 @@ pub(super) struct ClientRenderEntry {
 }
 
 impl ClientRenderEntry {
-    /// Apply one `refresh-client -f` value and republish the rendered flag
-    /// string the format consumers read.
+    /// Apply one `refresh-client -f` value.
     fn apply_flag_value(&mut self, value: &str) {
         self.flag_state.apply_flags(value);
-        self.flags =
-            self.flag_state
-                .display_flags_full(self.identified, self.control_mode, self.focused);
+    }
+
+    /// This client's `#{client_flags}` string — tmux's
+    /// `server_client_get_flags`, rendered from the flag set plus the handshake
+    /// bits and the focus this entry is holding.
+    fn display_flags(&self) -> String {
+        self.flag_state
+            .display_flags_full(self.identified, self.control_mode, self.focused)
     }
 
     /// Whether this client refuses input — tmux's `CLIENT_READONLY`.
@@ -681,7 +684,6 @@ impl ClientRenderRegistry {
             None,
             80,
             24,
-            String::new(),
             0,
             ClientFlagState::default(),
             false,
@@ -697,7 +699,6 @@ impl ClientRenderRegistry {
         pid: Option<i32>,
         cols: u16,
         rows: u16,
-        flags: String,
         identified: i64,
         flag_state: ClientFlagState,
         control_mode: bool,
@@ -733,7 +734,6 @@ impl ClientRenderRegistry {
                 // all; until then the window falls back to tmux's defaults.
                 xpixel: 0,
                 ypixel: 0,
-                flags,
                 control_mode,
                 size_changed: !control_mode,
                 size_seq,
@@ -788,7 +788,7 @@ impl ClientRenderRegistry {
                 user: entry.user.clone(),
                 cols: entry.cols,
                 rows: entry.rows,
-                flags: entry.flags.clone(),
+                flags: entry.display_flags(),
                 read_only: entry.read_only(),
                 control_mode: entry.control_mode,
                 pan_window: entry.pan_window,
@@ -1138,11 +1138,6 @@ impl ClientRenderRegistry {
         let enable = !entry.flag_state.read_only;
         entry.flag_state.read_only = enable;
         entry.flag_state.ignore_size = enable;
-        entry.flags = entry.flag_state.display_flags_full(
-            entry.identified,
-            entry.control_mode,
-            entry.focused,
-        );
         {
             // The attached client re-reads the registry view rather than the
             // values themselves; a control client, which keeps its own flag
@@ -1353,11 +1348,6 @@ impl ClientRenderRegistry {
             return false;
         }
         entry.focused = focused;
-        entry.flags = entry.flag_state.display_flags_full(
-            entry.identified,
-            entry.control_mode,
-            entry.focused,
-        );
         true
     }
 
@@ -1652,12 +1642,14 @@ impl ClientRenderAttachment {
         }
     }
 
-    pub(crate) fn update_control_flags(&self, flags: String, flag_state: &ClientFlagState) {
+    /// Publish the flag set a control client keeps of its own, so the registry
+    /// view other clients read (`#{client_flags}`, the destroy policy) follows
+    /// its `refresh-client -f`.
+    pub(crate) fn update_control_flags(&self, flag_state: &ClientFlagState) {
         {
             let mut inner = self.registry.inner.borrow_mut();
             if let Some(entry) = inner.clients.get_mut(&self.id) {
                 entry.flag_state = flag_state.clone();
-                entry.flags = flags;
             }
         }
     }
@@ -1693,7 +1685,7 @@ impl ClientRenderAttachment {
             .borrow()
             .clients
             .get(&self.id)
-            .map(|entry| (entry.flags.clone(), entry.read_only()))
+            .map(|entry| (entry.display_flags(), entry.read_only()))
             .unwrap_or_default()
     }
 
