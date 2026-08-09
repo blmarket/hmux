@@ -291,7 +291,6 @@ impl ServerState {
         if had_sessions && self.sessions.is_empty() && self.exit_empty_policy() != ExitEmpty::Off {
             self.shutdown_requested = true;
         }
-        if removed {}
         removed
     }
 

@@ -394,7 +394,6 @@ impl ServerState {
             .iter()
             .flat_map(|session| session.windows.iter().map(|link| link.id))
             .collect::<BTreeSet<_>>();
-        let window_count = self.windows.len();
         self.windows.retain(|id, _| linked.contains(id));
         let live_link_sets = self
             .sessions
@@ -403,7 +402,6 @@ impl ServerState {
             .collect::<BTreeSet<_>>();
         self.session_groups
             .retain(|link_set_id, _| live_link_sets.contains(link_set_id));
-        if self.windows.len() != window_count {}
     }
 
     /// tmux's `window_update_focus`: recompute whether the window's active pane
