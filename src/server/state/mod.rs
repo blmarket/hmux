@@ -914,9 +914,8 @@ pub struct ServerState {
     client_renders: Rc<ClientRenderRegistry>,
     wait_registry: Rc<WaitRegistry>,
     /// No-client format jobs, corresponding to tmux's process-global job tree.
-    /// Current native consumers use client-owned status caches; this remains a
-    /// distinct owner for no-client format contexts as those are implemented.
-    #[allow(dead_code)]
+    /// A format expanded with no client caches its `#()` jobs here; per-client
+    /// trees live in `client_renders`.
     format_jobs: Rc<super::status::FormatJobRegistry>,
 }
 
@@ -1063,7 +1062,6 @@ impl ServerState {
         Rc::clone(&self.wait_registry)
     }
 
-    #[allow(dead_code)]
     pub(crate) fn format_job_registry(&self) -> Rc<super::status::FormatJobRegistry> {
         Rc::clone(&self.format_jobs)
     }

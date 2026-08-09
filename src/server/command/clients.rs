@@ -1017,10 +1017,8 @@ pub(super) fn set_client_entry_vars(
         "client_created",
         (client.created_micros / 1_000_000).to_string(),
     )
-    // hmux never learns the terminal's pixel size; tmux without one reports
-    // zero cell dimensions the same way.
-    .set("client_cell_width", "0")
-    .set("client_cell_height", "0")
+    .set("client_cell_width", client.xpixel.to_string())
+    .set("client_cell_height", client.ypixel.to_string())
     .set("client_termfeatures", client.termfeatures.clone())
     // The secondary-DA terminal type: empty until the terminal answers a
     // query the attach flow does not send.

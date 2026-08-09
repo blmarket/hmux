@@ -325,6 +325,10 @@ pub(crate) struct ClientSnapshot {
     pub(crate) user: String,
     pub(crate) cols: u16,
     pub(crate) rows: u16,
+    /// The terminal's cell size in pixels, zero until it reports one —
+    /// `#{client_cell_width}` and `#{client_cell_height}`.
+    pub(crate) xpixel: u16,
+    pub(crate) ypixel: u16,
     pub(crate) flags: String,
     pub(crate) read_only: bool,
     pub(crate) control_mode: bool,
@@ -788,6 +792,8 @@ impl ClientRenderRegistry {
                 user: entry.user.clone(),
                 cols: entry.cols,
                 rows: entry.rows,
+                xpixel: entry.xpixel,
+                ypixel: entry.ypixel,
                 flags: entry.display_flags(),
                 read_only: entry.read_only(),
                 control_mode: entry.control_mode,
