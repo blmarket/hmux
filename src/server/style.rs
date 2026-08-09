@@ -523,10 +523,17 @@ pub(crate) struct CaptureStyleWriter {
     /// output. It is the only per-row state `grid_string_cells` keeps; the cell
     /// it compares against is carried across rows with everything else.
     has_link: bool,
+    /// The bytes the last [`Self::transition`] wrote — tmux's `code`, the
+    /// buffer `grid_string_cells_code` fills for one cell. It outlives the cell
+    /// there, and the OSC 8 that closes a row's open link is appended to it
+    /// rather than to a fresh buffer, which is why that close can arrive
+    /// carrying the last cell's sequences in front of it.
+    last_code: Vec<u8>,
 }
 
 impl CaptureStyleWriter {
     pub(crate) fn transition(&mut self, out: &mut Vec<u8>, next: &CellPresentation) {
+        let start = out.len();
         write_capture_style(out, &self.current.style, &next.style);
         // tmux writes the shift in/out between the style codes and the
         // hyperlink, so a cell changing both is preceded by SO then OSC 8.
@@ -547,6 +554,8 @@ impl CaptureStyleWriter {
                 self.has_link = false;
             }
         }
+        self.last_code.clear();
+        self.last_code.extend_from_slice(&out[start..]);
         self.current = next.clone();
     }
 
@@ -560,8 +569,20 @@ impl CaptureStyleWriter {
     /// end of every capture that tmux does not write. Only the row's own open
     /// hyperlink is closed, because that is the one piece of state tmux keeps
     /// per row.
-    pub(crate) fn finish_row(&mut self, out: &mut Vec<u8>) {
+    ///
+    /// `repeat_last_code` reproduces the one place `grid_string_cells` shows
+    /// its buffer: the close is appended to the sequences the last cell needed
+    /// rather than to a fresh buffer, so a row whose *last* cell is the one
+    /// that opened the link ends with that cell's sequences written a second
+    /// time and then closed. The caller decides, because only it can see
+    /// whether the last cell is where the last transition happened.
+    pub(crate) fn finish_row(&mut self, out: &mut Vec<u8>, repeat_last_code: bool) {
         if self.has_link {
+            if repeat_last_code {
+                let code = std::mem::take(&mut self.last_code);
+                out.extend_from_slice(&code);
+                self.last_code = code;
+            }
             write_capture_hyperlink(out, None);
             self.has_link = false;
         }

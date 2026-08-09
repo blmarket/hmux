@@ -63,8 +63,8 @@ use std::rc::Rc;
 use super::key::KeyCode;
 use super::options::{GlobalOptions, OptionSet, OptionsView};
 use super::pane::Pane;
-use crate::vt::screen::VtScreen;
-use crate::vt::PaneScreen;
+use hmux_vt::screen::VtScreen;
+use hmux_vt::PaneScreen;
 
 /// The server state, shared by everything running on the loop.
 pub(crate) type SharedState = Rc<RefCell<ServerState>>;
@@ -1287,7 +1287,7 @@ mod tests {
     use super::copy::*;
     use super::*;
     use crate::event_loop::test_driver::run_on_loop;
-    use crate::vt::screen::{CellSemantic, CellWidth, Grid, GridCell, GridRow, RowFlags};
+    use hmux_vt::screen::{CellSemantic, CellWidth, Grid, GridCell, GridRow, RowFlags};
 
     #[test]
     fn copy_vt_rows_exclude_crlf_and_trailing_cursor() {
@@ -1324,6 +1324,7 @@ mod tests {
                 semantic: CellSemantic::Output,
                 hyperlink: None,
                 hyperlink_id: None,
+                hyperlink_slot: 0,
                 tab: false,
             })
             .collect::<Vec<_>>();
@@ -1335,6 +1336,7 @@ mod tests {
                 semantic: CellSemantic::Output,
                 hyperlink: None,
                 hyperlink_id: None,
+                hyperlink_slot: 0,
                 tab: false,
             },
         );

@@ -7,8 +7,8 @@
 //! and so the screen's to answer.
 
 use super::screen::Screen;
-use crate::vt::input::{Key, KeyEvent, MouseAction, MouseButton, MouseEvent};
-use crate::vt::screen::mode;
+use crate::input::{Key, KeyEvent, MouseAction, MouseButton, MouseEvent};
+use crate::screen::mode;
 
 /// The largest offset field the UTF-8 mouse form carries: a two-byte UTF-8
 /// sequence. A report with a field past this is not sent at all.
@@ -63,7 +63,7 @@ fn reportable(screen: &Screen, mouse: MouseEvent) -> bool {
 }
 
 /// Encode one mouse event, or nothing when the program has not asked for it.
-pub(crate) fn encode_mouse(screen: &Screen, mouse: MouseEvent) -> Vec<u8> {
+pub fn encode_mouse(screen: &Screen, mouse: MouseEvent) -> Vec<u8> {
     if !reportable(screen, mouse) {
         return Vec::new();
     }
@@ -133,7 +133,7 @@ pub(crate) fn encode_mouse(screen: &Screen, mouse: MouseEvent) -> Vec<u8> {
 /// default modes would send.
 ///
 /// Only the mode word matters to the answer, so that is all it takes.
-pub(crate) fn encode_key(mode_word: u32, key: KeyEvent<'_>) -> Vec<u8> {
+pub fn encode_key(mode_word: u32, key: KeyEvent<'_>) -> Vec<u8> {
     let application = mode_word & mode::KCURSOR != 0;
     let cursor = |final_byte: char| -> Vec<u8> {
         let introducer = if application { "\x1bO" } else { "\x1b[" };
@@ -204,8 +204,8 @@ pub(crate) fn encode_key(mode_word: u32, key: KeyEvent<'_>) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vt::engine::dispatch::Engine;
-    use crate::vt::parser::tokenize;
+    use crate::engine::dispatch::Engine;
+    use crate::parser::tokenize;
 
     fn screen(input: &[u8]) -> Engine {
         let mut engine = Engine::new(80, 24, 100);

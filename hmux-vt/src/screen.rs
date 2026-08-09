@@ -10,7 +10,7 @@
 //! reconstruction, rather than leaving the server to recover it. The types
 //! below belong to hmux for the same reason — a backend converts into them.
 //!
-//! Stability: this is deliberately `pub(crate)`. It is an implementation seam
+//! Stability: this is deliberately `pub`. It is an implementation seam
 //! being carved, not a compatibility contract, and the daemon's contract is its
 //! tmux-compatible command line and wire protocol.
 
@@ -27,50 +27,50 @@ use super::sixel::SixelImage;
 /// are the pane's state, one sequence sets and clears them, and a second copy
 /// beside this one is a second implementation of the same DECSET semantics with
 /// its own chances to disagree.
-pub(crate) mod mode {
-    pub(crate) const CURSOR: u32 = 0x1;
-    pub(crate) const INSERT: u32 = 0x2;
-    pub(crate) const KCURSOR: u32 = 0x4;
-    pub(crate) const KKEYPAD: u32 = 0x8;
-    pub(crate) const WRAP: u32 = 0x10;
+pub mod mode {
+    pub const CURSOR: u32 = 0x1;
+    pub const INSERT: u32 = 0x2;
+    pub const KCURSOR: u32 = 0x4;
+    pub const KKEYPAD: u32 = 0x8;
+    pub const WRAP: u32 = 0x10;
     /// DECSET 1000: presses and releases.
-    pub(crate) const MOUSE_STANDARD: u32 = 0x20;
+    pub const MOUSE_STANDARD: u32 = 0x20;
     /// DECSET 1002: adds motion while a button is held.
-    pub(crate) const MOUSE_BUTTON: u32 = 0x40;
+    pub const MOUSE_BUTTON: u32 = 0x40;
     /// DECSET 12, and a side effect of every DECSCUSR style but the default.
-    pub(crate) const CURSOR_BLINKING: u32 = 0x80;
+    pub const CURSOR_BLINKING: u32 = 0x80;
     /// DECSET 1005: UTF-8 coordinate encoding.
-    pub(crate) const MOUSE_UTF8: u32 = 0x100;
+    pub const MOUSE_UTF8: u32 = 0x100;
     /// DECSET 1006: SGR encoding.
-    pub(crate) const MOUSE_SGR: u32 = 0x200;
+    pub const MOUSE_SGR: u32 = 0x200;
     /// DECSET 2004: the pane wants the paste markers.
-    pub(crate) const BRACKETPASTE: u32 = 0x400;
+    pub const BRACKETPASTE: u32 = 0x400;
     /// DECSET 1004: the pane asked to be told when focus moves.
-    pub(crate) const FOCUSON: u32 = 0x800;
+    pub const FOCUSON: u32 = 0x800;
     /// DECSET 1003: adds button-less motion.
-    pub(crate) const MOUSE_ALL: u32 = 0x1000;
-    pub(crate) const ORIGIN: u32 = 0x2000;
-    pub(crate) const CRLF: u32 = 0x4000;
+    pub const MOUSE_ALL: u32 = 0x1000;
+    pub const ORIGIN: u32 = 0x2000;
+    pub const CRLF: u32 = 0x4000;
     /// `CSI > 4 ; 1 m`: the `modifyOtherKeys` level the pane asked for. What it
     /// gets also depends on `extended-keys`, which hmux applies where the key
     /// is encoded rather than here — so these two bits are the pane's request,
     /// where tmux's are the request already mixed with the option.
-    pub(crate) const KEYS_EXTENDED: u32 = 0x8000;
+    pub const KEYS_EXTENDED: u32 = 0x8000;
     /// `CSI > 4 ; 2 m`: the same request, at the level that reports every key.
-    pub(crate) const KEYS_EXTENDED_2: u32 = 0x4_0000;
+    pub const KEYS_EXTENDED_2: u32 = 0x4_0000;
     /// DECSET 2031: the pane asked to be told when the theme changes.
-    pub(crate) const THEME_UPDATES: u32 = 0x8_0000;
+    pub const THEME_UPDATES: u32 = 0x8_0000;
     /// DECSET 2026: the pane asked for its output to be held back until it says
     /// the frame is done.
-    pub(crate) const SYNC: u32 = 0x10_0000;
+    pub const SYNC: u32 = 0x10_0000;
     /// The pane has spoken about the cursor blink itself, so a query is
     /// answered from [`CURSOR_BLINKING`] rather than from `cursor-style`.
-    pub(crate) const CURSOR_BLINKING_SET: u32 = 0x2_0000;
+    pub const CURSOR_BLINKING_SET: u32 = 0x2_0000;
 
     /// tmux's `ALL_MOUSE_MODES`: the program asked for reports at all.
-    pub(crate) const ALL_MOUSE: u32 = MOUSE_STANDARD | MOUSE_BUTTON | MOUSE_ALL;
+    pub const ALL_MOUSE: u32 = MOUSE_STANDARD | MOUSE_BUTTON | MOUSE_ALL;
     /// tmux's `EXTENDED_KEY_MODES`.
-    pub(crate) const ALL_KEYS_EXTENDED: u32 = KEYS_EXTENDED | KEYS_EXTENDED_2;
+    pub const ALL_KEYS_EXTENDED: u32 = KEYS_EXTENDED | KEYS_EXTENDED_2;
 }
 
 /// Ghostty-style display-cell width classification.
@@ -80,7 +80,7 @@ pub(crate) mod mode {
 /// [`SpacerHead`](CellWidth::SpacerHead) is the blank left at a right margin
 /// too narrow for the wide character that had to wrap.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum CellWidth {
+pub enum CellWidth {
     Narrow,
     Wide,
     SpacerTail,
@@ -92,7 +92,7 @@ pub(crate) enum CellWidth {
 
 /// The shell-integration classification of a cell's content.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum CellSemantic {
+pub enum CellSemantic {
     Output,
     /// Only libghostty-vt reports this. tmux classifies rows with
     /// `GRID_LINE_START_PROMPT` and `GRID_LINE_START_OUTPUT` alone, so under
@@ -108,14 +108,25 @@ pub(crate) enum CellSemantic {
 /// empty string; that intentionally distinguishes it from a literal U+0020 cell
 /// without claiming how the empty cell was produced.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct GridCell {
-    pub(crate) text: String,
-    pub(crate) width: CellWidth,
-    pub(crate) semantic: CellSemantic,
-    pub(crate) hyperlink: Option<String>,
+pub struct GridCell {
+    pub text: String,
+    pub width: CellWidth,
+    pub semantic: CellSemantic,
+    pub hyperlink: Option<String>,
     /// The OSC 8 `id=` the program set explicitly, if any. Implicit ids the
     /// emulator invents for its own bookkeeping are not reported.
-    pub(crate) hyperlink_id: Option<String>,
+    pub hyperlink_id: Option<String>,
+    /// Which link this cell belongs to, as the screen's own identity for it —
+    /// tmux's *inner* id, the number a `grid_cell` carries in `link`. Zero
+    /// means the cell is not in a link.
+    ///
+    /// Identity is not the URI: every anonymous OSC 8 opens a fresh link even
+    /// when it names an address already on screen, because two mentions of one
+    /// address are two links. A caller that has to count or de-duplicate links
+    /// — `capture-pane -H` does both — compares this, not
+    /// [`Self::hyperlink`]. The number is meaningful only within one screen and
+    /// only until it is reset.
+    pub hyperlink_slot: u32,
     /// Whether this cell stands for the run of columns a horizontal tab
     /// created, tmux's `GRID_FLAG_TAB`.
     ///
@@ -125,7 +136,7 @@ pub(crate) struct GridCell {
     /// `capture-pane` output can be narrower than the columns it covers. A
     /// backend that does not keep the tab's origin reports `false` and the tab
     /// reads back as the spaces it painted.
-    pub(crate) tab: bool,
+    pub tab: bool,
 }
 
 /// The tmux `GRID_LINE_*` flags of one row, which `capture-pane -F` reports.
@@ -134,17 +145,17 @@ pub(crate) struct GridCell {
 /// reads it. `GRID_LINE_DEAD` has no field: it marks a placeholder left behind
 /// mid-reflow, and no grid a caller can observe holds one.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct RowFlags {
+pub struct RowFlags {
     /// Some cell on the row belongs to an OSC 8 hyperlink.
-    pub(crate) hyperlink: bool,
+    pub hyperlink: bool,
     /// Command output starts on this row (OSC 133 C).
-    pub(crate) start_output: bool,
+    pub start_output: bool,
     /// A shell-integration prompt starts on this row (OSC 133 A).
-    pub(crate) start_prompt: bool,
+    pub start_prompt: bool,
     /// The row has held a cell needing tmux's extended representation — a wide
     /// or multi-byte character, an RGB colour, an underline colour or a link.
     /// It is sticky, as in tmux: erasing the cell does not clear the flag.
-    pub(crate) extended: bool,
+    pub extended: bool,
 }
 
 /// The pane options the screen itself has to consult.
@@ -158,10 +169,10 @@ pub(crate) struct RowFlags {
 /// pane's bytes are *parsed*, these decide what an operation does to the grid,
 /// and a backend that implements one need not implement the other.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ScreenOptions {
+pub struct ScreenOptions {
     /// `scroll-on-clear`: whether clearing the screen moves what was on it into
     /// the history instead of blanking it where it stands.
-    pub(crate) scroll_on_clear: bool,
+    pub scroll_on_clear: bool,
     /// The window's cell size in pixels, tmux's `w->xpixel`/`w->ypixel`.
     ///
     /// Not an option — it comes from the attached clients' terminals, which
@@ -169,8 +180,8 @@ pub(crate) struct ScreenOptions {
     /// screen the same way an option does and for the same reason: a sixel
     /// payload is measured in pixels and has to be converted into cells at the
     /// moment it is parsed, with no server state in reach.
-    pub(crate) xpixel: u32,
-    pub(crate) ypixel: u32,
+    pub xpixel: u32,
+    pub ypixel: u32,
 }
 
 impl Default for ScreenOptions {
@@ -196,7 +207,7 @@ impl Default for ScreenOptions {
 /// transition into those blanks outlives the trailing-space trim that removes
 /// the blanks themselves.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum CaptureExtent {
+pub enum CaptureExtent {
     /// tmux's `cellsize`, which is what a capture reads unless asked otherwise.
     Allocated,
     /// tmux's `cellused`, the written extent, which `-J` and `-T` ask for.
@@ -205,34 +216,34 @@ pub(crate) enum CaptureExtent {
 
 /// One physical row of a grid snapshot.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct GridRow {
-    pub(crate) cells: Vec<GridCell>,
+pub struct GridRow {
+    pub cells: Vec<GridCell>,
     /// Whether this physical row soft-wraps into the following one.
-    pub(crate) wrapped: bool,
+    pub wrapped: bool,
     /// tmux's `cellused`: how far into the row a program has written.
     ///
     /// This cannot be recovered from the cells. A cell erased inside the
     /// written extent is indistinguishable from one never touched, so a reader
     /// scanning back from the right for content finds a different boundary than
     /// tmux does — which is exactly what `capture-pane -J`/`-T` stop at.
-    pub(crate) used: usize,
+    pub used: usize,
     /// tmux's `cellsize`: the row's allocated extent, where a capture that
     /// keeps empty cells (the default, and `-N`) stops.
-    pub(crate) size: usize,
+    pub size: usize,
     /// tmux's `extdsize`: how many extended entries the row has allocated,
     /// which `#{history_all_bytes}` counts. A backend with no allocation
     /// model behind its rows reports zero.
-    pub(crate) extd: usize,
-    pub(crate) flags: RowFlags,
+    pub extd: usize,
+    pub flags: RowFlags,
 }
 
 /// An immutable copy of the active screen, scrollback first, viewport last.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Grid {
-    pub(crate) cols: u16,
-    pub(crate) viewport_rows: u16,
-    pub(crate) scrollback_rows: usize,
-    pub(crate) rows: Vec<GridRow>,
+pub struct Grid {
+    pub cols: u16,
+    pub viewport_rows: u16,
+    pub scrollback_rows: usize,
+    pub rows: Vec<GridRow>,
 }
 
 /// One image the screen holds, as a client's frame needs it.
@@ -242,32 +253,32 @@ pub(crate) struct Grid {
 /// these after it has painted a pane's text, which is where tmux's
 /// `tty_draw_images` sits.
 #[derive(Clone, Debug)]
-pub(crate) struct ScreenImage {
+pub struct ScreenImage {
     /// The anchor cell, in viewport coordinates.
-    pub(crate) px: u16,
-    pub(crate) py: u16,
+    pub px: u16,
+    pub py: u16,
     /// The size in cells.
-    pub(crate) sx: u16,
-    pub(crate) sy: u16,
+    pub sx: u16,
+    pub sy: u16,
     /// The screen's image-list revision when this was read. It changes whenever
     /// the set of images does, so a renderer can skip re-deriving bytes it has
     /// already sent without comparing the images themselves.
-    pub(crate) revision: u64,
+    pub revision: u64,
     /// The decoded image, shared: every attached client re-scales the same one
     /// for its own terminal.
-    pub(crate) data: Arc<SixelImage>,
+    pub data: Arc<SixelImage>,
     /// The text a client that cannot draw sixel gets instead, already laid out
     /// as tmux lays it out — one `\r\n`-terminated line per image row.
-    pub(crate) fallback: Arc<str>,
+    pub fallback: Arc<str>,
 }
 
 /// Row geometry of the active screen, read without walking any cells.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct GridDims {
-    pub(crate) cols: u16,
-    pub(crate) viewport_rows: u16,
-    pub(crate) scrollback_rows: usize,
-    pub(crate) total_rows: usize,
+pub struct GridDims {
+    pub cols: u16,
+    pub viewport_rows: u16,
+    pub scrollback_rows: usize,
+    pub total_rows: usize,
 }
 
 /// The pane's screen: the grid, its scrollback, and the ways the daemon reads
@@ -276,7 +287,16 @@ pub(crate) struct GridDims {
 /// Row indices are *physical*: zero is the oldest scrollback row and
 /// [`GridDims::scrollback_rows`] is the first visible one. Cursor coordinates
 /// are zero-based and viewport-relative.
-pub(crate) trait VtScreen {
+///
+/// # Stability
+///
+/// This trait is open — anyone may implement it — and it is a versioned
+/// compatibility contract: it does not change without a major version bump of
+/// `hmux-vt`, which while the crate is `0.x` means the minor. Adding a required
+/// method breaks every implementor, so new capability lands as a new trait or
+/// as inherent methods on the backends; a method with a default body is the one
+/// semver-minor escape hatch, and is used sparingly.
+pub trait VtScreen {
     /// Apply one parsed token.
     ///
     /// The seam carries tokens rather than bytes because the pane's stream is

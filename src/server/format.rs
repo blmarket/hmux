@@ -22,7 +22,7 @@ use std::ffi::{CStr, CString};
 use regex::RegexBuilder;
 
 use super::style::{parse_colour, Colour};
-use crate::vt::width::codepoint_width;
+use hmux_vt::width::codepoint_width;
 
 /// One variable's value: either materialized, or a deferred computation that
 /// runs (once) only if a format actually looks the variable up. The deferred
@@ -1185,7 +1185,7 @@ pub(crate) fn display_width(s: &str) -> usize {
 ///
 /// Literal hashes are grouped as escaped `##` pairs and style directives are
 /// zero-width. Ordinary codepoints use the terminal width policy in
-/// [`crate::vt::width`].
+/// [`hmux_vt::width`].
 pub(crate) fn display_tokens(s: &str) -> DisplayTokens<'_> {
     DisplayTokens {
         source: s,

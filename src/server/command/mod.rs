@@ -54,7 +54,7 @@ use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
 use super::task::{
     Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest, WaitToken,
 };
-use crate::vt::screen::{CaptureExtent, CellWidth, Grid, GridRow};
+use hmux_vt::screen::{CaptureExtent, CellWidth, Grid, GridRow};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.
@@ -7442,10 +7442,20 @@ fn serialize_capture(
             let mut links = Vec::new();
             if row.flags.hyperlink {
                 for cell in row.cells.iter().take(row.used.min(row.cells.len())) {
-                    if let Some(link) = cell.hyperlink.as_ref() {
-                        if seen_links.insert(link.clone()) {
-                            links.push(link.clone());
-                        }
+                    // Identity is the screen's, not the URI's: tmux compares
+                    // `gc.link`, so a second anonymous OSC 8 naming an address
+                    // already listed is a second link and is listed again.
+                    let Some(link) = cell.hyperlink.as_ref() else {
+                        continue;
+                    };
+                    // `cmd_capture_pane_hyperlinks` stops at one link per
+                    // column of the grid, for the whole capture rather than
+                    // per row.
+                    if seen_links.len() == grid.cols as usize {
+                        break;
+                    }
+                    if seen_links.insert(cell.hyperlink_slot) {
+                        links.push(link.clone());
                     }
                 }
             }
@@ -7705,6 +7715,15 @@ fn capture_vt_normalize_row(
         return String::new();
     };
 
+    // Every cell of the dump writes text, so the only sequences past the last
+    // text are the row's closing ones: the sequences the last cell needed,
+    // repeated, and then the OSC 8 that closes the row's link. The repeat is
+    // there exactly when the last cell is where the last transition happened,
+    // which is the one thing this pass cannot see for itself — it works in
+    // runs, not cells. So the dump says *whether* to repeat and the sequences
+    // themselves are re-derived here, in the capture's own spelling.
+    let repeat_last_code = tokens.len() > last_text + 2;
+
     let mut out = Vec::new();
     for (token_index, token) in tokens.iter().enumerate() {
         match token {
@@ -7716,7 +7735,7 @@ fn capture_vt_normalize_row(
             token => apply_capture_control(*token, decoder, presentation),
         }
     }
-    writer.finish_row(&mut out);
+    writer.finish_row(&mut out, repeat_last_code);
     String::from_utf8_lossy(&out).into_owned()
 }
 
@@ -9734,6 +9753,41 @@ mod tests {
                 "\x1b]8;id=link;https://example.test\x1b\\C",
                 // The row closes the link it opened, as `grid_string_cells`
                 // does, and leaves the style open for whatever follows.
+                "\x1b]8;;\x1b\\"
+            )
+        );
+    }
+
+    /// `grid_string_cells` appends the OSC 8 that closes a row's link to the
+    /// buffer the last cell's sequences are still sitting in, so a row whose
+    /// last cell is the one that opened the link ends with that cell's
+    /// sequences a second time. A row whose last cell only continued the link
+    /// does not: its buffer was rewritten empty.
+    #[test]
+    fn a_row_ending_in_the_cell_that_opened_its_link_repeats_that_cell() {
+        let opened_last = capture_vt_normalize_rows(
+            b"\x1b[31mA\x1b]8;;https://example.test\x1b\\B\x1b]8;;https://example.test\x1b\\\x1b]8;;\x1b\\",
+            1,
+        );
+        assert_eq!(
+            opened_last[0],
+            concat!(
+                "\x1b[31mA",
+                "\x1b]8;;https://example.test\x1b\\B",
+                "\x1b]8;;https://example.test\x1b\\",
+                "\x1b]8;;\x1b\\"
+            )
+        );
+
+        let continued_last = capture_vt_normalize_rows(
+            b"\x1b[31mA\x1b]8;;https://example.test\x1b\\BC\x1b]8;;\x1b\\",
+            1,
+        );
+        assert_eq!(
+            continued_last[0],
+            concat!(
+                "\x1b[31mA",
+                "\x1b]8;;https://example.test\x1b\\BC",
                 "\x1b]8;;\x1b\\"
             )
         );

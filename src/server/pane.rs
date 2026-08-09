@@ -30,21 +30,21 @@ use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, Scr
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 use crate::server::input_keys::ExtendedKeys;
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
-use crate::vt::observer::{
+use hmux_vt::observer::{
     decrqss_reply, Event as VtEvent, Observer, OscUpdate, BACKGROUND_COLOR_QUERY,
 };
-use crate::vt::parser::{Param, StringEnd, Token, TokenKind};
+use hmux_vt::parser::{Param, StringEnd, Token, TokenKind};
 
-use crate::vt::input::{InputEncoder, MouseEvent};
-pub(crate) use crate::vt::observer::parse_packed_colour;
-pub(crate) use crate::vt::observer::{
+use hmux_vt::input::{InputEncoder, MouseEvent};
+pub(crate) use hmux_vt::observer::parse_packed_colour;
+pub(crate) use hmux_vt::observer::{
     ClipboardEvent as PaneClipboardEvent, CursorShape as PaneCursorShape,
     OutputPolicy as PaneOutputPolicy, PassthroughPolicy,
 };
-use crate::vt::screen::{
+use hmux_vt::screen::{
     mode, CaptureExtent, Grid, GridDims, ScreenImage, ScreenOptions, VtScreen,
 };
-use crate::vt::PaneScreen;
+use hmux_vt::PaneScreen;
 
 /// A single pane. Holds the emulated screen and, if live, the child on its pty.
 pub struct Pane {
@@ -1730,7 +1730,7 @@ impl Pane {
     /// Reset the emulated terminal state without sending bytes to the child.
     pub(crate) fn reset_terminal(&self) -> io::Result<()> {
         let mut terminal = self.observation.term.borrow_mut();
-        for token in crate::vt::parser::tokenize(b"\x1bc") {
+        for token in hmux_vt::parser::tokenize(b"\x1bc") {
             self.observation.write_terminal(&mut terminal, &token);
         }
         self.observation.record_change(false);
@@ -1908,7 +1908,7 @@ impl Pane {
     }
 
     /// `resize-pane -T`; see
-    /// [`crate::vt::screen::VtScreen::trim_history_below_cursor`].
+    /// [`hmux_vt::screen::VtScreen::trim_history_below_cursor`].
     pub(crate) fn trim_history_below_cursor(&self) -> io::Result<()> {
         self.observation
             .term
@@ -1942,7 +1942,7 @@ impl Pane {
     }
 
     /// Rows as `capture-pane -e` wants them, which is not the same read as the
-    /// compositor's: see [`crate::vt::screen::VtScreen::dump_vt_capture_rows`].
+    /// compositor's: see [`hmux_vt::screen::VtScreen::dump_vt_capture_rows`].
     pub(crate) fn dump_rows_vt(
         &self,
         start: usize,
@@ -2010,7 +2010,7 @@ impl Pane {
     /// in hmux.
     pub fn clear_history(&self) -> io::Result<()> {
         let mut terminal = self.observation.term.borrow_mut();
-        for token in crate::vt::parser::tokenize(b"\x1b[3J") {
+        for token in hmux_vt::parser::tokenize(b"\x1b[3J") {
             self.observation.write_terminal(&mut terminal, &token);
         }
         self.observation.record_change(false);
@@ -3076,7 +3076,7 @@ mod tests {
     #[test]
     fn every_pane_state_glyph_is_exactly_two_columns() {
         use crate::integration::AgentState;
-        use crate::vt::width::codepoint_width;
+        use hmux_vt::width::codepoint_width;
 
         let classes = [
             PaneClass::Dead,

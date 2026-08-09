@@ -1,5 +1,5 @@
 [workspace]
-members = ["ghostty-sys"]
+members = ["ghostty-sys", "hmux-vt"]
 
 [package]
 name = "hmux"
@@ -18,13 +18,14 @@ path = "src/lib.rs"
 
 [features]
 default = []
-# The libghostty-vt backend. It is no longer the shipped engine; it is kept so
-# `vt::differential` can still diff the in-house engine against it, and as the
-# alternate implementation the seam was carved to allow.
-ghostty = ["dep:ghostty-sys"]
+# The libghostty-vt backend, forwarded to hmux-vt. It is no longer the shipped
+# engine; it is kept so the emulator's differential tests can diff the in-house
+# engine against it, and as the alternate implementation the seam was carved to
+# allow.
+ghostty = ["hmux-vt/ghostty"]
 
 [dependencies]
-ghostty-sys = { path = "ghostty-sys", optional = true }
+hmux-vt = { path = "hmux-vt" }
 libc = "0.2"
 mio = { version = "1.2", features = ["os-ext", "os-poll"] }
 regex = "1"

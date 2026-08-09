@@ -24,7 +24,7 @@
 use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::vt::sixel::SixelImage;
+use crate::sixel::SixelImage;
 
 /// tmux's `MAX_IMAGE_COUNT`.
 ///
@@ -105,27 +105,27 @@ mod registry {
 /// Deliberately not `Clone`: the identity is the server-wide registry's, and a
 /// second `Image` carrying it would outlive its own eviction.
 #[derive(Debug)]
-pub(crate) struct Image {
+pub struct Image {
     /// The server-wide identity, which is what the eviction order names.
     id: u64,
     /// The anchor cell, in viewport coordinates.
-    pub(crate) px: usize,
-    pub(crate) py: usize,
+    pub px: usize,
+    pub py: usize,
     /// The size in cells.
-    pub(crate) sx: usize,
-    pub(crate) sy: usize,
+    pub sx: usize,
+    pub sy: usize,
     /// Shared because every attached client's frame reads the same image and
     /// none of them owns it.
-    pub(crate) data: Arc<SixelImage>,
+    pub data: Arc<SixelImage>,
     /// The placeholder a client that cannot draw sixel gets, kept beside the
     /// image because tmux builds it once at store time and again after a crop.
-    pub(crate) fallback: Arc<str>,
+    pub fallback: Arc<str>,
 }
 
 /// A screen's images, tmux's `s->images` — and, while the alternate screen is
 /// up, its `s->saved_images`.
 #[derive(Debug, Default)]
-pub(crate) struct Images {
+pub struct Images {
     list: Vec<Image>,
     /// Bumped whenever the list changes, so a renderer can tell that what it
     /// last drew is stale without comparing the images themselves.
@@ -138,7 +138,7 @@ impl Images {
     /// The ones another screen's write evicted are filtered out rather than
     /// removed, because reading is not a mutation; the next operation that does
     /// mutate reclaims them.
-    pub(crate) fn live(&self) -> impl Iterator<Item = &Image> + '_ {
+    pub fn live(&self) -> impl Iterator<Item = &Image> + '_ {
         self.list.iter().filter(|image| registry::is_live(image.id))
     }
 
@@ -147,7 +147,7 @@ impl Images {
     /// The server-wide eviction count is folded in because an eviction can
     /// shorten this screen's list without this screen doing anything. Both
     /// terms only ever grow, so the sum does too.
-    pub(crate) fn revision(&self) -> u64 {
+    pub fn revision(&self) -> u64 {
         self.revision.wrapping_add(registry::evictions())
     }
 
@@ -167,7 +167,7 @@ impl Images {
     }
 
     /// tmux's `image_store`: anchor an image at the cursor.
-    pub(crate) fn store(&mut self, data: SixelImage, px: usize, py: usize) {
+    pub fn store(&mut self, data: SixelImage, px: usize, py: usize) {
         let (sx, sy) = data.size_in_cells();
         let fallback = SixelImage::fallback_text(sx, sy).into();
         let (sx, sy) = (sx as usize, sy as usize);
@@ -187,7 +187,7 @@ impl Images {
     }
 
     /// tmux's `image_free_all`. The answer is whether the screen needs redrawing.
-    pub(crate) fn free_all(&mut self) -> bool {
+    pub fn free_all(&mut self) -> bool {
         if self.list.is_empty() {
             return false;
         }
@@ -222,12 +222,12 @@ impl Images {
     /// `screen_write_clearstartofscreen`, which underflows to the whole
     /// unsigned range when the cursor is on the first row, and the effect —
     /// every image on the screen goes — is reproduced rather than corrected.
-    pub(crate) fn check_line(&mut self, py: usize, ny: usize) -> bool {
+    pub fn check_line(&mut self, py: usize, ny: usize) -> bool {
         self.free_matching(|image| py.saturating_add(ny) > image.py && py < image.py + image.sy)
     }
 
     /// tmux's `image_check_area`: the same, bounded in both directions.
-    pub(crate) fn check_area(&mut self, px: usize, py: usize, nx: usize, ny: usize) -> bool {
+    pub fn check_area(&mut self, px: usize, py: usize, nx: usize, ny: usize) -> bool {
         self.free_matching(|image| {
             py < image.py + image.sy
                 && py.saturating_add(ny) > image.py
@@ -238,7 +238,7 @@ impl Images {
 
     /// tmux's `image_scroll_up`: move the anchors up, drop what left the top of
     /// the screen, and crop what is half way off it.
-    pub(crate) fn scroll_up(&mut self, lines: usize) -> bool {
+    pub fn scroll_up(&mut self, lines: usize) -> bool {
         let mut redraw = false;
         let mut dropped = Vec::new();
         for image in &mut self.list {
@@ -285,7 +285,7 @@ impl Images {
     /// tmux's `TAILQ_CONCAT`: hand every image over to another list, leaving
     /// this one empty. The alternate screen swaps its list with the primary's
     /// this way, so nothing is freed and nothing leaves the server-wide order.
-    pub(crate) fn take_from(&mut self, other: &mut Images) {
+    pub fn take_from(&mut self, other: &mut Images) {
         self.list.append(&mut other.list);
         self.revision += 1;
         other.revision += 1;
@@ -303,7 +303,7 @@ impl Drop for Images {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vt::sixel;
+    use crate::sixel;
 
     /// A one-cell image against a ten by twenty pixel cell.
     fn image(cells_across: u32) -> SixelImage {

@@ -55,7 +55,7 @@ enum StringKind {
 /// How a string-carrying sequence ended. tmux answers a query with the same
 /// terminator the query used, so this has to survive to the dispatch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum StringEnd {
+pub enum StringEnd {
     /// `ESC \` (ST). tmux is 7-bit only, so the 8-bit `0x9c` is payload, not a
     /// terminator; leaving the string state is what dispatches it.
     StringTerminator,
@@ -66,11 +66,11 @@ pub(crate) enum StringEnd {
 /// tmux's `param_buf` after splitting: one CSI/DCS parameter position, which
 /// may be empty (defaulted) and may carry sub-parameters after a colon.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct Param {
+pub struct Param {
     /// The parameter proper, or `None` when the position was left empty.
-    pub(crate) value: Option<u32>,
+    pub value: Option<u32>,
     /// Colon-separated sub-parameters, as SGR 38:2:… uses.
-    pub(crate) subs: Vec<Option<u32>>,
+    pub subs: Vec<Option<u32>>,
 }
 
 impl Param {
@@ -82,7 +82,7 @@ impl Param {
     /// rather than as a number, and a handler that reads one abandons its
     /// operation instead of acting on the part before the colon. Only SGR looks
     /// past that, through [`Param::subs`].
-    pub(crate) fn get(&self, default: u32) -> Option<u32> {
+    pub fn get(&self, default: u32) -> Option<u32> {
         if self.is_string() {
             return None;
         }
@@ -91,14 +91,14 @@ impl Param {
 
     /// Whether the position carried sub-parameters — `input_split`'s
     /// `INPUT_STRING`.
-    pub(crate) fn is_string(&self) -> bool {
+    pub fn is_string(&self) -> bool {
         !self.subs.is_empty()
     }
 }
 
 /// One complete unit of a pane's byte stream.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum TokenKind {
+pub enum TokenKind {
     /// A printable character in ground state.
     Print(char),
     /// A UTF-8 sequence has just opened in ground state and has not finished.
@@ -151,18 +151,18 @@ pub(crate) enum TokenKind {
 
 /// A token plus the input bytes it was assembled from.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Token {
-    pub(crate) kind: TokenKind,
+pub struct Token {
+    pub kind: TokenKind,
     /// Every byte the parser consumed for this token, introducer and terminator
     /// included, in stream order.
-    pub(crate) raw: Vec<u8>,
+    pub raw: Vec<u8>,
 }
 
 /// tmux's `INPUT_BUF_START`: the string buffer starts here and doubles.
 const INPUT_BUFFER_START: usize = 32;
 
 /// tmux's `INPUT_BUF_DEFAULT_SIZE`, the `input-buffer-size` default.
-pub(crate) const INPUT_BUFFER_DEFAULT_SIZE: u32 = 1_048_576;
+pub const INPUT_BUFFER_DEFAULT_SIZE: u32 = 1_048_576;
 
 /// How long a terminal string may actually grow under `input-buffer-size`.
 ///
@@ -184,7 +184,7 @@ fn input_buffer_capacity(limit: u32) -> usize {
 /// For a caller that has to *synthesize* a sequence — a reset the server
 /// applies on the pane's behalf, a harness feeding a screen model — rather than
 /// one reading a pane, where the parser state has to survive read boundaries.
-pub(crate) fn tokenize(input: &[u8]) -> Vec<Token> {
+pub fn tokenize(input: &[u8]) -> Vec<Token> {
     let mut parser = Parser::default();
     let mut tokens = Vec::new();
     parser.parse(input, |token| tokens.push(token));
@@ -199,7 +199,7 @@ const PARAM_BUFFER_LIMIT: usize = 64;
 const INTERMEDIATE_BUFFER_LIMIT: usize = 4;
 
 /// The DEC ANSI state machine over one pane's output.
-pub(crate) struct Parser {
+pub struct Parser {
     state: State,
     /// Input bytes belonging to the token being assembled.
     raw: Vec<u8>,
@@ -238,7 +238,7 @@ impl Default for Parser {
 impl Parser {
     /// Apply the current `input-buffer-size`. tmux reads the option each time
     /// it grows a string, so a change takes effect on the next sequence.
-    pub(crate) fn set_string_capacity(&mut self, limit: u32) {
+    pub fn set_string_capacity(&mut self, limit: u32) {
         self.string_capacity = input_buffer_capacity(limit);
     }
 
@@ -250,7 +250,7 @@ impl Parser {
     /// the way back in, so a partly-collected UTF-8 character is not pending
     /// input: `input.c` collects those without leaving ground, and so does
     /// this.
-    pub(crate) fn pending(&self) -> &[u8] {
+    pub fn pending(&self) -> &[u8] {
         if self.state == State::Ground {
             &[]
         } else {
@@ -258,11 +258,64 @@ impl Parser {
         }
     }
 
+    /// Whether the parser is part-way through a sequence that ends at a
+    /// terminator rather than at a fixed byte — DCS, OSC, APC, the `ESC k`
+    /// rename, and the SOS/PM sequences that only wait for an ST.
+    ///
+    /// tmux runs its five-second ground timer over exactly these states
+    /// (`input_start_ground_timer` is the enter hook of each, and every way out
+    /// of them reaches a state that cancels it), so this is the condition a
+    /// caller arms that timer on. tmux restarts the timer whenever one such
+    /// sequence begins; a caller that only watches this across whole reads
+    /// restarts it once per read instead, which against a five-second timeout
+    /// is not an observable difference.
+    pub fn awaiting_terminator(&self) -> bool {
+        matches!(
+            self.state,
+            State::DcsEnter
+                | State::DcsParameter
+                | State::DcsIntermediate
+                | State::DcsHandler
+                | State::DcsEscape
+                | State::DcsIgnore
+                | State::OscString
+                | State::ApcString
+                | State::RenameString
+                | State::ConsumeSt
+        )
+    }
+
+    /// Abandon a sequence whose terminator never arrived, the way tmux's ground
+    /// timer does; returns whether there was one to abandon.
+    ///
+    /// `input_ground_timer_callback` reaches `input_reset(ictx, 0)`: the
+    /// collected sequence is dropped *undispatched* and the parser returns to
+    /// ground, so the pane output that follows reaches the screen instead of
+    /// being swallowed by an OSC nobody closed. The rest of `input_reset` — the
+    /// pending cell and the charset designations, which it also returns to
+    /// defaults — is screen state, not tokenizer state; a caller that wants the
+    /// whole of tmux's recovery resets those alongside this call.
+    ///
+    /// A part-collected UTF-8 character survives, as it survives every other
+    /// way out of a string state: `input_reset` does not clear `utf8started`.
+    pub fn expire(&mut self) -> bool {
+        if !self.awaiting_terminator() {
+            return false;
+        }
+        self.raw.clear();
+        self.param.clear();
+        self.intermediate.clear();
+        self.string.clear();
+        self.string_overflow = false;
+        self.state = State::Ground;
+        true
+    }
+
     /// Feed one chunk of pane output, calling `emit` once per complete token.
     ///
     /// A sequence split across chunks is retained, so the caller may hand over
     /// arbitrary read boundaries.
-    pub(crate) fn parse(&mut self, input: &[u8], mut emit: impl FnMut(Token)) {
+    pub fn parse(&mut self, input: &[u8], mut emit: impl FnMut(Token)) {
         for &byte in input {
             self.step(byte, &mut emit);
         }
@@ -1283,6 +1336,62 @@ mod tests {
         let mut out = Vec::new();
         parser.parse(&input, |token| out.push(token.kind));
         assert!(out.is_empty(), "the sequence is dropped, got {out:?}");
+    }
+
+    #[test]
+    fn expiry_drops_an_unterminated_string_and_lets_later_output_through() {
+        let mut parser = Parser::default();
+        let mut out = Vec::new();
+        parser.parse(b"\x1b]0;STUCK", |token| out.push(token.kind));
+        assert!(out.is_empty(), "the OSC has not been dispatched yet");
+        assert!(parser.awaiting_terminator());
+
+        assert!(parser.expire(), "there was a sequence to abandon");
+        assert!(!parser.awaiting_terminator());
+        assert_eq!(parser.pending(), b"");
+
+        parser.parse(b"AFTER", |token| out.push(token.kind));
+        assert_eq!(
+            out,
+            vec![
+                TokenKind::Print('A'),
+                TokenKind::Print('F'),
+                TokenKind::Print('T'),
+                TokenKind::Print('E'),
+                TokenKind::Print('R'),
+            ],
+            "the abandoned OSC is dropped undispatched and does not swallow what follows",
+        );
+    }
+
+    #[test]
+    fn expiry_is_armed_only_while_a_terminator_is_awaited() {
+        // The timer's states, and the ones tmux cancels it in: an escape or a
+        // CSI clears it on entry, and ground drops it.
+        for (input, armed) in [
+            (&b"\x1b]0;x"[..], true),
+            (&b"\x1bP1;2"[..], true),
+            (&b"\x1b_payload"[..], true),
+            (&b"\x1bkname"[..], true),
+            (&b"\x1bX"[..], true),
+            (&b"\x1b^"[..], true),
+            (&b"\x1b]0;x\x1b"[..], false),
+            (&b"\x1b]0;x\x07"[..], false),
+            (&b"\x1b["[..], false),
+            (&b"\x1b[1;2"[..], false),
+            (&b"\x1b"[..], false),
+            (&b"plain"[..], false),
+        ] {
+            let mut parser = Parser::default();
+            parser.parse(input, |_| {});
+            assert_eq!(
+                parser.awaiting_terminator(),
+                armed,
+                "after {:?}",
+                String::from_utf8_lossy(input)
+            );
+            assert_eq!(parser.expire(), armed);
+        }
     }
 
     #[test]

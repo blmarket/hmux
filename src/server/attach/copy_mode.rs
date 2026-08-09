@@ -7,7 +7,7 @@ use super::super::state::{
 use super::super::term::TerminalCapabilities;
 use super::super::{format, options, status};
 use super::append_terminal_style_reset;
-use crate::vt::screen::{CellWidth, GridCell};
+use hmux_vt::screen::{CellWidth, GridCell};
 
 pub(super) struct CopyModeAction {
     page_up: bool,

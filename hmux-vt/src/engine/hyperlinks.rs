@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use crate::vt::vis;
+use crate::vis;
 
 /// tmux's `MAX_HYPERLINKS`. tmux enforces this across the whole server; here it
 /// bounds one screen's table, which is the same protection against a pane that
@@ -32,7 +32,7 @@ struct Entry {
 
 /// A screen's hyperlink table: tmux's `struct hyperlinks`.
 #[derive(Debug)]
-pub(crate) struct Hyperlinks {
+pub struct Hyperlinks {
     next_inner: u32,
     entries: HashMap<u32, Entry>,
     /// `(internal_id, uri)` to inner id, for the named links only. Anonymous
@@ -65,7 +65,7 @@ impl Hyperlinks {
     /// nothing has vouched for it being valid UTF-8, and a byte that is not
     /// stops the link no more than a control byte does — it comes back as an
     /// octal escape.
-    pub(crate) fn put(&mut self, uri: &[u8], internal_id: Option<&[u8]>) -> u32 {
+    pub fn put(&mut self, uri: &[u8], internal_id: Option<&[u8]>) -> u32 {
         let uri = vis::escape(uri, vis::KEEP_WHITESPACE);
         let internal_id = vis::escape(internal_id.unwrap_or_default(), vis::KEEP_WHITESPACE);
         let named = !internal_id.is_empty();
@@ -96,7 +96,7 @@ impl Hyperlinks {
     ///
     /// The internal id comes back only when the sequence actually carried one;
     /// an anonymous link reports its URI and no id.
-    pub(crate) fn get(&self, inner: u32) -> Option<(&str, Option<&str>)> {
+    pub fn get(&self, inner: u32) -> Option<(&str, Option<&str>)> {
         let entry = self.entries.get(&inner)?;
         let internal_id = if entry.internal_id.is_empty() {
             None
@@ -109,7 +109,7 @@ impl Hyperlinks {
     // `clear-history -H` is what calls this, once that flag is plumbed through.
     #[allow(dead_code)]
     /// tmux's `hyperlinks_reset`, which a screen clear performs.
-    pub(crate) fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.entries.clear();
         self.by_id.clear();
         self.order.clear();
@@ -123,7 +123,7 @@ impl Hyperlinks {
 /// open link rather than opening a new one, which is why the URI comes back as
 /// an `Option`. A malformed body is rejected outright, leaving whatever link is
 /// open alone.
-pub(crate) fn parse(body: &[u8]) -> Option<(Option<&[u8]>, Option<&[u8]>)> {
+pub fn parse(body: &[u8]) -> Option<(Option<&[u8]>, Option<&[u8]>)> {
     let mut id: Option<&[u8]> = None;
     let mut rest = body;
     let uri = loop {

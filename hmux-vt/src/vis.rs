@@ -16,13 +16,13 @@
 /// both pass `VIS_OCTAL|VIS_CSTYLE` and neither passes `VIS_ALL`, `VIS_GLOB`,
 /// `VIS_SP`, `VIS_SAFE`, `VIS_DQ` or `VIS_NOSLASH`.
 #[derive(Clone, Copy, Eq, PartialEq)]
-pub(crate) struct Whitespace {
+pub struct Whitespace {
     tab: bool,
     newline: bool,
 }
 
 /// `VIS_OCTAL|VIS_CSTYLE`, which is what `hyperlinks_put` escapes a URI with.
-pub(crate) const KEEP_WHITESPACE: Whitespace = Whitespace {
+pub const KEEP_WHITESPACE: Whitespace = Whitespace {
     tab: false,
     newline: false,
 };
@@ -40,7 +40,7 @@ const ESCAPE_WHITESPACE: Whitespace = Whitespace {
 /// else is escaped one byte at a time. A lead byte that is not followed through
 /// is *not* taken to consume the length it announced: only the lead is escaped,
 /// and the bytes after it are read again from the start.
-pub(crate) fn escape(bytes: &[u8], whitespace: Whitespace) -> String {
+pub fn escape(bytes: &[u8], whitespace: Whitespace) -> String {
     let mut out = String::with_capacity(bytes.len());
     let mut index = 0;
     while index < bytes.len() {
@@ -62,7 +62,7 @@ pub(crate) fn escape(bytes: &[u8], whitespace: Whitespace) -> String {
 /// tmux's `clean_name` with `untrusted` set, behind `screen_set_title` and
 /// `screen_set_path`. `None` is tmux refusing the name, which leaves whatever
 /// was set before it in place.
-pub(crate) fn clean_name(bytes: &[u8]) -> Option<String> {
+pub fn clean_name(bytes: &[u8]) -> Option<String> {
     if !is_valid(bytes) {
         return None;
     }

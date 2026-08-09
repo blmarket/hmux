@@ -13,20 +13,20 @@
 use super::cell::{colour, flag, Cell, CellData};
 
 /// tmux's `GRID_LINE_*`.
-pub(crate) mod line_flag {
+pub mod line_flag {
     /// The line soft-wraps into the next one.
-    pub(crate) const WRAPPED: u8 = 0x1;
+    pub const WRAPPED: u8 = 0x1;
     /// Some cell on this line has needed tmux's extended cell representation.
     /// tmux sets this in `grid_extended_cell`, where it is an allocation
     /// decision, and never clears it; `capture-pane -F` reports it as `X`.
-    pub(crate) const EXTENDED: u8 = 0x2;
+    pub const EXTENDED: u8 = 0x2;
     /// A shell-integration prompt starts on this line (OSC 133 A).
-    pub(crate) const START_PROMPT: u8 = 0x8;
+    pub const START_PROMPT: u8 = 0x8;
     /// Command output starts on this line (OSC 133 C).
-    pub(crate) const START_OUTPUT: u8 = 0x10;
+    pub const START_OUTPUT: u8 = 0x10;
     /// Some cell on this line belongs to an OSC 8 hyperlink. `capture-pane -e`
     /// checks this before it walks a row looking for links.
-    pub(crate) const HYPERLINK: u8 = 0x20;
+    pub const HYPERLINK: u8 = 0x20;
 }
 
 /// Lay one logical line out at `sx` columns, appending the rows it becomes.
@@ -68,7 +68,7 @@ fn lay_out(out: &mut Vec<Line>, cells: Vec<Cell>, sx: usize, flags: u8) {
 /// This engine stores every cell the same way, so the answer changes no storage
 /// here. It is still worth computing, because tmux lets the answer show: the
 /// line flag it sets is sticky and `capture-pane -F` prints it.
-pub(crate) fn needs_extended(cell: &Cell) -> bool {
+pub fn needs_extended(cell: &Cell) -> bool {
     cell.attr > 0xff
         || cell.data.bytes.len() > 1
         || cell.data.width > 1
@@ -80,13 +80,13 @@ pub(crate) fn needs_extended(cell: &Cell) -> bool {
 }
 
 /// tmux's `COLOUR_DEFAULT`: neither of the two spellings of "unset".
-pub(crate) fn colour_is_default(value: i32) -> bool {
+pub fn colour_is_default(value: i32) -> bool {
     value == 8 || value == 9
 }
 
 /// One row.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct Line {
+pub struct Line {
     /// The allocated cells. tmux's `cellsize` is this length.
     cells: Vec<Cell>,
     /// tmux's `cellused`: how far a program has written into the row.
@@ -95,54 +95,54 @@ pub(crate) struct Line {
     /// Monotonic while the line lives — tmux never reclaims an entry when a
     /// rich cell is overwritten with a simple one — and reset with the line.
     extd: usize,
-    pub(crate) flags: u8,
+    pub flags: u8,
 }
 
 impl Line {
     /// The allocated extent, tmux's `cellsize`, which is where a capture that
     /// keeps its empty cells stops.
-    pub(crate) fn size(&self) -> usize {
+    pub fn size(&self) -> usize {
         self.cells.len()
     }
 
     /// The written extent, tmux's `cellused`.
-    pub(crate) fn used(&self) -> usize {
+    pub fn used(&self) -> usize {
         self.used
     }
 
     /// The allocated extended entries, tmux's `extdsize`.
-    pub(crate) fn extd(&self) -> usize {
+    pub fn extd(&self) -> usize {
         self.extd
     }
 
-    pub(crate) fn is_wrapped(&self) -> bool {
+    pub fn is_wrapped(&self) -> bool {
         self.flags & line_flag::WRAPPED != 0
     }
 }
 
 /// The cell store for one screen.
 #[derive(Clone, Debug)]
-pub(crate) struct Grid {
+pub struct Grid {
     /// Visible width and height.
-    pub(crate) sx: usize,
-    pub(crate) sy: usize,
+    pub sx: usize,
+    pub sy: usize,
     /// How many history rows are stored, tmux's `hsize`.
-    pub(crate) hsize: usize,
+    pub hsize: usize,
     /// The history cap. Zero means this grid keeps no history at all.
-    pub(crate) hlimit: usize,
+    pub hlimit: usize,
     /// tmux's `GRID_HISTORY`. Cleared while the alternate screen is up, so
     /// scrolling there adds nothing to the scrollback the primary screen built.
-    pub(crate) history: bool,
+    pub history: bool,
     /// How far the history has scrolled, tmux's `hscrolled`. Only the
     /// `history_bytes`-style accounting reads it.
-    pub(crate) hscrolled: usize,
+    pub hscrolled: usize,
     lines: Vec<Line>,
 }
 
 impl Grid {
     /// tmux's `grid_create`. `hlimit` of zero means no history, which is also
     /// what leaves `GRID_HISTORY` clear.
-    pub(crate) fn new(sx: usize, sy: usize, hlimit: usize) -> Grid {
+    pub fn new(sx: usize, sy: usize, hlimit: usize) -> Grid {
         Grid {
             sx,
             sy,
@@ -156,7 +156,7 @@ impl Grid {
 
     /// tmux's `grid_duplicate_lines`: copy `ny` rows out of `src` at row `sy`
     /// over this grid's rows from `dy`, clipped to what either grid holds.
-    pub(crate) fn duplicate_lines(&mut self, dy: usize, src: &Grid, sy: usize, ny: usize) {
+    pub fn duplicate_lines(&mut self, dy: usize, src: &Grid, sy: usize, ny: usize) {
         let ny = ny
             .min(self.total().saturating_sub(dy))
             .min(src.total().saturating_sub(sy));
@@ -166,18 +166,18 @@ impl Grid {
     }
 
     /// Total stored rows: history plus viewport.
-    pub(crate) fn total(&self) -> usize {
+    pub fn total(&self) -> usize {
         self.hsize + self.sy
     }
 
-    pub(crate) fn line(&self, py: usize) -> Option<&Line> {
+    pub fn line(&self, py: usize) -> Option<&Line> {
         self.lines.get(py)
     }
 
     /// tmux's `grid_get_cell`: a read past the allocated extent of a row is
     /// the *default* cell, not a cleared one — a distinction `capture-pane -e`
     /// can see, because a cleared cell may carry a background colour.
-    pub(crate) fn get(&self, px: usize, py: usize) -> Cell {
+    pub fn get(&self, px: usize, py: usize) -> Cell {
         match self.lines.get(py) {
             Some(line) => line.cells.get(px).cloned().unwrap_or_default(),
             None => Cell::default(),
@@ -187,12 +187,12 @@ impl Grid {
     /// The cell as it is actually stored, or `None` past the row's allocated
     /// extent. Unlike [`Grid::get`] this tells "a cell holding a default" apart
     /// from "no cell at all", which is a distinction `screen_write_cell` makes.
-    pub(crate) fn peek(&self, px: usize, py: usize) -> Option<&Cell> {
+    pub fn peek(&self, px: usize, py: usize) -> Option<&Cell> {
         self.lines.get(py).and_then(|line| line.cells.get(px))
     }
 
     /// tmux's `grid_set_cell`.
-    pub(crate) fn set(&mut self, px: usize, py: usize, cell: &Cell) {
+    pub fn set(&mut self, px: usize, py: usize, cell: &Cell) {
         if py >= self.lines.len() {
             return;
         }
@@ -217,7 +217,7 @@ impl Grid {
     }
 
     /// tmux's `grid_set_padding`: the blank right half of a wide character.
-    pub(crate) fn set_padding(&mut self, px: usize, py: usize) {
+    pub fn set_padding(&mut self, px: usize, py: usize) {
         self.set(px, py, &Cell::padding());
     }
 
@@ -226,7 +226,7 @@ impl Grid {
     /// The rounding is not just an allocation detail: the cells it brings into
     /// existence are *cleared* with `bg`, so how far a row grows decides what
     /// colour the space past a program's last write has.
-    pub(crate) fn expand_line(&mut self, py: usize, sx: usize, bg: i32) {
+    pub fn expand_line(&mut self, py: usize, sx: usize, bg: i32) {
         let Some(line) = self.lines.get(py) else {
             return;
         };
@@ -243,7 +243,7 @@ impl Grid {
     /// row once for the whole run it is about to put there, so a run that ends
     /// on a step rounds past it; the same characters written a cell at a time
     /// would stop at the first step and never allocate the rest.
-    pub(crate) fn rounded_extent(&self, sx: usize) -> usize {
+    pub fn rounded_extent(&self, sx: usize) -> usize {
         if sx < self.sx / 4 {
             self.sx / 4
         } else if sx < self.sx / 2 {
@@ -258,7 +258,7 @@ impl Grid {
     /// Grow a row to `sx` allocated cells, clearing the new ones with `bg`.
     /// The rounding is the caller's, so this is the half of `grid_expand_line`
     /// a run can apply once it knows how far it reached.
-    pub(crate) fn grow_line(&mut self, py: usize, sx: usize, bg: i32) {
+    pub fn grow_line(&mut self, py: usize, sx: usize, bg: i32) {
         let Some(line) = self.lines.get_mut(py) else {
             return;
         };
@@ -277,7 +277,7 @@ impl Grid {
     /// tmux's `grid_empty_line`: forget the row entirely. A non-default
     /// background is painted straight back over the full width, because an
     /// erase to a colour has to be visible where nothing was written.
-    pub(crate) fn empty_line(&mut self, py: usize, bg: i32) {
+    pub fn empty_line(&mut self, py: usize, bg: i32) {
         if py >= self.lines.len() {
             return;
         }
@@ -288,7 +288,7 @@ impl Grid {
     }
 
     /// tmux's `grid_clear_lines`.
-    pub(crate) fn clear_lines(&mut self, py: usize, ny: usize, bg: i32) {
+    pub fn clear_lines(&mut self, py: usize, ny: usize, bg: i32) {
         if ny == 0 || py + ny > self.lines.len() {
             return;
         }
@@ -301,7 +301,7 @@ impl Grid {
     }
 
     /// tmux's `grid_clear`: erase a rectangle.
-    pub(crate) fn clear(&mut self, px: usize, py: usize, nx: usize, ny: usize, bg: i32) {
+    pub fn clear(&mut self, px: usize, py: usize, nx: usize, ny: usize, bg: i32) {
         if nx == 0 || ny == 0 {
             return;
         }
@@ -333,7 +333,7 @@ impl Grid {
     }
 
     /// tmux's `grid_clear_cell`: put a cleared cell in place, keeping `bg`.
-    pub(crate) fn clear_cell(&mut self, px: usize, py: usize, bg: i32) {
+    pub fn clear_cell(&mut self, px: usize, py: usize, bg: i32) {
         if let Some(line) = self.lines.get_mut(py) {
             if let Some(cell) = line.cells.get_mut(px) {
                 *cell = Cell::cleared(bg);
@@ -343,7 +343,7 @@ impl Grid {
 
     /// tmux's `grid_move_lines`: move `ny` rows from `py` to `dy` within the
     /// grid, blanking whatever the move vacated.
-    pub(crate) fn move_lines(&mut self, dy: usize, py: usize, ny: usize, bg: i32) {
+    pub fn move_lines(&mut self, dy: usize, py: usize, ny: usize, bg: i32) {
         if ny == 0 || py == dy {
             return;
         }
@@ -367,7 +367,7 @@ impl Grid {
 
     /// tmux's `grid_move_cells`: shift cells within one row, as insert and
     /// delete character do.
-    pub(crate) fn move_cells(&mut self, dx: usize, px: usize, py: usize, nx: usize, bg: i32) {
+    pub fn move_cells(&mut self, dx: usize, px: usize, py: usize, nx: usize, bg: i32) {
         if nx == 0 || px == dx || py >= self.lines.len() {
             return;
         }
@@ -387,7 +387,7 @@ impl Grid {
 
     /// tmux's `grid_scroll_history`: the top visible row becomes history and a
     /// fresh row appears at the bottom.
-    pub(crate) fn scroll_history(&mut self, bg: i32) {
+    pub fn scroll_history(&mut self, bg: i32) {
         self.lines.push(Line::default());
         let last = self.lines.len() - 1;
         self.empty_line(last, bg);
@@ -397,7 +397,7 @@ impl Grid {
 
     /// tmux's `grid_scroll_history_region`: scrolling a region whose top is the
     /// top of the screen still feeds the history, unlike one further down.
-    pub(crate) fn scroll_history_region(&mut self, upper: usize, lower: usize, bg: i32) {
+    pub fn scroll_history_region(&mut self, upper: usize, lower: usize, bg: i32) {
         self.lines.insert(self.hsize, Line::default());
         // The region moved down by one with the insert; take its first row into
         // the history slot and close the gap behind it.
@@ -413,7 +413,7 @@ impl Grid {
 
     /// tmux's `grid_collect_history`: drop the oldest tenth once the history is
     /// over its limit, so trimming is amortized rather than per-line.
-    pub(crate) fn collect_history(&mut self) {
+    pub fn collect_history(&mut self) {
         if self.hsize == 0 || self.hsize < self.hlimit {
             return;
         }
@@ -429,7 +429,7 @@ impl Grid {
     /// tmux applies a lowered `history-limit` to panes that already exist, so
     /// this is the `all` form of `grid_collect_history`, unlike the amortized
     /// one-tenth collection used while output is scrolling.
-    pub(crate) fn set_history_limit(&mut self, hlimit: usize) {
+    pub fn set_history_limit(&mut self, hlimit: usize) {
         self.hlimit = hlimit;
         if self.hsize > hlimit {
             self.trim_history(self.hsize - hlimit);
@@ -456,7 +456,7 @@ impl Grid {
     /// clearing does not fill the scrollback with the blank tail of a
     /// half-drawn screen — and a screen nothing was written to scrolls nothing
     /// at all.
-    pub(crate) fn view_clear_history(&mut self, bg: i32) {
+    pub fn view_clear_history(&mut self, bg: i32) {
         let last = (0..self.sy)
             .filter(|yy| {
                 self.line(self.hsize + yy)
@@ -490,7 +490,7 @@ impl Grid {
     /// rows that fall off the bottom are the ones the viewport no longer
     /// reaches. Asking to remove more history than there is does nothing at
     /// all, as in tmux.
-    pub(crate) fn remove_history(&mut self, ny: usize) {
+    pub fn remove_history(&mut self, ny: usize) {
         if ny > self.hsize {
             return;
         }
@@ -498,7 +498,7 @@ impl Grid {
         self.hsize -= ny;
     }
 
-    pub(crate) fn clear_history(&mut self) {
+    pub fn clear_history(&mut self) {
         self.lines.drain(..self.hsize);
         self.hsize = 0;
         self.hscrolled = 0;
@@ -506,7 +506,7 @@ impl Grid {
 
     /// tmux's `grid_line_length`: the row's extent with trailing spaces
     /// trimmed, which is what a plain capture of the row shows.
-    pub(crate) fn line_length(&self, py: usize) -> usize {
+    pub fn line_length(&self, py: usize) -> usize {
         let Some(line) = self.lines.get(py) else {
             return 0;
         };
@@ -522,7 +522,7 @@ impl Grid {
     }
 
     /// Set or clear a line flag on a stored row.
-    pub(crate) fn set_line_flags(&mut self, py: usize, flags: u8, on: bool) {
+    pub fn set_line_flags(&mut self, py: usize, flags: u8, on: bool) {
         if let Some(line) = self.lines.get_mut(py) {
             if on {
                 line.flags |= flags;
@@ -538,7 +538,7 @@ impl Grid {
     /// same way, because that is the coordinate a resize does not move. How far
     /// the cursor travels in viewport terms falls out of what happened to the
     /// history, which is exactly how tmux keeps the two in step.
-    pub(crate) fn resize_y(&mut self, sy: usize, cursor: usize, bg: i32) -> usize {
+    pub fn resize_y(&mut self, sy: usize, cursor: usize, bg: i32) -> usize {
         if sy == self.sy {
             return cursor;
         }
@@ -599,7 +599,7 @@ impl Grid {
     ///
     /// A wide character is never split across the margin: a row ends early
     /// rather than leave half of one behind.
-    pub(crate) fn reflow(&mut self, sx: usize) {
+    pub fn reflow(&mut self, sx: usize) {
         if sx == 0 || sx == self.sx {
             self.sx = sx.max(1);
             return;
@@ -645,7 +645,7 @@ impl Grid {
 
     /// Where a cursor sits within its *logical* line, so it can be found again
     /// after a rewrap. tmux's `grid_wrap_position`.
-    pub(crate) fn wrap_position(&self, px: usize, py: usize) -> (Option<usize>, usize) {
+    pub fn wrap_position(&self, px: usize, py: usize) -> (Option<usize>, usize) {
         let mut ax = 0;
         let mut ay = 0;
         for yy in 0..py.min(self.lines.len()) {
@@ -668,7 +668,7 @@ impl Grid {
 
     /// The inverse: turn a logical position back into a row and column.
     /// tmux's `grid_unwrap_position`.
-    pub(crate) fn unwrap_position(&self, wx: Option<usize>, wy: usize) -> (usize, usize) {
+    pub fn unwrap_position(&self, wx: Option<usize>, wy: usize) -> (usize, usize) {
         let mut yy = 0;
         let mut ay = 0;
         while yy + 1 < self.lines.len() {
@@ -699,7 +699,7 @@ impl Grid {
 
     /// tmux's `grid_set_tab`: one cell standing for a run of `width` columns a
     /// horizontal tab created, rather than for spaces someone wrote.
-    pub(crate) fn tab_cell(template: &Cell, width: usize) -> Cell {
+    pub fn tab_cell(template: &Cell, width: usize) -> Cell {
         Cell {
             data: CellData {
                 bytes: vec![b' '; width],

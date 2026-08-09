@@ -44,7 +44,7 @@ use std::time::{Duration, Instant};
 use crate::integration::status::StatusHub;
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 use crate::tmux::traits::NonblockingFrameReader;
-use crate::vt::screen::ScreenImage;
+use hmux_vt::screen::ScreenImage;
 
 use super::cmd_send_keys::base64_encode;
 use super::command;

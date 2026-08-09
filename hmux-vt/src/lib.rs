@@ -14,37 +14,39 @@
 //!
 //! # The contract
 //!
-//! Inbound, the interface is the five `pub(crate)` submodules — [`parser`],
-//! [`observer`], [`screen`], [`input`], [`width`] — plus [`PaneScreen`], the
-//! implementation this build ships. Server code calls trait methods, so that
-//! alias is the only place a backend is chosen; `engine` (hmux's own port of
-//! tmux's grid and screen model) and `ghostty` (the libghostty-vt backend it
+//! The interface is this crate's `pub` surface and nothing else: the six
+//! modules [`parser`], [`observer`], [`screen`], [`input`], [`width`] and
+//! [`sixel`], plus [`EngineScreen`] (aliased [`PaneScreen`], the implementation
+//! this build ships) and [`TMUX_VERSION`]. Consumers call trait methods, so
+//! that alias is the only place a backend is chosen; `engine` (hmux's own port
+//! of tmux's grid and screen model) and `ghostty` (the libghostty-vt backend it
 //! replaced, still buildable behind the `ghostty` feature for `differential`
 //! to diff against) are private behind it.
 //!
-//! Outbound there is nothing: vt never depends on the server module. Every
-//! type crossing the seam is vt-owned — [`observer::OutputPolicy`],
-//! [`screen::ScreenOptions`], the event and token types — and the server
-//! pushes resolved option values in rather than vt reading server state.
+//! [`screen::VtScreen`] and [`input::InputEncoder`] are open public traits
+//! under a semver promise; see their documentation.
+//!
+//! Outbound there is nothing: this crate depends on no server code and, in the
+//! default build, on no external crate at all. Every type crossing the seam is
+//! owned here — [`observer::OutputPolicy`], [`screen::ScreenOptions`], the
+//! event and token types — and the server pushes resolved option values in
+//! rather than the emulator reading server state.
 //!
 //! One caveat: [`width`] is process-global mutable state, mirroring tmux's
 //! global options — there is one width policy per process, not one per screen.
-//!
-//! `hmux::model::TerminalModel` is the only `pub` window onto this seam, and
-//! it is not a compatibility contract.
 
 #[cfg(all(test, feature = "ghostty"))]
 mod differential;
 mod engine;
 #[cfg(feature = "ghostty")]
 mod ghostty;
-pub(crate) mod input;
-pub(crate) mod observer;
-pub(crate) mod parser;
-pub(crate) mod screen;
-pub(crate) mod sixel;
+pub mod input;
+pub mod observer;
+pub mod parser;
+pub mod screen;
+pub mod sixel;
 mod vis;
-pub(crate) mod width;
+pub mod width;
 mod x11_colour;
 
 /// The tmux release whose behavior hmux implements — product identity shared
@@ -52,7 +54,9 @@ mod x11_colour;
 /// command language (`#{version}`). Conformance is pinned to this version, so
 /// an application that special-cases a terminal by version has to see the
 /// same answer the command language claims to implement.
-pub(crate) const TMUX_VERSION: &str = "3.7b";
+pub const TMUX_VERSION: &str = "3.7b";
+
+pub use engine::backend::EngineScreen;
 
 /// The screen implementation this build ships.
-pub(crate) type PaneScreen = engine::backend::EngineScreen;
+pub type PaneScreen = EngineScreen;

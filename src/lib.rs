@@ -11,7 +11,10 @@
 //! - [`integration`] — prototype consumers of optional runtime capabilities.
 //! - [`model`] — a terminal model for out-of-process test harnesses.
 //! - [`serve`] — listeners and connection lifecycle management.
-//! - `vt` — the pane tokenizer, the terminal-emulation seam, and its backend.
+//!
+//! The pane tokenizer, the terminal-emulation seam, and its backend live in the
+//! `hmux-vt` crate; the daemon consumes them only through that crate's public
+//! surface.
 
 pub mod error;
 pub(crate) mod event_loop;
@@ -23,8 +26,7 @@ mod platform;
 pub mod serve;
 pub(crate) mod server;
 pub mod tmux;
-pub(crate) mod vt;
 
 pub use error::{Error, Result};
 
-pub(crate) use vt::TMUX_VERSION;
+pub(crate) use hmux_vt::TMUX_VERSION;

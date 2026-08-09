@@ -12,7 +12,7 @@ use super::{CustomizeOption, RenderInvalidation, ServerState};
 use crate::server::options::{
     is_array_option, option_scope, parse_option_name, GlobalOptions, OptionScope, OptionsView,
 };
-use crate::vt::width;
+use hmux_vt::width;
 
 impl ServerState {
     pub(crate) fn option_changed(&mut self, name: &str) {

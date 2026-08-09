@@ -7,37 +7,37 @@
 //! source without translation.
 
 /// tmux's `GRID_ATTR_*`, as one bitmask.
-pub(crate) mod attr {
-    pub(crate) const BRIGHT: u16 = 0x1;
-    pub(crate) const DIM: u16 = 0x2;
-    pub(crate) const UNDERSCORE: u16 = 0x4;
-    pub(crate) const BLINK: u16 = 0x8;
-    pub(crate) const REVERSE: u16 = 0x10;
-    pub(crate) const HIDDEN: u16 = 0x20;
-    pub(crate) const ITALICS: u16 = 0x40;
+pub mod attr {
+    pub const BRIGHT: u16 = 0x1;
+    pub const DIM: u16 = 0x2;
+    pub const UNDERSCORE: u16 = 0x4;
+    pub const BLINK: u16 = 0x8;
+    pub const REVERSE: u16 = 0x10;
+    pub const HIDDEN: u16 = 0x20;
+    pub const ITALICS: u16 = 0x40;
     /// The alternate (line-drawing) character set is selected for this cell.
-    pub(crate) const CHARSET: u16 = 0x80;
-    pub(crate) const STRIKETHROUGH: u16 = 0x100;
-    pub(crate) const UNDERSCORE_2: u16 = 0x200;
-    pub(crate) const UNDERSCORE_3: u16 = 0x400;
-    pub(crate) const UNDERSCORE_4: u16 = 0x800;
-    pub(crate) const UNDERSCORE_5: u16 = 0x1000;
-    pub(crate) const OVERLINE: u16 = 0x2000;
+    pub const CHARSET: u16 = 0x80;
+    pub const STRIKETHROUGH: u16 = 0x100;
+    pub const UNDERSCORE_2: u16 = 0x200;
+    pub const UNDERSCORE_3: u16 = 0x400;
+    pub const UNDERSCORE_4: u16 = 0x800;
+    pub const UNDERSCORE_5: u16 = 0x1000;
+    pub const OVERLINE: u16 = 0x2000;
 
     /// Every underline style, so selecting one can clear the others.
-    pub(crate) const ALL_UNDERSCORE: u16 =
+    pub const ALL_UNDERSCORE: u16 =
         UNDERSCORE | UNDERSCORE_2 | UNDERSCORE_3 | UNDERSCORE_4 | UNDERSCORE_5;
 }
 
 /// tmux's `GRID_FLAG_*`, as one bitmask.
-pub(crate) mod flag {
+pub mod flag {
     /// The blank second half of a wide character.
-    pub(crate) const PADDING: u8 = 0x4;
+    pub const PADDING: u8 = 0x4;
     /// The cell has never been written; a clear left it as it is.
-    pub(crate) const CLEARED: u8 = 0x40;
+    pub const CLEARED: u8 = 0x40;
     /// The cell is part of a run a horizontal tab created, rather than of
     /// spaces someone typed. `capture-pane -e` has to tell them apart.
-    pub(crate) const TAB: u8 = 0x80;
+    pub const TAB: u8 = 0x80;
 }
 
 /// tmux's colour encoding: a palette index, or an RGB triple, or "default".
@@ -45,26 +45,26 @@ pub(crate) mod flag {
 /// tmux carries this as one `int` with flag bits above the value, and every
 /// SGR handler reads and writes it in that form. Keeping the same encoding is
 /// what lets those handlers be ported rather than reinterpreted.
-pub(crate) mod colour {
+pub mod colour {
     /// The 256-colour palette flag.
-    pub(crate) const FLAG_256: i32 = 0x0100_0000;
+    pub const FLAG_256: i32 = 0x0100_0000;
     /// The direct-colour flag; the low 24 bits are then `0xrrggbb`.
-    pub(crate) const FLAG_RGB: i32 = 0x0200_0000;
+    pub const FLAG_RGB: i32 = 0x0200_0000;
     /// tmux's "no colour chosen", which resolves against the pane's options.
-    pub(crate) const DEFAULT: i32 = 8;
+    pub const DEFAULT: i32 = 8;
 
     /// One of the 256 palette entries.
-    pub(crate) fn indexed(index: u8) -> i32 {
+    pub fn indexed(index: u8) -> i32 {
         i32::from(index) | FLAG_256
     }
 
     /// A direct colour.
-    pub(crate) fn rgb(red: u8, green: u8, blue: u8) -> i32 {
+    pub fn rgb(red: u8, green: u8, blue: u8) -> i32 {
         FLAG_RGB | (i32::from(red) << 16) | (i32::from(green) << 8) | i32::from(blue)
     }
 
     /// The `0xrrggbb` of a direct colour, if it is one.
-    pub(crate) fn as_rgb(colour: i32) -> Option<(u8, u8, u8)> {
+    pub fn as_rgb(colour: i32) -> Option<(u8, u8, u8)> {
         if colour & FLAG_RGB == 0 {
             return None;
         }
@@ -80,7 +80,7 @@ pub(crate) mod colour {
     /// The palette index of a 256-colour value, if it is one. The eight bright
     /// aixterm colours (90–97, 100–107) are folded onto 8–15, as tmux folds
     /// them.
-    pub(crate) fn as_index(colour: i32) -> Option<u8> {
+    pub fn as_index(colour: i32) -> Option<u8> {
         if colour & FLAG_256 != 0 {
             return u8::try_from(colour & 0xff).ok();
         }
@@ -96,21 +96,21 @@ pub(crate) mod colour {
 /// `UTF8_SIZE`. A cluster that would outgrow this starts a new cell instead,
 /// which is observable: a seven-codepoint emoji ZWJ sequence is 26 bytes, so
 /// the bound decides whether it lands in one cell or two.
-pub(crate) const UTF8_SIZE: usize = 32;
+pub const UTF8_SIZE: usize = 32;
 
 /// The character content of a cell: a grapheme cluster and the number of
 /// columns it occupies.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CellData {
+pub struct CellData {
     /// The cluster's UTF-8 bytes, at most [`UTF8_SIZE`] of them.
-    pub(crate) bytes: Vec<u8>,
+    pub bytes: Vec<u8>,
     /// Display width in columns: 0, 1 or 2.
-    pub(crate) width: u8,
+    pub width: u8,
 }
 
 impl CellData {
     /// One ASCII or single-codepoint character.
-    pub(crate) fn from_char(character: char, width: u8) -> CellData {
+    pub fn from_char(character: char, width: u8) -> CellData {
         let mut bytes = [0u8; 4];
         CellData {
             bytes: character.encode_utf8(&mut bytes).as_bytes().to_vec(),
@@ -119,7 +119,7 @@ impl CellData {
     }
 
     /// The cell content of a space, which is what a clear leaves behind.
-    pub(crate) fn space() -> CellData {
+    pub fn space() -> CellData {
         CellData {
             bytes: vec![b' '],
             width: 1,
@@ -127,30 +127,30 @@ impl CellData {
     }
 
     /// Whether the cell holds exactly one space.
-    pub(crate) fn is_space(&self) -> bool {
+    pub fn is_space(&self) -> bool {
         self.bytes == b" "
     }
 
     /// The cluster as text. Cell bytes are always valid UTF-8, because they
     /// only ever arrive as an encoded `char`.
-    pub(crate) fn text(&self) -> &str {
+    pub fn text(&self) -> &str {
         std::str::from_utf8(&self.bytes).unwrap_or("")
     }
 }
 
 /// One grid cell: tmux's `struct grid_cell`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Cell {
-    pub(crate) data: CellData,
-    pub(crate) attr: u16,
-    pub(crate) flags: u8,
-    pub(crate) fg: i32,
-    pub(crate) bg: i32,
+pub struct Cell {
+    pub data: CellData,
+    pub attr: u16,
+    pub flags: u8,
+    pub fg: i32,
+    pub bg: i32,
     /// The underline colour, which SGR 58 sets separately from the foreground.
-    pub(crate) us: i32,
+    pub us: i32,
     /// The OSC 8 hyperlink this cell belongs to, as an index into the screen's
     /// hyperlink table. Zero means none.
-    pub(crate) link: u32,
+    pub link: u32,
 }
 
 impl Default for Cell {
@@ -171,7 +171,7 @@ impl Default for Cell {
 impl Cell {
     /// tmux's `grid_default_cell` with the cleared flag set: a cell an erase
     /// produced rather than one a program wrote a space into.
-    pub(crate) fn cleared(background: i32) -> Cell {
+    pub fn cleared(background: i32) -> Cell {
         Cell {
             bg: background,
             flags: flag::CLEARED,
@@ -185,7 +185,7 @@ impl Cell {
     /// its colours, not its attributes, not its hyperlink, not the tab flag.
     /// That is observable wherever a padding cell outlives its character, since
     /// what is left behind is a default cell rather than a coloured one.
-    pub(crate) fn padding() -> Cell {
+    pub fn padding() -> Cell {
         Cell {
             data: CellData {
                 bytes: Vec::new(),
@@ -196,13 +196,13 @@ impl Cell {
         }
     }
 
-    pub(crate) fn is_padding(&self) -> bool {
+    pub fn is_padding(&self) -> bool {
         self.flags & flag::PADDING != 0
     }
 
     /// tmux's `grid_cells_look_equal`: whether two cells would be drawn the
     /// same, ignoring bookkeeping flags that do not reach the screen.
-    pub(crate) fn looks_equal(&self, other: &Cell) -> bool {
+    pub fn looks_equal(&self, other: &Cell) -> bool {
         if self.fg != other.fg || self.bg != other.bg || self.us != other.us {
             return false;
         }
@@ -219,7 +219,7 @@ impl Cell {
     /// flag, so a cell a tab produced is *not* equal to one holding a typed
     /// space — a distinction `capture-pane -e` depends on. It also never
     /// compares the underline colour, which is tmux's and stays tmux's.
-    pub(crate) fn equals(&self, other: &Cell) -> bool {
+    pub fn equals(&self, other: &Cell) -> bool {
         self.fg == other.fg
             && self.bg == other.bg
             && self.attr == other.attr

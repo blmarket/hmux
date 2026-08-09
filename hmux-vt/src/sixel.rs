@@ -3,7 +3,8 @@
 //! A sixel image arrives as a DCS payload, is decoded into a plane of colour
 //! register indices, and leaves again either as bytes for a client terminal
 //! that speaks sixel or as the text placeholder for one that does not. Nothing
-//! here touches a screen; [`super::images`] is what anchors an image to cells.
+//! here touches a screen; the engine's image list is what anchors an image to
+//! cells.
 //!
 //! The port is literal, quirks included, because the bytes hmux writes to a
 //! client have to be the bytes tmux would have written. Two places where that
@@ -17,7 +18,7 @@ const WIDTH_LIMIT: u32 = 10000;
 const HEIGHT_LIMIT: u32 = 10000;
 
 /// tmux's `SIXEL_COLOUR_REGISTERS`, which is also what XTSMGRAPHICS reports.
-pub(crate) const COLOUR_REGISTERS: u32 = 1024;
+pub const COLOUR_REGISTERS: u32 = 1024;
 
 /// One row of six pixels' worth of colour indices, tmux's `struct sixel_line`.
 ///
@@ -33,7 +34,7 @@ struct SixelLine {
 
 /// A decoded sixel image, tmux's `struct sixel_image`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct SixelImage {
+pub struct SixelImage {
     x: u32,
     y: u32,
     /// The cell size in pixels the image is measured against — the window's,
@@ -160,7 +161,7 @@ impl SixelImage {
     }
 
     /// tmux's `sixel_size_in_cells`: pixel dimensions rounded up to whole cells.
-    pub(crate) fn size_in_cells(&self) -> (u32, u32) {
+    pub fn size_in_cells(&self) -> (u32, u32) {
         // tmux divides by the window's cell size, which `recalculate_sizes`
         // never leaves at zero. Clamping keeps a synthesized image from
         // dividing by it anyway.
@@ -180,7 +181,7 @@ impl SixelImage {
     // `sixel_scale`'s parameters, in its order: grouping them would only hide
     // which C argument each one is.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn scale(
+    pub fn scale(
         &self,
         xpixel: u32,
         ypixel: u32,
@@ -249,7 +250,7 @@ impl SixelImage {
     ///
     /// `None` is tmux's NULL: an image that never selected a colour has nothing
     /// to say.
-    pub(crate) fn print(&self, map: Option<&SixelImage>) -> Option<Vec<u8>> {
+    pub fn print(&self, map: Option<&SixelImage>) -> Option<Vec<u8>> {
         let colours = match map {
             Some(map) => &map.colours,
             None => &self.colours,
@@ -374,7 +375,7 @@ impl SixelImage {
     /// Written exactly as tmux writes it — one `\r\n`-terminated line per image
     /// row, the label on the first — because tmux hands these bytes to the
     /// client's terminal raw, carriage returns and all.
-    pub(crate) fn fallback_text(sx: u32, sy: u32) -> String {
+    pub fn fallback_text(sx: u32, sy: u32) -> String {
         let label = format!("SIXEL IMAGE ({sx}x{sy})");
         let mut out = String::new();
         out.push_str(&label);
@@ -607,7 +608,7 @@ fn parse_repeat(si: &mut SixelImage, bytes: &[u8], pos: usize) -> Option<usize> 
 /// `payload` is the DCS string *after* its final byte, which hmux's parser has
 /// already split off; tmux's `buf[0] == 'q'` check is the caller's job here, and
 /// its "empty image" rejection of a one-byte buffer becomes an empty payload.
-pub(crate) fn parse(payload: &[u8], p2: u32, xpixel: u32, ypixel: u32) -> Option<SixelImage> {
+pub fn parse(payload: &[u8], p2: u32, xpixel: u32, ypixel: u32) -> Option<SixelImage> {
     if payload.is_empty() {
         return None;
     }

@@ -8,13 +8,13 @@
 //! This is the shipped backend, reached through [`super::screen::VtScreen`]
 //! and named by [`super::PaneScreen`].
 
-pub(crate) mod backend;
-pub(crate) mod cell;
+pub mod backend;
+pub mod cell;
 mod combine;
-pub(crate) mod dispatch;
-pub(crate) mod dump;
-pub(crate) mod grid;
-pub(crate) mod hyperlinks;
-pub(crate) mod images;
-pub(crate) mod keys;
-pub(crate) mod screen;
+pub mod dispatch;
+pub mod dump;
+pub mod grid;
+pub mod hyperlinks;
+pub mod images;
+pub mod keys;
+pub mod screen;

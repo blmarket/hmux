@@ -26,9 +26,9 @@ use super::combine;
 use super::grid::{colour_is_default, line_flag, needs_extended, Grid, Line};
 use super::hyperlinks::Hyperlinks;
 use super::images::Images;
-use crate::vt::screen::{mode, ScreenOptions};
-use crate::vt::sixel::SixelImage;
-use crate::vt::width;
+use crate::screen::{mode, ScreenOptions};
+use crate::sixel::SixelImage;
+use crate::width;
 
 /// What [`Screen::combine`] decided about a character, which is tmux's return
 /// value from `screen_write_combine` given a name.
@@ -42,7 +42,7 @@ enum Combined {
 }
 
 /// tmux's default history limit, the `history-limit` option's default.
-pub(crate) const DEFAULT_HISTORY_LIMIT: usize = 2000;
+pub const DEFAULT_HISTORY_LIMIT: usize = 2000;
 
 /// The cursor and character state a DECSC saves and a DECRC restores.
 #[derive(Clone, Debug)]
@@ -77,8 +77,8 @@ struct Run {
 }
 
 /// One pane's screen.
-pub(crate) struct Screen {
-    pub(crate) grid: Grid,
+pub struct Screen {
+    pub grid: Grid,
     /// The primary screen's visible rows while the alternate screen is up, and
     /// `None` while it is not. tmux's `saved_grid`, which holds those rows only
     /// — the grid itself never changes hands, so the history stays under the
@@ -90,33 +90,33 @@ pub(crate) struct Screen {
     saved_state: Option<SavedState>,
     /// DECSC's own save, which is separate from the alternate screen's.
     saved_cursor: Option<SavedState>,
-    pub(crate) cx: usize,
-    pub(crate) cy: usize,
+    pub cx: usize,
+    pub cy: usize,
     /// The scrolling region, inclusive, in viewport rows.
-    pub(crate) rupper: usize,
-    pub(crate) rlower: usize,
-    pub(crate) mode: u32,
-    pub(crate) tabs: BTreeSet<usize>,
+    pub rupper: usize,
+    pub rlower: usize,
+    pub mode: u32,
+    pub tabs: BTreeSet<usize>,
     /// The cell attributes the next character is written with.
-    pub(crate) cell: Cell,
+    pub cell: Cell,
     /// The OSC 8 links this screen's cells point into, tmux's
     /// `screen->hyperlinks`.
-    pub(crate) hyperlinks: Hyperlinks,
+    pub hyperlinks: Hyperlinks,
     /// The sixel images anchored to this screen's cells, tmux's `s->images`.
-    pub(crate) images: Images,
+    pub images: Images,
     /// The primary screen's images while the alternate screen is up, tmux's
     /// `s->saved_images`. Unlike the grid, they are handed over rather than
     /// copied: an image is not made of cells and has nothing to duplicate.
     saved_images: Images,
     /// The pane options this screen consults, as the server last resolved them.
-    pub(crate) options: ScreenOptions,
+    pub options: ScreenOptions,
     /// The run of plain characters in progress; see [`Run`].
     run: Option<Run>,
 }
 
 impl Screen {
     /// tmux's `screen_init`.
-    pub(crate) fn new(sx: usize, sy: usize, hlimit: usize) -> Screen {
+    pub fn new(sx: usize, sy: usize, hlimit: usize) -> Screen {
         let sx = sx.max(1);
         let sy = sy.max(1);
         Screen {
@@ -145,7 +145,7 @@ impl Screen {
     /// Anything that is not another plain character in the next column closes
     /// the run, because tmux writes it to the grid at that point and the next
     /// run's expansion starts from the extent this one left.
-    pub(crate) fn end_run(&mut self) {
+    pub fn end_run(&mut self) {
         self.run = None;
     }
 
@@ -172,11 +172,11 @@ impl Screen {
         }
     }
 
-    pub(crate) fn sx(&self) -> usize {
+    pub fn sx(&self) -> usize {
         self.grid.sx
     }
 
-    pub(crate) fn sy(&self) -> usize {
+    pub fn sy(&self) -> usize {
         self.grid.sy
     }
 
@@ -198,7 +198,7 @@ impl Screen {
     /// The column may sit one past the last one: that is the pending-wrap
     /// position a character written in the final column leaves behind, and
     /// clamping it away would lose the wrap.
-    pub(crate) fn set_cursor(&mut self, cx: Option<usize>, cy: Option<usize>) {
+    pub fn set_cursor(&mut self, cx: Option<usize>, cy: Option<usize>) {
         if let Some(cx) = cx {
             self.cx = if cx > self.sx() { self.sx() - 1 } else { cx };
         }
@@ -209,13 +209,13 @@ impl Screen {
 
     /// Apply a session's history limit. There is one grid to apply it to: the
     /// alternate screen borrows the primary's rather than bringing its own.
-    pub(crate) fn set_history_limit(&mut self, limit: usize) {
+    pub fn set_history_limit(&mut self, limit: usize) {
         self.grid.set_history_limit(limit);
     }
 
     /// tmux's `screen_write_cursormove`: absolute addressing, which origin mode
     /// makes relative to the scrolling region.
-    pub(crate) fn cursor_move(&mut self, px: Option<usize>, py: Option<usize>, origin: bool) {
+    pub fn cursor_move(&mut self, px: Option<usize>, py: Option<usize>, origin: bool) {
         let py = py.map(|py| {
             if origin && self.mode & mode::ORIGIN != 0 {
                 if py > self.rlower - self.rupper {
@@ -232,7 +232,7 @@ impl Screen {
         self.set_cursor(px.map(|px| px.min(self.sx() - 1)), py);
     }
 
-    pub(crate) fn cursor_up(&mut self, n: usize) {
+    pub fn cursor_up(&mut self, n: usize) {
         // Above the region the cursor stops at the top of the screen; inside
         // it, at the region's own top.
         let top = if self.cy < self.rupper {
@@ -244,7 +244,7 @@ impl Screen {
         self.leave_pending_wrap();
     }
 
-    pub(crate) fn cursor_down(&mut self, n: usize) {
+    pub fn cursor_down(&mut self, n: usize) {
         let bottom = if self.cy > self.rlower {
             self.sy() - 1
         } else {
@@ -268,23 +268,23 @@ impl Screen {
         }
     }
 
-    pub(crate) fn cursor_left(&mut self, n: usize) {
+    pub fn cursor_left(&mut self, n: usize) {
         self.cx = self.cx.saturating_sub(n);
     }
 
-    pub(crate) fn cursor_right(&mut self, n: usize) {
+    pub fn cursor_right(&mut self, n: usize) {
         self.cx = (self.cx + n).min(self.sx() - 1);
     }
 
     /// tmux's `screen_write_carriagereturn`.
-    pub(crate) fn carriage_return(&mut self) {
+    pub fn carriage_return(&mut self) {
         self.set_cursor(Some(0), None);
     }
 
     /// tmux's `screen_write_backspace`: at column zero it steps back onto the
     /// end of the previous row, but only if that row soft-wrapped into this
     /// one.
-    pub(crate) fn backspace(&mut self) {
+    pub fn backspace(&mut self) {
         let (mut cx, mut cy) = (self.cx, self.cy);
         if cx == 0 {
             if cy == 0 {
@@ -343,7 +343,7 @@ impl Screen {
 
     /// tmux's `screen_write_linefeed`. `wrapped` marks the row it leaves as
     /// soft-wrapped, which is how `capture-pane -J` rejoins it.
-    pub(crate) fn linefeed(&mut self, wrapped: bool, bg: i32) {
+    pub fn linefeed(&mut self, wrapped: bool, bg: i32) {
         if wrapped {
             let row = self.view_y(self.cy);
             self.grid.set_line_flags(row, line_flag::WRAPPED, true);
@@ -365,7 +365,7 @@ impl Screen {
     }
 
     /// tmux's `screen_write_reverseindex`.
-    pub(crate) fn reverse_index(&mut self, bg: i32) {
+    pub fn reverse_index(&mut self, bg: i32) {
         if self.cy == self.rupper {
             self.images.free_all();
             self.scroll_region_down(bg);
@@ -375,7 +375,7 @@ impl Screen {
     }
 
     /// tmux's `screen_write_scrollup`.
-    pub(crate) fn scroll_up(&mut self, lines: usize, bg: i32) {
+    pub fn scroll_up(&mut self, lines: usize, bg: i32) {
         let limit = self.rlower - self.rupper + 1;
         let lines = lines.max(1).min(limit);
         self.images.scroll_up(lines);
@@ -385,7 +385,7 @@ impl Screen {
     }
 
     /// tmux's `screen_write_scrolldown`.
-    pub(crate) fn scroll_down(&mut self, lines: usize, bg: i32) {
+    pub fn scroll_down(&mut self, lines: usize, bg: i32) {
         let limit = self.rlower - self.rupper + 1;
         let lines = lines.max(1).min(limit);
         // Nothing moves an image *down*, so every one of them goes.
@@ -398,7 +398,7 @@ impl Screen {
     // ---- insert and delete -----------------------------------------------
 
     /// tmux's `screen_write_insertcharacter`.
-    pub(crate) fn insert_character(&mut self, nx: usize, bg: i32) {
+    pub fn insert_character(&mut self, nx: usize, bg: i32) {
         let sx = self.sx();
         if self.cx > sx - 1 {
             return;
@@ -426,7 +426,7 @@ impl Screen {
     }
 
     /// tmux's `screen_write_deletecharacter`.
-    pub(crate) fn delete_character(&mut self, nx: usize, bg: i32) {
+    pub fn delete_character(&mut self, nx: usize, bg: i32) {
         let sx = self.sx();
         if self.cx > sx - 1 {
             return;
@@ -440,7 +440,7 @@ impl Screen {
     }
 
     /// tmux's `screen_write_clearcharacter`: erase in place, no shifting.
-    pub(crate) fn clear_character(&mut self, nx: usize, bg: i32) {
+    pub fn clear_character(&mut self, nx: usize, bg: i32) {
         let sx = self.sx();
         if self.cx > sx - 1 {
             return;
@@ -454,7 +454,7 @@ impl Screen {
 
     /// tmux's `screen_write_insertline`. Outside the scrolling region the
     /// insert runs to the bottom of the screen instead.
-    pub(crate) fn insert_line(&mut self, ny: usize, bg: i32) {
+    pub fn insert_line(&mut self, ny: usize, bg: i32) {
         let sy = self.sy();
         let cy = self.cy;
         self.images.check_line(cy, sy - cy);
@@ -477,7 +477,7 @@ impl Screen {
     }
 
     /// tmux's `screen_write_deleteline`.
-    pub(crate) fn delete_line(&mut self, ny: usize, bg: i32) {
+    pub fn delete_line(&mut self, ny: usize, bg: i32) {
         let sy = self.sy();
         let cy = self.cy;
         self.images.check_line(cy, sy - cy);
@@ -508,7 +508,7 @@ impl Screen {
     }
 
     /// tmux's `screen_write_clearline`.
-    pub(crate) fn clear_line(&mut self, bg: i32) {
+    pub fn clear_line(&mut self, bg: i32) {
         // tmux leaves an untouched row alone entirely — including the images
         // over it — when the erase has no colour to leave behind either.
         if self.line_size() != 0 || !colour_is_default(bg) {
@@ -520,7 +520,7 @@ impl Screen {
     }
 
     /// tmux's `screen_write_clearendofline`.
-    pub(crate) fn clear_end_of_line(&mut self, bg: i32) {
+    pub fn clear_end_of_line(&mut self, bg: i32) {
         let sx = self.grid.sx;
         if self.cx == 0 {
             self.clear_line(bg);
@@ -537,7 +537,7 @@ impl Screen {
     }
 
     /// tmux's `screen_write_clearstartofline`.
-    pub(crate) fn clear_start_of_line(&mut self, bg: i32) {
+    pub fn clear_start_of_line(&mut self, bg: i32) {
         let sx = self.grid.sx;
         if self.cx >= sx - 1 {
             self.clear_line(bg);
@@ -550,7 +550,7 @@ impl Screen {
     }
 
     /// tmux's `screen_write_clearscreen`.
-    pub(crate) fn clear_screen(&mut self, bg: i32) {
+    pub fn clear_screen(&mut self, bg: i32) {
         self.images.free_all();
         if self.scrolls_on_clear() {
             self.grid.view_clear_history(bg);
@@ -569,7 +569,7 @@ impl Screen {
     }
 
     /// tmux's `screen_write_clearendofscreen`.
-    pub(crate) fn clear_end_of_screen(&mut self, bg: i32) {
+    pub fn clear_end_of_screen(&mut self, bg: i32) {
         let (cy, sy) = (self.cy, self.sy());
         self.images.check_line(cy, sy - cy);
         // From the home position this erases the whole screen, so it takes the
@@ -588,7 +588,7 @@ impl Screen {
     }
 
     /// tmux's `screen_write_clearstartofscreen`.
-    pub(crate) fn clear_start_of_screen(&mut self, bg: i32) {
+    pub fn clear_start_of_screen(&mut self, bg: i32) {
         // `s->cy - 1` in tmux, which on the first row underflows to the whole
         // unsigned range and takes every image on the screen with it. The
         // wrapping is the behaviour, not an accident to be tidied away.
@@ -604,12 +604,12 @@ impl Screen {
     }
 
     /// tmux's `screen_write_clearhistory`.
-    pub(crate) fn clear_history(&mut self) {
+    pub fn clear_history(&mut self) {
         self.grid.clear_history();
     }
 
     /// tmux's `screen_write_alignmenttest` (DECALN).
-    pub(crate) fn alignment_test(&mut self) {
+    pub fn alignment_test(&mut self) {
         self.images.free_all();
         let (sx, sy) = (self.grid.sx, self.sy());
         let cell = Cell {
@@ -637,7 +637,7 @@ impl Screen {
     /// is the part that stays. An image that fits but has no room below the
     /// cursor scrolls the whole screen up instead — the whole screen, not the
     /// scrolling region, because an image is not part of the region's contents.
-    pub(crate) fn sixel_image(&mut self, image: SixelImage, bg: i32) {
+    pub fn sixel_image(&mut self, image: SixelImage, bg: i32) {
         // Nowhere to put an image on a one-row screen: the cursor's row is the
         // only row, and the image would have to start below it.
         if self.sy() == 1 {
@@ -689,7 +689,7 @@ impl Screen {
 
     /// tmux's `screen_write_cell`: place one character, wrapping, padding and
     /// overwriting as needed.
-    pub(crate) fn put_cell(&mut self, cell: &Cell) {
+    pub fn put_cell(&mut self, cell: &Cell) {
         if cell.is_padding() {
             return;
         }
@@ -1029,14 +1029,14 @@ impl Screen {
     // ---- tabs ------------------------------------------------------------
 
     /// tmux's `screen_reset_tabs`.
-    pub(crate) fn reset_tabs(&mut self) {
+    pub fn reset_tabs(&mut self) {
         self.tabs = default_tabs(self.sx());
     }
 
     /// tmux's HT handling in `input_c0_dispatch`: advance to the next stop,
     /// and where the run is blank record it as one tab cell rather than as
     /// spaces, so `capture-pane -e` can tell them apart.
-    pub(crate) fn tab(&mut self) {
+    pub fn tab(&mut self) {
         let sx = self.sx();
         if self.cx >= sx - 1 {
             return;
@@ -1074,7 +1074,7 @@ impl Screen {
     /// than refusing it; only a region that has collapsed to one line or
     /// inverted is refused. The answer is whether it took, which is what tells
     /// the caller to home the cursor.
-    pub(crate) fn set_scroll_region(&mut self, upper: usize, lower: usize) -> bool {
+    pub fn set_scroll_region(&mut self, upper: usize, lower: usize) -> bool {
         let last = self.sy() - 1;
         let (upper, lower) = (upper.min(last), lower.min(last));
         if upper >= lower {
@@ -1086,17 +1086,17 @@ impl Screen {
     }
 
     /// tmux's `screen_write_mode_set`.
-    pub(crate) fn mode_set(&mut self, bits: u32) {
+    pub fn mode_set(&mut self, bits: u32) {
         self.mode |= bits;
     }
 
     /// tmux's `screen_write_mode_clear`.
-    pub(crate) fn mode_clear(&mut self, bits: u32) {
+    pub fn mode_clear(&mut self, bits: u32) {
         self.mode &= !bits;
     }
 
     /// DECSC: remember the cursor and the character attributes.
-    pub(crate) fn save_cursor(&mut self) {
+    pub fn save_cursor(&mut self) {
         self.saved_cursor = Some(SavedState {
             cx: self.cx,
             cy: self.cy,
@@ -1107,7 +1107,7 @@ impl Screen {
 
     /// DECRC. With nothing saved the cursor goes home, as tmux's
     /// `input_restore_state` leaves it.
-    pub(crate) fn restore_cursor(&mut self) {
+    pub fn restore_cursor(&mut self) {
         match self.saved_cursor.clone() {
             // tmux restores through `screen_write_cursormove`, which clamps to
             // the last real column — so a cursor saved in the pending-wrap
@@ -1132,7 +1132,7 @@ impl Screen {
     /// up stays under the alternate screen — `history_size` still counts it and
     /// a copy-mode scroll still reaches it. What the alternate screen loses is
     /// the ability to *add* to that history, which is `GRID_HISTORY` going out.
-    pub(crate) fn alternate_on(&mut self, save_cursor: bool) {
+    pub fn alternate_on(&mut self, save_cursor: bool) {
         if self.saved_grid.is_some() {
             return;
         }
@@ -1160,7 +1160,7 @@ impl Screen {
     }
 
     /// tmux's `screen_alternate_off`.
-    pub(crate) fn alternate_off(&mut self, restore_cursor: bool) {
+    pub fn alternate_off(&mut self, restore_cursor: bool) {
         // The cursor and the cell come back whether or not an alternate screen
         // is up, and the position is clamped onto the screen either way — which
         // is how a pane sitting in the pending-wrap column loses it here.
@@ -1204,7 +1204,7 @@ impl Screen {
     /// went up, or `None` when no alternate screen is in use. tmux's
     /// `saved_grid`, which `capture-pane -a` reads; its presence is also what
     /// "the alternate screen is up" means.
-    pub(crate) fn saved_grid(&self) -> Option<&Grid> {
+    pub fn saved_grid(&self) -> Option<&Grid> {
         self.saved_grid.as_ref()
     }
 
@@ -1213,7 +1213,7 @@ impl Screen {
     /// The grid is not replaced: the reset ends in the same clear an `ED 2`
     /// ends in, so the visible screen goes into the history rather than being
     /// discarded with it. `MODE_CRLF` is the one mode a reset leaves alone.
-    pub(crate) fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.reset_tabs();
         let sy = self.sy();
         self.set_scroll_region(0, sy - 1);
@@ -1234,7 +1234,7 @@ impl Screen {
 
     /// Resize the screen, as tmux's `screen_resize` does: the width first, then
     /// the height, with the tab stops laid out again against the new width.
-    pub(crate) fn resize(&mut self, sx: usize, sy: usize) {
+    pub fn resize(&mut self, sx: usize, sy: usize) {
         let sx = sx.max(1);
         let sy = sy.max(1);
         // tmux's `screen_resize` drops the images outright rather than trying
@@ -1294,7 +1294,7 @@ fn default_tabs(sx: usize) -> BTreeSet<usize> {
 
 /// The background an erase uses: tmux erases to the current cell's background
 /// unless that background is the default.
-pub(crate) fn erase_background(cell: &Cell) -> i32 {
+pub fn erase_background(cell: &Cell) -> i32 {
     if colour_is_default(cell.bg) {
         colour::DEFAULT
     } else {
@@ -1742,7 +1742,7 @@ mod tests {
             }
             payload.extend_from_slice(format!("!{}~", cells_x * 16).as_bytes());
         }
-        crate::vt::sixel::parse(&payload, 0, 16, 32).expect("the payload parses")
+        crate::sixel::parse(&payload, 0, 16, 32).expect("the payload parses")
     }
 
     fn placed(screen: &Screen) -> Vec<(usize, usize, usize, usize)> {

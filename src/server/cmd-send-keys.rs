@@ -17,7 +17,7 @@ use super::input_keys::{PaneKey, PaneKeyEncoding};
 use super::key::{parse_key_name, KeyBase, KeyCode, Modifiers, SpecialKey};
 use super::options;
 use super::state::{ClientKey, KeyBinding, ServerState};
-use crate::vt::input::{encode_key_default_modes, Key, KeyEvent};
+use hmux_vt::input::{encode_key_default_modes, Key, KeyEvent};
 
 const VALUE_FLAGS: &[&str] = &["-c", "-N", "-t"];
 

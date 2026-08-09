@@ -7,10 +7,10 @@
 //!
 //! The oracle is the pinned tmux 3.7b, which resolves a width in two steps: it
 //! consults its width cache first, and falls back to `utf8proc_wcwidth`. We
-//! reproduce both halves. [`defaults`] is tmux's built-in cache, transcribed;
-//! [`table`] is generated from the same utf8proc release the pinned tmux links
-//! against, so the fallback agrees codepoint for codepoint without a C
-//! dependency in the build.
+//! reproduce both halves. The private `defaults` module is tmux's built-in
+//! cache, transcribed; `table` is generated from the same utf8proc release the
+//! pinned tmux links against, so the fallback agrees codepoint for codepoint
+//! without a C dependency in the build.
 
 mod defaults;
 mod table;
@@ -27,12 +27,12 @@ static VARIATION_SELECTOR_ALWAYS_WIDE: AtomicBool = AtomicBool::new(true);
 
 /// Whether U+FE0F should force the cell it joins to two columns.
 #[must_use]
-pub(crate) fn variation_selector_always_wide() -> bool {
+pub fn variation_selector_always_wide() -> bool {
     VARIATION_SELECTOR_ALWAYS_WIDE.load(Ordering::Relaxed)
 }
 
 /// Apply `variation-selector-always-wide`.
-pub(crate) fn set_variation_selector_always_wide(wide: bool) {
+pub fn set_variation_selector_always_wide(wide: bool) {
     VARIATION_SELECTOR_ALWAYS_WIDE.store(wide, Ordering::Relaxed);
 }
 
@@ -56,7 +56,7 @@ static OVERRIDES: RwLock<Vec<Override>> = RwLock::new(Vec::new());
 
 /// Rebuild the overrides from the `codepoint-widths` array. Entries that do not
 /// parse are dropped, as tmux drops them.
-pub(crate) fn set_codepoint_widths<'a>(entries: impl IntoIterator<Item = &'a str>) {
+pub fn set_codepoint_widths<'a>(entries: impl IntoIterator<Item = &'a str>) {
     let parsed = entries.into_iter().filter_map(parse_override).collect();
     if let Ok(mut overrides) = OVERRIDES.write() {
         *overrides = parsed;
@@ -106,7 +106,7 @@ fn override_width(codepoint: u32) -> Option<u8> {
 /// U+10FFFF have width one, matching what tmux would do with a codepoint its
 /// UTF-8 decoder would never hand to the width lookup in the first place.
 #[must_use]
-pub(crate) fn codepoint_width(codepoint: u32) -> u8 {
+pub fn codepoint_width(codepoint: u32) -> u8 {
     // `codepoint-widths` goes into the same cache tmux consults first, on top
     // of the built-in entries, so an override beats both of the steps below.
     if let Some(width) = override_width(codepoint) {

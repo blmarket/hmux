@@ -12,9 +12,9 @@
 
 use std::io;
 
-use crate::vt::parser::Parser;
-use crate::vt::screen::VtScreen;
-use crate::vt::PaneScreen;
+use hmux_vt::parser::Parser;
+use hmux_vt::screen::VtScreen;
+use hmux_vt::PaneScreen;
 
 /// A screen a harness can feed bytes to and read back.
 pub struct TerminalModel {

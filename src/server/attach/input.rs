@@ -103,7 +103,7 @@ fn parse_terminal_answer(data: &[u8]) -> TerminalAnswer {
             selection,
             data: std::str::from_utf8(encoded)
                 .ok()
-                .and_then(crate::vt::observer::base64_decode_strict)
+                .and_then(hmux_vt::observer::base64_decode_strict)
                 .unwrap_or_default(),
         },
         consumed,

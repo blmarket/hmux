@@ -29,8 +29,8 @@ use crate::server::pane::{
     parse_packed_colour, Pane, PaneClipboardEvent, PaneIo, PaneKeyState, PaneOutputPolicy,
     PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
 };
-use crate::vt::input::MouseEvent;
-use crate::vt::screen::{ScreenImage, ScreenOptions};
+use hmux_vt::input::MouseEvent;
+use hmux_vt::screen::{ScreenImage, ScreenOptions};
 
 impl ServerState {
     /// Hand a pipe job the loop owns from here. `copy-pipe` uses this for the

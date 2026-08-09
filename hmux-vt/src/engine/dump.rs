@@ -17,15 +17,15 @@ use std::fmt::Write as _;
 use super::cell::{attr, colour, flag, Cell};
 use super::grid::Grid as EngineGrid;
 use super::screen::Screen;
-use crate::vt::screen::mode;
-use crate::vt::screen::{
+use crate::screen::mode;
+use crate::screen::{
     CaptureExtent, CellSemantic, CellWidth, Grid, GridCell, GridRow, RowFlags,
 };
 
 use super::grid::line_flag;
 
 /// Snapshot physical rows `[start, start + count)`, clamped to the grid.
-pub(crate) fn snapshot(screen: &Screen, start: usize, count: usize) -> Grid {
+pub fn snapshot(screen: &Screen, start: usize, count: usize) -> Grid {
     snapshot_grid(screen, &screen.grid, start, count)
 }
 
@@ -34,7 +34,7 @@ pub(crate) fn snapshot(screen: &Screen, start: usize, count: usize) -> Grid {
 ///
 /// The screen is still what resolves a cell's link, as in tmux: `-a` swaps the
 /// grid it walks but keeps reading `wp->base`'s hyperlink table.
-pub(crate) fn snapshot_grid(
+pub fn snapshot_grid(
     screen: &Screen,
     grid: &EngineGrid,
     start: usize,
@@ -122,12 +122,17 @@ fn snapshot_cell(screen: &Screen, cell: &Cell, semantic: CellSemantic, written: 
         Some((uri, id)) => (Some(uri.to_string()), id.map(str::to_string)),
         None => (None, None),
     };
+    // A link the table has forgotten reads as no link at all, so the identity
+    // goes with it: tmux's readers skip a cell whose `hyperlinks_get` fails
+    // exactly as they skip one whose `link` is zero.
+    let hyperlink_slot = if hyperlink.is_some() { cell.link } else { 0 };
     GridCell {
         text,
         width,
         semantic,
         hyperlink,
         hyperlink_id,
+        hyperlink_slot,
         tab: cell.flags & flag::TAB != 0,
     }
 }
@@ -138,7 +143,7 @@ fn snapshot_cell(screen: &Screen, cell: &Cell, semantic: CellSemantic, written: 
 /// mostly-empty screen is the text on it, not the text plus a run of newlines.
 /// When `unwrap` is set, a row that soft-wraps is rejoined with the row it
 /// wrapped into, so a logical line that the margin split reads as one line.
-pub(crate) fn plain(screen: &Screen, start: usize, count: usize, unwrap: bool) -> String {
+pub fn plain(screen: &Screen, start: usize, count: usize, unwrap: bool) -> String {
     let grid = &screen.grid;
     let total = grid.total();
     let start = start.min(total);
@@ -183,7 +188,7 @@ pub(crate) fn plain(screen: &Screen, start: usize, count: usize, unwrap: bool) -
 /// the last non-blank cell on a row whose tail is not blank — a popup's closing
 /// border, for instance.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum RowExtent {
+pub enum RowExtent {
     /// Up to the last non-blank cell; the caller erases the rest.
     Redraw,
     /// A capture, running to the extent `capture-pane`'s flags selected.
@@ -192,12 +197,12 @@ pub(crate) enum RowExtent {
 
 /// VT bytes for physical rows `[start, start + count)`, positioned absolutely
 /// and with the cursor left where the screen has it.
-pub(crate) fn vt(screen: &Screen, start: usize, count: usize, extent: RowExtent) -> Vec<u8> {
+pub fn vt(screen: &Screen, start: usize, count: usize, extent: RowExtent) -> Vec<u8> {
     vt_grid(screen, &screen.grid, start, count, extent)
 }
 
 /// As [`vt`], but of a grid other than the screen's own; see [`snapshot_grid`].
-pub(crate) fn vt_grid(
+pub fn vt_grid(
     screen: &Screen,
     grid: &EngineGrid,
     start: usize,
@@ -253,6 +258,14 @@ fn vt_row(
     // cell continues the link the row above ended in emits no sequence for it,
     // and so has nothing to close either.
     let mut has_link = false;
+    // tmux's `code`: the escape sequences one cell needs, built in a buffer
+    // `grid_string_cells_code` clears and rewrites per cell. The buffer outlives
+    // the loop, and the close a row still holding a link appends at the end is
+    // appended *to it* rather than to a fresh one — so a row whose last cell is
+    // the one that opened the link re-emits that cell's sequences before the
+    // close. Keeping the buffer rather than writing straight out is what lets a
+    // capture reproduce that.
+    let mut code = String::new();
     let width = match extent {
         RowExtent::Redraw => grid.line_length(py),
         RowExtent::Capture(CaptureExtent::Allocated) => grid
@@ -270,15 +283,16 @@ fn vt_row(
             continue;
         }
         let last_link = pen.link;
+        code.clear();
         if !cell.looks_equal(&pen) {
-            out.push_str(&sgr(&pen, &cell));
+            code.push_str(&sgr(&pen, &cell));
             pen = cell.clone();
         }
         // tmux writes the shift in/out between the style codes and the
         // hyperlink, so a cell that changes both is preceded by SO then OSC 8.
         let wants_charset = cell.attr & attr::CHARSET != 0;
         if wants_charset != charset {
-            out.push_str(if wants_charset { "\x1b(0" } else { "\x1b(B" });
+            code.push_str(if wants_charset { "\x1b(0" } else { "\x1b(B" });
             charset = wants_charset;
         }
         // tmux writes the hyperlink after the style codes, and only when the
@@ -286,23 +300,24 @@ fn vt_row(
         if cell.link != last_link {
             match screen.hyperlinks.get(cell.link) {
                 Some((uri, Some(id))) => {
-                    let _ = write!(out, "\x1b]8;id={id};{uri}\x1b\\");
+                    let _ = write!(code, "\x1b]8;id={id};{uri}\x1b\\");
                     has_link = true;
                 }
                 Some((uri, None)) => {
-                    let _ = write!(out, "\x1b]8;;{uri}\x1b\\");
+                    let _ = write!(code, "\x1b]8;;{uri}\x1b\\");
                     has_link = true;
                 }
                 // The cell is not in a link. Only a link this row opened is
                 // closed here: one carried in from the row above is left as it
                 // is, which is what tmux's row-local `has_link` decides.
                 None if has_link => {
-                    out.push_str(CLOSE_HYPERLINK);
+                    code.push_str(CLOSE_HYPERLINK);
                     has_link = false;
                 }
                 None => {}
             }
         }
+        out.push_str(&code);
         // tmux copies the whole cell into `lastgc` for every cell, so the link
         // it compares against moves on even when the style did not.
         pen.link = cell.link;
@@ -324,6 +339,15 @@ fn vt_row(
         out.push_str("\x1b(B");
     }
     if has_link {
+        // `grid_string_cells` appends the close to the buffer the last cell
+        // left behind and writes the pair, so a row whose last cell opened the
+        // link repeats that cell's sequences here — an open immediately
+        // followed by its close. A capture reproduces it because a capture is
+        // what that code serializes; the redraw path is tmux's `tty_draw_line`,
+        // which builds its bytes from the cells and never sees this buffer.
+        if extent != RowExtent::Redraw {
+            out.push_str(&code);
+        }
         out.push_str(CLOSE_HYPERLINK);
     }
     // A redraw closes whatever the row opened, because the next row is painted
@@ -434,15 +458,15 @@ fn sgr_colour(value: i32, base: i32, extended: i32) -> Option<String> {
 }
 
 /// Whether the cursor should be shown, tmux's `MODE_CURSOR`.
-pub(crate) fn cursor_visible(screen: &Screen) -> bool {
+pub fn cursor_visible(screen: &Screen) -> bool {
     screen.mode & mode::CURSOR != 0
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vt::engine::dispatch::Engine;
-    use crate::vt::parser::tokenize;
+    use crate::engine::dispatch::Engine;
+    use crate::parser::tokenize;
 
     fn engine(sx: usize, sy: usize, input: &[u8]) -> Engine {
         let mut engine = Engine::new(sx, sy, 100);
@@ -542,6 +566,35 @@ mod tests {
         assert!(dump.contains("\x1b(Bx"), "got {dump:?}");
     }
 
+    /// `grid_string_cells` appends the close to the buffer the last cell left
+    /// behind, so a row whose last cell is the one that opened the link ends
+    /// with that cell's sequences a second time — and a row whose last cell
+    /// only continued the link does not, its buffer having been rewritten
+    /// empty. The redraw path is a different serializer in tmux and shows
+    /// neither.
+    #[test]
+    fn a_capture_repeats_the_last_cell_when_it_is_what_opened_the_link() {
+        let capture = RowExtent::Capture(CaptureExtent::Written);
+        let opened_last = engine(3, 1, b"a\x1b]8;;t\x1b\\b");
+        assert_eq!(
+            String::from_utf8(vt(&opened_last.screen, 0, 1, capture)).expect("utf8"),
+            "a\x1b]8;;t\x1b\\b\x1b]8;;t\x1b\\\x1b]8;;\x1b\\\x1b[1;3H"
+        );
+
+        let continued_last = engine(3, 1, b"\x1b]8;;t\x1b\\ab");
+        assert_eq!(
+            String::from_utf8(vt(&continued_last.screen, 0, 1, capture)).expect("utf8"),
+            "\x1b]8;;t\x1b\\ab\x1b]8;;\x1b\\\x1b[1;3H"
+        );
+
+        assert!(
+            !String::from_utf8(vt(&opened_last.screen, 0, 1, RowExtent::Redraw))
+                .expect("utf8")
+                .contains("\x1b]8;;t\x1b\\\x1b]8;;\x1b\\"),
+            "the redraw path does not carry the quirk"
+        );
+    }
+
     #[test]
     fn vt_writes_direct_colours_as_direct_colours() {
         let engine = engine(10, 1, b"\x1b[38;2;1;2;3mx");
@@ -549,3 +602,4 @@ mod tests {
         assert!(dump.contains("\x1b[38;2;1;2;3m"), "got {dump:?}");
     }
 }
+

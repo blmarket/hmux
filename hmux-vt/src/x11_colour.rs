@@ -589,7 +589,7 @@ const X11_COLOURS: &[(&str, u32)] = &[
 
 /// tmux's `colour_byname`: an X11 name, or a `grey`/`gray` percentage, as an
 /// `0xrrggbb` value. Names are matched case-insensitively, as `strcasecmp` does.
-pub(crate) fn colour_by_name(name: &str) -> Option<u32> {
+pub fn colour_by_name(name: &str) -> Option<u32> {
     // tmux special-cases the grey ramp before consulting the table, so
     // `grey40` resolves even though only the bare names are listed.
     let ramp = name

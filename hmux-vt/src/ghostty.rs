@@ -9,10 +9,10 @@
 //! is this backend's problem and not the server's. That is the whole point of
 //! putting the seam here rather than at the library's own surface.
 //!
-//! This is no longer the shipped backend — [`crate::vt::PaneScreen`] names the
+//! This is no longer the shipped backend — [`crate::PaneScreen`] names the
 //! in-house engine — and the whole module is behind the `ghostty` feature. It
 //! is kept as the alternate implementation the seam was carved to allow, and
-//! as the other side of [`crate::vt::differential`], which is its only caller.
+//! as the other side of [`crate::differential`], which is its only caller.
 
 // The differential harness is test-only, so in a non-test build with this
 // feature on nothing constructs the backend.
@@ -33,7 +33,7 @@ use super::screen::{
 
 /// A libghostty-vt error, wrapping the C `GhosttyResult` code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Error(pub(crate) i32);
+pub struct Error(pub i32);
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -58,7 +58,7 @@ fn check(code: i32) -> Result<(), Error> {
 }
 
 /// An owned terminal emulator instance: VT parser + screen grid + scrollback.
-pub(crate) struct GhosttyScreen {
+pub struct GhosttyScreen {
     raw: ffi::GhosttyTerminal,
 }
 
@@ -74,7 +74,7 @@ impl GhosttyScreen {
     const DEFAULT_MAX_SCROLLBACK_BYTES: usize = 10_000_000;
 
     /// Create a `cols`×`rows` terminal with native-pane scrollback.
-    pub(crate) fn new(cols: u16, rows: u16) -> Result<GhosttyScreen, Error> {
+    pub fn new(cols: u16, rows: u16) -> Result<GhosttyScreen, Error> {
         let mut raw: ffi::GhosttyTerminal = ptr::null_mut();
         // SAFETY: `raw` is a valid out-pointer; NULL allocator = default.
         check(unsafe {
@@ -102,7 +102,7 @@ impl GhosttyScreen {
 
     /// Feed raw VT bytes (a chunk of PTY output) through the parser. Never fails:
     /// malformed input is absorbed to keep state consistent (see header docs).
-    pub(crate) fn write(&mut self, data: &[u8]) {
+    pub fn write(&mut self, data: &[u8]) {
         if data.is_empty() {
             return;
         }
@@ -436,12 +436,26 @@ impl GhosttyScreen {
                     self.grid_ref_hyperlink(&grid_ref, ffi::ghostty_grid_ref_hyperlink_uri)?;
                 let hyperlink_id =
                     self.grid_ref_hyperlink(&grid_ref, ffi::ghostty_grid_ref_hyperlink_id)?;
+                // libghostty-vt exposes a link's URI and `id=` but not the
+                // identity behind them, so the best this backend can say is
+                // "same address, same `id=`, same link" — which coalesces the
+                // repeated anonymous links the engine keeps distinct. The
+                // number is derived rather than allocated, and forced away from
+                // zero so a real link is never mistaken for none.
+                let hyperlink_slot = hyperlink.as_ref().map_or(0, |uri| {
+                    let mut hash: u32 = 2_166_136_261;
+                    for byte in uri.bytes().chain(hyperlink_id.iter().flat_map(|id| id.bytes())) {
+                        hash = (hash ^ u32::from(byte)).wrapping_mul(16_777_619);
+                    }
+                    hash | 1
+                });
                 cells.push(GridCell {
                     text,
                     width,
                     semantic,
                     hyperlink,
                     hyperlink_id,
+                    hyperlink_slot,
                     // libghostty-vt does not keep a tab's origin: by the time a
                     // cell is readable the tab is the blanks it painted.
                     tab: false,
@@ -934,7 +948,7 @@ impl InputEncoder for GhosttyScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vt::input::{Key, MouseAction, MouseButton};
+    use crate::input::{Key, MouseAction, MouseButton};
 
     #[test]
     fn key_encoder_tracks_terminal_cursor_mode() {

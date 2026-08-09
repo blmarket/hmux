@@ -1,8 +1,8 @@
 //! The in-house engine as a screen the server can use.
 //!
-//! This is the other side of [`crate::vt::screen::VtScreen`] from
-//! [`crate::vt::ghostty`]: same trait, same types, no libghostty-vt. It is the
-//! backend [`crate::vt::PaneScreen`] names, so this is what a pane's grid
+//! This is the other side of [`crate::screen::VtScreen`] from
+//! [`crate::ghostty`]: same trait, same types, no libghostty-vt. It is the
+//! backend [`crate::PaneScreen`] names, so this is what a pane's grid
 //! actually is; the Ghostty one survives behind its feature as the thing the
 //! differential harness diffs against.
 
@@ -13,17 +13,17 @@ use super::dispatch::Engine;
 use super::dump;
 use super::keys;
 use super::screen::DEFAULT_HISTORY_LIMIT;
-use crate::vt::input::{InputEncoder, MouseEvent};
-use crate::vt::parser::Token;
-use crate::vt::screen::{CaptureExtent, Grid, GridDims, ScreenImage, ScreenOptions, VtScreen};
+use crate::input::{InputEncoder, MouseEvent};
+use crate::parser::Token;
+use crate::screen::{CaptureExtent, Grid, GridDims, ScreenImage, ScreenOptions, VtScreen};
 
 /// hmux's own screen.
-pub(crate) struct EngineScreen {
+pub struct EngineScreen {
     engine: Engine,
 }
 
 impl EngineScreen {
-    pub(crate) fn new(cols: u16, rows: u16) -> EngineScreen {
+    pub fn new(cols: u16, rows: u16) -> EngineScreen {
         EngineScreen {
             engine: Engine::new(
                 usize::from(cols.max(1)),
@@ -206,7 +206,7 @@ impl InputEncoder for EngineScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vt::parser::tokenize;
+    use crate::parser::tokenize;
 
     fn screen(cols: u16, rows: u16, input: &[u8]) -> EngineScreen {
         let mut screen = EngineScreen::new(cols, rows);

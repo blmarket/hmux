@@ -27,11 +27,11 @@ use super::x11_colour;
 
 /// The OSC 11 question hmux forwards to the client's own terminal, because only
 /// the outer terminal knows the answer.
-pub(crate) const BACKGROUND_COLOR_QUERY: &[u8] = b"\x1b]11;?\x1b\\";
+pub const BACKGROUND_COLOR_QUERY: &[u8] = b"\x1b]11;?\x1b\\";
 
 /// The DSR synchronization request Neovim appends to capability queries; the
 /// outer terminal's `CSI 0 n` tells it every preceding reply has arrived.
-pub(crate) const DEVICE_STATUS_REPORT_QUERY: &[u8] = b"\x1b[5n";
+pub const DEVICE_STATUS_REPORT_QUERY: &[u8] = b"\x1b[5n";
 
 /// The version XTVERSION reports. hmux presents a tmux-compatible surface, and
 /// an application that special-cases a terminal by name has to see the same
@@ -45,22 +45,22 @@ const XTVERSION_NAME: &str = "tmux";
 /// so the resolved values are pushed to the pane instead and re-pushed whenever
 /// they can have changed.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct OutputPolicy {
+pub struct OutputPolicy {
     /// `alternate-screen`: whether smcup and rmcup switch screens at all.
-    pub(crate) alternate_screen: bool,
+    pub alternate_screen: bool,
     /// `allow-set-title`: whether the pane may retitle itself.
-    pub(crate) allow_set_title: bool,
+    pub allow_set_title: bool,
     /// `allow-passthrough`: how far a `DCS tmux;` payload reaches.
-    pub(crate) passthrough: PassthroughPolicy,
+    pub passthrough: PassthroughPolicy,
     /// `input-buffer-size`: how long a terminal string may grow before the
     /// parser abandons it.
-    pub(crate) input_buffer_size: u32,
+    pub input_buffer_size: u32,
     /// The resolved `cursor-style` option, as a DECSCUSR parameter. A pane
     /// that has not sent DECSCUSR uses this as its DECRQSS answer.
-    pub(crate) cursor_style: u8,
+    pub cursor_style: u8,
     /// `pane-colours`, packed as `0xrrggbb` by index — the palette a query
     /// falls back to when the pane has set nothing itself.
-    pub(crate) palette: Vec<Option<u32>>,
+    pub palette: Vec<Option<u32>>,
 }
 
 /// The options' own defaults, which a pane parses against until the server's
@@ -81,7 +81,7 @@ impl Default for OutputPolicy {
 /// `allow-passthrough`: whether a pane may write to a client's terminal
 /// directly, and whether it has to be the pane on screen to do so.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) enum PassthroughPolicy {
+pub enum PassthroughPolicy {
     #[default]
     Off,
     /// `on`: only clients whose current window holds the pane.
@@ -93,7 +93,7 @@ pub(crate) enum PassthroughPolicy {
 
 /// One OSC 52 sequence seen in a pane's output.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ClipboardEvent {
+pub enum ClipboardEvent {
     /// `OSC 52 ; <selection> ; <base64>` — an application setting the
     /// clipboard, already decoded.
     Set { data: Vec<u8> },
@@ -110,7 +110,7 @@ pub(crate) enum ClipboardEvent {
 
 /// The cursor style a pane asked for with DECSCUSR.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) enum CursorShape {
+pub enum CursorShape {
     #[default]
     Default,
     Block,
@@ -120,7 +120,7 @@ pub(crate) enum CursorShape {
 
 impl CursorShape {
     /// tmux's `screen_set_cursor_style` mapping of a DECSCUSR parameter.
-    pub(crate) fn from_parameter(parameter: u8) -> Self {
+    pub fn from_parameter(parameter: u8) -> Self {
         match parameter {
             1 | 2 => Self::Block,
             3 | 4 => Self::Underline,
@@ -130,7 +130,7 @@ impl CursorShape {
     }
 
     /// The name `#{cursor_shape}` reports.
-    pub(crate) fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Default => "default",
             Self::Block => "block",
@@ -142,7 +142,7 @@ impl CursorShape {
 
 /// One OSC sequence that changed a pane's reported state.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum OscUpdate {
+pub enum OscUpdate {
     /// OSC 11 / 111: `#{pane_bg}`.
     Background(String),
     /// OSC 10 / 110: `#{pane_fg}`.
@@ -158,7 +158,7 @@ pub(crate) enum OscUpdate {
 
 /// Something in a pane's output the server has to act on.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum Event {
+pub enum Event {
     /// A `BEL` reached the screen.
     Bell,
     /// The pane retitled itself (OSC 0/2 or APC), and the option allowed it.
@@ -227,17 +227,17 @@ pub(crate) enum Event {
 
 /// One pass of [`Observer::feed`].
 #[derive(Debug, Default)]
-pub(crate) struct Observed {
+pub struct Observed {
     /// The tokens the screen should apply, in order. A sequence the pane's
     /// options refuse is absent; one the options rewrite appears rewritten,
     /// bytes and all.
-    pub(crate) screen: Vec<Token>,
+    pub screen: Vec<Token>,
     /// Events, each paired with how many of `screen`'s tokens precede it.
-    pub(crate) events: Vec<(usize, Event)>,
+    pub events: Vec<(usize, Event)>,
 }
 
 /// One pane's tokenizer plus the state the tokens change.
-pub(crate) struct Observer {
+pub struct Observer {
     parser: Parser,
     /// The pane's `OSC 4` palette, as packed `0xrrggbb`. tmux keeps one per
     /// pane so a query is answered from what that pane set, not the client's.
@@ -256,12 +256,25 @@ impl Default for Observer {
 impl Observer {
     /// The bytes of a sequence the tokenizer has not finished, which
     /// `capture-pane -P` returns. See [`Parser::pending`].
-    pub(crate) fn pending(&self) -> &[u8] {
+    pub fn pending(&self) -> &[u8] {
         self.parser.pending()
     }
 
+    /// Whether the tokenizer is waiting for a string terminator, which is when
+    /// tmux's ground timer runs. See [`Parser::awaiting_terminator`].
+    pub fn awaiting_terminator(&self) -> bool {
+        self.parser.awaiting_terminator()
+    }
+
+    /// Abandon a sequence whose terminator never arrived. See
+    /// [`Parser::expire`]; nothing is observed, because tmux's ground timer
+    /// discards the sequence rather than dispatching it.
+    pub fn expire(&mut self) -> bool {
+        self.parser.expire()
+    }
+
     /// Tokenize one chunk of pane output against the current options.
-    pub(crate) fn feed(&mut self, input: &[u8], policy: &OutputPolicy) -> Observed {
+    pub fn feed(&mut self, input: &[u8], policy: &OutputPolicy) -> Observed {
         self.parser.set_string_capacity(policy.input_buffer_size);
         let mut tokens = VecDeque::new();
         self.parser.parse(input, |token| tokens.push_back(token));
@@ -828,7 +841,7 @@ fn first_is_zero(params: &[Param]) -> bool {
 
 /// tmux's `input_handle_decrqss` reply. The only setting it reports is the
 /// cursor style; anything else gets `DCS 0 $ r ST`, its "invalid request" form.
-pub(crate) fn decrqss_reply(
+pub fn decrqss_reply(
     request: &[u8],
     shape: CursorShape,
     blinking: bool,
@@ -904,7 +917,7 @@ fn osc52_reply_selection(selection: &str) -> String {
 
 /// Decode standard base64, rejecting anything that is not fully padded — which
 /// is what makes tmux drop `aGk` where it accepts `aGk=`.
-pub(crate) fn base64_decode_strict(text: &str) -> Option<Vec<u8>> {
+pub fn base64_decode_strict(text: &str) -> Option<Vec<u8>> {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let bytes = text.as_bytes();
     if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
@@ -930,13 +943,13 @@ pub(crate) fn base64_decode_strict(text: &str) -> Option<Vec<u8>> {
 }
 
 /// An X11 colour payload as a packed `0xrrggbb`, for the palette store.
-pub(crate) fn parse_packed_colour(value: &str) -> Option<u32> {
+pub fn parse_packed_colour(value: &str) -> Option<u32> {
     let text = parse_colour(value)?;
     u32::from_str_radix(text.strip_prefix('#')?, 16).ok()
 }
 
 /// An X11 colour specification as the `#rrggbb` string the formats report.
-pub(crate) fn parse_colour(value: &str) -> Option<String> {
+pub fn parse_colour(value: &str) -> Option<String> {
     let value = value.trim();
     let rgb = if let Some(parts) = value.strip_prefix("rgb:") {
         let parts: Vec<_> = parts.split('/').collect();

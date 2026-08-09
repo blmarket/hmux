@@ -1,22 +1,22 @@
 //! Applying tokens to the screen: tmux's `input.c` dispatch tables.
 //!
-//! The framing is already done by [`crate::vt::parser`]; what is left is the
+//! The framing is already done by [`crate::parser`]; what is left is the
 //! meaning of each sequence, which is exactly what `input.c`'s `input_c0_*`,
 //! `input_esc_*` and `input_csi_*` handlers decide. They are ported here one
 //! for one, against the same `screen-write.c` operations.
 //!
 //! Sequences the *server* answers rather than the screen — device attributes,
 //! DSR, DECRQM, OSC colours, clipboard, passthrough — are absent by design:
-//! [`crate::vt::observer`] already handled them before the token got here.
+//! [`crate::observer`] already handled them before the token got here.
 
 use super::cell::{attr, colour, Cell, CellData};
 use super::grid::line_flag;
 use super::hyperlinks;
 use super::screen::{erase_background, Screen};
-use crate::vt::parser::{Param, TokenKind};
-use crate::vt::screen::mode;
-use crate::vt::sixel;
-use crate::vt::width::codepoint_width;
+use crate::parser::{Param, TokenKind};
+use crate::screen::mode;
+use crate::sixel;
+use crate::width::codepoint_width;
 
 /// The character sets `SO`/`SI` and `ESC ( 0` select between.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -39,8 +39,8 @@ impl Charsets {
 }
 
 /// The screen plus the parser-side state `input.c` keeps beside it.
-pub(crate) struct Engine {
-    pub(crate) screen: Screen,
+pub struct Engine {
+    pub screen: Screen,
     charsets: Charsets,
     /// The charset half of tmux's `old_cell`. DECSC saves the whole
     /// `input_cell` — the pen *and* which sets G0/G1 hold — so DECRC puts the
@@ -56,7 +56,7 @@ pub(crate) struct Engine {
 }
 
 impl Engine {
-    pub(crate) fn new(sx: usize, sy: usize, hlimit: usize) -> Engine {
+    pub fn new(sx: usize, sy: usize, hlimit: usize) -> Engine {
         Engine {
             screen: Screen::new(sx, sy, hlimit),
             charsets: Charsets::default(),
@@ -67,7 +67,7 @@ impl Engine {
     }
 
     /// Apply one token.
-    pub(crate) fn apply(&mut self, kind: &TokenKind) {
+    pub fn apply(&mut self, kind: &TokenKind) {
         // "input_parse will end the collection when anything that isn't a plain
         // character is encountered" — the comment in `screen_write_collect_add`,
         // and the reason a run's extent stops where the next sequence begins.
@@ -928,7 +928,7 @@ fn csi_is_known(private: Option<u8>, intermediates: &[u8], final_byte: u8) -> bo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vt::parser::tokenize;
+    use crate::parser::tokenize;
 
     fn screen(sx: usize, sy: usize) -> Engine {
         Engine::new(sx, sy, 100)
@@ -967,7 +967,7 @@ mod tests {
 
     /// The snapshot's view of one viewport cell, which is what `capture-pane`
     /// and copy mode read.
-    fn snapshot_cell(engine: &Engine, px: usize) -> crate::vt::screen::GridCell {
+    fn snapshot_cell(engine: &Engine, px: usize) -> crate::screen::GridCell {
         let grid = super::super::dump::snapshot(&engine.screen, engine.screen.grid.hsize, 1);
         grid.rows[0].cells[px].clone()
     }

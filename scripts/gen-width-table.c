@@ -1,5 +1,5 @@
 /*
- * Generates hmux/src/vt/width/table.rs.
+ * Generates hmux/hmux-vt/src/width/table.rs.
  *
  * The width oracle is the pinned tmux 3.7b, which links libutf8proc and
  * resolves a codepoint's width through its own compat wrapper in
@@ -26,7 +26,7 @@
  *     PREFIX=${UTF8PROC%/lib/*}
  *     cc -O2 -I"$PREFIX/include" hmux/scripts/gen-width-table.c \
  *         -L"$PREFIX/lib" -lutf8proc -o /tmp/gen-width-table
- *     /tmp/gen-width-table > hmux/src/vt/width/table.rs
+ *     /tmp/gen-width-table > hmux/hmux-vt/src/width/table.rs
  *
  * The generated file records the utf8proc version it came from; if the pinned
  * tmux moves to a different utf8proc, regenerate and expect the conformance
