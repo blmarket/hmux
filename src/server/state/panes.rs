@@ -24,10 +24,11 @@ use crate::server::input_keys::{
     self, ExtendedKeys, ExtendedKeysFormat, PaneKey, PaneKeyEncoding, PaneKeyModes, PaneKeyOptions,
 };
 use crate::server::key::parse_key_name;
+use crate::server::mouse::TtyMouseMode;
 use crate::server::options::{OptionSet, OptionsView};
 use crate::server::pane::{
-    parse_packed_colour, Pane, PaneClipboardEvent, PaneIo, PaneKeyState, PaneOutputPolicy,
-    PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
+    parse_packed_colour, MouseTrackingMode, Pane, PaneClipboardEvent, PaneIo, PaneKeyState,
+    PaneOutputPolicy, PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
 };
 use hmux_vt::input::MouseEvent;
 use hmux_vt::screen::{ScreenImage, ScreenOptions};
@@ -2369,6 +2370,66 @@ impl ServerState {
         let sess = &self.sessions[session];
         let win = self.window(session, sess.active);
         Ok((win, win.active))
+    }
+
+    /// The mouse mode an attached client's own terminal should be in, which is
+    /// what decides whether any mouse report reaches hmux at all.
+    ///
+    /// tmux recomputes this per client on every pass of its event loop
+    /// (`server_client_reset_state`) and writes to the terminal only when the
+    /// answer changed. With `mouse off` the client mirrors what the active
+    /// pane asked for, so a program that tracks the mouse itself keeps being
+    /// fed. With `mouse on` hmux reads the mouse instead, and needs button
+    /// mode for drags — all-motion when a pane in the window wants that or
+    /// when `focus-follows-mouse` needs to see the pointer cross a border.
+    ///
+    /// `overlay` is tmux's `c->overlay_draw`/`prompt_string` case, where the
+    /// mode comes from the overlay's own screen rather than from a pane.
+    pub(crate) fn client_tty_mouse_mode(&self, session_name: &str, overlay: bool) -> TtyMouseMode {
+        let enabled = |name: &str| {
+            self.option_for_target(session_name, name)
+                .is_some_and(|value| value == "on")
+        };
+        let mut mode = if overlay {
+            TtyMouseMode::Off
+        } else {
+            match self
+                .active_pane(session_name)
+                .and_then(|pane| pane.mouse_modes().tracking)
+            {
+                Some(MouseTrackingMode::Standard) => TtyMouseMode::Standard,
+                Some(MouseTrackingMode::Button) => TtyMouseMode::Button,
+                Some(MouseTrackingMode::All) => TtyMouseMode::All,
+                None => TtyMouseMode::Off,
+            }
+        };
+        if !enabled("mouse") {
+            return mode;
+        }
+        if !overlay {
+            // The pane's own choice stops mattering here, with one exception:
+            // any pane in the window asking for all-motion keeps the client in
+            // all-motion, so a drag that leaves the pane still reports.
+            let any_all = self
+                .active_window_panes(session_name)
+                .is_ok_and(|(window, _)| {
+                    window.panes.iter().any(|node| {
+                        node.pane.mouse_modes().tracking == Some(MouseTrackingMode::All)
+                    })
+                });
+            mode = if any_all {
+                TtyMouseMode::All
+            } else {
+                TtyMouseMode::Off
+            };
+        }
+        if enabled("focus-follows-mouse") {
+            TtyMouseMode::All
+        } else if mode == TtyMouseMode::All {
+            mode
+        } else {
+            TtyMouseMode::Button
+        }
     }
 
     /// Whether the active pane's cursor is visible (DEC mode 25), for the

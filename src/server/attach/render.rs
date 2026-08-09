@@ -356,6 +356,35 @@ impl AttachSession {
         }
         Ok(())
     }
+
+    /// Put the client's terminal into the mouse mode the session now wants.
+    ///
+    /// This runs on every pass of the attach loop, as tmux's
+    /// `server_client_reset_state` does, because the wanted mode follows the
+    /// active pane's DECSETs: nothing else notices when the program in the
+    /// pane starts or stops tracking the mouse. The cached word keeps the
+    /// steady state to an integer compare — bytes go out only on a transition,
+    /// which is what `tty_update_mode` diffs `tty->mode` for.
+    pub(super) fn sync_tty_mouse_mode(&mut self, state: &SharedState) {
+        // tmux gates the whole mouse path on the terminal describing a mouse
+        // key, and hmux's start and stop sequences already do.
+        if self.tty.terminal.capability("kmous").is_none() {
+            return;
+        }
+        let overlay = self.compositor.ui.active_overlay.is_some()
+            || self.compositor.ui.command_prompt.is_some();
+        let wanted = state
+            .borrow_mut()
+            .client_tty_mouse_mode(self.compositor.target.stable_target.as_str(), overlay);
+        if self.compositor.render.tty_mouse_mode == wanted {
+            return;
+        }
+        let _ = self
+            .tty
+            .output
+            .queue(self.tty.render_fd.as_raw_fd(), wanted.apply_sequence());
+        self.compositor.render.tty_mouse_mode = wanted;
+    }
 }
 
 /// The cursor a command prompt puts on the client's terminal: the colour from

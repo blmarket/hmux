@@ -13,6 +13,48 @@ pub(crate) enum MouseProtocol {
     Sgr,
 }
 
+/// Which DECSET mouse mode an attached client's *own* terminal is put in.
+///
+/// This is the outgoing direction: what hmux asks the real terminal for, as
+/// against the modes a pane's program asked hmux for. The two are related but
+/// not the same — a pane wanting DECSET 1000 is the reason the terminal is
+/// asked for it, but `mouse on` overrides the ask because hmux is then the one
+/// reading the mouse.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum TtyMouseMode {
+    #[default]
+    Off,
+    /// DECSET 1000: presses and releases.
+    Standard,
+    /// DECSET 1002: adds motion while a button is held.
+    Button,
+    /// DECSET 1003: adds button-less motion.
+    All,
+}
+
+impl TtyMouseMode {
+    /// The sequence that moves a terminal from whatever mouse mode it is in to
+    /// this one.
+    ///
+    /// tmux's `tty_update_mode` clears all four modes before applying the
+    /// wanted one, because terminals disagree about how the bits interact, and
+    /// pairs any tracking mode with SGR encoding — the only coordinate form
+    /// wide enough for a screen past column 223.
+    pub(crate) fn apply_sequence(self) -> &'static [u8] {
+        const CLEAR: &[u8] = b"\x1b[?1006l\x1b[?1000l\x1b[?1002l\x1b[?1003l";
+        match self {
+            Self::Off => CLEAR,
+            Self::Standard => b"\x1b[?1006l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006h\x1b[?1000h",
+            Self::Button => {
+                b"\x1b[?1006l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006h\x1b[?1000h\x1b[?1002h"
+            }
+            Self::All => {
+                b"\x1b[?1006l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006h\x1b[?1000h\x1b[?1002h\x1b[?1003h"
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MouseEventKind {
     Move,

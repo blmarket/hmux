@@ -187,9 +187,9 @@ impl AttachSession {
         let focus_events = Self::focus_events(&state.borrow_mut());
         let tty_start = tty_start_sequence(&terminal, focus_events);
         let _ = tty_output.queue(render_fd.as_raw_fd(), &tty_start);
-        if state.borrow_mut().option_for_target(target, "mouse") == Some("on") {
-            let _ = tty_output.queue(render_fd.as_raw_fd(), b"\x1b[?1000h\x1b[?1002h\x1b[?1006h");
-        }
+        // The mouse mode is not set here: `sync_tty_mouse_mode` does it on the
+        // first pass of the loop, from the pane's modes and the options as
+        // they stand then, and keeps doing it as either changes.
         let (subscribed_window, output_subscription) = {
             let st = state.borrow_mut();
             active_window_output_subscription(&st, target)?
@@ -746,6 +746,7 @@ impl AttachSession {
             return Ok(drive);
         }
         self.render_turn(state, triggers)?;
+        self.sync_tty_mouse_mode(state);
         Ok(AttachDrive::Continue)
     }
 
@@ -1191,12 +1192,9 @@ impl AttachSession {
                             .output
                             .queue(self.tty.render_fd.as_raw_fd(), &start);
                         self.compositor.render.output_cursor_visible = None;
-                        if state.borrow_mut().option_for_target(target, "mouse") == Some("on") {
-                            let _ = self.tty.output.queue(
-                                self.tty.render_fd.as_raw_fd(),
-                                b"\x1b[?1000h\x1b[?1002h\x1b[?1006h",
-                            );
-                        }
+                        // The start sequence just cleared the mouse modes, so
+                        // the next pass re-applies whatever is wanted now.
+                        self.compositor.render.tty_mouse_mode = TtyMouseMode::Off;
                         // tmux stamps session activity when a client comes back
                         // from MSG_UNLOCK/MSG_WAKEUP, which re-arms the lock
                         // timer instead of leaving a resumed client unlocked.
@@ -1220,12 +1218,9 @@ impl AttachSession {
                             .output
                             .queue(self.tty.render_fd.as_raw_fd(), &start);
                         self.compositor.render.output_cursor_visible = None;
-                        if state.borrow_mut().option_for_target(target, "mouse") == Some("on") {
-                            let _ = self.tty.output.queue(
-                                self.tty.render_fd.as_raw_fd(),
-                                b"\x1b[?1000h\x1b[?1002h\x1b[?1006h",
-                            );
-                        }
+                        // The start sequence just cleared the mouse modes, so
+                        // the next pass re-applies whatever is wanted now.
+                        self.compositor.render.tty_mouse_mode = TtyMouseMode::Off;
                         // tmux stamps session activity when a client comes back
                         // from MSG_UNLOCK/MSG_WAKEUP, which re-arms the lock
                         // timer instead of leaving a resumed client unlocked.

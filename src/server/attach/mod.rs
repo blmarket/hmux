@@ -55,7 +55,7 @@ use super::latmon::LatMon;
 #[cfg(test)]
 use super::mouse::MouseButton;
 use super::mouse::{
-    self, MouseEvent, MouseEventKind, MouseInputState, MousePosition, MouseProtocol,
+    self, MouseEvent, MouseEventKind, MouseInputState, MousePosition, MouseProtocol, TtyMouseMode,
 };
 use super::pane::{OutputSubscription, Pane, PaneInputStats, PaneIo};
 use super::state::{
@@ -234,6 +234,10 @@ struct AttachRenderState {
     last_render: Vec<u8>,
     seen_large_scroll: BTreeMap<u32, u64>,
     output_cursor_visible: Option<bool>,
+    /// The mouse mode this client's terminal was last put in — tmux's
+    /// `tty->mode` restricted to its mouse bits. Holding it is what lets the
+    /// mode be recomputed every pass and written only when it moved.
+    tty_mouse_mode: TtyMouseMode,
     last_title: Option<String>,
     force_clear: bool,
     /// What the active window's images looked like when this client was last
@@ -636,6 +640,8 @@ impl AttachCompositorState {
                 last_images: None,
                 seen_large_scroll: BTreeMap::new(),
                 output_cursor_visible: None,
+                // The tty start sequence has just cleared every mouse mode.
+                tty_mouse_mode: TtyMouseMode::Off,
                 last_title: None,
                 force_clear: true,
             },
