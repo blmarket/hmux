@@ -18,6 +18,7 @@ use std::ffi::OsString;
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::UNIX_EPOCH;
 
 use tracing_subscriber::fmt::MakeWriter;
 
@@ -38,6 +39,14 @@ struct FakeProcessSource {
     /// Per-file contents served through `read_span`, seeded with
     /// [`with_file_content`](Self::with_file_content).
     file_contents: HashMap<PathBuf, Vec<u8>>,
+    /// Per-file modification time, seeded with
+    /// [`with_file_modified`](Self::with_file_modified). Absent means unreadable.
+    file_modified: HashMap<PathBuf, SystemTime>,
+    /// Per-pid start time, seeded with
+    /// [`with_start_time`](Self::with_start_time). Absent means unreadable.
+    start_time: HashMap<u32, SystemTime>,
+    /// Per-pid environment, seeded with [`with_environ`](Self::with_environ).
+    environ: HashMap<u32, Vec<(OsString, OsString)>>,
     open_files: HashMap<u32, Vec<PathBuf>>,
     has_process_table: bool,
     /// Number of full-table scans, so tests can assert the process table is read
@@ -59,6 +68,9 @@ impl FakeProcessSource {
             cwd: HashMap::new(),
             files: HashMap::new(),
             file_contents: HashMap::new(),
+            file_modified: HashMap::new(),
+            start_time: HashMap::new(),
+            environ: HashMap::new(),
             open_files: HashMap::new(),
             has_process_table,
             scans: Arc::new(AtomicUsize::new(0)),
@@ -80,6 +92,32 @@ impl FakeProcessSource {
     /// Seed the bytes `read_span` serves for `path`.
     fn with_file_content(mut self, path: PathBuf, content: &[u8]) -> Self {
         self.file_contents.insert(path, content.to_vec());
+        self
+    }
+
+    /// Seed `path`'s modification time, as seconds after an arbitrary epoch.
+    fn with_file_modified(mut self, path: PathBuf, seconds: u64) -> Self {
+        self.file_modified
+            .insert(path, UNIX_EPOCH + Duration::from_secs(seconds));
+        self
+    }
+
+    /// Seed `pid`'s start time, on the same scale as
+    /// [`with_file_modified`](Self::with_file_modified).
+    fn with_start_time(mut self, pid: u32, seconds: u64) -> Self {
+        self.start_time
+            .insert(pid, UNIX_EPOCH + Duration::from_secs(seconds));
+        self
+    }
+
+    /// Seed `pid`'s environment.
+    fn with_environ(mut self, pid: u32, vars: &[(&str, &str)]) -> Self {
+        self.environ.insert(
+            pid,
+            vars.iter()
+                .map(|(name, value)| (OsString::from(*name), OsString::from(*value)))
+                .collect(),
+        );
         self
     }
 
@@ -129,6 +167,18 @@ impl ProcessSource for FakeProcessSource {
         self.file_contents
             .get(path)
             .map(|content| content.len() as u64)
+    }
+
+    fn file_modified(&self, path: &Path) -> Option<SystemTime> {
+        self.file_modified.get(path).copied()
+    }
+
+    fn start_time(&self, pid: u32) -> Option<SystemTime> {
+        self.start_time.get(&pid).copied()
+    }
+
+    fn environ(&self, pid: u32) -> Vec<(OsString, OsString)> {
+        self.environ.get(&pid).cloned().unwrap_or_default()
     }
 }
 
@@ -456,6 +506,250 @@ fn claude_session_id_is_read_from_the_newest_cwd_transcript() {
         status.model.as_deref(),
         Some("claude-fable-5"),
         "the model last named in the session transcript should be published"
+    );
+}
+
+/// Claude stamps every process it spawns with its session id and its own pid.
+/// While such a process is alive the session is known outright, so attribution
+/// must take it over any cwd guess — even one pointing at a newer, actively
+/// growing neighbour transcript that the heuristic would otherwise prefer.
+#[test]
+fn descendant_environment_stamp_names_the_session_exactly() {
+    let mine = "22222222-2222-4222-8222-222222222222";
+    let neighbour = "11111111-1111-4111-8111-111111111111";
+    let cwd = PathBuf::from("/work/proj");
+    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
+    let neighbour_path = transcript_dir.join(format!("{neighbour}.jsonl"));
+
+    // Pane child (100) is a shell, claude (200) runs beneath it, and a tool
+    // subprocess (300) runs beneath claude carrying the stamp. The neighbour's
+    // transcript is newer and postdates the agent's start, so nothing but the
+    // stamp can pick the right session here.
+    let source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100), (300, 200)],
+        HashMap::from([
+            (100u32, vec![OsString::from("zsh")]),
+            (200u32, vec![OsString::from("claude")]),
+            (300u32, vec![OsString::from("rg")]),
+        ]),
+        HashMap::new(),
+        true,
+    )
+    .with_cwd(200, cwd)
+    .with_start_time(200, 100)
+    .with_environ(
+        300,
+        &[
+            ("CLAUDE_CODE_SESSION_ID", mine),
+            ("CLAUDE_PID", "200"),
+            ("PATH", "/usr/bin"),
+        ],
+    )
+    .with_files(
+        transcript_dir.clone(),
+        vec![neighbour_path.clone(), mine_path.clone()],
+    )
+    .with_file_modified(neighbour_path.clone(), 300)
+    .with_file_modified(mine_path.clone(), 200)
+    .with_file_content(
+        neighbour_path,
+        br#"{"type":"assistant","message":{"model":"claude-fable-5","role":"assistant"}}
+"#,
+    )
+    .with_file_content(
+        mine_path,
+        br#"{"type":"assistant","message":{"model":"claude-opus-5","role":"assistant"}}
+"#,
+    );
+
+    let pane = ScriptedPane::new(
+        100,
+        vec![frame(
+            Some("\u{2733} hmux"),
+            "earlier output\n──────────\n❯ ",
+        )],
+    );
+    let server = FakeServer { pane };
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+
+    capture_logs(|| {
+        let mut panes = HashMap::new();
+        poll(&server, &detectors, &source, Some(&hub), &mut panes);
+    });
+
+    let snap = hub.snapshot();
+    let status = snap.panes.get(&PaneId(0)).expect("status published");
+    assert_eq!(
+        status.session_id.as_deref(),
+        Some(mine),
+        "the stamp on a spawned process should outrank the newest-transcript guess"
+    );
+    assert_eq!(
+        status.model.as_deref(),
+        Some("claude-opus-5"),
+        "the model must come from the stamped session's own transcript"
+    );
+}
+
+/// The stamp is an environment variable, so it is inherited: an agent launched
+/// by another agent carries the launching session's id, as does everything below
+/// it. Only the owning-pid variable distinguishes the two, so a stamp naming
+/// some other agent must be ignored rather than attributed to this pane.
+#[test]
+fn inherited_environment_stamp_from_another_agent_is_ignored() {
+    let outer = "11111111-1111-4111-8111-111111111111";
+    let mine = "22222222-2222-4222-8222-222222222222";
+    let cwd = PathBuf::from("/work/proj");
+    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
+
+    // This pane's claude (200) was itself launched by another claude (900), so
+    // both it and its tool subprocess (300) carry session `outer` owned by 900.
+    let source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100), (300, 200)],
+        HashMap::from([
+            (100u32, vec![OsString::from("zsh")]),
+            (200u32, vec![OsString::from("claude")]),
+            (300u32, vec![OsString::from("rg")]),
+        ]),
+        HashMap::new(),
+        true,
+    )
+    .with_cwd(200, cwd)
+    .with_start_time(200, 100)
+    .with_environ(
+        200,
+        &[("CLAUDE_CODE_SESSION_ID", outer), ("CLAUDE_PID", "900")],
+    )
+    .with_environ(
+        300,
+        &[("CLAUDE_CODE_SESSION_ID", outer), ("CLAUDE_PID", "900")],
+    )
+    .with_files(transcript_dir.clone(), vec![mine_path.clone()])
+    .with_file_modified(mine_path.clone(), 200)
+    .with_file_content(
+        mine_path,
+        br#"{"type":"assistant","message":{"model":"claude-opus-5","role":"assistant"}}
+"#,
+    );
+
+    let pane = ScriptedPane::new(
+        100,
+        vec![frame(
+            Some("\u{2733} hmux"),
+            "earlier output\n──────────\n❯ ",
+        )],
+    );
+    let server = FakeServer { pane };
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+
+    capture_logs(|| {
+        let mut panes = HashMap::new();
+        poll(&server, &detectors, &source, Some(&hub), &mut panes);
+    });
+
+    let snap = hub.snapshot();
+    let status = snap.panes.get(&PaneId(0)).expect("status published");
+    assert_eq!(
+        status.session_id.as_deref(),
+        Some(mine),
+        "an inherited stamp owned by a different agent must not be attributed"
+    );
+    assert_eq!(status.model.as_deref(), Some("claude-opus-5"));
+}
+
+/// A freshly started agent has no transcript of its own until its first turn
+/// completes, so the newest file in the shared project directory during that
+/// window belongs to a neighbour. Adopting it publishes the neighbour's session
+/// and model, and because the pane then sits idle no later correlation ever
+/// revisits the choice — the wrong model stays on the status line for the life
+/// of the process. A transcript that went silent before this agent even started
+/// cannot be the one this agent is writing, so it must not be adopted.
+#[test]
+fn transcript_older_than_the_agent_is_not_adopted() {
+    let neighbour = "11111111-1111-4111-8111-111111111111";
+    let mine = "22222222-2222-4222-8222-222222222222";
+    let cwd = PathBuf::from("/work/proj");
+    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let neighbour_path = transcript_dir.join(format!("{neighbour}.jsonl"));
+    let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
+
+    // The neighbour's session last wrote at t=100; this pane's agent started at
+    // t=200 and has not yet written a transcript of its own.
+    let mut source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100)],
+        HashMap::from([
+            (100u32, vec![OsString::from("zsh")]),
+            (200u32, vec![OsString::from("claude")]),
+        ]),
+        HashMap::new(),
+        true,
+    )
+    .with_cwd(200, cwd)
+    .with_start_time(200, 200)
+    .with_files(transcript_dir.clone(), vec![neighbour_path.clone()])
+    .with_file_modified(neighbour_path.clone(), 100)
+    .with_file_content(
+        neighbour_path.clone(),
+        br#"{"type":"assistant","message":{"model":"claude-fable-5","role":"assistant"}}
+"#,
+    );
+
+    let idle = frame(Some("\u{2733} hmux"), "earlier output\n──────────\n❯ ");
+    let pane = ScriptedPane::new(100, vec![idle.clone(), idle]);
+    let server = FakeServer { pane: pane.clone() };
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+
+    capture_logs(|| {
+        let mut panes = HashMap::new();
+        poll(&server, &detectors, &source, Some(&hub), &mut panes);
+
+        let snap = hub.snapshot();
+        let status = snap.panes.get(&PaneId(0)).expect("status published");
+        assert_eq!(status.agent, "claude");
+        assert_eq!(
+            status.session_id, None,
+            "a transcript last written before the agent started is not its own"
+        );
+        assert_eq!(
+            status.model, None,
+            "no session attributed means no model to publish"
+        );
+
+        // The first turn completes and the agent's own transcript appears, dated
+        // after the process started.
+        source.files.insert(
+            transcript_dir.clone(),
+            vec![mine_path.clone(), neighbour_path],
+        );
+        source
+            .file_modified
+            .insert(mine_path.clone(), UNIX_EPOCH + Duration::from_secs(300));
+        source.file_contents.insert(
+            mine_path,
+            br#"{"type":"assistant","message":{"model":"claude-opus-5","role":"assistant"}}
+"#
+            .to_vec(),
+        );
+        pane.step();
+        poll(&server, &detectors, &source, Some(&hub), &mut panes);
+    });
+
+    let snap = hub.snapshot();
+    let status = snap.panes.get(&PaneId(0)).expect("status published");
+    assert_eq!(
+        status.session_id.as_deref(),
+        Some(mine),
+        "the agent's own transcript should be adopted once it exists"
+    );
+    assert_eq!(
+        status.model.as_deref(),
+        Some("claude-opus-5"),
+        "the model published must come from this agent's own session"
     );
 }
 
@@ -890,17 +1184,26 @@ fn real_proc_attributes_a_live_agent() {
         .parse()
         .expect("numeric pid");
     let detectors = default_detectors();
-    let scan = find_agent_in_tree(
-        &ProcessSnapshot::capture(&SystemProcesses),
-        root,
-        &detectors,
-    );
+    let snapshot = ProcessSnapshot::capture(&SystemProcesses);
+    let scan = find_agent_in_tree(&snapshot, root, &detectors);
     match scan {
         TreeScan::Found { detector, pid, .. } => {
             eprintln!(
                 "attributed to agent: {} pid {pid}",
                 detectors[detector].label()
-            )
+            );
+            // The session stamp is only present while the agent has a live
+            // subprocess, so its absence is reported rather than asserted.
+            match find_descendant_env_session(&snapshot, pid, detectors[detector].as_ref()) {
+                Some((session_id, file)) => {
+                    eprintln!("session from descendant environment: {session_id} at {file:?}");
+                    assert!(
+                        file.ends_with(format!("{session_id}.jsonl")),
+                        "the resolved file must be the one the stamped id names"
+                    );
+                }
+                None => eprintln!("no session stamp visible (agent has no live subprocess)"),
+            }
         }
         other => panic!("expected Found, got {other:?}"),
     }

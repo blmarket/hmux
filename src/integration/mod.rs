@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use tracing::{info, warn};
 
@@ -111,6 +111,15 @@ pub(crate) enum SessionIdSource {
     AgentCwdTranscript,
 }
 
+/// The environment variables an agent stamps onto processes it spawns, naming
+/// the session and the agent process that owns it.
+pub(crate) struct SessionEnvStamp {
+    /// Variable holding the session id.
+    pub(crate) session_id: &'static str,
+    /// Variable holding the pid of the agent that set it.
+    pub(crate) owner_pid: &'static str,
+}
+
 /// Whether `text` is a canonical 8-4-4-4-12 hex UUID (case-insensitive).
 pub(crate) fn is_uuid(text: &str) -> bool {
     text.len() == 36
@@ -172,6 +181,23 @@ pub(crate) trait AgentDetector {
 
     /// Extract a session id from a session file's name (not its full path).
     fn session_id_from_file_name(&self, _name: &OsStr) -> Option<String> {
+        None
+    }
+
+    /// The environment variables this agent stamps onto processes it spawns:
+    /// `(session id, owning agent pid)`. The pid variable is what makes the
+    /// stamp usable — the environment is inherited, so a nested agent carries
+    /// its *parent's* session id, and only an owner that names the attributed
+    /// process identifies a stamp as this agent's own. `None` when the agent
+    /// does not stamp what it spawns.
+    fn session_env_stamp(&self) -> Option<SessionEnvStamp> {
+        None
+    }
+
+    /// Locate the session file `session_id` names, given the agent's working
+    /// directory. Returns `None` when the id is not one this agent could have
+    /// issued, which is what validates an id read from the environment.
+    fn session_file_for_id(&self, _cwd: &Path, _session_id: &str) -> Option<PathBuf> {
         None
     }
 
@@ -314,6 +340,11 @@ struct TrackedPane {
 /// same process) within a few active polls, since the old transcript then goes
 /// permanently silent while the new one grows with the pane's own turns.
 const TRANSCRIPT_ADOPTION_POLLS: u32 = 5;
+
+/// Maximum descendants whose environment is read while looking for an agent's
+/// session stamp. A tool subprocess sits within a step or two of the agent, so
+/// this bounds the per-poll cost of a pane that has spawned a deep or wide tree.
+const ENV_SCAN_LIMIT: usize = 32;
 
 /// Evidence gathered about a possible replacement session file.
 struct SessionCandidate {
@@ -523,7 +554,15 @@ fn inspect(
             // one. No new mention retains the current value. Growth doubles as
             // the liveness signal for adoption correlation below.
             let session_file_grew = advance_model_scan(tracked, snapshot);
-            if let Some(source) = detectors[detector].session_id_source() {
+            // An agent that stamps the processes it spawns names its session
+            // outright, so that reading is preferred over every heuristic. It is
+            // only available while a spawned process is alive, so a miss falls
+            // through to the declared source rather than clearing anything.
+            if let Some((session_id, session_file)) =
+                find_descendant_env_session(snapshot, pid, detectors[detector].as_ref())
+            {
+                adopt_session(tracked, snapshot, session_id, session_file);
+            } else if let Some(source) = detectors[detector].session_id_source() {
                 // Both sources are rechecked every poll so switching threads or
                 // sessions within one agent process replaces the cached id. Each
                 // only overwrites on a positive read, so a transient inspection
@@ -551,17 +590,7 @@ fn inspect(
                         ),
                     };
                     if adopt {
-                        tracked.agent_session_id = Some(session_id);
-                        tracked.session_candidate = None;
-                        // A new session file restarts the model scan from its
-                        // beginning; the model belongs to the session, so the
-                        // value read from the previous file is dropped with it.
-                        if tracked.model_scan.as_ref().map(ModelScan::path) != Some(&*session_file)
-                        {
-                            tracked.model_scan = Some(ModelScan::new(session_file));
-                            tracked.agent_model = None;
-                            advance_model_scan(tracked, snapshot);
-                        }
+                        adopt_session(tracked, snapshot, session_id, session_file);
                     }
                 }
             }
@@ -875,6 +904,24 @@ pub(crate) trait ProcessSource {
         None
     }
 
+    /// When the file at `path` was last modified. `None` when unreadable or
+    /// unsupported.
+    fn file_modified(&self, _path: &Path) -> Option<SystemTime> {
+        None
+    }
+
+    /// When `pid` began running, used to reject session state that was already
+    /// stale before the agent existed. `None` when unreadable or unsupported.
+    fn start_time(&self, _pid: u32) -> Option<SystemTime> {
+        None
+    }
+
+    /// `pid`'s environment as `(name, value)` pairs. Empty when unreadable or
+    /// unsupported.
+    fn environ(&self, _pid: u32) -> Vec<(OsString, OsString)> {
+        Vec::new()
+    }
+
     /// Up to `max_len` bytes of the file at `path` starting at byte `offset`,
     /// used to scan agent session files incrementally. An empty vector means
     /// end of file; `None` means the file is unreadable or the platform does
@@ -930,6 +977,18 @@ impl ProcessSource for SystemProcesses {
 
     fn file_len(&self, path: &Path) -> Option<u64> {
         std::fs::metadata(path).ok().map(|metadata| metadata.len())
+    }
+
+    fn file_modified(&self, path: &Path) -> Option<SystemTime> {
+        std::fs::metadata(path).ok()?.modified().ok()
+    }
+
+    fn start_time(&self, pid: u32) -> Option<SystemTime> {
+        CurrentPlatform::process_start_time(pid)
+    }
+
+    fn environ(&self, pid: u32) -> Vec<(OsString, OsString)> {
+        CurrentPlatform::process_environ(pid)
     }
 
     fn read_span(&self, path: &Path, offset: u64, max_len: usize) -> Option<Vec<u8>> {
@@ -1042,6 +1101,15 @@ fn find_open_file_session_in_tree(
 /// the session file. Reading the cwd once from the matched process suffices — an
 /// agent and any wrapper below it share the working directory they were
 /// launched in.
+///
+/// The session directory is keyed by working directory alone, so every agent
+/// sharing a project contributes to it. A file last written before this agent
+/// started cannot be the one this agent is writing, so such files are skipped
+/// rather than treated as candidates: an agent that has not yet created its own
+/// session file would otherwise adopt a neighbour's, which reports the
+/// neighbour's model and session id for the life of the process. A resumed
+/// session is not lost by this — the transcript re-dates itself as soon as the
+/// resumed agent appends to it.
 fn find_cwd_transcript_session(
     snapshot: &ProcessSnapshot,
     pid: u32,
@@ -1049,15 +1117,99 @@ fn find_cwd_transcript_session(
 ) -> Option<(String, PathBuf)> {
     let cwd = snapshot.source.cwd(pid)?;
     let dir = detector.session_dir_for_cwd(&cwd)?;
+    // Without a readable start time nothing can be dated, so every file stays a
+    // candidate and attribution remains best-effort newest.
+    let started = snapshot.source.start_time(pid);
     snapshot
         .source
         .files_newest_first(&dir)
         .iter()
+        .filter(|path| written_since(snapshot, path, started))
         .find_map(|path| {
             path.file_name()
                 .and_then(|name| detector.session_id_from_file_name(name))
                 .map(|session_id| (session_id, path.clone()))
         })
+}
+
+/// Publish `session_id` as the pane's session and point the model scan at its
+/// file. A new file restarts the scan from its beginning; the model belongs to
+/// the session, so the value read from the previous file is dropped with it.
+fn adopt_session(
+    tracked: &mut TrackedPane,
+    snapshot: &ProcessSnapshot,
+    session_id: String,
+    session_file: PathBuf,
+) {
+    tracked.agent_session_id = Some(session_id);
+    tracked.session_candidate = None;
+    if tracked.model_scan.as_ref().map(ModelScan::path) != Some(&*session_file) {
+        tracked.model_scan = Some(ModelScan::new(session_file));
+        tracked.agent_model = None;
+        advance_model_scan(tracked, snapshot);
+    }
+}
+
+/// Resolve a session id from the environment an agent stamps onto processes it
+/// spawns. This is exact where the cwd heuristic can only guess: the stamp names
+/// the session directly, so no correlation over file growth is needed.
+///
+/// Only *descendants* are inspected, never the attributed process itself. The
+/// environment is inherited, so an agent launched by another agent carries its
+/// parent's session id — reading the agent's own environment would attribute the
+/// launching session. The owner-pid variable is checked for the same reason:
+/// only a stamp naming this agent identifies a process it spawned itself.
+///
+/// The stamp lives on tool subprocesses, which exist only while the agent is
+/// running one, so this yields nothing for an idle agent and the caller falls
+/// back to dated-transcript attribution.
+fn find_descendant_env_session(
+    snapshot: &ProcessSnapshot,
+    agent_pid: u32,
+    detector: &dyn AgentDetector,
+) -> Option<(String, PathBuf)> {
+    let stamp = detector.session_env_stamp()?;
+    let cwd = snapshot.source.cwd(agent_pid)?;
+    let mut pending = snapshot.children_of(agent_pid).to_vec();
+    let mut visited = HashSet::from([agent_pid]);
+    let mut inspected = 0;
+    while let Some(pid) = pending.pop() {
+        if !visited.insert(pid) {
+            continue;
+        }
+        if inspected >= ENV_SCAN_LIMIT {
+            break;
+        }
+        inspected += 1;
+        let environ = snapshot.source.environ(pid);
+        let value = |name: &str| {
+            environ
+                .iter()
+                .find(|(key, _)| key == name)
+                .and_then(|(_, value)| value.to_str())
+        };
+        let owned_by_agent =
+            value(stamp.owner_pid).and_then(|owner| owner.parse::<u32>().ok()) == Some(agent_pid);
+        if owned_by_agent {
+            if let Some(session_id) = value(stamp.session_id) {
+                if let Some(file) = detector.session_file_for_id(&cwd, session_id) {
+                    return Some((session_id.to_ascii_lowercase(), file));
+                }
+            }
+        }
+        pending.extend(snapshot.children_of(pid).iter().copied());
+    }
+    None
+}
+
+/// Whether `path` was last modified at or after `started`. An unreadable
+/// timestamp on either side keeps the file eligible, so a platform that cannot
+/// date processes or files behaves exactly as it did before dating existed.
+fn written_since(snapshot: &ProcessSnapshot, path: &Path, started: Option<SystemTime>) -> bool {
+    let (Some(started), Some(modified)) = (started, snapshot.source.file_modified(path)) else {
+        return true;
+    };
+    modified >= started
 }
 
 /// Return the registry index of the first known agent found at `root` or one of

@@ -6,6 +6,7 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::ptr;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::{ForkOutcome, OutputWakeup, Platform, ProcessInfo};
 
@@ -283,6 +284,14 @@ impl Platform for Darwin {
             .filter(|fd| fd.proc_fdtype == libc::PROX_FDTYPE_VNODE as u32)
             .filter_map(|fd| vnode_fd_path(pid, fd.proc_fd))
             .collect()
+    }
+
+    fn process_start_time(pid: u32) -> Option<SystemTime> {
+        let info = bsd_info(pid as libc::pid_t)?;
+        UNIX_EPOCH.checked_add(
+            Duration::from_secs(info.pbi_start_tvsec)
+                + Duration::from_micros(info.pbi_start_tvusec),
+        )
     }
 }
 

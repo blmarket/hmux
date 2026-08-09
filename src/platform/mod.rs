@@ -17,6 +17,7 @@ use std::ffi::OsString;
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd, RawFd};
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 /// A coalescing, pollable indication that a pane's output state changed.
 pub(crate) trait OutputWakeup: AsFd + Send + Sync {
@@ -105,6 +106,20 @@ pub(crate) trait Platform {
     /// Paths currently referenced by `pid`'s open file descriptors. Empty when
     /// the process is unreadable or the platform does not support inspection.
     fn process_open_files(_pid: u32) -> Vec<PathBuf> {
+        Vec::new()
+    }
+
+    /// Wall-clock time at which `pid` began running, when readable. Used to
+    /// date session state against the process that would have written it.
+    /// `None` when the process is unreadable or the platform does not support
+    /// inspection.
+    fn process_start_time(_pid: u32) -> Option<SystemTime> {
+        None
+    }
+
+    /// `pid`'s environment as `(name, value)` pairs. Empty when the process is
+    /// unreadable or the platform does not support inspection.
+    fn process_environ(_pid: u32) -> Vec<(OsString, OsString)> {
         Vec::new()
     }
 }

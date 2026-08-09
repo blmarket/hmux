@@ -21,7 +21,8 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use super::{
-    is_uuid, title_working_spinner, AgentDetector, AgentState, Detection, SessionIdSource,
+    is_uuid, title_working_spinner, AgentDetector, AgentState, Detection, SessionEnvStamp,
+    SessionIdSource,
 };
 
 /// A resting-title marker: Claude sets `✳ …` (U+2733) at its idle prompt.
@@ -51,6 +52,19 @@ impl AgentDetector for ClaudeDetector {
         session_id_from_transcript_name(name)
     }
 
+    fn session_env_stamp(&self) -> Option<SessionEnvStamp> {
+        Some(SessionEnvStamp {
+            session_id: "CLAUDE_CODE_SESSION_ID",
+            owner_pid: "CLAUDE_PID",
+        })
+    }
+
+    fn session_file_for_id(&self, cwd: &Path, session_id: &str) -> Option<PathBuf> {
+        is_uuid(session_id)
+            .then(|| transcript_dir(cwd))?
+            .map(|dir| dir.join(format!("{}.jsonl", session_id.to_ascii_lowercase())))
+    }
+
     fn detect(&self, screen: &str, title: Option<&str>) -> Detection {
         detect(screen, title)
     }
@@ -61,6 +75,11 @@ impl AgentDetector for ClaudeDetector {
 /// project's working directory with every non-alphanumeric character replaced by
 /// `-`. The active session is the most recently modified transcript in that
 /// directory, so attribution reads the agent's cwd and lists this directory.
+///
+/// The directory is shared by every agent run from the same project, and Claude
+/// Code does not create a transcript until its first turn completes, so "newest"
+/// alone can name a neighbour's session during that window. Candidates are
+/// therefore dated against the agent's start time before being considered.
 pub(crate) fn transcript_dir(cwd: &Path) -> Option<PathBuf> {
     let home = std::env::var_os("HOME")?;
     Some(

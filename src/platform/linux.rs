@@ -1,11 +1,12 @@
 //! Linux implementation of the operating-system boundary.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::path::PathBuf;
 use std::ptr;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::{ForkOutcome, OutputWakeup, Platform, ProcessInfo};
 
@@ -210,6 +211,59 @@ impl Platform for Linux {
     fn process_cwd(pid: u32) -> Option<PathBuf> {
         fs::read_link(format!("/proc/{pid}/cwd")).ok()
     }
+
+    fn process_start_time(pid: u32) -> Option<SystemTime> {
+        let since_boot = read_start_ticks(pid)? as f64 / clock_ticks_per_second()? as f64;
+        boot_time()?.checked_add(Duration::from_secs_f64(since_boot))
+    }
+
+    fn process_environ(pid: u32) -> Vec<(OsString, OsString)> {
+        use std::os::unix::ffi::OsStrExt;
+        let Ok(environ) = fs::read(format!("/proc/{pid}/environ")) else {
+            return Vec::new();
+        };
+        environ
+            .split(|byte| *byte == 0)
+            .filter(|entry| !entry.is_empty())
+            .filter_map(|entry| {
+                // Only the first `=` separates name from value; values may
+                // contain any number of them.
+                let split = entry.iter().position(|byte| *byte == b'=')?;
+                Some((
+                    OsStr::from_bytes(&entry[..split]).to_owned(),
+                    OsStr::from_bytes(&entry[split + 1..]).to_owned(),
+                ))
+            })
+            .collect()
+    }
+}
+
+/// Seconds since the epoch at which the kernel booted, from `/proc/stat`'s
+/// `btime` line. Process start times are recorded relative to this instant.
+fn boot_time() -> Option<SystemTime> {
+    let stat = fs::read_to_string("/proc/stat").ok()?;
+    let seconds: u64 = stat
+        .lines()
+        .find_map(|line| line.strip_prefix("btime "))?
+        .trim()
+        .parse()
+        .ok()?;
+    UNIX_EPOCH.checked_add(Duration::from_secs(seconds))
+}
+
+/// Parse the start time from `/proc/<pid>/stat`, in clock ticks since boot.
+/// The `comm` field can contain spaces and parentheses, so fields are read
+/// after the final `)`: the tokens there begin at `state`, making `starttime`
+/// (field 22 overall) the twentieth.
+fn read_start_ticks(pid: u32) -> Option<u64> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let after_comm = &stat[stat.rfind(')')? + 1..];
+    after_comm.split_whitespace().nth(19)?.parse().ok()
+}
+
+fn clock_ticks_per_second() -> Option<u64> {
+    let ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    (ticks > 0).then_some(ticks as u64)
 }
 
 /// Parse the parent pid from `/proc/<pid>/stat`. The `comm` field can contain
