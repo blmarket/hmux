@@ -118,10 +118,10 @@ fn daemonize() -> std::io::Result<DaemonOutcome> {
     Ok(DaemonOutcome::Child)
 }
 
-/// Serve the libghostty-vt server through the event-loop protocol engine.
+/// Serve the tmux-compatible server through the event-loop protocol engine.
 fn run_server(args: Args) -> hmux::Result<()> {
     let listen_socket = args.socket.as_deref().expect("socket resolved in main");
-    info!("engine: event-loop protocol (libghostty-vt)");
+    info!("engine: event-loop protocol");
     // Start as a server only. The first untargeted `tmux attach` lazily creates
     // session 0, so launching hmux does not speculatively spawn a shell or
     // commit the first session to the 80x24 fallback geometry.

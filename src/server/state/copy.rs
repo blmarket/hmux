@@ -209,10 +209,10 @@ pub(super) fn reflow_copy_snapshot(state: &mut CopyState, cols: u16, rows: u16) 
     }
     terminal
         .resize(cols, rows)
-        .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
+        .map_err(|error| io::Error::other(format!("vt error: {error:?}")))?;
     state.grid = terminal
         .grid_snapshot()
-        .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
+        .map_err(|error| io::Error::other(format!("vt error: {error:?}")))?;
     for (offset, semantic, hyperlink) in metadata {
         let (row, col) = copy_point_at_offset(&state.grid, offset);
         if let Some(cell) = state
@@ -227,7 +227,7 @@ pub(super) fn reflow_copy_snapshot(state: &mut CopyState, cols: u16, rows: u16) 
     }
     let vt = terminal
         .dump_vt()
-        .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
+        .map_err(|error| io::Error::other(format!("vt error: {error:?}")))?;
     state.replace_vt(vt);
     let (cursor_row, cursor_col) = copy_point_at_offset(&state.grid, cursor_offset);
     state.cursor = CopyCursor {
@@ -265,14 +265,14 @@ pub(super) fn view_copy_state(output: Vec<u8>, cols: u16, rows: u16) -> io::Resu
     }
     let grid = terminal
         .grid_snapshot()
-        .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
+        .map_err(|error| io::Error::other(format!("vt error: {error:?}")))?;
     let vt = terminal
         .dump_vt()
-        .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
+        .map_err(|error| io::Error::other(format!("vt error: {error:?}")))?;
     let vt_rows = copy_vt_row_ranges(&vt);
     let (col, row) = terminal
         .cursor_position()
-        .map_err(|error| io::Error::other(format!("ghostty error: {error:?}")))?;
+        .map_err(|error| io::Error::other(format!("vt error: {error:?}")))?;
     let scroll = grid.scrollback_rows;
     Ok(CopyState {
         backing: CopyBacking::ViewOutput(output),

@@ -478,7 +478,7 @@ impl AttachSession {
         }
         let stable_target = self.compositor.target.stable_target.clone();
         let target = stable_target.as_str();
-        // 2. Relay terminal queries which Ghostty consumed from pane output.
+        // 2. Relay terminal queries which the emulator consumed from pane output.
         //    The outer terminal's reply is read immediately below and forwarded
         //    through the ordinary pane-input path. In particular, Neovim sends
         //    an OSC 11 default-background request followed by a CSI 5n status

@@ -4834,9 +4834,9 @@ pub(super) fn vars_full(
                 )
                 .set("cursor_character", pane_cursor_character(&p.pane))
                 // tmux drops history rows past `history-limit` as they scroll
-                // off, so the size saturates there. Ghostty measures its own
-                // scrollback in bytes rather than rows, so hmux applies the
-                // limit where the rows are counted and read back instead.
+                // off, so the size saturates there. The seam lets a backend
+                // leave `set_history_limit` a no-op, so the limit is also
+                // applied where the rows are counted and read back.
                 .set(
                     "history_size",
                     p.pane
@@ -5437,9 +5437,9 @@ fn session_command(
     }
 }
 
-/// `clear-history [-H] [-t target]`. Ghostty owns the pane's scrollback, so ask
-/// it to erase history while retaining the viewport, then leave any copy mode
-/// associated with the pane.
+/// `clear-history [-H] [-t target]`. The emulator owns the pane's scrollback,
+/// so ask it to erase history while retaining the viewport, then leave any copy
+/// mode associated with the pane.
 fn clear_history(args: &[String], st: &mut ServerState) -> CommandResult {
     let target = flag_value(args, "-t")
         .map(str::to_string)
@@ -7371,8 +7371,8 @@ fn capture_range(
     let last = total_rows.saturating_sub(1);
     let history = scrollback_rows.min(last);
     // History past `history-limit` is gone in tmux, so it must not be readable
-    // here either; Ghostty keeps its scrollback by bytes rather than rows, so
-    // the limit is applied where the rows are read back.
+    // here either; the seam lets a backend keep more than the limit, so the
+    // limit is applied where the rows are read back.
     let floor = history.saturating_sub(history_limit);
     let default_top = history;
     let default_bottom = history

@@ -1,6 +1,6 @@
 //! Resolved capabilities for one attached client terminal.
 //!
-//! Pane terminal state belongs to libghostty-vt. This module describes the
+//! Pane terminal state belongs to the hmux-vt emulator. This module describes the
 //! outer terminal driven by the attach compositor: the terminfo values sent by
 //! the tmux client, identify-time feature hints, and configured feature and
 //! capability overrides.

@@ -3,7 +3,7 @@
 //! A deliberately small mirror of tmux's `session`/`winlink`/`window`/
 //! `window_pane` tree — enough to back the commands the prototype implements
 //! (`list-sessions`, `new-session`, `has-session`, `kill-session`) with real
-//! state. Panes hold a libghostty-backed [`Pane`], so a created session is a
+//! state. Panes hold an emulator-backed [`Pane`], so a created session is a
 //! genuinely running terminal, not a stub.
 //!
 //! This module owns the [`ServerState`] struct and the core model types

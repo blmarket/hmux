@@ -84,9 +84,8 @@ pub enum CellWidth {
     Narrow,
     Wide,
     SpacerTail,
-    /// Only libghostty-vt reports this; tmux's grid has no equivalent, so the
+    /// A backend may report this; tmux's grid has no equivalent, so the
     /// engine never produces one.
-    #[cfg_attr(not(feature = "ghostty"), allow(dead_code))]
     SpacerHead,
 }
 
@@ -94,10 +93,9 @@ pub enum CellWidth {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CellSemantic {
     Output,
-    /// Only libghostty-vt reports this. tmux classifies rows with
+    /// A backend may report this. tmux classifies rows with
     /// `GRID_LINE_START_PROMPT` and `GRID_LINE_START_OUTPUT` alone, so under
     /// the engine every row is one of the other two.
-    #[cfg_attr(not(feature = "ghostty"), allow(dead_code))]
     Input,
     Prompt,
 }

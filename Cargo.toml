@@ -1,5 +1,5 @@
 [workspace]
-members = ["ghostty-sys", "hmux-vt"]
+members = ["hmux-vt"]
 
 [package]
 name = "hmux"
@@ -15,14 +15,6 @@ path = "src/main.rs"
 [lib]
 name = "hmux"
 path = "src/lib.rs"
-
-[features]
-default = []
-# The libghostty-vt backend, forwarded to hmux-vt. It is no longer the shipped
-# engine; it is kept so the emulator's differential tests can diff the in-house
-# engine against it, and as the alternate implementation the seam was carved to
-# allow.
-ghostty = ["hmux-vt/ghostty"]
 
 [dependencies]
 hmux-vt = { path = "hmux-vt" }

@@ -5,12 +5,4 @@ edition = "2021"
 description = "hmux's terminal emulator: the DEC ANSI tokenizer, the observation stream, and the screen behind it"
 license = "GPL-3.0-only"
 
-[features]
-default = []
-# The libghostty-vt backend. It is no longer the shipped engine; it is kept so
-# the crate's differential tests can diff the in-house engine against it, and
-# as the alternate implementation the `VtScreen` seam was carved to allow.
-ghostty = ["dep:ghostty-sys"]
-
 [dependencies]
-ghostty-sys = { path = "../ghostty-sys", optional = true }

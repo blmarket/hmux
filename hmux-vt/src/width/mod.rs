@@ -144,11 +144,6 @@ mod tests {
 
     #[test]
     fn a_conjoining_hangul_jamo_vowel_is_one_cell_wide() {
-        // libghostty-vt called U+1161 zero width, and hmux inherited that
-        // answer for as long as it owned the grid. tmux 3.7b calls it one:
-        // printing it alone into an empty pane leaves the cursor at column 1.
-        // What makes a jamo disappear into the preceding cell is the combining
-        // rule in the screen, not its width.
         assert_eq!(codepoint_width(0x1161), 1);
     }
 

@@ -13,7 +13,7 @@
 //!   "open terminal failed: not a terminal", matching real tmux and making the
 //!   matrix report `OK` for a recognized command even when the harness passes
 //!   `/dev/null`), and enters the attach loop.
-//! - The attach loop renders the session's active pane (libghostty-vt grid → VT
+//! - The attach loop renders the session's active pane (emulator grid → VT
 //!   sequences via `Terminal::dump_vt`) onto the client's tty fd, forwards
 //!   keystrokes from the tty fd into the pane's pty master, and handles
 //!   `MSG_RESIZE` / `MSG_DETACH` from the imsg control plane.
@@ -3829,7 +3829,7 @@ mod tests {
     // (claude-code) hides the hardware cursor (`CSI ? 25 l`) and paints its own.
     // The compositor used to always leave the client's real cursor lit, so two
     // cursors appeared — the app's painted one plus the client's, 3 rows up at
-    // ghostty's tracked position. The compositor now mirrors the pane's DECTCEM
+    // the emulator's tracked position. The compositor now mirrors the pane's DECTCEM
     // state: it hides the cursor during the repaint and only re-shows it (at the
     // pane's position) when the pane's app wants it shown.
 

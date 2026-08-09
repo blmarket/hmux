@@ -31,40 +31,15 @@
           pkgs = import nixpkgs { inherit system; };
           tmux37b = tmux37bFor pkgs;
           agentmon = agentmonFor pkgs;
-          zigDeps = pkgs.callPackage ./ghostty-sys/vendor/libghostty-vt/build.zig.zon.nix {
-            name = "libghostty-vt-zig-deps";
-            linkFarm = name: entries:
-              pkgs.runCommand name { } ''
-                mkdir -p $out
-                ${pkgs.lib.concatMapStringsSep "\n" (e: ''
-                  cp -rL ${e.path} $out/${e.name}
-                '') entries}
-              '';
-          };
           hmux = pkgs.rustPlatform.buildRustPackage {
             pname = "hmux";
             version = "0.1.0";
             src = ./.;
 
             cargoLock.lockFile = ./Cargo.lock;
-            nativeBuildInputs = [ pkgs.zig_0_16 ]
-              ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
-                pkgs.xcbuild
-                pkgs.darwin.cctools
-              ];
             buildInputs = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
               pkgs.apple-sdk
             ];
-            dontUseZigBuild = true;
-            dontUseZigCheck = true;
-            dontUseZigInstall = true;
-            postPatch = ''
-              substituteInPlace ghostty-sys/build.rs \
-                --replace-fail '"build",' '"build", "--system", "${zigDeps}",'
-            '';
-            preBuild = ''
-              export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-cache"
-            '';
           };
         in
         {
@@ -91,7 +66,6 @@
           default = pkgs.mkShell {
             packages = [
               tmux37b
-              pkgs.zig_0_16
               pkgs.rustc
               pkgs.rustfmt
               pkgs.clippy

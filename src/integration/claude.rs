@@ -14,8 +14,8 @@
 //! - legacy permission phrasings → blocked;
 //! - a resting `✳ ` title → idle.
 //!
-//! Herdr's `osc_progress` idle rule has no analogue here: libghostty-vt does not
-//! surface OSC 9;4 progress, so that channel is unavailable.
+//! Herdr's `osc_progress` idle rule has no analogue here: the detector reads
+//! only the screen tail and the window title, not OSC 9;4 progress reports.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};

@@ -176,7 +176,7 @@ pub(crate) fn key_from_byte(byte: u8) -> KeyCode {
 /// Encode the byte-valued subset used by the `prefix` and `prefix2` options.
 ///
 /// Stateful pane encoding is intentionally separate and handled by the
-/// libghostty-vt-backed encoder.
+/// emulator-backed encoder.
 pub(crate) fn basic_key_bytes(key: KeyCode) -> Option<Vec<u8>> {
     let mut bytes = Vec::with_capacity(2);
     if key.modifiers.meta() {

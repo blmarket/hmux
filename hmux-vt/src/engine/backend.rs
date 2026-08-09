@@ -1,10 +1,8 @@
 //! The in-house engine as a screen the server can use.
 //!
-//! This is the other side of [`crate::screen::VtScreen`] from
-//! [`crate::ghostty`]: same trait, same types, no libghostty-vt. It is the
+//! This is the implementation side of [`crate::screen::VtScreen`]: it is the
 //! backend [`crate::PaneScreen`] names, so this is what a pane's grid
-//! actually is; the Ghostty one survives behind its feature as the thing the
-//! differential harness diffs against.
+//! actually is.
 
 use std::io;
 use std::sync::Arc;

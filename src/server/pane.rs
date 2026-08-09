@@ -1,9 +1,9 @@
-//! A pane: a child process on a PTY, its output parsed by a libghostty-vt
+//! A pane: a child process on a PTY, its output parsed by an hmux-vt
 //! [`Terminal`].
 //!
 //! This is where the "clone" earns its name — instead of proxying to a backing
 //! tmux, hmux owns the pty/child and maintains the screen itself. tmux keeps this
-//! state in `window_pane` + `screen`/`input.c`; here the grid lives in libghostty
+//! state in `window_pane` + `screen`/`input.c`; here the grid lives in hmux-vt
 //! and the master fd is drained by the central event loop.
 //!
 //! Only a text-emulation slice is implemented: spawn, feed output → grid, send
@@ -333,9 +333,8 @@ pub(crate) struct NativePaneObservation {
     /// Last DECSCUSR parameter emitted by the pane (0..=6). The VT formatter
     /// restores cursor position but does not serialize this terminal state.
     cursor_shape: Cell<u8>,
-    /// The pane's reportable VT modes, republished as one snapshot at the end
-    /// of each output batch. Ghostty owns the emulation; these are tracked
-    /// beside it because it does not expose them.
+    /// The pane's reportable VT modes, republished as one snapshot read back
+    /// from the screen's mode word at the end of each output batch.
     modes: Cell<PaneModeSnapshot>,
     /// Set when the pane sent DSR ?996 and is waiting for an answer.
     theme_query: Cell<bool>,
@@ -375,8 +374,7 @@ pub(crate) struct NativePaneObservation {
     /// on the client ttys they are allowed to reach.
     passthrough: RefCell<VecDeque<PanePassthrough>>,
     /// The title the pane last set for itself, tmux's `screen->title`. Tracked
-    /// here rather than read back from Ghostty because tmux's limit on it is
-    /// `input-buffer-size`, and Ghostty's is its own.
+    /// here from the observer's title events; the screen keeps no copy of it.
     announced_title: RefCell<Option<String>>,
     /// tmux's `screen->titles`, the stack `CSI 22 t` pushes onto and
     /// `CSI 23 t` pops from. It lives beside the title rather than in the
@@ -2040,8 +2038,8 @@ impl Pane {
 
     /// Clear scrollback while preserving the visible viewport.
     ///
-    /// CSI 3 J is Ghostty's own erase-scrollback operation, so this keeps the
-    /// chosen terminal engine authoritative instead of reconstructing its grid
+    /// CSI 3 J is the emulator's own erase-scrollback operation, so this keeps
+    /// the terminal engine authoritative instead of reconstructing its grid
     /// in hmux.
     pub fn clear_history(&self) -> io::Result<()> {
         let mut terminal = self.observation.term.borrow_mut();
@@ -2668,8 +2666,7 @@ pub(crate) struct PaneKeyState {
 }
 
 /// The pane terminal state tmux keeps in `screen->mode` and publishes as format
-/// variables. Ghostty owns the emulation but does not expose these, so they are
-/// tracked from the pane's byte stream beside it.
+/// variables, tracked from the pane's byte stream beside the screen.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct PaneTerminalModes {
     /// IRM, as `#{insert_flag}`.

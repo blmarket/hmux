@@ -19,15 +19,13 @@
 //! [`sixel`], plus [`EngineScreen`] (aliased [`PaneScreen`], the implementation
 //! this build ships) and [`TMUX_VERSION`]. Consumers call trait methods, so
 //! that alias is the only place a backend is chosen; `engine` (hmux's own port
-//! of tmux's grid and screen model) and `ghostty` (the libghostty-vt backend it
-//! replaced, still buildable behind the `ghostty` feature for `differential`
-//! to diff against) are private behind it.
+//! of tmux's grid and screen model) is private behind it.
 //!
 //! [`screen::VtScreen`] and [`input::InputEncoder`] are open public traits
 //! under a semver promise; see their documentation.
 //!
-//! Outbound there is nothing: this crate depends on no server code and, in the
-//! default build, on no external crate at all. Every type crossing the seam is
+//! Outbound there is nothing: this crate depends on no server code and on no
+//! external crate at all. Every type crossing the seam is
 //! owned here — [`observer::OutputPolicy`], [`screen::ScreenOptions`], the
 //! event and token types — and the server pushes resolved option values in
 //! rather than the emulator reading server state.
@@ -35,11 +33,7 @@
 //! One caveat: [`width`] is process-global mutable state, mirroring tmux's
 //! global options — there is one width policy per process, not one per screen.
 
-#[cfg(all(test, feature = "ghostty"))]
-mod differential;
 mod engine;
-#[cfg(feature = "ghostty")]
-mod ghostty;
 pub mod input;
 pub mod observer;
 pub mod parser;

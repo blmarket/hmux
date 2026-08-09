@@ -735,14 +735,14 @@ fn encode_parsed_key_for_pane(state: &ServerState, target: &str, code: KeyCode) 
 }
 
 fn encode_parsed_key_for_client(code: KeyCode) -> Option<ClientKey> {
-    let bytes = with_ghostty_key_event(code, encode_key_default_modes)?;
+    let bytes = with_key_event(code, encode_key_default_modes)?;
     Some(ClientKey {
         bytes,
         forward_unbound: matches!(code.base, KeyBase::Char(_)),
     })
 }
 
-fn with_ghostty_key_event<T>(code: KeyCode, encode: impl FnOnce(KeyEvent<'_>) -> T) -> Option<T> {
+fn with_key_event<T>(code: KeyCode, encode: impl FnOnce(KeyEvent<'_>) -> T) -> Option<T> {
     let mut shift = code.modifiers.shift();
     let (key, text, unshifted) = match code.base {
         KeyBase::Char('\u{1b}') => (Key::ESCAPE, None, None),

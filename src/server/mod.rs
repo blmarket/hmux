@@ -1,4 +1,4 @@
-//! Shared tmux-compatible server engine built on libghostty-vt.
+//! Shared tmux-compatible server engine built on the hmux-vt emulator.
 //!
 //! This module owns sessions, windows, panes, command behavior, attach state,
 //! and terminal emulation. The [`crate::event_loop`] runtime supplies
@@ -6,7 +6,7 @@
 //!
 //! The interactive attach path — compositing panes onto the client's tty — is
 //! implemented in the `attach` module: on attach-identify the server takes the
-//! client's tty fd and drives it directly via libghostty's VT formatter, with
+//! client's tty fd and drives it directly via the emulator's VT formatter, with
 //! input forwarding and resize/detach handling.
 //!
 //! The observation hook below is crate-private: the server emits unclassified

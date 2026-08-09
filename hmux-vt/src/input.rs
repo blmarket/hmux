@@ -19,9 +19,8 @@ use std::io;
 pub struct Key(i32);
 
 impl Key {
-    /// The opaque code, for a backend that has to translate it. Only the
-    /// libghostty-vt backend does; the engine reads the key itself.
-    #[cfg_attr(not(feature = "ghostty"), allow(dead_code))]
+    /// The opaque code, for a backend that has to translate it into its own
+    /// encoder's key identity; the engine reads the key itself.
     pub fn code(self) -> i32 {
         self.0
     }
@@ -118,9 +117,8 @@ pub struct KeyEvent<'a> {
     pub alt: bool,
     /// The text the press would insert, when it inserts any.
     pub text: Option<&'a str>,
-    /// The character the key bears with no shift applied. Only the
-    /// libghostty-vt backend needs it told to it separately.
-    #[cfg_attr(not(feature = "ghostty"), allow(dead_code))]
+    /// The character the key bears with no shift applied, for a backend whose
+    /// encoder wants it stated separately; the engine derives it from the key.
     pub unshifted_codepoint: Option<char>,
 }
 

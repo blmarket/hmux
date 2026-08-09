@@ -34,7 +34,7 @@
 //! identifies the field layout so samples left by older binaries are obvious.
 //!
 //! - `echo`   = input accepted by hmux → the pane's next output wakes the loop
-//!   (possible PTY queueing + shell/app response + libghostty VT parse). It is
+//!   (possible PTY queueing + shell/app response + VT parse). It is
 //!   the bulk of any real hmux-side cost, but does not itself prove causality.
 //! - `pane`   = input offered → pane output parsed. A large value points at PTY
 //!   queueing or the foreground application rather than the attach renderer.
