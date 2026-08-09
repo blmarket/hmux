@@ -5,6 +5,9 @@ It splits its own window and hands the bottom half to a coding agent, then
 repeats one cycle: wait until quota pacing allows a run, start the agent on the
 prompt, end the run once the agent goes idle, and commit whatever it changed.
 
+`--preset` picks which agent runs, with its model and effort; the presets are
+named in `PRESETS`.
+
 Pacing comes from the same `QuotaService` the dashboard shows. A window is
 "on pace" while the share of it spent is no larger than the share of it
 elapsed; over pace, the loop sleeps until an even burn would have caught up,
@@ -31,12 +34,30 @@ from .quota import QuotaReport, QuotaService, QuotaWindow
 from .services import AgentmonService, CommandError, discover_context
 
 
-# The one preset for now. Further presets get a --preset flag rather than more
-# defaults here.
-LOOPER_AGENT = "codex"
-LOOPER_MODEL = "gpt-5.6-luna"
-LOOPER_EFFORT = "max"
-LOOPER_PROVIDER = "codex"
+@dataclass(frozen=True)
+class Preset:
+    """One named agent configuration a loop can run with.
+
+    `provider` is the quota provider that paces it. A provider `QuotaService`
+    knows nothing about — antigravity has no usage endpoint — leaves the loop
+    unpaced, which `pacing_decision` reports on every run.
+    """
+
+    agent: str
+    model: str
+    effort: str
+    provider: str
+
+
+PRESETS = {
+    "codex": Preset(
+        agent="codex", model="gpt-5.6-luna", effort="max", provider="codex"
+    ),
+    "agy": Preset(
+        agent="agy", model="gemini-3.6-flash", effort="high", provider="antigravity"
+    ),
+}
+DEFAULT_PRESET = "codex"
 
 # States that end a run: the agent is sitting at its prompt with nothing left
 # to do, or it wants a human. An interactive agent never exits on its own, so
@@ -122,10 +143,10 @@ def format_duration(seconds: float) -> str:
 
 @dataclass(frozen=True)
 class LooperConfig:
-    agent: str = LOOPER_AGENT
-    model: str = LOOPER_MODEL
-    effort: str = LOOPER_EFFORT
-    provider: str = LOOPER_PROVIDER
+    agent: str = PRESETS[DEFAULT_PRESET].agent
+    model: str = PRESETS[DEFAULT_PRESET].model
+    effort: str = PRESETS[DEFAULT_PRESET].effort
+    provider: str = PRESETS[DEFAULT_PRESET].provider
     # 0 means "until the user stops it" for both limits below.
     max_runs: int = 0
     run_timeout: float = 0.0
@@ -323,6 +344,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="pane to split (otherwise $TMUX_PANE, the pane looper runs in)",
     )
     parser.add_argument(
+        "--preset", choices=sorted(PRESETS), default=DEFAULT_PRESET,
+        help="agent, model and effort to run (default: %(default)s)",
+    )
+    parser.add_argument(
         "-n", "--max-runs", type=int, default=0,
         help="stop after this many runs (default: keep going)",
     )
@@ -380,7 +405,12 @@ def main(argv: list[str] | None = None) -> int:
         print("looper: not inside a git worktree", file=sys.stderr)
         return 1
 
+    preset = PRESETS[args.preset]
     config = LooperConfig(
+        agent=preset.agent,
+        model=preset.model,
+        effort=preset.effort,
+        provider=preset.provider,
         max_runs=max(0, args.max_runs),
         run_timeout=max(0.0, args.run_timeout),
         agent_size_percent=args.size,

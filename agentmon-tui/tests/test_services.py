@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import subprocess
 import threading
@@ -18,6 +19,7 @@ from agentmon.services import (
     discover_repository,
     discover_socket,
     is_claude_rate_limit_options_dialog,
+    trust_agy_workspace,
 )
 from agentmon.transcript import Transcript
 
@@ -1103,6 +1105,77 @@ def test_launch_without_devshell_keeps_the_plain_command(
 
     assert service._agent_command("codex") == 'exec codex --yolo "$(cat instruction.md)"'
     assert "nix" not in service._agent_command("claude")
+
+
+def test_agy_takes_its_model_effort_and_prompt_as_separate_flags(
+    repository: Repository,
+) -> None:
+    service = AgentmonService(repository, socket="/tmp/hmux.sock")
+
+    # agy reads the initial prompt from `-i`, not a trailing argument.
+    assert service._agent_command("agy", "gemini-3.6-flash", "high") == (
+        "exec agy --dangerously-skip-permissions --model gemini-3.6-flash "
+        '--effort high -i "$(cat instruction.md)"'
+    )
+    assert service._agent_command("agy") == (
+        'exec agy --dangerously-skip-permissions -i "$(cat instruction.md)"'
+    )
+    assert service._agent_command("agy", with_instruction=False) == (
+        "exec agy --dangerously-skip-permissions"
+    )
+
+
+def test_agy_trust_seeding_adds_a_worktree_once(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.json"
+    worktree = tmp_path / "work"
+    worktree.mkdir()
+
+    # No settings file yet: one is created with just the trusted list.
+    assert trust_agy_workspace(worktree, settings=settings) is True
+    assert json.loads(settings.read_text()) == {
+        "trustedWorkspaces": [str(worktree)]
+    }
+    # Already trusted: left exactly as it was.
+    assert trust_agy_workspace(worktree, settings=settings) is False
+
+    # An existing file keeps its other keys and entries.
+    settings.write_text(
+        json.dumps({"colorScheme": "dark", "trustedWorkspaces": ["/elsewhere"]})
+    )
+    assert trust_agy_workspace(worktree, settings=settings) is True
+    assert json.loads(settings.read_text()) == {
+        "colorScheme": "dark",
+        "trustedWorkspaces": ["/elsewhere", str(worktree)],
+    }
+
+
+def test_agy_trust_seeding_survives_an_unusable_settings_file(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.json"
+    settings.write_text("not json at all")
+    worktree = tmp_path / "work"
+    worktree.mkdir()
+
+    assert trust_agy_workspace(worktree, settings=settings) is True
+    assert json.loads(settings.read_text()) == {
+        "trustedWorkspaces": [str(worktree)]
+    }
+
+
+def test_agy_trust_seeding_records_the_path_the_agent_will_see(
+    tmp_path: Path,
+) -> None:
+    """A worktree reached through a symlink is trusted under both spellings."""
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    settings = tmp_path / "settings.json"
+
+    assert trust_agy_workspace(link, settings=settings) is True
+    assert json.loads(settings.read_text())["trustedWorkspaces"] == [
+        str(link),
+        str(real),
+    ]
 
 
 def test_devshell_available_needs_both_nix_and_a_flake(

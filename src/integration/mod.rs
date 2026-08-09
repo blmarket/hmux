@@ -3,7 +3,7 @@
 //! A single background [`AgentObserver`] polls pane observability and classifies
 //! each pane's agent lifecycle state. Detection is split into a generic harness
 //! (this module) and per-agent [`AgentDetector`]s (e.g. [`codex`], [`claude`],
-//! and [`pi`]),
+//! [`pi`], and [`agy`]),
 //! so adding an agent is a matter of adding a detector rather than another
 //! poller. Running one observer with a detector registry — instead of one thread
 //! per agent — avoids two observers fighting over the same pane, and matches how
@@ -21,6 +21,7 @@ use tracing::{info, warn};
 use crate::observability::v1::{PaneId, PaneObservability, ServerObservability};
 use crate::platform::{CurrentPlatform, Platform};
 
+pub mod agy;
 pub mod claude;
 pub mod codex;
 pub mod pi;
@@ -230,6 +231,7 @@ pub(crate) fn default_detectors() -> Vec<Box<dyn AgentDetector>> {
         Box::new(codex::CodexDetector),
         Box::new(claude::ClaudeDetector),
         Box::new(pi::PiDetector),
+        Box::new(agy::AgyDetector),
     ]
 }
 

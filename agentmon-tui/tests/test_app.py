@@ -200,6 +200,9 @@ def test_t_opens_the_complete_transcript_in_less(monkeypatch) -> None:
 def test_agent_badges_are_compact_and_have_a_future_agent_fallback() -> None:
     assert agent_badge("codex") == "CODX"
     assert agent_badge("claude-code") == "CLDE"
+    # agy needs no entry of its own: the fallback already pads it to the
+    # column width without mangling the name.
+    assert agent_badge("agy") == "AGY "
     assert agent_badge("gemini-cli") == "GEMI"
     assert agent_badge("aider") == "AIDE"
     assert agent_badge("window") == "----"
@@ -1266,6 +1269,58 @@ def test_l_opens_launch_agent_screen_with_instruction_and_choices() -> None:
             await pilot.pause()
             assert screen.query_one("#effort", Select).disabled
             assert screen.query_one("#model", Select).value == "default"
+
+    asyncio.run(exercise())
+
+
+def test_every_launchable_agent_offers_model_and_effort_choices() -> None:
+    from agentmon.model import (
+        DEFAULT_LAUNCH_CHOICE,
+        LAUNCH_AGENT_EFFORTS,
+        LAUNCH_AGENT_LABELS,
+        LAUNCH_AGENT_MODELS,
+        normalize_launch_agent,
+    )
+
+    # The launch form indexes both tables by the selected agent, so a label
+    # without an entry in either would break the picker rather than degrade.
+    assert LAUNCH_AGENT_MODELS.keys() == LAUNCH_AGENT_LABELS.keys()
+    assert LAUNCH_AGENT_EFFORTS.keys() == LAUNCH_AGENT_LABELS.keys()
+    for agent in LAUNCH_AGENT_LABELS:
+        assert LAUNCH_AGENT_MODELS[agent][0] == DEFAULT_LAUNCH_CHOICE
+        assert LAUNCH_AGENT_EFFORTS[agent][0] == DEFAULT_LAUNCH_CHOICE
+        assert normalize_launch_agent(agent) == agent
+    # hmux reports agy under the same name the launcher uses.
+    assert normalize_launch_agent("agy") == "agy"
+    assert normalize_launch_agent("gemini-cli") == "codex"
+
+
+def test_launch_agent_screen_offers_the_agy_choices() -> None:
+    async def exercise() -> None:
+        root = Path("/demo/project")
+        repo = Repository(root=root, common_dir=root / ".git", branch="main")
+        app = AgentmonApp(DemoService(repo, socket="/tmp/demo"))
+
+        async with app.run_test(size=(110, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("l")
+            await pilot.pause()
+
+            screen = app.screen
+            assert isinstance(screen, LaunchAgentScreen)
+            screen.query_one("#agent", Select).value = "agy"
+            await pilot.pause()
+            model = screen.query_one("#model", Select)
+            effort = screen.query_one("#effort", Select)
+            assert model.value == "default"
+            # Unlike Claude, agy takes an effort level of its own.
+            assert not effort.disabled
+
+            await pilot.press("m")
+            await pilot.press("e")
+            await pilot.pause()
+            assert model.value == "gemini-3.6-flash"
+            assert effort.value == "low"
 
     asyncio.run(exercise())
 

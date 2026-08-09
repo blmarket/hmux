@@ -7,6 +7,7 @@ import pytest
 
 from agentmon.looper import (
     DONE_STATES,
+    PRESETS,
     Looper,
     LooperConfig,
     format_duration,
@@ -14,6 +15,7 @@ from agentmon.looper import (
     pacing_decision,
     pacing_ready_at,
 )
+from agentmon.model import Repository
 from agentmon.quota import QuotaReport, QuotaWindow
 from agentmon.services import CommandError, PaneStatus
 
@@ -341,6 +343,57 @@ def test_loop_names_a_quota_lookup_failure_once(tmp_path: Path) -> None:
     assert sum("Codex auth unavailable" in line for line in lines) == 1
 
 
+def test_preset_decides_which_agent_the_loop_starts(tmp_path: Path) -> None:
+    preset = PRESETS["agy"]
+    service = FakeService("idle")
+    looper, _lines, _naps = build(
+        service,
+        # Nothing reports antigravity quota, so the loop runs unpaced.
+        FakeQuotaService(report(codex_window(90.0, elapsed_days=0.5))),
+        tmp_path,
+        agent=preset.agent,
+        model=preset.model,
+        effort=preset.effort,
+        provider=preset.provider,
+        max_runs=1,
+    )
+
+    assert looper.run() == 0
+    assert service.splits[0]["agent"] == "agy"
+    assert service.splits[0]["model"] == "gemini-3.6-flash"
+    assert service.splits[0]["effort"] == "high"
+
+
+def test_main_plumbs_the_chosen_preset_into_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import looper as looper_module
+
+    monkeypatch.setattr("sys.stdin", _Stdin("Do the thing.\n"))
+    monkeypatch.setenv("TMUX_PANE", "%0")
+    monkeypatch.setattr(
+        looper_module,
+        "discover_context",
+        lambda **_kwargs: _FakeContext(tmp_path),
+    )
+    configs: list[LooperConfig] = []
+    monkeypatch.setattr(
+        looper_module, "Looper", lambda *args, **kwargs: _FakeLooper(configs, **kwargs)
+    )
+
+    assert main(["--preset", "agy"]) == 0
+    assert configs == [
+        LooperConfig(agent="agy", model="gemini-3.6-flash", effort="high",
+                     provider="antigravity")
+    ]
+
+
+def test_main_rejects_a_preset_that_does_not_exist() -> None:
+    with pytest.raises(SystemExit) as caught:
+        main(["--preset", "nope"])
+    assert caught.value.code == 2
+
+
 def test_main_refuses_to_start_without_a_prompt(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -369,3 +422,25 @@ class _Stdin:
 
     def read(self) -> str:
         return self.text
+
+
+class _FakeContext:
+    """The bits of `discover_context` main() reaches for."""
+
+    def __init__(self, root: Path) -> None:
+        self.warning = ""
+        self.repository = Repository(root, root / ".git", "main")
+
+    def service(self) -> object:
+        return object()
+
+
+class _FakeLooper:
+    def __init__(self, configs: list[LooperConfig], **kwargs: object) -> None:
+        configs.append(kwargs["config"])
+
+    def log(self, message: str) -> None:
+        pass
+
+    def run(self) -> int:
+        return 0

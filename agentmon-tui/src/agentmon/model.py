@@ -8,6 +8,7 @@ DEFAULT_LAUNCH_AGENT = "codex"
 LAUNCH_AGENT_LABELS = {
     "codex": "Codex",
     "claude": "Claude Code",
+    "agy": "Antigravity",
 }
 
 # "default" means the launcher passes no model/effort flag and the agent CLI
@@ -18,10 +19,12 @@ DEFAULT_LAUNCH_CHOICE = "default"
 LAUNCH_AGENT_MODELS = {
     "codex": ("default", "gpt-5-codex", "gpt-5"),
     "claude": ("default", "claude-sonnet-5", "claude-opus-5", "claude-fable-5"),
+    "agy": ("default", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-pro"),
 }
 LAUNCH_AGENT_EFFORTS = {
     "codex": ("default", "low", "medium", "high", "xhigh"),
     "claude": ("default",),
+    "agy": ("default", "low", "medium", "high"),
 }
 
 # Friendly display names for model/effort identifiers that are otherwise
@@ -30,6 +33,9 @@ LAUNCH_CHOICE_LABELS = {
     "claude-sonnet-5": "Sonnet 5",
     "claude-opus-5": "Opus 5",
     "claude-fable-5": "Fable 5",
+    "gemini-3.6-flash": "Gemini 3.6 Flash",
+    "gemini-3.5-flash": "Gemini 3.5 Flash",
+    "gemini-3.1-pro": "Gemini 3.1 Pro",
 }
 
 

@@ -12,6 +12,20 @@ It recognize and provide basic agent stuff via tmux placeholders, only when the
 existing tmux control plane does not support the feature necessary for agent
 control. See ./agentmon/ to see an example agent integration.
 
+Recognized agents, and what each pane reports:
+
+| Agent | Program | Lifecycle state | Session id | Model |
+|-------|---------|-----------------|------------|-------|
+| Codex | `codex` | title + screen | open rollout file | yes |
+| Claude Code | `claude` | title + screen | cwd transcript | yes |
+| Pi | `pi` | screen | cwd transcript | yes |
+| Antigravity CLI | `agy` | screen only | open conversation database | no |
+
+`agy` sets no terminal title at all, so its state comes purely from the screen,
+and its conversation lives in a sqlite database instead of a transcript file:
+the session id is reported, the model is not. agentmon cannot show a transcript
+for an `agy` run for the same reason.
+
 ## Why not tmux, cmux, or herdr?
 
 - tmux is de facto standard of terminal multiplexer, broadly available.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import selectors
@@ -50,8 +51,13 @@ DEVSHELL_PROBE = f"{DEVSHELL_PREFIX} true >/dev/null 2>&1"
 CLAUDE_RATE_LIMIT_COMMAND = "/rate-limit-options"
 CLAUDE_RATE_LIMIT_OPTION_ONE = "Stop and wait for limit to reset"
 
-# Both claude and codex quit on `/exit` typed at their prompt.
+# claude, codex and agy all quit on `/exit` typed at their prompt.
 AGENT_EXIT_COMMAND = "/exit"
+
+# agy asks whether the project is trusted before it will run anything, and
+# remembers the answer per exact workspace path in this file.
+AGY_SETTINGS = Path(".gemini/antigravity-cli/settings.json")
+AGY_TRUSTED_KEY = "trustedWorkspaces"
 _ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 
@@ -64,6 +70,46 @@ def devshell_available(path: Path) -> bool:
     fallback instead of a stalled form.
     """
     return shutil.which("nix") is not None and (path / "flake.nix").is_file()
+
+
+def trust_agy_workspace(worktree: Path, *, settings: Path | None = None) -> bool:
+    """Pre-answer agy's trust dialog for `worktree`; True when it was added.
+
+    agy asks "Do you trust the contents of this project?" for every workspace
+    path it has not seen before, and `--dangerously-skip-permissions` does not
+    cover it. Every launch here runs in a freshly created worktree — a path agy
+    has never seen — so without seeding this the agent would sit on that dialog
+    with nobody watching, which a loop runner reads as blocked and stops on.
+
+    Both the literal and the symlink-resolved path are recorded when they
+    differ: the trust check is on the exact string agy computes for its working
+    directory, and which of the two that is depends on how the pane was started.
+    A malformed or missing settings file is rewritten from scratch rather than
+    failing the launch — its only other keys are UI preferences.
+    """
+    path = settings if settings is not None else Path.home() / AGY_SETTINGS
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    trusted = data.get(AGY_TRUSTED_KEY)
+    if not isinstance(trusted, list):
+        trusted = []
+
+    wanted = [str(worktree)]
+    resolved = str(worktree.resolve())
+    if resolved not in wanted:
+        wanted.append(resolved)
+    missing = [candidate for candidate in wanted if candidate not in trusted]
+    if not missing:
+        return False
+
+    data[AGY_TRUSTED_KEY] = trusted + missing
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return True
 
 
 def _is_shell_command(command: str) -> bool:
@@ -869,6 +915,13 @@ class AgentmonService:
             return codex_transcript.load_transcript(run.session_id)
         if run.agent in {"claude", "claude-code"}:
             return claude_transcript.load_transcript(run.session_id)
+        if run.agent == "agy":
+            # agy keeps conversations in sqlite rather than a JSONL transcript;
+            # reading it is a task of its own. The run is still monitored, it
+            # just has nothing to show here.
+            raise TranscriptError(
+                "agy stores its conversation in a database agentmon cannot read yet"
+            )
         raise TranscriptError(f"Unsupported transcript agent: {run.agent}")
 
     def recent_finished(self, active: list[AgentRun], limit: int = 5) -> list[AgentRun]:
@@ -1072,6 +1125,7 @@ class AgentmonService:
         window-level status such as the agent state follows. Returns the new
         pane id.
         """
+        self._prepare_agent_workspace(agent, worktree)
         command = self._agent_command(
             agent,
             model,
@@ -1291,6 +1345,7 @@ class AgentmonService:
         commit = self.save_instruction(draft.worktree, draft.branch, draft.prompt)
         progress(LaunchStep("instruction.md committed", commit or "unchanged"))
 
+        self._prepare_agent_workspace(draft.agent, draft.worktree)
         command = self._agent_command(
             draft.agent, draft.model, draft.effort, devshell=draft.devshell
         )
@@ -1313,6 +1368,7 @@ class AgentmonService:
         with_instruction = bool(instruction.strip())
         if with_instruction:
             self.save_instruction(worktree, run.branch, instruction)
+        self._prepare_agent_workspace(agent, worktree)
         command = self._agent_command(
             agent,
             model,
@@ -1332,6 +1388,19 @@ class AgentmonService:
         )
         return result.stdout.strip()
 
+    def _prepare_agent_workspace(self, agent: str, worktree: Path) -> None:
+        """Do whatever `agent` needs before it can be started in `worktree`.
+
+        A failure here is fatal to the launch on purpose: the setup it performs
+        is what keeps the agent from stopping on a dialog nobody is watching.
+        """
+        if agent != "agy":
+            return
+        try:
+            trust_agy_workspace(worktree)
+        except OSError as exc:
+            raise CommandError(f"Could not record {worktree} as trusted for agy: {exc}")
+
     def _agent_command(
         self,
         agent: str,
@@ -1342,6 +1411,9 @@ class AgentmonService:
         instruction_file: str = "",
         devshell: bool = False,
     ) -> str:
+        # Agents differ in how an initial prompt is handed over: codex and
+        # claude take it as a trailing positional argument, agy behind `-i`.
+        instruction_flag = ""
         if agent == "codex":
             parts = ["codex", "--yolo"]
             if model != "default":
@@ -1352,6 +1424,13 @@ class AgentmonService:
             parts = ["claude", "--dangerously-skip-permissions"]
             if model != "default":
                 parts.extend(["--model", model])
+        elif agent == "agy":
+            parts = ["agy", "--dangerously-skip-permissions"]
+            if model != "default":
+                parts.extend(["--model", model])
+            if effort != "default":
+                parts.extend(["--effort", effort])
+            instruction_flag = "-i"
         else:
             raise CommandError(f"Unsupported launch agent: {agent}")
         invocation = shlex.join(parts)
@@ -1360,7 +1439,8 @@ class AgentmonService:
             # relative default resolves against the pane's start directory. A
             # loop runner's prompt lives outside the worktree instead.
             source = shlex.quote(instruction_file or "instruction.md")
-            invocation += f' "$(cat {source})"'
+            prefix = f" {instruction_flag}" if instruction_flag else ""
+            invocation += f'{prefix} "$(cat {source})"'
         if not devshell:
             return "exec " + invocation
         # Probe separately rather than falling back on the agent's own exit
