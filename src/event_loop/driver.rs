@@ -127,6 +127,13 @@ enum Effect {
     CancelProtocolTimer {
         target: ActorRef<ProtocolClient>,
     },
+    SetPaneTimer {
+        target: ActorRef<EventPane>,
+        deadline: Instant,
+    },
+    CancelPaneTimer {
+        target: ActorRef<EventPane>,
+    },
     StopListener(ActorRef<Listener>),
     StopPane(ActorRef<EventPane>),
     StopChildSignal(ActorRef<ChildSignal>),
@@ -237,6 +244,16 @@ impl Outbox {
 
     pub(crate) fn cancel_protocol_timer(&mut self, target: ActorRef<ProtocolClient>) {
         self.effects.push(Effect::CancelProtocolTimer { target });
+    }
+
+    /// Arm the pane's ground timer, tmux's five seconds of patience with a
+    /// string sequence whose terminator has not arrived.
+    pub(crate) fn set_pane_timer(&mut self, target: ActorRef<EventPane>, deadline: Instant) {
+        self.effects.push(Effect::SetPaneTimer { target, deadline });
+    }
+
+    pub(crate) fn cancel_pane_timer(&mut self, target: ActorRef<EventPane>) {
+        self.effects.push(Effect::CancelPaneTimer { target });
     }
 
     pub(crate) fn stop_listener(&mut self, target: ActorRef<Listener>) {
@@ -935,6 +952,20 @@ where
             Effect::CancelProtocolTimer { target } => {
                 self.cancel_protocol_timer(&target);
             }
+            Effect::SetPaneTimer { target, deadline } => {
+                self.cancel_pane_timer(&target);
+                let timer = self.timers.set(
+                    deadline,
+                    Envelope::Pane {
+                        target: target.clone(),
+                        event: PaneEvent::GroundTimer,
+                    },
+                );
+                target.with_mut(|pane| pane.set_timer(Some(timer)));
+            }
+            Effect::CancelPaneTimer { target } => {
+                self.cancel_pane_timer(&target);
+            }
             Effect::StopListener(target) => {
                 target.stop();
             }
@@ -1182,6 +1213,14 @@ where
         if let Some(timer) = timer {
             self.timers.cancel(timer);
             target.with_mut(|client| client.set_timer(None));
+        }
+    }
+
+    fn cancel_pane_timer(&mut self, target: &ActorRef<EventPane>) {
+        let timer = target.with(EventPane::timer).flatten();
+        if let Some(timer) = timer {
+            self.timers.cancel(timer);
+            target.with_mut(|pane| pane.set_timer(None));
         }
     }
 }

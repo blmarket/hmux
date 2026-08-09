@@ -1,17 +1,28 @@
 //! Reactor-owned pane PTY I/O.
 
 use std::os::fd::BorrowedFd;
+use std::time::{Duration, Instant};
 
 use crate::server::pane::PaneIo;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;
 use super::reactor::{Readiness, Token};
+use super::timer::TimerId;
+
+/// tmux's ground timer: how long `input.c` waits for the terminator of a
+/// string sequence before giving up on it and returning the parser to ground,
+/// so a pane that opens an OSC and never closes it does not swallow everything
+/// it writes afterwards.
+const GROUND_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(crate) enum PaneEvent {
     Start,
     Ready(Readiness),
     ReadContinuation,
+    /// The ground timer expired on a string sequence still waiting for its
+    /// terminator.
+    GroundTimer,
     Shutdown,
 }
 
@@ -28,6 +39,13 @@ pub(crate) struct EventPane {
     writable_interest: bool,
     work_queued: bool,
     stopping: bool,
+    /// The armed ground timer, if any.
+    timer: Option<TimerId>,
+    /// Whether the parser was inside a string sequence at the end of the last
+    /// read. tmux restarts the timer whenever such a sequence *begins*; this
+    /// watches the same edge once per read, which against five seconds is not
+    /// an observable difference.
+    awaiting_terminator: bool,
 }
 
 impl EventPane {
@@ -38,7 +56,17 @@ impl EventPane {
             writable_interest: false,
             work_queued: false,
             stopping: false,
+            timer: None,
+            awaiting_terminator: false,
         }
+    }
+
+    pub(crate) fn timer(&self) -> Option<TimerId> {
+        self.timer
+    }
+
+    pub(crate) fn set_timer(&mut self, timer: Option<TimerId>) {
+        self.timer = timer;
     }
 
     pub(crate) fn fd(&self) -> BorrowedFd<'_> {
@@ -93,6 +121,12 @@ impl EventPane {
     ) {
         match event {
             PaneEvent::Start if !self.stopping => self.sync_interest(target, outbox),
+            PaneEvent::GroundTimer if !self.stopping => {
+                self.timer = None;
+                self.awaiting_terminator = false;
+                self.io.expire_ground();
+                self.sync_interest(target, outbox);
+            }
             PaneEvent::Ready(readiness) if !self.stopping => {
                 self.work_queued = false;
                 if readiness.is_writable() {
@@ -150,16 +184,41 @@ impl EventPane {
             }
             PaneEvent::Shutdown => {
                 self.stopping = true;
+                if self.timer.is_some() {
+                    outbox.cancel_pane_timer(target.clone());
+                }
                 outbox.set_pane_interest(target.clone(), PaneInterest::Disabled);
                 outbox.stop_pane(target.clone());
             }
-            PaneEvent::Start | PaneEvent::Ready(_) | PaneEvent::ReadContinuation => {}
+            PaneEvent::Start
+            | PaneEvent::Ready(_)
+            | PaneEvent::ReadContinuation
+            | PaneEvent::GroundTimer => {}
         }
     }
 
     fn sync_interest(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
+        self.sync_ground_timer(target, outbox);
         if let Some(interest) = self.take_interest_change() {
             outbox.set_pane_interest(target.clone(), interest);
+        }
+    }
+
+    /// Arm the ground timer when the pane has just entered a string sequence,
+    /// and drop it when the sequence is over. `input_start_ground_timer` runs
+    /// on the way into each of those states and `input_ground` cancels it, so
+    /// the timer measures from where the sequence began rather than from the
+    /// last byte of it.
+    fn sync_ground_timer(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
+        let awaiting = self.io.awaiting_terminator();
+        if awaiting == self.awaiting_terminator {
+            return;
+        }
+        self.awaiting_terminator = awaiting;
+        if awaiting {
+            outbox.set_pane_timer(target.clone(), Instant::now() + GROUND_TIMEOUT);
+        } else if self.timer.is_some() {
+            outbox.cancel_pane_timer(target.clone());
         }
     }
 }

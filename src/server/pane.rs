@@ -1050,6 +1050,35 @@ impl NativePaneObservation {
         (replies, queries)
     }
 
+    /// Whether the pane is part-way through a string sequence, which is when
+    /// tmux's five-second ground timer runs.
+    fn awaiting_terminator(&self) -> bool {
+        self.observer.borrow().awaiting_terminator()
+    }
+
+    /// Give up on a string sequence whose terminator never arrived, as tmux's
+    /// ground timer does, and report whether there was one.
+    ///
+    /// `input_ground_timer_callback` reaches `input_reset(ictx, 0)`, which is
+    /// more than the tokenizer's half: it also returns the pending cell and the
+    /// charset designations to their defaults. Those are the screen's, so they
+    /// are reset the way the rest of this file resets screen state — by
+    /// synthesizing the sequences that say it. What `input_reset` does to the
+    /// DECSC save is not reachable that way and is left alone; nothing the
+    /// server reports exposes it.
+    fn expire_ground(&self) -> bool {
+        if !self.observer.borrow_mut().expire() {
+            return false;
+        }
+        let mut terminal = self.term.borrow_mut();
+        for token in hmux_vt::parser::tokenize(b"\x1b[m\x0f\x1b(B\x1b)B") {
+            terminal.apply(&token);
+        }
+        drop(terminal);
+        self.record_change(false);
+        true
+    }
+
     /// Apply one parse event against the screen as it stands at that point in
     /// the stream. Anything the caller has to deliver is collected instead.
     fn apply_event(
@@ -2295,6 +2324,18 @@ impl PaneIo {
             alive,
             closed: false,
         })
+    }
+
+    /// Whether the pane's parser is waiting for a string terminator, which is
+    /// when tmux arms its five-second ground timer.
+    pub(crate) fn awaiting_terminator(&self) -> bool {
+        self.observation.awaiting_terminator()
+    }
+
+    /// The ground timer fired: abandon the sequence whose terminator never came
+    /// so the output that follows reaches the screen.
+    pub(crate) fn expire_ground(&self) {
+        self.observation.expire_ground();
     }
 
     pub(crate) fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
