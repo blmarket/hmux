@@ -720,7 +720,15 @@ impl Screen {
 
         // Overwriting the left half of a wide character has to erase its
         // right half too, and vice versa, or a stale padding cell is left.
-        let erased = self.overwrite(width);
+        // The two write paths clean up the padding around them differently, so
+        // each gets its own: a run through `screen_write_collect_end`, a single
+        // character through `screen_write_overwrite`.
+        let erased = if collected {
+            self.collect_padding_before();
+            false
+        } else {
+            self.overwrite(width)
+        };
 
         // tmux's `skip`. A write that would leave the cell exactly as it found
         // it does not reach the grid at all — and only the uncollected path
@@ -747,7 +755,7 @@ impl Screen {
             }
             self.grid.set(self.cx, row, cell);
             for xx in self.cx + 1..self.cx + width {
-                self.grid.set_padding(xx, row, cell);
+                self.grid.set_padding(xx, row);
             }
         }
 
@@ -758,6 +766,21 @@ impl Screen {
             self.set_cursor(Some(self.cx + width), None);
         } else {
             self.cx = sx - not_wrap;
+        }
+
+        // A run cleans up after itself: `screen_write_collect_end` clears the
+        // padding left beyond the cells it has just written, so a wide
+        // character the run half-covered does not leave its right half behind.
+        // tmux does this once when the run flushes; doing it as each character
+        // lands reaches the same grid, because the run is contiguous and only
+        // ever grows to the right.
+        if collected {
+            let row = self.view_y(self.cy);
+            let mut xx = self.cx;
+            while xx < sx && self.grid.get(xx, row).is_padding() {
+                self.grid.clear(xx, row, 1, 1, colour::DEFAULT);
+                xx += 1;
+            }
         }
     }
 
@@ -891,49 +914,97 @@ impl Screen {
 
         self.grid.set(cx - n, row, &last);
         if force_wide {
-            self.grid.set_padding(cx - 1, row, &last);
+            self.grid.set_padding(cx - 1, row);
         }
         self.set_cursor(Some(cx), None);
         Combined::Consumed
     }
 
+    /// tmux's padding cleanup on the left of a collected run, from
+    /// `screen_write_collect_end`.
+    ///
+    /// It is deliberately not [`Screen::overwrite`]'s. Both walk back over the
+    /// padding to the character it belongs to, but this one clears that
+    /// character only when it is itself wide or padding — so a run landing
+    /// immediately after an ordinary single-column character leaves it standing.
+    fn collect_padding_before(&mut self) {
+        if self.cx == 0 {
+            return;
+        }
+        let row = self.view_y(self.cy);
+        let mut xx = self.cx;
+        let mut cell = self.grid.get(xx, row);
+        while xx > 0 {
+            cell = self.grid.get(xx, row);
+            if !cell.is_padding() {
+                break;
+            }
+            self.grid.clear(xx, row, 1, 1, colour::DEFAULT);
+            xx -= 1;
+        }
+        if xx == self.cx {
+            return;
+        }
+        // tmux re-reads the cell when the walk ran off the left of the row,
+        // because the loop left `gc` holding column one.
+        if xx == 0 {
+            cell = self.grid.get(0, row);
+        }
+        if usize::from(cell.data.width) > 1 || cell.is_padding() {
+            self.grid.clear(xx, row, 1, 1, colour::DEFAULT);
+        }
+    }
+
     /// tmux's `screen_write_overwrite`: clear the padding around a wide
     /// character the incoming one partly covers.
+    ///
+    /// This is the single-character path only; a run of plain characters is
+    /// cleaned up by [`Screen::collect_padding_before`] instead, which is where
+    /// tmux puts it and which decides differently.
     ///
     /// The answer is whether anything was erased, which is what tells the
     /// caller the write is not a no-op after all.
     fn overwrite(&mut self, width: usize) -> bool {
         let row = self.view_y(self.cy);
         let sx = self.sx();
+        // The cell as it was found. Both decisions below are made about it, so
+        // it is read once, before the first of them writes over it.
+        let now = self.grid.get(self.cx, row);
         let mut erased = false;
 
-        // Landing on the right half of a wide character: erase its left half.
-        if self.grid.get(self.cx, row).is_padding() {
+        // Landing on the right half of a wide character: erase the padding
+        // back to the character it belongs to, and that character with it.
+        if now.is_padding() {
             let mut xx = self.cx;
-            while xx > 0 {
+            while xx > 0 && self.grid.get(xx, row).is_padding() {
+                self.grid.clear(xx, row, 1, 1, colour::DEFAULT);
                 xx -= 1;
-                if !self.grid.get(xx, row).is_padding() {
-                    break;
-                }
             }
-            self.grid.clear(xx, row, self.cx - xx, 1, colour::DEFAULT);
+            self.grid.clear(xx, row, 1, 1, colour::DEFAULT);
             erased = true;
         }
 
         // Covering the left half of a wide character: erase the padding that
         // followed it.
-        for xx in self.cx..(self.cx + width).min(sx) {
-            let cell = self.grid.get(xx, row);
-            if xx > self.cx && !cell.is_padding() {
-                break;
-            }
-            if usize::from(cell.data.width) > 1 || (xx > self.cx && cell.is_padding()) {
-                let mut end = xx + 1;
-                while end < sx && self.grid.get(end, row).is_padding() {
-                    end += 1;
+        if width != 1 || usize::from(now.data.width) != 1 || now.is_padding() {
+            let mut xx = self.cx + width;
+            while xx < sx && self.grid.get(xx, row).is_padding() {
+                if now.flags & flag::TAB != 0 {
+                    // A tab is not erased by writing over its first column:
+                    // tmux turns each column it still covers into a tab cell
+                    // of its own, so what is left of the run is still captured
+                    // as tabs rather than as blanks.
+                    let mut cell = now.clone();
+                    cell.data = CellData {
+                        bytes: b" ".to_vec(),
+                        width: 1,
+                    };
+                    self.grid.set(xx, row, &cell);
+                } else {
+                    self.grid.clear(xx, row, 1, 1, colour::DEFAULT);
                 }
-                self.grid.clear(xx, row, end - xx, 1, colour::DEFAULT);
                 erased = true;
+                xx += 1;
             }
         }
         erased
@@ -1022,15 +1093,18 @@ impl Screen {
     /// `input_restore_state` leaves it.
     pub(crate) fn restore_cursor(&mut self) {
         match self.saved_cursor.clone() {
+            // tmux restores through `screen_write_cursormove`, which clamps to
+            // the last real column — so a cursor saved in the pending-wrap
+            // position comes back one column short of where it was.
             Some(state) => {
                 self.cell = state.cell;
                 self.mode = (self.mode & !mode::ORIGIN) | (state.mode & mode::ORIGIN);
-                self.set_cursor(Some(state.cx), Some(state.cy));
+                self.cursor_move(Some(state.cx), Some(state.cy), false);
             }
             None => {
                 self.cell = Cell::default();
                 self.mode &= !mode::ORIGIN;
-                self.set_cursor(Some(0), Some(0));
+                self.cursor_move(Some(0), Some(0), false);
             }
         }
     }
@@ -1071,7 +1145,19 @@ impl Screen {
 
     /// tmux's `screen_alternate_off`.
     pub(crate) fn alternate_off(&mut self, restore_cursor: bool) {
+        // The cursor and the cell come back whether or not an alternate screen
+        // is up, and the position is clamped onto the screen either way — which
+        // is how a pane sitting in the pending-wrap column loses it here.
+        if restore_cursor {
+            if let Some(state) = self.saved_state.clone() {
+                self.cell = state.cell;
+                self.cx = state.cx;
+                self.cy = state.cy;
+            }
+        }
         let Some(saved) = self.saved_grid.take() else {
+            self.cx = self.cx.min(self.sx() - 1);
+            self.cy = self.cy.min(self.sy() - 1);
             return;
         };
         let (sx, sy) = (self.grid.sx, self.grid.sy);
@@ -1080,13 +1166,6 @@ impl Screen {
         // rows were saved at, takes them, and comes back to the current one.
         if (saved.sx, saved.sy) != (sx, sy) {
             self.resize(saved.sx, saved.sy);
-        }
-        if restore_cursor {
-            if let Some(state) = self.saved_state.take() {
-                self.cell = state.cell;
-                self.cx = state.cx;
-                self.cy = state.cy;
-            }
         }
         self.saved_state = None;
         let py = self.grid.hsize;
@@ -1123,9 +1202,11 @@ impl Screen {
         let sy = self.sy();
         self.set_scroll_region(0, sy - 1);
         self.mode = mode::CURSOR | mode::WRAP | (self.mode & mode::CRLF);
-        if self.saved_grid.is_some() {
-            self.alternate_off(false);
-        }
+        // The alternate screen survives a reset: `screen_write_reset` never
+        // looks at `saved_grid`. That is observable, because the alternate
+        // screen is also what has the grid's history turned off — so the clear
+        // below blanks the rows where they stand instead of scrolling them into
+        // a history the pane is not adding to.
         self.clear_screen(colour::DEFAULT);
         self.set_cursor(Some(0), Some(0));
         // `input_reset_cell`: the cell the pane draws with, and the one DECSC

@@ -21,6 +21,7 @@
 use std::collections::VecDeque;
 
 use super::parser::{Param, Parser, StringEnd, Token, TokenKind, INPUT_BUFFER_DEFAULT_SIZE};
+use super::sixel;
 use super::vis;
 use super::x11_colour;
 
@@ -282,6 +283,16 @@ impl Observer {
                 let bytes = character.encode_utf8(&mut buffer).as_bytes().to_vec();
                 out.rewrite(TokenKind::Print(character), bytes);
             }
+            // An unfinished UTF-8 character contributes no bytes: the ones it
+            // has collected travel with the token it eventually resolves into.
+            TokenKind::Utf8Started => {
+                out.rewrite(TokenKind::Utf8Started, Vec::new());
+            }
+            // Likewise for the replacement a malformed sequence resolved to:
+            // the bytes handed on are the replacement's, not the bad ones.
+            TokenKind::Replacement => {
+                out.rewrite(TokenKind::Replacement, "\u{fffd}".as_bytes().to_vec());
+            }
             TokenKind::Control(byte) => {
                 if byte == 0x07 {
                     out.event(Event::Bell);
@@ -373,16 +384,22 @@ impl Observer {
             }
             // DECRQM for a private mode. The answer is a mode word read, so
             // it is ordered into the stream like the cursor report: what the
-            // pane asked about is what the screen has *here*.
+            // pane asked about is what the screen has *here*. tmux answers only
+            // a request that names a mode — `if (m > 0)` — so a bare or zero
+            // parameter produces nothing at all.
             (Some(b'?'), [b'$'], b'p') => {
                 if let Some(mode) = params.first().map_or(Some(0), |param| param.get(0)) {
-                    out.event(Event::DecPrivateModeReport(mode));
+                    if mode > 0 {
+                        out.event(Event::DecPrivateModeReport(mode));
+                    }
                 }
             }
             // ANSI DECRQM for a standard mode.
             (None, [b'$'], b'p') => {
                 if let Some(mode) = params.first().map_or(Some(0), |param| param.get(0)) {
-                    out.event(Event::DecModeReport(mode));
+                    if mode > 0 {
+                        out.event(Event::DecModeReport(mode));
+                    }
                 }
             }
             // Secondary DA and XTVERSION.
@@ -395,15 +412,31 @@ impl Observer {
                     format!("\x1bP>|{XTVERSION_NAME} {}\x1b\\", crate::TMUX_VERSION).into_bytes(),
                 ));
             }
-            // Sixel graphics attributes. The daemon does not render sixel
-            // image payloads, but tmux answers this capability query locally
-            // and applications use it independently of image rendering.
-            (Some(b'?'), [], b'S')
-                if params.len() == 2
-                    && params[0].get(0) == Some(1)
-                    && params[1].get(0) == Some(1) =>
-            {
-                out.event(Event::Reply(b"\x1b[?1;0;1024S".to_vec()));
+            // XTSMGRAPHICS, tmux's `input_csi_dispatch_sm_graphics`. The
+            // daemon does not render sixel image payloads, but tmux answers
+            // this capability query locally and applications use it
+            // independently of image rendering.
+            //
+            // Only a request for the colour-register count reports the
+            // register count; every other item — including one that names no
+            // item at all — is answered with the failure form, which is why an
+            // unrecognised `CSI ? … S` still produces a reply.
+            (Some(b'?'), [], b'S') if params.len() <= 3 => {
+                // tmux's `input_get(ictx, i, 0, 0)`: a position left out or
+                // left empty reads as zero, and one carrying sub-parameters as
+                // -1, which its `%d` prints rather than suppressing the reply.
+                let read = |index: usize| -> i64 {
+                    params
+                        .get(index)
+                        .map_or(0, |param| param.get(0).map_or(-1, i64::from))
+                };
+                let (item, action, value) = (read(0), read(1), read(2));
+                let reply = if item == 1 && matches!(action, 1 | 2 | 4) {
+                    format!("\x1b[?{item};0;{}S", sixel::COLOUR_REGISTERS)
+                } else {
+                    format!("\x1b[?{item};3;{value}S")
+                };
+                out.event(Event::Reply(reply.into_bytes()));
             }
             // DSR ?996: which theme is this terminal using?
             (Some(b'?'), [], b'n') if params.first().is_some_and(|p| p.get(0) == Some(996)) => {

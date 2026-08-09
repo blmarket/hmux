@@ -217,8 +217,8 @@ impl Grid {
     }
 
     /// tmux's `grid_set_padding`: the blank right half of a wide character.
-    pub(crate) fn set_padding(&mut self, px: usize, py: usize, template: &Cell) {
-        self.set(px, py, &Cell::padding(template));
+    pub(crate) fn set_padding(&mut self, px: usize, py: usize) {
+        self.set(px, py, &Cell::padding());
     }
 
     /// tmux's `grid_expand_line`, rounding included.

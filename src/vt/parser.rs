@@ -99,9 +99,22 @@ impl Param {
 /// One complete unit of a pane's byte stream.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum TokenKind {
-    /// A printable character in ground state. Invalid UTF-8 has already been
-    /// resolved to `U+FFFD`, one replacement per malformed sequence.
+    /// A printable character in ground state.
     Print(char),
+    /// A UTF-8 sequence has just opened in ground state and has not finished.
+    ///
+    /// Nothing reaches the screen, and the bytes stay with the parser until the
+    /// character resolves. It exists because tmux clears `INPUT_LAST` on every
+    /// top-bit-set byte, so an unfinished character is already enough to leave
+    /// a following REP with nothing to repeat.
+    Utf8Started,
+    /// The `U+FFFD` a malformed UTF-8 sequence resolves to, one per sequence.
+    ///
+    /// It is written to the screen exactly as a printed character is, and is
+    /// kept apart from one only because tmux leaves `INPUT_LAST` clear for it:
+    /// `input_stop_utf8` writes the replacement without recording it, so a
+    /// following REP has nothing to repeat.
+    Replacement,
     /// A C0 control executed in place (`BEL`, `BS`, `HT`, `LF`, `CR`, `SO`, …).
     Control(u8),
     /// `ESC` + intermediates + a final byte.
@@ -351,10 +364,10 @@ impl Parser {
     /// `input_stop_utf8`: give up on a part-collected UTF-8 character and enter
     /// the replacement it decodes to.
     fn stop_utf8(&mut self, emit: &mut impl FnMut(Token)) {
-        if let Some(character) = self.utf8.flush() {
+        if self.utf8.flush() {
             let raw = std::mem::take(&mut self.raw);
             emit(Token {
-                kind: TokenKind::Print(character),
+                kind: TokenKind::Replacement,
                 raw,
             });
         }
@@ -371,9 +384,9 @@ impl Parser {
         // `input_c0_dispatch` stops UTF-8 collection before it looks at the
         // byte, the same as `input_print` does. The bytes it resolves belong to
         // the sequence in progress, so they stay in its accumulated bytes.
-        if let Some(character) = self.utf8.flush() {
+        if self.utf8.flush() {
             emit(Token {
-                kind: TokenKind::Print(character),
+                kind: TokenKind::Replacement,
                 raw: Vec::new(),
             });
         }
@@ -399,13 +412,28 @@ impl Parser {
         // one that was still open.
         if byte >= 0x80 {
             self.raw.push(byte);
-            match self.utf8.push(byte) {
+            let opening = self.utf8.is_idle();
+            let step = self.utf8.push(byte);
+            if opening && matches!(step, Utf8Step::More) {
+                emit(Token {
+                    kind: TokenKind::Utf8Started,
+                    raw: Vec::new(),
+                });
+            }
+            match step {
                 Utf8Step::More => {}
                 Utf8Step::Done(character) => self.dispatch(TokenKind::Print(character), emit),
+                Utf8Step::Invalid => self.dispatch(TokenKind::Replacement, emit),
             }
             return;
         }
-        self.stop_utf8(emit);
+        // DEL is the one byte tmux's ground table gives no handler at all, so
+        // it reaches neither `input_print` nor `input_c0_dispatch` and a UTF-8
+        // character part-way through survives it: `\xcd\x7f` writes nothing,
+        // and a continuation byte after the DEL still completes the character.
+        if byte != 0x7f {
+            self.stop_utf8(emit);
+        }
         self.raw.push(byte);
         match byte {
             0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.dispatch(TokenKind::Control(byte), emit),
@@ -908,11 +936,18 @@ enum Utf8Step {
     More,
     /// A character is ready.
     Done(char),
+    /// The sequence was malformed and stands for one replacement. This is not
+    /// `Done(REPLACEMENT)`: a stream may spell `U+FFFD` correctly, and that is
+    /// a printed character like any other.
+    Invalid,
 }
 
-const REPLACEMENT: char = '\u{fffd}';
-
 impl Utf8Collector {
+    /// Whether no sequence is part-way through, so the next byte opens one.
+    fn is_idle(&self) -> bool {
+        self.bytes.is_empty()
+    }
+
     fn push(&mut self, byte: u8) -> Utf8Step {
         if self.bytes.is_empty() {
             self.width = match byte {
@@ -921,7 +956,7 @@ impl Utf8Collector {
                 0xf0..=0xf4 => 4,
                 // A continuation byte or an over-long lead opens nothing, and
                 // nothing is collected: `utf8_open` fails before it appends.
-                _ => return Utf8Step::Done(REPLACEMENT),
+                _ => return Utf8Step::Invalid,
             };
             self.poisoned = false;
             self.bytes.push(byte);
@@ -935,26 +970,27 @@ impl Utf8Collector {
             return Utf8Step::More;
         }
         let character = if self.poisoned {
-            REPLACEMENT
+            None
         } else {
             std::str::from_utf8(&self.bytes)
                 .ok()
                 .and_then(|text| text.chars().next())
-                .unwrap_or(REPLACEMENT)
         };
         self.bytes.clear();
-        Utf8Step::Done(character)
+        match character {
+            Some(character) => Utf8Step::Done(character),
+            None => Utf8Step::Invalid,
+        }
     }
 
     /// Give up on an incomplete sequence because a byte that cannot be part of
     /// one at all arrived — anything below `0x80`, which the ground state
     /// handles itself. tmux's `input_stop_utf8`, called from `input_print` and
     /// `input_c0_dispatch` before either looks at the byte.
-    fn flush(&mut self) -> Option<char> {
-        (!self.bytes.is_empty()).then(|| {
-            self.bytes.clear();
-            REPLACEMENT
-        })
+    fn flush(&mut self) -> bool {
+        let started = !self.bytes.is_empty();
+        self.bytes.clear();
+        started
     }
 }
 
@@ -1136,7 +1172,12 @@ mod tests {
     fn utf8_is_collected_in_ground_state() {
         assert_eq!(
             tokens("é界".as_bytes()),
-            vec![TokenKind::Print('é'), TokenKind::Print('界')]
+            vec![
+                TokenKind::Utf8Started,
+                TokenKind::Print('é'),
+                TokenKind::Utf8Started,
+                TokenKind::Print('界')
+            ]
         );
     }
 
@@ -1144,9 +1185,13 @@ mod tests {
     fn one_malformed_sequence_becomes_one_replacement() {
         assert_eq!(
             tokens(b"\xc3\x28"),
-            vec![TokenKind::Print('\u{fffd}'), TokenKind::Print('(')]
+            vec![
+                TokenKind::Utf8Started,
+                TokenKind::Replacement,
+                TokenKind::Print('(')
+            ]
         );
-        assert_eq!(tokens(b"\xff"), vec![TokenKind::Print('\u{fffd}')]);
+        assert_eq!(tokens(b"\xff"), vec![TokenKind::Replacement]);
     }
 
     #[test]
@@ -1156,14 +1201,19 @@ mod tests {
         // and keeps collecting, so the buried character never reappears.
         assert_eq!(
             tokens(b"\xe0\xc3\xa9"),
-            vec![TokenKind::Print('\u{fffd}')],
+            vec![TokenKind::Utf8Started, TokenKind::Replacement],
             "one sequence, one replacement, nothing replayed"
         );
         // The same sequence one byte shorter leaves the third slot to whatever
         // comes next, which is also swallowed.
         assert_eq!(
             tokens(b"\xe0\xc3\xa9\xc3\xa9"),
-            vec![TokenKind::Print('\u{fffd}'), TokenKind::Print('é')]
+            vec![
+                TokenKind::Utf8Started,
+                TokenKind::Replacement,
+                TokenKind::Utf8Started,
+                TokenKind::Print('é')
+            ]
         );
     }
 
@@ -1172,9 +1222,12 @@ mod tests {
         let mut parser = Parser::default();
         let mut out = Vec::new();
         parser.parse("界".as_bytes()[..2].as_ref(), |token| out.push(token.kind));
-        assert!(out.is_empty());
+        assert_eq!(out, vec![TokenKind::Utf8Started]);
         parser.parse("界".as_bytes()[2..].as_ref(), |token| out.push(token.kind));
-        assert_eq!(out, vec![TokenKind::Print('界')]);
+        assert_eq!(
+            out,
+            vec![TokenKind::Utf8Started, TokenKind::Print('界')]
+        );
     }
 
     #[test]
@@ -1185,6 +1238,7 @@ mod tests {
         assert_eq!(
             tokens(b"\xe0\x1b[31mZ"),
             vec![
+                TokenKind::Utf8Started,
                 TokenKind::Csi {
                     private: None,
                     params: vec![Param {
@@ -1194,7 +1248,7 @@ mod tests {
                     intermediates: Vec::new(),
                     final_byte: b'm',
                 },
-                TokenKind::Print('\u{fffd}'),
+                TokenKind::Replacement,
                 TokenKind::Print('Z'),
             ]
         );

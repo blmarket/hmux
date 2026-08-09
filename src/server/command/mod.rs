@@ -7712,13 +7712,22 @@ fn apply_capture_control(
             };
             let parameters = String::from_utf8_lossy(&rest[..separator]);
             let uri = String::from_utf8_lossy(&rest[separator + 1..]).into_owned();
-            presentation.hyperlink = (!uri.is_empty()).then(|| Hyperlink {
-                id: parameters
-                    .split(':')
-                    .find_map(|field| field.strip_prefix("id=").map(str::to_string))
-                    .unwrap_or_default(),
-                uri,
-            });
+            if uri.is_empty() {
+                presentation.hyperlink = None;
+                presentation.hyperlink_epoch = 0;
+            } else {
+                presentation.hyperlink = Some(Hyperlink {
+                    id: parameters
+                        .split(':')
+                        .find_map(|field| field.strip_prefix("id=").map(str::to_string))
+                        .unwrap_or_default(),
+                    uri,
+                });
+                // The dump writes an OSC 8 exactly where the cell's link
+                // changes, so counting them is what tells two anonymous links
+                // naming one URI apart.
+                presentation.hyperlink_epoch = presentation.hyperlink_epoch.wrapping_add(1);
+            }
         }
         CaptureToken::Acs(value) => presentation.acs = value,
         CaptureToken::Text(_) | CaptureToken::Other => {}

@@ -243,8 +243,16 @@ fn vt_row(
     mut pen: Cell,
     out: &mut String,
 ) -> Cell {
-    let mut charset = false;
-    let mut link = 0u32;
+    // Whether SO is in effect. tmux reads this off the carried `lastgc` rather
+    // than from a row-local flag, so a row that starts in the character set the
+    // row above ended in emits no SO — and a capture that ends inside one ends
+    // without an SI.
+    let mut charset = pen.attr & attr::CHARSET != 0;
+    // tmux's `has_link`, which is local to one row while the cell it compares
+    // against — `pen`, its `lastgc` — is carried across them. A row whose first
+    // cell continues the link the row above ended in emits no sequence for it,
+    // and so has nothing to close either.
+    let mut has_link = false;
     let width = match extent {
         RowExtent::Redraw => grid.line_length(py),
         RowExtent::Capture(CaptureExtent::Allocated) => grid
@@ -261,30 +269,43 @@ fn vt_row(
         if cell.is_padding() {
             continue;
         }
+        let last_link = pen.link;
         if !cell.looks_equal(&pen) {
             out.push_str(&sgr(&pen, &cell));
             pen = cell.clone();
         }
-        // tmux writes the hyperlink after the style codes, and only when the
-        // cell's link differs from the one already open.
-        if cell.link != link {
-            match screen.hyperlinks.get(cell.link) {
-                Some((uri, Some(id))) => {
-                    let _ = write!(out, "\x1b]8;id={id};{uri}\x1b\\");
-                }
-                Some((uri, None)) => {
-                    let _ = write!(out, "\x1b]8;;{uri}\x1b\\");
-                }
-                // The cell is not in a link; close the one that is open.
-                None => out.push_str(CLOSE_HYPERLINK),
-            }
-            link = cell.link;
-        }
+        // tmux writes the shift in/out between the style codes and the
+        // hyperlink, so a cell that changes both is preceded by SO then OSC 8.
         let wants_charset = cell.attr & attr::CHARSET != 0;
         if wants_charset != charset {
             out.push_str(if wants_charset { "\x1b(0" } else { "\x1b(B" });
             charset = wants_charset;
         }
+        // tmux writes the hyperlink after the style codes, and only when the
+        // cell's link differs from the last cell's.
+        if cell.link != last_link {
+            match screen.hyperlinks.get(cell.link) {
+                Some((uri, Some(id))) => {
+                    let _ = write!(out, "\x1b]8;id={id};{uri}\x1b\\");
+                    has_link = true;
+                }
+                Some((uri, None)) => {
+                    let _ = write!(out, "\x1b]8;;{uri}\x1b\\");
+                    has_link = true;
+                }
+                // The cell is not in a link. Only a link this row opened is
+                // closed here: one carried in from the row above is left as it
+                // is, which is what tmux's row-local `has_link` decides.
+                None if has_link => {
+                    out.push_str(CLOSE_HYPERLINK);
+                    has_link = false;
+                }
+                None => {}
+            }
+        }
+        // tmux copies the whole cell into `lastgc` for every cell, so the link
+        // it compares against moves on even when the style did not.
+        pen.link = cell.link;
         // A capture puts the tab back: tmux's `grid_string_cells` writes one
         // `\t` for a tab cell whatever blanks it holds, so the captured row is
         // narrower than the columns the tab covered. A redraw keeps the blanks
@@ -296,10 +317,13 @@ fn vt_row(
             out.push_str(cell.data.text());
         }
     }
-    if charset {
+    // A redraw closes the character set it opened, because the next row is
+    // painted somewhere else. A capture hands it on instead, as tmux's carried
+    // `lastgc` does — and so a capture that ends inside SO ends without SI.
+    if extent == RowExtent::Redraw && charset {
         out.push_str("\x1b(B");
     }
-    if link != 0 {
+    if has_link {
         out.push_str(CLOSE_HYPERLINK);
     }
     // A redraw closes whatever the row opened, because the next row is painted

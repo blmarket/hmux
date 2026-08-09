@@ -108,6 +108,14 @@ pub(crate) struct Hyperlink {
 pub(crate) struct CellPresentation {
     pub(crate) style: CellStyle,
     pub(crate) hyperlink: Option<Hyperlink>,
+    /// Which OSC 8 in the stream opened this link, counted from the last close.
+    ///
+    /// Two anonymous OSC 8s naming the same URI are two links, not one — tmux
+    /// gives each its own inner id, so a capture re-announces the URI between
+    /// them. The URI and the `id=` cannot tell them apart, so the sequence they
+    /// arrived in does. Zero whenever no link is open, which keeps this out of
+    /// the comparison everywhere a link is not involved.
+    pub(crate) hyperlink_epoch: u64,
     pub(crate) acs: bool,
 }
 
@@ -511,36 +519,52 @@ fn parse_semicolon_colour(fields: &[&str]) -> Option<(Colour, usize)> {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CaptureStyleWriter {
     current: CellPresentation,
+    /// tmux's `has_link`: whether *this row* has opened a hyperlink in the
+    /// output. It is the only per-row state `grid_string_cells` keeps; the cell
+    /// it compares against is carried across rows with everything else.
+    has_link: bool,
 }
 
 impl CaptureStyleWriter {
     pub(crate) fn transition(&mut self, out: &mut Vec<u8>, next: &CellPresentation) {
         write_capture_style(out, &self.current.style, &next.style);
-        write_capture_hyperlink(
-            out,
-            self.current.hyperlink.as_ref(),
-            next.hyperlink.as_ref(),
-        );
+        // tmux writes the shift in/out between the style codes and the
+        // hyperlink, so a cell changing both is preceded by SO then OSC 8.
         if self.current.acs != next.acs {
             out.push(if next.acs { 0x0e } else { 0x0f });
+        }
+        if self.current.hyperlink != next.hyperlink
+            || self.current.hyperlink_epoch != next.hyperlink_epoch
+        {
+            if next.hyperlink.is_some() {
+                write_capture_hyperlink(out, next.hyperlink.as_ref());
+                self.has_link = true;
+            } else if self.has_link {
+                // Only a link this row opened is closed here. One carried in
+                // from the row above is left alone, which is what leaves a
+                // continuing link unmentioned on the rows that follow it.
+                write_capture_hyperlink(out, None);
+                self.has_link = false;
+            }
         }
         self.current = next.clone();
     }
 
     /// End one row of a capture.
     ///
-    /// The style is deliberately left open. tmux carries `grid_string_cells`'s
-    /// last cell across the rows of a single `capture-pane`, so a row that ends
-    /// mid-style is followed either by a row that opens with the transition or,
-    /// if it is the last one, by nothing at all — closing here would put a
-    /// reset at the end of every capture that tmux does not write. The
-    /// hyperlink and the line-drawing set do close per row, as they do in tmux.
+    /// The style, the line-drawing set and the cell's hyperlink are
+    /// deliberately left open. tmux carries `grid_string_cells`'s last cell
+    /// across the rows of a single `capture-pane`, so a row that ends mid-style
+    /// is followed either by a row that opens with the transition or, if it is
+    /// the last one, by nothing at all — closing here would put a reset at the
+    /// end of every capture that tmux does not write. Only the row's own open
+    /// hyperlink is closed, because that is the one piece of state tmux keeps
+    /// per row.
     pub(crate) fn finish_row(&mut self, out: &mut Vec<u8>) {
-        let next = CellPresentation {
-            style: self.current.style,
-            ..CellPresentation::default()
-        };
-        self.transition(out, &next);
+        if self.has_link {
+            write_capture_hyperlink(out, None);
+            self.has_link = false;
+        }
     }
 }
 
@@ -641,14 +665,11 @@ fn push_sgr(out: &mut Vec<u8>, codes: &[String]) {
     out.push(b'm');
 }
 
-pub(crate) fn write_capture_hyperlink(
-    out: &mut Vec<u8>,
-    old: Option<&Hyperlink>,
-    new: Option<&Hyperlink>,
-) {
-    if old == new {
-        return;
-    }
+/// The OSC 8 that opens `link`, or closes whatever is open when it is `None`.
+///
+/// This is unconditional: the caller has already decided the link changed, and
+/// two anonymous links naming one URI are a change the sequences cannot show.
+pub(crate) fn write_capture_hyperlink(out: &mut Vec<u8>, new: Option<&Hyperlink>) {
     out.extend_from_slice(b"\x1b]8;");
     if let Some(link) = new {
         if !link.id.is_empty() {

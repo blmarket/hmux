@@ -75,7 +75,16 @@ impl Engine {
             self.screen.end_run();
         }
         match kind {
-            TokenKind::Print(character) => self.print(*character),
+            TokenKind::Print(character) => self.print(*character, true),
+            // `input_top_bit_set` clears `INPUT_LAST` for every top-bit-set
+            // byte and puts it back only for a character that completed, so
+            // both an unfinished sequence and the replacement a broken one
+            // resolves to leave REP with nothing to repeat.
+            TokenKind::Utf8Started => self.last_valid = false,
+            TokenKind::Replacement => {
+                self.print('\u{fffd}', false);
+                self.last_valid = false;
+            }
             TokenKind::Control(byte) => self.control(*byte),
             TokenKind::Esc {
                 intermediates,
@@ -87,16 +96,26 @@ impl Engine {
                 intermediates,
                 final_byte,
             } => self.csi(*private, params, intermediates, *final_byte),
-            TokenKind::Osc { data, .. } => self.osc(data),
+            // Entering a string state — `input_enter_osc` and its DCS, APC and
+            // rename counterparts — clears `INPUT_LAST` before a byte of the
+            // string is read.
+            TokenKind::Osc { data, .. } => {
+                self.last_valid = false;
+                self.osc(data);
+            }
             TokenKind::Dcs {
                 params,
                 intermediates,
                 final_byte,
                 data,
-            } => self.dcs(params.as_deref(), intermediates, *final_byte, data),
+            } => {
+                self.last_valid = false;
+                self.dcs(params.as_deref(), intermediates, *final_byte, data);
+            }
             // The rename and APC forms never reach the screen: the observer
-            // consumed them.
-            TokenKind::Apc { .. } | TokenKind::Rename { .. } => {}
+            // consumed them. Entering their string states still costs REP its
+            // character.
+            TokenKind::Apc { .. } | TokenKind::Rename { .. } => self.last_valid = false,
         }
     }
 
@@ -136,7 +155,7 @@ impl Engine {
 
     /// tmux's `input_print` and `input_top_bit_set`, which differ only in where
     /// the character came from.
-    fn print(&mut self, character: char) {
+    fn print(&mut self, character: char, records_last: bool) {
         let width = codepoint_width(character as u32);
         let mut cell = self.screen.cell.clone();
         if self.charsets.acs_selected() && character.is_ascii() {
@@ -146,8 +165,10 @@ impl Engine {
         }
         cell.data = CellData::from_char(character, width);
         self.screen.put_cell(&cell);
-        self.last = Some(cell.data);
-        self.last_valid = true;
+        if records_last {
+            self.last = Some(cell.data);
+            self.last_valid = true;
+        }
     }
 
     /// tmux's `input_c0_dispatch`.
@@ -235,7 +256,12 @@ impl Engine {
             ([b')'], b'B') => self.charsets.g1_acs = false,
             _ => {}
         }
-        self.last_valid = false;
+        // `input_esc_dispatch` returns before this when the sequence is not in
+        // its table, so an escape tmux does not recognise leaves REP's
+        // character where it was.
+        if esc_is_known(intermediates, final_byte) {
+            self.last_valid = false;
+        }
     }
 
     // ---- control sequences ------------------------------------------------
@@ -439,8 +465,11 @@ impl Engine {
             }
             _ => {}
         }
-        // Only a printable character leaves something for REP to repeat.
-        if !matches!((private, intermediates, final_byte), (None, [], b'b')) {
+        // Every sequence in `input_csi_table` clears `INPUT_LAST` on the way
+        // out — REP included, so a second REP straight after the first has
+        // nothing left to repeat. One that is not in the table returns before
+        // that and leaves the character alone.
+        if csi_is_known(private, intermediates, final_byte) {
             self.last_valid = false;
         }
     }
@@ -593,12 +622,12 @@ impl Engine {
 
     /// tmux's `input_csi_dispatch_sgr`.
     fn sgr(&mut self, params: &[Param]) {
+        // `CSI m` with no parameters at all copies the default cell wholesale,
+        // which drops the open hyperlink with everything else. `CSI 0 m` goes
+        // through the loop below, where tmux lifts the link out and puts it
+        // back — so the two spellings of "reset" are not the same sequence.
         if params.is_empty() {
-            let link = self.screen.cell.link;
-            self.screen.cell = Cell {
-                link,
-                ..Cell::default()
-            };
+            self.screen.cell = Cell::default();
             return;
         }
         let mut index = 0;
@@ -614,7 +643,12 @@ impl Engine {
             let n = param.value.unwrap_or(0);
             if matches!(n, 38 | 48 | 58) {
                 index += 1;
-                let at = |offset: usize| params.get(index + offset).and_then(|param| param.get(0));
+                let at = |offset: usize| {
+                    params
+                        .get(index + offset)
+                        .filter(|param| !param.is_string())
+                        .and_then(|param| param.value)
+                };
                 // `input_get(ictx, i, 0, -1)`: a position left empty and one
                 // carrying sub-parameters both read as -1 and select neither
                 // arm, leaving the introducer to be skipped on its own.
@@ -646,6 +680,14 @@ impl Engine {
 
     /// The colon form, `38:2::r:g:b` and `4:3`.
     fn sgr_colon(&mut self, param: &Param) {
+        // `input_csi_dispatch_sgr_colon` splits into a fixed array of eight and
+        // abandons the whole parameter the moment it has counted the eighth
+        // position — before it looks at what any of them said. A colon list
+        // that long therefore does nothing at all, however well-formed its
+        // first positions were.
+        if 1 + param.subs.len() >= 8 {
+            return;
+        }
         let read = |index: usize| -> Option<u32> { param.subs.get(index).copied().flatten() };
         match param.value {
             // Underline style.
@@ -817,6 +859,70 @@ impl Engine {
             None => 0,
         };
     }
+}
+
+/// Whether this escape sequence is in tmux's `input_esc_table`.
+///
+/// `input_esc_dispatch` looks the sequence up before it does anything, and a
+/// miss returns straight away — which is why what the table holds is observable
+/// beyond the operations themselves: only a hit clears `INPUT_LAST`.
+fn esc_is_known(intermediates: &[u8], final_byte: u8) -> bool {
+    matches!(
+        (intermediates, final_byte),
+        ([], b'7' | b'8' | b'=' | b'>' | b'D' | b'E' | b'H' | b'M' | b'\\' | b'c')
+            | ([b'#'], b'8')
+            | ([b'('] | [b')'], b'0' | b'B')
+    )
+}
+
+/// Whether this control sequence is in tmux's `input_csi_table`.
+///
+/// tmux keeps the private marker in the same intermediate buffer the table is
+/// keyed on, so `?$p` is one entry and `$p` another; here the two arrive apart
+/// and are paired up again.
+fn csi_is_known(private: Option<u8>, intermediates: &[u8], final_byte: u8) -> bool {
+    matches!(
+        (private, intermediates, final_byte),
+        (
+            None,
+            [],
+            b'@' | b'A'
+                | b'B'
+                | b'C'
+                | b'D'
+                | b'E'
+                | b'F'
+                | b'G'
+                | b'H'
+                | b'J'
+                | b'K'
+                | b'L'
+                | b'M'
+                | b'P'
+                | b'S'
+                | b'T'
+                | b'X'
+                | b'Z'
+                | b'`'
+                | b'b'
+                | b'c'
+                | b'd'
+                | b'f'
+                | b'g'
+                | b'h'
+                | b'l'
+                | b'm'
+                | b'n'
+                | b'r'
+                | b's'
+                | b't'
+                | b'u'
+        ) | (Some(b'?'), [], b'S' | b'h' | b'l' | b'n')
+            | (Some(b'>'), [], b'c' | b'm' | b'n' | b'q')
+            | (None, [b'$'], b'p')
+            | (Some(b'?'), [b'$'], b'p')
+            | (None, [b' '], b'q')
+    )
 }
 
 #[cfg(test)]
