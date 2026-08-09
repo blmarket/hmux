@@ -455,10 +455,6 @@ pub struct Session {
     pub(crate) last_windows: Vec<u64>,
     pub cols: u16,
     pub rows: u16,
-    /// Creation time, formatted like tmux's `(created ...)` stamp. Volatile, so
-    /// conformance normalizes it away; kept so the default `list-sessions` line
-    /// is structurally identical to real tmux's.
-    pub created: String,
     /// Creation time as Unix epoch seconds — tmux's `#{session_created}`. Its
     /// exact value is volatile (conformance only checks its truthiness), but it
     /// is always set, so `#{?session_created,…}` behaves like real tmux.
@@ -544,7 +540,7 @@ impl Session {
             "{}: {} windows (created {})",
             self.name,
             self.windows.len(),
-            self.created,
+            created_stamp(self.created_epoch),
         )
     }
 }
@@ -703,15 +699,15 @@ impl PaneNode {
     }
 }
 
-/// Format tmux's `(created ...)` timestamp for "now" (e.g.
+/// Format `epoch` as tmux's `(created ...)` timestamp (e.g.
 /// `Tue Jul  7 20:57:17 2026`). Best-effort; an empty string on failure (the
 /// value is normalized away in conformance comparisons regardless).
-pub fn created_stamp() -> String {
-    // SAFETY: standard libc time/localtime/strftime dance. `localtime` returns a
+pub fn created_stamp(epoch: i64) -> String {
+    // SAFETY: standard libc localtime/strftime dance. `localtime` returns a
     // pointer into a static buffer, used only until the next call; we copy out
     // immediately via strftime.
     unsafe {
-        let t = libc::time(std::ptr::null_mut());
+        let t = epoch as libc::time_t;
         let tm = libc::localtime(&t);
         if tm.is_null() {
             return String::new();

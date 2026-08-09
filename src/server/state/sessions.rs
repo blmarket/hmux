@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use super::sizing::{clamp_window_size, parse_size_pair, DEFAULT_XPIXEL, DEFAULT_YPIXEL};
 use super::{
-    created_stamp, fill_spec_spawn_ids, now_epoch, now_micros, pane_start_command, ExitEmpty,
+    fill_spec_spawn_ids, now_epoch, now_micros, pane_start_command, ExitEmpty,
     LayoutCell, Notification, Pane, PaneNode, PaneSpec, RenderInvalidation, ServerState, Session,
     Window, Winlink, ALERT_ACTIVITY,
 };
@@ -213,7 +213,6 @@ impl ServerState {
             active: 0,
             last_active: None,
             last_windows: Vec::new(),
-            created: created_stamp(),
             created_epoch: now_epoch(),
             // tmux seeds activity from the creation time, so creation order is
             // the initial `detach-on-destroy` ordering.
