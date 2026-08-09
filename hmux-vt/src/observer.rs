@@ -574,13 +574,15 @@ impl Observer {
             out.keep(token);
             return;
         }
-        let Ok(number) = std::str::from_utf8(&data[..digits])
-            .unwrap_or_default()
-            .parse::<u32>()
-        else {
-            out.keep(token);
-            return;
-        };
+        // `input_exit_osc` accumulates into a `u_int`, so a run of digits too
+        // long for one wraps rather than failing — and a pane can reach OSC 0 by
+        // writing `8` and thirty zeros. The arithmetic is the observable part,
+        // so it is reproduced rather than corrected.
+        let number = data[..digits].iter().fold(0u32, |number, digit| {
+            number
+                .wrapping_mul(10)
+                .wrapping_add(u32::from(digit - b'0'))
+        });
         let rest = &data[digits..];
         let body = match rest.first() {
             None => &[][..],
@@ -1106,6 +1108,17 @@ mod tests {
         let observed = observer.feed(b"x\x1b]2;t\x07\x1b_a\x1b\\y", &refused);
         assert_eq!(screen_bytes(&observed), b"x\x1b\\y");
         assert!(observed.events.is_empty());
+    }
+
+    /// `input_exit_osc` accumulates the option into a `u_int`, so a digit run
+    /// too long for one wraps instead of being refused: `8` and thirty zeros is
+    /// zero again, which is OSC 0 with an empty title.
+    #[test]
+    fn an_osc_option_wraps_the_way_a_u_int_does() {
+        assert_eq!(
+            events(b"\x1b]800000000000000000000000000000\x07"),
+            vec![Event::Title(String::new())]
+        );
     }
 
     #[test]
