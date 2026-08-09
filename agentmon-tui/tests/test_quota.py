@@ -7,12 +7,15 @@ from pathlib import Path
 import pytest
 
 from agentmon.quota import (
+    ANTIGRAVITY_LOAD_URL,
+    ANTIGRAVITY_USAGE_URL,
     CLAUDE_USAGE_URL,
     CODEX_USAGE_URL,
     QuotaError,
     QuotaReport,
     QuotaService,
     QuotaWindow,
+    parse_antigravity_usage,
     parse_claude_usage,
     parse_codex_usage,
 )
@@ -51,6 +54,42 @@ CLAUDE_PAYLOAD = {
             "scope": {"model": {"display_name": "Fable"}},
         },
     ],
+}
+
+
+ANTIGRAVITY_PAYLOAD = {
+    "groups": [
+        {
+            "displayName": "Gemini Models",
+            "buckets": [
+                {
+                    "bucketId": "gemini-weekly",
+                    "displayName": "Weekly Limit Remaining",
+                    "window": "weekly",
+                    "resetTime": "2026-08-15T07:57:05Z",
+                    "remainingFraction": 0.8,
+                },
+                {
+                    "bucketId": "gemini-5h",
+                    "displayName": "Five Hour Limit Remaining",
+                    "window": "5h",
+                    "resetTime": "2026-08-09T11:11:53Z",
+                    "remainingFraction": 1,
+                },
+            ],
+        },
+        {
+            "displayName": "Claude and GPT models",
+            "buckets": [
+                {
+                    "bucketId": "3p-weekly",
+                    "window": "weekly",
+                    "resetTime": "2026-08-16T06:39:05Z",
+                    "remainingFraction": 0.1,
+                }
+            ],
+        },
+    ]
 }
 
 
@@ -151,6 +190,48 @@ def test_claude_payload_without_data_is_an_error() -> None:
         parse_claude_usage({"limits": []})
 
 
+def test_parses_antigravity_gemini_windows_as_usage() -> None:
+    quotas = parse_antigravity_usage(ANTIGRAVITY_PAYLOAD)
+    assert [quota.label for quota in quotas] == ["Gemini weekly", "Gemini 5h"]
+    # The API reports what is left; the dialog and pacing both want what is spent.
+    assert [quota.used_percent for quota in quotas] == pytest.approx([20.0, 0.0])
+    assert [quota.window_seconds for quota in quotas] == [604800.0, 18000.0]
+    assert quotas[1].resets_at == datetime(2026, 8, 9, 11, 11, 53, tzinfo=timezone.utc)
+    assert {quota.provider for quota in quotas} == {"antigravity"}
+
+
+def test_antigravity_third_party_group_does_not_pace_gemini_runs() -> None:
+    """The Claude/GPT group is spent by other models, so it stays out."""
+    quotas = parse_antigravity_usage(ANTIGRAVITY_PAYLOAD)
+    assert all("Gemini" in quota.label for quota in quotas)
+
+
+def test_antigravity_bucket_without_a_fraction_is_skipped() -> None:
+    payload = {
+        "groups": [
+            {
+                "displayName": "Gemini Models",
+                "buckets": [
+                    {"bucketId": "gemini-5h", "window": "5h", "remainingAmount": 3},
+                    {
+                        "bucketId": "gemini-weekly",
+                        "window": "weekly",
+                        "remainingFraction": 0.5,
+                    },
+                ],
+            }
+        ]
+    }
+    assert [quota.label for quota in parse_antigravity_usage(payload)] == [
+        "Gemini weekly"
+    ]
+
+
+def test_antigravity_payload_without_gemini_data_is_an_error() -> None:
+    with pytest.raises(QuotaError):
+        parse_antigravity_usage({"groups": []})
+
+
 class FakeClock:
     def __init__(self, now: float) -> None:
         self.now = now
@@ -160,7 +241,7 @@ class FakeClock:
 
 
 @pytest.fixture
-def credential_paths(tmp_path: Path) -> tuple[Path, Path]:
+def credential_paths(tmp_path: Path) -> tuple[Path, Path, Path]:
     codex_auth = tmp_path / "codex-auth.json"
     codex_auth.write_text(
         json.dumps({"tokens": {"access_token": "codex-token", "account_id": "acct"}})
@@ -169,16 +250,22 @@ def credential_paths(tmp_path: Path) -> tuple[Path, Path]:
     claude_credentials.write_text(
         json.dumps({"claudeAiOauth": {"accessToken": "claude-token"}})
     )
-    return codex_auth, claude_credentials
+    antigravity_token = tmp_path / "antigravity-oauth-token"
+    antigravity_token.write_text(
+        json.dumps(
+            {"token": {"access_token": "agy-token"}, "auth_method": "consumer"}
+        )
+    )
+    return codex_auth, claude_credentials, antigravity_token
 
 
 def make_service(
     tmp_path: Path,
-    credential_paths: tuple[Path, Path],
+    credential_paths: tuple[Path, Path, Path],
     clock: FakeClock,
     calls: list[str],
 ) -> QuotaService:
-    def fetch(url: str, headers: dict[str, str]) -> dict:
+    def fetch(url: str, headers: dict[str, str], body: dict | None = None) -> dict:
         calls.append(url)
         if url == CODEX_USAGE_URL:
             assert headers["Authorization"] == "Bearer codex-token"
@@ -189,12 +276,23 @@ def make_service(
         if url == CLAUDE_USAGE_URL:
             assert headers["Authorization"] == "Bearer claude-token"
             return CLAUDE_PAYLOAD
+        if url == ANTIGRAVITY_LOAD_URL:
+            assert body == {"metadata": {"ideType": "ANTIGRAVITY"}}
+            return {"cloudaicompanionProject": "some-project"}
+        if url == ANTIGRAVITY_USAGE_URL:
+            assert headers["Authorization"] == "Bearer agy-token"
+            # Like the Codex originator, this endpoint answers HTTP 403 unless
+            # the caller names itself as the Antigravity CLI.
+            assert headers["User-Agent"].startswith("antigravity/cli/")
+            assert body == {"project": "some-project"}
+            return ANTIGRAVITY_PAYLOAD
         raise AssertionError(f"unexpected URL: {url}")
 
-    codex_auth, claude_credentials = credential_paths
+    codex_auth, claude_credentials, antigravity_token = credential_paths
     return QuotaService(
         codex_auth_path=codex_auth,
         claude_credentials_path=claude_credentials,
+        antigravity_token_path=antigravity_token,
         cache_path=tmp_path / "cache" / "quota.json",
         ttl_seconds=300,
         fetch=fetch,
@@ -202,8 +300,8 @@ def make_service(
     )
 
 
-def test_report_fetches_both_providers(
-    tmp_path: Path, credential_paths: tuple[Path, Path]
+def test_report_fetches_every_provider(
+    tmp_path: Path, credential_paths: tuple[Path, Path, Path]
 ) -> None:
     calls: list[str] = []
     service = make_service(tmp_path, credential_paths, FakeClock(1000.0), calls)
@@ -213,13 +311,32 @@ def test_report_fetches_both_providers(
         "Claude 5h",
         "Claude weekly",
         "Fable weekly",
+        "Gemini weekly",
+        "Gemini 5h",
     ]
     assert report.errors == ()
-    assert calls == [CODEX_USAGE_URL, CLAUDE_USAGE_URL]
+    assert calls == [
+        CODEX_USAGE_URL,
+        CLAUDE_USAGE_URL,
+        ANTIGRAVITY_LOAD_URL,
+        ANTIGRAVITY_USAGE_URL,
+    ]
+
+
+def test_report_looks_up_the_antigravity_project_once(
+    tmp_path: Path, credential_paths: tuple[Path, Path, Path]
+) -> None:
+    """The companion project outlives a refresh, so only quota is refetched."""
+    calls: list[str] = []
+    service = make_service(tmp_path, credential_paths, FakeClock(1000.0), calls)
+    service.report()
+    service.report(force=True)
+    assert calls.count(ANTIGRAVITY_LOAD_URL) == 1
+    assert calls.count(ANTIGRAVITY_USAGE_URL) == 2
 
 
 def test_report_serves_cached_data_within_ttl(
-    tmp_path: Path, credential_paths: tuple[Path, Path]
+    tmp_path: Path, credential_paths: tuple[Path, Path, Path]
 ) -> None:
     calls: list[str] = []
     clock = FakeClock(1000.0)
@@ -227,11 +344,16 @@ def test_report_serves_cached_data_within_ttl(
     service.report()
     clock.now += 299
     service.report()
-    assert calls == [CODEX_USAGE_URL, CLAUDE_USAGE_URL]
+    assert calls == [
+        CODEX_USAGE_URL,
+        CLAUDE_USAGE_URL,
+        ANTIGRAVITY_LOAD_URL,
+        ANTIGRAVITY_USAGE_URL,
+    ]
 
 
 def test_report_refreshes_after_ttl(
-    tmp_path: Path, credential_paths: tuple[Path, Path]
+    tmp_path: Path, credential_paths: tuple[Path, Path, Path]
 ) -> None:
     calls: list[str] = []
     clock = FakeClock(1000.0)
@@ -243,7 +365,7 @@ def test_report_refreshes_after_ttl(
 
 
 def test_report_force_bypasses_cache(
-    tmp_path: Path, credential_paths: tuple[Path, Path]
+    tmp_path: Path, credential_paths: tuple[Path, Path, Path]
 ) -> None:
     calls: list[str] = []
     service = make_service(tmp_path, credential_paths, FakeClock(1000.0), calls)
@@ -253,7 +375,7 @@ def test_report_force_bypasses_cache(
 
 
 def test_report_reuses_disk_cache_across_instances(
-    tmp_path: Path, credential_paths: tuple[Path, Path]
+    tmp_path: Path, credential_paths: tuple[Path, Path, Path]
 ) -> None:
     first_calls: list[str] = []
     service = make_service(tmp_path, credential_paths, FakeClock(1000.0), first_calls)
@@ -269,7 +391,7 @@ def test_report_reuses_disk_cache_across_instances(
 
 
 def test_report_prefers_a_fresher_disk_cache_over_refetching(
-    tmp_path: Path, credential_paths: tuple[Path, Path]
+    tmp_path: Path, credential_paths: tuple[Path, Path, Path]
 ) -> None:
     """A long-lived client must not refetch what a sibling already refreshed."""
     calls: list[str] = []
@@ -284,12 +406,17 @@ def test_report_prefers_a_fresher_disk_cache_over_refetching(
     clock.now = 1500.0
     report = service.report()
 
-    assert calls == [CODEX_USAGE_URL, CLAUDE_USAGE_URL]
+    assert calls == [
+        CODEX_USAGE_URL,
+        CLAUDE_USAGE_URL,
+        ANTIGRAVITY_LOAD_URL,
+        ANTIGRAVITY_USAGE_URL,
+    ]
     assert report.fetched_at.timestamp() == 1400.0
 
 
 def test_report_refetches_when_the_disk_cache_is_stale_too(
-    tmp_path: Path, credential_paths: tuple[Path, Path]
+    tmp_path: Path, credential_paths: tuple[Path, Path, Path]
 ) -> None:
     calls: list[str] = []
     clock = FakeClock(1000.0)
@@ -303,37 +430,45 @@ def test_report_refetches_when_the_disk_cache_is_stale_too(
 
 
 def test_provider_failure_is_reported_not_raised(
-    tmp_path: Path, credential_paths: tuple[Path, Path]
+    tmp_path: Path, credential_paths: tuple[Path, Path, Path]
 ) -> None:
-    def fetch(url: str, headers: dict[str, str]) -> dict:
+    def fetch(url: str, headers: dict[str, str], body: dict | None = None) -> dict:
         if url == CODEX_USAGE_URL:
             raise QuotaError("codex is down")
+        if url == ANTIGRAVITY_LOAD_URL:
+            return {"cloudaicompanionProject": "some-project"}
+        if url == ANTIGRAVITY_USAGE_URL:
+            return ANTIGRAVITY_PAYLOAD
         return CLAUDE_PAYLOAD
 
-    codex_auth, claude_credentials = credential_paths
+    codex_auth, claude_credentials, antigravity_token = credential_paths
     service = QuotaService(
         codex_auth_path=codex_auth,
         claude_credentials_path=claude_credentials,
+        antigravity_token_path=antigravity_token,
         cache_path=tmp_path / "quota.json",
         fetch=fetch,
         clock=FakeClock(1000.0),
     )
     report = service.report()
     assert report.errors == ("codex is down",)
-    assert [quota.provider for quota in report.quotas] == ["claude"] * 3
+    assert [quota.provider for quota in report.quotas] == ["claude"] * 3 + [
+        "antigravity"
+    ] * 2
 
 
 def test_missing_credentials_become_errors(tmp_path: Path) -> None:
     service = QuotaService(
         codex_auth_path=tmp_path / "missing-codex.json",
         claude_credentials_path=tmp_path / "missing-claude.json",
+        antigravity_token_path=tmp_path / "missing-agy-token",
         cache_path=tmp_path / "quota.json",
-        fetch=lambda url, headers: pytest.fail("must not fetch without credentials"),
+        fetch=lambda *args: pytest.fail("must not fetch without credentials"),
         clock=FakeClock(1000.0),
     )
     report = service.report()
     assert report.quotas == ()
-    assert len(report.errors) == 2
+    assert len(report.errors) == 3
 
 
 def test_expired_claude_token_is_an_error(tmp_path: Path) -> None:
@@ -346,9 +481,36 @@ def test_expired_claude_token_is_an_error(tmp_path: Path) -> None:
     service = QuotaService(
         codex_auth_path=tmp_path / "missing-codex.json",
         claude_credentials_path=claude_credentials,
+        antigravity_token_path=tmp_path / "missing-agy-token",
         cache_path=tmp_path / "quota.json",
-        fetch=lambda url, headers: pytest.fail("must not fetch an expired token"),
+        fetch=lambda *args: pytest.fail("must not fetch an expired token"),
         clock=FakeClock(1000.0),
     )
     report = service.report()
     assert any("expired" in error for error in report.errors)
+
+
+def test_expired_antigravity_token_is_an_error(tmp_path: Path) -> None:
+    """Only `agy` refreshes its token, so agentmon says so instead of retrying."""
+    antigravity_token = tmp_path / "antigravity-oauth-token"
+    antigravity_token.write_text(
+        json.dumps(
+            {
+                "token": {
+                    "access_token": "agy-token",
+                    "expiry": "1970-01-01T00:10:00Z",
+                },
+                "auth_method": "consumer",
+            }
+        )
+    )
+    service = QuotaService(
+        codex_auth_path=tmp_path / "missing-codex.json",
+        claude_credentials_path=tmp_path / "missing-claude.json",
+        antigravity_token_path=antigravity_token,
+        cache_path=tmp_path / "quota.json",
+        fetch=lambda *args: pytest.fail("must not fetch an expired token"),
+        clock=FakeClock(1000.0),
+    )
+    report = service.report()
+    assert any("run agy" in error for error in report.errors)

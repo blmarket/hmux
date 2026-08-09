@@ -38,9 +38,9 @@ from .services import AgentmonService, CommandError, discover_context
 class Preset:
     """One named agent configuration a loop can run with.
 
-    `provider` is the quota provider that paces it. A provider `QuotaService`
-    knows nothing about — antigravity has no usage endpoint — leaves the loop
-    unpaced, which `pacing_decision` reports on every run.
+    `provider` is the quota provider that paces it. A provider that reports
+    nothing — credentials the `QuotaService` cannot read, say — leaves the
+    loop unpaced, which `pacing_decision` reports on every run.
     """
 
     agent: str

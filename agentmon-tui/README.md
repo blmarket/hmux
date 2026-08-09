@@ -28,11 +28,9 @@ the run changed. `nix develop` puts `looper` on `$PATH`; from this directory
 
 `--preset` chooses what runs. `codex` (the default) is codex with
 `gpt-5.6-luna` at effort `max`; `agy` is the Antigravity CLI with
-`gemini-3.6-flash` at effort `high`. There is no quota source for Antigravity,
-so the `agy` preset runs unpaced — the log says `no antigravity quota reported`
-on every run. Launching `agy` also records the worktree in the CLI's
-`trustedWorkspaces`, since it would otherwise stop on its trust dialog in a
-worktree it has never seen.
+`gemini-3.6-flash` at effort `high`. Launching `agy` also records the worktree
+in the CLI's `trustedWorkspaces`, since it would otherwise stop on its trust
+dialog in a worktree it has never seen.
 
 ### Pacing
 
@@ -52,6 +50,20 @@ Two deliberate non-blockers: a window the provider left undated cannot be
 paced, and a provider that reported nothing at all (expired credentials, say)
 leaves nothing to pace against. Both are passed over with a note in the log
 rather than stalling the loop forever.
+
+### Quota sources
+
+Windows come from each provider's own usage endpoint, read with the OAuth
+token that provider's CLI already stores, and are cached for five minutes in
+`$XDG_CACHE_HOME/agentmon/quota.json` so the TUI dialog and any number of
+loops share one lookup.
+
+Antigravity reports what is left rather than what is spent, and splits its
+quota into a Gemini group and one for the Claude and GPT models it can proxy.
+Only the Gemini windows are surfaced, since those are the ones an `agy` run on
+a Gemini model spends. Its token lives about an hour and only `agy` itself
+refreshes it, so quota reads out of a long-idle install fail until the next
+run; the dialog and the log say so rather than guessing.
 
 ### Ending a run
 

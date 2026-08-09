@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import json
 import os
+import platform
+import re
+import sys
 import threading
 import time
 import urllib.error
@@ -23,11 +26,15 @@ from pathlib import Path
 CODEX_USAGE_URL = "https://chatgpt.com/backend-api/codex/usage"
 CODEX_ORIGINATOR = "codex_cli_rs"
 CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+ANTIGRAVITY_BASE_URL = "https://daily-cloudcode-pa.googleapis.com/v1internal"
+ANTIGRAVITY_LOAD_URL = f"{ANTIGRAVITY_BASE_URL}:loadCodeAssist"
+ANTIGRAVITY_USAGE_URL = f"{ANTIGRAVITY_BASE_URL}:retrieveUserQuotaSummary"
+ANTIGRAVITY_CLI_VERSION = "1.1.10"
 DEFAULT_TTL_SECONDS = 300.0
 CLAUDE_SESSION_SECONDS = 5 * 3600.0
 CLAUDE_WEEKLY_SECONDS = 7 * 86400.0
 
-Fetcher = Callable[[str, dict[str, str]], dict]
+Fetcher = Callable[..., dict]
 
 
 class QuotaError(RuntimeError):
@@ -73,8 +80,13 @@ def default_cache_path() -> Path:
     return base / "agentmon" / "quota.json"
 
 
-def _http_get_json(url: str, headers: dict[str, str]) -> dict:
-    request = urllib.request.Request(url, headers=headers)
+def _http_json(url: str, headers: dict[str, str], body: dict | None = None) -> dict:
+    """GET `url`, or POST `body` to it as JSON when one is given."""
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+        headers = {**headers, "Content-Type": "application/json"}
+    request = urllib.request.Request(url, data=data, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
             payload = json.load(response)
@@ -115,8 +127,11 @@ def _epoch_datetime(value: object) -> datetime | None:
 def _iso_datetime(value: object) -> datetime | None:
     if not isinstance(value, str):
         return None
+    # Go-written timestamps carry nanoseconds, which datetime cannot hold and
+    # older Pythons refuse to parse at all.
+    text = re.sub(r"(\.\d{6})\d+", r"\1", value.replace("Z", "+00:00"))
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.fromisoformat(text)
     except ValueError:
         return None
 
@@ -209,22 +224,114 @@ def parse_claude_usage(payload: dict) -> list[QuotaWindow]:
     return quotas
 
 
+def _antigravity_window_seconds(window: object) -> float | None:
+    """Length of an Antigravity bucket window, named rather than measured."""
+    if window == "weekly":
+        return CLAUDE_WEEKLY_SECONDS
+    if isinstance(window, str) and window.endswith("h"):
+        try:
+            return float(window[:-1]) * 3600.0
+        except ValueError:
+            return None
+    return None
+
+
+def _is_gemini_group(group: dict) -> bool:
+    """Whether a quota group covers the Gemini models `agy` runs by default.
+
+    Antigravity also reports a group for the Claude and GPT models it can
+    proxy, but those windows are spent by a different set of models; folding
+    them in would let a spent third-party window pace a Gemini loop.
+    """
+    buckets = group.get("buckets")
+    if isinstance(buckets, list) and any(
+        isinstance(bucket, dict)
+        and str(bucket.get("bucketId", "")).startswith("gemini")
+        for bucket in buckets
+    ):
+        return True
+    name = group.get("displayName")
+    return isinstance(name, str) and "gemini" in name.lower()
+
+
+def parse_antigravity_usage(payload: dict) -> list[QuotaWindow]:
+    """Extract the Gemini 5h and weekly windows from an Antigravity summary.
+
+    The API reports what is left rather than what is spent, and only names the
+    window ("5h", "weekly") instead of dating its start.
+    """
+    groups = payload.get("groups")
+    if not isinstance(groups, list):
+        raise QuotaError("Antigravity usage response has no quota groups")
+    quotas: list[QuotaWindow] = []
+    for group in groups:
+        if not isinstance(group, dict) or not _is_gemini_group(group):
+            continue
+        buckets = group.get("buckets")
+        if not isinstance(buckets, list):
+            continue
+        for bucket in buckets:
+            if not isinstance(bucket, dict):
+                continue
+            remaining = bucket.get("remainingFraction")
+            if not isinstance(remaining, (int, float)):
+                # The other arm of the oneof counts requests, which says
+                # nothing about the share of the window that is left.
+                continue
+            span = _window_span(_antigravity_window_seconds(bucket.get("window")))
+            quotas.append(
+                QuotaWindow(
+                    provider="antigravity",
+                    label=f"Gemini {span}",
+                    used_percent=max(0.0, 100.0 - float(remaining) * 100.0),
+                    resets_at=_iso_datetime(bucket.get("resetTime")),
+                    window_seconds=_antigravity_window_seconds(bucket.get("window")),
+                )
+            )
+    if not quotas:
+        raise QuotaError("Antigravity usage response has no Gemini quota data")
+    return quotas
+
+
+def _antigravity_user_agent(auth_method: str) -> str:
+    """Identify as the Antigravity CLI, which the usage endpoint requires.
+
+    Callers that do not name themselves this way get HTTP 403 no matter how
+    good their OAuth token is, the same way the Codex endpoint insists on its
+    originator header.
+    """
+    machine = platform.machine().lower()
+    arch = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64"}.get(
+        machine, machine
+    )
+    os_type = "darwin" if sys.platform == "darwin" else sys.platform
+    return (
+        f"antigravity/cli/{ANTIGRAVITY_CLI_VERSION} (aidev_client; "
+        f"os_type={os_type}; arch={arch}; auth_method={auth_method})"
+    )
+
+
 class QuotaService:
-    """Fetch and cache subscription quotas for Codex and Claude."""
+    """Fetch and cache subscription quotas for Codex, Claude and Antigravity."""
 
     def __init__(
         self,
         *,
         codex_auth_path: Path | None = None,
         claude_credentials_path: Path | None = None,
+        antigravity_token_path: Path | None = None,
         cache_path: Path | None = None,
         ttl_seconds: float = DEFAULT_TTL_SECONDS,
-        fetch: Fetcher = _http_get_json,
+        fetch: Fetcher = _http_json,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.codex_auth_path = codex_auth_path or Path.home() / ".codex" / "auth.json"
         self.claude_credentials_path = (
             claude_credentials_path or Path.home() / ".claude" / ".credentials.json"
+        )
+        self.antigravity_token_path = (
+            antigravity_token_path
+            or Path.home() / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
         )
         self.cache_path = cache_path or default_cache_path()
         self.ttl_seconds = ttl_seconds
@@ -232,6 +339,7 @@ class QuotaService:
         self._clock = clock
         self._lock = threading.Lock()
         self._cached: QuotaReport | None = None
+        self._antigravity_project: str | None = None
 
     def report(self, *, force: bool = False) -> QuotaReport:
         """Return quota usage, refreshing only when the cache has expired."""
@@ -262,7 +370,11 @@ class QuotaService:
     def _fetch_report(self) -> QuotaReport:
         quotas: list[QuotaWindow] = []
         errors: list[str] = []
-        for fetch_provider in (self._fetch_codex, self._fetch_claude):
+        for fetch_provider in (
+            self._fetch_codex,
+            self._fetch_claude,
+            self._fetch_antigravity,
+        ):
             try:
                 quotas.extend(fetch_provider())
             except QuotaError as exc:
@@ -325,6 +437,54 @@ class QuotaService:
             "User-Agent": "agentmon",
         }
         return parse_claude_usage(self._fetch(CLAUDE_USAGE_URL, headers))
+
+    def _fetch_antigravity(self) -> list[QuotaWindow]:
+        try:
+            credentials = json.loads(
+                self.antigravity_token_path.read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError) as exc:
+            raise QuotaError(f"Antigravity credentials unavailable: {exc}") from exc
+        token = credentials.get("token") if isinstance(credentials, dict) else None
+        access_token = token.get("access_token") if isinstance(token, dict) else None
+        if not access_token:
+            raise QuotaError(
+                f"Antigravity credentials have no OAuth access token: "
+                f"{self.antigravity_token_path}"
+            )
+        expiry = _iso_datetime(token.get("expiry"))
+        if expiry is not None and expiry.timestamp() <= self._clock():
+            # Only the Antigravity CLI refreshes this token, so agentmon can
+            # do nothing but wait for the next `agy` run.
+            raise QuotaError(
+                "Antigravity OAuth token is expired; run agy to refresh it"
+            )
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "User-Agent": _antigravity_user_agent(
+                str(credentials.get("auth_method") or "consumer")
+            ),
+        }
+        project = self._antigravity_project or self._load_antigravity_project(headers)
+        self._antigravity_project = project
+        return parse_antigravity_usage(
+            self._fetch(ANTIGRAVITY_USAGE_URL, headers, {"project": project})
+        )
+
+    def _load_antigravity_project(self, headers: dict[str, str]) -> str:
+        """Look up the companion project the quota summary is keyed by.
+
+        It is not stored anywhere on disk, so the only way to learn it is to
+        ask the same endpoint the CLI asks when it starts up.
+        """
+        payload = self._fetch(
+            ANTIGRAVITY_LOAD_URL, headers, {"metadata": {"ideType": "ANTIGRAVITY"}}
+        )
+        project = payload.get("cloudaicompanionProject")
+        if not isinstance(project, str) or not project:
+            raise QuotaError("Antigravity did not report a companion project")
+        return project
 
     def _load_disk_cache(self) -> QuotaReport | None:
         try:

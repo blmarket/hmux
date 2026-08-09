@@ -2122,6 +2122,12 @@ class DemoQuotaService(QuotaService):
                 QuotaWindow(
                     "claude", "Fable weekly", 14.0, now + timedelta(days=1), week
                 ),
+                QuotaWindow(
+                    "antigravity", "Gemini weekly", 19.0, now + timedelta(days=6), week
+                ),
+                QuotaWindow(
+                    "antigravity", "Gemini 5h", 0.0, now + timedelta(hours=4.5), session
+                ),
             ),
         )
 
