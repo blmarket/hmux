@@ -2249,9 +2249,11 @@ fn reap_orphan_list(orphans: &mut Vec<pid_t>) {
     });
 }
 
-/// Upper bound on how much currently-readable pane output is applied in one grid
-/// transition. Draining without waiting batches an already-queued burst like an
-/// event loop, without adding a timer or delaying interactive echo.
+/// Upper bound on how much currently-readable pane output is consumed in one
+/// readiness turn. Draining without waiting batches an already-queued burst
+/// like an event loop, without adding a timer or delaying interactive echo.
+/// Each read chunk is parsed as it arrives, so a reply to a query is written
+/// back at its chunk boundary rather than held for the rest of the turn.
 const OUTPUT_COALESCE_MAX_BYTES: usize = 256 * 1024;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -2322,9 +2324,9 @@ impl PaneIo {
         }
 
         let mut buffer = [0u8; 4096];
-        let mut pending = Vec::new();
+        let mut consumed = 0usize;
         let mut reached_eof = false;
-        while pending.len() < OUTPUT_COALESCE_MAX_BYTES {
+        while consumed < OUTPUT_COALESCE_MAX_BYTES {
             let read = unsafe {
                 libc::read(
                     self.fd.as_raw_fd(),
@@ -2333,7 +2335,11 @@ impl PaneIo {
                 )
             };
             if read > 0 {
-                pending.extend_from_slice(&buffer[..read as usize]);
+                consumed += read as usize;
+                // Parsed chunk by chunk, not batched for the turn: a reply this
+                // chunk provokes must reach the pane before the pane can stop
+                // repainting over its own echo of it.
+                self.process_output(&buffer[..read as usize]);
                 continue;
             }
             if read == 0 {
@@ -2351,10 +2357,7 @@ impl PaneIo {
             }
         }
 
-        let continuation = pending_capacity_reached(&pending);
-        if !pending.is_empty() {
-            self.process_output(pending);
-        }
+        let continuation = consumed >= OUTPUT_COALESCE_MAX_BYTES;
         if reached_eof {
             self.close();
         }
@@ -2364,18 +2367,18 @@ impl PaneIo {
         })
     }
 
-    fn process_output(&mut self, pending: Vec<u8>) {
+    fn process_output(&mut self, pending: &[u8]) {
         if self.pipe_output_active.get() {
             let mut outbound = self.pipe_output.borrow_mut();
             if outbound.closed {
                 drop(outbound);
                 self.pipe_output_active.set(false);
             } else {
-                outbound.push(&pending);
+                outbound.push(pending);
             }
         }
 
-        let (replies, queries) = self.observation.observe_output(&pending);
+        let (replies, queries) = self.observation.observe_output(pending);
 
         if !queries.is_empty() {
             let mut queued = self.terminal_queries.borrow_mut();
@@ -2405,10 +2408,6 @@ impl Drop for PaneIo {
     fn drop(&mut self) {
         self.close();
     }
-}
-
-fn pending_capacity_reached(pending: &[u8]) -> bool {
-    pending.len() >= OUTPUT_COALESCE_MAX_BYTES
 }
 
 fn trailing_lines(text: &str, lines: usize) -> String {
@@ -3096,7 +3095,7 @@ mod tests {
         // Codex reports its live status in the window title via OSC 2. The
         // title is recorded where the child's output is filtered, since that
         // is what holds it to `input-buffer-size`.
-        test_pane_io(&pane).process_output(b"\x1b]2;Working (5s)\x07".to_vec());
+        test_pane_io(&pane).process_output(b"\x1b]2;Working (5s)\x07");
         assert_eq!(
             observation.title().expect("title").as_deref(),
             Some("Working (5s)")
