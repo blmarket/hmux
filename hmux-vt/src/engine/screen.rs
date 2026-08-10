@@ -25,9 +25,7 @@ use super::cell::{attr, colour, flag, Cell, CellData, UTF8_SIZE};
 use super::combine;
 use super::grid::{colour_is_default, line_flag, needs_extended, Grid, Line};
 use super::hyperlinks::Hyperlinks;
-use super::images::Images;
 use crate::screen::{mode, ScreenOptions};
-use crate::sixel::SixelImage;
 use crate::width;
 
 /// What [`Screen::combine`] decided about a character, which is tmux's return
@@ -108,12 +106,6 @@ pub struct Screen {
     /// The OSC 8 links this screen's cells point into, tmux's
     /// `screen->hyperlinks`.
     pub hyperlinks: Hyperlinks,
-    /// The sixel images anchored to this screen's cells, tmux's `s->images`.
-    pub images: Images,
-    /// The primary screen's images while the alternate screen is up, tmux's
-    /// `s->saved_images`. Unlike the grid, they are handed over rather than
-    /// copied: an image is not made of cells and has nothing to duplicate.
-    saved_images: Images,
     /// The pane options this screen consults, as the server last resolved them.
     pub options: ScreenOptions,
     /// The title the pane last announced (OSC 0/2, or the APC form the
@@ -150,8 +142,6 @@ impl Screen {
             tabs: default_tabs(sx),
             cell: Cell::default(),
             hyperlinks: Hyperlinks::default(),
-            images: Images::default(),
-            saved_images: Images::default(),
             options: ScreenOptions::default(),
             title: None,
             titles: Vec::new(),
@@ -348,15 +338,6 @@ impl Screen {
     /// not, on a screen that has history, still promotes its top row.
     fn scroll_region_up(&mut self, bg: i32) {
         let (rupper, rlower) = (self.rupper, self.rlower);
-        self.scroll_bounds_up(rupper, rlower, bg);
-    }
-
-    /// The same, against a region given rather than the screen's own.
-    ///
-    /// Writing an image scrolls the *whole* screen to make room for it, which
-    /// tmux does by calling `grid_view_scroll_region_up` with the screen's
-    /// bounds instead of the scrolling region's.
-    fn scroll_bounds_up(&mut self, rupper: usize, rlower: usize, bg: i32) {
         if self.has_history() {
             self.grid.collect_history();
             if rupper == 0 && rlower == self.sy() - 1 {
@@ -385,15 +366,6 @@ impl Screen {
             self.grid.set_line_flags(row, line_flag::WRAPPED, true);
         }
         if self.cy == self.rlower {
-            // A region that reaches the bottom of the screen carries the
-            // images up with it; one that does not cannot, so tmux throws away
-            // every image the region crosses instead.
-            if self.rlower == self.sy() - 1 {
-                self.images.scroll_up(1);
-            } else {
-                let (rupper, rlower) = (self.rupper, self.rlower);
-                self.images.check_line(rupper, rlower - rupper);
-            }
             self.scroll_region_up(bg);
         } else if self.cy < self.sy() - 1 {
             self.cy += 1;
@@ -403,7 +375,6 @@ impl Screen {
     /// tmux's `screen_write_reverseindex`.
     pub fn reverse_index(&mut self, bg: i32) {
         if self.cy == self.rupper {
-            self.images.free_all();
             self.scroll_region_down(bg);
         } else if self.cy > 0 {
             self.cy -= 1;
@@ -414,7 +385,6 @@ impl Screen {
     pub fn scroll_up(&mut self, lines: usize, bg: i32) {
         let limit = self.rlower - self.rupper + 1;
         let lines = lines.max(1).min(limit);
-        self.images.scroll_up(lines);
         for _ in 0..lines {
             self.scroll_region_up(bg);
         }
@@ -424,8 +394,6 @@ impl Screen {
     pub fn scroll_down(&mut self, lines: usize, bg: i32) {
         let limit = self.rlower - self.rupper + 1;
         let lines = lines.max(1).min(limit);
-        // Nothing moves an image *down*, so every one of them goes.
-        self.images.free_all();
         for _ in 0..lines {
             self.scroll_region_down(bg);
         }
@@ -440,8 +408,6 @@ impl Screen {
             return;
         }
         let nx = nx.max(1).min(sx - self.cx);
-        let cy = self.cy;
-        self.images.check_line(cy, 1);
         self.insert_cells(nx, bg);
     }
 
@@ -468,8 +434,6 @@ impl Screen {
             return;
         }
         let nx = nx.max(1).min(sx - self.cx);
-        let cy = self.cy;
-        self.images.check_line(cy, 1);
         let (px, py) = (self.cx, self.view_y(self.cy));
         self.grid.move_cells(px, px + nx, py, sx - px - nx, bg);
         self.grid.clear(sx - nx, py, nx, 1, bg);
@@ -482,8 +446,6 @@ impl Screen {
             return;
         }
         let nx = nx.max(1).min(sx - self.cx);
-        let cy = self.cy;
-        self.images.check_line(cy, 1);
         let py = self.view_y(self.cy);
         self.grid.clear(self.cx, py, nx, 1, bg);
     }
@@ -492,8 +454,6 @@ impl Screen {
     /// insert runs to the bottom of the screen instead.
     pub fn insert_line(&mut self, ny: usize, bg: i32) {
         let sy = self.sy();
-        let cy = self.cy;
-        self.images.check_line(cy, sy - cy);
         if self.cy < self.rupper || self.cy > self.rlower {
             let ny = ny.max(1).min(sy - self.cy);
             let py = self.view_y(self.cy);
@@ -515,8 +475,6 @@ impl Screen {
     /// tmux's `screen_write_deleteline`.
     pub fn delete_line(&mut self, ny: usize, bg: i32) {
         let sy = self.sy();
-        let cy = self.cy;
-        self.images.check_line(cy, sy - cy);
         if self.cy < self.rupper || self.cy > self.rlower {
             let ny = ny.max(1).min(sy - self.cy);
             let py = self.view_y(self.cy);
@@ -536,21 +494,8 @@ impl Screen {
 
     // ---- clearing --------------------------------------------------------
 
-    /// The row's allocated extent, which the clearing operations test before
-    /// they decide an image is in the way.
-    fn line_size(&self) -> usize {
-        let row = self.view_y(self.cy);
-        self.grid.line(row).map_or(0, Line::size)
-    }
-
     /// tmux's `screen_write_clearline`.
     pub fn clear_line(&mut self, bg: i32) {
-        // tmux leaves an untouched row alone entirely — including the images
-        // over it — when the erase has no colour to leave behind either.
-        if self.line_size() != 0 || !colour_is_default(bg) {
-            let cy = self.cy;
-            self.images.check_line(cy, 1);
-        }
         let py = self.view_y(self.cy);
         self.grid.clear(0, py, self.grid.sx, 1, bg);
     }
@@ -561,12 +506,6 @@ impl Screen {
         if self.cx == 0 {
             self.clear_line(bg);
             return;
-        }
-        // tmux's `s->cx > sx - 1 || (s->cx >= gl->cellsize && COLOUR_DEFAULT(bg))`
-        // return, read the other way round.
-        if self.cx < sx && (self.cx < self.line_size() || !colour_is_default(bg)) {
-            let cy = self.cy;
-            self.images.check_line(cy, 1);
         }
         let py = self.view_y(self.cy);
         self.grid.clear(self.cx, py, sx - self.cx, 1, bg);
@@ -579,15 +518,12 @@ impl Screen {
             self.clear_line(bg);
             return;
         }
-        let cy = self.cy;
-        self.images.check_line(cy, 1);
         let py = self.view_y(self.cy);
         self.grid.clear(0, py, (self.cx + 1).min(sx), 1, bg);
     }
 
     /// tmux's `screen_write_clearscreen`.
     pub fn clear_screen(&mut self, bg: i32) {
-        self.images.free_all();
         if self.scrolls_on_clear() {
             self.grid.view_clear_history(bg);
             return;
@@ -606,8 +542,6 @@ impl Screen {
 
     /// tmux's `screen_write_clearendofscreen`.
     pub fn clear_end_of_screen(&mut self, bg: i32) {
-        let (cy, sy) = (self.cy, self.sy());
-        self.images.check_line(cy, sy - cy);
         // From the home position this erases the whole screen, so it takes the
         // same route as `clear_screen`. From anywhere else it does not, and
         // tmux checks the cursor rather than the extent.
@@ -625,11 +559,6 @@ impl Screen {
 
     /// tmux's `screen_write_clearstartofscreen`.
     pub fn clear_start_of_screen(&mut self, bg: i32) {
-        // `s->cy - 1` in tmux, which on the first row underflows to the whole
-        // unsigned range and takes every image on the screen with it. The
-        // wrapping is the behaviour, not an accident to be tidied away.
-        let cy = self.cy;
-        self.images.check_line(0, cy.wrapping_sub(1));
         let top = self.view_y(0);
         let py = self.view_y(self.cy);
         let sx = self.grid.sx;
@@ -646,7 +575,6 @@ impl Screen {
 
     /// tmux's `screen_write_alignmenttest` (DECALN).
     pub fn alignment_test(&mut self) {
-        self.images.free_all();
         let (sx, sy) = (self.grid.sx, self.sy());
         let cell = Cell {
             data: CellData::from_char('E', 1),
@@ -661,64 +589,6 @@ impl Screen {
         self.set_cursor(Some(0), Some(0));
         self.rupper = 0;
         self.rlower = sy - 1;
-    }
-
-    // ---- images ----------------------------------------------------------
-
-    /// tmux's `screen_write_sixelimage`: put an image on the screen at the
-    /// cursor, making room for it first.
-    ///
-    /// An image that does not fit is cropped from the *top*, which is what a
-    /// terminal does when something too tall arrives: the bottom of the image
-    /// is the part that stays. An image that fits but has no room below the
-    /// cursor scrolls the whole screen up instead — the whole screen, not the
-    /// scrolling region, because an image is not part of the region's contents.
-    pub fn sixel_image(&mut self, image: SixelImage, bg: i32) {
-        // Nowhere to put an image on a one-row screen: the cursor's row is the
-        // only row, and the image would have to start below it.
-        if self.sy() == 1 {
-            return;
-        }
-
-        let mut image = image;
-        let (x, mut y) = cells(&image);
-        let (cx, cy) = (self.cx, self.cy);
-        if x > self.sx() || y > self.sy() - 1 {
-            let sx = if x > self.sx().saturating_sub(cx) {
-                self.sx().saturating_sub(cx)
-            } else {
-                x
-            };
-            let sy = if y > self.sy() - 1 { self.sy() - 1 } else { y };
-            let Some(cropped) = image.scale(0, 0, 0, (y - sy) as u32, sx as u32, sy as u32, true)
-            else {
-                return;
-            };
-            image = cropped;
-            // tmux re-measures both dimensions; only the height is read again,
-            // to decide how far the screen has to scroll.
-            y = cells(&image).1;
-        }
-
-        let below = self.sy() - cy;
-        if below <= y {
-            let lines = y - below + 1;
-            self.images.scroll_up(lines);
-            let bottom = self.sy() - 1;
-            for _ in 0..lines {
-                self.scroll_bounds_up(0, bottom, bg);
-            }
-            let row = cy.saturating_sub(lines);
-            self.set_cursor(None, Some(row));
-        }
-
-        let (px, py) = (self.cx, self.cy);
-        self.images.store(image, px, py);
-
-        // tmux moves the cursor using the row the cursor was on *before* the
-        // scroll, which lands past the last row and is clamped onto it — the
-        // same row `cy - lines + y` names.
-        self.cursor_move(Some(0), Some(cy + y), false);
     }
 
     // ---- writing characters ----------------------------------------------
@@ -795,14 +665,6 @@ impl Screen {
             // The run claims the row's extent before the cells go down, as
             // tmux's `grid_set_cells` expands ahead of the write it will make.
             if collected {
-                // tmux checks the images once for the whole collected run,
-                // which is the same set of images a per-cell check over that
-                // run frees: the run is contiguous and stays on one row. Only
-                // collected cells check at all — a wide character or one
-                // written in insert mode goes down through `screen_write_cell`,
-                // which has no image hook.
-                let (cx, cy) = (self.cx, self.cy);
-                self.images.check_area(cx, cy, width, 1);
                 self.extend_run(row, self.cx + width);
             }
             self.grid.set(self.cx, row, cell);
@@ -1188,9 +1050,6 @@ impl Screen {
         // blanked where they stand rather than scrolled anywhere.
         let py = self.grid.hsize;
         self.grid.clear(0, py, sx, sy, colour::DEFAULT);
-        // The images go with the primary screen's rows rather than being freed,
-        // so a vim session underneath does not cost the pane its images.
-        self.saved_images.take_from(&mut self.images);
         self.saved_history = self.grid.history;
         self.grid.history = false;
     }
@@ -1228,10 +1087,6 @@ impl Screen {
         if (saved.sx, saved.sy) != (sx, sy) {
             self.resize(sx, sy);
         }
-        // Whatever the alternate screen drew goes; the primary screen's images
-        // come back with its rows.
-        self.images.free_all();
-        self.images.take_from(&mut self.saved_images);
         self.cx = self.cx.min(self.sx() - 1);
         self.cy = self.cy.min(self.sy() - 1);
     }
@@ -1279,9 +1134,6 @@ impl Screen {
     pub fn resize(&mut self, sx: usize, sy: usize) {
         let sx = sx.max(1);
         let sy = sy.max(1);
-        // tmux's `screen_resize` drops the images outright rather than trying
-        // to place them again against a grid that has just been rewrapped.
-        self.images.free_all();
         if sx != self.grid.sx {
             // Rewrapping moves the cursor's row, so remember where it sits in
             // its *logical* line and find that place again afterwards.
@@ -1318,12 +1170,6 @@ impl Screen {
         }
         self.cy = self.cy.min(sy - 1);
     }
-}
-
-/// An image's size in cells, as the screen counts cells.
-fn cells(image: &SixelImage) -> (usize, usize) {
-    let (x, y) = image.size_in_cells();
-    (x as usize, y as usize)
 }
 
 /// tmux's `screen_reset_tabs`: a stop every eight columns, skipping column 0.
@@ -1767,170 +1613,5 @@ mod tests {
         let mut screen = Screen::new(6, 2, 100);
         screen.clear_line(colour::indexed(4));
         assert_eq!(screen.grid.get(5, 0).bg, colour::indexed(4));
-    }
-
-    // ---- images ----------------------------------------------------------
-
-    /// A solid image `cells_x` by `cells_y` cells, measured against the default
-    /// sixteen by thirty-two pixel cell a screen assumes.
-    fn image(cells_x: usize, cells_y: usize) -> SixelImage {
-        let mut payload = b"#0;2;100;0;0#0".to_vec();
-        // Each band of six pixel rows takes one `-`, and the height wanted is
-        // the smallest that still rounds up to `cells_y` cells.
-        let bands = ((cells_y - 1) * 32) / 6 + 1;
-        for band in 0..bands {
-            if band != 0 {
-                payload.push(b'-');
-            }
-            payload.extend_from_slice(format!("!{}~", cells_x * 16).as_bytes());
-        }
-        crate::sixel::parse(&payload, 0, 16, 32).expect("the payload parses")
-    }
-
-    fn placed(screen: &Screen) -> Vec<(usize, usize, usize, usize)> {
-        screen
-            .images
-            .live()
-            .map(|image| (image.px, image.py, image.sx, image.sy))
-            .collect()
-    }
-
-    #[test]
-    fn an_image_lands_at_the_cursor_and_the_cursor_ends_below_it() {
-        let mut screen = Screen::new(10, 5, 100);
-        screen.set_cursor(Some(3), Some(1));
-        screen.sixel_image(image(2, 2), colour::DEFAULT);
-        assert_eq!(placed(&screen), vec![(3, 1, 2, 2)]);
-        assert_eq!(
-            (screen.cx, screen.cy),
-            (0, 3),
-            "the cursor returns to column zero, below the image"
-        );
-    }
-
-    #[test]
-    fn a_one_row_screen_has_nowhere_to_put_an_image() {
-        let mut screen = Screen::new(10, 1, 100);
-        screen.sixel_image(image(1, 1), colour::DEFAULT);
-        assert!(placed(&screen).is_empty());
-    }
-
-    #[test]
-    fn an_image_with_no_room_below_the_cursor_scrolls_the_screen() {
-        let mut screen = Screen::new(10, 5, 100);
-        for row in 0..5 {
-            screen.set_cursor(Some(0), Some(row));
-            put(&mut screen, &format!("r{row}"));
-        }
-        screen.set_cursor(Some(0), Some(4));
-        screen.sixel_image(image(1, 2), colour::DEFAULT);
-        // Two rows are needed and one was left, so the screen scrolled by two.
-        assert_eq!(text(&screen, 0), "r2");
-        assert_eq!(screen.grid.hsize, 2, "the rows went into the history");
-        assert_eq!(placed(&screen), vec![(0, 2, 1, 2)]);
-        assert_eq!((screen.cx, screen.cy), (0, 4));
-    }
-
-    /// The scroll is of the whole screen, not of the scrolling region: an image
-    /// is not part of the region's contents.
-    #[test]
-    fn making_room_for_an_image_ignores_the_scrolling_region() {
-        let mut screen = Screen::new(10, 5, 100);
-        for row in 0..5 {
-            screen.set_cursor(Some(0), Some(row));
-            put(&mut screen, &format!("r{row}"));
-        }
-        screen.set_scroll_region(1, 3);
-        screen.set_cursor(Some(0), Some(4));
-        screen.sixel_image(image(1, 1), colour::DEFAULT);
-        // One row was needed and the cursor was on the last one, so everything
-        // moved up by one — including `r0`, which the region does not cover.
-        assert_eq!(text(&screen, 0), "r1");
-        assert_eq!(text(&screen, 3), "r4", "the row below the region moved too");
-        assert_eq!(placed(&screen), vec![(0, 3, 1, 1)]);
-    }
-
-    #[test]
-    fn an_image_too_wide_for_the_screen_is_cropped_to_it() {
-        let mut screen = Screen::new(4, 5, 100);
-        screen.sixel_image(image(6, 1), colour::DEFAULT);
-        assert_eq!(placed(&screen), vec![(0, 0, 4, 1)]);
-    }
-
-    /// Too tall, the *top* is what goes: the bottom of the image is the part a
-    /// terminal keeps.
-    #[test]
-    fn an_image_too_tall_for_the_screen_keeps_its_bottom() {
-        let mut screen = Screen::new(10, 4, 100);
-        screen.sixel_image(image(1, 5), colour::DEFAULT);
-        assert_eq!(placed(&screen), vec![(0, 0, 1, 3)]);
-    }
-
-    #[test]
-    fn writing_over_an_image_takes_it_away() {
-        let mut screen = Screen::new(10, 5, 100);
-        screen.set_cursor(Some(2), Some(1));
-        screen.sixel_image(image(2, 1), colour::DEFAULT);
-        screen.set_cursor(Some(0), Some(1));
-        put(&mut screen, "x");
-        assert_eq!(placed(&screen).len(), 1, "column zero is beside it");
-        screen.set_cursor(Some(3), Some(1));
-        put(&mut screen, "x");
-        assert!(placed(&screen).is_empty(), "column three is under it");
-    }
-
-    #[test]
-    fn clearing_the_screen_takes_every_image_with_it() {
-        let mut screen = Screen::new(10, 5, 100);
-        screen.sixel_image(image(1, 1), colour::DEFAULT);
-        screen.clear_screen(colour::DEFAULT);
-        assert!(placed(&screen).is_empty());
-    }
-
-    /// tmux's `screen_write_clearstartofscreen` passes `s->cy - 1`, which on the
-    /// first row underflows and frees every image rather than the rows above.
-    #[test]
-    fn clearing_to_the_start_of_the_screen_from_the_first_row_frees_them_all() {
-        let mut screen = Screen::new(10, 5, 100);
-        screen.set_cursor(Some(0), Some(3));
-        screen.sixel_image(image(1, 1), colour::DEFAULT);
-        screen.set_cursor(Some(1), Some(0));
-        screen.clear_start_of_screen(colour::DEFAULT);
-        assert!(placed(&screen).is_empty());
-    }
-
-    #[test]
-    fn a_linefeed_at_the_bottom_carries_the_images_up_with_it() {
-        let mut screen = Screen::new(10, 5, 100);
-        screen.set_cursor(Some(0), Some(1));
-        screen.sixel_image(image(1, 1), colour::DEFAULT);
-        screen.set_cursor(Some(0), Some(4));
-        screen.linefeed(false, colour::DEFAULT);
-        assert_eq!(placed(&screen), vec![(0, 0, 1, 1)]);
-        screen.linefeed(false, colour::DEFAULT);
-        assert!(placed(&screen).is_empty(), "it left the top of the screen");
-    }
-
-    #[test]
-    fn the_alternate_screen_gives_the_images_back_on_the_way_out() {
-        let mut screen = Screen::new(10, 5, 100);
-        screen.sixel_image(image(1, 1), colour::DEFAULT);
-        screen.alternate_on(true);
-        assert!(placed(&screen).is_empty(), "the alternate screen is bare");
-        screen.sixel_image(image(2, 1), colour::DEFAULT);
-        screen.alternate_off(true);
-        assert_eq!(
-            placed(&screen),
-            vec![(0, 0, 1, 1)],
-            "the primary screen's image came back and the other one did not"
-        );
-    }
-
-    #[test]
-    fn a_resize_drops_the_images() {
-        let mut screen = Screen::new(10, 5, 100);
-        screen.sixel_image(image(1, 1), colour::DEFAULT);
-        screen.resize(10, 6);
-        assert!(placed(&screen).is_empty());
     }
 }

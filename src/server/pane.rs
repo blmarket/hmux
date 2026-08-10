@@ -40,7 +40,7 @@ pub(crate) use hmux_vt::{
     OutputPolicy as PaneOutputPolicy, PassthroughPolicy,
 };
 use hmux_vt::{
-    mode, CaptureExtent, Grid, GridDims, RowExtent, ScreenImage, ScreenOptions, ScreenSnapshot,
+    mode, CaptureExtent, Grid, GridDims, RowExtent, ScreenOptions, ScreenSnapshot,
 };
 use hmux_vt::PaneScreen;
 
@@ -1647,15 +1647,6 @@ impl Pane {
         let available = scroll.saturating_add(usize::from(self.rows));
         let vt = terminal.dump_vt_rows(start, visible_rows.min(available), RowExtent::Redraw);
         (vt, scroll)
-    }
-
-    /// The images anchored to this pane's visible screen, oldest first.
-    ///
-    /// Separate from [`Self::dump_viewport_vt`] because an image is drawn
-    /// *over* the cells rather than being some of them: tmux paints the pane's
-    /// text first and then walks the same list in `tty_draw_images`.
-    pub(crate) fn images(&self) -> Vec<ScreenImage> {
-        self.observation.term.borrow().screen().images()
     }
 
     /// How many scrollback (history) rows the grid holds above the visible

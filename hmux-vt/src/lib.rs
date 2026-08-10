@@ -46,7 +46,6 @@ mod observer;
 mod parser;
 mod screen;
 mod scroll;
-mod sixel;
 mod terminal;
 mod vis;
 mod width;
@@ -74,7 +73,7 @@ pub use parser::StringEnd;
 // The screen: the grid itself and the values reading it produces.
 pub use screen::{
     mode, CaptureExtent, CellSemantic, CellWidth, Grid, GridCell, GridDims, GridRow, PaneScreen,
-    RowExtent, RowFlags, ScreenImage, ScreenOptions, ScreenSnapshot,
+    RowExtent, RowFlags, ScreenOptions, ScreenSnapshot,
 };
 
 // The key and mouse identities an encode takes.

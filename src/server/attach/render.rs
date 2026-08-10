@@ -44,14 +44,6 @@ impl AttachSession {
                         .output
                         .queue(self.tty.render_fd.as_raw_fd(), &title);
                 }
-                // An image the server has dropped is still on the client's
-                // terminal, and the cells it covered are unchanged — so nothing
-                // in the frame delta would paint over it. Repaint the lot,
-                // which is the whole-frame form of tmux's `tty_invalidate`.
-                let images = st.active_window_images_signature(target);
-                if self.compositor.render.last_images.replace(images) != Some(images) {
-                    self.compositor.render.force_clear = true;
-                }
                 take_large_scroll_repaint(
                     &st,
                     target,

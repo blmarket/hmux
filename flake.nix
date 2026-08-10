@@ -11,18 +11,7 @@
         "x86_64-linux"
       ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
-      tmux37bFor = pkgs:
-        pkgs.tmux.overrideAttrs {
-          version = "3.7b";
-          src = pkgs.fetchFromGitHub {
-            owner = "tmux";
-            repo = "tmux";
-            tag = "3.7b";
-            hash = "sha256-CTq06XP997M0ODxQihTq34dI9H6jSRLUXLYuTWOwDpc=";
-          };
-          # remove patches specified in pkgs.tmux
-          patches = [ ];
-        };
+      tmux37bFor = pkgs: pkgs.callPackage ./nix/tmux.nix { };
       agentmonFor = pkgs: pkgs.callPackage ./agentmon-tui/package.nix { };
     in
     {

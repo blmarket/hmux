@@ -121,10 +121,9 @@ impl AttachSession {
             .and_then(super::super::format::username)
             .unwrap_or_default();
         render_attachment.set_peer_identity(peer_uid, peer_user.clone());
-        // The cell's pixel size arrives with the terminal size and is what
-        // decides whether this client is sent a sixel image or its placeholder,
-        // so it is published alongside — a client that reports none publishes
-        // zero, which is the answer that chooses the placeholder.
+        // The cell's pixel size arrives with the terminal size and feeds the
+        // window's own, so it is published alongside — a client that reports
+        // none publishes zero, as tmux's `tty->xpixel` does.
         render_attachment.update_cell_pixels(winsize.xpixel, winsize.ypixel);
 
         let stable_target = format!("${session_id}");

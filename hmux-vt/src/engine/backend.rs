@@ -5,17 +5,13 @@
 //! [`GridDims::scrollback_rows`] is the first visible one. Cursor coordinates
 //! are zero-based and viewport-relative.
 
-use std::sync::Arc;
-
 use super::dispatch::Engine;
 use super::dump;
 use super::keys;
 use super::screen::DEFAULT_HISTORY_LIMIT;
 use crate::input::MouseEvent;
 use crate::parser::Token;
-use crate::screen::{
-    CaptureExtent, Grid, GridDims, RowExtent, ScreenImage, ScreenOptions, ScreenSnapshot,
-};
+use crate::screen::{CaptureExtent, Grid, GridDims, RowExtent, ScreenOptions, ScreenSnapshot};
 
 /// hmux's own screen, and the only one: the engine is the chosen
 /// implementation rather than one of several a caller picks between.
@@ -66,7 +62,7 @@ impl PaneScreen {
     }
 
     /// The options as last pushed, for the answers that read them back — the
-    /// XTWINOPS pixel reports use the cell size the way a sixel parse does.
+    /// XTWINOPS pixel reports are answered from the cell size they carry.
     pub fn options(&self) -> ScreenOptions {
         self.engine.screen.options
     }
@@ -168,28 +164,6 @@ impl PaneScreen {
             scrollback_rows: grid.hsize,
             total_rows: grid.total(),
         }
-    }
-
-    /// The images anchored to the *visible* screen, oldest first.
-    ///
-    /// Separate from [`Self::grid_snapshot_range`] because an image is not
-    /// cells: it covers them rather than being one of them, and a caller that
-    /// only wants the text should not pay to carry pixels around.
-    pub fn images(&self) -> Vec<ScreenImage> {
-        let images = &self.engine.screen.images;
-        let revision = images.revision();
-        images
-            .live()
-            .map(|image| ScreenImage {
-                px: u16::try_from(image.px).unwrap_or(u16::MAX),
-                py: u16::try_from(image.py).unwrap_or(u16::MAX),
-                sx: u16::try_from(image.sx).unwrap_or(u16::MAX),
-                sy: u16::try_from(image.sy).unwrap_or(u16::MAX),
-                revision,
-                data: Arc::clone(&image.data),
-                fallback: Arc::clone(&image.fallback),
-            })
-            .collect()
     }
 
     /// The *inactive* screen — the one the alternate-screen switch displaced —

@@ -16,7 +16,6 @@ use super::hyperlinks;
 use super::screen::{erase_background, Screen};
 use crate::parser::{Param, TokenKind};
 use crate::screen::mode;
-use crate::sixel;
 use crate::vis;
 use crate::width::codepoint_width;
 
@@ -105,47 +104,13 @@ impl Engine {
                 self.last_valid = false;
                 self.osc(data);
             }
-            TokenKind::Dcs {
-                params,
-                intermediates,
-                final_byte,
-                data,
-            } => {
+            // The DCS, rename and APC forms never reach the screen: the
+            // observer consumed them. Entering their string states still costs
+            // REP its character.
+            TokenKind::Dcs { .. } | TokenKind::Apc { .. } | TokenKind::Rename { .. } => {
                 self.last_valid = false;
-                self.dcs(params.as_deref(), intermediates, *final_byte, data);
             }
-            // The rename and APC forms never reach the screen: the observer
-            // consumed them. Entering their string states still costs REP its
-            // character.
-            TokenKind::Apc { .. } | TokenKind::Rename { .. } => self.last_valid = false,
         }
-    }
-
-    /// tmux's `input_dcs_dispatch`, minus everything the observer already
-    /// answered: what is left that touches the grid is a sixel image.
-    ///
-    /// tmux tests `buf[0] == 'q'` on a payload that still has the sequence's
-    /// final byte at its head; hmux's parser has already split that off, so the
-    /// same test is on the final byte itself.
-    fn dcs(&mut self, params: Option<&[Param]>, intermediates: &[u8], final_byte: u8, data: &[u8]) {
-        if final_byte != b'q' || !intermediates.is_empty() {
-            return;
-        }
-        // `input_split` refusing the parameters stops the sixel branch, and
-        // only it: the passthrough and DECRQSS branches never look at them.
-        let Some(params) = params else {
-            return;
-        };
-        // The background-select mode, `input_get(ictx, 1, 0, 0)`.
-        let p2 = params.get(1).and_then(|param| param.get(0)).unwrap_or(0);
-        let options = self.screen.options;
-        let Some(image) = sixel::parse(data, p2, options.xpixel, options.ypixel) else {
-            return;
-        };
-        // The pen's background, not the erase background: tmux passes
-        // `ictx->cell.cell.bg` straight through.
-        let bg = self.screen.cell.bg;
-        self.screen.sixel_image(image, bg);
     }
 
     /// The background an erase uses, tmux's `bg` in `input_csi_dispatch`.

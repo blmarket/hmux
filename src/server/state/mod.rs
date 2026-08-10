@@ -400,8 +400,8 @@ pub struct Window {
     /// were last drawn at instead of churning on every client resize.
     pub(crate) pending_size: Option<WindowSize>,
     /// The window's cell size in pixels — tmux's `w->xpixel`/`w->ypixel`,
-    /// aggregated from the attached clients' terminals. Only sixel parsing
-    /// reads it, to turn an image's pixel dimensions into cells.
+    /// aggregated from the attached clients' terminals. The XTWINOPS pixel
+    /// reports a pane answers are computed from it.
     pub(crate) xpixel: u16,
     pub(crate) ypixel: u16,
     pub(crate) layout: LayoutCell,

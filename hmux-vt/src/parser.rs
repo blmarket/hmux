@@ -125,12 +125,11 @@ pub enum TokenKind {
         final_byte: u8,
     },
     /// `DCS` + parameters + intermediates + final + payload, ended by ST.
+    ///
+    /// The parameters are collected — the state machine has to walk them to
+    /// find the final byte — but never reported: nothing tmux dispatches from
+    /// a DCS without sixel support reads them.
     Dcs {
-        /// What `input_split` made of the parameters, or `None` when it refused
-        /// them. Only the sixel branch of `input_dcs_dispatch` splits at all,
-        /// and a refusal stops that branch rather than the whole sequence — so
-        /// the distinction has to survive as far as the handler.
-        params: Option<Vec<Param>>,
         intermediates: Vec<u8>,
         final_byte: u8,
         data: Vec<u8>,
@@ -741,11 +740,10 @@ impl Parser {
         let mut data = std::mem::take(&mut self.string);
         // The first collected byte is the sequence's final byte, not payload.
         let final_byte = if data.is_empty() { 0 } else { data.remove(0) };
-        let params = split_params(&self.param);
+        self.param.clear();
         let intermediates = std::mem::take(&mut self.intermediate);
         self.dispatch(
             TokenKind::Dcs {
-                params,
                 intermediates,
                 final_byte,
                 data,
@@ -1116,7 +1114,6 @@ mod tests {
         assert_eq!(
             tokens(b"\x1bPtmux;\x1b\x1b[31m\x1b\\"),
             vec![TokenKind::Dcs {
-                params: Some(Vec::new()),
                 intermediates: Vec::new(),
                 final_byte: b't',
                 data: b"mux;\x1b[31m".to_vec(),
@@ -1129,7 +1126,6 @@ mod tests {
         assert_eq!(
             tokens(b"\x1bP$q q\x1b\\"),
             vec![TokenKind::Dcs {
-                params: Some(Vec::new()),
                 intermediates: vec![b'$'],
                 final_byte: b'q',
                 data: b" q".to_vec(),

@@ -4376,11 +4376,10 @@ pub(super) fn vars_full(
         .set("server_sessions", st.sessions().len().to_string())
         .set("next_session_id", format!("${}", st.next_session_id()))
         .set("start_time", st.started_epoch().to_string())
-        // The pinned tmux 3.7b oracle is built `--enable-sixel`, and so is
-        // this: images are parsed, stored against the screen, and drawn to a
-        // client that can take them. The daemon still loads no config file
+        // The pinned tmux 3.7b oracle is built `--disable-sixel`, and hmux
+        // implements no sixel at all. The daemon also loads no config file
         // (see README.md on server capability gaps).
-        .set("sixel_support", "1")
+        .set("sixel_support", "0")
         .set("config_files", "")
         .set("buffer_mode_format", BUFFER_MODE_DEFAULT_FORMAT)
         .set("client_mode_format", CLIENT_MODE_DEFAULT_FORMAT)

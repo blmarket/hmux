@@ -15,6 +15,5 @@ pub mod dispatch;
 pub mod dump;
 pub mod grid;
 pub mod hyperlinks;
-pub mod images;
 pub mod keys;
 pub mod screen;

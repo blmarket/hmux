@@ -712,15 +712,6 @@ impl ServerState {
         })
     }
 
-    /// The cell size in pixels a client's terminal reports, which sixel output
-    /// scales against. `(0, 0)` — a client that reports none — is what sends an
-    /// image out as its text placeholder instead, as it does in tmux.
-    pub(crate) fn client_cell_pixels(&self, client_name: &str) -> (u16, u16) {
-        self.client_renders
-            .client_cell_pixels(client_name)
-            .unwrap_or((0, 0))
-    }
-
     /// The viewport of the client with this name, for the render path — which
     /// knows the client it is painting for by name, not by handle.
     pub(crate) fn client_viewport(&self, client_name: &str) -> Option<ClientViewport> {

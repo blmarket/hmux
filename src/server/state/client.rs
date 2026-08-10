@@ -216,8 +216,7 @@ pub(super) struct ClientRenderEntry {
     pub(super) cols: u16,
     pub(super) rows: u16,
     /// The client terminal's cell size in pixels — tmux's `tty->xpixel` and
-    /// `tty->ypixel` — or zero while the terminal has reported none. Only sixel
-    /// output reads it.
+    /// `tty->ypixel` — or zero while the terminal has reported none.
     pub(super) xpixel: u16,
     pub(super) ypixel: u16,
     pub(super) control_mode: bool,
@@ -812,16 +811,6 @@ impl ClientRenderRegistry {
     ) -> R {
         let inner = self.inner.borrow();
         f(inner.clients.values())
-    }
-
-    /// The cell size in pixels the named client's terminal reports, or zero
-    /// when it reports none.
-    pub(super) fn client_cell_pixels(&self, name: &str) -> Option<(u16, u16)> {
-        self.with_entries(|mut entries| {
-            entries
-                .find(|entry| entry.name == name)
-                .map(|entry| (entry.xpixel, entry.ypixel))
-        })
     }
 
     /// The viewport inputs of the client called `name`.
@@ -1613,9 +1602,9 @@ impl ClientRenderAttachment {
         self.registry.bump_generation();
     }
 
-    /// Publish the client terminal's cell size in pixels, which sixel output
-    /// scales against. Separate from [`Self::update_size`] because a font
-    /// change moves it without moving the cell count.
+    /// Publish the client terminal's cell size in pixels, which the window's
+    /// own cell size is aggregated from. Separate from [`Self::update_size`]
+    /// because a font change moves it without moving the cell count.
     pub(crate) fn update_cell_pixels(&self, xpixel: u16, ypixel: u16) {
         {
             let mut inner = self.registry.inner.borrow_mut();

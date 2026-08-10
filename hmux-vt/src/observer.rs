@@ -28,7 +28,6 @@
 use std::collections::VecDeque;
 
 use super::parser::{Param, Parser, StringEnd, Token, TokenKind, INPUT_BUFFER_DEFAULT_SIZE};
-use super::sixel;
 use super::vis;
 use super::x11_colour;
 
@@ -343,8 +342,7 @@ impl Observer {
                 intermediates,
                 final_byte,
                 data,
-                ..
-            } => self.dcs(token, &intermediates, final_byte, &data, policy, out),
+            } => self.dcs(&intermediates, final_byte, &data, policy, out),
             TokenKind::Apc { data } => {
                 // tmux hands an APC title to the same `screen_set_title` as OSC
                 // 0/2, and an emulator that does not recognize APC would print
@@ -420,41 +418,13 @@ impl Observer {
                     format!("\x1bP>|{XTVERSION_NAME} {}\x1b\\", super::TMUX_VERSION).into_bytes(),
                 ));
             }
-            // XTSMGRAPHICS, tmux's `input_csi_dispatch_sm_graphics`. The
-            // daemon does not render sixel image payloads, but tmux answers
-            // this capability query locally and applications use it
-            // independently of image rendering.
-            //
-            // Only a request for the colour-register count reports the
-            // register count; every other item — including one that names no
-            // item at all — is answered with the failure form, which is why an
-            // unrecognised `CSI ? … S` still produces a reply.
-            (Some(b'?'), [], b'S') if params.len() <= 3 => {
-                // tmux's `input_get(ictx, i, 0, 0)`: a position left out or
-                // left empty reads as zero, and one carrying sub-parameters as
-                // -1, which its `%d` prints rather than suppressing the reply.
-                let read = |index: usize| -> i64 {
-                    params
-                        .get(index)
-                        .map_or(0, |param| param.get(0).map_or(-1, i64::from))
-                };
-                let (item, action, value) = (read(0), read(1), read(2));
-                let reply = if item == 1 && matches!(action, 1 | 2 | 4) {
-                    format!("\x1b[?{item};0;{}S", sixel::COLOUR_REGISTERS)
-                } else {
-                    format!("\x1b[?{item};3;{value}S")
-                };
-                out.event(Event::Reply(reply.into_bytes()));
-            }
             // DSR ?996: which theme is this terminal using?
             (Some(b'?'), [], b'n') if params.first().is_some_and(|p| p.get(0) == Some(996)) => {
                 out.event(Event::ThemeQuery);
             }
             // Primary DA.
             (None, [], b'c') if first_is_zero(params) => {
-                // The pinned tmux is built with sixel support, which is what
-                // puts the `4` in its answer.
-                out.event(Event::Reply(b"\x1b[?1;2;4c".to_vec()));
+                out.event(Event::Reply(b"\x1b[?1;2c".to_vec()));
             }
             (None, [], b'n') => match params.first().map_or(Some(0), |param| param.get(0)) {
                 // DSR 5n: no malfunction — and the outer terminal is asked the
@@ -713,7 +683,6 @@ impl Observer {
 
     fn dcs(
         &mut self,
-        token: Token,
         intermediates: &[u8],
         final_byte: u8,
         data: &[u8],
@@ -726,14 +695,6 @@ impl Observer {
             // The cursor style and its blink are the pane's and the screen's
             // respectively, so the reply is composed where both are in reach.
             out.event(Event::StatusReport(data.to_vec()));
-            return;
-        }
-        // A sixel image is the one DCS that reaches the grid — it scrolls the
-        // screen to make room for itself and moves the cursor — so it is the
-        // one the screen is given. tmux's test is `buf[0] == 'q'` with no
-        // intermediate, which here is the final byte with no intermediate.
-        if final_byte == b'q' && intermediates.is_empty() {
-            out.keep(token);
             return;
         }
         // `DCS tmux; … ST`. The final byte is the first byte of tmux's DCS
@@ -1177,7 +1138,7 @@ mod tests {
     fn device_attribute_queries_are_answered_locally() {
         assert_eq!(
             events(b"\x1b[c"),
-            vec![Event::Reply(b"\x1b[?1;2;4c".to_vec())]
+            vec![Event::Reply(b"\x1b[?1;2c".to_vec())]
         );
         assert_eq!(
             events(b"\x1b[>c"),
@@ -1190,10 +1151,9 @@ mod tests {
                 Event::ForwardQuery(DEVICE_STATUS_REPORT_QUERY),
             ]
         );
-        assert_eq!(
-            events(b"\x1b[?1;1S"),
-            vec![Event::Reply(b"\x1b[?1;0;1024S".to_vec())]
-        );
+        // XTSMGRAPHICS goes unanswered: tmux's `input_csi_dispatch_sm_graphics`
+        // is an empty function in a build without sixel support.
+        assert_eq!(events(b"\x1b[?1;1S"), vec![]);
     }
 
     #[test]

@@ -220,6 +220,10 @@ const FEATURES: &[Feature] = &[
         capabilities: FEATURE_RGB,
         flags: TERM_256_COLOURS | TERM_RGB_COLOURS,
     },
+    // tmux's `tty_feature_sixel` is in the feature table whether or not the
+    // build renders sixel, so `terminal-features` still names it and
+    // `#{client_termfeatures}` still reports it. Nothing reads `TERM_SIXEL`:
+    // the pinned oracle is built `--disable-sixel` and hmux draws no images.
     Feature {
         name: "sixel",
         capabilities: FEATURE_SIXEL,
@@ -282,13 +286,6 @@ pub(crate) trait TerminalCapabilities {
 pub(crate) enum CapabilityParameter<'a> {
     Number(i32),
     String(&'a str),
-}
-
-/// tmux's sixel test in `tty_cmd_sixelimage`: the `sixel` terminal feature —
-/// which is what sets `TERM_SIXEL` — or a terminfo entry that declares `Sxl` on
-/// its own. Either is enough; a client with neither gets the text placeholder.
-pub(crate) fn supports_sixel(terminal: &dyn TerminalCapabilities) -> bool {
-    terminal.has_feature("sixel") || terminal.capability("Sxl").is_some()
 }
 
 pub(crate) fn string_capability<'a>(

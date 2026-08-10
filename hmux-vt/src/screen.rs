@@ -10,10 +10,6 @@
 //! a compatibility contract, and the daemon's contract is its tmux-compatible
 //! command line and wire protocol.
 
-use std::sync::Arc;
-
-use super::sixel::SixelImage;
-
 pub use crate::engine::backend::PaneScreen;
 
 /// tmux's `MODE_*`, the bits `screen->mode` carries.
@@ -159,9 +155,9 @@ pub struct ScreenOptions {
     ///
     /// Not an option — it comes from the attached clients' terminals, which
     /// `recalculate_sizes` aggregates onto the window — but it reaches the
-    /// screen the same way an option does and for the same reason: a sixel
-    /// payload is measured in pixels and has to be converted into cells at the
-    /// moment it is parsed, with no server state in reach.
+    /// screen the same way an option does and for the same reason: the
+    /// XTWINOPS pixel reports are answered from the grid, with no server state
+    /// in reach.
     pub xpixel: u32,
     pub ypixel: u32,
 }
@@ -254,66 +250,6 @@ pub struct Grid {
     pub viewport_rows: u16,
     pub scrollback_rows: usize,
     pub rows: Vec<GridRow>,
-}
-
-/// One image the screen holds, as a client's frame needs it.
-///
-/// An image is not made of cells, so it cannot come back inside [`Grid`]: it is
-/// anchored to a cell and drawn over whatever is there. The compositor reads
-/// these after it has painted a pane's text, which is where tmux's
-/// `tty_draw_images` sits.
-#[derive(Clone, Debug)]
-pub struct ScreenImage {
-    /// The anchor cell, in viewport coordinates.
-    pub px: u16,
-    pub py: u16,
-    /// The size in cells.
-    pub sx: u16,
-    pub sy: u16,
-    /// The screen's image-list revision when this was read. It changes whenever
-    /// the set of images does, so a renderer can skip re-deriving bytes it has
-    /// already sent without comparing the images themselves.
-    pub revision: u64,
-    /// The decoded image, shared: every attached client re-scales the same one
-    /// for its own terminal. The codec's representation does not leave the
-    /// crate; [`ScreenImage::sixel_for_client`] is what a compositor reads.
-    pub(crate) data: Arc<SixelImage>,
-    /// The text a client that cannot draw sixel gets instead, already laid out
-    /// as tmux lays it out — one `\r\n`-terminated line per image row.
-    pub fallback: Arc<str>,
-}
-
-impl ScreenImage {
-    /// tmux's `tty_cmd_sixelimage`: the sixel bytes a client draws for the part
-    /// of this image it can see.
-    ///
-    /// `origin` and `size` are in *image* cells — the crop `tty_clamp_area`
-    /// works out — and `cell_pixels` is the client terminal's own cell size.
-    /// The crop is resampled onto that geometry and re-serialized against the
-    /// original's palette, which is why the rescale itself carries no colour
-    /// registers. `None` when the crop lands outside the image or the image
-    /// never selected a colour, both of which are tmux's NULL.
-    ///
-    /// A client that cannot draw sixel writes [`Self::fallback`] instead.
-    #[must_use]
-    pub fn sixel_for_client(
-        &self,
-        cell_pixels: (u16, u16),
-        origin: (u16, u16),
-        size: (u16, u16),
-    ) -> Option<Vec<u8>> {
-        self.data
-            .scale(
-                u32::from(cell_pixels.0),
-                u32::from(cell_pixels.1),
-                u32::from(origin.0),
-                u32::from(origin.1),
-                u32::from(size.0),
-                u32::from(size.1),
-                false,
-            )?
-            .print(Some(&self.data))
-    }
 }
 
 /// Row geometry of the active screen, read without walking any cells.

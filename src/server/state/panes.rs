@@ -31,7 +31,7 @@ use crate::server::pane::{
     PaneOutputPolicy, PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
 };
 use hmux_vt::MouseEvent;
-use hmux_vt::{ScreenImage, ScreenOptions};
+use hmux_vt::ScreenOptions;
 
 impl ServerState {
     /// Hand a pipe job the loop owns from here. `copy-pipe` uses this for the
@@ -327,8 +327,8 @@ impl ServerState {
                 let options = node.options(window, &self.global_options);
                 node.pane.set_screen_options(ScreenOptions {
                     scroll_on_clear: options.get("scroll-on-clear") != Some("off"),
-                    // Not an option: the window's cell size in pixels, which a
-                    // sixel payload has to be measured against as it is parsed.
+                    // Not an option: the window's cell size in pixels, which
+                    // the XTWINOPS pixel reports are answered from.
                     xpixel: u32::from(window.xpixel),
                     ypixel: u32::from(window.ypixel),
                 });
@@ -2326,41 +2326,6 @@ impl ServerState {
             .active_pane(session_name)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no active pane"))?;
         Ok(pane.dump_viewport_vt(scroll_offset, visible_rows))
-    }
-
-    /// The images on the active pane's visible screen, for the compositor to
-    /// draw after it has painted the pane's text.
-    pub(crate) fn active_pane_images(&self, session_name: &str) -> Vec<ScreenImage> {
-        self.active_pane(session_name)
-            .map(crate::server::pane::Pane::images)
-            .unwrap_or_default()
-    }
-
-    /// A value that changes exactly when something about the active window's
-    /// images does.
-    ///
-    /// The client's terminal needs a full repaint at that moment, and nothing
-    /// else will ask for one: an image is drawn *over* cells the server never
-    /// wrote to, so when the image goes away the text under it is unchanged and
-    /// the frame differ finds nothing to repaint — leaving the picture on the
-    /// client's screen with nothing behind it. This is what tmux reaches by
-    /// marking the pane `PANE_REDRAW` from every image operation.
-    ///
-    /// A pane's image count is folded in beside its revision because a pane
-    /// with no images has no revision to report.
-    pub(crate) fn active_window_images_signature(&self, session_name: &str) -> u64 {
-        let Ok((window, _)) = self.active_window_panes(session_name) else {
-            return 0;
-        };
-        let mut signature: u64 = 0xcbf2_9ce4_8422_2325;
-        for node in &window.panes {
-            let images = node.pane.images();
-            let revision = images.first().map_or(0, |image| image.revision);
-            for value in [images.len() as u64, revision] {
-                signature = (signature ^ value).wrapping_mul(0x0000_0100_0000_01b3);
-            }
-        }
-        signature
     }
 
     pub(crate) fn active_window_panes(&self, session_name: &str) -> io::Result<(&Window, usize)> {
