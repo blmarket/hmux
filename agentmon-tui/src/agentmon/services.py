@@ -161,7 +161,7 @@ RUN_FORMAT = "\t".join(
     )
 )
 
-# Single-pane status is read from the same server-wide listing as RUN_FORMAT:
+# Single-pane status is read from the same session-wide listing as RUN_FORMAT:
 # `list-panes -t` targets a pane's whole window, so the pane is picked out here.
 PANE_STATUS_FORMAT = "\t".join(
     ("#{pane_id}", "#{pane_agent}", "#{pane_agent_state}")
@@ -250,6 +250,27 @@ def _supports_hmux_agent_status(path: str, tmux: str) -> bool:
     )
 
 
+def discover_session(socket: str, *, tmux: str = "tmux") -> str | None:
+    """Return the id of the session agentmon itself runs in, if any.
+
+    Panes are monitored for that one session, so a window linked into a second
+    session — `link-window`, a session group, a screenshot helper borrowing the
+    window — is reported once instead of once per session it hangs in. Outside
+    hmux, and on a socket other than the one holding this pane, there is no
+    such session and the whole server is monitored as before.
+    """
+    pane = os.environ.get("TMUX_PANE")
+    if not pane:
+        return None
+    result = _run(
+        [tmux, "-S", socket, "display-message", "-p", "-t", pane, "#{session_id}"],
+        check=False,
+    )
+    if result.returncode:
+        return None
+    return result.stdout.strip() or None
+
+
 def discover_socket(
     *, requested: str | None = None, tmux: str = "tmux"
 ) -> SocketSelection:
@@ -313,9 +334,15 @@ class AgentmonContext:
     socket: str
     tmux: str = "tmux"
     warning: str = ""
+    session: str | None = None
 
     def service(self) -> AgentmonService:
-        return AgentmonService(self.repository, socket=self.socket, tmux=self.tmux)
+        return AgentmonService(
+            self.repository,
+            socket=self.socket,
+            tmux=self.tmux,
+            session=self.session,
+        )
 
 
 def discover_context(
@@ -340,6 +367,7 @@ def discover_context(
         socket=selection.path,
         tmux=tmux,
         warning=selection.warning,
+        session=discover_session(selection.path, tmux=tmux),
     )
 
 
@@ -374,11 +402,18 @@ class WorktreeOverview:
 
 class AgentmonService:
     def __init__(
-        self, repo: Repository | None, *, socket: str, tmux: str = "tmux"
+        self,
+        repo: Repository | None,
+        *,
+        socket: str,
+        tmux: str = "tmux",
+        session: str | None = None,
     ) -> None:
         self.repo = repo
         self.socket = socket
         self.tmux = tmux
+        # The session agentmon watches, or None to watch the whole server.
+        self.session = session
         self._repositories = {} if repo is None else {repo.common_dir: repo}
         self._worktree_contexts = (
             {}
@@ -392,10 +427,18 @@ class AgentmonService:
             self.repo is not None and repo.common_dir == self.repo.common_dir
         ):
             return self
-        return AgentmonService(repo, socket=self.socket, tmux=self.tmux)
+        return AgentmonService(
+            repo, socket=self.socket, tmux=self.tmux, session=self.session
+        )
 
     def for_run(self, run: AgentRun) -> AgentmonService:
         return self.for_repository(run.repository)
+
+    def _pane_listing(self) -> list[str]:
+        """Return the `list-panes` arguments for the panes agentmon monitors."""
+        if self.session is None:
+            return ["list-panes", "-a"]
+        return ["list-panes", "-s", "-t", self.session]
 
     def suggested_worktree(self, branch: str) -> Path:
         # Keep worktrees as siblings while allowing conventional feature/foo refs.
@@ -692,6 +735,33 @@ class AgentmonService:
         )
         return {line for line in result.stdout.splitlines() if line}
 
+    def _session_ids(self) -> set[str]:
+        result = _run(
+            [
+                self.tmux,
+                "-S",
+                self.socket,
+                "list-sessions",
+                "-F",
+                "#{session_id}",
+            ],
+            check=False,
+        )
+        if result.returncode:
+            return set()
+        return {line for line in result.stdout.splitlines() if line}
+
+    def _watched_sessions(self) -> set[str]:
+        """Return the sessions to hold a control client on.
+
+        Intersecting with the live sessions matters for the scoped case: once
+        agentmon's own session is gone there is nothing left to attach to, and
+        without this the watcher would retry a dead target forever.
+        """
+        if self.session is None:
+            return self._session_names()
+        return {self.session} & self._session_ids()
+
     def watch_runs(
         self, on_change: Callable[[], None], stop: threading.Event
     ) -> None:
@@ -759,7 +829,7 @@ class AgentmonService:
             selector.register(process.stdout, selectors.EVENT_READ, session)
 
         def reconcile() -> None:
-            sessions = self._session_names()
+            sessions = self._watched_sessions()
             for session in set(clients) - sessions:
                 remove(session)
             for session in sessions - set(clients):
@@ -810,7 +880,7 @@ class AgentmonService:
 
     def runs(self) -> list[AgentRun]:
         result = _run(
-            [self.tmux, "-S", self.socket, "list-panes", "-a", "-F", RUN_FORMAT]
+            [self.tmux, "-S", self.socket, *self._pane_listing(), "-F", RUN_FORMAT]
         )
         windows: dict[str, list[tuple[tuple[bool, bool], list[str]]]] = {}
         for line in result.stdout.splitlines():
@@ -1060,7 +1130,7 @@ class AgentmonService:
         """
         result = _run(
             [
-                self.tmux, "-S", self.socket, "list-panes", "-a", "-F",
+                self.tmux, "-S", self.socket, *self._pane_listing(), "-F",
                 PANE_STATUS_FORMAT,
             ],
             check=False,
@@ -1379,9 +1449,12 @@ class AgentmonService:
         return self._open_agent_window(worktree, run.branch, command)
 
     def _open_agent_window(self, worktree: Path, name: str, command: str) -> str:
+        # The window has to land in the session agentmon lists, or the run it
+        # just started would never show up on the dashboard.
+        target = f"{self.session}:" if self.session is not None else "0:"
         result = _run(
             [
-                self.tmux, "-S", self.socket, "new-window", "-d", "-t", "0:",
+                self.tmux, "-S", self.socket, "new-window", "-d", "-t", target,
                 "-P", "-F", "#{window_index}", "-n", name,
                 "-c", str(worktree), command,
             ]

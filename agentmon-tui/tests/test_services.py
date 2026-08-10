@@ -109,6 +109,112 @@ def test_service_without_any_repository_can_collect_non_git_windows(
     assert service.recent_finished_all(active) == []
 
 
+def test_runs_list_only_the_panes_of_agentmon_own_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A window linked into a second session must not be listed twice."""
+    from agentmon import services
+
+    calls: list[list[str]] = []
+
+    def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess(
+            args, 0, f"%1\tdev:1.0\tscratch\t\t\t{tmp_path}\t\t1\tzsh\n", ""
+        )
+
+    service = AgentmonService(None, socket="/tmp/hmux.sock", session="$0")
+    monkeypatch.setattr(services, "_run", run)
+    monkeypatch.setattr(service, "_git_common_dir", lambda _cwd: None)
+
+    assert len(service.runs()) == 1
+    assert calls[0][3:7] == ["list-panes", "-s", "-t", "$0"]
+
+    calls.clear()
+    service.pane_status("%1")
+    assert calls[0][3:7] == ["list-panes", "-s", "-t", "$0"]
+
+
+def test_runs_list_the_whole_server_when_agentmon_has_no_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import services
+
+    calls: list[list[str]] = []
+
+    def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess(
+            args, 0, f"%1\tdev:1.0\tscratch\t\t\t{tmp_path}\t\t1\tzsh\n", ""
+        )
+
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+    monkeypatch.setattr(services, "_run", run)
+    monkeypatch.setattr(service, "_git_common_dir", lambda _cwd: None)
+
+    service.runs()
+
+    assert calls[0][3:5] == ["list-panes", "-a"]
+
+
+def test_agent_windows_open_in_the_session_agentmon_lists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import services
+
+    calls: list[list[str]] = []
+
+    def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "3\n", "")
+
+    monkeypatch.setattr(services, "_run", run)
+
+    scoped = AgentmonService(None, socket="/tmp/hmux.sock", session="$2")
+    assert scoped._open_agent_window(tmp_path, "run", "codex") == "3"
+    assert "$2:" in calls[0]
+
+    calls.clear()
+    AgentmonService(None, socket="/tmp/hmux.sock")._open_agent_window(
+        tmp_path, "run", "codex"
+    )
+    assert "0:" in calls[0]
+
+
+def test_watches_only_agentmon_own_session_while_it_lives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = AgentmonService(None, socket="/tmp/hmux.sock", session="$0")
+    monkeypatch.setattr(service, "_session_ids", lambda: {"$0", "$1"})
+    assert service._watched_sessions() == {"$0"}
+
+    monkeypatch.setattr(service, "_session_ids", lambda: {"$1"})
+    assert service._watched_sessions() == set()
+
+
+def test_discovers_the_session_holding_agentmon_own_pane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agentmon.services import discover_session
+
+    monkeypatch.setenv("TMUX_PANE", "%7")
+    monkeypatch.setattr(
+        "agentmon.services._run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, "$3\n", ""),
+    )
+    assert discover_session("/tmp/hmux.sock") == "$3"
+
+    # A pane that this server does not know about leaves agentmon unscoped.
+    monkeypatch.setattr(
+        "agentmon.services._run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 1, "", "no pane"),
+    )
+    assert discover_session("/tmp/hmux.sock") is None
+
+    monkeypatch.delenv("TMUX_PANE")
+    assert discover_session("/tmp/hmux.sock") is None
+
+
 def test_discovers_current_hmux_session_socket_without_warning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

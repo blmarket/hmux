@@ -12,6 +12,12 @@ uv run agentmon
 
 See command palette(Ctrl + P) for list of available commands.
 
+Runs are monitored for the session `agentmon` itself sits in, and new runs are
+opened there too. A window linked into more than one session therefore appears
+once rather than once per session. Started outside hmux — from a plain terminal
+with `--socket` or `HMUX_SOCKET` — there is no such session, so every session on
+the server is monitored and new runs go to session `0`.
+
 ## looper
 
 Run it from a pane inside hmux, in the worktree you want worked on:
