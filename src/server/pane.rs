@@ -1,5 +1,5 @@
-//! A pane: a child process on a PTY, its output parsed by an hmux-vt
-//! [`Terminal`].
+//! A pane: a child process on a PTY, its output parsed onto an hmux-vt
+//! [`PaneScreen`].
 //!
 //! This is where the "clone" earns its name — instead of proxying to a backing
 //! tmux, hmux owns the pty/child and maintains the screen itself. tmux keeps this
@@ -35,15 +35,13 @@ use hmux_vt::observer::{
 };
 use hmux_vt::parser::{Param, StringEnd, Token, TokenKind};
 
-use hmux_vt::input::{InputEncoder, MouseEvent};
+use hmux_vt::input::MouseEvent;
 pub(crate) use hmux_vt::observer::parse_packed_colour;
 pub(crate) use hmux_vt::observer::{
     ClipboardEvent as PaneClipboardEvent, CursorShape as PaneCursorShape,
     OutputPolicy as PaneOutputPolicy, PassthroughPolicy,
 };
-use hmux_vt::screen::{
-    mode, CaptureExtent, Grid, GridDims, ScreenImage, ScreenOptions, VtScreen,
-};
+use hmux_vt::screen::{mode, CaptureExtent, Grid, GridDims, ScreenImage, ScreenOptions};
 use hmux_vt::PaneScreen;
 
 /// A single pane. Holds the emulated screen and, if live, the child on its pty.
@@ -788,8 +786,8 @@ impl NativePaneObservation {
         const GRID_CELL_ENTRY_BYTES: usize = 5;
         const GRID_EXTD_ENTRY_BYTES: usize = 23;
         let term = self.term.borrow_mut();
-        let dims = term.grid_dims()?;
-        let grid = term.grid_snapshot_range(0, dims.total_rows)?;
+        let dims = term.grid_dims();
+        let grid = term.grid_snapshot_range(0, dims.total_rows);
         let lines = dims.total_rows;
         let cells: usize = grid.rows.iter().map(|row| row.size).sum();
         let extended: usize = grid.rows.iter().map(|row| row.extd).sum();
@@ -1123,16 +1121,11 @@ impl NativePaneObservation {
             }
             VtEvent::AlternateScreen(on) => self.alternate_on.set(on),
             VtEvent::SaveAlternateCursor => {
-                if let Ok((x, y)) = terminal.cursor_position() {
-                    self.alternate_saved_x.set(u32::from(x));
-                    self.alternate_saved_y.set(u32::from(y));
-                }
+                let (x, y) = terminal.cursor_position();
+                self.alternate_saved_x.set(u32::from(x));
+                self.alternate_saved_y.set(u32::from(y));
             }
-            VtEvent::CursorPositionReport => {
-                if let Some(reply) = cursor_position_report(terminal) {
-                    replies.push(reply);
-                }
-            }
+            VtEvent::CursorPositionReport => replies.push(cursor_position_report(terminal)),
             VtEvent::WindowSizeReport(operation) => {
                 if let Some(reply) = window_size_report(terminal, operation) {
                     replies.push(reply);
@@ -1159,18 +1152,16 @@ impl NativePaneObservation {
                 policy.cursor_style,
             )),
             VtEvent::SetTabStop => {
-                if let Ok((x, _)) = terminal.cursor_position() {
-                    self.update_tab_stops(|stops| {
-                        stops.insert(x);
-                    });
-                }
+                let (x, _) = terminal.cursor_position();
+                self.update_tab_stops(|stops| {
+                    stops.insert(x);
+                });
             }
             VtEvent::ClearTabStop => {
-                if let Ok((x, _)) = terminal.cursor_position() {
-                    self.update_tab_stops(|stops| {
-                        stops.remove(&x);
-                    });
-                }
+                let (x, _) = terminal.cursor_position();
+                self.update_tab_stops(|stops| {
+                    stops.remove(&x);
+                });
             }
             VtEvent::ClearAllTabStops => self.update_tab_stops(BTreeSet::clear),
             VtEvent::CursorShape(shape) => self.cursor_shape.set(shape),
@@ -1272,12 +1263,8 @@ impl NativePaneObservation {
     /// visible where the cursor already was.
     fn write_terminal(&self, terminal: &mut PaneScreen, token: &Token) -> bool {
         let action = self.redraw_detector.borrow_mut().scan(token);
-        let large_scroll = action.is_some_and(|action| {
-            terminal
-                .cursor_position()
-                .ok()
-                .is_some_and(|(_, y)| action.needs_large_redraw(y))
-        });
+        let large_scroll = action
+            .is_some_and(|action| action.needs_large_redraw(terminal.cursor_position().1));
         terminal.apply(token);
         large_scroll
     }
@@ -1352,7 +1339,7 @@ impl NativePaneObservation {
     #[allow(dead_code)]
     pub(crate) fn contract_terminal_tail(&self, max_rows: usize) -> io::Result<String> {
         let terminal = self.term.borrow_mut();
-        Ok(trailing_lines(&terminal.dump_plain()?, max_rows))
+        Ok(trailing_lines(&plain_dump(&terminal, false), max_rows))
     }
 }
 
@@ -1377,22 +1364,22 @@ impl PaneObservability for NativePaneObservation {
     fn screen(&self, source: ScreenSource, lines: usize) -> io::Result<ScreenTail> {
         let term = self.term.borrow_mut();
         let text = match source {
-            ScreenSource::Recent => term.dump_plain()?,
-            ScreenSource::RecentUnwrapped => term.dump_plain_unwrapped()?,
+            ScreenSource::Recent => plain_dump(&term, false),
+            ScreenSource::RecentUnwrapped => plain_dump(&term, true),
             ScreenSource::Visible => {
                 // The plain dump is history-first; the viewport is the tail after
                 // the scrollback rows. Drop history so only the on-screen rows
-                // remain (see report.md).
-                let dump = term.dump_plain()?;
-                let history = term.scrollback_rows()?;
-                drop_leading_lines(&dump, history)
+                // remain.
+                let dims = term.grid_dims();
+                let dump = term.dump_plain_rows(0, dims.total_rows, false);
+                drop_leading_lines(&dump, dims.scrollback_rows)
             }
         };
         // Writers advance the revision while holding the same terminal lock,
         // so the formatted text, cursor state, and revision form one coherent
         // snapshot.
         let revision = self.revision.get();
-        let cursor_visible = term.cursor_visible()?;
+        let cursor_visible = term.cursor_visible();
         let cursor_shape = self.cursor_shape.get();
         Ok(ScreenTail {
             revision,
@@ -1403,7 +1390,7 @@ impl PaneObservability for NativePaneObservation {
     }
 
     fn scrollback_rows(&self) -> io::Result<usize> {
-        self.term.borrow_mut().scrollback_rows()
+        Ok(self.term.borrow_mut().grid_dims().scrollback_rows)
     }
 
     fn title(&self) -> io::Result<Option<String>> {
@@ -1756,7 +1743,7 @@ impl Pane {
         self.input_with_stats(bytes).map(|_| ())
     }
 
-    pub(crate) fn encode_mouse(&self, event: MouseEvent) -> io::Result<Vec<u8>> {
+    pub(crate) fn encode_mouse(&self, event: MouseEvent) -> Vec<u8> {
         self.observation.term.borrow_mut().encode_mouse(event)
     }
 
@@ -1870,7 +1857,7 @@ impl Pane {
         self.rows = rows;
         {
             let mut t = self.observation.term.borrow_mut();
-            t.resize(cols, rows)?;
+            t.resize(cols, rows);
             {
                 let mut detector = self.observation.redraw_detector.borrow_mut();
                 detector.resize(rows);
@@ -1900,8 +1887,8 @@ impl Pane {
     }
 
     /// The current screen as plain text.
-    pub fn dump(&self) -> io::Result<String> {
-        self.observation.term.borrow_mut().dump_plain()
+    pub fn dump(&self) -> String {
+        plain_dump(&self.observation.term.borrow_mut(), false)
     }
 
     /// The visible screen as plain text, without scrollback — what tmux's
@@ -1914,45 +1901,46 @@ impl Pane {
             .text)
     }
 
-    pub(crate) fn cursor_position(&self) -> io::Result<(u16, u16)> {
+    pub(crate) fn cursor_position(&self) -> (u16, u16) {
         self.observation.term.borrow_mut().cursor_position()
     }
 
-    pub(crate) fn copy_snapshot(&self) -> io::Result<(Grid, Vec<u8>, (u16, u16))> {
+    pub(crate) fn copy_snapshot(&self) -> (Grid, Vec<u8>, (u16, u16)) {
         let terminal = self.observation.term.borrow_mut();
-        let grid = terminal.grid_snapshot()?;
-        let vt = terminal.dump_vt()?;
-        let cursor = terminal.cursor_position()?;
-        Ok((grid, vt, cursor))
+        let total = terminal.grid_dims().total_rows;
+        (
+            terminal.grid_snapshot_range(0, total),
+            terminal.dump_vt_rows(0, total),
+            terminal.cursor_position(),
+        )
     }
 
     /// Row geometry of the grid without the per-cell snapshot walk.
-    pub(crate) fn grid_dims(&self) -> io::Result<GridDims> {
+    pub(crate) fn grid_dims(&self) -> GridDims {
         self.observation.term.borrow_mut().grid_dims()
     }
 
     /// Snapshot only physical rows `[start, start + count)`; see
     /// [`PaneScreen::grid_snapshot_range`].
-    pub(crate) fn grid_snapshot_range(&self, start: usize, count: usize) -> io::Result<Grid> {
+    pub(crate) fn grid_snapshot_range(&self, start: usize, count: usize) -> Grid {
         self.observation
             .term
             .borrow_mut()
             .grid_snapshot_range(start, count)
     }
 
-    /// `resize-pane -T`; see
-    /// [`hmux_vt::screen::VtScreen::trim_history_below_cursor`].
-    pub(crate) fn trim_history_below_cursor(&self) -> io::Result<()> {
+    /// `resize-pane -T`; see [`PaneScreen::trim_history_below_cursor`].
+    pub(crate) fn trim_history_below_cursor(&self) {
         self.observation
             .term
             .borrow_mut()
-            .trim_history_below_cursor()
+            .trim_history_below_cursor();
     }
 
     /// The screen the alternate-screen switch displaced, which
     /// `capture-pane -a` reads, or `None` when the pane is not on an alternate
     /// screen. The VT half is the `-e` serialization of the same rows.
-    pub(crate) fn inactive_snapshot(&self) -> io::Result<Option<(Grid, Vec<u8>)>> {
+    pub(crate) fn inactive_snapshot(&self) -> Option<(Grid, Vec<u8>)> {
         self.observation.term.borrow_mut().inactive_snapshot()
     }
 
@@ -1970,43 +1958,36 @@ impl Pane {
     /// The current screen as VT escape sequences, suitable for writing to a
     /// client tty. This is the compositor primitive: the pane's grid is
     /// formatted as VT and sent to the attached client's terminal.
-    pub fn dump_vt(&self) -> io::Result<Vec<u8>> {
-        self.observation.term.borrow_mut().dump_vt()
+    pub fn dump_vt(&self) -> Vec<u8> {
+        let terminal = self.observation.term.borrow_mut();
+        let total = terminal.grid_dims().total_rows;
+        terminal.dump_vt_rows(0, total)
     }
 
     /// Rows as `capture-pane -e` wants them, which is not the same read as the
-    /// compositor's: see [`hmux_vt::screen::VtScreen::dump_vt_capture_rows`].
-    pub(crate) fn dump_rows_vt(
-        &self,
-        start: usize,
-        rows: usize,
-        extent: CaptureExtent,
-    ) -> io::Result<Vec<u8>> {
+    /// compositor's: see [`PaneScreen::dump_vt_capture_rows`].
+    pub(crate) fn dump_rows_vt(&self, start: usize, rows: usize, extent: CaptureExtent) -> Vec<u8> {
         self.observation
             .term
             .borrow_mut()
-            .dump_vt_capture_rows(start, rows, self.cols, extent)
+            .dump_vt_capture_rows(start, rows, extent)
     }
 
     /// One physical row as trimmed plain text, without formatting the rest of
     /// the grid.
-    pub(crate) fn dump_plain_row(&self, row: usize) -> io::Result<String> {
+    pub(crate) fn dump_plain_row(&self, row: usize) -> String {
         self.observation
             .term
             .borrow_mut()
-            .dump_plain_rows(row, 1, self.cols)
+            .dump_plain_rows(row, 1, false)
     }
 
     /// Format only the rows visible at a copy-mode scroll offset. Returning
     /// the clamped offset lets the compositor decide whether the live cursor
     /// belongs in the selected viewport.
-    pub fn dump_viewport_vt(
-        &self,
-        scroll_offset: usize,
-        visible_rows: usize,
-    ) -> io::Result<(Vec<u8>, usize)> {
+    pub fn dump_viewport_vt(&self, scroll_offset: usize, visible_rows: usize) -> (Vec<u8>, usize) {
         let terminal = self.observation.term.borrow_mut();
-        let scrollback = terminal.scrollback_rows()?;
+        let scrollback = terminal.grid_dims().scrollback_rows;
         let scroll = scroll_offset.min(scrollback);
         let start = scrollback - scroll;
         // A client whose terminal is taller than this pane asks for rows the
@@ -2016,8 +1997,8 @@ impl Pane {
         // the rest, so the window is drawn at the top as tmux draws it. tmux
         // pads the remainder with the pane-border fill rather than blanks.
         let available = scroll.saturating_add(usize::from(self.rows));
-        let vt = terminal.dump_vt_rows(start, visible_rows.min(available), self.cols)?;
-        Ok((vt, scroll))
+        let vt = terminal.dump_vt_rows(start, visible_rows.min(available));
+        (vt, scroll)
     }
 
     /// The images anchored to this pane's visible screen, oldest first.
@@ -2032,8 +2013,8 @@ impl Pane {
     /// How many scrollback (history) rows the grid holds above the visible
     /// viewport. Consumers that render only the on-screen rows (the compositor,
     /// `capture-pane -p`) skip this many leading rows of a dump.
-    pub fn scrollback_rows(&self) -> io::Result<usize> {
-        self.observation.term.borrow_mut().scrollback_rows()
+    pub fn scrollback_rows(&self) -> usize {
+        self.observation.term.borrow_mut().grid_dims().scrollback_rows
     }
 
     /// Clear scrollback while preserving the visible viewport.
@@ -2053,7 +2034,7 @@ impl Pane {
     /// Whether the pane's cursor is visible (DEC mode 25). The compositor
     /// mirrors this onto the client tty so a TUI that hides the cursor and
     /// paints its own doesn't leave the client's real cursor lit on top.
-    pub fn cursor_visible(&self) -> io::Result<bool> {
+    pub fn cursor_visible(&self) -> bool {
         self.observation.term.borrow_mut().cursor_visible()
     }
 
@@ -2455,6 +2436,12 @@ impl Drop for PaneIo {
     }
 }
 
+/// The whole grid as plain text — the full row range, which is how every
+/// whole-screen reader spells it now that the screen takes one.
+fn plain_dump(terminal: &PaneScreen, join_wraps: bool) -> String {
+    terminal.dump_plain_rows(0, terminal.grid_dims().total_rows, join_wraps)
+}
+
 fn trailing_lines(text: &str, lines: usize) -> String {
     if lines == 0 || text.is_empty() {
         return String::new();
@@ -2753,9 +2740,9 @@ pub(crate) enum MouseTrackingMode {
     All,
 }
 
-fn cursor_position_report(terminal: &PaneScreen) -> Option<Vec<u8>> {
-    let (x, y) = terminal.cursor_position().ok()?;
-    Some(format!("\x1b[{};{}R", y.saturating_add(1), x.saturating_add(1)).into_bytes())
+fn cursor_position_report(terminal: &PaneScreen) -> Vec<u8> {
+    let (x, y) = terminal.cursor_position();
+    format!("\x1b[{};{}R", y.saturating_add(1), x.saturating_add(1)).into_bytes()
 }
 
 /// tmux's default window pixel geometry when no attached client reports one.
@@ -2763,7 +2750,7 @@ const DEFAULT_CELL_WIDTH: u32 = 16;
 const DEFAULT_CELL_HEIGHT: u32 = 32;
 
 fn window_size_report(terminal: &PaneScreen, operation: u32) -> Option<Vec<u8>> {
-    let dims = terminal.grid_dims().ok()?;
+    let dims = terminal.grid_dims();
     let columns = u32::from(dims.cols);
     let rows = u32::from(dims.viewport_rows);
     let (report, height, width) = match operation {
@@ -3271,7 +3258,7 @@ mod tests {
     fn inert_pane_feeds_grid() {
         let pane = Pane::inert(20, 4).expect("inert pane");
         pane.feed(b"synthetic\r\noutput");
-        let dump = pane.dump().expect("dump");
+        let dump = pane.dump();
         assert!(dump.contains("synthetic"), "got {dump:?}");
         assert!(dump.contains("output"), "got {dump:?}");
         assert!(!pane.is_live());
@@ -3349,14 +3336,14 @@ mod tests {
     fn clear_history_preserves_the_visible_viewport() {
         let pane = Pane::inert(10, 4).expect("pane");
         pane.feed(b"1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7");
-        assert!(pane.scrollback_rows().expect("history before") > 0);
-        let visible_before = pane.dump_viewport_vt(0, 4).expect("visible before").0;
+        assert!(pane.scrollback_rows() > 0);
+        let visible_before = pane.dump_viewport_vt(0, 4).0;
 
         pane.clear_history().expect("clear history");
 
-        assert_eq!(pane.scrollback_rows().expect("history after"), 0);
+        assert_eq!(pane.scrollback_rows(), 0);
         assert_eq!(
-            pane.dump_viewport_vt(0, 4).expect("visible after").0,
+            pane.dump_viewport_vt(0, 4).0,
             visible_before
         );
     }

@@ -1,23 +1,17 @@
-//! The screen seam: what the server needs a terminal emulator to be.
+//! The types a pane's grid is read back as.
 //!
-//! Everything above this module addresses the pane's grid through
-//! [`VtScreen`], never through a particular emulator. The bytes come from the
-//! tokenizer ([`super::observer`]); the grid, the scrollback and the
-//! serializations of both come from here.
+//! The screen itself is [`crate::PaneScreen`]; this module holds the values its
+//! reads produce and the options it consults. They are shaped by what the
+//! daemon consumes: the bytes come from the tokenizer ([`super::observer`]),
+//! and the grid, the scrollback and the serializations of both come from the
+//! screen.
 //!
-//! The trait is shaped by what the daemon consumes, not by what any one
-//! emulator exposes: a backend whose library hides some of this owes the
-//! reconstruction, rather than leaving the server to recover it. The types
-//! below belong to hmux for the same reason — a backend converts into them.
-//!
-//! Stability: this is deliberately `pub`. It is an implementation seam
-//! being carved, not a compatibility contract, and the daemon's contract is its
-//! tmux-compatible command line and wire protocol.
+//! Stability: this is deliberately `pub`. It is an implementation surface, not
+//! a compatibility contract, and the daemon's contract is its tmux-compatible
+//! command line and wire protocol.
 
-use std::io;
 use std::sync::Arc;
 
-use super::parser::Token;
 use super::sixel::SixelImage;
 
 /// tmux's `MODE_*`, the bits `screen->mode` carries.
@@ -131,9 +125,7 @@ pub struct GridCell {
     /// The cell holds blanks so that the grid renders as the program intended,
     /// but a text read of the row puts the tab back: tmux's
     /// `grid_string_cells` emits a single `\t` for such a cell, which is why
-    /// `capture-pane` output can be narrower than the columns it covers. A
-    /// backend that does not keep the tab's origin reports `false` and the tab
-    /// reads back as the spaces it painted.
+    /// `capture-pane` output can be narrower than the columns it covers.
     pub tab: bool,
 }
 
@@ -162,10 +154,9 @@ pub struct RowFlags {
 /// with the whole server in reach. hmux's screen runs away from server state,
 /// so the resolved values are pushed to it instead and re-pushed whenever they
 /// can have changed. That is the same shape
-/// [`OutputPolicy`](super::observer::OutputPolicy) has for the
-/// tokenizer, and it is deliberately a separate one: those options decide how a
-/// pane's bytes are *parsed*, these decide what an operation does to the grid,
-/// and a backend that implements one need not implement the other.
+/// [`OutputPolicy`](super::observer::OutputPolicy) has for the tokenizer, and
+/// it is deliberately a separate one: those options decide how a pane's bytes
+/// are *parsed*, these decide what an operation does to the grid.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ScreenOptions {
     /// `scroll-on-clear`: whether clearing the screen moves what was on it into
@@ -229,8 +220,7 @@ pub struct GridRow {
     /// keeps empty cells (the default, and `-N`) stops.
     pub size: usize,
     /// tmux's `extdsize`: how many extended entries the row has allocated,
-    /// which `#{history_all_bytes}` counts. A backend with no allocation
-    /// model behind its rows reports zero.
+    /// which `#{history_all_bytes}` counts.
     pub extd: usize,
     pub flags: RowFlags,
 }
@@ -275,144 +265,8 @@ pub struct ScreenImage {
 pub struct GridDims {
     pub cols: u16,
     pub viewport_rows: u16,
+    /// How many rows of history sit above the viewport. This is where a caller
+    /// that only wants the history count gets it.
     pub scrollback_rows: usize,
     pub total_rows: usize,
-}
-
-/// The pane's screen: the grid, its scrollback, and the ways the daemon reads
-/// them back out.
-///
-/// Row indices are *physical*: zero is the oldest scrollback row and
-/// [`GridDims::scrollback_rows`] is the first visible one. Cursor coordinates
-/// are zero-based and viewport-relative.
-///
-/// # Stability
-///
-/// This trait is open — anyone may implement it — and it is a versioned
-/// compatibility contract: it does not change without a major version bump of
-/// `hmux-vt`, which while the crate is `0.x` means the minor. Adding a required
-/// method breaks every implementor, so new capability lands as a new trait or
-/// as inherent methods on the backends; a method with a default body is the one
-/// semver-minor escape hatch, and is used sparingly.
-pub trait VtScreen {
-    /// Apply one parsed token.
-    ///
-    /// The seam carries tokens rather than bytes because the pane's stream is
-    /// parsed once, upstream. A backend that wraps another emulator hands
-    /// [`Token::raw`] straight on; the in-house engine reads the token itself
-    /// and never looks at the bytes again.
-    ///
-    /// This never fails: malformed input has already been resolved by the
-    /// parser, and a sequence the screen does not implement is ignored, not an
-    /// error.
-    fn apply(&mut self, token: &Token);
-
-    /// Resize the grid. Both dimensions are clamped to at least one.
-    fn resize(&mut self, cols: u16, rows: u16) -> io::Result<()>;
-
-    /// Apply the pane options the screen consults; see [`ScreenOptions`].
-    fn set_options(&mut self, options: ScreenOptions);
-
-    /// Apply a pane's history limit to the retained primary-screen scrollback.
-    ///
-    /// The server owns this option, while the screen owns the rows it trims;
-    /// keeping the operation here avoids reconstructing a grid at the command
-    /// layer. A backend without row-level history control may leave this as a
-    /// no-op and document that limitation.
-    fn set_history_limit(&mut self, limit: usize);
-
-    /// The pane's VT modes, as [`mode`]'s bits.
-    ///
-    /// Every mode a pane can set lives here, not only the ones that steer the
-    /// grid, because one sequence writes a mode and one word should hold it.
-    /// The server reads this rather than counting DECSETs beside the screen.
-    fn modes(&self) -> u32;
-
-    /// `resize-pane -T`: drop the rows below the cursor and pull the same
-    /// number of rows out of the history into the viewport, so the cursor's
-    /// line ends up at the bottom of the screen with its content intact.
-    ///
-    /// This is tmux's one operation on history that is neither a write nor a
-    /// read, and a backend that does not own its scrollback cannot offer it.
-    fn trim_history_below_cursor(&mut self) -> io::Result<()>;
-
-    /// The cursor, zero-based and relative to the viewport.
-    fn cursor_position(&self) -> io::Result<(u16, u16)>;
-
-    /// Whether the cursor is visible (DECTCEM).
-    ///
-    /// A full-screen application typically hides the hardware cursor and paints
-    /// its own as a styled cell. [`Self::dump_vt`] carries the cursor's
-    /// *position* but not this, so the compositor has to ask separately and
-    /// mirror the answer onto the client tty — otherwise the client's real
-    /// cursor stays lit on top of the painted one.
-    fn cursor_visible(&self) -> io::Result<bool>;
-
-    /// How many rows of history sit above the viewport.
-    fn scrollback_rows(&self) -> io::Result<usize>;
-
-    /// Row geometry, without walking any cells.
-    fn grid_dims(&self) -> io::Result<GridDims>;
-
-    /// Snapshot every physical cell and row.
-    fn grid_snapshot(&self) -> io::Result<Grid>;
-
-    /// The images anchored to the *visible* screen, oldest first.
-    ///
-    /// Separate from [`Self::grid_snapshot`] because an image is not cells: it
-    /// covers them rather than being one of them, and a caller that only wants
-    /// the text should not pay to carry pixels around. A backend with no image
-    /// support answers with an empty list.
-    fn images(&self) -> Vec<ScreenImage>;
-
-    /// The *inactive* screen — the one the alternate-screen switch displaced —
-    /// as its snapshot and its `capture-pane -e` serialization, or `None` when
-    /// no alternate screen is in use.
-    ///
-    /// tmux keeps it as `saved_grid` and `capture-pane -a` is the only thing
-    /// that reads it. Both forms come back together because a capture picks one
-    /// of them and the grid is walked either way; splitting them would mean
-    /// walking it twice or asking a backend to hold a cursor into a screen that
-    /// has none.
-    fn inactive_snapshot(&self) -> io::Result<Option<(Grid, Vec<u8>)>>;
-
-    /// Snapshot only physical rows `[start, start + count)`, clamped to the
-    /// grid. The per-cell walk dominates the cost of a snapshot, so a consumer
-    /// with a known row range pays for that range alone. The returned
-    /// dimensions still describe the whole grid; `rows[0]` is physical row
-    /// `start`.
-    fn grid_snapshot_range(&self, start: usize, count: usize) -> io::Result<Grid>;
-
-    /// The whole screen as plain text, trailing whitespace trimmed.
-    fn dump_plain(&self) -> io::Result<String>;
-
-    /// As [`Self::dump_plain`], but with rows split only by a right-margin soft
-    /// wrap rejoined into one logical line.
-    fn dump_plain_unwrapped(&self) -> io::Result<String>;
-
-    /// Plain text for physical rows `[start, start + rows)` alone.
-    fn dump_plain_rows(&self, start: usize, rows: usize, cols: u16) -> io::Result<String>;
-
-    /// The whole screen as VT escape sequences, ready to write to a client tty:
-    /// text, SGR styles, hyperlinks and a final cursor position.
-    fn dump_vt(&self) -> io::Result<Vec<u8>>;
-
-    /// VT bytes for physical rows `[start, start + rows)` alone.
-    fn dump_vt_rows(&self, start: usize, rows: usize, cols: u16) -> io::Result<Vec<u8>>;
-
-    /// As [`Self::dump_vt_rows`], but for `capture-pane -e` rather than for a
-    /// client's tty.
-    ///
-    /// The two are not the same read. A capture runs to one of the row's two
-    /// extents, so a space a program wrote — perhaps carrying a background
-    /// colour — is part of the captured row. A redraw stops at the last
-    /// non-blank cell and erases the rest, which is cheaper and is what the
-    /// compositor wants. tmux keeps the same two paths apart.
-    fn dump_vt_capture_rows(
-        &self,
-        start: usize,
-        rows: usize,
-        cols: u16,
-        extent: CaptureExtent,
-    ) -> io::Result<Vec<u8>>;
 }

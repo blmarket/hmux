@@ -1377,7 +1377,7 @@ impl ServerState {
     /// Dump the plain-text screen of the pane named by `target` (`capture-pane`).
     pub fn dump_pane(&self, target: &str) -> io::Result<String> {
         let t = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
-        self.window(t.session, t.window).panes[t.pane].pane.dump()
+        Ok(self.window(t.session, t.window).panes[t.pane].pane.dump())
     }
 
     /// `swap-pane -s src -t dst`: exchange the two panes' positions. Same-window
@@ -1973,7 +1973,7 @@ impl ServerState {
         if pane.input_off {
             return Ok(());
         }
-        let bytes = pane.pane.encode_mouse(event)?;
+        let bytes = pane.pane.encode_mouse(event);
         pane.pane.input(&bytes)
     }
 
@@ -2313,7 +2313,7 @@ impl ServerState {
         let pane = self
             .active_pane(session_name)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no active pane"))?;
-        pane.dump_vt()
+        Ok(pane.dump_vt())
     }
 
     pub(crate) fn dump_active_pane_viewport_vt(
@@ -2325,7 +2325,7 @@ impl ServerState {
         let pane = self
             .active_pane(session_name)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no active pane"))?;
-        pane.dump_viewport_vt(scroll_offset, visible_rows)
+        Ok(pane.dump_viewport_vt(scroll_offset, visible_rows))
     }
 
     /// The images on the active pane's visible screen, for the compositor to
@@ -2438,7 +2438,7 @@ impl ServerState {
         let pane = self
             .active_pane(session_name)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no active pane"))?;
-        pane.cursor_visible()
+        Ok(pane.cursor_visible())
     }
 
     /// DECSCUSR parameter selected by the active pane.
@@ -2478,7 +2478,7 @@ impl ServerState {
         let pane = self
             .active_pane(session_name)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no active pane"))?;
-        pane.scrollback_rows()
+        Ok(pane.scrollback_rows())
     }
 
     /// How many leading scrollback (history) rows the pane named by `target`
@@ -2486,9 +2486,9 @@ impl ServerState {
     /// visible screen rather than the top of history.
     pub fn pane_scrollback_rows(&self, target: &str) -> io::Result<usize> {
         let t = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
-        self.window(t.session, t.window).panes[t.pane]
+        Ok(self.window(t.session, t.window).panes[t.pane]
             .pane
-            .scrollback_rows()
+            .scrollback_rows())
     }
 
     /// Dump the active pane as plain text (for debugging / tests).
@@ -2496,6 +2496,6 @@ impl ServerState {
         let pane = self
             .active_pane(session_name)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no active pane"))?;
-        pane.dump()
+        Ok(pane.dump())
     }
 }

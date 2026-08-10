@@ -1,26 +1,19 @@
-//! The input-encoding seam: turning a key press or a mouse action into the
-//! bytes the pane's program expects.
+//! Key and mouse identities, and the bytes they turn into.
 //!
-//! This is deliberately separate from [`super::screen::VtScreen`]. Encoding
-//! *reads* screen state — the cursor-key mode, the keypad mode, which mouse
-//! protocol the program asked for — but it produces bytes for the child, not
-//! cells for the grid, and it changes for different reasons. One god-trait over
-//! both would tie a rewrite of either to the other.
-
-use std::io;
+//! Encoding *reads* screen state — the cursor-key mode, the keypad mode, which
+//! mouse protocol the program asked for — so the mouse encoder is a method on
+//! [`crate::PaneScreen`], which tracks those modes. This module holds the
+//! values that encoder takes and the one keyless encoding that needs no pane.
 
 /// A physical key identity, independent of the layout that produced it.
 ///
-/// The code is opaque above the seam: only the constants below and
-/// [`Key::from_ascii`], which maps a US-layout character onto the key that
-/// bears it, name a key. A backend translates the code into whatever its own
-/// encoder wants.
+/// The code is opaque: only the constants below and [`Key::from_ascii`], which
+/// maps a US-layout character onto the key that bears it, name a key.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Key(i32);
 
 impl Key {
-    /// The opaque code, for a backend that has to translate it into its own
-    /// encoder's key identity; the engine reads the key itself.
+    /// The opaque code, which the encoder reads to identify the key.
     pub fn code(self) -> i32 {
         self.0
     }
@@ -117,8 +110,8 @@ pub struct KeyEvent<'a> {
     pub alt: bool,
     /// The text the press would insert, when it inserts any.
     pub text: Option<&'a str>,
-    /// The character the key bears with no shift applied, for a backend whose
-    /// encoder wants it stated separately; the engine derives it from the key.
+    /// The character the key bears with no shift applied, stated separately
+    /// from the key for a caller that already knows it.
     pub unshifted_codepoint: Option<char>,
 }
 
@@ -165,22 +158,4 @@ pub struct MouseEvent {
 pub fn encode_key_default_modes(key: KeyEvent<'_>) -> Vec<u8> {
     use super::screen::mode;
     super::engine::keys::encode_key(mode::CURSOR | mode::WRAP, key)
-}
-
-/// Encoding a click for the program running in the pane.
-///
-/// The encoding depends on modes the program set, so this is implemented
-/// alongside the screen that tracks them rather than as a free function. Keys
-/// are not here: the pane's key path is the server's port of `input-keys.c`,
-/// and the keyless caller has [`encode_key_default_modes`].
-///
-/// # Stability
-///
-/// Like [`super::screen::VtScreen`], this trait is open and is a versioned
-/// compatibility contract: no breaking change without a major version bump of
-/// `hmux-vt` (the minor, while the crate is `0.x`).
-pub trait InputEncoder {
-    /// The bytes this mouse event produces, or none when the program has asked
-    /// for no mouse reports.
-    fn encode_mouse(&self, mouse: MouseEvent) -> io::Result<Vec<u8>>;
 }

@@ -893,7 +893,8 @@ impl PopupOverlay {
             "default",
             terminal,
         ));
-        if let Ok(vt) = self.pane.dump_vt() {
+        {
+            let vt = self.pane.dump_vt();
             let (popup_rows, cursor) = split_pane_vt(&vt);
             let visible_height = height.saturating_sub(inset * 2);
             let visible_width = width.saturating_sub(inset * 2);

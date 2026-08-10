@@ -4816,34 +4816,15 @@ pub(super) fn vars_full(
                         "0"
                     },
                 )
-                .set(
-                    "cursor_x",
-                    p.pane
-                        .cursor_position()
-                        .map(|(x, _)| x)
-                        .unwrap_or(0)
-                        .to_string(),
-                )
-                .set(
-                    "cursor_y",
-                    p.pane
-                        .cursor_position()
-                        .map(|(_, y)| y)
-                        .unwrap_or(0)
-                        .to_string(),
-                )
+                .set("cursor_x", p.pane.cursor_position().0.to_string())
+                .set("cursor_y", p.pane.cursor_position().1.to_string())
                 .set("cursor_character", pane_cursor_character(&p.pane))
                 // tmux drops history rows past `history-limit` as they scroll
-                // off, so the size saturates there. The seam lets a backend
-                // leave `set_history_limit` a no-op, so the limit is also
-                // applied where the rows are counted and read back.
+                // off, so the size saturates there. The limit is applied again
+                // here, where the rows are counted and read back.
                 .set(
                     "history_size",
-                    p.pane
-                        .scrollback_rows()
-                        .unwrap_or(0)
-                        .min(history_limit)
-                        .to_string(),
+                    p.pane.scrollback_rows().min(history_limit).to_string(),
                 )
                 .set("history_limit", history_limit.to_string())
                 // `pane_format` marks a pane-level format context (always 1 here,
@@ -5230,19 +5211,13 @@ fn set_mouse_vars(st: &ServerState, sess: &Session, win_idx: usize, pane_idx: us
 }
 
 fn pane_cursor_character(pane: &super::pane::Pane) -> String {
-    let Ok((x, y)) = pane.cursor_position() else {
-        return String::new();
-    };
-    let history = pane.scrollback_rows().unwrap_or(0);
+    let (x, y) = pane.cursor_position();
+    let history = pane.scrollback_rows();
     pane.dump_plain_row(history + y as usize)
-        .ok()
-        .and_then(|row| {
-            row.lines()
-                .next()
-                .and_then(|line| line.chars().nth(x as usize))
-        })
-        .map(|character| character.to_string())
-        .unwrap_or_else(|| " ".to_string())
+        .lines()
+        .next()
+        .and_then(|line| line.chars().nth(x as usize))
+        .map_or_else(|| " ".to_string(), |character| character.to_string())
 }
 
 /// The server process's working directory. This backs `#{session_path}` and is
@@ -7219,10 +7194,9 @@ fn capture_pane(args: &[String], st: &mut ServerState, agents: &PaneAgents) -> C
             .pane
             .inactive_snapshot();
         match snapshot {
-            Ok(Some(snapshot)) => Some(snapshot),
-            Ok(None) if has_flag(args, "-q") => return finish_capture(args, st, Vec::new()),
-            Ok(None) => return CommandResult::err("no alternate screen\n"),
-            Err(error) => return CommandResult::err(format!("{error}\n")),
+            Some(snapshot) => Some(snapshot),
+            None if has_flag(args, "-q") => return finish_capture(args, st, Vec::new()),
+            None => return CommandResult::err("no alternate screen\n"),
         }
     } else {
         None
@@ -7286,10 +7260,7 @@ fn capture_pane(args: &[String], st: &mut ServerState, agents: &PaneAgents) -> C
                 serialize_capture(args, grid, 0, range, styled_rows.as_deref())
             }
         } else {
-            let dims = match node.pane.grid_dims() {
-                Ok(dims) => dims,
-                Err(error) => return CommandResult::err(format!("{error}\n")),
-            };
+            let dims = node.pane.grid_dims();
             if dims.total_rows == 0 {
                 String::new()
             } else {
@@ -7302,22 +7273,11 @@ fn capture_pane(args: &[String], st: &mut ServerState, agents: &PaneAgents) -> C
                     history_limit,
                 );
                 let rows = range.bottom - range.top + 1;
-                let grid = match node.pane.grid_snapshot_range(range.top, rows) {
-                    Ok(grid) => grid,
-                    Err(error) => return CommandResult::err(format!("{error}\n")),
-                };
-                let styled_rows = if styled {
-                    let bytes = match node
-                        .pane
-                        .dump_rows_vt(range.top, rows, capture_extent(args))
-                    {
-                        Ok(bytes) => bytes,
-                        Err(error) => return CommandResult::err(format!("{error}\n")),
-                    };
-                    Some(capture_vt_normalize_rows(&bytes, rows))
-                } else {
-                    None
-                };
+                let grid = node.pane.grid_snapshot_range(range.top, rows);
+                let styled_rows = styled.then(|| {
+                    let bytes = node.pane.dump_rows_vt(range.top, rows, capture_extent(args));
+                    capture_vt_normalize_rows(&bytes, rows)
+                });
                 serialize_capture(args, &grid, range.top, range, styled_rows.as_deref())
             }
         }
@@ -7371,8 +7331,8 @@ fn capture_range(
     let last = total_rows.saturating_sub(1);
     let history = scrollback_rows.min(last);
     // History past `history-limit` is gone in tmux, so it must not be readable
-    // here either; the seam lets a backend keep more than the limit, so the
-    // limit is applied where the rows are read back.
+    // here either; the screen can hold more rows than the limit between
+    // re-pushes, so the limit is applied again where the rows are read back.
     let floor = history.saturating_sub(history_limit);
     let default_top = history;
     let default_bottom = history
@@ -7928,10 +7888,8 @@ fn resize_pane(args: &[String], st: &mut ServerState) -> CommandResult {
         if node.copy.is_some() {
             return CommandResult::ok("");
         }
-        return match node.pane.trim_history_below_cursor() {
-            Ok(()) => CommandResult::ok(""),
-            Err(error) => CommandResult::err(format!("{error}\n")),
-        };
+        node.pane.trim_history_below_cursor();
+        return CommandResult::ok("");
     }
     if has_bool_flag(args, 'Z') {
         return match st.toggle_zoom(&target) {

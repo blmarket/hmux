@@ -356,10 +356,8 @@ pub(crate) fn grid_word_and_line(
     position: MousePosition,
     separators: &str,
 ) -> (String, String) {
-    let Ok(dump) = pane.dump() else {
-        return (String::new(), String::new());
-    };
-    let history = pane.scrollback_rows().unwrap_or(0);
+    let dump = pane.dump();
+    let history = pane.scrollback_rows();
     let Some(line) = dump.lines().nth(history + usize::from(position.y)) else {
         return (String::new(), String::new());
     };
@@ -387,10 +385,8 @@ pub(crate) fn grid_word_and_line(
 /// The OSC 8 hyperlink under the mouse, tmux's `#{mouse_hyperlink}` — read
 /// from the clicked cell's link metadata, empty when the cell has none.
 pub(crate) fn grid_hyperlink(pane: &super::pane::Pane, position: MousePosition) -> String {
-    let history = pane.scrollback_rows().unwrap_or(0);
-    let Ok(grid) = pane.grid_snapshot_range(history + usize::from(position.y), 1) else {
-        return String::new();
-    };
+    let history = pane.scrollback_rows();
+    let grid = pane.grid_snapshot_range(history + usize::from(position.y), 1);
     grid.rows
         .first()
         .and_then(|row| row.cells.get(usize::from(position.x)))

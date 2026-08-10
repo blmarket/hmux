@@ -12,9 +12,8 @@
 //! - [`model`] — a terminal model for out-of-process test harnesses.
 //! - [`serve`] — listeners and connection lifecycle management.
 //!
-//! The pane tokenizer, the terminal-emulation seam, and its backend live in the
-//! `hmux-vt` crate; the daemon consumes them only through that crate's public
-//! surface.
+//! The pane tokenizer and the terminal emulation live in the `hmux-vt` crate;
+//! the daemon consumes them only through that crate's public surface.
 
 pub mod error;
 pub(crate) mod event_loop;

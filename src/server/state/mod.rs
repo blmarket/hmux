@@ -63,7 +63,6 @@ use std::rc::Rc;
 use super::key::KeyCode;
 use super::options::{GlobalOptions, OptionSet, OptionsView};
 use super::pane::Pane;
-use hmux_vt::screen::VtScreen;
 use hmux_vt::PaneScreen;
 
 /// The server state, shared by everything running on the loop.

@@ -153,7 +153,7 @@ pub(crate) fn pane_slider(pane: &PaneNode, height: u16) -> (u16, u16) {
     let bar = f64::from(height.max(1));
     let size = match pane.copy.as_ref() {
         Some(copy) => copy.grid.scrollback_rows,
-        None => pane.pane.scrollback_rows().unwrap_or(0),
+        None => pane.pane.scrollback_rows(),
     } as f64;
     let total = size + bar;
     let slider_height = (bar * (bar / total)) as u16;
@@ -683,9 +683,8 @@ impl ServerState {
         // does for a window the client has never panned.
         let (mut ox, mut oy) = (0, 0);
         if let Some(pane) = window.panes.get(window.active) {
-            if let (Some(rect), Ok((cursor_x, cursor_y))) =
-                (window.pane_rect(pane.id), pane.pane.cursor_position())
-            {
+            if let Some(rect) = window.pane_rect(pane.id) {
+                let (cursor_x, cursor_y) = pane.pane.cursor_position();
                 let cx = rect.left.saturating_add(cursor_x);
                 let cy = rect.top.saturating_add(cursor_y);
                 ox = if cx < sx {

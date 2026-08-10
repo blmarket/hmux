@@ -14,7 +14,7 @@
 //!   matrix report `OK` for a recognized command even when the harness passes
 //!   `/dev/null`), and enters the attach loop.
 //! - The attach loop renders the session's active pane (emulator grid → VT
-//!   sequences via `Terminal::dump_vt`) onto the client's tty fd, forwards
+//!   sequences via `Pane::dump_vt`) onto the client's tty fd, forwards
 //!   keystrokes from the tty fd into the pane's pty master, and handles
 //!   `MSG_RESIZE` / `MSG_DETACH` from the imsg control plane.
 //! - Input handling forwards unbound bytes to the pane and resolves configured
@@ -3304,7 +3304,7 @@ fn compose_split_frame(
         } else if let Some(copy_view) = copy_view.as_ref() {
             (copy_view.rows(height), copy_view.cursor(height, width), 0)
         } else {
-            let (vt, _) = node.pane.dump_viewport_vt(0, height as usize)?;
+            let (vt, _) = node.pane.dump_viewport_vt(0, height as usize);
             let (pane_rows, cursor) = split_pane_vt(&vt);
             (
                 pane_rows.into_iter().map(<[u8]>::to_vec).collect(),
@@ -3542,7 +3542,7 @@ fn compose_split_frame(
     out.extend_from_slice(format!("\x1b[{} q", win.panes[active].pane.cursor_shape()).as_bytes());
     if win.panes[active].mode_view.is_none()
         && (win.panes[active].copy.is_some()
-            || win.panes[active].pane.cursor_visible().unwrap_or(true))
+            || win.panes[active].pane.cursor_visible())
     {
         out.extend_from_slice(b"\x1b[?25h");
     }
@@ -3570,7 +3570,7 @@ fn offset_cup_row(cursor: &[u8], offset: u16) -> Vec<u8> {
 
 /// Split a pane VT dump into per-row content plus the trailing cursor-restore.
 ///
-/// `Terminal::dump_vt` emits `row0\r\nrow1\r\n…rowN` (styles flow inline across
+/// `Pane::dump_vt` emits `row0\r\nrow1\r\n…rowN` (styles flow inline across
 /// rows) followed by a final cursor-position escape (`CSI r ; c H`). The
 /// compositor needs the rows individually so it can position and erase each one
 /// in place, and the cursor escape to reissue after drawing. If no trailing CUP

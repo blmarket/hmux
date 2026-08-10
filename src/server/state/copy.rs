@@ -7,7 +7,7 @@
 
 use std::io;
 
-use super::{PaneScreen, VtScreen};
+use super::PaneScreen;
 use hmux_vt::parser::tokenize;
 use hmux_vt::screen::{CellSemantic, CellWidth, Grid, GridCell, GridRow};
 
@@ -207,12 +207,8 @@ pub(super) fn reflow_copy_snapshot(state: &mut CopyState, cols: u16, rows: u16) 
     for token in tokenize(&copy_reflow_vt(state)) {
         terminal.apply(&token);
     }
-    terminal
-        .resize(cols, rows)
-        .map_err(|error| io::Error::other(format!("vt error: {error:?}")))?;
-    state.grid = terminal
-        .grid_snapshot()
-        .map_err(|error| io::Error::other(format!("vt error: {error:?}")))?;
+    terminal.resize(cols, rows);
+    state.grid = terminal.grid_snapshot_range(0, terminal.grid_dims().total_rows);
     for (offset, semantic, hyperlink) in metadata {
         let (row, col) = copy_point_at_offset(&state.grid, offset);
         if let Some(cell) = state
@@ -225,9 +221,7 @@ pub(super) fn reflow_copy_snapshot(state: &mut CopyState, cols: u16, rows: u16) 
             cell.hyperlink = hyperlink;
         }
     }
-    let vt = terminal
-        .dump_vt()
-        .map_err(|error| io::Error::other(format!("vt error: {error:?}")))?;
+    let vt = terminal.dump_vt_rows(0, terminal.grid_dims().total_rows);
     state.replace_vt(vt);
     let (cursor_row, cursor_col) = copy_point_at_offset(&state.grid, cursor_offset);
     state.cursor = CopyCursor {
@@ -263,16 +257,11 @@ pub(super) fn view_copy_state(output: Vec<u8>, cols: u16, rows: u16) -> io::Resu
     for token in tokenize(&view_output_vt(&output)) {
         terminal.apply(&token);
     }
-    let grid = terminal
-        .grid_snapshot()
-        .map_err(|error| io::Error::other(format!("vt error: {error:?}")))?;
-    let vt = terminal
-        .dump_vt()
-        .map_err(|error| io::Error::other(format!("vt error: {error:?}")))?;
+    let total = terminal.grid_dims().total_rows;
+    let grid = terminal.grid_snapshot_range(0, total);
+    let vt = terminal.dump_vt_rows(0, total);
     let vt_rows = copy_vt_row_ranges(&vt);
-    let (col, row) = terminal
-        .cursor_position()
-        .map_err(|error| io::Error::other(format!("vt error: {error:?}")))?;
+    let (col, row) = terminal.cursor_position();
     let scroll = grid.scrollback_rows;
     Ok(CopyState {
         backing: CopyBacking::ViewOutput(output),

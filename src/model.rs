@@ -5,15 +5,12 @@
 //! used to produce the bytes, so a difference in the assertion is a difference
 //! in the daemon, not in two independent readings of a byte stream.
 //!
-//! This is the only public window onto the emulation seam, and it is
+//! This is the only public window onto the emulation, and it is
 //! deliberately narrow: feed bytes, read the screen back. Nothing here is an
 //! end-user contract — the daemon's contract is its tmux-compatible command
 //! line and wire protocol.
 
-use std::io;
-
 use hmux_vt::parser::Parser;
-use hmux_vt::screen::VtScreen;
 use hmux_vt::PaneScreen;
 
 /// A screen a harness can feed bytes to and read back.
@@ -24,11 +21,11 @@ pub struct TerminalModel {
 
 impl TerminalModel {
     /// A `cols`×`rows` model with the daemon's own scrollback settings.
-    pub fn new(cols: u16, rows: u16) -> io::Result<TerminalModel> {
-        Ok(TerminalModel {
+    pub fn new(cols: u16, rows: u16) -> TerminalModel {
+        TerminalModel {
             parser: Parser::default(),
             screen: PaneScreen::new(cols, rows),
-        })
+        }
     }
 
     /// Apply a chunk of terminal bytes. A sequence split across calls is
@@ -39,23 +36,25 @@ impl TerminalModel {
     }
 
     /// Resize the model, as a client resize would resize the pane.
-    pub fn resize(&mut self, cols: u16, rows: u16) -> io::Result<()> {
-        self.screen.resize(cols, rows)
+    pub fn resize(&mut self, cols: u16, rows: u16) {
+        self.screen.resize(cols, rows);
     }
 
     /// The whole screen as plain text, trailing whitespace trimmed.
-    pub fn dump_plain(&self) -> io::Result<String> {
-        self.screen.dump_plain()
+    pub fn dump_plain(&self) -> String {
+        self.screen
+            .dump_plain_rows(0, self.screen.grid_dims().total_rows, false)
     }
 
     /// The whole screen as VT escape sequences, as the compositor would write
     /// them to a client tty.
-    pub fn dump_vt(&self) -> io::Result<Vec<u8>> {
-        self.screen.dump_vt()
+    pub fn dump_vt(&self) -> Vec<u8> {
+        self.screen
+            .dump_vt_rows(0, self.screen.grid_dims().total_rows)
     }
 
     /// How many rows of history sit above the viewport.
-    pub fn scrollback_rows(&self) -> io::Result<usize> {
-        self.screen.scrollback_rows()
+    pub fn scrollback_rows(&self) -> usize {
+        self.screen.grid_dims().scrollback_rows
     }
 }

@@ -1,28 +1,29 @@
-//! The in-house engine as a screen the server can use.
+//! The pane's screen: the grid, its scrollback, and the ways the daemon reads
+//! them back out.
 //!
-//! This is the implementation side of [`crate::screen::VtScreen`]: it is the
-//! backend [`crate::PaneScreen`] names, so this is what a pane's grid
-//! actually is.
+//! Row indices are *physical*: zero is the oldest scrollback row and
+//! [`GridDims::scrollback_rows`] is the first visible one. Cursor coordinates
+//! are zero-based and viewport-relative.
 
-use std::io;
 use std::sync::Arc;
 
 use super::dispatch::Engine;
 use super::dump;
 use super::keys;
 use super::screen::DEFAULT_HISTORY_LIMIT;
-use crate::input::{InputEncoder, MouseEvent};
+use crate::input::MouseEvent;
 use crate::parser::Token;
-use crate::screen::{CaptureExtent, Grid, GridDims, ScreenImage, ScreenOptions, VtScreen};
+use crate::screen::{CaptureExtent, Grid, GridDims, ScreenImage, ScreenOptions};
 
-/// hmux's own screen.
-pub struct EngineScreen {
+/// hmux's own screen, and the only one: the engine is the chosen
+/// implementation rather than one of several a caller picks between.
+pub struct PaneScreen {
     engine: Engine,
 }
 
-impl EngineScreen {
-    pub fn new(cols: u16, rows: u16) -> EngineScreen {
-        EngineScreen {
+impl PaneScreen {
+    pub fn new(cols: u16, rows: u16) -> PaneScreen {
+        PaneScreen {
             engine: Engine::new(
                 usize::from(cols.max(1)),
                 usize::from(rows.max(1)),
@@ -30,74 +31,100 @@ impl EngineScreen {
             ),
         }
     }
-}
 
-impl VtScreen for EngineScreen {
-    fn apply(&mut self, token: &Token) {
+    /// Apply one parsed token.
+    ///
+    /// The screen takes tokens rather than bytes because the pane's stream is
+    /// parsed once, upstream. This never fails: malformed input has already
+    /// been resolved by the parser, and a sequence the screen does not
+    /// implement is ignored, not an error.
+    pub fn apply(&mut self, token: &Token) {
         self.engine.apply(&token.kind);
     }
 
-    fn resize(&mut self, cols: u16, rows: u16) -> io::Result<()> {
+    /// Resize the grid. Both dimensions are clamped to at least one.
+    pub fn resize(&mut self, cols: u16, rows: u16) {
         self.engine
             .screen
             .resize(usize::from(cols.max(1)), usize::from(rows.max(1)));
-        Ok(())
     }
 
-    fn set_options(&mut self, options: ScreenOptions) {
+    /// Apply the pane options the screen consults; see [`ScreenOptions`].
+    pub fn set_options(&mut self, options: ScreenOptions) {
         self.engine.screen.options = options;
     }
 
-    fn set_history_limit(&mut self, limit: usize) {
+    /// Apply a pane's history limit to the retained primary-screen scrollback.
+    ///
+    /// The server owns this option, while the screen owns the rows it trims;
+    /// keeping the operation here avoids reconstructing a grid at the command
+    /// layer.
+    pub fn set_history_limit(&mut self, limit: usize) {
         self.engine.screen.set_history_limit(limit);
     }
 
-    fn modes(&self) -> u32 {
+    /// The pane's VT modes, as [`crate::screen::mode`]'s bits.
+    ///
+    /// Every mode a pane can set lives here, not only the ones that steer the
+    /// grid, because one sequence writes a mode and one word should hold it.
+    /// The server reads this rather than counting DECSETs beside the screen.
+    pub fn modes(&self) -> u32 {
         self.engine.screen.mode
     }
 
-    fn trim_history_below_cursor(&mut self) -> io::Result<()> {
+    /// `resize-pane -T`: drop the rows below the cursor and pull the same
+    /// number of rows out of the history into the viewport, so the cursor's
+    /// line ends up at the bottom of the screen with its content intact.
+    ///
+    /// This is tmux's one operation on history that is neither a write nor a
+    /// read.
+    pub fn trim_history_below_cursor(&mut self) {
         let screen = &mut self.engine.screen;
         // The rows below the cursor are what goes, and there is only as much
         // history as there is to pull up in their place.
         let adjust = (screen.sy() - 1 - screen.cy).min(screen.grid.hsize);
         screen.grid.remove_history(adjust);
         screen.cy += adjust;
-        Ok(())
     }
 
-    fn cursor_position(&self) -> io::Result<(u16, u16)> {
+    /// The cursor, zero-based and relative to the viewport.
+    pub fn cursor_position(&self) -> (u16, u16) {
         let screen = &self.engine.screen;
-        Ok((
+        (
             u16::try_from(screen.cx).unwrap_or(u16::MAX),
             u16::try_from(screen.cy).unwrap_or(u16::MAX),
-        ))
+        )
     }
 
-    fn cursor_visible(&self) -> io::Result<bool> {
-        Ok(dump::cursor_visible(&self.engine.screen))
+    /// Whether the cursor is visible (DECTCEM).
+    ///
+    /// A full-screen application typically hides the hardware cursor and paints
+    /// its own as a styled cell. [`Self::dump_vt_rows`] carries the cursor's
+    /// *position* but not this, so the compositor has to ask separately and
+    /// mirror the answer onto the client tty — otherwise the client's real
+    /// cursor stays lit on top of the painted one.
+    pub fn cursor_visible(&self) -> bool {
+        dump::cursor_visible(&self.engine.screen)
     }
 
-    fn scrollback_rows(&self) -> io::Result<usize> {
-        Ok(self.engine.screen.grid.hsize)
-    }
-
-    fn grid_dims(&self) -> io::Result<GridDims> {
+    /// Row geometry, without walking any cells. This is also where the history
+    /// count comes from: [`GridDims::scrollback_rows`].
+    pub fn grid_dims(&self) -> GridDims {
         let grid = &self.engine.screen.grid;
-        Ok(GridDims {
+        GridDims {
             cols: u16::try_from(grid.sx).unwrap_or(u16::MAX),
             viewport_rows: u16::try_from(grid.sy).unwrap_or(u16::MAX),
             scrollback_rows: grid.hsize,
             total_rows: grid.total(),
-        })
+        }
     }
 
-    fn grid_snapshot(&self) -> io::Result<Grid> {
-        let total = self.engine.screen.grid.total();
-        Ok(dump::snapshot(&self.engine.screen, 0, total))
-    }
-
-    fn images(&self) -> Vec<ScreenImage> {
+    /// The images anchored to the *visible* screen, oldest first.
+    ///
+    /// Separate from [`Self::grid_snapshot_range`] because an image is not
+    /// cells: it covers them rather than being one of them, and a caller that
+    /// only wants the text should not pay to carry pixels around.
+    pub fn images(&self) -> Vec<ScreenImage> {
         let images = &self.engine.screen.images;
         let revision = images.revision();
         images
@@ -114,9 +141,17 @@ impl VtScreen for EngineScreen {
             .collect()
     }
 
-    fn inactive_snapshot(&self) -> io::Result<Option<(Grid, Vec<u8>)>> {
+    /// The *inactive* screen — the one the alternate-screen switch displaced —
+    /// as its snapshot and its `capture-pane -e` serialization, or `None` when
+    /// no alternate screen is in use.
+    ///
+    /// tmux keeps it as `saved_grid` and `capture-pane -a` is the only thing
+    /// that reads it. Both forms come back together because a capture picks one
+    /// of them and the grid is walked either way; splitting them would mean
+    /// walking it twice or holding a cursor into a screen that has none.
+    pub fn inactive_snapshot(&self) -> Option<(Grid, Vec<u8>)> {
         let screen = &self.engine.screen;
-        Ok(screen.saved_grid().map(|grid| {
+        screen.saved_grid().map(|grid| {
             let total = grid.total();
             (
                 dump::snapshot_grid(screen, grid, 0, total),
@@ -130,74 +165,68 @@ impl VtScreen for EngineScreen {
                     dump::RowExtent::Capture(CaptureExtent::Allocated),
                 ),
             )
-        }))
+        })
     }
 
-    fn grid_snapshot_range(&self, start: usize, count: usize) -> io::Result<Grid> {
-        Ok(dump::snapshot(&self.engine.screen, start, count))
+    /// Snapshot physical rows `[start, start + count)`, clamped to the grid.
+    /// The per-cell walk dominates the cost of a snapshot, so a consumer with a
+    /// known row range pays for that range alone. The returned dimensions still
+    /// describe the whole grid; `rows[0]` is physical row `start`.
+    ///
+    /// A whole-grid snapshot is this call over `0..grid_dims().total_rows`.
+    pub fn grid_snapshot_range(&self, start: usize, count: usize) -> Grid {
+        dump::snapshot(&self.engine.screen, start, count)
     }
 
-    fn dump_plain(&self) -> io::Result<String> {
-        let total = self.engine.screen.grid.total();
-        Ok(dump::plain(&self.engine.screen, 0, total, false))
-    }
-
-    fn dump_plain_unwrapped(&self) -> io::Result<String> {
-        let total = self.engine.screen.grid.total();
-        Ok(dump::plain(&self.engine.screen, 0, total, true))
-    }
-
-    fn dump_plain_rows(&self, start: usize, rows: usize, cols: u16) -> io::Result<String> {
-        if rows == 0 || cols == 0 {
-            return Ok(String::new());
+    /// Physical rows `[start, start + rows)` as plain text, trailing whitespace
+    /// trimmed. With `join_wraps`, rows split only by a right-margin soft wrap
+    /// come back as one logical line.
+    pub fn dump_plain_rows(&self, start: usize, rows: usize, join_wraps: bool) -> String {
+        if rows == 0 {
+            return String::new();
         }
-        Ok(dump::plain(&self.engine.screen, start, rows, false))
+        dump::plain(&self.engine.screen, start, rows, join_wraps)
     }
 
-    fn dump_vt(&self) -> io::Result<Vec<u8>> {
-        let total = self.engine.screen.grid.total();
-        Ok(dump::vt(
-            &self.engine.screen,
-            0,
-            total,
-            dump::RowExtent::Redraw,
-        ))
-    }
-
-    fn dump_vt_rows(&self, start: usize, rows: usize, cols: u16) -> io::Result<Vec<u8>> {
-        if rows == 0 || cols == 0 {
-            return Ok(Vec::new());
+    /// Physical rows `[start, start + rows)` as VT escape sequences, ready to
+    /// write to a client tty: text, SGR styles, hyperlinks and a final cursor
+    /// position.
+    pub fn dump_vt_rows(&self, start: usize, rows: usize) -> Vec<u8> {
+        if rows == 0 {
+            return Vec::new();
         }
-        Ok(dump::vt(
-            &self.engine.screen,
-            start,
-            rows,
-            dump::RowExtent::Redraw,
-        ))
+        dump::vt(&self.engine.screen, start, rows, dump::RowExtent::Redraw)
     }
 
-    fn dump_vt_capture_rows(
-        &self,
-        start: usize,
-        rows: usize,
-        cols: u16,
-        extent: CaptureExtent,
-    ) -> io::Result<Vec<u8>> {
-        if rows == 0 || cols == 0 {
-            return Ok(Vec::new());
+    /// As [`Self::dump_vt_rows`], but for `capture-pane -e` rather than for a
+    /// client's tty.
+    ///
+    /// The two are not the same read. A capture runs to one of the row's two
+    /// extents, so a space a program wrote — perhaps carrying a background
+    /// colour — is part of the captured row. A redraw stops at the last
+    /// non-blank cell and erases the rest, which is cheaper and is what the
+    /// compositor wants. tmux keeps the same two paths apart.
+    pub fn dump_vt_capture_rows(&self, start: usize, rows: usize, extent: CaptureExtent) -> Vec<u8> {
+        if rows == 0 {
+            return Vec::new();
         }
-        Ok(dump::vt(
+        dump::vt(
             &self.engine.screen,
             start,
             rows,
             dump::RowExtent::Capture(extent),
-        ))
+        )
     }
-}
 
-impl InputEncoder for EngineScreen {
-    fn encode_mouse(&self, mouse: MouseEvent) -> io::Result<Vec<u8>> {
-        Ok(keys::encode_mouse(&self.engine.screen, mouse))
+    /// The bytes this mouse event produces, or none when the program has asked
+    /// for no mouse reports.
+    ///
+    /// Encoding lives with the screen because it reads the modes the screen
+    /// tracks — which mouse protocol the program asked for. Keys are not here:
+    /// the pane's key path is the server's port of `input-keys.c`, and the
+    /// keyless caller has [`crate::input::encode_key_default_modes`].
+    pub fn encode_mouse(&self, mouse: MouseEvent) -> Vec<u8> {
+        keys::encode_mouse(&self.engine.screen, mouse)
     }
 }
 
@@ -206,38 +235,44 @@ mod tests {
     use super::*;
     use crate::parser::tokenize;
 
-    fn screen(cols: u16, rows: u16, input: &[u8]) -> EngineScreen {
-        let mut screen = EngineScreen::new(cols, rows);
+    fn screen(cols: u16, rows: u16, input: &[u8]) -> PaneScreen {
+        let mut screen = PaneScreen::new(cols, rows);
         for token in tokenize(input) {
             screen.apply(&token);
         }
         screen
     }
 
+    /// The whole grid, which every caller spells as the full row range.
+    fn all_rows(screen: &PaneScreen) -> usize {
+        screen.grid_dims().total_rows
+    }
+
     #[test]
     fn the_engine_answers_the_whole_seam() {
         let screen = screen(10, 3, b"hello\r\nworld");
-        assert_eq!(screen.cursor_position().expect("cursor"), (5, 1));
-        assert!(screen.cursor_visible().expect("cursor mode"));
-        assert_eq!(screen.scrollback_rows().expect("history"), 0);
-        let dims = screen.grid_dims().expect("dims");
+        assert_eq!(screen.cursor_position(), (5, 1));
+        assert!(screen.cursor_visible());
+        let dims = screen.grid_dims();
+        assert_eq!(dims.scrollback_rows, 0);
         assert_eq!((dims.cols, dims.viewport_rows, dims.total_rows), (10, 3, 3));
-        assert!(screen.dump_plain().expect("plain").contains("world"));
-        assert!(!screen.dump_vt().expect("vt").is_empty());
-        assert_eq!(screen.grid_snapshot().expect("snapshot").rows.len(), 3);
+        let total = all_rows(&screen);
+        assert!(screen.dump_plain_rows(0, total, false).contains("world"));
+        assert!(!screen.dump_vt_rows(0, total).is_empty());
+        assert_eq!(screen.grid_snapshot_range(0, total).rows.len(), 3);
     }
 
     #[test]
     fn a_hidden_cursor_is_reported_hidden() {
         let screen = screen(10, 2, b"\x1b[?25l");
-        assert!(!screen.cursor_visible().expect("cursor mode"));
+        assert!(!screen.cursor_visible());
     }
 
     #[test]
     fn a_range_snapshot_starts_at_the_row_it_was_asked_for() {
         let screen = screen(10, 2, b"a\r\nb\r\nc\r\nd");
-        assert_eq!(screen.scrollback_rows().expect("history"), 2);
-        let grid = screen.grid_snapshot_range(2, 2).expect("range");
+        assert_eq!(screen.grid_dims().scrollback_rows, 2);
+        let grid = screen.grid_snapshot_range(2, 2);
         assert_eq!(grid.rows.len(), 2);
         assert_eq!(grid.rows[0].cells[0].text, "c");
         assert_eq!(
@@ -249,13 +284,24 @@ mod tests {
     #[test]
     fn resizing_rewraps_the_content_and_keeps_the_cursor_with_it() {
         let mut screen = screen(10, 3, b"abcdefgh");
-        screen.resize(4, 2).expect("resize");
-        let dims = screen.grid_dims().expect("dims");
+        screen.resize(4, 2);
+        let dims = screen.grid_dims();
         assert_eq!((dims.cols, dims.viewport_rows), (4, 2));
-        assert!(screen.dump_plain().expect("plain").contains("abcd\nefgh"));
-        let (cx, cy) = screen.cursor_position().expect("cursor");
+        assert!(screen
+            .dump_plain_rows(0, dims.total_rows, false)
+            .contains("abcd\nefgh"));
         // Four is the pending-wrap column of a four-column screen, which is
         // where tmux parks a cursor that has just filled the last one.
-        assert_eq!((cx, cy), (4, 0));
+        assert_eq!(screen.cursor_position(), (4, 0));
+    }
+
+    #[test]
+    fn joining_wraps_puts_a_soft_wrapped_line_back_together() {
+        let screen = screen(4, 3, b"abcdefgh");
+        let total = all_rows(&screen);
+        assert!(screen
+            .dump_plain_rows(0, total, false)
+            .contains("abcd\nefgh"));
+        assert!(screen.dump_plain_rows(0, total, true).contains("abcdefgh"));
     }
 }

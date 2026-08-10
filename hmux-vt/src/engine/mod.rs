@@ -5,8 +5,7 @@
 //! scrolling rules. Where hmux's own semantics and tmux's cannot both hold, the
 //! divergence is documented rather than smoothed over.
 //!
-//! This is the shipped backend, reached through [`super::screen::VtScreen`]
-//! and named by [`super::PaneScreen`].
+//! This is what a pane's grid actually is; [`super::PaneScreen`] is its face.
 
 pub mod backend;
 pub mod cell;

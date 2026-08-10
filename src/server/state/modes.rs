@@ -43,7 +43,7 @@ impl ServerState {
                 node.mode = mode.map(str::to_string);
             } else {
                 let copy = if mode.is_some() {
-                    let (grid, vt, (col, row)) = node.pane.copy_snapshot()?;
+                    let (grid, vt, (col, row)) = node.pane.copy_snapshot();
                     let vt_rows = copy_vt_row_ranges(&vt);
                     Some(CopyState {
                         backing: CopyBacking::PaneSnapshot,
@@ -484,7 +484,7 @@ impl ServerState {
             let source = &self
                 .window(source_resolved.session, source_resolved.window)
                 .panes[source_resolved.pane];
-            source.pane.copy_snapshot()?
+            source.pane.copy_snapshot()
         };
         let session_id = self.sessions[target_resolved.session].id;
         let node = &mut self
@@ -743,7 +743,7 @@ impl ServerState {
                 return Err(io::Error::other("not in a mode"));
             }
             if command == "refresh-from-pane" {
-                let (grid, vt, _) = node.pane.copy_snapshot()?;
+                let (grid, vt, _) = node.pane.copy_snapshot();
                 let state = node.copy.as_mut().expect("copy mode checked above");
                 state.backing = CopyBacking::PaneSnapshot;
                 state.grid = grid;
