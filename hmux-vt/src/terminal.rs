@@ -15,27 +15,17 @@
 //! the application loop. The only ordering the caller owes the events is the
 //! `Vec`'s own.
 
-use crate::observer::{Event, Observer, OutputPolicy};
+use crate::observer::{decrqss_reply, CursorShape, Event, Observer, OscState, OutputPolicy};
 use crate::parser::{tokenize, StringEnd, Token};
 use crate::screen::{mode, PaneScreen};
 use crate::scroll::ScrollRedraw;
-use crate::{ClipboardEvent, OscUpdate};
+use crate::ClipboardEvent;
 
 /// Something in the processed byte stream the server has to act on.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TerminalEvent {
     /// A `BEL` reached the screen.
     Bell,
-    /// The pane retitled itself (OSC 0/2 or APC), and the option allowed it.
-    Title(String),
-    /// `CSI 22 ; 0|2 t`: put the title as it stands on the title stack.
-    /// Unlike [`TerminalEvent::Title`] this is not gated on `allow-set-title`
-    /// — tmux's `screen_push_title` is reached without consulting the option,
-    /// and the pane is only saving a title it is already allowed to have.
-    TitlePush,
-    /// `CSI 23 ; 0|2 t`: take the title back off the stack. An empty stack
-    /// leaves the title alone.
-    TitlePop,
     /// `ESC k … ST`: the screen-family window rename control.
     Rename(String),
     /// The pane switched screens (DECSET 47 / 1047 / 1049).
@@ -43,37 +33,8 @@ pub enum TerminalEvent {
     /// DECSET 1049 is about to switch, and this is the cursor to remember —
     /// read before the switch, because the switch is what moves it.
     SaveAlternateCursor { x: u16, y: u16 },
-    /// DSR 6n, and where the cursor stood when the question arrived.
-    CursorPositionReport { x: u16, y: u16 },
-    /// CSI window operation: a terminal size query, with the dimensions the
-    /// screen had when it was asked.
-    WindowSizeReport { operation: u32, cols: u16, rows: u16 },
-    /// DECRQM, with the screen's mode word as it stood at the question's point
-    /// in the stream.
-    DecPrivateModeReport { mode: u32, screen_modes: u32 },
-    /// ANSI DECRQM, with the same captured mode word.
-    DecModeReport { mode: u32, screen_modes: u32 },
-    /// DECRQSS: answer this setting request. The request is carried unparsed
-    /// because most of what answers it is server state; the one screen fact it
-    /// needs — whether the cursor blinks — is captured here.
-    StatusReport {
-        request: Vec<u8>,
-        cursor_blinking: bool,
-    },
-    /// HTS: set a tab stop in this column, the cursor's at the time.
-    SetTabStop { column: u16 },
-    /// TBC 0: clear the tab stop in this column, the cursor's at the time.
-    ClearTabStop { column: u16 },
-    /// TBC 3: clear every tab stop.
-    ClearAllTabStops,
-    /// DECSCUSR: the pane asked for a cursor style.
-    CursorShape(u8),
     /// Bytes to write back to the pane's own input.
     Reply(Vec<u8>),
-    /// OSC 10 / 11 / 12 asked the pane for a colour it stores. The pane owns
-    /// the colour values; this event preserves the query's number, position
-    /// and terminator until that state is reached.
-    ColourQuery { number: u32, end: StringEnd },
     /// Bytes to forward to the client's terminal, whose answer comes back to
     /// the pane.
     ForwardQuery(&'static [u8]),
@@ -82,8 +43,6 @@ pub enum TerminalEvent {
     /// what comes back, so the index and the query's terminator are carried
     /// until the server can route it.
     PaletteQuery { index: u8, end: StringEnd },
-    /// A pane colour or path the formats report.
-    Osc(OscUpdate),
     /// An OSC 52 clipboard set or query.
     Clipboard(ClipboardEvent),
     /// A `DCS tmux;` payload, already stripped of its prefix and terminator.
@@ -143,6 +102,12 @@ impl Terminal {
         self.observer.pending()
     }
 
+    /// The pane state OSC sequences have set — colours, path, progress — as
+    /// the formats report it.
+    pub fn osc_state(&self) -> OscState {
+        self.observer.osc_state()
+    }
+
     /// Whether the tokenizer is waiting for a string terminator, which is when
     /// tmux's ground timer runs.
     pub fn awaiting_terminator(&self) -> bool {
@@ -163,7 +128,7 @@ impl Terminal {
                 large_scroll |= self.apply(&tokens[applied]);
                 applied += 1;
             }
-            let resolved = self.resolve(event);
+            let resolved = self.resolve(event, policy);
             events.push(resolved);
         }
         for token in &tokens[applied..] {
@@ -219,60 +184,128 @@ impl Terminal {
     }
 
     /// Turn an observed event into its public form, capturing the screen state
-    /// it reports at this point in the stream.
-    fn resolve(&self, event: Event) -> TerminalEvent {
+    /// it reports at this point in the stream. The queries whose whole answer
+    /// is emulator state — DECRQSS, DECRQM — resolve to the reply bytes
+    /// themselves; the policy supplies the `cursor-style` fallback their
+    /// cursor answers share.
+    fn resolve(&self, event: Event, policy: &OutputPolicy) -> TerminalEvent {
         match event {
             Event::Bell => TerminalEvent::Bell,
-            Event::Title(title) => TerminalEvent::Title(title),
-            Event::TitlePush => TerminalEvent::TitlePush,
-            Event::TitlePop => TerminalEvent::TitlePop,
             Event::Rename(name) => TerminalEvent::Rename(name),
             Event::AlternateScreen(on) => TerminalEvent::AlternateScreen(on),
             Event::SaveAlternateCursor => {
                 let (x, y) = self.screen.cursor_position();
                 TerminalEvent::SaveAlternateCursor { x, y }
             }
+            // DSR 6n, answered with the cursor as it stands here — which is
+            // why the event is ordered inside the stream at all.
             Event::CursorPositionReport => {
                 let (x, y) = self.screen.cursor_position();
-                TerminalEvent::CursorPositionReport { x, y }
+                TerminalEvent::Reply(
+                    format!("\x1b[{};{}R", y.saturating_add(1), x.saturating_add(1)).into_bytes(),
+                )
             }
             Event::WindowSizeReport(operation) => {
-                let dims = self.screen.grid_dims();
-                TerminalEvent::WindowSizeReport {
-                    operation,
-                    cols: dims.cols,
-                    rows: dims.viewport_rows,
-                }
+                TerminalEvent::Reply(window_size_report(&self.screen, operation))
             }
-            Event::DecPrivateModeReport(mode) => TerminalEvent::DecPrivateModeReport {
-                mode,
-                screen_modes: self.screen.modes(),
-            },
-            Event::DecModeReport(mode) => TerminalEvent::DecModeReport {
-                mode,
-                screen_modes: self.screen.modes(),
-            },
-            Event::StatusReport(request) => TerminalEvent::StatusReport {
-                request,
-                cursor_blinking: self.screen.modes() & mode::CURSOR_BLINKING != 0,
-            },
-            Event::SetTabStop => TerminalEvent::SetTabStop {
-                column: self.screen.cursor_position().0,
-            },
-            Event::ClearTabStop => TerminalEvent::ClearTabStop {
-                column: self.screen.cursor_position().0,
-            },
-            Event::ClearAllTabStops => TerminalEvent::ClearAllTabStops,
-            Event::CursorShape(shape) => TerminalEvent::CursorShape(shape),
+            Event::DecPrivateModeReport(mode) => {
+                let status = dec_mode_status(&self.screen, policy.cursor_style, mode);
+                TerminalEvent::Reply(format!("\x1b[?{mode};{status}$y").into_bytes())
+            }
+            Event::DecModeReport(mode) => {
+                let status = ansi_mode_status(self.screen.modes(), mode);
+                TerminalEvent::Reply(format!("\x1b[{mode};{status}$y").into_bytes())
+            }
+            Event::StatusReport(request) => TerminalEvent::Reply(decrqss_reply(
+                &request,
+                CursorShape::from_parameter(self.screen.cursor_style()),
+                self.screen.modes() & mode::CURSOR_BLINKING != 0,
+                policy.cursor_style,
+            )),
             Event::Reply(bytes) => TerminalEvent::Reply(bytes),
-            Event::ColourQuery { number, end } => TerminalEvent::ColourQuery { number, end },
             Event::ForwardQuery(query) => TerminalEvent::ForwardQuery(query),
             Event::PaletteQuery { index, end } => TerminalEvent::PaletteQuery { index, end },
-            Event::Osc(update) => TerminalEvent::Osc(update),
             Event::Clipboard(clipboard) => TerminalEvent::Clipboard(clipboard),
             Event::Passthrough(data) => TerminalEvent::Passthrough(data),
             Event::ThemeQuery => TerminalEvent::ThemeQuery,
         }
+    }
+}
+
+/// tmux's XTWINOPS geometry reports — the only operations `CSI t` answers,
+/// and the only ones the observer reports, so every reachable operation has
+/// an arm. The pixel forms use the cell size the server pushed with the
+/// screen options: the attached clients' geometry, or tmux's defaults while
+/// no client has reported one.
+fn window_size_report(screen: &PaneScreen, operation: u32) -> Vec<u8> {
+    let dims = screen.grid_dims();
+    let options = screen.options();
+    let (cols, rows) = (u32::from(dims.cols), u32::from(dims.viewport_rows));
+    let (report, height, width) = match operation {
+        14 => (4, rows * options.ypixel, cols * options.xpixel),
+        15 => (5, rows * options.ypixel, cols * options.xpixel),
+        16 => (6, options.ypixel, options.xpixel),
+        18 => (8, rows, cols),
+        _ => (9, rows, cols),
+    };
+    format!("\x1b[{report};{height};{width}t").into_bytes()
+}
+
+/// tmux's DECRQM answer for a private mode: 1 set, 2 reset, 0 unrecognized,
+/// or 4 permanently reset.
+///
+/// Everything it reads is the screen's at this point in the stream: the mode
+/// word, the alternate-screen state the 47/1047/1049 aliases stand for, and
+/// the DECSCUSR style. Mode 12 is the one answer that is not a mode-word read.
+/// tmux reports the blink the pane asked for only once the pane has spoken —
+/// a DECSCUSR that moved the cursor off its default style, or a DECSET/DECRST
+/// 12 — and otherwise answers from the `cursor-style` option, whose blinking
+/// choices are the odd parameters.
+fn dec_mode_status(screen: &PaneScreen, cursor_style: u8, mode_number: u32) -> u8 {
+    let modes = screen.modes();
+    let reports = |bit: u32| Some(modes & bit != 0);
+    let set = match mode_number {
+        // DECCOLM is recognized by tmux but permanently reset: hmux has no
+        // 132-column screen mode to enable either.
+        3 => return 4,
+        1 => reports(mode::KCURSOR),
+        6 => reports(mode::ORIGIN),
+        7 => reports(mode::WRAP),
+        12 => Some(
+            if CursorShape::from_parameter(screen.cursor_style()) != CursorShape::Default
+                || modes & mode::CURSOR_BLINKING_SET != 0
+            {
+                modes & mode::CURSOR_BLINKING != 0
+            } else {
+                matches!(cursor_style, 1 | 3 | 5)
+            },
+        ),
+        25 => reports(mode::CURSOR),
+        47 | 1047 | 1049 => Some(screen.alternate_active()),
+        1000 => reports(mode::MOUSE_STANDARD),
+        1002 => reports(mode::MOUSE_BUTTON),
+        1003 => reports(mode::MOUSE_ALL),
+        1004 => reports(mode::FOCUSON),
+        1005 => reports(mode::MOUSE_UTF8),
+        1006 => reports(mode::MOUSE_SGR),
+        2004 => reports(mode::BRACKETPASTE),
+        2026 => reports(mode::SYNC),
+        2031 => reports(mode::THEME_UPDATES),
+        _ => None,
+    };
+    match set {
+        Some(true) => 1,
+        Some(false) => 2,
+        None => 0,
+    }
+}
+
+/// tmux's DECRQM answer for a standard mode: 1 set, 2 reset, 0 unrecognized.
+fn ansi_mode_status(modes: u32, mode_number: u32) -> u8 {
+    match mode_number {
+        4 if modes & mode::INSERT != 0 => 1,
+        4 => 2,
+        _ => 0,
     }
 }
 
@@ -289,32 +322,89 @@ mod tests {
     fn a_cursor_report_captures_the_cursor_at_its_point_in_the_stream() {
         let mut terminal = Terminal::new(80, 24);
         let events = process(&mut terminal, b"AB\x1b[6nXY");
-        assert_eq!(
-            events,
-            [TerminalEvent::CursorPositionReport { x: 2, y: 0 }]
-        );
+        assert_eq!(events, [TerminalEvent::Reply(b"\x1b[1;3R".to_vec())]);
         assert_eq!(terminal.screen().cursor_position(), (4, 0));
     }
 
     #[test]
-    fn a_tab_stop_captures_the_column_it_was_set_in() {
+    fn a_size_report_answers_in_cells_and_in_the_pushed_pixel_geometry() {
         let mut terminal = Terminal::new(80, 24);
-        let events = process(&mut terminal, b"ABC\x1bHD");
-        assert_eq!(events, [TerminalEvent::SetTabStop { column: 3 }]);
+        assert_eq!(
+            process(&mut terminal, b"\x1b[18t\x1b[14t"),
+            [
+                TerminalEvent::Reply(b"\x1b[8;24;80t".to_vec()),
+                // 24 rows x 32 px, 80 cols x 16 px: tmux's default cell size,
+                // in force until the server pushes a client's.
+                TerminalEvent::Reply(b"\x1b[4;768;1280t".to_vec()),
+            ]
+        );
     }
 
     #[test]
-    fn a_mode_report_captures_the_mode_word_before_later_changes() {
+    fn a_tab_stop_lands_in_the_column_the_cursor_was_in() {
         let mut terminal = Terminal::new(80, 24);
-        // Query bracketed paste, then enable it afterwards in the same chunk.
+        let events = process(&mut terminal, b"ABC\x1bHD");
+        assert_eq!(events, []);
+        assert!(terminal.screen().tab_stops().contains(&3));
+    }
+
+    #[test]
+    fn a_mode_report_answers_from_the_mode_word_before_later_changes() {
+        let mut terminal = Terminal::new(80, 24);
+        // Query bracketed paste, then enable it afterwards in the same chunk:
+        // the answer is "reset", read at the query's point in the stream.
         let events = process(&mut terminal, b"\x1b[?2004$p\x1b[?2004h");
-        let [TerminalEvent::DecPrivateModeReport { mode, screen_modes }] = events.as_slice()
-        else {
-            panic!("expected one mode report, got {events:?}");
-        };
-        assert_eq!(*mode, 2004);
-        assert_eq!(screen_modes & mode::BRACKETPASTE, 0);
+        assert_eq!(events, [TerminalEvent::Reply(b"\x1b[?2004;2$y".to_vec())]);
         assert_ne!(terminal.screen().modes() & mode::BRACKETPASTE, 0);
+    }
+
+    #[test]
+    fn a_decrqss_answer_reads_the_style_the_screen_holds_here() {
+        let mut terminal = Terminal::new(80, 24);
+        // Set a steady underline, query it, then change to a bar afterwards in
+        // the same chunk: the answer reports the underline.
+        let events = process(&mut terminal, b"\x1b[4 q\x1bP$q q\x1b\\\x1b[6 q");
+        assert_eq!(events, [TerminalEvent::Reply(b"\x1bP1$r q4 q\x1b\\".to_vec())]);
+        assert_eq!(terminal.screen().cursor_style(), 6);
+    }
+
+    #[test]
+    fn an_alternate_mode_report_reads_the_switch_the_screen_made() {
+        let mut terminal = Terminal::new(80, 24);
+        let events = process(&mut terminal, b"\x1b[?1049h\x1b[?1049$p");
+        assert!(terminal.screen().alternate_active());
+        assert_eq!(
+            events.last(),
+            Some(&TerminalEvent::Reply(b"\x1b[?1049;1$y".to_vec()))
+        );
+    }
+
+    #[test]
+    fn the_title_lives_on_the_screen_and_the_stack_pushes_and_pops() {
+        let mut terminal = Terminal::new(80, 24);
+        assert_eq!(terminal.screen().title(), None);
+        process(&mut terminal, b"\x1b]2;first\x07\x1b[22;0t\x1b]0;second\x07");
+        assert_eq!(terminal.screen().title(), Some("second".to_string()));
+        process(&mut terminal, b"\x1b[23;0t");
+        assert_eq!(
+            terminal.screen().title(),
+            Some("first".to_string()),
+            "the pop restores what the push saved"
+        );
+        // An empty stack leaves the title alone.
+        process(&mut terminal, b"\x1b[23;2t");
+        assert_eq!(terminal.screen().title(), Some("first".to_string()));
+    }
+
+    #[test]
+    fn a_refused_title_leaves_the_screen_title_alone() {
+        let mut terminal = Terminal::new(80, 24);
+        let refused = OutputPolicy {
+            allow_set_title: false,
+            ..OutputPolicy::default()
+        };
+        terminal.process(b"\x1b]2;secret\x07", &refused);
+        assert_eq!(terminal.screen().title(), None);
     }
 
     #[test]

@@ -63,6 +63,12 @@ impl PaneScreen {
         self.engine.screen.options = options;
     }
 
+    /// The options as last pushed, for the answers that read them back — the
+    /// XTWINOPS pixel reports use the cell size the way a sixel parse does.
+    pub fn options(&self) -> ScreenOptions {
+        self.engine.screen.options
+    }
+
     /// Apply a pane's history limit to the retained primary-screen scrollback.
     ///
     /// The server owns this option, while the screen owns the rows it trims;
@@ -114,6 +120,40 @@ impl PaneScreen {
     /// cursor stays lit on top of the painted one.
     pub fn cursor_visible(&self) -> bool {
         dump::cursor_visible(&self.engine.screen)
+    }
+
+    /// The DECSCUSR parameter as the pane last sent it (0 default, 1..=6
+    /// block/underline/bar with blinking on the odd values), for `#{cursor_shape}`
+    /// and for mirroring onto the attached tty. tmux's `s->cstyle`, kept as the
+    /// raw parameter. Like [`Self::cursor_visible`], [`Self::dump_vt_rows`]
+    /// does not carry it, so a compositor restoring a screen asks separately.
+    pub fn cursor_style(&self) -> u8 {
+        self.engine.screen.cursor_style
+    }
+
+    /// Whether the alternate screen is up (DECSET 47/1047/1049), tmux's
+    /// `SCREEN_IS_ALTERNATE`.
+    pub fn alternate_active(&self) -> bool {
+        self.engine.screen.alternate_active()
+    }
+
+    /// The title the pane last announced (OSC 0/2 or the APC form), tmux's
+    /// `screen->title` — or `None` while the pane has never set one, which is
+    /// where the daemon's host-name fallback applies.
+    pub fn title(&self) -> Option<String> {
+        self.engine.screen.title.clone()
+    }
+
+    /// The tab stops, ascending, as `#{pane_tabs}` lists them: the default
+    /// every-eight layout until the pane edits it with HTS/TBC, laid out
+    /// afresh when a resize changes the width (tmux's `screen_reset_tabs`).
+    pub fn tab_stops(&self) -> Vec<u16> {
+        self.engine
+            .screen
+            .tabs
+            .iter()
+            .map(|stop| u16::try_from(*stop).unwrap_or(u16::MAX))
+            .collect()
     }
 
     /// Row geometry, without walking any cells. This is also where the history

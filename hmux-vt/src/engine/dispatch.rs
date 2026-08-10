@@ -5,9 +5,10 @@
 //! `input_esc_*` and `input_csi_*` handlers decide. They are ported here one
 //! for one, against the same `screen-write.c` operations.
 //!
-//! Sequences the *server* answers rather than the screen — device attributes,
-//! DSR, DECRQM, OSC colours, clipboard, passthrough — are absent by design:
-//! [`crate::observer`] already handled them before the token got here.
+//! Sequences that are answered rather than applied — device attributes, DSR,
+//! DECRQM, OSC colours, clipboard, passthrough — are absent by design:
+//! [`crate::observer`] already handled them before the token got here. What
+//! remains is everything that lands on screen state, the title included.
 
 use super::cell::{attr, colour, Cell, CellData};
 use super::grid::line_flag;
@@ -16,6 +17,7 @@ use super::screen::{erase_background, Screen};
 use crate::parser::{Param, TokenKind};
 use crate::screen::mode;
 use crate::sixel;
+use crate::vis;
 use crate::width::codepoint_width;
 
 /// The character sets `SO`/`SI` and `ESC ( 0` select between.
@@ -454,10 +456,60 @@ impl Engine {
             (Some(b'>'), [], b'n') if get(0, 0) == Some(4) => {
                 self.screen.mode_clear(mode::ALL_KEYS_EXTENDED);
             }
-            // DECSCUSR. The style itself is the server's to report; what the
-            // screen keeps is the blink every style but the default decides.
+            // XTWINOPS, walked with tmux's argument grammar. The geometry
+            // reports are the observer's to answer; what the screen keeps is
+            // the title stack `CSI 22 t` pushes onto and `CSI 23 t` pops from.
+            // Only the window title and the "both" spelling (0 and 2) reach
+            // the stack; the icon-name-only form is understood and does
+            // nothing. A missing argument abandons the rest of the sequence,
+            // as tmux's `case -1` does.
+            (None, [], b't') => {
+                let read = |index: usize| -> Option<u32> {
+                    params
+                        .get(index)
+                        .filter(|param| !param.is_string())
+                        .and_then(|param| param.value)
+                };
+                let mut index = 0;
+                while let Some(operation) = read(index) {
+                    match operation {
+                        // Two arguments: move, resize in pixels, resize in
+                        // cells.
+                        3 | 4 | 8 => {
+                            index += 2;
+                            if read(index - 1).is_none() || read(index).is_none() {
+                                break;
+                            }
+                        }
+                        // One argument: raise/lower, refresh.
+                        9 | 10 => {
+                            index += 1;
+                            if read(index).is_none() {
+                                break;
+                            }
+                        }
+                        22 | 23 => {
+                            index += 1;
+                            match read(index) {
+                                None => break,
+                                Some(0 | 2) if operation == 22 => self.screen.push_title(),
+                                Some(0 | 2) => self.screen.pop_title(),
+                                Some(_) => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                    index += 1;
+                }
+            }
+            // DECSCUSR: the style, plus the blink every style but the default
+            // decides. Style 0 goes back to the default without touching the
+            // blink, as tmux's `screen_set_cursor_style` case 0 does.
             (None, [b' '], b'q') => {
                 if let Some(style) = get(0, 0) {
+                    if style <= 6 {
+                        self.screen.cursor_style = style as u8;
+                    }
                     if (1..=6).contains(&style) {
                         self.toggle(mode::CURSOR_BLINKING, style % 2 == 1);
                     }
@@ -827,16 +879,43 @@ impl Engine {
     /// and the hyperlink one. Everything else the observer already turned into
     /// server state.
     fn osc(&mut self, data: &[u8]) {
-        // A hyperlink is read as bytes: tmux never asks whether the URI is text
-        // before storing it, so a byte that is not valid UTF-8 does not cost
-        // the pane its link.
-        if let Some(body) = data.strip_prefix(b"8;") {
-            self.osc_8(body);
+        // tmux's `input_exit_osc` number parse: a body that does not open with
+        // digits names no command, and a run of digits too long for a `u_int`
+        // wraps rather than failing. The bytes stay bytes past the number: tmux
+        // never asks whether a URI or a title is text before looking at it.
+        let digits = data.iter().take_while(|byte| byte.is_ascii_digit()).count();
+        if digits == 0 {
             return;
         }
-        let Some(body) = data.strip_prefix(b"133;") else {
-            return;
+        let number = data[..digits].iter().fold(0u32, |number, digit| {
+            number
+                .wrapping_mul(10)
+                .wrapping_add(u32::from(digit - b'0'))
+        });
+        let body = match data[digits..].first() {
+            None => &[][..],
+            Some(b';') => &data[digits + 1..],
+            // Anything else is not a well-formed OSC.
+            Some(_) => return,
         };
+        match number {
+            // The title. The `allow-set-title` gate has already dropped the
+            // sequence upstream; what is applied here is tmux's
+            // `screen_set_title`, whose clean refuses a name it cannot vis and
+            // leaves the one already set.
+            0 | 2 => {
+                if let Some(title) = vis::clean_name(body) {
+                    self.screen.title = Some(title);
+                }
+                return;
+            }
+            8 => {
+                self.osc_8(body);
+                return;
+            }
+            133 => {}
+            _ => return,
+        }
         let row = self.screen.grid.hsize + self.screen.cy;
         match body.first().copied().map(char::from) {
             // A prompt starts here.

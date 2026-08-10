@@ -147,20 +147,37 @@ impl CursorShape {
     }
 }
 
-/// One OSC sequence that changed a pane's reported state.
+/// The pane state OSC sequences set, as the formats report it: one snapshot
+/// of the observer's stored values.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum OscUpdate {
-    /// OSC 11 / 111: `#{pane_bg}`.
-    Background(String),
-    /// OSC 10 / 110: `#{pane_fg}`.
-    Foreground(String),
-    /// OSC 12 / 112: `#{cursor_colour}`.
-    CursorColour(String),
+pub struct OscState {
+    /// OSC 10 / 110: `#{pane_fg}`, `default` until the pane speaks.
+    pub foreground: String,
+    /// OSC 11 / 111: `#{pane_bg}`, `default` until the pane speaks.
+    pub background: String,
+    /// OSC 12 / 112: `#{cursor_colour}`. tmux spells the unset value `none`
+    /// where the unset foreground and background are `default`.
+    pub cursor_colour: String,
     /// OSC 7: `#{pane_path}`, kept verbatim as tmux keeps it.
-    Path(String),
-    /// OSC 9;4: `#{pane_pb_state}` and `#{pane_pb_progress}`. The progress is
-    /// absent when the report named only a state, which leaves the old value.
-    ProgressBar { state: u8, progress: Option<u8> },
+    pub path: String,
+    /// OSC 9;4: `#{pane_pb_state}`, `0..=4` as ConEmu numbers them.
+    pub progress_state: u8,
+    /// `#{pane_pb_progress}`, `0..=100`. A report naming only a state leaves
+    /// the previous progress in place.
+    pub progress_value: u8,
+}
+
+impl Default for OscState {
+    fn default() -> Self {
+        OscState {
+            foreground: "default".to_string(),
+            background: "default".to_string(),
+            cursor_colour: "none".to_string(),
+            path: String::new(),
+            progress_state: 0,
+            progress_value: 0,
+        }
+    }
 }
 
 /// Something in a pane's output the server has to act on.
@@ -168,16 +185,6 @@ pub enum OscUpdate {
 pub enum Event {
     /// A `BEL` reached the screen.
     Bell,
-    /// The pane retitled itself (OSC 0/2 or APC), and the option allowed it.
-    Title(String),
-    /// `CSI 22 ; 0|2 t`: put the title as it stands on the title stack.
-    /// Unlike [`Event::Title`] this is not gated on `allow-set-title` — tmux's
-    /// `screen_push_title` is reached without consulting the option, and the
-    /// pane is only saving a title it is already allowed to have.
-    TitlePush,
-    /// `CSI 23 ; 0|2 t`: take the title back off the stack. An empty stack
-    /// leaves the title alone.
-    TitlePop,
     /// `ESC k … ST`: the screen-family window rename control.
     Rename(String),
     /// The pane switched screens (DECSET 47 / 1047 / 1049).
@@ -200,20 +207,8 @@ pub enum Event {
     /// still unparsed, because what answers it is state the observer does not
     /// hold.
     StatusReport(Vec<u8>),
-    /// HTS: set a tab stop in the cursor's column.
-    SetTabStop,
-    /// TBC 0: clear the tab stop in the cursor's column.
-    ClearTabStop,
-    /// TBC 3: clear every tab stop.
-    ClearAllTabStops,
-    /// DECSCUSR: the pane asked for a cursor style.
-    CursorShape(u8),
     /// Bytes to write back to the pane's own input.
     Reply(Vec<u8>),
-    /// OSC 10 / 11 / 12 asked the pane for a colour it stores. The pane owns
-    /// the colour values; this event preserves the query's number, position
-    /// and terminator until that state is reached.
-    ColourQuery { number: u32, end: StringEnd },
     /// Bytes to forward to the client's terminal, whose answer comes back to
     /// the pane.
     ForwardQuery(&'static [u8]),
@@ -222,8 +217,6 @@ pub enum Event {
     /// what comes back, so the index and the query's terminator are carried
     /// until the server can route it.
     PaletteQuery { index: u8, end: StringEnd },
-    /// A pane colour or path the formats report.
-    Osc(OscUpdate),
     /// An OSC 52 clipboard set or query.
     Clipboard(ClipboardEvent),
     /// A `DCS tmux;` payload, already stripped of its prefix and terminator.
@@ -249,6 +242,10 @@ pub struct Observer {
     /// The pane's `OSC 4` palette, as packed `0xrrggbb`. tmux keeps one per
     /// pane so a query is answered from what that pane set, not the client's.
     palette: Box<[Option<u32>; 256]>,
+    /// The rest of the OSC-set pane state — colours, path, progress — stored
+    /// beside the palette for the same reason: the pane's own queries are
+    /// answered from what the pane set, at the point in the stream it asked.
+    osc_state: OscState,
 }
 
 impl Default for Observer {
@@ -256,6 +253,7 @@ impl Default for Observer {
         Self {
             parser: Parser::default(),
             palette: Box::new([None; 256]),
+            osc_state: OscState::default(),
         }
     }
 }
@@ -272,6 +270,11 @@ impl Observer {
     /// tmux's ground timer runs.
     pub fn awaiting_terminator(&self) -> bool {
         self.parser.awaiting_terminator()
+    }
+
+    /// The pane state OSC sequences have set, as the formats report it.
+    pub fn osc_state(&self) -> OscState {
+        self.osc_state.clone()
     }
 
     /// Abandon a sequence whose terminator never arrived. Nothing is observed,
@@ -320,10 +323,7 @@ impl Observer {
                 }
                 out.keep(token);
             }
-            TokenKind::Esc {
-                intermediates,
-                final_byte,
-            } => self.esc(token, &intermediates, final_byte, out),
+            TokenKind::Esc { .. } => out.keep(token),
             TokenKind::Csi {
                 private,
                 params,
@@ -351,9 +351,6 @@ impl Observer {
                 // it. Rewriting it as the OSC 2 it means keeps the two in
                 // stream order, so the last one to arrive still wins.
                 if policy.allow_set_title {
-                    if let Some(title) = vis::clean_name(&data) {
-                        out.event(Event::Title(title));
-                    }
                     let mut body = b"2;".to_vec();
                     body.extend_from_slice(&data);
                     let mut raw = b"\x1b]".to_vec();
@@ -375,16 +372,6 @@ impl Observer {
                 out.event(Event::Rename(String::from_utf8_lossy(&data).into_owned()));
             }
         }
-    }
-
-    fn esc(&mut self, token: Token, intermediates: &[u8], final_byte: u8, out: &mut Observed) {
-        // HTS is the one escape the server has to see: the stop lands in the
-        // column the cursor is in *now*, so the screen has to be told where
-        // that is rather than working it out at the end of the read.
-        if intermediates.is_empty() && final_byte == b'H' {
-            out.event(Event::SetTabStop);
-        }
-        out.keep(token);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -486,20 +473,6 @@ impl Observer {
             // pixel geometry uses tmux's default cell size when no attached
             // terminal has supplied one.
             (None, [], b't') => window_operations(params, out),
-            // TBC.
-            (None, [], b'g') => match params.first().map_or(Some(0), |param| param.get(0)) {
-                Some(0) => out.event(Event::ClearTabStop),
-                Some(3) => out.event(Event::ClearAllTabStops),
-                _ => {}
-            },
-            // DECSCUSR.
-            (None, [b' '], b'q') => {
-                if let Some(shape) = params.first().map_or(Some(0), |param| param.get(0)) {
-                    if shape <= 6 {
-                        out.event(Event::CursorShape(shape as u8));
-                    }
-                }
-            }
             _ => {}
         }
         out.keep(token);
@@ -603,13 +576,10 @@ impl Observer {
         };
         let text = String::from_utf8_lossy(body);
         match number {
+            // The title is the screen's to keep; what the option decides is
+            // whether the sequence reaches it at all.
             0 | 2 => {
                 if policy.allow_set_title {
-                    // `screen_set_title` refuses a name it cannot clean, and a
-                    // refused one leaves the title that was already set.
-                    if let Some(title) = vis::clean_name(body) {
-                        out.event(Event::Title(title));
-                    }
                     out.keep(token);
                 }
                 // Refused: the sequence never reaches the screen at all.
@@ -621,27 +591,38 @@ impl Observer {
             // `screen_set_path` cleans a path by the same rule as a title.
             7 => {
                 if let Some(path) = vis::clean_name(body) {
-                    out.event(Event::Osc(OscUpdate::Path(path)));
+                    self.osc_state.path = path;
                 }
             }
             9 => {
-                if let Some(update) = progress_bar_report(&text) {
-                    out.event(Event::Osc(update));
+                if let Some((state, progress)) = progress_bar_report(&text) {
+                    self.osc_state.progress_state = state;
+                    if let Some(progress) = progress {
+                        self.osc_state.progress_value = progress;
+                    }
                 }
             }
             10..=12 => {
+                let stored = match number {
+                    10 => &mut self.osc_state.foreground,
+                    11 => &mut self.osc_state.background,
+                    _ => &mut self.osc_state.cursor_colour,
+                };
                 if text == "?" {
-                    // These colours are pane-local, so the pane answers at the
-                    // same point in the stream. Only it can tell whether it has
-                    // a value stored, so the fallback for an unset background —
-                    // asking the outer terminal — is left to it too.
-                    out.event(Event::ColourQuery { number, end });
+                    match colour_query_reply(number, stored, end) {
+                        Some(reply) => out.event(Event::Reply(reply)),
+                        // With no colour of its own, tmux answers a background
+                        // question from the attached terminal's; ask it. An
+                        // unset foreground or cursor colour has no such
+                        // fallback, so the question goes unanswered as tmux
+                        // leaves it when no client offers one.
+                        None if number == 11 => {
+                            out.event(Event::ForwardQuery(BACKGROUND_COLOR_QUERY));
+                        }
+                        None => {}
+                    }
                 } else if let Some(colour) = parse_colour(&text) {
-                    out.event(Event::Osc(match number {
-                        10 => OscUpdate::Foreground(colour),
-                        11 => OscUpdate::Background(colour),
-                        _ => OscUpdate::CursorColour(colour),
-                    }));
+                    *stored = colour;
                 }
             }
             52 => {
@@ -664,9 +645,9 @@ impl Observer {
             }
             // The reset forms. tmux spells an unset cursor colour `none` but an
             // unset foreground or background `default`.
-            110 => out.event(Event::Osc(OscUpdate::Foreground("default".to_string()))),
-            111 => out.event(Event::Osc(OscUpdate::Background("default".to_string()))),
-            112 => out.event(Event::Osc(OscUpdate::CursorColour("none".to_string()))),
+            110 => self.osc_state.foreground = "default".to_string(),
+            111 => self.osc_state.background = "default".to_string(),
+            112 => self.osc_state.cursor_colour = "none".to_string(),
             _ => {}
         }
         out.keep(token);
@@ -824,17 +805,14 @@ fn window_operations(params: &[Param], out: &mut Observed) {
             }
             // The geometry reports, which are all this answers.
             14 | 15 | 16 | 18 | 19 => out.event(Event::WindowSizeReport(operation)),
-            // Push and pop the title, one argument saying which title. Only
-            // the window title and the "both" spelling reach the stack; the
-            // icon-name-only form is understood and does nothing. A missing
-            // argument abandons the rest of the sequence, as `case -1` does.
+            // Push and pop the title, one argument saying which title. The
+            // stack itself is the screen's; the argument is still consumed so
+            // the walk stays aligned, and a missing one abandons the rest of
+            // the sequence, as `case -1` does.
             22 | 23 => {
                 index += 1;
-                match read(index) {
-                    None => return,
-                    Some(0 | 2) if operation == 22 => out.event(Event::TitlePush),
-                    Some(0 | 2) => out.event(Event::TitlePop),
-                    Some(_) => {}
+                if read(index).is_none() {
+                    return;
                 }
             }
             _ => {}
@@ -851,7 +829,7 @@ fn first_is_zero(params: &[Param]) -> bool {
 
 /// tmux's `input_handle_decrqss` reply. The only setting it reports is the
 /// cursor style; anything else gets `DCS 0 $ r ST`, its "invalid request" form.
-pub fn decrqss_reply(
+pub(crate) fn decrqss_reply(
     request: &[u8],
     shape: CursorShape,
     blinking: bool,
@@ -877,7 +855,7 @@ pub fn decrqss_reply(
 /// Only the `4` subcommand — the ConEmu progress report — means anything to
 /// tmux. A report naming just a state leaves the previous progress in place,
 /// which is why the value is optional.
-fn progress_bar_report(body: &str) -> Option<OscUpdate> {
+fn progress_bar_report(body: &str) -> Option<(u8, Option<u8>)> {
     let rest = body.strip_prefix('4')?;
     // `9;4` and `9;4;` carry no state and are dropped rather than reset.
     let rest = rest.strip_prefix(';').filter(|rest| !rest.is_empty())?;
@@ -885,16 +863,26 @@ fn progress_bar_report(body: &str) -> Option<OscUpdate> {
     let state = state.parse::<u8>().ok().filter(|state| *state <= 4)?;
     let Some(progress) = rest.strip_prefix(';').filter(|rest| !rest.is_empty()) else {
         // Anything other than a clean end here is malformed, not a bare state.
-        return rest.is_empty().then_some(OscUpdate::ProgressBar {
-            state,
-            progress: None,
-        });
+        return rest.is_empty().then_some((state, None));
     };
     let progress = progress.parse::<u8>().ok().filter(|value| *value <= 100)?;
-    Some(OscUpdate::ProgressBar {
-        state,
-        progress: Some(progress),
-    })
+    Some((state, Some(progress)))
+}
+
+/// The reply to an OSC 10/11/12 colour question, in the pane's own
+/// terminator: tmux's `input_osc_colour_reply`. `None` when the stored value
+/// is not a colour a reply can spell — the unset `default`/`none` forms.
+fn colour_query_reply(number: u32, colour: &str, end: StringEnd) -> Option<Vec<u8>> {
+    let packed = parse_packed_colour(colour)?;
+    let (r, g, b) = ((packed >> 16) as u8, (packed >> 8) as u8, packed as u8);
+    let terminator = match end {
+        StringEnd::StringTerminator => "\x1b\\",
+        StringEnd::Bell => "\x07",
+    };
+    Some(
+        format!("\x1b]{number};rgb:{r:02x}{r:02x}/{g:02x}{g:02x}/{b:02x}{b:02x}{terminator}")
+            .into_bytes(),
+    )
 }
 
 /// One `OSC 52` body, as tmux's `input_osc_52` reads it.
@@ -1100,10 +1088,7 @@ mod tests {
     fn an_apc_title_reaches_the_screen_as_the_osc_2_it_means() {
         let (_, observed) = observe(b"\x1b_title\x1b\\");
         assert_eq!(screen_bytes(&observed), b"\x1b]2;title\x1b\\\x1b\\");
-        assert_eq!(
-            observed.events,
-            vec![(0, Event::Title("title".to_string()))]
-        );
+        assert!(observed.events.is_empty(), "the title is the screen's");
     }
 
     #[test]
@@ -1120,13 +1105,13 @@ mod tests {
 
     /// `input_exit_osc` accumulates the option into a `u_int`, so a digit run
     /// too long for one wraps instead of being refused: `8` and thirty zeros is
-    /// zero again, which is OSC 0 with an empty title.
+    /// zero again, which is OSC 0 with an empty title — gated as a title, so
+    /// the sequence is forwarded to the screen rather than reported.
     #[test]
     fn an_osc_option_wraps_the_way_a_u_int_does() {
-        assert_eq!(
-            events(b"\x1b]800000000000000000000000000000\x07"),
-            vec![Event::Title(String::new())]
-        );
+        let (_, observed) = observe(b"\x1b]800000000000000000000000000000\x07");
+        assert!(observed.events.is_empty());
+        assert_eq!(observed.screen.len(), 1, "the wrapped OSC 0 is kept");
     }
 
     #[test]
@@ -1212,32 +1197,43 @@ mod tests {
     }
 
     #[test]
-    fn a_colour_question_is_handed_to_the_pane_that_stores_the_colour() {
-        for number in [10, 11, 12] {
-            assert_eq!(
-                events(format!("\x1b]{number};?\x07").as_bytes()),
-                vec![Event::ColourQuery {
-                    number,
-                    end: StringEnd::Bell
-                }]
-            );
-        }
+    fn a_colour_question_is_answered_from_what_the_pane_set() {
+        let mut observer = Observer::default();
+        // Unset: the foreground and cursor colour go unanswered; only the
+        // background falls back to asking the outer terminal.
+        let observed = observer.feed(b"\x1b]10;?\x07\x1b]12;?\x07\x1b]11;?\x07", &policy());
+        assert_eq!(
+            observed.events,
+            vec![(2, Event::ForwardQuery(BACKGROUND_COLOR_QUERY))]
+        );
+        // Set: the stored colour answers, in the query's own terminator.
+        let observed = observer.feed(b"\x1b]10;rgb:ff/00/00\x1b\\\x1b]10;?\x07", &policy());
+        assert_eq!(
+            observed
+                .events
+                .iter()
+                .map(|(_, event)| event.clone())
+                .collect::<Vec<_>>(),
+            vec![Event::Reply(b"\x1b]10;rgb:ffff/0000/0000\x07".to_vec())]
+        );
     }
 
     #[test]
-    fn osc_colours_and_paths_are_reported() {
-        assert_eq!(
-            events(b"\x1b]11;rgb:ff/00/00\x1b\\"),
-            vec![Event::Osc(OscUpdate::Background("#ff0000".to_string()))]
+    fn osc_colours_and_paths_are_stored_for_the_formats() {
+        let mut observer = Observer::default();
+        observer.feed(
+            b"\x1b]11;rgb:ff/00/00\x1b\\\x1b]7;file://h/tmp\x1b\\\x1b]9;4;1;42\x07",
+            &policy(),
         );
-        assert_eq!(
-            events(b"\x1b]7;file://h/tmp\x1b\\"),
-            vec![Event::Osc(OscUpdate::Path("file://h/tmp".to_string()))]
-        );
-        assert_eq!(
-            events(b"\x1b]112\x07"),
-            vec![Event::Osc(OscUpdate::CursorColour("none".to_string()))]
-        );
+        let state = observer.osc_state();
+        assert_eq!(state.background, "#ff0000");
+        assert_eq!(state.path, "file://h/tmp");
+        assert_eq!((state.progress_state, state.progress_value), (1, 42));
+        // The reset forms put the unset spellings back.
+        observer.feed(b"\x1b]111\x07\x1b]112\x07", &policy());
+        let state = observer.osc_state();
+        assert_eq!(state.background, "default");
+        assert_eq!(state.cursor_colour, "none");
     }
 
     #[test]
@@ -1282,13 +1278,13 @@ mod tests {
     }
 
     #[test]
-    fn decrqss_is_forwarded_unparsed_for_the_pane_to_answer() {
-        // The cursor style and the blink that answer this live on the pane and
-        // the screen, so the observer hands the request on rather than holding
-        // copies of both to answer it here.
+    fn decrqss_is_forwarded_unparsed_for_the_terminal_to_answer() {
+        // The cursor style and the blink that answer this live on the screen,
+        // which the observer does not hold; the terminal resolves the request
+        // against it at this point in the stream.
         assert_eq!(
             events(b"\x1b[4 q\x1bP$q q\x1b\\"),
-            vec![Event::CursorShape(4), Event::StatusReport(b" q".to_vec()),]
+            vec![Event::StatusReport(b" q".to_vec())]
         );
     }
 
@@ -1310,17 +1306,12 @@ mod tests {
     }
 
     #[test]
-    fn tab_stop_edits_are_ordered_against_the_tokens_that_move_the_cursor() {
+    fn tab_stop_edits_pass_through_as_screen_tokens() {
+        // HTS and TBC are the screen's to apply — the engine owns the tab
+        // stops — so the observer forwards them without an event.
         let (_, observed) = observe(b"\x1b[5G\x1bH\x1b[g\x1b[3g");
-        assert_eq!(
-            observed.events,
-            vec![
-                (1, Event::SetTabStop),
-                (2, Event::ClearTabStop),
-                (3, Event::ClearAllTabStops),
-            ],
-            "each edit lands after the tokens that positioned the cursor for it"
-        );
+        assert!(observed.events.is_empty());
+        assert_eq!(observed.screen.len(), 4);
     }
 
     #[test]

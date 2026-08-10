@@ -96,6 +96,12 @@ pub struct Screen {
     pub rupper: usize,
     pub rlower: usize,
     pub mode: u32,
+    /// The DECSCUSR parameter as the pane last sent it, `0..=6`. tmux splits
+    /// this into `s->cstyle` and the blink bit in `s->mode`; keeping the raw
+    /// parameter loses nothing, since the blink every non-default style decides
+    /// still lands in [`Self::mode`]. Not reset by RIS — tmux's
+    /// `screen_write_reset` leaves `cstyle` alone.
+    pub cursor_style: u8,
     pub tabs: BTreeSet<usize>,
     /// The cell attributes the next character is written with.
     pub cell: Cell,
@@ -110,6 +116,16 @@ pub struct Screen {
     saved_images: Images,
     /// The pane options this screen consults, as the server last resolved them.
     pub options: ScreenOptions,
+    /// The title the pane last announced (OSC 0/2, or the APC form the
+    /// observer rewrites into OSC 2), tmux's `s->title` — except an unset
+    /// title stays `None` where tmux pre-fills the host name at pane
+    /// creation, so the daemon substitutes that fallback when it reads the
+    /// title back. Not touched by RIS: tmux's `screen_write_reset` leaves
+    /// the title and its stack alone.
+    pub title: Option<String>,
+    /// tmux's `s->titles`, the stack `CSI 22 t` pushes onto and `CSI 23 t`
+    /// pops from. Newest last.
+    titles: Vec<Option<String>>,
     /// The run of plain characters in progress; see [`Run`].
     run: Option<Run>,
 }
@@ -130,13 +146,33 @@ impl Screen {
             rupper: 0,
             rlower: sy - 1,
             mode: mode::CURSOR | mode::WRAP,
+            cursor_style: 0,
             tabs: default_tabs(sx),
             cell: Cell::default(),
             hyperlinks: Hyperlinks::default(),
             images: Images::default(),
             saved_images: Images::default(),
             options: ScreenOptions::default(),
+            title: None,
+            titles: Vec::new(),
             run: None,
+        }
+    }
+
+    /// tmux's `screen_push_title`: keep ten and evict the oldest to make
+    /// room, so a pane that pushes without popping loses the bottom of its
+    /// stack rather than the top.
+    pub fn push_title(&mut self) {
+        while self.titles.len() >= 10 {
+            self.titles.remove(0);
+        }
+        self.titles.push(self.title.clone());
+    }
+
+    /// tmux's `screen_pop_title`: an empty stack leaves the title alone.
+    pub fn pop_title(&mut self) {
+        if let Some(title) = self.titles.pop() {
+            self.title = title;
         }
     }
 
@@ -1206,6 +1242,12 @@ impl Screen {
     /// "the alternate screen is up" means.
     pub fn saved_grid(&self) -> Option<&Grid> {
         self.saved_grid.as_ref()
+    }
+
+    /// Whether the alternate screen is up, tmux's `SCREEN_IS_ALTERNATE`: the
+    /// presence of the saved primary rows is the state itself.
+    pub fn alternate_active(&self) -> bool {
+        self.saved_grid.is_some()
     }
 
     /// RIS, as tmux's `screen_write_reset` performs it.

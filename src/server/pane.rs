@@ -11,7 +11,7 @@
 //! is the next milestone (see the module docs).
 
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::io::{self, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
@@ -30,9 +30,7 @@ use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, Scr
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 use crate::server::input_keys::ExtendedKeys;
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
-use hmux_vt::{
-    decrqss_reply, OscUpdate, Terminal, TerminalEvent as VtEvent, BACKGROUND_COLOR_QUERY,
-};
+use hmux_vt::{Terminal, TerminalEvent as VtEvent};
 use hmux_vt::StringEnd;
 
 use hmux_vt::MouseEvent;
@@ -278,10 +276,6 @@ impl Coroutine for PanePipeIo {
 /// exited. Nothing portable makes a child's exit readable.
 const PIPE_REAP_RETRY: Duration = Duration::from_millis(50);
 
-/// How deep `CSI 22 t` may stack pane titles, tmux's limit in
-/// `screen_push_title`.
-const TITLE_STACK_LIMIT: usize = 10;
-
 static NEXT_PANE_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 
 /// The live half of a pane: the child pid and the pty master.
@@ -330,31 +324,11 @@ pub(crate) struct NativePaneObservation {
     /// This is monotonic so each attached client can observe it independently.
     large_scroll_revision: Cell<u64>,
     control_output: RefCell<ControlOutputJournal>,
-    /// Last DECSCUSR parameter emitted by the pane (0..=6). The VT formatter
-    /// restores cursor position but does not serialize this terminal state.
-    cursor_shape: Cell<u8>,
     /// The pane's reportable VT modes, republished as one snapshot read back
     /// from the screen's mode word at the end of each output batch.
     modes: Cell<PaneModeSnapshot>,
     /// Set when the pane sent DSR ?996 and is waiting for an answer.
     theme_query: Cell<bool>,
-    background: RefCell<String>,
-    /// The rest of the OSC-set pane state, behind `#{pane_fg}`,
-    /// `#{cursor_colour}` and `#{pane_path}`.
-    foreground: RefCell<String>,
-    cursor_colour: RefCell<String>,
-    path: RefCell<String>,
-    /// The OSC 9;4 progress bar, behind `#{pane_pb_state}` (0..=4) and
-    /// `#{pane_pb_progress}`.
-    progress_state: Cell<u8>,
-    progress_value: Cell<u8>,
-    /// The pane's tab stops, or `None` while they are still the default every
-    /// eight columns. A resize puts them back, as tmux's `screen_reset_tabs`
-    /// does.
-    tab_stops: RefCell<Option<BTreeSet<u16>>>,
-    /// The pane's width, which is what the default tab stops are laid out
-    /// against. Held here so a tab edit never has to lock the terminal.
-    columns: Cell<u16>,
     /// Whether the pane is on its alternate screen (`#{alternate_on}`), and the
     /// cursor DECSET 1049 saved on the way in. tmux leaves the saved position
     /// behind on the way out, and starts it at `UINT_MAX` to mean "never set" —
@@ -373,13 +347,6 @@ pub(crate) struct NativePaneObservation {
     /// `DCS tmux;` payloads the pane emitted, waiting for the server to put them
     /// on the client ttys they are allowed to reach.
     passthrough: RefCell<VecDeque<PanePassthrough>>,
-    /// The title the pane last set for itself, tmux's `screen->title`. Tracked
-    /// here from the observer's title events; the screen keeps no copy of it.
-    announced_title: RefCell<Option<String>>,
-    /// tmux's `screen->titles`, the stack `CSI 22 t` pushes onto and
-    /// `CSI 23 t` pops from. It lives beside the title rather than in the
-    /// screen because that is where the title itself lives.
-    title_stack: RefCell<Vec<Option<String>>>,
     /// OSC 4 questions about palette entries the pane does not hold, waiting
     /// for the server to put them to an attached terminal. Each carries the
     /// terminator the pane asked with, because that is what its answer uses.
@@ -661,7 +628,7 @@ impl NativePaneObservation {
         ))
     }
 
-    fn new(term: Terminal, child: Option<ObservedChild>, cols: u16) -> Self {
+    fn new(term: Terminal, child: Option<ObservedChild>) -> Self {
         let latency_enabled = matches!(
             std::env::var("HMUX_LATENCY"),
             Ok(value) if !value.is_empty() && value != "0"
@@ -671,17 +638,8 @@ impl NativePaneObservation {
             revision: Cell::new(0),
             large_scroll_revision: Cell::new(0),
             control_output: RefCell::new(ControlOutputJournal::default()),
-            cursor_shape: Cell::new(0),
             modes: Cell::new(PaneModeSnapshot::default()),
             theme_query: Cell::new(false),
-            background: RefCell::new("default".to_string()),
-            foreground: RefCell::new("default".to_string()),
-            cursor_colour: RefCell::new("none".to_string()),
-            path: RefCell::new(String::new()),
-            progress_state: Cell::new(0),
-            progress_value: Cell::new(0),
-            tab_stops: RefCell::new(None),
-            columns: Cell::new(cols),
             alternate_on: Cell::new(false),
             alternate_saved_x: Cell::new(u32::MAX),
             alternate_saved_y: Cell::new(u32::MAX),
@@ -696,8 +654,6 @@ impl NativePaneObservation {
             bell_count: Cell::new(0),
             clipboard_events: RefCell::new(VecDeque::new()),
             passthrough: RefCell::new(VecDeque::new()),
-            announced_title: RefCell::new(None),
-            title_stack: RefCell::new(Vec::new()),
             palette_queries: RefCell::new(VecDeque::new()),
             // A pane that has produced nothing yet still needs naming once.
             changed: Cell::new(true),
@@ -725,39 +681,25 @@ impl NativePaneObservation {
     }
 
     fn osc_state(&self) -> PaneOscState {
-        let read = |slot: &RefCell<String>| slot.borrow().clone();
+        let state = self.term.borrow().osc_state();
         PaneOscState {
-            foreground: read(&self.foreground),
-            cursor_colour: read(&self.cursor_colour),
-            path: read(&self.path),
-            progress_state: match self.progress_state.get() {
+            foreground: state.foreground,
+            cursor_colour: state.cursor_colour,
+            path: state.path,
+            progress_state: match state.progress_state {
                 1 => "normal",
                 2 => "error",
                 3 => "indeterminate",
                 4 => "paused",
                 _ => "hidden",
             },
-            progress_value: self.progress_value.get(),
-        }
-    }
-
-    /// Apply `edit` to the pane's tab stops, materializing the defaults first
-    /// if the pane has not changed them yet.
-    fn update_tab_stops(&self, edit: impl FnOnce(&mut BTreeSet<u16>)) {
-        let columns = self.columns.get();
-        {
-            let mut stops = self.tab_stops.borrow_mut();
-            edit(stops.get_or_insert_with(|| default_tab_stops(columns)));
+            progress_value: state.progress_value,
         }
     }
 
     /// The pane's tab stops, as `#{pane_tabs}` lists them.
     fn tab_stops(&self) -> Vec<u16> {
-        self.tab_stops
-            .borrow()
-            .as_ref()
-            .map(|stops| stops.iter().copied().collect())
-            .unwrap_or_else(|| default_tab_stops(self.columns.get()).into_iter().collect())
+        self.term.borrow().screen().tab_stops()
     }
 
     /// The pane's scroll region, as `#{scroll_region_upper}`/`#{lower}` report
@@ -776,7 +718,9 @@ impl NativePaneObservation {
             cursor_blinking: modes.cursor_blinking,
             keypad: modes.application_keypad,
             cursor_keys: modes.cursor_keys,
-            cursor_shape: PaneCursorShape::from_parameter(self.cursor_shape.get()),
+            cursor_shape: PaneCursorShape::from_parameter(
+                self.term.borrow().screen().cursor_style(),
+            ),
             synchronized_output: modes.synchronized_output,
             bracketed_paste: modes.bracketed_paste,
         }
@@ -815,7 +759,7 @@ impl NativePaneObservation {
 
     /// The title the pane last set for itself.
     fn announced_title(&self) -> Option<String> {
-        self.announced_title.borrow().clone()
+        self.term.borrow().screen().title()
     }
 
     pub(crate) fn take_passthrough(&self) -> Vec<PanePassthrough> {
@@ -913,29 +857,8 @@ impl NativePaneObservation {
     ) {
         match event {
             VtEvent::Bell => self.note_bells(1),
-            VtEvent::Title(title) => {
-                let mut announced = self.announced_title.borrow_mut();
-                *announced = Some(title);
-            }
-            VtEvent::TitlePush => {
-                let title = self.announced_title.borrow().clone();
-                let mut stack = self.title_stack.borrow_mut();
-                // tmux's `screen_push_title` keeps ten and evicts the oldest to
-                // make room, so a pane that pushes without popping loses the
-                // bottom of its stack rather than the top.
-                while stack.len() >= TITLE_STACK_LIMIT {
-                    stack.remove(0);
-                }
-                stack.push(title);
-            }
-            // `screen_pop_title` on an empty stack leaves the title alone.
-            VtEvent::TitlePop => {
-                if let Some(title) = self.title_stack.borrow_mut().pop() {
-                    *self.announced_title.borrow_mut() = title;
-                }
-            }
             // `ESC k` renames the window rather than retitling the pane, so it
-            // is queued for the server instead of touching `announced_title`.
+            // is queued for the server instead of landing on the screen.
             VtEvent::Rename(title) => {
                 let mut renames = self.renames.borrow_mut();
                 // As with the clipboard queue, an application that outruns the
@@ -950,69 +873,7 @@ impl NativePaneObservation {
                 self.alternate_saved_x.set(u32::from(x));
                 self.alternate_saved_y.set(u32::from(y));
             }
-            VtEvent::CursorPositionReport { x, y } => replies.push(cursor_position_report(x, y)),
-            VtEvent::WindowSizeReport {
-                operation,
-                cols,
-                rows,
-            } => {
-                if let Some(reply) = window_size_report(cols, rows, operation) {
-                    replies.push(reply);
-                }
-            }
-            VtEvent::DecPrivateModeReport { mode, screen_modes } => {
-                let status = dec_mode_status(
-                    screen_modes,
-                    self.alternate_on.get(),
-                    PaneCursorShape::from_parameter(self.cursor_shape.get()),
-                    policy.cursor_style,
-                    mode,
-                );
-                replies.push(format!("\x1b[?{mode};{status}$y").into_bytes());
-            }
-            VtEvent::DecModeReport { mode, screen_modes } => {
-                let status = ansi_mode_status(screen_modes, mode);
-                replies.push(format!("\x1b[{mode};{status}$y").into_bytes());
-            }
-            VtEvent::StatusReport {
-                request,
-                cursor_blinking,
-            } => replies.push(decrqss_reply(
-                &request,
-                PaneCursorShape::from_parameter(self.cursor_shape.get()),
-                cursor_blinking,
-                policy.cursor_style,
-            )),
-            VtEvent::SetTabStop { column } => {
-                self.update_tab_stops(|stops| {
-                    stops.insert(column);
-                });
-            }
-            VtEvent::ClearTabStop { column } => {
-                self.update_tab_stops(|stops| {
-                    stops.remove(&column);
-                });
-            }
-            VtEvent::ClearAllTabStops => self.update_tab_stops(BTreeSet::clear),
-            VtEvent::CursorShape(shape) => self.cursor_shape.set(shape),
             VtEvent::Reply(reply) => replies.push(reply),
-            VtEvent::ColourQuery { number, end } => {
-                let stored = match number {
-                    10 => &self.foreground,
-                    11 => &self.background,
-                    _ => &self.cursor_colour,
-                };
-                match colour_query_reply(number, &stored.borrow(), end) {
-                    Some(reply) => replies.push(reply),
-                    // With no colour of its own, tmux answers a background
-                    // question from the attached terminal's; ask it. An unset
-                    // foreground or cursor colour has no such fallback here, so
-                    // the question goes unanswered as tmux leaves it when no
-                    // client offers one.
-                    None if number == 11 => queries.push(BACKGROUND_COLOR_QUERY),
-                    None => {}
-                }
-            }
             VtEvent::ForwardQuery(query) => queries.push(query),
             VtEvent::PaletteQuery { index, end } => {
                 let mut queued = self.palette_queries.borrow_mut();
@@ -1020,25 +881,6 @@ impl NativePaneObservation {
                 // server loop loses the excess rather than growing the server.
                 if queued.len() < 16 {
                     queued.push_back((index, end == StringEnd::Bell));
-                }
-            }
-            VtEvent::Osc(update) => {
-                let slot_value = match update {
-                    OscUpdate::Background(colour) => Some((&self.background, colour)),
-                    OscUpdate::Foreground(colour) => Some((&self.foreground, colour)),
-                    OscUpdate::CursorColour(colour) => Some((&self.cursor_colour, colour)),
-                    OscUpdate::Path(path) => Some((&self.path, path)),
-                    OscUpdate::ProgressBar { state, progress } => {
-                        self.progress_state.set(state);
-                        if let Some(progress) = progress {
-                            self.progress_value.set(progress);
-                        }
-                        None
-                    }
-                };
-                if let Some((slot, value)) = slot_value {
-                    let mut current = slot.borrow_mut();
-                    *current = value;
                 }
             }
             VtEvent::Clipboard(event) => self.note_clipboard_event(event),
@@ -1201,7 +1043,7 @@ impl PaneObservability for NativePaneObservation {
         // snapshot.
         let revision = self.revision.get();
         let cursor_visible = term.cursor_visible();
-        let cursor_shape = self.cursor_shape.get();
+        let cursor_shape = term.cursor_style();
         Ok(ScreenTail {
             revision,
             text: trailing_lines(&text, lines),
@@ -1225,7 +1067,7 @@ impl Pane {
     pub fn inert(cols: u16, rows: u16) -> io::Result<Pane> {
         let term = Terminal::new(cols, rows);
         Ok(Pane {
-            observation: Rc::new(NativePaneObservation::new(term, None, cols)),
+            observation: Rc::new(NativePaneObservation::new(term, None)),
             terminal_queries: Rc::new(RefCell::new(VecDeque::new())),
             child: None,
             pending_input: Rc::new(RefCell::new(VecDeque::new())),
@@ -1317,7 +1159,6 @@ impl Pane {
                 pid: pid as u32,
                 alive: Rc::clone(&alive),
             }),
-            cols,
         ));
         let pane_io = PaneIo::new(
             &master,
@@ -1675,13 +1516,6 @@ impl Pane {
         self.cols = cols;
         self.rows = rows;
         self.observation.term.borrow_mut().resize(cols, rows);
-        // tmux's screen_resize lays the default tab stops out afresh, dropping
-        // whatever the pane had set.
-        self.observation.columns.set(cols);
-        {
-            let mut stops = self.observation.tab_stops.borrow_mut();
-            *stops = None;
-        }
         if let Some(child) = &self.child {
             let ws = libc::winsize {
                 ws_row: rows,
@@ -1767,7 +1601,7 @@ impl Pane {
     }
 
     pub(crate) fn background_color(&self) -> String {
-        self.observation.background.borrow().clone()
+        self.observation.term.borrow().osc_state().background
     }
 
     /// The current screen as VT escape sequences, suitable for writing to a
@@ -1860,7 +1694,7 @@ impl Pane {
     /// Current DECSCUSR parameter (0/default, 1..=6 block/underline/bar with
     /// blinking encoded by odd values), for mirroring onto the attached tty.
     pub fn cursor_shape(&self) -> u8 {
-        self.observation.cursor_shape.get()
+        self.observation.term.borrow().screen().cursor_style()
     }
 
     pub(crate) fn bracketed_paste_enabled(&self) -> bool {
@@ -2279,78 +2113,6 @@ fn drop_leading_lines(text: &str, n: usize) -> String {
     rows[n.min(rows.len())..].join("\n")
 }
 
-/// tmux's `screen_reset_tabs`: a stop every eight columns, skipping column 0.
-fn default_tab_stops(columns: u16) -> BTreeSet<u16> {
-    (1..)
-        .map(|multiple| multiple * 8)
-        .take_while(|stop| *stop < columns)
-        .collect()
-}
-
-/// tmux's DECRQM answer for a private mode: 1 set, 2 reset, 0 unrecognized,
-/// or 4 permanently reset.
-///
-/// The alternate-screen aliases are state rather than bits in the screen's
-/// mode word, so their status comes from the pane's screen-tracking state.
-///
-/// Mode 12 is the one answer that is not a mode-word read. tmux reports the
-/// blink the pane asked for only once the pane has spoken — a DECSCUSR that
-/// moved the cursor off its default style, or a DECSET/DECRST 12 — and
-/// otherwise answers from the `cursor-style` option, whose blinking choices
-/// are the odd parameters.
-fn dec_mode_status(
-    modes: u32,
-    alternate_on: bool,
-    cursor_shape: PaneCursorShape,
-    cursor_style: u8,
-    mode: u32,
-) -> u8 {
-    let reports = |bit: u32| Some(modes & bit != 0);
-    let set = match mode {
-        // DECCOLM is recognized by tmux but permanently reset: hmux has no
-        // 132-column screen mode to enable either.
-        3 => return 4,
-        1 => reports(mode::KCURSOR),
-        6 => reports(mode::ORIGIN),
-        7 => reports(mode::WRAP),
-        12 => Some(
-            if cursor_shape != PaneCursorShape::Default
-                || modes & mode::CURSOR_BLINKING_SET != 0
-            {
-                modes & mode::CURSOR_BLINKING != 0
-            } else {
-                matches!(cursor_style, 1 | 3 | 5)
-            },
-        ),
-        25 => reports(mode::CURSOR),
-        47 | 1047 | 1049 => Some(alternate_on),
-        1000 => reports(mode::MOUSE_STANDARD),
-        1002 => reports(mode::MOUSE_BUTTON),
-        1003 => reports(mode::MOUSE_ALL),
-        1004 => reports(mode::FOCUSON),
-        1005 => reports(mode::MOUSE_UTF8),
-        1006 => reports(mode::MOUSE_SGR),
-        2004 => reports(mode::BRACKETPASTE),
-        2026 => reports(mode::SYNC),
-        2031 => reports(mode::THEME_UPDATES),
-        _ => None,
-    };
-    match set {
-        Some(true) => 1,
-        Some(false) => 2,
-        None => 0,
-    }
-}
-
-/// tmux's DECRQM answer for a standard mode: 1 set, 2 reset, 0 unrecognized.
-fn ansi_mode_status(modes: u32, mode: u32) -> u8 {
-    match mode {
-        4 if modes & mode::INSERT != 0 => 1,
-        4 => 2,
-        _ => 0,
-    }
-}
-
 /// The reportable VT modes a pane's byte stream has set, in their own types.
 ///
 /// This is a *reading* of the screen's mode word, not a second copy of it: the
@@ -2557,28 +2319,6 @@ pub(crate) enum MouseTrackingMode {
     Button,
     /// DECSET 1003: adds button-less motion.
     All,
-}
-
-fn cursor_position_report(x: u16, y: u16) -> Vec<u8> {
-    format!("\x1b[{};{}R", y.saturating_add(1), x.saturating_add(1)).into_bytes()
-}
-
-/// tmux's default window pixel geometry when no attached client reports one.
-const DEFAULT_CELL_WIDTH: u32 = 16;
-const DEFAULT_CELL_HEIGHT: u32 = 32;
-
-fn window_size_report(cols: u16, rows: u16, operation: u32) -> Option<Vec<u8>> {
-    let columns = u32::from(cols);
-    let rows = u32::from(rows);
-    let (report, height, width) = match operation {
-        14 => (4, rows * DEFAULT_CELL_HEIGHT, columns * DEFAULT_CELL_WIDTH),
-        15 => (5, rows * DEFAULT_CELL_HEIGHT, columns * DEFAULT_CELL_WIDTH),
-        16 => (6, DEFAULT_CELL_HEIGHT, DEFAULT_CELL_WIDTH),
-        18 => (8, rows, columns),
-        19 => (9, rows, columns),
-        _ => return None,
-    };
-    Some(format!("\x1b[{report};{height};{width}t").into_bytes())
 }
 
 /// Upper bound on bytes buffered for a child that is not reading its stdin. A
@@ -2875,19 +2615,6 @@ impl PaneClass {
 /// unset colour — spelled `default` for the foreground and background, `none`
 /// for the cursor — parses as no colour and so has no reply, which is where
 /// tmux's own fallbacks take over.
-fn colour_query_reply(number: u32, colour: &str, end: StringEnd) -> Option<Vec<u8>> {
-    let packed = parse_packed_colour(colour)?;
-    let (r, g, b) = ((packed >> 16) as u8, (packed >> 8) as u8, packed as u8);
-    let terminator = match end {
-        StringEnd::StringTerminator => "\x1b\\",
-        StringEnd::Bell => "\x07",
-    };
-    Some(
-        format!("\x1b]{number};rgb:{r:02x}{r:02x}/{g:02x}{g:02x}/{b:02x}{b:02x}{terminator}")
-            .into_bytes(),
-    )
-}
-
 /// Render a pane's argument vector the way tmux's `cmd_stringify_argv` does,
 /// for the callers that reduce the result with [`parse_window_name`].
 ///
@@ -3296,7 +3023,7 @@ mod tests {
 
     /// A BEL that terminates an OSC string is a terminator, not a bell.
     fn inert_observation() -> NativePaneObservation {
-        NativePaneObservation::new(Terminal::new(20, 4), None, 20)
+        NativePaneObservation::new(Terminal::new(20, 4), None)
     }
 
     #[test]
@@ -3362,6 +3089,6 @@ mod tests {
         let observation = inert_observation();
         let (replies, queries) = observation.observe_output(b"\x1b]10;?\x07\x1b]11;?\x07");
         assert!(replies.is_empty(), "got pane replies: {replies:?}");
-        assert_eq!(queries, vec![BACKGROUND_COLOR_QUERY]);
+        assert_eq!(queries, vec![hmux_vt::BACKGROUND_COLOR_QUERY]);
     }
 }

@@ -63,10 +63,11 @@ pub const TMUX_VERSION: &str = "3.7b";
 // self-contained events out, with the screen inside.
 pub use terminal::{Terminal, TerminalEvent};
 
-// The vocabulary the events carry and the option values pushed in.
+// The vocabulary the events carry, the option values pushed in, and the
+// OSC-set pane state read back out.
 pub use observer::{
-    decrqss_reply, parse_packed_colour, ClipboardEvent, CursorShape, OscUpdate, OutputPolicy,
-    PassthroughPolicy, BACKGROUND_COLOR_QUERY,
+    parse_packed_colour, ClipboardEvent, CursorShape, OscState, OutputPolicy, PassthroughPolicy,
+    BACKGROUND_COLOR_QUERY,
 };
 pub use parser::StringEnd;
 
