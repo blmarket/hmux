@@ -8,7 +8,7 @@
 use std::io;
 
 use super::PaneScreen;
-use hmux_vt::{CellSemantic, CellWidth, Grid, GridCell, GridRow};
+use hmux_vt::{CellSemantic, CellWidth, Grid, GridCell, GridRow, RowExtent};
 
 #[derive(Clone, Debug)]
 pub(crate) struct CopyState {
@@ -218,7 +218,7 @@ pub(super) fn reflow_copy_snapshot(state: &mut CopyState, cols: u16, rows: u16) 
             cell.hyperlink = hyperlink;
         }
     }
-    let vt = terminal.dump_vt_rows(0, terminal.grid_dims().total_rows);
+    let vt = terminal.dump_vt_rows(0, terminal.grid_dims().total_rows, RowExtent::Redraw);
     state.replace_vt(vt);
     let (cursor_row, cursor_col) = copy_point_at_offset(&state.grid, cursor_offset);
     state.cursor = CopyCursor {
@@ -254,7 +254,7 @@ pub(super) fn view_copy_state(output: Vec<u8>, cols: u16, rows: u16) -> io::Resu
     terminal.apply_vt(&view_output_vt(&output));
     let total = terminal.grid_dims().total_rows;
     let grid = terminal.grid_snapshot_range(0, total);
-    let vt = terminal.dump_vt_rows(0, total);
+    let vt = terminal.dump_vt_rows(0, total, RowExtent::Redraw);
     let vt_rows = copy_vt_row_ranges(&vt);
     let (col, row) = terminal.cursor_position();
     let scroll = grid.scrollback_rows;

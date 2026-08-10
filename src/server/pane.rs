@@ -39,7 +39,9 @@ pub(crate) use hmux_vt::{
     ClipboardEvent as PaneClipboardEvent, CursorShape as PaneCursorShape,
     OutputPolicy as PaneOutputPolicy, PassthroughPolicy,
 };
-use hmux_vt::{mode, CaptureExtent, Grid, GridDims, ScreenImage, ScreenOptions};
+use hmux_vt::{
+    mode, CaptureExtent, Grid, GridDims, RowExtent, ScreenImage, ScreenOptions, ScreenSnapshot,
+};
 use hmux_vt::PaneScreen;
 
 /// A single pane. Holds the emulated screen and, if live, the child on its pty.
@@ -1543,13 +1545,18 @@ impl Pane {
         self.observation.term.borrow().screen().cursor_position()
     }
 
-    pub(crate) fn copy_snapshot(&self) -> (Grid, Vec<u8>, (u16, u16)) {
+    /// The whole live screen materialized for a copy-mode freeze, plus the
+    /// cursor. The VT half is serialized to redraw extent because copy mode
+    /// replays it through [`PaneScreen::apply_vt`] on reflow.
+    pub(crate) fn copy_snapshot(&self) -> (ScreenSnapshot, (u16, u16)) {
         let terminal = self.observation.term.borrow();
         let terminal = terminal.screen();
         let total = terminal.grid_dims().total_rows;
         (
-            terminal.grid_snapshot_range(0, total),
-            terminal.dump_vt_rows(0, total),
+            ScreenSnapshot {
+                grid: terminal.grid_snapshot_range(0, total),
+                vt: terminal.dump_vt_rows(0, total, RowExtent::Redraw),
+            },
             terminal.cursor_position(),
         )
     }
@@ -1577,7 +1584,7 @@ impl Pane {
     /// The screen the alternate-screen switch displaced, which
     /// `capture-pane -a` reads, or `None` when the pane is not on an alternate
     /// screen. The VT half is the `-e` serialization of the same rows.
-    pub(crate) fn inactive_snapshot(&self) -> Option<(Grid, Vec<u8>)> {
+    pub(crate) fn inactive_snapshot(&self) -> Option<ScreenSnapshot> {
         self.observation.term.borrow().screen().inactive_snapshot()
     }
 
@@ -1599,17 +1606,17 @@ impl Pane {
         let terminal = self.observation.term.borrow();
         let terminal = terminal.screen();
         let total = terminal.grid_dims().total_rows;
-        terminal.dump_vt_rows(0, total)
+        terminal.dump_vt_rows(0, total, RowExtent::Redraw)
     }
 
     /// Rows as `capture-pane -e` wants them, which is not the same read as the
-    /// compositor's: see [`PaneScreen::dump_vt_capture_rows`].
+    /// compositor's: see [`PaneScreen::dump_vt_rows`].
     pub(crate) fn dump_rows_vt(&self, start: usize, rows: usize, extent: CaptureExtent) -> Vec<u8> {
         self.observation
             .term
             .borrow()
             .screen()
-            .dump_vt_capture_rows(start, rows, extent)
+            .dump_vt_rows(start, rows, RowExtent::Capture(extent))
     }
 
     /// One physical row as trimmed plain text, without formatting the rest of
@@ -1638,7 +1645,7 @@ impl Pane {
         // the rest, so the window is drawn at the top as tmux draws it. tmux
         // pads the remainder with the pane-border fill rather than blanks.
         let available = scroll.saturating_add(usize::from(self.rows));
-        let vt = terminal.dump_vt_rows(start, visible_rows.min(available));
+        let vt = terminal.dump_vt_rows(start, visible_rows.min(available), RowExtent::Redraw);
         (vt, scroll)
     }
 

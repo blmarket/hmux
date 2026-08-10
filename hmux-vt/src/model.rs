@@ -11,7 +11,7 @@
 //! is meant for the screen and no pane options apply.
 
 use crate::parser::Parser;
-use crate::screen::PaneScreen;
+use crate::screen::{PaneScreen, RowExtent};
 
 /// A screen a harness can feed bytes to and read back.
 pub struct TerminalModel {
@@ -50,7 +50,7 @@ impl TerminalModel {
     /// them to a client tty.
     pub fn dump_vt(&self) -> Vec<u8> {
         self.screen
-            .dump_vt_rows(0, self.screen.grid_dims().total_rows)
+            .dump_vt_rows(0, self.screen.grid_dims().total_rows, RowExtent::Redraw)
     }
 
     /// How many rows of history sit above the viewport.

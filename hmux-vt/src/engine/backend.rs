@@ -13,7 +13,9 @@ use super::keys;
 use super::screen::DEFAULT_HISTORY_LIMIT;
 use crate::input::MouseEvent;
 use crate::parser::Token;
-use crate::screen::{CaptureExtent, Grid, GridDims, ScreenImage, ScreenOptions};
+use crate::screen::{
+    CaptureExtent, Grid, GridDims, RowExtent, ScreenImage, ScreenOptions, ScreenSnapshot,
+};
 
 /// hmux's own screen, and the only one: the engine is the chosen
 /// implementation rather than one of several a caller picks between.
@@ -191,29 +193,28 @@ impl PaneScreen {
     }
 
     /// The *inactive* screen — the one the alternate-screen switch displaced —
-    /// as its snapshot and its `capture-pane -e` serialization, or `None` when
-    /// no alternate screen is in use.
+    /// materialized, or `None` when no alternate screen is in use.
     ///
     /// tmux keeps it as `saved_grid` and `capture-pane -a` is the only thing
     /// that reads it. Both forms come back together because a capture picks one
     /// of them and the grid is walked either way; splitting them would mean
     /// walking it twice or holding a cursor into a screen that has none.
-    pub fn inactive_snapshot(&self) -> Option<(Grid, Vec<u8>)> {
+    pub fn inactive_snapshot(&self) -> Option<ScreenSnapshot> {
         let screen = &self.engine.screen;
         screen.saved_grid().map(|grid| {
             let total = grid.total();
-            (
-                dump::snapshot_grid(screen, grid, 0, total),
+            ScreenSnapshot {
+                grid: dump::snapshot_grid(screen, grid, 0, total),
                 // `-a` reads the whole displaced screen; which extent the
                 // capture wants is decided when its rows are serialized.
-                dump::vt_grid(
+                vt: dump::vt_grid(
                     screen,
                     grid,
                     0,
                     total,
-                    dump::RowExtent::Capture(CaptureExtent::Allocated),
+                    RowExtent::Capture(CaptureExtent::Allocated),
                 ),
-            )
+            }
         })
     }
 
@@ -237,34 +238,20 @@ impl PaneScreen {
         dump::plain(&self.engine.screen, start, rows, join_wraps)
     }
 
-    /// Physical rows `[start, start + rows)` as VT escape sequences, ready to
-    /// write to a client tty: text, SGR styles, hyperlinks and a final cursor
-    /// position.
-    pub fn dump_vt_rows(&self, start: usize, rows: usize) -> Vec<u8> {
-        if rows == 0 {
-            return Vec::new();
-        }
-        dump::vt(&self.engine.screen, start, rows, dump::RowExtent::Redraw)
-    }
-
-    /// As [`Self::dump_vt_rows`], but for `capture-pane -e` rather than for a
-    /// client's tty.
+    /// Physical rows `[start, start + rows)` as VT escape sequences: text, SGR
+    /// styles, hyperlinks and a final cursor position.
     ///
-    /// The two are not the same read. A capture runs to one of the row's two
+    /// The extent picks which of the two reads this is — they are not the
+    /// same. A [`Capture`](RowExtent::Capture) runs to one of the row's two
     /// extents, so a space a program wrote — perhaps carrying a background
-    /// colour — is part of the captured row. A redraw stops at the last
-    /// non-blank cell and erases the rest, which is cheaper and is what the
-    /// compositor wants. tmux keeps the same two paths apart.
-    pub fn dump_vt_capture_rows(&self, start: usize, rows: usize, extent: CaptureExtent) -> Vec<u8> {
+    /// colour — is part of the captured row. A [`Redraw`](RowExtent::Redraw)
+    /// stops at the last non-blank cell and erases the rest, which is cheaper
+    /// and is what a client tty wants. tmux keeps the same two paths apart.
+    pub fn dump_vt_rows(&self, start: usize, rows: usize, extent: RowExtent) -> Vec<u8> {
         if rows == 0 {
             return Vec::new();
         }
-        dump::vt(
-            &self.engine.screen,
-            start,
-            rows,
-            dump::RowExtent::Capture(extent),
-        )
+        dump::vt(&self.engine.screen, start, rows, extent)
     }
 
     /// The bytes this mouse event produces, or none when the program has asked
@@ -307,7 +294,7 @@ mod tests {
         assert_eq!((dims.cols, dims.viewport_rows, dims.total_rows), (10, 3, 3));
         let total = all_rows(&screen);
         assert!(screen.dump_plain_rows(0, total, false).contains("world"));
-        assert!(!screen.dump_vt_rows(0, total).is_empty());
+        assert!(!screen.dump_vt_rows(0, total, RowExtent::Redraw).is_empty());
         assert_eq!(screen.grid_snapshot_range(0, total).rows.len(), 3);
     }
 

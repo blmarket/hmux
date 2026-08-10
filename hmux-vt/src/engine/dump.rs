@@ -19,7 +19,7 @@ use super::grid::Grid as EngineGrid;
 use super::screen::Screen;
 use crate::screen::mode;
 use crate::screen::{
-    CaptureExtent, CellSemantic, CellWidth, Grid, GridCell, GridRow, RowFlags,
+    CaptureExtent, CellSemantic, CellWidth, Grid, GridCell, GridRow, RowExtent, RowFlags,
 };
 
 use super::grid::line_flag;
@@ -176,22 +176,6 @@ pub fn plain(screen: &Screen, start: usize, count: usize, unwrap: bool) -> Strin
         lines.pop();
     }
     lines.join("\n")
-}
-
-/// How far along a row a VT serialization runs.
-///
-/// tmux keeps these apart and so do we: `grid_string_cells`, which is what
-/// `capture-pane -e` uses, runs to one of the row's two extents, while the tty
-/// redraw paints the row and erases what follows. Forcing both through one
-/// extent loses either a written trailing space (capture) or everything past
-/// the last non-blank cell on a row whose tail is not blank — a popup's closing
-/// border, for instance.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RowExtent {
-    /// Up to the last non-blank cell; the caller erases the rest.
-    Redraw,
-    /// A capture, running to the extent `capture-pane`'s flags selected.
-    Capture(CaptureExtent),
 }
 
 /// VT bytes for physical rows `[start, start + count)`, positioned absolutely

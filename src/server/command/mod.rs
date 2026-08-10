@@ -7232,7 +7232,7 @@ fn capture_pane(args: &[String], st: &mut ServerState, agents: &PaneAgents) -> C
         // displaced. Neither is the live grid, and both are served the same way.
         let whole = inactive
             .as_ref()
-            .map(|(grid, vt)| (grid, vt))
+            .map(|snapshot| (&snapshot.grid, &snapshot.vt))
             .or_else(|| match use_mode {
                 true => node.copy.as_ref().map(|copy| (&copy.grid, &copy.vt)),
                 false => None,

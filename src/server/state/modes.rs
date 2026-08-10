@@ -7,6 +7,8 @@
 
 use std::io;
 
+use hmux_vt::ScreenSnapshot;
+
 use super::copy::*;
 use super::mode::update_mode_edit_item;
 use super::sizing::pane_slider;
@@ -43,7 +45,7 @@ impl ServerState {
                 node.mode = mode.map(str::to_string);
             } else {
                 let copy = if mode.is_some() {
-                    let (grid, vt, (col, row)) = node.pane.copy_snapshot();
+                    let (ScreenSnapshot { grid, vt }, (col, row)) = node.pane.copy_snapshot();
                     let vt_rows = copy_vt_row_ranges(&vt);
                     Some(CopyState {
                         backing: CopyBacking::PaneSnapshot,
@@ -491,7 +493,7 @@ impl ServerState {
             .window_mut(target_resolved.session, target_resolved.window)
             .panes[target_resolved.pane];
         if node.copy.is_none() {
-            let (grid, vt, (col, row)) = snapshot;
+            let (ScreenSnapshot { grid, vt }, (col, row)) = snapshot;
             let vt_rows = copy_vt_row_ranges(&vt);
             node.copy = Some(CopyState {
                 backing: CopyBacking::PaneSnapshot,
@@ -743,7 +745,7 @@ impl ServerState {
                 return Err(io::Error::other("not in a mode"));
             }
             if command == "refresh-from-pane" {
-                let (grid, vt, _) = node.pane.copy_snapshot();
+                let (ScreenSnapshot { grid, vt }, _) = node.pane.copy_snapshot();
                 let state = node.copy.as_mut().expect("copy mode checked above");
                 state.backing = CopyBacking::PaneSnapshot;
                 state.grid = grid;

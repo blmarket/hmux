@@ -196,6 +196,35 @@ pub enum CaptureExtent {
     Written,
 }
 
+/// A screen materialized in one walk: the structured grid and its
+/// `capture-pane -e` serialization together.
+///
+/// Two screens come back this way — the one the alternate-screen switch
+/// displaced ([`PaneScreen::inactive_snapshot`]) and the one copy mode
+/// freezes. Neither is the live grid, and their consumers want both forms of
+/// the same walk.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScreenSnapshot {
+    pub grid: Grid,
+    pub vt: Vec<u8>,
+}
+
+/// How far along a row a VT serialization runs.
+///
+/// tmux keeps these apart and so do we: `grid_string_cells`, which is what
+/// `capture-pane -e` uses, runs to one of the row's two extents, while the tty
+/// redraw paints the row and erases what follows. Forcing both through one
+/// extent loses either a written trailing space (capture) or everything past
+/// the last non-blank cell on a row whose tail is not blank — a popup's closing
+/// border, for instance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RowExtent {
+    /// Up to the last non-blank cell; the caller erases the rest.
+    Redraw,
+    /// A capture, running to the extent `capture-pane`'s flags selected.
+    Capture(CaptureExtent),
+}
+
 /// One physical row of a grid snapshot.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GridRow {
