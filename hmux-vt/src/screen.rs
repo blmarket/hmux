@@ -67,30 +67,24 @@ pub mod mode {
     pub(crate) const ALL_KEYS_EXTENDED: u32 = KEYS_EXTENDED | KEYS_EXTENDED_2;
 }
 
-/// Ghostty-style display-cell width classification.
+/// How many display cells a cell's content occupies.
 ///
 /// A wide character occupies its own [`Wide`](CellWidth::Wide) cell plus a
-/// following [`SpacerTail`](CellWidth::SpacerTail); a
-/// [`SpacerHead`](CellWidth::SpacerHead) is the blank left at a right margin
-/// too narrow for the wide character that had to wrap.
+/// following [`SpacerTail`](CellWidth::SpacerTail).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CellWidth {
     Narrow,
     Wide,
     SpacerTail,
-    /// A backend may report this; tmux's grid has no equivalent, so the
-    /// engine never produces one.
-    SpacerHead,
 }
 
 /// The shell-integration classification of a cell's content.
+///
+/// tmux classifies rows with `GRID_LINE_START_PROMPT` and
+/// `GRID_LINE_START_OUTPUT` alone, so every cell is one of these two.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CellSemantic {
     Output,
-    /// A backend may report this. tmux classifies rows with
-    /// `GRID_LINE_START_PROMPT` and `GRID_LINE_START_OUTPUT` alone, so under
-    /// the engine every row is one of the other two.
-    Input,
     Prompt,
 }
 
@@ -105,9 +99,6 @@ pub struct GridCell {
     pub width: CellWidth,
     pub semantic: CellSemantic,
     pub hyperlink: Option<String>,
-    /// The OSC 8 `id=` the program set explicitly, if any. Implicit ids the
-    /// emulator invents for its own bookkeeping are not reported.
-    pub hyperlink_id: Option<String>,
     /// Which link this cell belongs to, as the screen's own identity for it —
     /// tmux's *inner* id, the number a `grid_cell` carries in `link`. Zero
     /// means the cell is not in a link.
@@ -253,11 +244,45 @@ pub struct ScreenImage {
     /// already sent without comparing the images themselves.
     pub revision: u64,
     /// The decoded image, shared: every attached client re-scales the same one
-    /// for its own terminal.
-    pub data: Arc<SixelImage>,
+    /// for its own terminal. The codec's representation does not leave the
+    /// crate; [`ScreenImage::sixel_for_client`] is what a compositor reads.
+    pub(crate) data: Arc<SixelImage>,
     /// The text a client that cannot draw sixel gets instead, already laid out
     /// as tmux lays it out — one `\r\n`-terminated line per image row.
     pub fallback: Arc<str>,
+}
+
+impl ScreenImage {
+    /// tmux's `tty_cmd_sixelimage`: the sixel bytes a client draws for the part
+    /// of this image it can see.
+    ///
+    /// `origin` and `size` are in *image* cells — the crop `tty_clamp_area`
+    /// works out — and `cell_pixels` is the client terminal's own cell size.
+    /// The crop is resampled onto that geometry and re-serialized against the
+    /// original's palette, which is why the rescale itself carries no colour
+    /// registers. `None` when the crop lands outside the image or the image
+    /// never selected a colour, both of which are tmux's NULL.
+    ///
+    /// A client that cannot draw sixel writes [`Self::fallback`] instead.
+    #[must_use]
+    pub fn sixel_for_client(
+        &self,
+        cell_pixels: (u16, u16),
+        origin: (u16, u16),
+        size: (u16, u16),
+    ) -> Option<Vec<u8>> {
+        self.data
+            .scale(
+                u32::from(cell_pixels.0),
+                u32::from(cell_pixels.1),
+                u32::from(origin.0),
+                u32::from(origin.1),
+                u32::from(size.0),
+                u32::from(size.1),
+                false,
+            )?
+            .print(Some(&self.data))
+    }
 }
 
 /// Row geometry of the active screen, read without walking any cells.

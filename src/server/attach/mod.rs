@@ -2955,18 +2955,7 @@ fn compose_pane_images(
         let column = view.left + (x0 - view.ox) + 1;
 
         let payload = if output.draws_sixel() {
-            // The pixels come from the rescaled crop and the palette from the
-            // original, which is why the scale does not copy the registers.
-            let scaled = image.data.scale(
-                u32::from(output.xpixel),
-                u32::from(output.ypixel),
-                u32::from(i),
-                u32::from(j),
-                u32::from(rx),
-                u32::from(ry),
-                false,
-            );
-            match scaled.and_then(|scaled| scaled.print(Some(&image.data))) {
+            match image.sixel_for_client((output.xpixel, output.ypixel), (i, j), (rx, ry)) {
                 Some(payload) => payload,
                 None => continue,
             }

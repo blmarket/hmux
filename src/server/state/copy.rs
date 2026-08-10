@@ -345,7 +345,7 @@ fn copy_reflow_vt(state: &CopyState) -> Vec<u8> {
 }
 
 fn copy_cell_is_padding(cell: &GridCell) -> bool {
-    matches!(cell.width, CellWidth::SpacerTail | CellWidth::SpacerHead)
+    matches!(cell.width, CellWidth::SpacerTail)
 }
 
 fn copy_line_length(grid: &Grid, row: usize) -> usize {
@@ -1811,13 +1811,8 @@ fn append_copy_cells(output: &mut String, grid: &Grid, row: usize, from: usize, 
         return;
     }
     for cell in &grid.rows[row].cells[from..to] {
-        match cell.width {
-            CellWidth::SpacerTail => continue,
-            CellWidth::SpacerHead => {
-                output.push(' ');
-                continue;
-            }
-            CellWidth::Narrow | CellWidth::Wide => {}
+        if cell.width == CellWidth::SpacerTail {
+            continue;
         }
         // tmux's `window_copy_copy_line` puts the tab back rather than copying
         // the blanks it painted, so what is yanked is what was typed.

@@ -1320,7 +1320,6 @@ mod tests {
                 width: CellWidth::Narrow,
                 semantic: CellSemantic::Output,
                 hyperlink: None,
-                hyperlink_id: None,
                 hyperlink_slot: 0,
                 tab: false,
             })
@@ -1332,7 +1331,6 @@ mod tests {
                 width: CellWidth::Narrow,
                 semantic: CellSemantic::Output,
                 hyperlink: None,
-                hyperlink_id: None,
                 hyperlink_slot: 0,
                 tab: false,
             },

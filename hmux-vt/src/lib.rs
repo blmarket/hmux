@@ -14,8 +14,8 @@
 //! # The contract
 //!
 //! The interface is this crate's `pub` surface and nothing else: the modules
-//! [`parser`], [`observer`], [`screen`], [`input`], [`width`] and [`sixel`],
-//! plus [`PaneScreen`] and [`TMUX_VERSION`]. The modules stay separate because they
+//! [`parser`], [`observer`], [`screen`], [`input`] and [`width`], plus
+//! [`PaneScreen`] and [`TMUX_VERSION`]. The modules stay separate because they
 //! change for different reasons — owning the width tables should not mean
 //! owning the grid — and [`screen`] holds the values a screen read produces
 //! while [`input`] holds the key and mouse identities an encode takes.
@@ -34,7 +34,7 @@ pub mod input;
 pub mod observer;
 pub mod parser;
 pub mod screen;
-pub mod sixel;
+mod sixel;
 mod vis;
 pub mod width;
 mod x11_colour;

@@ -255,20 +255,21 @@ impl Default for Observer {
 
 impl Observer {
     /// The bytes of a sequence the tokenizer has not finished, which
-    /// `capture-pane -P` returns. See [`Parser::pending`].
+    /// `capture-pane -P` returns. The tokenizer's own accessor, which this is
+    /// the public facade for.
     pub fn pending(&self) -> &[u8] {
         self.parser.pending()
     }
 
     /// Whether the tokenizer is waiting for a string terminator, which is when
-    /// tmux's ground timer runs. See [`Parser::awaiting_terminator`].
+    /// tmux's ground timer runs.
     pub fn awaiting_terminator(&self) -> bool {
         self.parser.awaiting_terminator()
     }
 
-    /// Abandon a sequence whose terminator never arrived. See
-    /// [`Parser::expire`]; nothing is observed, because tmux's ground timer
-    /// discards the sequence rather than dispatching it.
+    /// Abandon a sequence whose terminator never arrived. Nothing is observed,
+    /// because tmux's ground timer discards the sequence rather than
+    /// dispatching it.
     pub fn expire(&mut self) -> bool {
         self.parser.expire()
     }

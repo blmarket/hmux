@@ -4985,9 +4985,7 @@ pub(super) fn vars_full(
                     let line = row
                         .cells
                         .iter()
-                        .filter(|cell| {
-                            !matches!(cell.width, CellWidth::SpacerTail | CellWidth::SpacerHead)
-                        })
+                        .filter(|cell| !matches!(cell.width, CellWidth::SpacerTail))
                         .map(|cell| {
                             if cell.text.is_empty() {
                                 " "
@@ -7471,7 +7469,7 @@ fn capture_plain_row(row: &GridRow, args: &[String]) -> String {
 
     let mut line = String::new();
     for cell in row.cells.iter().take(end) {
-        if matches!(cell.width, CellWidth::SpacerTail | CellWidth::SpacerHead) {
+        if matches!(cell.width, CellWidth::SpacerTail) {
             continue;
         }
         if cell.tab {

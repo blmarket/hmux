@@ -115,13 +115,13 @@ fn snapshot_cell(screen: &Screen, cell: &Cell, semantic: CellSemantic, written: 
     } else {
         cell.data.text().to_string()
     };
-    // A cell's `link` indexes the screen's hyperlink table. The `id=` comes
-    // back only when the sequence carried one: an anonymous link has a URI and
-    // no id, which is the distinction `capture-pane -e` re-emits.
-    let (hyperlink, hyperlink_id) = match screen.hyperlinks.get(cell.link) {
-        Some((uri, id)) => (Some(uri.to_string()), id.map(str::to_string)),
-        None => (None, None),
-    };
+    // A cell's `link` indexes the screen's hyperlink table. The `id=` a
+    // sequence carried stays in that table: `capture-pane -e` re-emits it from
+    // there, and a snapshot reader wants the URI and the identity below.
+    let hyperlink = screen
+        .hyperlinks
+        .get(cell.link)
+        .map(|(uri, _)| uri.to_string());
     // A link the table has forgotten reads as no link at all, so the identity
     // goes with it: tmux's readers skip a cell whose `hyperlinks_get` fails
     // exactly as they skip one whose `link` is zero.
@@ -131,7 +131,6 @@ fn snapshot_cell(screen: &Screen, cell: &Cell, semantic: CellSemantic, written: 
         width,
         semantic,
         hyperlink,
-        hyperlink_id,
         hyperlink_slot,
         tab: cell.flags & flag::TAB != 0,
     }

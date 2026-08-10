@@ -1010,10 +1010,12 @@ mod tests {
             b"\x1b]8;id=x1;https://a.test\x1b\\LINK\x1b]8;;\x1b\\ plain",
         );
         assert_eq!(text(&engine, 0), "LINK plain");
+        let slot = snapshot_cell(&engine, 0).hyperlink_slot;
+        assert_ne!(slot, 0, "a linked cell carries the screen's own identity");
         for px in 0..4 {
             let cell = snapshot_cell(&engine, px);
             assert_eq!(cell.hyperlink.as_deref(), Some("https://a.test"));
-            assert_eq!(cell.hyperlink_id.as_deref(), Some("x1"));
+            assert_eq!(cell.hyperlink_slot, slot);
         }
         // The empty URI closed the link, so what follows is not part of it.
         assert_eq!(snapshot_cell(&engine, 4).hyperlink, None);
@@ -1021,12 +1023,12 @@ mod tests {
     }
 
     #[test]
-    fn an_anonymous_link_reports_its_uri_but_no_id() {
+    fn an_anonymous_link_reports_its_uri() {
         let mut engine = screen(24, 3);
         feed(&mut engine, b"\x1b]8;;https://b.test\x1b\\X");
         let cell = snapshot_cell(&engine, 0);
         assert_eq!(cell.hyperlink.as_deref(), Some("https://b.test"));
-        assert_eq!(cell.hyperlink_id, None);
+        assert_ne!(cell.hyperlink_slot, 0);
     }
 
     #[test]

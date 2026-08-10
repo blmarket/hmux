@@ -398,7 +398,7 @@ fn render_mark_and_position(
                 .map_or(0, |last| last + 1);
             out.extend_from_slice(&style);
             for (column, cell) in cells.iter().take(width as usize).enumerate() {
-                if matches!(cell.width, CellWidth::SpacerTail | CellWidth::SpacerHead) {
+                if matches!(cell.width, CellWidth::SpacerTail) {
                     continue;
                 }
                 if column == used {
@@ -544,7 +544,7 @@ fn render_search(
 
 fn render_cells(out: &mut Vec<u8>, cells: &[GridCell]) {
     for cell in cells {
-        if matches!(cell.width, CellWidth::SpacerTail | CellWidth::SpacerHead) {
+        if matches!(cell.width, CellWidth::SpacerTail) {
             continue;
         }
         if cell.text.is_empty() {
