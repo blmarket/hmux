@@ -379,21 +379,9 @@ pub(crate) enum TerminalRequestKind {
     Clipboard { bel: bool },
 }
 
-/// What an attached terminal answered, as the client's input parser recovered
+/// What an attached terminal answered, as the client's input scanner recovered
 /// it.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum TerminalReply {
-    Palette {
-        index: u8,
-        /// The colour packed as `0xrrggbb`.
-        colour: u32,
-    },
-    Clipboard {
-        /// The selection letter the terminal named, if it named one.
-        selection: Option<u8>,
-        data: Vec<u8>,
-    },
-}
+pub(crate) use hmux_vt::TerminalAnswer as TerminalReply;
 
 /// The client-side inputs of the oversized-window viewport calculation.
 #[derive(Clone, Copy)]

@@ -31,9 +31,9 @@ use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 use crate::server::input_keys::ExtendedKeys;
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
 use hmux_vt::{
-    decrqss_reply, Event as VtEvent, Observer, OscUpdate, BACKGROUND_COLOR_QUERY,
+    decrqss_reply, OscUpdate, Terminal, TerminalEvent as VtEvent, BACKGROUND_COLOR_QUERY,
 };
-use hmux_vt::{Param, StringEnd, Token, TokenKind};
+use hmux_vt::StringEnd;
 
 use hmux_vt::MouseEvent;
 pub(crate) use hmux_vt::parse_packed_colour;
@@ -320,13 +320,15 @@ struct ObservedChild {
 /// State which remains valid for the lifetime of a resolved observation
 /// handle, even if the pane is subsequently removed from the server tree.
 pub(crate) struct NativePaneObservation {
-    term: Rc<RefCell<PaneScreen>>,
+    /// The pane's terminal emulation: every query reply, OSC state change,
+    /// mode change, bell, clipboard event, passthrough payload and title comes
+    /// out of its single parse of the byte stream.
+    term: RefCell<Terminal>,
     revision: Cell<u64>,
     /// Revision of the latest scroll operation whose vertical region is large
     /// enough for tmux to prefer one deferred repaint over immediate row draws.
     /// This is monotonic so each attached client can observe it independently.
     large_scroll_revision: Cell<u64>,
-    redraw_detector: RefCell<ScrollRedraw>,
     control_output: RefCell<ControlOutputJournal>,
     /// Last DECSCUSR parameter emitted by the pane (0..=6). The VT formatter
     /// restores cursor position but does not serialize this terminal state.
@@ -394,10 +396,6 @@ pub(crate) struct NativePaneObservation {
     renames: RefCell<VecDeque<String>>,
     /// The options that decide what the pane's own output is allowed to do.
     output_policy: PaneOutputPolicyCell,
-    /// The pane's one tokenizer. Every query reply, OSC state change, mode
-    /// change, bell, clipboard event, passthrough payload and title comes out
-    /// of this single parse of the byte stream.
-    observer: RefCell<Observer>,
 }
 
 /// [`PaneOutputPolicy`] as the pane's parser reads it: shared with the server,
@@ -476,148 +474,6 @@ pub(crate) struct PanePassthrough {
 
 struct OutputEvent {
     wakeup: <CurrentPlatform as Platform>::OutputWakeup,
-}
-
-#[derive(Clone, Copy)]
-struct ScrollRegion {
-    top: u16,
-    bottom: u16,
-}
-
-/// Where in its scrolling region an operation moves rows, which decides whether
-/// the cursor has to be inside it for the move to be visible.
-#[derive(Clone, Copy)]
-enum ScrollEdge {
-    /// Reverse index: only at the region's top row.
-    Top,
-    /// Line feed and index: only at the region's bottom row.
-    Bottom,
-    /// Insert/delete line: anywhere inside the region.
-    Inside,
-    /// Scroll up/down: the whole region moves regardless of the cursor.
-    Any,
-}
-
-#[derive(Clone, Copy)]
-struct ScrollAction {
-    region: ScrollRegion,
-    edge: ScrollEdge,
-    rows: u16,
-}
-
-impl ScrollAction {
-    /// Whether tmux would prefer one deferred repaint of the pane over drawing
-    /// the moved rows: the region has to be at least half the pane, and the
-    /// cursor has to be somewhere the operation actually moves rows.
-    fn needs_large_redraw(self, cursor_y: u16) -> bool {
-        if self.region.bottom.saturating_sub(self.region.top) < self.rows / 2 {
-            return false;
-        }
-        match self.edge {
-            ScrollEdge::Top => cursor_y == self.region.top,
-            ScrollEdge::Bottom => cursor_y == self.region.bottom,
-            ScrollEdge::Inside => (self.region.top..=self.region.bottom).contains(&cursor_y),
-            ScrollEdge::Any => true,
-        }
-    }
-}
-
-/// Recognizes the operations that scroll a vertical region, so the compositor
-/// can choose between repainting rows and repainting the pane.
-///
-/// This reads the pane's tokens rather than its bytes: the framing is already
-/// settled by the time it sees them, so all that is left is the scrolling
-/// region, which is screen state the tokens change.
-struct ScrollRedraw {
-    rows: u16,
-    explicit_region: Option<ScrollRegion>,
-}
-
-impl ScrollRedraw {
-    fn new(rows: u16) -> Self {
-        Self {
-            rows: rows.max(1),
-            explicit_region: None,
-        }
-    }
-
-    fn resize(&mut self, rows: u16) {
-        self.rows = rows.max(1);
-        self.explicit_region = None;
-    }
-
-    fn region(&self) -> ScrollRegion {
-        self.explicit_region.unwrap_or(ScrollRegion {
-            top: 0,
-            bottom: self.rows.saturating_sub(1),
-        })
-    }
-
-    /// Classify one token, applying any change it makes to the region first.
-    fn scan(&mut self, token: &Token) -> Option<ScrollAction> {
-        let edge = match &token.kind {
-            TokenKind::Control(0x0a..=0x0c) => ScrollEdge::Bottom,
-            TokenKind::Esc {
-                intermediates,
-                final_byte,
-            } if intermediates.is_empty() => match final_byte {
-                b'D' => ScrollEdge::Bottom,
-                b'M' => ScrollEdge::Top,
-                // RIS puts the region back to the whole screen.
-                b'c' => {
-                    self.explicit_region = None;
-                    return None;
-                }
-                _ => return None,
-            },
-            TokenKind::Csi {
-                private: None,
-                params,
-                intermediates,
-                final_byte,
-            } => match (intermediates.as_slice(), final_byte) {
-                // DECSTR, which also resets the region.
-                ([b'!'], b'p') => {
-                    self.explicit_region = None;
-                    return None;
-                }
-                ([], b'r') => {
-                    self.set_region(params);
-                    return None;
-                }
-                ([], b'S' | b'T') => ScrollEdge::Any,
-                ([], b'L' | b'M') => ScrollEdge::Inside,
-                _ => return None,
-            },
-            _ => return None,
-        };
-        Some(ScrollAction {
-            region: self.region(),
-            edge,
-            rows: self.rows,
-        })
-    }
-
-    /// DECSTBM. A region that is empty or runs off the screen is refused, as
-    /// tmux refuses it.
-    fn set_region(&mut self, params: &[Param]) {
-        let read = |index: usize, default: u16| -> u16 {
-            params
-                .get(index)
-                .and_then(|param: &Param| param.value)
-                .and_then(|value| u16::try_from(value).ok())
-                .filter(|value| *value != 0)
-                .unwrap_or(default)
-        };
-        let top = read(0, 1);
-        let bottom = read(1, self.rows);
-        if top < bottom && bottom <= self.rows {
-            self.explicit_region = Some(ScrollRegion {
-                top: top - 1,
-                bottom: bottom - 1,
-            });
-        }
-    }
 }
 
 const CONTROL_OUTPUT_LIMIT: usize = 1024 * 1024;
@@ -785,9 +641,9 @@ impl NativePaneObservation {
         const GRID_LINE_BYTES: usize = 40;
         const GRID_CELL_ENTRY_BYTES: usize = 5;
         const GRID_EXTD_ENTRY_BYTES: usize = 23;
-        let term = self.term.borrow_mut();
-        let dims = term.grid_dims();
-        let grid = term.grid_snapshot_range(0, dims.total_rows);
+        let term = self.term.borrow();
+        let dims = term.screen().grid_dims();
+        let grid = term.screen().grid_snapshot_range(0, dims.total_rows);
         let lines = dims.total_rows;
         let cells: usize = grid.rows.iter().map(|row| row.size).sum();
         let extended: usize = grid.rows.iter().map(|row| row.extd).sum();
@@ -805,21 +661,15 @@ impl NativePaneObservation {
         ))
     }
 
-    fn new(
-        term: Rc<RefCell<PaneScreen>>,
-        child: Option<ObservedChild>,
-        cols: u16,
-        rows: u16,
-    ) -> Self {
+    fn new(term: Terminal, child: Option<ObservedChild>, cols: u16) -> Self {
         let latency_enabled = matches!(
             std::env::var("HMUX_LATENCY"),
             Ok(value) if !value.is_empty() && value != "0"
         );
         Self {
-            term,
+            term: RefCell::new(term),
             revision: Cell::new(0),
             large_scroll_revision: Cell::new(0),
-            redraw_detector: RefCell::new(ScrollRedraw::new(rows)),
             control_output: RefCell::new(ControlOutputJournal::default()),
             cursor_shape: Cell::new(0),
             modes: Cell::new(PaneModeSnapshot::default()),
@@ -852,7 +702,6 @@ impl NativePaneObservation {
             // A pane that has produced nothing yet still needs naming once.
             changed: Cell::new(true),
             renames: RefCell::new(VecDeque::new()),
-            observer: RefCell::new(Observer::default()),
             output_policy: PaneOutputPolicyCell::default(),
         }
     }
@@ -914,8 +763,7 @@ impl NativePaneObservation {
     /// The pane's scroll region, as `#{scroll_region_upper}`/`#{lower}` report
     /// it: the DECSTBM region when one is set, else the whole screen.
     fn scroll_region(&self) -> (u16, u16) {
-        let region = self.redraw_detector.borrow().region();
-        (region.top, region.bottom)
+        self.term.borrow().scroll_region()
     }
 
     fn terminal_modes(&self) -> PaneTerminalModes {
@@ -1005,72 +853,51 @@ impl NativePaneObservation {
         self.changed.set(false);
     }
 
-    /// Feed one chunk of the pane's output through its tokenizer and apply
-    /// everything the parse reports.
+    /// Feed one chunk of the pane's output through its terminal and act on
+    /// every event the emulation reports.
     ///
     /// Returns what only the caller can deliver: bytes to write back to the
     /// pane's own input, and questions to forward to the client's terminal.
     ///
-    /// Each event is applied at exactly its point in the byte stream, so an
-    /// event that reads the cursor — a DSR reply, a tab stop, the cursor DECSET
-    /// 1049 saves — sees the screen as it stands there and not as it ends up.
+    /// The events arrive after the whole chunk has reached the screen, but
+    /// each is self-contained: screen state one reports — a cursor position, a
+    /// mode word — was captured at that event's point in the byte stream.
     fn observe_output(&self, pending: &[u8]) -> (Vec<Vec<u8>>, Vec<&'static [u8]>) {
         self.append_control_output(pending);
         let policy = self.output_policy();
-        let observed = self.observer.borrow_mut().feed(pending, &policy);
-        let tokens = &observed.screen[..];
+        let events = self.term.borrow_mut().process(pending, &policy);
 
         let mut replies: Vec<Vec<u8>> = Vec::new();
         let mut queries: Vec<&'static [u8]> = Vec::new();
-        {
-            let mut terminal = self.term.borrow_mut();
-            let mut segment_start = 0usize;
-            let mut large_scroll = false;
-            for (split_at, event) in observed.events {
-                while segment_start < split_at {
-                    large_scroll |= self.write_terminal(&mut terminal, &tokens[segment_start]);
-                    segment_start += 1;
-                }
-                self.apply_event(event, &terminal, &policy, &mut replies, &mut queries);
+        let mut large_scroll = false;
+        for event in events {
+            match event {
+                VtEvent::LargeScroll => large_scroll = true,
+                event => self.apply_event(event, &policy, &mut replies, &mut queries),
             }
-            for token in &tokens[segment_start..] {
-                large_scroll |= self.write_terminal(&mut terminal, token);
-            }
-            self.record_change(large_scroll);
-            // The modes are republished from the screen once the whole batch
-            // has reached it. Reading them before would report what the pane
-            // asked for a read ago, and there is nothing else holding them:
-            // the screen's mode word is the only copy.
-            self.modes.set(PaneModeSnapshot::of(terminal.modes()));
         }
+        self.record_change(large_scroll);
+        // The modes are republished from the screen once the whole batch has
+        // reached it. Reading them before would report what the pane asked
+        // for a read ago, and there is nothing else holding them: the
+        // screen's mode word is the only copy.
+        self.modes
+            .set(PaneModeSnapshot::of(self.term.borrow().screen().modes()));
         (replies, queries)
     }
 
     /// Whether the pane is part-way through a string sequence, which is when
     /// tmux's five-second ground timer runs.
     fn awaiting_terminator(&self) -> bool {
-        self.observer.borrow().awaiting_terminator()
+        self.term.borrow().awaiting_terminator()
     }
 
     /// Give up on a string sequence whose terminator never arrived, as tmux's
     /// ground timer does, and report whether there was one.
-    ///
-    /// `input_ground_timer_callback` reaches `input_reset(ictx, 0)`, which is
-    /// more than the tokenizer's half: it also returns the pending cell and the
-    /// charset designations to their defaults. Those are the screen's, so they
-    /// are reset the way the rest of this file resets screen state — by
-    /// synthesizing the sequences that say it. What `input_reset` does to the
-    /// DECSC save is not reachable that way and is left alone; nothing the
-    /// server reports exposes it.
     fn expire_ground(&self) -> bool {
-        if !self.observer.borrow_mut().expire() {
+        if !self.term.borrow_mut().expire_ground() {
             return false;
         }
-        let mut terminal = self.term.borrow_mut();
-        for token in hmux_vt::tokenize(b"\x1b[m\x0f\x1b(B\x1b)B") {
-            terminal.apply(&token);
-        }
-        drop(terminal);
         self.record_change(false);
         true
     }
@@ -1080,7 +907,6 @@ impl NativePaneObservation {
     fn apply_event(
         &self,
         event: VtEvent,
-        terminal: &PaneScreen,
         policy: &PaneOutputPolicy,
         replies: &mut Vec<Vec<u8>>,
         queries: &mut Vec<&'static [u8]>,
@@ -1120,20 +946,23 @@ impl NativePaneObservation {
                 }
             }
             VtEvent::AlternateScreen(on) => self.alternate_on.set(on),
-            VtEvent::SaveAlternateCursor => {
-                let (x, y) = terminal.cursor_position();
+            VtEvent::SaveAlternateCursor { x, y } => {
                 self.alternate_saved_x.set(u32::from(x));
                 self.alternate_saved_y.set(u32::from(y));
             }
-            VtEvent::CursorPositionReport => replies.push(cursor_position_report(terminal)),
-            VtEvent::WindowSizeReport(operation) => {
-                if let Some(reply) = window_size_report(terminal, operation) {
+            VtEvent::CursorPositionReport { x, y } => replies.push(cursor_position_report(x, y)),
+            VtEvent::WindowSizeReport {
+                operation,
+                cols,
+                rows,
+            } => {
+                if let Some(reply) = window_size_report(cols, rows, operation) {
                     replies.push(reply);
                 }
             }
-            VtEvent::DecPrivateModeReport(mode) => {
+            VtEvent::DecPrivateModeReport { mode, screen_modes } => {
                 let status = dec_mode_status(
-                    terminal.modes(),
+                    screen_modes,
                     self.alternate_on.get(),
                     PaneCursorShape::from_parameter(self.cursor_shape.get()),
                     policy.cursor_style,
@@ -1141,26 +970,27 @@ impl NativePaneObservation {
                 );
                 replies.push(format!("\x1b[?{mode};{status}$y").into_bytes());
             }
-            VtEvent::DecModeReport(mode) => {
-                let status = ansi_mode_status(terminal.modes(), mode);
+            VtEvent::DecModeReport { mode, screen_modes } => {
+                let status = ansi_mode_status(screen_modes, mode);
                 replies.push(format!("\x1b[{mode};{status}$y").into_bytes());
             }
-            VtEvent::StatusReport(request) => replies.push(decrqss_reply(
+            VtEvent::StatusReport {
+                request,
+                cursor_blinking,
+            } => replies.push(decrqss_reply(
                 &request,
                 PaneCursorShape::from_parameter(self.cursor_shape.get()),
-                terminal.modes() & mode::CURSOR_BLINKING != 0,
+                cursor_blinking,
                 policy.cursor_style,
             )),
-            VtEvent::SetTabStop => {
-                let (x, _) = terminal.cursor_position();
+            VtEvent::SetTabStop { column } => {
                 self.update_tab_stops(|stops| {
-                    stops.insert(x);
+                    stops.insert(column);
                 });
             }
-            VtEvent::ClearTabStop => {
-                let (x, _) = terminal.cursor_position();
+            VtEvent::ClearTabStop { column } => {
                 self.update_tab_stops(|stops| {
-                    stops.remove(&x);
+                    stops.remove(&column);
                 });
             }
             VtEvent::ClearAllTabStops => self.update_tab_stops(BTreeSet::clear),
@@ -1217,6 +1047,9 @@ impl NativePaneObservation {
                 invisible_panes: policy.passthrough == PassthroughPolicy::Always,
             }),
             VtEvent::ThemeQuery => self.theme_query.set(true),
+            // Folded into the batch's revision bump by `observe_output`, which
+            // filters it out before events reach here.
+            VtEvent::LargeScroll => {}
         }
     }
 
@@ -1254,19 +1087,6 @@ impl NativePaneObservation {
             self.large_scroll_revision.set(revision);
         }
         self.notify_output();
-    }
-
-    /// Apply one token to the screen, reporting whether it scrolled enough of
-    /// the pane that the compositor should repaint the whole thing.
-    ///
-    /// The cursor is read *before* the token applies, because a scroll is only
-    /// visible where the cursor already was.
-    fn write_terminal(&self, terminal: &mut PaneScreen, token: &Token) -> bool {
-        let action = self.redraw_detector.borrow_mut().scan(token);
-        let large_scroll = action
-            .is_some_and(|action| action.needs_large_redraw(terminal.cursor_position().1));
-        terminal.apply(token);
-        large_scroll
     }
 
     fn notify_output(&self) {
@@ -1338,8 +1158,8 @@ impl NativePaneObservation {
     /// boundary.
     #[allow(dead_code)]
     pub(crate) fn contract_terminal_tail(&self, max_rows: usize) -> io::Result<String> {
-        let terminal = self.term.borrow_mut();
-        Ok(trailing_lines(&plain_dump(&terminal, false), max_rows))
+        let terminal = self.term.borrow();
+        Ok(trailing_lines(&plain_dump(terminal.screen(), false), max_rows))
     }
 }
 
@@ -1362,10 +1182,11 @@ impl PaneObservability for NativePaneObservation {
     }
 
     fn screen(&self, source: ScreenSource, lines: usize) -> io::Result<ScreenTail> {
-        let term = self.term.borrow_mut();
+        let term = self.term.borrow();
+        let term = term.screen();
         let text = match source {
-            ScreenSource::Recent => plain_dump(&term, false),
-            ScreenSource::RecentUnwrapped => plain_dump(&term, true),
+            ScreenSource::Recent => plain_dump(term, false),
+            ScreenSource::RecentUnwrapped => plain_dump(term, true),
             ScreenSource::Visible => {
                 // The plain dump is history-first; the viewport is the tail after
                 // the scrollback rows. Drop history so only the on-screen rows
@@ -1390,7 +1211,7 @@ impl PaneObservability for NativePaneObservation {
     }
 
     fn scrollback_rows(&self) -> io::Result<usize> {
-        Ok(self.term.borrow_mut().grid_dims().scrollback_rows)
+        Ok(self.term.borrow().screen().grid_dims().scrollback_rows)
     }
 
     fn title(&self) -> io::Result<Option<String>> {
@@ -1402,14 +1223,9 @@ impl Pane {
     /// A pane with a screen but no process. Useful as a lightweight session
     /// placeholder and for feeding synthetic bytes in tests.
     pub fn inert(cols: u16, rows: u16) -> io::Result<Pane> {
-        let term = PaneScreen::new(cols, rows);
+        let term = Terminal::new(cols, rows);
         Ok(Pane {
-            observation: Rc::new(NativePaneObservation::new(
-                Rc::new(RefCell::new(term)),
-                None,
-                cols,
-                rows,
-            )),
+            observation: Rc::new(NativePaneObservation::new(term, None, cols)),
             terminal_queries: Rc::new(RefCell::new(VecDeque::new())),
             child: None,
             pending_input: Rc::new(RefCell::new(VecDeque::new())),
@@ -1432,8 +1248,7 @@ impl Pane {
     ) -> io::Result<Pane> {
         assert!(!argv.is_empty(), "argv must have at least the program");
 
-        let term = PaneScreen::new(cols, rows);
-        let term = Rc::new(RefCell::new(term));
+        let term = Terminal::new(cols, rows);
         let terminal_queries = Rc::new(RefCell::new(VecDeque::new()));
 
         // Build the C argv *before* forking: allocation is not async-signal-safe,
@@ -1503,7 +1318,6 @@ impl Pane {
                 alive: Rc::clone(&alive),
             }),
             cols,
-            rows,
         ));
         let pane_io = PaneIo::new(
             &master,
@@ -1744,15 +1558,12 @@ impl Pane {
     }
 
     pub(crate) fn encode_mouse(&self, event: MouseEvent) -> Vec<u8> {
-        self.observation.term.borrow_mut().encode_mouse(event)
+        self.observation.term.borrow().screen().encode_mouse(event)
     }
 
     /// Reset the emulated terminal state without sending bytes to the child.
     pub(crate) fn reset_terminal(&self) -> io::Result<()> {
-        let mut terminal = self.observation.term.borrow_mut();
-        for token in hmux_vt::tokenize(b"\x1bc") {
-            self.observation.write_terminal(&mut terminal, &token);
-        }
+        self.observation.term.borrow_mut().reset();
         self.observation.record_change(false);
         Ok(())
     }
@@ -1826,12 +1637,20 @@ impl Pane {
     /// Like the output policy, these are pushed rather than looked up, and for
     /// the same reason: the screen has no view of the option tables.
     pub(crate) fn set_screen_options(&self, options: ScreenOptions) {
-        self.observation.term.borrow_mut().set_options(options);
+        self.observation
+            .term
+            .borrow_mut()
+            .screen_mut()
+            .set_options(options);
     }
 
     /// Apply the session's history cap to the pane's primary scrollback.
     pub(crate) fn set_history_limit(&self, limit: usize) {
-        self.observation.term.borrow_mut().set_history_limit(limit);
+        self.observation
+            .term
+            .borrow_mut()
+            .screen_mut()
+            .set_history_limit(limit);
     }
 
     /// Publish the options the pane's output is parsed against. The server
@@ -1855,14 +1674,7 @@ impl Pane {
     pub fn resize(&mut self, cols: u16, rows: u16) -> io::Result<()> {
         self.cols = cols;
         self.rows = rows;
-        {
-            let mut t = self.observation.term.borrow_mut();
-            t.resize(cols, rows);
-            {
-                let mut detector = self.observation.redraw_detector.borrow_mut();
-                detector.resize(rows);
-            }
-        }
+        self.observation.term.borrow_mut().resize(cols, rows);
         // tmux's screen_resize lays the default tab stops out afresh, dropping
         // whatever the pane had set.
         self.observation.columns.set(cols);
@@ -1888,7 +1700,7 @@ impl Pane {
 
     /// The current screen as plain text.
     pub fn dump(&self) -> String {
-        plain_dump(&self.observation.term.borrow_mut(), false)
+        plain_dump(self.observation.term.borrow().screen(), false)
     }
 
     /// The visible screen as plain text, without scrollback — what tmux's
@@ -1902,11 +1714,12 @@ impl Pane {
     }
 
     pub(crate) fn cursor_position(&self) -> (u16, u16) {
-        self.observation.term.borrow_mut().cursor_position()
+        self.observation.term.borrow().screen().cursor_position()
     }
 
     pub(crate) fn copy_snapshot(&self) -> (Grid, Vec<u8>, (u16, u16)) {
-        let terminal = self.observation.term.borrow_mut();
+        let terminal = self.observation.term.borrow();
+        let terminal = terminal.screen();
         let total = terminal.grid_dims().total_rows;
         (
             terminal.grid_snapshot_range(0, total),
@@ -1917,7 +1730,7 @@ impl Pane {
 
     /// Row geometry of the grid without the per-cell snapshot walk.
     pub(crate) fn grid_dims(&self) -> GridDims {
-        self.observation.term.borrow_mut().grid_dims()
+        self.observation.term.borrow().screen().grid_dims()
     }
 
     /// Snapshot only physical rows `[start, start + count)`; see
@@ -1925,7 +1738,8 @@ impl Pane {
     pub(crate) fn grid_snapshot_range(&self, start: usize, count: usize) -> Grid {
         self.observation
             .term
-            .borrow_mut()
+            .borrow()
+            .screen()
             .grid_snapshot_range(start, count)
     }
 
@@ -1934,6 +1748,7 @@ impl Pane {
         self.observation
             .term
             .borrow_mut()
+            .screen_mut()
             .trim_history_below_cursor();
     }
 
@@ -1941,14 +1756,14 @@ impl Pane {
     /// `capture-pane -a` reads, or `None` when the pane is not on an alternate
     /// screen. The VT half is the `-e` serialization of the same rows.
     pub(crate) fn inactive_snapshot(&self) -> Option<(Grid, Vec<u8>)> {
-        self.observation.term.borrow_mut().inactive_snapshot()
+        self.observation.term.borrow().screen().inactive_snapshot()
     }
 
     /// Bytes of an escape sequence the pane's tokenizer has not finished, which
     /// `capture-pane -P` returns. This is the pane's one parser, so the answer
     /// is the same framing everything else on this pane was decided by.
     pub(crate) fn pending_input(&self) -> Vec<u8> {
-        self.observation.observer.borrow().pending().to_vec()
+        self.observation.term.borrow().pending().to_vec()
     }
 
     pub(crate) fn background_color(&self) -> String {
@@ -1959,7 +1774,8 @@ impl Pane {
     /// client tty. This is the compositor primitive: the pane's grid is
     /// formatted as VT and sent to the attached client's terminal.
     pub fn dump_vt(&self) -> Vec<u8> {
-        let terminal = self.observation.term.borrow_mut();
+        let terminal = self.observation.term.borrow();
+        let terminal = terminal.screen();
         let total = terminal.grid_dims().total_rows;
         terminal.dump_vt_rows(0, total)
     }
@@ -1969,7 +1785,8 @@ impl Pane {
     pub(crate) fn dump_rows_vt(&self, start: usize, rows: usize, extent: CaptureExtent) -> Vec<u8> {
         self.observation
             .term
-            .borrow_mut()
+            .borrow()
+            .screen()
             .dump_vt_capture_rows(start, rows, extent)
     }
 
@@ -1978,7 +1795,8 @@ impl Pane {
     pub(crate) fn dump_plain_row(&self, row: usize) -> String {
         self.observation
             .term
-            .borrow_mut()
+            .borrow()
+            .screen()
             .dump_plain_rows(row, 1, false)
     }
 
@@ -1986,7 +1804,8 @@ impl Pane {
     /// the clamped offset lets the compositor decide whether the live cursor
     /// belongs in the selected viewport.
     pub fn dump_viewport_vt(&self, scroll_offset: usize, visible_rows: usize) -> (Vec<u8>, usize) {
-        let terminal = self.observation.term.borrow_mut();
+        let terminal = self.observation.term.borrow();
+        let terminal = terminal.screen();
         let scrollback = terminal.grid_dims().scrollback_rows;
         let scroll = scroll_offset.min(scrollback);
         let start = scrollback - scroll;
@@ -2007,26 +1826,26 @@ impl Pane {
     /// *over* the cells rather than being some of them: tmux paints the pane's
     /// text first and then walks the same list in `tty_draw_images`.
     pub(crate) fn images(&self) -> Vec<ScreenImage> {
-        self.observation.term.borrow_mut().images()
+        self.observation.term.borrow().screen().images()
     }
 
     /// How many scrollback (history) rows the grid holds above the visible
     /// viewport. Consumers that render only the on-screen rows (the compositor,
     /// `capture-pane -p`) skip this many leading rows of a dump.
     pub fn scrollback_rows(&self) -> usize {
-        self.observation.term.borrow_mut().grid_dims().scrollback_rows
+        self.observation
+            .term
+            .borrow()
+            .screen()
+            .grid_dims()
+            .scrollback_rows
     }
 
-    /// Clear scrollback while preserving the visible viewport.
-    ///
-    /// CSI 3 J is the emulator's own erase-scrollback operation, so this keeps
-    /// the terminal engine authoritative instead of reconstructing its grid
-    /// in hmux.
+    /// Clear scrollback while preserving the visible viewport, as the
+    /// emulator's own erase-scrollback operation so its grid is not
+    /// reconstructed in hmux.
     pub fn clear_history(&self) -> io::Result<()> {
-        let mut terminal = self.observation.term.borrow_mut();
-        for token in hmux_vt::tokenize(b"\x1b[3J") {
-            self.observation.write_terminal(&mut terminal, &token);
-        }
+        self.observation.term.borrow_mut().erase_scrollback();
         self.observation.record_change(false);
         Ok(())
     }
@@ -2035,7 +1854,7 @@ impl Pane {
     /// mirrors this onto the client tty so a TUI that hides the cursor and
     /// paints its own doesn't leave the client's real cursor lit on top.
     pub fn cursor_visible(&self) -> bool {
-        self.observation.term.borrow_mut().cursor_visible()
+        self.observation.term.borrow().screen().cursor_visible()
     }
 
     /// Current DECSCUSR parameter (0/default, 1..=6 block/underline/bar with
@@ -2740,8 +2559,7 @@ pub(crate) enum MouseTrackingMode {
     All,
 }
 
-fn cursor_position_report(terminal: &PaneScreen) -> Vec<u8> {
-    let (x, y) = terminal.cursor_position();
+fn cursor_position_report(x: u16, y: u16) -> Vec<u8> {
     format!("\x1b[{};{}R", y.saturating_add(1), x.saturating_add(1)).into_bytes()
 }
 
@@ -2749,10 +2567,9 @@ fn cursor_position_report(terminal: &PaneScreen) -> Vec<u8> {
 const DEFAULT_CELL_WIDTH: u32 = 16;
 const DEFAULT_CELL_HEIGHT: u32 = 32;
 
-fn window_size_report(terminal: &PaneScreen, operation: u32) -> Option<Vec<u8>> {
-    let dims = terminal.grid_dims();
-    let columns = u32::from(dims.cols);
-    let rows = u32::from(dims.viewport_rows);
+fn window_size_report(cols: u16, rows: u16, operation: u32) -> Option<Vec<u8>> {
+    let columns = u32::from(cols);
+    let rows = u32::from(rows);
     let (report, height, width) = match operation {
         14 => (4, rows * DEFAULT_CELL_HEIGHT, columns * DEFAULT_CELL_WIDTH),
         15 => (5, rows * DEFAULT_CELL_HEIGHT, columns * DEFAULT_CELL_WIDTH),
@@ -3479,8 +3296,7 @@ mod tests {
 
     /// A BEL that terminates an OSC string is a terminator, not a bell.
     fn inert_observation() -> NativePaneObservation {
-        let term = PaneScreen::new(20, 4);
-        NativePaneObservation::new(Rc::new(RefCell::new(term)), None, 20, 4)
+        NativePaneObservation::new(Terminal::new(20, 4), None, 20)
     }
 
     #[test]

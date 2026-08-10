@@ -1,44 +1,53 @@
 //! hmux's terminal-emulation layer.
 //!
-//! A pane's byte stream is parsed exactly once, by [`Parser`] — the DEC ANSI
-//! state machine tmux's `input.c` implements. [`Observer`] turns those tokens
-//! into the two things the server needs: the bytes the screen should apply,
-//! and the ordered events everything else reacts to (query replies, OSC state,
-//! mode changes, bells, clipboard, passthrough, titles).
+//! The emulator is [`Terminal`]: one chunk of a pane's byte stream in, the
+//! ordered [`TerminalEvent`] list the server has to act on out. Inside it the
+//! stream is parsed exactly once — by the DEC ANSI state machine tmux's
+//! `input.c` implements — the pane's options are applied, and the surviving
+//! output lands on the screen. Tokens, and the interleaving of applying them
+//! with observing them, are internal.
 //!
-//! The grid those bytes land on is [`PaneScreen`], hmux's own port of tmux's
-//! grid and screen model. It is the implementation, not one of several: there
-//! is no backend to select, so its operations are inherent methods and the
-//! ones that cannot fail say so in their signatures.
+//! The grid itself is [`PaneScreen`], hmux's own port of tmux's grid and
+//! screen model, reachable through the terminal for everything that reads it
+//! back out. It is the implementation, not one of several: there is no
+//! backend to select, so its operations are inherent methods and the ones
+//! that cannot fail say so in their signatures.
 //!
 //! # The contract
 //!
 //! The interface is the re-export list below and nothing else: every public
 //! item is named in this file, so the whole surface is managed in one place.
 //! The groups partition what the daemon needs from terminal emulation by
-//! consumer context, one vocabulary each: the tokenizer for anything that
-//! needs sequence framing without pane semantics, the observer for the pane
-//! path, the screen for the grid and the values reading it produces, the key
-//! and mouse identities an encode takes, and the width policy for measuring.
-//! The groups stay separate because they change for different reasons —
-//! owning the width tables should not mean owning the grid.
+//! consumer context, one vocabulary each: the terminal for the pane path, the
+//! screen for the grid and the values reading it produces, the key and mouse
+//! identities an encode takes, the answer scanner for the client tty path,
+//! the model for out-of-process harnesses, and the width policy for
+//! measuring. The groups stay separate because they change for different
+//! reasons — owning the width tables should not mean owning the grid.
 //!
 //! Outbound there is nothing: this crate depends on no server code and on no
 //! external crate at all. Every type crossing the boundary is owned here —
-//! [`OutputPolicy`], [`ScreenOptions`], the event and token types — and the
-//! server pushes resolved option values in rather than the emulator reading
-//! server state.
+//! [`OutputPolicy`], [`ScreenOptions`], the event types — and the server
+//! pushes resolved option values in rather than the emulator reading server
+//! state. Events are self-contained for the same reason in reverse: screen
+//! state an event reports is captured at the event's point in the stream, so
+//! the server acts on values, not on a screen it has to read at the right
+//! moment.
 //!
 //! One caveat: the width policy is process-global mutable state, mirroring
 //! tmux's global options — there is one width policy per process, not one per
 //! screen.
 
+mod answer;
 mod engine;
 mod input;
+mod model;
 mod observer;
 mod parser;
 mod screen;
+mod scroll;
 mod sixel;
+mod terminal;
 mod vis;
 mod width;
 mod x11_colour;
@@ -50,14 +59,16 @@ mod x11_colour;
 /// same answer the command language claims to implement.
 pub const TMUX_VERSION: &str = "3.7b";
 
-// The tokenizer: bytes to framed tokens, lossless and semantics-free.
-pub use parser::{tokenize, Param, Parser, StringEnd, Token, TokenKind};
+// The pane path: one chunk of the pane's byte stream in, ordered
+// self-contained events out, with the screen inside.
+pub use terminal::{Terminal, TerminalEvent};
 
-// The pane path: tokens to screen tokens plus ordered events, options applied.
+// The vocabulary the events carry and the option values pushed in.
 pub use observer::{
-    base64_decode_strict, decrqss_reply, parse_packed_colour, ClipboardEvent, CursorShape, Event,
-    Observed, Observer, OscUpdate, OutputPolicy, PassthroughPolicy, BACKGROUND_COLOR_QUERY,
+    decrqss_reply, parse_packed_colour, ClipboardEvent, CursorShape, OscUpdate, OutputPolicy,
+    PassthroughPolicy, BACKGROUND_COLOR_QUERY,
 };
+pub use parser::StringEnd;
 
 // The screen: the grid itself and the values reading it produces.
 pub use screen::{
@@ -67,6 +78,12 @@ pub use screen::{
 
 // The key and mouse identities an encode takes.
 pub use input::{encode_key_default_modes, Key, KeyEvent, MouseAction, MouseButton, MouseEvent};
+
+// The client tty path: the outer terminal's answers, picked out of its input.
+pub use answer::{AnswerScanner, TerminalAnswer};
+
+// The model for out-of-process harnesses: feed bytes, read the screen back.
+pub use model::TerminalModel;
 
 // The width policy: how many cells a codepoint occupies.
 pub use width::{codepoint_width, set_codepoint_widths, set_variation_selector_always_wide};

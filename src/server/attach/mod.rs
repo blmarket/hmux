@@ -282,11 +282,11 @@ struct AttachInputState {
     mouse: MouseInputState,
     key_prompt: KeyPromptState,
     terminal_reply: Option<PendingTerminalReply>,
-    /// The head of an OSC answer to a question the server put to this terminal
-    /// on a pane's behalf, held over a read boundary until its terminator
-    /// arrives. It is the server's answer, not the pane's input, so it is kept
-    /// apart from `terminal_reply`.
-    terminal_answer: Vec<u8>,
+    /// Picks out the answers to questions the server put to this terminal on a
+    /// pane's behalf, holding an unfinished one over a read boundary. They are
+    /// the server's answers, not the pane's input, so they are kept apart from
+    /// `terminal_reply`.
+    terminal_answer: hmux_vt::AnswerScanner,
     injected: VecDeque<ClientKey>,
 }
 
@@ -657,7 +657,7 @@ impl AttachCompositorState {
                 mouse: MouseInputState::default(),
                 key_prompt: KeyPromptState::Idle,
                 terminal_reply: None,
-                terminal_answer: Vec::new(),
+                terminal_answer: hmux_vt::AnswerScanner::new(),
                 injected: VecDeque::new(),
             },
             io_state: ClientIoState::Active,

@@ -927,7 +927,7 @@ fn osc52_reply_selection(selection: &str) -> String {
 
 /// Decode standard base64, rejecting anything that is not fully padded — which
 /// is what makes tmux drop `aGk` where it accepts `aGk=`.
-pub fn base64_decode_strict(text: &str) -> Option<Vec<u8>> {
+pub(crate) fn base64_decode_strict(text: &str) -> Option<Vec<u8>> {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let bytes = text.as_bytes();
     if bytes.is_empty() || !bytes.len().is_multiple_of(4) {

@@ -34,12 +34,21 @@ impl PaneScreen {
 
     /// Apply one parsed token.
     ///
-    /// The screen takes tokens rather than bytes because the pane's stream is
-    /// parsed once, upstream. This never fails: malformed input has already
+    /// The screen takes tokens rather than bytes because a live pane's stream
+    /// is parsed once, upstream. This never fails: malformed input has already
     /// been resolved by the parser, and a sequence the screen does not
     /// implement is ignored, not an error.
-    pub fn apply(&mut self, token: &Token) {
+    pub(crate) fn apply(&mut self, token: &Token) {
         self.engine.apply(&token.kind);
+    }
+
+    /// Apply a complete VT byte sequence, tokenized here. For rebuilding a
+    /// grid from previously dumped output; a live pane's stream belongs to
+    /// [`crate::Terminal`], whose tokenizer holds state across reads.
+    pub fn apply_vt(&mut self, vt: &[u8]) {
+        for token in crate::parser::tokenize(vt) {
+            self.apply(&token);
+        }
     }
 
     /// Resize the grid. Both dimensions are clamped to at least one.

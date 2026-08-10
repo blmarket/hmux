@@ -8,7 +8,6 @@
 use std::io;
 
 use super::PaneScreen;
-use hmux_vt::tokenize;
 use hmux_vt::{CellSemantic, CellWidth, Grid, GridCell, GridRow};
 
 #[derive(Clone, Debug)]
@@ -204,9 +203,7 @@ pub(super) fn reflow_copy_snapshot(state: &mut CopyState, cols: u16, rows: u16) 
         }
     }
     let mut terminal = PaneScreen::new(state.grid.cols, state.grid.viewport_rows);
-    for token in tokenize(&copy_reflow_vt(state)) {
-        terminal.apply(&token);
-    }
+    terminal.apply_vt(&copy_reflow_vt(state));
     terminal.resize(cols, rows);
     state.grid = terminal.grid_snapshot_range(0, terminal.grid_dims().total_rows);
     for (offset, semantic, hyperlink) in metadata {
@@ -254,9 +251,7 @@ fn view_output_vt(output: &[u8]) -> Vec<u8> {
 
 pub(super) fn view_copy_state(output: Vec<u8>, cols: u16, rows: u16) -> io::Result<CopyState> {
     let mut terminal = PaneScreen::new(cols.max(1), rows.max(1));
-    for token in tokenize(&view_output_vt(&output)) {
-        terminal.apply(&token);
-    }
+    terminal.apply_vt(&view_output_vt(&output));
     let total = terminal.grid_dims().total_rows;
     let grid = terminal.grid_snapshot_range(0, total);
     let vt = terminal.dump_vt_rows(0, total);

@@ -143,13 +143,14 @@ pub enum TokenKind {
     Rename { data: Vec<u8> },
 }
 
-/// A token plus the input bytes it was assembled from.
+/// A token plus the input bytes it was assembled from. Outside this crate it
+/// is opaque: a value that travels from the tokenizer to the screen.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Token {
-    pub kind: TokenKind,
+    pub(crate) kind: TokenKind,
     /// Every byte the parser consumed for this token, introducer and terminator
     /// included, in stream order.
-    pub raw: Vec<u8>,
+    pub(crate) raw: Vec<u8>,
 }
 
 /// tmux's `INPUT_BUF_START`: the string buffer starts here and doubles.
