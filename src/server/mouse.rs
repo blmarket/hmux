@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use super::key::{KeyBase, KeyCode, Modifiers, MouseKey, MouseKind, MouseLocation};
 use super::state::{PaneNode, PaneRect, ServerState, Session, Window};
 use super::status::{self, RenderedStatus, StatusRangeKind};
-use hmux_vt::input::{MouseAction, MouseButton as EncoderButton, MouseEvent as EncoderEvent};
+use hmux_vt::{MouseAction, MouseButton as EncoderButton, MouseEvent as EncoderEvent};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MouseProtocol {

@@ -54,7 +54,7 @@ use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
 use super::task::{
     Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest, WaitToken,
 };
-use hmux_vt::screen::{CaptureExtent, CellWidth, Grid, GridRow};
+use hmux_vt::{CaptureExtent, CellWidth, Grid, GridRow};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.

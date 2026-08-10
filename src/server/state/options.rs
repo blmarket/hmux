@@ -12,7 +12,7 @@ use super::{CustomizeOption, RenderInvalidation, ServerState};
 use crate::server::options::{
     is_array_option, option_scope, parse_option_name, GlobalOptions, OptionScope, OptionsView,
 };
-use hmux_vt::width;
+use hmux_vt::{set_codepoint_widths, set_variation_selector_always_wide};
 
 impl ServerState {
     pub(crate) fn option_changed(&mut self, name: &str) {
@@ -48,11 +48,11 @@ impl ServerState {
         // already in the grid keeps the width it was placed with.
         if name == "codepoint-widths" {
             let options = OptionsView::one(self.global_options.server());
-            width::set_codepoint_widths(options.array_values(name));
+            set_codepoint_widths(options.array_values(name));
         }
         if name == "variation-selector-always-wide" {
             let options = OptionsView::one(self.global_options.server());
-            width::set_variation_selector_always_wide(options.get(name) != Some("off"));
+            set_variation_selector_always_wide(options.get(name) != Some("off"));
         }
     }
 

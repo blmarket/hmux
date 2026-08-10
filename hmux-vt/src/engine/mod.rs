@@ -5,7 +5,8 @@
 //! scrolling rules. Where hmux's own semantics and tmux's cannot both hold, the
 //! divergence is documented rather than smoothed over.
 //!
-//! This is what a pane's grid actually is; [`super::PaneScreen`] is its face.
+//! This is what a pane's grid actually is; [`crate::screen::PaneScreen`] is its
+//! face.
 
 pub mod backend;
 pub mod cell;

@@ -1284,7 +1284,7 @@ mod tests {
     use super::copy::*;
     use super::*;
     use crate::event_loop::test_driver::run_on_loop;
-    use hmux_vt::screen::{CellSemantic, CellWidth, Grid, GridCell, GridRow, RowFlags};
+    use hmux_vt::{CellSemantic, CellWidth, Grid, GridCell, GridRow, RowFlags};
 
     #[test]
     fn copy_vt_rows_exclude_crlf_and_trailing_cursor() {

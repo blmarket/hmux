@@ -30,18 +30,18 @@ use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, Scr
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 use crate::server::input_keys::ExtendedKeys;
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
-use hmux_vt::observer::{
+use hmux_vt::{
     decrqss_reply, Event as VtEvent, Observer, OscUpdate, BACKGROUND_COLOR_QUERY,
 };
-use hmux_vt::parser::{Param, StringEnd, Token, TokenKind};
+use hmux_vt::{Param, StringEnd, Token, TokenKind};
 
-use hmux_vt::input::MouseEvent;
-pub(crate) use hmux_vt::observer::parse_packed_colour;
-pub(crate) use hmux_vt::observer::{
+use hmux_vt::MouseEvent;
+pub(crate) use hmux_vt::parse_packed_colour;
+pub(crate) use hmux_vt::{
     ClipboardEvent as PaneClipboardEvent, CursorShape as PaneCursorShape,
     OutputPolicy as PaneOutputPolicy, PassthroughPolicy,
 };
-use hmux_vt::screen::{mode, CaptureExtent, Grid, GridDims, ScreenImage, ScreenOptions};
+use hmux_vt::{mode, CaptureExtent, Grid, GridDims, ScreenImage, ScreenOptions};
 use hmux_vt::PaneScreen;
 
 /// A single pane. Holds the emulated screen and, if live, the child on its pty.
@@ -1067,7 +1067,7 @@ impl NativePaneObservation {
             return false;
         }
         let mut terminal = self.term.borrow_mut();
-        for token in hmux_vt::parser::tokenize(b"\x1b[m\x0f\x1b(B\x1b)B") {
+        for token in hmux_vt::tokenize(b"\x1b[m\x0f\x1b(B\x1b)B") {
             terminal.apply(&token);
         }
         drop(terminal);
@@ -1750,7 +1750,7 @@ impl Pane {
     /// Reset the emulated terminal state without sending bytes to the child.
     pub(crate) fn reset_terminal(&self) -> io::Result<()> {
         let mut terminal = self.observation.term.borrow_mut();
-        for token in hmux_vt::parser::tokenize(b"\x1bc") {
+        for token in hmux_vt::tokenize(b"\x1bc") {
             self.observation.write_terminal(&mut terminal, &token);
         }
         self.observation.record_change(false);
@@ -2024,7 +2024,7 @@ impl Pane {
     /// in hmux.
     pub fn clear_history(&self) -> io::Result<()> {
         let mut terminal = self.observation.term.borrow_mut();
-        for token in hmux_vt::parser::tokenize(b"\x1b[3J") {
+        for token in hmux_vt::tokenize(b"\x1b[3J") {
             self.observation.write_terminal(&mut terminal, &token);
         }
         self.observation.record_change(false);
@@ -3127,7 +3127,7 @@ mod tests {
     #[test]
     fn every_pane_state_glyph_is_exactly_two_columns() {
         use crate::integration::AgentState;
-        use hmux_vt::width::codepoint_width;
+        use hmux_vt::codepoint_width;
 
         let classes = [
             PaneClass::Dead,

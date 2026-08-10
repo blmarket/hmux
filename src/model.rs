@@ -10,7 +10,7 @@
 //! end-user contract — the daemon's contract is its tmux-compatible command
 //! line and wire protocol.
 
-use hmux_vt::parser::Parser;
+use hmux_vt::Parser;
 use hmux_vt::PaneScreen;
 
 /// A screen a harness can feed bytes to and read back.

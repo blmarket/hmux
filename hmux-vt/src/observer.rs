@@ -17,6 +17,13 @@
 //! This replaces a battery of independent detectors, each of which recovered
 //! escape-sequence framing from the raw byte stream on its own. There is one
 //! framing now, and it is `input.c`'s.
+//!
+//! The grammar of a sequence lives with the module that dispatches it. That is
+//! why the OSC 52 base64 rules ([`base64_decode_strict`]), the X11 colour
+//! grammar ([`parse_packed_colour`]) and the DECRQSS answers
+//! ([`decrqss_reply`]) are here: they parse and produce the payloads of
+//! sequences this module handles, even when a caller reuses one from another
+//! direction.
 
 use std::collections::VecDeque;
 

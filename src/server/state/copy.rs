@@ -8,8 +8,8 @@
 use std::io;
 
 use super::PaneScreen;
-use hmux_vt::parser::tokenize;
-use hmux_vt::screen::{CellSemantic, CellWidth, Grid, GridCell, GridRow};
+use hmux_vt::tokenize;
+use hmux_vt::{CellSemantic, CellWidth, Grid, GridCell, GridRow};
 
 #[derive(Clone, Debug)]
 pub(crate) struct CopyState {

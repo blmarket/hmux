@@ -1,6 +1,6 @@
 //! The width policy: how many cells a character occupies.
 //!
-//! Width is its own concern, kept out of [`crate::PaneScreen`]. tmux exposes it
+//! Width is its own concern, kept out of [`crate::screen::PaneScreen`]. tmux exposes it
 //! as options (`codepoint-widths`, `variation-selector-always-wide`), so the
 //! server sets the policy here; the emulator reads it where it combines a
 //! character, which is why the getter is crate-visible and the setters are

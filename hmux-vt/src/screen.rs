@@ -1,7 +1,7 @@
-//! The types a pane's grid is read back as.
+//! The pane's grid and the types it is read back as.
 //!
-//! The screen itself is [`crate::PaneScreen`]; this module holds the values its
-//! reads produce and the options it consults. They are shaped by what the
+//! The screen itself is [`PaneScreen`], re-exported here; the rest of the
+//! module holds the values its reads produce and the options it consults. They are shaped by what the
 //! daemon consumes: the bytes come from the tokenizer ([`super::observer`]),
 //! and the grid, the scrollback and the serializations of both come from the
 //! screen.
@@ -13,6 +13,8 @@
 use std::sync::Arc;
 
 use super::sixel::SixelImage;
+
+pub use crate::engine::backend::PaneScreen;
 
 /// tmux's `MODE_*`, the bits `screen->mode` carries.
 ///

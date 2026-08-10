@@ -2,7 +2,7 @@
 //!
 //! Encoding *reads* screen state — the cursor-key mode, the keypad mode, which
 //! mouse protocol the program asked for — so the mouse encoder is a method on
-//! [`crate::PaneScreen`], which tracks those modes. This module holds the
+//! [`crate::screen::PaneScreen`], which tracks those modes. This module holds the
 //! values that encoder takes and the one keyless encoding that needs no pane.
 
 /// A physical key identity, independent of the layout that produced it.

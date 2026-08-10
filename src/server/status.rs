@@ -13,7 +13,7 @@ use super::style::{self, CellPresentation, CellStyle, Colour, TerminalStyleWrite
 use super::term::{terminal_acs, terminal_utf8, TerminalCapabilities};
 use crate::integration::status::{PaneAgents, StatusSnapshot};
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
-use hmux_vt::width::codepoint_width;
+use hmux_vt::codepoint_width;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fmt::Write as _;
