@@ -44,7 +44,7 @@ pub mod mode {
     /// DECSET 1003: adds button-less motion.
     pub const MOUSE_ALL: u32 = 0x1000;
     pub const ORIGIN: u32 = 0x2000;
-    pub const CRLF: u32 = 0x4000;
+    pub(crate) const CRLF: u32 = 0x4000;
     /// `CSI > 4 ; 1 m`: the `modifyOtherKeys` level the pane asked for. What it
     /// gets also depends on `extended-keys`, which hmux applies where the key
     /// is encoded rather than here — so these two bits are the pane's request,
@@ -62,9 +62,9 @@ pub mod mode {
     pub const CURSOR_BLINKING_SET: u32 = 0x2_0000;
 
     /// tmux's `ALL_MOUSE_MODES`: the program asked for reports at all.
-    pub const ALL_MOUSE: u32 = MOUSE_STANDARD | MOUSE_BUTTON | MOUSE_ALL;
+    pub(crate) const ALL_MOUSE: u32 = MOUSE_STANDARD | MOUSE_BUTTON | MOUSE_ALL;
     /// tmux's `EXTENDED_KEY_MODES`.
-    pub const ALL_KEYS_EXTENDED: u32 = KEYS_EXTENDED | KEYS_EXTENDED_2;
+    pub(crate) const ALL_KEYS_EXTENDED: u32 = KEYS_EXTENDED | KEYS_EXTENDED_2;
 }
 
 /// Ghostty-style display-cell width classification.

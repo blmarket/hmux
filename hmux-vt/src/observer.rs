@@ -3,8 +3,8 @@
 //! [`Observer`] drives one [`Parser`] over a pane's output and turns the tokens
 //! into two things:
 //!
-//! - the bytes the screen backend should see, with the sequences the pane's
-//!   options refuse removed, and
+//! - the bytes the screen should see, with the sequences the pane's options
+//!   refuse removed, and
 //! - an ordered list of [`Event`]s: query replies, OSC state, mode changes,
 //!   bells, clipboard, passthrough, titles.
 //!
@@ -31,7 +31,7 @@ pub const BACKGROUND_COLOR_QUERY: &[u8] = b"\x1b]11;?\x1b\\";
 
 /// The DSR synchronization request Neovim appends to capability queries; the
 /// outer terminal's `CSI 0 n` tells it every preceding reply has arrived.
-pub const DEVICE_STATUS_REPORT_QUERY: &[u8] = b"\x1b[5n";
+const DEVICE_STATUS_REPORT_QUERY: &[u8] = b"\x1b[5n";
 
 /// The version XTVERSION reports. hmux presents a tmux-compatible surface, and
 /// an application that special-cases a terminal by name has to see the same
@@ -289,8 +289,8 @@ impl Observer {
         match token.kind.clone() {
             // The decoded character, not the bytes it came from: a malformed
             // sequence has already been resolved to one replacement here, and
-            // handing the original bytes on would let a backend that parses for
-            // itself resolve it again, differently.
+            // handing the original bytes on would let a second reader of those
+            // bytes resolve it again, differently.
             TokenKind::Print(character) => {
                 let mut buffer = [0u8; 4];
                 let bytes = character.encode_utf8(&mut buffer).as_bytes().to_vec();
@@ -951,7 +951,7 @@ pub fn parse_packed_colour(value: &str) -> Option<u32> {
 }
 
 /// An X11 colour specification as the `#rrggbb` string the formats report.
-pub fn parse_colour(value: &str) -> Option<String> {
+fn parse_colour(value: &str) -> Option<String> {
     let value = value.trim();
     let rgb = if let Some(parts) = value.strip_prefix("rgb:") {
         let parts: Vec<_> = parts.split('/').collect();
@@ -1037,8 +1037,8 @@ mod tests {
         OutputPolicy::default()
     }
 
-    /// The bytes a backend that parses for itself would be handed: every
-    /// token's own bytes, in order.
+    /// Every screen token's own bytes, in order — the byte stream the tokens
+    /// stand for.
     fn screen_bytes(observed: &Observed) -> Vec<u8> {
         observed
             .screen

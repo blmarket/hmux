@@ -1,9 +1,10 @@
 //! The width policy: how many cells a character occupies.
 //!
-//! Width is its own concern, not part of the screen trait. tmux exposes it as
-//! options (`codepoint-widths`, `variation-selector-always-wide`), so the
-//! policy has to be addressable on its own rather than buried in whichever
-//! emulator owns the grid.
+//! Width is its own concern, kept out of [`crate::PaneScreen`]. tmux exposes it
+//! as options (`codepoint-widths`, `variation-selector-always-wide`), so the
+//! server sets the policy here; the emulator reads it where it combines a
+//! character, which is why the getter is crate-visible and the setters are
+//! not.
 //!
 //! The oracle is the pinned tmux 3.7b, which resolves a width in two steps: it
 //! consults its width cache first, and falls back to `utf8proc_wcwidth`. We
@@ -27,7 +28,7 @@ static VARIATION_SELECTOR_ALWAYS_WIDE: AtomicBool = AtomicBool::new(true);
 
 /// Whether U+FE0F should force the cell it joins to two columns.
 #[must_use]
-pub fn variation_selector_always_wide() -> bool {
+pub(crate) fn variation_selector_always_wide() -> bool {
     VARIATION_SELECTOR_ALWAYS_WIDE.load(Ordering::Relaxed)
 }
 

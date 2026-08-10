@@ -13,9 +13,15 @@
 //! on its own now shares this one framing.
 //!
 //! Each token carries the exact input bytes it was built from ([`Token::raw`]),
-//! accumulated across reads the way tmux accumulates `since_ground`. A consumer
-//! that has to hand a sequence on to another emulator can forward those bytes
-//! verbatim rather than re-serializing parameters it may not round-trip.
+//! accumulated across reads the way tmux accumulates `since_ground`. That is
+//! what lets a sequence be forwarded verbatim — to the client's own terminal,
+//! or to a `capture-pane -P` reader — rather than re-serialized from parameters
+//! that may not round-trip.
+//!
+//! The public surface here is the token model, [`tokenize`] and [`Parser`], for
+//! the daemon's out-of-process terminal model. Capacity, pending-sequence,
+//! terminator and expiry control are crate-visible: [`super::observer`] is the
+//! facade a pane drives, and it owns the parser it drives.
 
 /// Where the state machine is between bytes. The names follow `input.c`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -70,7 +76,7 @@ impl Param {
     /// rather than as a number, and a handler that reads one abandons its
     /// operation instead of acting on the part before the colon. Only SGR looks
     /// past that, through [`Param::subs`].
-    pub fn get(&self, default: u32) -> Option<u32> {
+    pub(crate) fn get(&self, default: u32) -> Option<u32> {
         if self.is_string() {
             return None;
         }
@@ -79,7 +85,7 @@ impl Param {
 
     /// Whether the position carried sub-parameters — `input_split`'s
     /// `INPUT_STRING`.
-    pub fn is_string(&self) -> bool {
+    pub(crate) fn is_string(&self) -> bool {
         !self.subs.is_empty()
     }
 }
@@ -150,7 +156,7 @@ pub struct Token {
 const INPUT_BUFFER_START: usize = 32;
 
 /// tmux's `INPUT_BUF_DEFAULT_SIZE`, the `input-buffer-size` default.
-pub const INPUT_BUFFER_DEFAULT_SIZE: u32 = 1_048_576;
+pub(crate) const INPUT_BUFFER_DEFAULT_SIZE: u32 = 1_048_576;
 
 /// How long a terminal string may actually grow under `input-buffer-size`.
 ///
@@ -223,7 +229,7 @@ impl Default for Parser {
 impl Parser {
     /// Apply the current `input-buffer-size`. tmux reads the option each time
     /// it grows a string, so a change takes effect on the next sequence.
-    pub fn set_string_capacity(&mut self, limit: u32) {
+    pub(crate) fn set_string_capacity(&mut self, limit: u32) {
         self.string_capacity = input_buffer_capacity(limit);
     }
 
@@ -235,7 +241,7 @@ impl Parser {
     /// the way back in, so a partly-collected UTF-8 character is not pending
     /// input: `input.c` collects those without leaving ground, and so does
     /// this.
-    pub fn pending(&self) -> &[u8] {
+    pub(crate) fn pending(&self) -> &[u8] {
         if self.state == State::Ground {
             &[]
         } else {
@@ -254,7 +260,7 @@ impl Parser {
     /// sequence begins; a caller that only watches this across whole reads
     /// restarts it once per read instead, which against a five-second timeout
     /// is not an observable difference.
-    pub fn awaiting_terminator(&self) -> bool {
+    pub(crate) fn awaiting_terminator(&self) -> bool {
         matches!(
             self.state,
             State::DcsEnter
@@ -283,7 +289,7 @@ impl Parser {
     ///
     /// A part-collected UTF-8 character survives, as it survives every other
     /// way out of a string state: `input_reset` does not clear `utf8started`.
-    pub fn expire(&mut self) -> bool {
+    pub(crate) fn expire(&mut self) -> bool {
         if !self.awaiting_terminator() {
             return false;
         }

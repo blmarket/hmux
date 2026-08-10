@@ -13,30 +13,23 @@
 pub struct Key(i32);
 
 impl Key {
-    /// The opaque code, which the encoder reads to identify the key.
-    pub fn code(self) -> i32 {
-        self.0
-    }
-}
-
-impl Key {
-    pub const UNIDENTIFIED: Key = Key(0);
-    pub const BACKQUOTE: Key = Key(1);
-    pub const BACKSLASH: Key = Key(2);
-    pub const BRACKET_LEFT: Key = Key(3);
-    pub const BRACKET_RIGHT: Key = Key(4);
-    pub const COMMA: Key = Key(5);
-    pub const DIGIT_0: Key = Key(6);
-    pub const EQUAL: Key = Key(16);
-    pub const A: Key = Key(20);
-    pub const MINUS: Key = Key(46);
-    pub const PERIOD: Key = Key(47);
-    pub const QUOTE: Key = Key(48);
-    pub const SEMICOLON: Key = Key(49);
-    pub const SLASH: Key = Key(50);
+    pub(crate) const UNIDENTIFIED: Key = Key(0);
+    pub(crate) const BACKQUOTE: Key = Key(1);
+    pub(crate) const BACKSLASH: Key = Key(2);
+    pub(crate) const BRACKET_LEFT: Key = Key(3);
+    pub(crate) const BRACKET_RIGHT: Key = Key(4);
+    pub(crate) const COMMA: Key = Key(5);
+    pub(crate) const DIGIT_0: Key = Key(6);
+    pub(crate) const EQUAL: Key = Key(16);
+    pub(crate) const A: Key = Key(20);
+    pub(crate) const MINUS: Key = Key(46);
+    pub(crate) const PERIOD: Key = Key(47);
+    pub(crate) const QUOTE: Key = Key(48);
+    pub(crate) const SEMICOLON: Key = Key(49);
+    pub(crate) const SLASH: Key = Key(50);
     pub const BACKSPACE: Key = Key(53);
     pub const ENTER: Key = Key(58);
-    pub const SPACE: Key = Key(63);
+    pub(crate) const SPACE: Key = Key(63);
     pub const TAB: Key = Key(64);
     pub const DELETE: Key = Key(68);
     pub const END: Key = Key(69);
@@ -48,7 +41,7 @@ impl Key {
     pub const ARROW_LEFT: Key = Key(76);
     pub const ARROW_RIGHT: Key = Key(77);
     pub const ARROW_UP: Key = Key(78);
-    pub const NUMPAD_0: Key = Key(80);
+    pub(crate) const NUMPAD_0: Key = Key(80);
     pub const NUMPAD_ADD: Key = Key(90);
     pub const NUMPAD_DECIMAL: Key = Key(95);
     pub const NUMPAD_DIVIDE: Key = Key(96);
@@ -56,7 +49,7 @@ impl Key {
     pub const NUMPAD_MULTIPLY: Key = Key(104);
     pub const NUMPAD_SUBTRACT: Key = Key(107);
     pub const ESCAPE: Key = Key(120);
-    pub const F1: Key = Key(121);
+    pub(crate) const F1: Key = Key(121);
 
     /// Map a printable US-layout ASCII character to the key that bears it.
     pub fn from_ascii(ch: char) -> Key {
@@ -87,7 +80,7 @@ impl Key {
     }
 
     /// The function-key number this key is, the inverse of [`Key::function`].
-    pub fn function_number(self) -> Option<u8> {
+    pub(crate) fn function_number(self) -> Option<u8> {
         let offset = self.0 - Key::F1.0;
         (0..12)
             .contains(&offset)
