@@ -17,7 +17,7 @@
 
 use crate::observer::{decrqss_reply, CursorShape, Event, Observer, OscState, OutputPolicy};
 use crate::parser::{tokenize, StringEnd, Token};
-use crate::screen::{mode, PaneScreen};
+use crate::screen::{mode, PaneScreen, ScreenOptions};
 use crate::scroll::ScrollRedraw;
 use crate::ClipboardEvent;
 
@@ -78,10 +78,21 @@ impl Terminal {
         &self.screen
     }
 
-    /// The screen, for the operations that change it from outside the byte
-    /// stream: options, the history limit, history trimming.
-    pub fn screen_mut(&mut self) -> &mut PaneScreen {
-        &mut self.screen
+    /// Apply the pane options the screen consults; see [`ScreenOptions`].
+    pub fn set_screen_options(&mut self, options: ScreenOptions) {
+        self.screen.set_options(options);
+    }
+
+    /// Apply a pane's history limit to the retained primary-screen scrollback.
+    pub fn set_history_limit(&mut self, limit: usize) {
+        self.screen.set_history_limit(limit);
+    }
+
+    /// `resize-pane -T`: drop the rows below the cursor and pull the same
+    /// number of rows out of the history in their place; see
+    /// [`PaneScreen::trim_history_below_cursor`].
+    pub fn trim_history_below_cursor(&mut self) {
+        self.screen.trim_history_below_cursor();
     }
 
     /// Resize the screen, keeping the scroll classification in step.

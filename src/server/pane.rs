@@ -1478,20 +1478,12 @@ impl Pane {
     /// Like the output policy, these are pushed rather than looked up, and for
     /// the same reason: the screen has no view of the option tables.
     pub(crate) fn set_screen_options(&self, options: ScreenOptions) {
-        self.observation
-            .term
-            .borrow_mut()
-            .screen_mut()
-            .set_options(options);
+        self.observation.term.borrow_mut().set_screen_options(options);
     }
 
     /// Apply the session's history cap to the pane's primary scrollback.
     pub(crate) fn set_history_limit(&self, limit: usize) {
-        self.observation
-            .term
-            .borrow_mut()
-            .screen_mut()
-            .set_history_limit(limit);
+        self.observation.term.borrow_mut().set_history_limit(limit);
     }
 
     /// Publish the options the pane's output is parsed against. The server
@@ -1579,11 +1571,7 @@ impl Pane {
 
     /// `resize-pane -T`; see [`PaneScreen::trim_history_below_cursor`].
     pub(crate) fn trim_history_below_cursor(&self) {
-        self.observation
-            .term
-            .borrow_mut()
-            .screen_mut()
-            .trim_history_below_cursor();
+        self.observation.term.borrow_mut().trim_history_below_cursor();
     }
 
     /// The screen the alternate-screen switch displaced, which
