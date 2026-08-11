@@ -73,19 +73,8 @@ pub(crate) fn exec(
             return CommandResult::err("no mouse target\n");
         };
         let mouse_target = format!("%{pane_id}");
-        let wait = state
-            .pane_observation_state(&mouse_target)
-            .ok()
-            .map(|observation| {
-                let revision = observation.contract_revision();
-                (observation, revision)
-            });
         return match state.input_mouse_to_pane(&mouse_target, event) {
-            Ok(()) => {
-                let mut result = CommandResult::ok("");
-                result.pane_output_wait = wait;
-                result
-            }
+            Ok(()) => CommandResult::ok(""),
             Err(_) => CommandResult::err("no mouse target\n"),
         };
     }
@@ -651,19 +640,8 @@ fn run_mode_bindings(target: &str, bindings: Vec<KeyBinding>) -> CommandResult {
 }
 
 fn write_pane_input(state: &mut ServerState, target: &str, bytes: &[u8]) -> CommandResult {
-    let wait = state
-        .pane_observation_state(target)
-        .ok()
-        .map(|observation| {
-            let revision = observation.contract_revision();
-            (observation, revision)
-        });
     match state.input_to_pane(target, bytes) {
-        Ok(()) => {
-            let mut result = CommandResult::ok("");
-            result.pane_output_wait = wait;
-            result
-        }
+        Ok(()) => CommandResult::ok(""),
         Err(_) => CommandResult::err(format!("{}\n", state.pane_target_error(target))),
     }
 }

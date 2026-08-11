@@ -5,7 +5,7 @@
 //! the tmux client, identify-time feature hints, and configured feature and
 //! capability overrides.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::ffi::CString;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -15,56 +15,280 @@ enum CapabilityType {
     String,
 }
 
-// Keep this catalog in the same order and spelling as tmux's tty-term.c.
-// Identify messages contain only these entries, and overrides for unknown
-// names are ignored rather than creating ad-hoc capabilities.
-const FLAG_CAPABILITIES: &[&str] = &["am", "AX", "bce", "RGB", "Sxl", "Tc", "XT"];
-const NUMBER_CAPABILITIES: &[&str] = &["colors", "U8"];
-const STRING_CAPABILITIES: &[&str] = &[
-    "acsc", "bel", "Bidi", "blink", "bold", "civis", "clear", "Clmg", "Cmg", "cnorm", "Cr", "csr",
-    "Cs", "cub1", "cub", "cud1", "cud", "cuf1", "cuf", "cup", "cuu1", "cuu", "cvvis", "dch1",
-    "dch", "dim", "dl1", "dl", "Dseks", "Dsfcs", "Dsbp", "Dsmg", "E3", "ech", "ed", "el1", "el",
-    "enacs", "Enbp", "Eneks", "Enfcs", "Enmg", "fsl", "Hls", "home", "hpa", "ich1", "ich", "il1",
-    "il", "indn", "invis", "kcbt", "kcub1", "kcud1", "kcuf1", "kcuu1", "kDC", "kDC3", "kDC4",
-    "kDC5", "kDC6", "kDC7", "kdch1", "kDN", "kDN3", "kDN4", "kDN5", "kDN6", "kDN7", "kEND",
-    "kEND3", "kEND4", "kEND5", "kEND6", "kEND7", "kend", "kf10", "kf11", "kf12", "kf13", "kf14",
-    "kf15", "kf16", "kf17", "kf18", "kf19", "kf1", "kf20", "kf21", "kf22", "kf23", "kf24", "kf25",
-    "kf26", "kf27", "kf28", "kf29", "kf2", "kf30", "kf31", "kf32", "kf33", "kf34", "kf35", "kf36",
-    "kf37", "kf38", "kf39", "kf3", "kf40", "kf41", "kf42", "kf43", "kf44", "kf45", "kf46", "kf47",
-    "kf48", "kf49", "kf4", "kf50", "kf51", "kf52", "kf53", "kf54", "kf55", "kf56", "kf57", "kf58",
-    "kf59", "kf5", "kf60", "kf61", "kf62", "kf63", "kf6", "kf7", "kf8", "kf9", "kHOM", "kHOM3",
-    "kHOM4", "kHOM5", "kHOM6", "kHOM7", "khome", "kIC", "kIC3", "kIC4", "kIC5", "kIC6", "kIC7",
-    "kich1", "kind", "kLFT", "kLFT3", "kLFT4", "kLFT5", "kLFT6", "kLFT7", "kmous", "knp", "kNXT",
-    "kNXT3", "kNXT4", "kNXT5", "kNXT6", "kNXT7", "kpp", "kPRV", "kPRV3", "kPRV4", "kPRV5", "kPRV6",
-    "kPRV7", "kRIT", "kRIT3", "kRIT4", "kRIT5", "kRIT6", "kRIT7", "kri", "kUP", "kUP3", "kUP4",
-    "kUP5", "kUP6", "kUP7", "Ms", "Nobr", "ol", "op", "Rect", "rev", "rin", "ri", "rmacs", "rmcup",
-    "rmkx", "setab", "setaf", "setal", "setrgbb", "setrgbf", "Setulc", "Setulc1", "Se", "sgr0",
-    "sitm", "smacs", "smcup", "smkx", "Smol", "smso", "Smulx", "smul", "smxx", "Spb", "Ss", "Swd",
-    "Sync", "tsl", "vpa",
-];
+macro_rules! capability_catalog {
+    ($($name:ident: $kind:ident,)*) => {
+        /// Terminal capability codes, one per entry of tmux's tty-term.c
+        /// catalog and in the same order: the ordinal is output-visible
+        /// through [`ResolvedTerm::descriptions`]. Identify messages contain
+        /// only these entries, and overrides for unknown names are ignored
+        /// rather than creating ad-hoc capabilities.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        #[allow(non_camel_case_types)] // variants keep tmux's exact spellings
+        #[repr(u8)]
+        pub(crate) enum Capability {
+            $($name,)*
+        }
 
-const CAPABILITY_NAMES: &[&str] = &[
-    "acsc", "am", "AX", "bce", "bel", "Bidi", "blink", "bold", "civis", "clear", "Clmg", "Cmg",
-    "cnorm", "colors", "Cr", "Cs", "csr", "cub", "cub1", "cud", "cud1", "cuf", "cuf1", "cup",
-    "cuu", "cuu1", "cvvis", "dch", "dch1", "dim", "dl", "dl1", "Dsbp", "Dseks", "Dsfcs", "Dsmg",
-    "E3", "ech", "ed", "el", "el1", "enacs", "Enbp", "Eneks", "Enfcs", "Enmg", "fsl", "Hls",
-    "home", "hpa", "ich", "ich1", "il", "il1", "indn", "invis", "kcbt", "kcub1", "kcud1", "kcuf1",
-    "kcuu1", "kDC", "kDC3", "kDC4", "kDC5", "kDC6", "kDC7", "kdch1", "kDN", "kDN3", "kDN4", "kDN5",
-    "kDN6", "kDN7", "kend", "kEND", "kEND3", "kEND4", "kEND5", "kEND6", "kEND7", "kf1", "kf10",
-    "kf11", "kf12", "kf13", "kf14", "kf15", "kf16", "kf17", "kf18", "kf19", "kf2", "kf20", "kf21",
-    "kf22", "kf23", "kf24", "kf25", "kf26", "kf27", "kf28", "kf29", "kf3", "kf30", "kf31", "kf32",
-    "kf33", "kf34", "kf35", "kf36", "kf37", "kf38", "kf39", "kf4", "kf40", "kf41", "kf42", "kf43",
-    "kf44", "kf45", "kf46", "kf47", "kf48", "kf49", "kf5", "kf50", "kf51", "kf52", "kf53", "kf54",
-    "kf55", "kf56", "kf57", "kf58", "kf59", "kf6", "kf60", "kf61", "kf62", "kf63", "kf7", "kf8",
-    "kf9", "kHOM", "kHOM3", "kHOM4", "kHOM5", "kHOM6", "kHOM7", "khome", "kIC", "kIC3", "kIC4",
-    "kIC5", "kIC6", "kIC7", "kich1", "kind", "kLFT", "kLFT3", "kLFT4", "kLFT5", "kLFT6", "kLFT7",
-    "kmous", "knp", "kNXT", "kNXT3", "kNXT4", "kNXT5", "kNXT6", "kNXT7", "kpp", "kPRV", "kPRV3",
-    "kPRV4", "kPRV5", "kPRV6", "kPRV7", "kri", "kRIT", "kRIT3", "kRIT4", "kRIT5", "kRIT6", "kRIT7",
-    "kUP", "kUP3", "kUP4", "kUP5", "kUP6", "kUP7", "Ms", "Nobr", "ol", "op", "Rect", "rev", "RGB",
-    "ri", "rin", "rmacs", "rmcup", "rmkx", "Se", "setab", "setaf", "setal", "setrgbb", "setrgbf",
-    "Setulc", "Setulc1", "sgr0", "sitm", "smacs", "smcup", "smkx", "Smol", "smso", "smul", "Smulx",
-    "smxx", "Spb", "Sxl", "Ss", "Swd", "Sync", "Tc", "tsl", "U8", "vpa", "XT",
-];
+        impl Capability {
+            const ALL: &'static [Capability] = &[$(Capability::$name),*];
+
+            fn from_name(name: &str) -> Option<Self> {
+                match name {
+                    $(stringify!($name) => Some(Self::$name),)*
+                    _ => None,
+                }
+            }
+
+            fn name(self) -> &'static str {
+                match self {
+                    $(Self::$name => stringify!($name),)*
+                }
+            }
+
+            fn value_type(self) -> CapabilityType {
+                match self {
+                    $(Self::$name => CapabilityType::$kind,)*
+                }
+            }
+        }
+    };
+}
+
+capability_catalog! {
+    acsc: String,
+    am: Flag,
+    AX: Flag,
+    bce: Flag,
+    bel: String,
+    Bidi: String,
+    blink: String,
+    bold: String,
+    civis: String,
+    clear: String,
+    Clmg: String,
+    Cmg: String,
+    cnorm: String,
+    colors: Number,
+    Cr: String,
+    Cs: String,
+    csr: String,
+    cub: String,
+    cub1: String,
+    cud: String,
+    cud1: String,
+    cuf: String,
+    cuf1: String,
+    cup: String,
+    cuu: String,
+    cuu1: String,
+    cvvis: String,
+    dch: String,
+    dch1: String,
+    dim: String,
+    dl: String,
+    dl1: String,
+    Dsbp: String,
+    Dseks: String,
+    Dsfcs: String,
+    Dsmg: String,
+    E3: String,
+    ech: String,
+    ed: String,
+    el: String,
+    el1: String,
+    enacs: String,
+    Enbp: String,
+    Eneks: String,
+    Enfcs: String,
+    Enmg: String,
+    fsl: String,
+    Hls: String,
+    home: String,
+    hpa: String,
+    ich: String,
+    ich1: String,
+    il: String,
+    il1: String,
+    indn: String,
+    invis: String,
+    kcbt: String,
+    kcub1: String,
+    kcud1: String,
+    kcuf1: String,
+    kcuu1: String,
+    kDC: String,
+    kDC3: String,
+    kDC4: String,
+    kDC5: String,
+    kDC6: String,
+    kDC7: String,
+    kdch1: String,
+    kDN: String,
+    kDN3: String,
+    kDN4: String,
+    kDN5: String,
+    kDN6: String,
+    kDN7: String,
+    kend: String,
+    kEND: String,
+    kEND3: String,
+    kEND4: String,
+    kEND5: String,
+    kEND6: String,
+    kEND7: String,
+    kf1: String,
+    kf10: String,
+    kf11: String,
+    kf12: String,
+    kf13: String,
+    kf14: String,
+    kf15: String,
+    kf16: String,
+    kf17: String,
+    kf18: String,
+    kf19: String,
+    kf2: String,
+    kf20: String,
+    kf21: String,
+    kf22: String,
+    kf23: String,
+    kf24: String,
+    kf25: String,
+    kf26: String,
+    kf27: String,
+    kf28: String,
+    kf29: String,
+    kf3: String,
+    kf30: String,
+    kf31: String,
+    kf32: String,
+    kf33: String,
+    kf34: String,
+    kf35: String,
+    kf36: String,
+    kf37: String,
+    kf38: String,
+    kf39: String,
+    kf4: String,
+    kf40: String,
+    kf41: String,
+    kf42: String,
+    kf43: String,
+    kf44: String,
+    kf45: String,
+    kf46: String,
+    kf47: String,
+    kf48: String,
+    kf49: String,
+    kf5: String,
+    kf50: String,
+    kf51: String,
+    kf52: String,
+    kf53: String,
+    kf54: String,
+    kf55: String,
+    kf56: String,
+    kf57: String,
+    kf58: String,
+    kf59: String,
+    kf6: String,
+    kf60: String,
+    kf61: String,
+    kf62: String,
+    kf63: String,
+    kf7: String,
+    kf8: String,
+    kf9: String,
+    kHOM: String,
+    kHOM3: String,
+    kHOM4: String,
+    kHOM5: String,
+    kHOM6: String,
+    kHOM7: String,
+    khome: String,
+    kIC: String,
+    kIC3: String,
+    kIC4: String,
+    kIC5: String,
+    kIC6: String,
+    kIC7: String,
+    kich1: String,
+    kind: String,
+    kLFT: String,
+    kLFT3: String,
+    kLFT4: String,
+    kLFT5: String,
+    kLFT6: String,
+    kLFT7: String,
+    kmous: String,
+    knp: String,
+    kNXT: String,
+    kNXT3: String,
+    kNXT4: String,
+    kNXT5: String,
+    kNXT6: String,
+    kNXT7: String,
+    kpp: String,
+    kPRV: String,
+    kPRV3: String,
+    kPRV4: String,
+    kPRV5: String,
+    kPRV6: String,
+    kPRV7: String,
+    kri: String,
+    kRIT: String,
+    kRIT3: String,
+    kRIT4: String,
+    kRIT5: String,
+    kRIT6: String,
+    kRIT7: String,
+    kUP: String,
+    kUP3: String,
+    kUP4: String,
+    kUP5: String,
+    kUP6: String,
+    kUP7: String,
+    Ms: String,
+    Nobr: String,
+    ol: String,
+    op: String,
+    Rect: String,
+    rev: String,
+    RGB: Flag,
+    ri: String,
+    rin: String,
+    rmacs: String,
+    rmcup: String,
+    rmkx: String,
+    Se: String,
+    setab: String,
+    setaf: String,
+    setal: String,
+    setrgbb: String,
+    setrgbf: String,
+    Setulc: String,
+    Setulc1: String,
+    sgr0: String,
+    sitm: String,
+    smacs: String,
+    smcup: String,
+    smkx: String,
+    Smol: String,
+    smso: String,
+    smul: String,
+    Smulx: String,
+    smxx: String,
+    Spb: String,
+    Sxl: Flag,
+    Ss: String,
+    Swd: String,
+    Sync: String,
+    Tc: Flag,
+    tsl: String,
+    U8: Number,
+    vpa: String,
+    XT: Flag,
+}
 
 const DEFAULT_TERMINAL_FEATURES: &[&str] = &[
     "xterm*:clipboard:ccolour:cstyle:focus:title",
@@ -263,7 +487,7 @@ pub(crate) enum CapabilityValue {
 pub(crate) trait TerminalCapabilities {
     fn name(&self) -> &str;
 
-    fn capability(&self, name: &str) -> Option<&CapabilityValue>;
+    fn capability(&self, capability: Capability) -> Option<&CapabilityValue>;
 
     #[allow(dead_code)] // consumed as terminal-feature-driven output migrates here
     fn has_feature(&self, name: &str) -> bool;
@@ -274,12 +498,15 @@ pub(crate) trait TerminalCapabilities {
 
     fn generation(&self) -> u64;
 
-    fn flag(&self, name: &str) -> bool {
-        matches!(self.capability(name), Some(CapabilityValue::Flag(true)))
+    fn flag(&self, capability: Capability) -> bool {
+        matches!(
+            self.capability(capability),
+            Some(CapabilityValue::Flag(true))
+        )
     }
 
     fn auto_margin(&self) -> bool {
-        self.flag("am")
+        self.flag(Capability::am)
     }
 }
 
@@ -292,17 +519,20 @@ pub(crate) enum CapabilityParameter<'a> {
 
 pub(crate) fn string_capability<'a>(
     terminal: &'a dyn TerminalCapabilities,
-    name: &str,
+    capability: Capability,
 ) -> Option<&'a [u8]> {
-    match terminal.capability(name) {
+    match terminal.capability(capability) {
         Some(CapabilityValue::String(value)) => Some(value),
         _ => None,
     }
 }
 
 #[allow(dead_code)] // consumed as color selection migrates to resolved capabilities
-pub(crate) fn number_capability(terminal: &dyn TerminalCapabilities, name: &str) -> Option<i32> {
-    match terminal.capability(name) {
+pub(crate) fn number_capability(
+    terminal: &dyn TerminalCapabilities,
+    capability: Capability,
+) -> Option<i32> {
+    match terminal.capability(capability) {
         Some(CapabilityValue::Number(value)) => Some(*value),
         _ => None,
     }
@@ -323,12 +553,12 @@ pub(crate) fn number_capability(terminal: &dyn TerminalCapabilities, name: &str)
 /// parser for balanced conditionals.
 pub(crate) fn expand_capability(
     terminal: &dyn TerminalCapabilities,
-    name: &str,
+    capability: Capability,
     parameters: &[CapabilityParameter<'_>],
 ) -> Option<Vec<u8>> {
     use terminfo::expand::{Context, Expand, Parameter};
 
-    let value = string_capability(terminal, name)?;
+    let value = string_capability(terminal, capability)?;
     let arguments = parameters
         .iter()
         .map(|parameter| match parameter {
@@ -425,14 +655,25 @@ impl TerminalIdentity {
 }
 
 /// One attached client's effective terminal profile.
+///
+/// Capabilities are stored by [`Capability`] ordinal; features are the bitmask
+/// whose bit positions are `FEATURES` table indices, the same encoding the
+/// identify wire protocol uses.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ResolvedTerm {
     identity: TerminalIdentity,
-    capabilities: BTreeMap<String, CapabilityValue>,
-    features: BTreeSet<String>,
+    capabilities: Vec<Option<CapabilityValue>>,
+    features: u32,
     terminal_flags: u8,
     acs: BTreeMap<u8, u8>,
     generation: u64,
+}
+
+fn feature_bit(name: &str) -> Option<u32> {
+    FEATURES
+        .iter()
+        .position(|feature| feature.name == name)
+        .map(|index| 1 << index)
 }
 
 impl ResolvedTerm {
@@ -451,30 +692,30 @@ impl ResolvedTerm {
     pub(crate) fn refresh<'a>(&mut self, options: impl IntoIterator<Item = (&'a str, &'a str)>) {
         self.generation = self.generation.wrapping_add(1);
         self.capabilities.clear();
+        self.capabilities.resize(Capability::ALL.len(), None);
         for entry in &self.identity.capabilities {
             let Some((name, value)) = entry.split_once('=') else {
                 continue;
             };
-            if let Some(value) = identify_value(name, value) {
-                self.capabilities.insert(name.to_string(), value);
+            let Some(capability) = Capability::from_name(name) else {
+                continue;
+            };
+            if let Some(value) = identify_value(capability, value) {
+                self.capabilities[capability as usize] = Some(value);
             }
         }
 
-        self.features.clear();
-        for (index, feature) in FEATURES.iter().enumerate() {
-            if self.identity.feature_bits & (1_u32 << index) != 0 {
-                self.features.insert(feature.name.to_string());
-            }
-        }
+        const KNOWN_FEATURES: u32 = (1 << FEATURES.len()) - 1;
+        self.features = self.identity.feature_bits & KNOWN_FEATURES;
         match self.identity.colorterm.as_deref() {
             Some(value)
                 if value.eq_ignore_ascii_case("truecolor")
                     || value.eq_ignore_ascii_case("24bit") =>
             {
-                self.features.insert("RGB".to_string());
+                self.add_features(&["RGB"]);
             }
             Some(value) if value.contains("256") => {
-                self.features.insert("256".to_string());
+                self.add_features(&["256"]);
             }
             _ => {}
         }
@@ -493,14 +734,14 @@ impl ResolvedTerm {
                 continue;
             }
             for feature in fields {
-                let Some(canonical) = FEATURES
+                let Some(index) = FEATURES
                     .iter()
-                    .find(|known| known.name.eq_ignore_ascii_case(&feature))
+                    .position(|known| known.name.eq_ignore_ascii_case(&feature))
                 else {
                     // tty_add_features stops at the first unknown name.
                     break;
                 };
-                self.features.insert(canonical.name.to_string());
+                self.features |= 1 << index;
             }
         }
 
@@ -509,23 +750,24 @@ impl ResolvedTerm {
         self.apply_overrides(&options);
         self.recompute_derived_flags(0);
 
-        let vt100_like = self.flag_value("XT")
+        let vt100_like = self.flag_value(Capability::XT)
             || self
-                .string_value("clear")
+                .string_value(Capability::clear)
                 .is_some_and(|clear| clear.starts_with(b"\x1b["));
         if vt100_like {
-            self.add_feature_names(["bpaste", "focus", "title"]);
+            self.add_features(&["bpaste", "focus", "title"]);
         }
 
-        if (self.flag_value("Tc") || self.has_capability("RGB"))
-            && (!self.has_capability("setrgbf") || !self.has_capability("setrgbb"))
+        if (self.flag_value(Capability::Tc) || self.has_capability(Capability::RGB))
+            && (!self.has_capability(Capability::setrgbf)
+                || !self.has_capability(Capability::setrgbb))
         {
-            self.add_feature_names(["RGB"]);
+            self.add_features(&["RGB"]);
         }
 
         let mut feature_flags = 0;
-        for feature in FEATURES {
-            if !self.features.contains(feature.name) {
+        for (index, feature) in FEATURES.iter().enumerate() {
+            if self.features & (1 << index) == 0 {
                 continue;
             }
             for capabilities in feature.capabilities {
@@ -539,10 +781,10 @@ impl ResolvedTerm {
         // into the profile before the final override pass so `Smol@` can still
         // explicitly remove it.
         if (self.identity.name.starts_with("screen") || self.identity.name.starts_with("tmux"))
-            && !self.has_capability("Smol")
+            && !self.has_capability(Capability::Smol)
         {
             self.apply_capabilities(FEATURE_OVERLINE[0]);
-            self.features.insert("overline".into());
+            self.add_features(&["overline"]);
         }
 
         self.apply_overrides(&options);
@@ -554,9 +796,9 @@ impl ResolvedTerm {
     }
 
     pub(crate) fn validation_error(&self) -> Option<&'static str> {
-        if !self.has_capability("clear") {
+        if !self.has_capability(Capability::clear) {
             Some("terminal does not support clear")
-        } else if !self.has_capability("cup") {
+        } else if !self.has_capability(Capability::cup) {
             Some("terminal does not support cup")
         } else {
             None
@@ -578,18 +820,19 @@ impl ResolvedTerm {
     pub(crate) fn feature_list(&self) -> String {
         FEATURES
             .iter()
-            .filter(|feature| self.features.contains(feature.name))
-            .map(|feature| feature.name)
+            .enumerate()
+            .filter(|(index, _)| self.features & (1 << index) != 0)
+            .map(|(_, feature)| feature.name)
             .collect::<Vec<_>>()
             .join(",")
     }
 
     pub(crate) fn descriptions(&self) -> Vec<String> {
-        CAPABILITY_NAMES
+        Capability::ALL
             .iter()
-            .enumerate()
-            .map(|(index, name)| {
-                let description = match self.capabilities.get(*name) {
+            .map(|capability| {
+                let index = *capability as usize;
+                let description = match self.get(*capability) {
                     None => "[missing]".to_string(),
                     Some(CapabilityValue::Flag(value)) => format!("(flag) {value}"),
                     Some(CapabilityValue::Number(value)) => format!("(number) {value}"),
@@ -597,14 +840,14 @@ impl ResolvedTerm {
                         format!("(string) {}", visible_capability(value))
                     }
                 };
-                format!("{index:4}: {name}: {description}")
+                format!("{index:4}: {}: {description}", capability.name())
             })
             .collect()
     }
 
-    fn add_feature_names<const N: usize>(&mut self, names: [&str; N]) {
+    fn add_features(&mut self, names: &[&str]) {
         for name in names {
-            self.features.insert(name.to_string());
+            self.features |= feature_bit(name).expect("catalogued feature name");
         }
     }
 
@@ -642,18 +885,18 @@ impl ResolvedTerm {
             return;
         }
         if let Some(name) = field.strip_suffix('@').filter(|_| !field.contains('=')) {
-            if capability_type(name).is_some() {
-                self.capabilities.remove(name);
+            if let Some(capability) = Capability::from_name(name) {
+                self.capabilities[capability as usize] = None;
             }
             return;
         }
 
         let (name, encoded) = field.split_once('=').unwrap_or((field, ""));
-        let Some(kind) = capability_type(name) else {
+        let Some(capability) = Capability::from_name(name) else {
             return;
         };
         let decoded = decode_vis(encoded).unwrap_or_else(|| encoded.as_bytes().to_vec());
-        let value = match kind {
+        let value = match capability.value_type() {
             // The presence of a flag in an override enables it. tmux ignores
             // the assigned value even for spellings such as `am=0`.
             CapabilityType::Flag => CapabilityValue::Flag(true),
@@ -668,22 +911,25 @@ impl ResolvedTerm {
             }
             CapabilityType::String => CapabilityValue::String(decoded),
         };
-        self.capabilities.insert(name.to_string(), value);
+        self.capabilities[capability as usize] = Some(value);
     }
 
-    fn has_capability(&self, name: &str) -> bool {
-        self.capabilities.contains_key(name)
+    fn get(&self, capability: Capability) -> Option<&CapabilityValue> {
+        self.capabilities
+            .get(capability as usize)
+            .and_then(Option::as_ref)
     }
 
-    fn flag_value(&self, name: &str) -> bool {
-        matches!(
-            self.capabilities.get(name),
-            Some(CapabilityValue::Flag(true))
-        )
+    fn has_capability(&self, capability: Capability) -> bool {
+        self.get(capability).is_some()
     }
 
-    fn string_value(&self, name: &str) -> Option<&[u8]> {
-        match self.capabilities.get(name) {
+    fn flag_value(&self, capability: Capability) -> bool {
+        matches!(self.get(capability), Some(CapabilityValue::Flag(true)))
+    }
+
+    fn string_value(&self, capability: Capability) -> Option<&[u8]> {
+        match self.get(capability) {
             Some(CapabilityValue::String(value)) => Some(value),
             _ => None,
         }
@@ -691,22 +937,22 @@ impl ResolvedTerm {
 
     fn recompute_derived_flags(&mut self, base: u8) {
         self.terminal_flags = base;
-        if self.has_capability("setrgbf") && self.has_capability("setrgbb") {
+        if self.has_capability(Capability::setrgbf) && self.has_capability(Capability::setrgbb) {
             self.terminal_flags |= TERM_RGB_COLOURS;
         } else {
             self.terminal_flags &= !TERM_RGB_COLOURS;
         }
-        if self.has_capability("Cmg") && self.has_capability("Clmg") {
+        if self.has_capability(Capability::Cmg) && self.has_capability(Capability::Clmg) {
             self.terminal_flags |= TERM_DECSLRM;
         } else {
             self.terminal_flags &= !TERM_DECSLRM;
         }
-        if self.has_capability("Rect") {
+        if self.has_capability(Capability::Rect) {
             self.terminal_flags |= TERM_DECFRA;
         } else {
             self.terminal_flags &= !TERM_DECFRA;
         }
-        if !self.flag_value("am") {
+        if !self.flag_value(Capability::am) {
             self.terminal_flags |= TERM_NO_AM;
         } else {
             self.terminal_flags &= !TERM_NO_AM;
@@ -717,7 +963,7 @@ impl ResolvedTerm {
         const ASCII_ACS: &str = "a#j+k+l+m+n+o-p-q-r-s-t+u+v+w+x|y<z>~.";
         self.acs.clear();
         let acs = self
-            .string_value("acsc")
+            .string_value(Capability::acsc)
             .unwrap_or(ASCII_ACS.as_bytes())
             .to_vec();
         for pair in acs.chunks_exact(2) {
@@ -760,8 +1006,8 @@ impl TerminalCapabilities for ResolvedTerm {
         &self.identity.name
     }
 
-    fn capability(&self, name: &str) -> Option<&CapabilityValue> {
-        self.capabilities.get(name)
+    fn capability(&self, capability: Capability) -> Option<&CapabilityValue> {
+        self.get(capability)
     }
 
     fn utf8(&self) -> bool {
@@ -769,12 +1015,13 @@ impl TerminalCapabilities for ResolvedTerm {
     }
 
     fn has_feature(&self, name: &str) -> bool {
-        if self.features.contains(name) {
-            return true;
-        }
-        let Some(feature) = FEATURES.iter().find(|feature| feature.name == name) else {
+        let Some(index) = FEATURES.iter().position(|feature| feature.name == name) else {
             return false;
         };
+        if self.features & (1 << index) != 0 {
+            return true;
+        }
+        let feature = &FEATURES[index];
         if name == "ignorefkeys" || self.terminal_flags & feature.flags != feature.flags {
             return false;
         }
@@ -783,7 +1030,7 @@ impl TerminalCapabilities for ResolvedTerm {
                 .split_once('=')
                 .map_or(*capability, |(name, _)| name);
             let name = name.strip_suffix('@').unwrap_or(name);
-            self.has_capability(name)
+            Capability::from_name(name).is_some_and(|capability| self.has_capability(capability))
         })
     }
 
@@ -794,7 +1041,7 @@ impl TerminalCapabilities for ResolvedTerm {
 
 pub(crate) fn terminal_acs(terminal: &dyn TerminalCapabilities, input: u8) -> Option<u8> {
     const ASCII_ACS: &[u8] = b"a#j+k+l+m+n+o-p-q-r-s-t+u+v+w+x|y<z>~.";
-    let acs = match terminal.capability("acsc") {
+    let acs = match terminal.capability(Capability::acsc) {
         Some(CapabilityValue::String(value)) => value.as_slice(),
         _ => ASCII_ACS,
     };
@@ -819,20 +1066,8 @@ pub(crate) fn writable_width(
     usize::from(width)
 }
 
-fn capability_type(name: &str) -> Option<CapabilityType> {
-    if FLAG_CAPABILITIES.contains(&name) {
-        Some(CapabilityType::Flag)
-    } else if NUMBER_CAPABILITIES.contains(&name) {
-        Some(CapabilityType::Number)
-    } else if STRING_CAPABILITIES.contains(&name) {
-        Some(CapabilityType::String)
-    } else {
-        None
-    }
-}
-
-fn identify_value(name: &str, value: &str) -> Option<CapabilityValue> {
-    match capability_type(name)? {
+fn identify_value(capability: Capability, value: &str) -> Option<CapabilityValue> {
+    match capability.value_type() {
         CapabilityType::Flag => Some(CapabilityValue::Flag(value == "1")),
         CapabilityType::Number => value
             .parse::<i32>()
@@ -1058,11 +1293,11 @@ mod tests {
         );
         assert!(term.auto_margin());
         assert_eq!(
-            term.capability("colors"),
+            term.capability(Capability::colors),
             Some(&CapabilityValue::Number(256))
         );
         assert_eq!(
-            term.capability("clear"),
+            term.capability(Capability::clear),
             Some(&CapabilityValue::String(b"\x1b[H\x1b[2J".to_vec()))
         );
     }
@@ -1083,18 +1318,18 @@ mod tests {
             ),
             [],
         );
-        assert_eq!(term.capability("Sxl"), Some(&CapabilityValue::Flag(false)));
-        assert_eq!(term.capability("U8"), Some(&CapabilityValue::Number(1)));
+        assert_eq!(term.capability(Capability::Sxl), Some(&CapabilityValue::Flag(false)));
+        assert_eq!(term.capability(Capability::U8), Some(&CapabilityValue::Number(1)));
         assert_eq!(
-            term.capability("kf63"),
+            term.capability(Capability::kf63),
             Some(&CapabilityValue::String(b"last-key".to_vec()))
         );
         assert_eq!(
-            term.capability("bel"),
+            term.capability(Capability::bel),
             Some(&CapabilityValue::String(b"beepdone".to_vec()))
         );
-        assert_eq!(term.capability("colors"), None);
-        assert_eq!(term.capability("not-a-tmux-capability"), None);
+        assert_eq!(term.capability(Capability::colors), None);
+        assert_eq!(Capability::from_name("not-a-tmux-capability"), None);
     }
 
     #[test]
@@ -1109,13 +1344,13 @@ mod tests {
     #[test]
     fn screen_family_overline_inference_respects_explicit_removal() {
         let inferred = ResolvedTerm::resolve(identity("screen-256color", &[]), []);
-        assert!(inferred.capability("Smol").is_some());
+        assert!(inferred.capability(Capability::Smol).is_some());
 
         let removed = ResolvedTerm::resolve(
             identity("screen-256color", &[]),
             [("terminal-overrides", "screen*:Smol@")],
         );
-        assert!(removed.capability("Smol").is_none());
+        assert!(removed.capability(Capability::Smol).is_none());
     }
 
     #[test]
@@ -1152,11 +1387,11 @@ mod tests {
                 "missing default feature {feature}"
             );
         }
-        assert!(xterm.capability("Ms").is_some());
-        assert!(xterm.capability("Ss").is_some());
+        assert!(xterm.capability(Capability::Ms).is_some());
+        assert!(xterm.capability(Capability::Ss).is_some());
 
         let linux = ResolvedTerm::resolve(identity("linux", &["AX=1"]), []);
-        assert_eq!(linux.capability("AX"), None);
+        assert_eq!(linux.capability(Capability::AX), None);
     }
 
     #[test]
@@ -1184,16 +1419,16 @@ mod tests {
         assert!(term.has_feature("RGB"));
         assert!(term.has_feature("sync"));
         assert_eq!(
-            term.capability("setrgbf"),
+            term.capability(Capability::setrgbf),
             Some(&CapabilityValue::String(b"custom".to_vec()))
         );
-        assert_eq!(term.capability("setrgbb"), None);
+        assert_eq!(term.capability(Capability::setrgbb), None);
         assert_eq!(
-            term.capability("Sync"),
+            term.capability(Capability::Sync),
             Some(&CapabilityValue::String(b"\x1b[custom".to_vec()))
         );
         assert_eq!(
-            term.capability("Smulx"),
+            term.capability(Capability::Smulx),
             Some(&CapabilityValue::String(b"\x1b[4:%p1%dm".to_vec()))
         );
     }
@@ -1208,10 +1443,10 @@ mod tests {
             );
         }
         assert_eq!(
-            term.capability("Enbp"),
+            term.capability(Capability::Enbp),
             Some(&CapabilityValue::String(b"\x1b[?2004h".to_vec()))
         );
-        assert!(term.capability("setrgbf").is_some());
+        assert!(term.capability(Capability::setrgbf).is_some());
         assert!(term.terminal_flags & TERM_VT100_LIKE != 0);
         assert!(term.terminal_flags & TERM_RGB_COLOURS != 0);
     }
@@ -1224,8 +1459,8 @@ mod tests {
         );
         assert!(term.has_feature("mouse"));
         assert!(!term.has_feature("title"));
-        assert!(term.capability("kmous").is_some());
-        assert!(term.capability("tsl").is_none());
+        assert!(term.capability(Capability::kmous).is_some());
+        assert!(term.capability(Capability::tsl).is_none());
     }
 
     #[test]
@@ -1234,9 +1469,9 @@ mod tests {
         identified.feature_bits = 1 << 8;
         let term = ResolvedTerm::resolve(identified, []);
         assert!(term.has_feature("ignorefkeys"));
-        assert_eq!(term.capability("kf1"), None);
-        assert_eq!(term.capability("kf12"), None);
-        assert_eq!(term.capability("kf63"), None);
+        assert_eq!(term.capability(Capability::kf1), None);
+        assert_eq!(term.capability(Capability::kf12), None);
+        assert_eq!(term.capability(Capability::kf63), None);
     }
 
     #[test]
@@ -1268,7 +1503,7 @@ mod tests {
             [("terminal-overrides", r"screen:bel=\E]1::ready\007")],
         );
         assert_eq!(
-            term.capability("bel"),
+            term.capability(Capability::bel),
             Some(&CapabilityValue::String(b"\x1b]1:ready\x07".to_vec()))
         );
     }
@@ -1298,11 +1533,11 @@ mod tests {
             ),
             [],
         );
-        assert_eq!(number_capability(&term, "colors"), Some(256));
+        assert_eq!(number_capability(&term, Capability::colors), Some(256));
         assert_eq!(
             expand_capability(
                 &term,
-                "cup",
+                Capability::cup,
                 &[
                     CapabilityParameter::Number(0),
                     CapabilityParameter::Number(4),
@@ -1313,7 +1548,7 @@ mod tests {
         assert_eq!(
             expand_capability(
                 &term,
-                "Ms",
+                Capability::Ms,
                 &[
                     CapabilityParameter::String("c"),
                     CapabilityParameter::String("aGVsbG8="),
@@ -1321,7 +1556,7 @@ mod tests {
             ),
             Some(b"\x1b]52;c;aGVsbG8=\x07".to_vec())
         );
-        assert_eq!(expand_capability(&term, "colors", &[]), None);
+        assert_eq!(expand_capability(&term, Capability::colors, &[]), None);
     }
 
     #[test]
@@ -1336,22 +1571,22 @@ mod tests {
             (16, b"\x1b[38;5;16m".as_slice()),
         ] {
             assert_eq!(
-                expand_capability(&term, "setaf", &[CapabilityParameter::Number(colour)]),
+                expand_capability(&term, Capability::setaf, &[CapabilityParameter::Number(colour)]),
                 Some(expected.to_vec())
             );
         }
         assert_eq!(
-            expand_capability(&term, "Sync", &[CapabilityParameter::Number(1)]),
+            expand_capability(&term, Capability::Sync, &[CapabilityParameter::Number(1)]),
             Some(b"\x1b[?2026h".to_vec())
         );
         assert_eq!(
-            expand_capability(&term, "Sync", &[CapabilityParameter::Number(2)]),
+            expand_capability(&term, Capability::Sync, &[CapabilityParameter::Number(2)]),
             Some(b"\x1b[?2026l".to_vec())
         );
         assert_eq!(
             expand_capability(
                 &term,
-                "Hls",
+                Capability::Hls,
                 &[
                     CapabilityParameter::String("link"),
                     CapabilityParameter::String("https://example.test"),
@@ -1368,7 +1603,11 @@ mod tests {
             [("terminal-features", "modern:RGB:hyperlinks:sync:usstyle")],
         );
         assert_eq!(
-            expand_capability(&term, "Setulc", &[CapabilityParameter::Number(0x11_22_33)]),
+            expand_capability(
+                &term,
+                Capability::Setulc,
+                &[CapabilityParameter::Number(0x11_22_33)]
+            ),
             Some(b"\x1b[58:2:17:34:51m".to_vec())
         );
     }

@@ -291,12 +291,12 @@ impl AttachSession {
                     // immediate hide/restore pair around only the dirty rows.
                     let sync_start = term::expand_capability(
                         &self.tty.terminal,
-                        "Sync",
+                        Capability::Sync,
                         &[term::CapabilityParameter::Number(1)],
                     );
                     let sync_end = term::expand_capability(
                         &self.tty.terminal,
-                        "Sync",
+                        Capability::Sync,
                         &[term::CapabilityParameter::Number(2)],
                     );
                     if let (Some(sync_start), Some(sync_end)) = (sync_start, sync_end) {
@@ -360,7 +360,7 @@ impl AttachSession {
     pub(super) fn sync_tty_mouse_mode(&mut self, state: &SharedState) {
         // tmux gates the whole mouse path on the terminal describing a mouse
         // key, and hmux's start and stop sequences already do.
-        if self.tty.terminal.capability("kmous").is_none() {
+        if self.tty.terminal.capability(Capability::kmous).is_none() {
             return;
         }
         let overlay = self.compositor.ui.active_overlay.is_some()

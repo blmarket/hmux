@@ -933,7 +933,7 @@ impl AttachSession {
                             .unwrap_or_else(|| "?".to_string());
                         if let Some(sequence) = term::expand_capability(
                             &self.tty.terminal,
-                            "Ms",
+                            Capability::Ms,
                             &[
                                 term::CapabilityParameter::String(""),
                                 term::CapabilityParameter::String(&encoded),

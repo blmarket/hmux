@@ -8,7 +8,6 @@
 use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use super::copy::{view_copy_state, CopyBacking};
@@ -2091,18 +2090,6 @@ impl ServerState {
         node.mode_view = None;
         self.invalidate_session(session_id, RenderInvalidation::RESET_MODE);
         Ok(())
-    }
-
-    pub(crate) fn pane_observation_state(
-        &self,
-        target: &str,
-    ) -> io::Result<Rc<crate::server::pane::NativePaneObservation>> {
-        let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
-        Ok(
-            self.window(resolved.session, resolved.window).panes[resolved.pane]
-                .pane
-                .observation_state(),
-        )
     }
 
     pub(crate) fn append_view_output(&mut self, target: &str, output: &[u8]) -> io::Result<()> {
