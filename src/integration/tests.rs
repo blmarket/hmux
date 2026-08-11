@@ -845,7 +845,8 @@ fn same_cwd_sibling_transcript_does_not_steal_attribution() {
 
 /// The counterpart: when the pane's own agent starts a new session in the same
 /// process (its old transcript goes permanently silent while the new one grows
-/// with the pane's turns), correlation must adopt the new transcript.
+/// with the pane's turns), correlation must adopt the new transcript — once the
+/// old one has been silent long enough to tell a dead session from a tool call.
 #[test]
 fn silent_transcript_yields_to_newer_one_growing_while_pane_works() {
     let old = "11111111-1111-4111-8111-111111111111";
@@ -891,7 +892,7 @@ fn silent_transcript_yields_to_newer_one_growing_while_pane_works() {
             .files
             .insert(transcript_dir.clone(), vec![new_path.clone(), old_path]);
         source.file_contents.insert(new_path.clone(), Vec::new());
-        for _ in 0..(pane.frames.len() - 1) {
+        for _ in 0..(TRANSCRIPT_SILENT_POLLS + TRANSCRIPT_ADOPTION_POLLS + 1) {
             source
                 .file_contents
                 .get_mut(&new_path)
@@ -911,6 +912,176 @@ fn silent_transcript_yields_to_newer_one_growing_while_pane_works() {
         status.session_id.as_deref(),
         Some(new),
         "sustained correlated growth must re-attribute the pane"
+    );
+    assert_eq!(status.model.as_deref(), Some("claude-fable-5"));
+}
+
+/// A working agent writes its transcript in bursts: one long tool call leaves it
+/// untouched for a minute while the pane keeps its working spinner. A sibling
+/// session streaming into the shared project directory throughout such a gap
+/// must not be mistaken for this pane's own — the observed failure was a pane
+/// running Fable reporting a neighbouring Opus session's model.
+#[test]
+fn neighbour_streaming_through_a_tool_call_does_not_steal_attribution() {
+    let mine = "11111111-1111-4111-8111-111111111111";
+    let neighbour = "22222222-2222-4222-8222-222222222222";
+    let cwd = PathBuf::from("/work/proj");
+    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
+    let neighbour_path = transcript_dir.join(format!("{neighbour}.jsonl"));
+
+    let mut source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100)],
+        HashMap::from([
+            (100u32, vec![OsString::from("zsh")]),
+            (200u32, vec![OsString::from("claude")]),
+        ]),
+        HashMap::new(),
+        true,
+    )
+    .with_cwd(200, cwd)
+    .with_files(transcript_dir.clone(), vec![mine_path.clone()])
+    .with_file_content(
+        mine_path.clone(),
+        br#"{"type":"assistant","message":{"model":"claude-fable-5","role":"assistant"}}
+"#,
+    );
+
+    let idle = frame(Some("\u{2733} hmux"), "earlier output\n──────────\n❯ ");
+    let working = frame(Some("⠹ hmux"), "some streamed output");
+    let pane = ScriptedPane::new(100, vec![idle, working]);
+    let server = FakeServer { pane: pane.clone() };
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+
+    capture_logs(|| {
+        let mut panes = HashMap::new();
+        // First poll attributes this pane's own (only) transcript.
+        poll(&server, &detectors, &source, Some(&hub), &mut panes);
+        // The pane starts a tool call: its transcript stops growing while the
+        // spinner keeps it working. Meanwhile a neighbour's newer session
+        // streams into the same directory for most of that gap.
+        source.files.insert(
+            transcript_dir.clone(),
+            vec![neighbour_path.clone(), mine_path.clone()],
+        );
+        source
+            .file_contents
+            .insert(neighbour_path.clone(), Vec::new());
+        for _ in 0..(TRANSCRIPT_SILENT_POLLS - 1) {
+            source
+                .file_contents
+                .get_mut(&neighbour_path)
+                .unwrap()
+                .extend_from_slice(
+                    br#"{"type":"assistant","message":{"model":"claude-opus-5"}}
+"#,
+                );
+            pane.step();
+            poll(&server, &detectors, &source, Some(&hub), &mut panes);
+        }
+    });
+
+    let snap = hub.snapshot();
+    let status = snap.panes.get(&PaneId(0)).expect("status published");
+    assert_eq!(
+        status.session_id.as_deref(),
+        Some(mine),
+        "a tool call's silence must not hand the pane to a streaming neighbour"
+    );
+    assert_eq!(
+        status.model.as_deref(),
+        Some("claude-fable-5"),
+        "the pane must keep reporting its own session's model"
+    );
+}
+
+/// Once the agent has named its session outright — the stamp its tool
+/// subprocesses carry — the newest-transcript guess must never overrule it, no
+/// matter how long the stamped transcript stays quiet or how steadily a
+/// neighbour's grows. The stamp is only readable while a tool subprocess is
+/// alive, so the guess would otherwise reclaim the pane between tool calls.
+#[test]
+fn stamped_session_is_not_displaced_by_a_streaming_neighbour() {
+    let mine = "11111111-1111-4111-8111-111111111111";
+    let neighbour = "22222222-2222-4222-8222-222222222222";
+    let cwd = PathBuf::from("/work/proj");
+    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
+    let neighbour_path = transcript_dir.join(format!("{neighbour}.jsonl"));
+
+    // Pane child (100) is a shell, claude (200) runs beneath it, and a tool
+    // subprocess (300) beneath claude carries the stamp on the first poll only.
+    let mut source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100), (300, 200)],
+        HashMap::from([
+            (100u32, vec![OsString::from("zsh")]),
+            (200u32, vec![OsString::from("claude")]),
+            (300u32, vec![OsString::from("rg")]),
+        ]),
+        HashMap::new(),
+        true,
+    )
+    .with_cwd(200, cwd)
+    .with_start_time(200, 100)
+    .with_environ(
+        300,
+        &[("CLAUDE_CODE_SESSION_ID", mine), ("CLAUDE_PID", "200")],
+    )
+    .with_files(transcript_dir.clone(), vec![mine_path.clone()])
+    .with_file_modified(mine_path.clone(), 200)
+    .with_file_content(
+        mine_path.clone(),
+        br#"{"type":"assistant","message":{"model":"claude-fable-5","role":"assistant"}}
+"#,
+    );
+
+    let idle = frame(Some("\u{2733} hmux"), "earlier output\n──────────\n❯ ");
+    let working = frame(Some("⠹ hmux"), "some streamed output");
+    let pane = ScriptedPane::new(100, vec![idle, working]);
+    let server = FakeServer { pane: pane.clone() };
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+
+    capture_logs(|| {
+        let mut panes = HashMap::new();
+        // First poll reads the stamp and attributes the session exactly.
+        poll(&server, &detectors, &source, Some(&hub), &mut panes);
+        // The tool subprocess exits, taking the stamp with it, and a neighbour's
+        // newer session streams for far longer than correlation would need.
+        source.table.retain(|(pid, _)| *pid != 300);
+        source.environ.remove(&300);
+        source.files.insert(
+            transcript_dir.clone(),
+            vec![neighbour_path.clone(), mine_path.clone()],
+        );
+        source
+            .file_contents
+            .insert(neighbour_path.clone(), Vec::new());
+        source.file_modified.insert(
+            neighbour_path.clone(),
+            UNIX_EPOCH + Duration::from_secs(300),
+        );
+        for _ in 0..(TRANSCRIPT_SILENT_POLLS + 4 * TRANSCRIPT_ADOPTION_POLLS) {
+            source
+                .file_contents
+                .get_mut(&neighbour_path)
+                .unwrap()
+                .extend_from_slice(
+                    br#"{"type":"assistant","message":{"model":"claude-opus-5"}}
+"#,
+                );
+            pane.step();
+            poll(&server, &detectors, &source, Some(&hub), &mut panes);
+        }
+    });
+
+    let snap = hub.snapshot();
+    let status = snap.panes.get(&PaneId(0)).expect("status published");
+    assert_eq!(
+        status.session_id.as_deref(),
+        Some(mine),
+        "an exactly identified session must not be replaced by a directory guess"
     );
     assert_eq!(status.model.as_deref(), Some("claude-fable-5"));
 }

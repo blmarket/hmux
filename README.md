@@ -26,6 +26,16 @@ and its conversation lives in a sqlite database instead of a transcript file:
 the session id is reported, the model is not. agentmon cannot show a transcript
 for an `agy` run for the same reason.
 
+Agents listed as using a "cwd transcript" keep it in a directory named after
+their working directory, not after the pane or the process, so several runs
+started in one directory share that directory. hmux takes the session id from the agent's own environment
+stamp whenever the agent has a live tool subprocess to read it from; between
+those, it falls back to the most recently written transcript in that directory
+and only accepts a different one after the attributed transcript has stayed
+silent for a while and the replacement has grown as the pane worked. A pane that
+never runs a tool can therefore report a neighbouring run's session id and
+model for a while after switching sessions in place.
+
 ## Why not tmux, cmux, or herdr?
 
 - tmux is de facto standard of terminal multiplexer, broadly available.

@@ -325,10 +325,19 @@ struct TrackedPane {
     /// cwd-scoped transcript adopted after activity correlation — see
     /// [`should_adopt_transcript`]).
     agent_session_id: Option<String>,
+    /// Whether the attributed session was named outright by the agent's own
+    /// environment stamp rather than guessed from the session directory. An
+    /// exact identification is not displaced by a guess — see
+    /// [`should_adopt_transcript`].
+    session_stamped: bool,
     /// A newer transcript observed in the pane's session directory, held while
     /// activity correlation gathers evidence that it belongs to this pane
     /// rather than to another pane running in the same working directory.
     session_candidate: Option<SessionCandidate>,
+    /// Consecutive polls in which the attributed session file did not grow,
+    /// restarted whenever it grows or a different file is attributed (see
+    /// [`TRANSCRIPT_SILENT_POLLS`]).
+    silent_polls: u32,
     /// Incremental scanner over the resolved session file, keyed on its path so
     /// a session switch restarts the scan from the new file's beginning.
     model_scan: Option<ModelScan>,
@@ -337,16 +346,41 @@ struct TrackedPane {
     agent_model: Option<String>,
 }
 
+impl TrackedPane {
+    /// Drop everything known about the pane's session, so the next attribution
+    /// starts from scratch. Used wherever the attributed agent goes away or is
+    /// replaced: nothing learned about the previous one survives it.
+    fn forget_session(&mut self) {
+        self.agent_session_id = None;
+        self.session_stamped = false;
+        self.session_candidate = None;
+        self.silent_polls = 0;
+        self.model_scan = None;
+        self.agent_model = None;
+    }
+}
+
 /// Correlated-evidence polls required before a cwd-attributed pane adopts a
 /// newer transcript from its session directory: polls in which the pane's agent
-/// is working, its attributed transcript is silent, and the candidate is
-/// growing. Session directories are keyed by working directory, so two panes
-/// running the same agent in the same directory share one; newest-by-mtime
-/// alone would flip both panes to whichever session wrote last. Correlation
-/// still follows a genuine in-pane session switch (a new session started in the
-/// same process) within a few active polls, since the old transcript then goes
-/// permanently silent while the new one grows with the pane's own turns.
+/// is working, its attributed transcript has been silent for
+/// [`TRANSCRIPT_SILENT_POLLS`], and the candidate is growing. Session
+/// directories are keyed by working directory, so two panes running the same
+/// agent in the same directory share one; newest-by-mtime alone would flip both
+/// panes to whichever session wrote last. Correlation still follows a genuine
+/// in-pane session switch (a new session started in the same process), since the
+/// old transcript then goes permanently silent while the new one grows with the
+/// pane's own turns.
 const TRANSCRIPT_ADOPTION_POLLS: u32 = 5;
+
+/// Polls the attributed transcript must have stayed silent before any evidence
+/// for a replacement counts — roughly 30s at [`POLL_INTERVAL`].
+///
+/// A working agent writes its transcript in bursts, not continuously: a single
+/// tool call leaves it untouched for a minute or more while the pane still shows
+/// a working spinner. Without this floor, a neighbouring session streaming into
+/// the shared directory satisfies the correlation in the length of one such gap,
+/// which is how a pane running one model came to report a sibling pane's.
+const TRANSCRIPT_SILENT_POLLS: u32 = 150;
 
 /// Maximum descendants whose environment is read while looking for an agent's
 /// session stamp. A tool subprocess sits within a step or two of the agent, so
@@ -415,7 +449,9 @@ fn poll<O: ServerObservability>(
                         agent: None,
                         agent_pid: None,
                         agent_session_id: None,
+                        session_stamped: false,
                         session_candidate: None,
+                        silent_polls: 0,
                         model_scan: None,
                         agent_model: None,
                     });
@@ -476,10 +512,7 @@ fn inspect(
 
     if process.exited {
         tracked.agent_pid = None;
-        tracked.agent_session_id = None;
-        tracked.session_candidate = None;
-        tracked.model_scan = None;
-        tracked.agent_model = None;
+        tracked.forget_session();
         publish(
             id,
             tracked,
@@ -518,10 +551,7 @@ fn inspect(
     if let TreeScan::NotFound = scan {
         tracked.agent = None;
         tracked.agent_pid = None;
-        tracked.agent_session_id = None;
-        tracked.session_candidate = None;
-        tracked.model_scan = None;
-        tracked.agent_model = None;
+        tracked.forget_session();
         tracked.revision = Some(revision);
         publish(
             id,
@@ -551,16 +581,18 @@ fn inspect(
         TreeScan::Found { detector, pid, .. } => {
             let agent_changed = tracked.agent != Some(detector) || tracked.agent_pid != Some(pid);
             if agent_changed {
-                tracked.agent_session_id = None;
-                tracked.session_candidate = None;
-                tracked.model_scan = None;
-                tracked.agent_model = None;
+                tracked.forget_session();
             }
             // Read any bytes the agent appended to its session file since the
             // last poll; the newest model named there replaces the published
             // one. No new mention retains the current value. Growth doubles as
             // the liveness signal for adoption correlation below.
             let session_file_grew = advance_model_scan(tracked, snapshot);
+            tracked.silent_polls = if session_file_grew {
+                0
+            } else {
+                tracked.silent_polls.saturating_add(1)
+            };
             // An agent that stamps the processes it spawns names its session
             // outright, so that reading is preferred over every heuristic. It is
             // only available while a spawned process is alive, so a miss falls
@@ -568,7 +600,7 @@ fn inspect(
             if let Some((session_id, session_file)) =
                 find_descendant_env_session(snapshot, pid, detectors[detector].as_ref())
             {
-                adopt_session(tracked, snapshot, session_id, session_file);
+                adopt_session(tracked, snapshot, session_id, session_file, true);
             } else if let Some(source) = detectors[detector].session_id_source() {
                 // Both sources are rechecked every poll so switching threads or
                 // sessions within one agent process replaces the cached id. Each
@@ -597,7 +629,7 @@ fn inspect(
                         ),
                     };
                     if adopt {
-                        adopt_session(tracked, snapshot, session_id, session_file);
+                        adopt_session(tracked, snapshot, session_id, session_file, false);
                     }
                 }
             }
@@ -606,10 +638,7 @@ fn inspect(
         }
         TreeScan::NoProcessTable => {
             tracked.agent_pid = None;
-            tracked.agent_session_id = None;
-            tracked.session_candidate = None;
-            tracked.model_scan = None;
-            tracked.agent_model = None;
+            tracked.forget_session();
         }
         TreeScan::NotFound => {}
     }
@@ -733,17 +762,22 @@ fn advance_model_scan(tracked: &mut TrackedPane, snapshot: &ProcessSnapshot) -> 
 /// the same agent in the same directory resolves the same "newest" file, and
 /// only one of them can be its writer. mtime order alone cannot say which, so a
 /// pane with an attributed transcript adopts a different one only on correlated
-/// evidence that its own attribution is dead: over several polls the pane's
-/// agent is working and the candidate grows while the attributed transcript
-/// stays silent (see [`TRANSCRIPT_ADOPTION_POLLS`]). Any growth of the
-/// attributed transcript re-confirms it and discards the gathered evidence.
+/// evidence that its own attribution is dead: its transcript has gone silent for
+/// [`TRANSCRIPT_SILENT_POLLS`], and from then on the pane's agent is working
+/// while the candidate grows over [`TRANSCRIPT_ADOPTION_POLLS`]. Any growth of
+/// the attributed transcript re-confirms it and discards the gathered evidence.
 ///
-/// This is deliberately biased toward keeping the current attribution: a pane
-/// mid-turn whose transcript pauses (a long tool call) while a same-directory
-/// sibling streams can accumulate spurious evidence, but adopting wrongly is
-/// self-healing — the pane's real transcript becomes the newest candidate as
-/// soon as it grows again, while flipping on bare mtime was wrong immediately
-/// and stayed wrong.
+/// A transcript named outright by the agent's own environment stamp is exact,
+/// and no amount of correlated evidence outweighs it: the guess never displaces
+/// it. The stamp lives on tool subprocesses, so it is republished whenever the
+/// pane runs a tool, and a genuine in-pane session switch is picked up there.
+///
+/// The remainder is deliberately biased toward keeping the current attribution:
+/// a pane mid-turn whose transcript pauses (a long tool call) while a
+/// same-directory sibling streams would otherwise accumulate spurious evidence.
+/// Adopting wrongly is self-healing — the pane's real transcript becomes the
+/// newest candidate as soon as it grows again — but it is wrong meanwhile, and
+/// flipping on bare mtime was wrong immediately and stayed wrong.
 fn should_adopt_transcript(
     tracked: &mut TrackedPane,
     candidate: &Path,
@@ -763,6 +797,12 @@ fn should_adopt_transcript(
         tracked.session_candidate = None;
         return true;
     }
+    // Our session was named by the agent itself; a directory guess cannot
+    // overrule it.
+    if tracked.session_stamped {
+        tracked.session_candidate = None;
+        return false;
+    }
     // Our transcript is still being written: whatever else appeared in the
     // shared directory belongs to another pane.
     if session_file_grew {
@@ -770,13 +810,14 @@ fn should_adopt_transcript(
         return false;
     }
     let len = snapshot.source.file_len(candidate);
+    let silent = tracked.silent_polls >= TRANSCRIPT_SILENT_POLLS;
     let working = matches!(
         tracked.reported.as_ref().map(|reported| reported.state),
         Some(AgentState::Working)
     );
     match tracked.session_candidate.as_mut() {
         Some(evidence) if evidence.path == *candidate => {
-            if working && len.is_some_and(|len| len > evidence.len) {
+            if silent && working && len.is_some_and(|len| len > evidence.len) {
                 evidence.correlated_polls += 1;
             }
             if let Some(len) = len {
@@ -1140,17 +1181,24 @@ fn find_cwd_transcript_session(
 /// Publish `session_id` as the pane's session and point the model scan at its
 /// file. A new file restarts the scan from its beginning; the model belongs to
 /// the session, so the value read from the previous file is dropped with it.
+///
+/// `stamped` records how the session was resolved: exactly, from the agent's own
+/// environment stamp, or by guessing at its session directory. Only the former
+/// is protected from later guesses (see [`should_adopt_transcript`]).
 fn adopt_session(
     tracked: &mut TrackedPane,
     snapshot: &ProcessSnapshot,
     session_id: String,
     session_file: PathBuf,
+    stamped: bool,
 ) {
     tracked.agent_session_id = Some(session_id);
+    tracked.session_stamped = stamped;
     tracked.session_candidate = None;
     if tracked.model_scan.as_ref().map(ModelScan::path) != Some(&*session_file) {
         tracked.model_scan = Some(ModelScan::new(session_file));
         tracked.agent_model = None;
+        tracked.silent_polls = 0;
         advance_model_scan(tracked, snapshot);
     }
 }
