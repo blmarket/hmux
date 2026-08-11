@@ -26,12 +26,19 @@ const CONTROL_BUFFER_HIGH: usize = 8192;
 const CLIENT_CONTROLCONTROL: i64 = 0x4000;
 
 /// One readiness source owned by an event-loop control client.
+///
+/// `Command` carries the suspension generation that produced its descriptor.
+/// A suspended command's completion descriptor is created per suspension, so
+/// the generation is what makes the readiness source of one suspension a
+/// distinct key from the next: the driver keys registrations by source, and a
+/// key that repeated across suspensions would leave the loop polling the
+/// finished command's closed descriptor.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum EventControlSource {
     Input,
     Output,
     State,
-    Command,
+    Command(u64),
     Pane(u32),
 }
 
@@ -63,6 +70,7 @@ pub(crate) struct EventControlClient {
     client_window_sizes: BTreeMap<u32, (u16, u16)>,
     command_queue: CommandQueue<ControlQueueItem>,
     command_state: ControlCommandState,
+    command_generation: u64,
     command_continuation: bool,
     background_commands: Vec<command::BackgroundCommandRequest>,
     stdin_open: bool,
@@ -255,6 +263,7 @@ impl EventControlClient {
             client_window_sizes: BTreeMap::new(),
             command_queue: CommandQueue::new(),
             command_state: ControlCommandState::Idle,
+            command_generation: 0,
             command_continuation: false,
             background_commands: Vec::new(),
             stdin_open: true,
@@ -287,7 +296,9 @@ impl EventControlClient {
             sources.push(EventControlSource::Output);
         }
         match self.command_state {
-            ControlCommandState::Waiting(_) => sources.push(EventControlSource::Command),
+            ControlCommandState::Waiting(_) => {
+                sources.push(EventControlSource::Command(self.command_generation))
+            }
             ControlCommandState::Idle => {
                 sources.push(EventControlSource::State);
                 sources.extend(self.streams.keys().copied().map(EventControlSource::Pane));
@@ -302,10 +313,12 @@ impl EventControlClient {
             EventControlSource::Input => self.client_tty.stdin.as_ref()?.as_raw_fd(),
             EventControlSource::Output => self.output_fd.as_raw_fd(),
             EventControlSource::State => self.render_attachment.as_raw_fd(),
-            EventControlSource::Command => match &self.command_state {
-                ControlCommandState::Waiting(active) => active.task.wait().and_then(|wait| {
-                    wait.sources().first().map(|source| source.fd().as_raw_fd())
-                })?,
+            EventControlSource::Command(generation) => match &self.command_state {
+                ControlCommandState::Waiting(active) if generation == self.command_generation => {
+                    active.task.wait().and_then(|wait| {
+                        wait.sources().first().map(|source| source.fd().as_raw_fd())
+                    })?
+                }
                 _ => return None,
             },
             EventControlSource::Pane(pane_id) => {
@@ -427,7 +440,13 @@ impl EventControlClient {
                 let _ = self.render_attachment.take();
                 state_ready = true;
             }
-            Some(EventControlSource::Command) => self.complete_pending_command(true)?,
+            // A readiness event that outlived its suspension names an older
+            // generation; the descriptor it reported on is gone.
+            Some(EventControlSource::Command(generation))
+                if generation == self.command_generation =>
+            {
+                self.complete_pending_command(true)?
+            }
             Some(EventControlSource::Pane(pane_id))
                 if matches!(self.command_state, ControlCommandState::Idle) =>
             {
@@ -956,6 +975,10 @@ impl EventControlClient {
             let ControlCommandState::Running(active) = state else {
                 return Ok(());
             };
+            // Each suspension waits on its own completion descriptor, so this
+            // wait is a new readiness source even when the same command
+            // suspends again.
+            self.command_generation = self.command_generation.wrapping_add(1);
             self.command_state = ControlCommandState::Waiting(active);
             Ok(())
         } else {

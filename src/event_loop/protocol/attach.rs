@@ -35,13 +35,18 @@ const ATTACH_QUEUE_LIMIT: usize = MAX_IMSGSIZE * 64;
 const IMMEDIATE_TURN_BUDGET: usize = 64;
 
 /// One native attach descriptor watched by the central reactor.
+///
+/// Both variants carry a generation, for the same reason: the reactor keys a
+/// registration by its source, so a source whose descriptor is replaced has to
+/// become a new key. `Command`'s descriptor belongs to the in-flight
+/// suspension and is created afresh for each one.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum EventAttachSource {
     Runtime {
         source: AttachRuntimeSource,
         generation: u64,
     },
-    Command,
+    Command(u64),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -178,7 +183,14 @@ pub(super) struct EventAttachClient {
     runtime_sources: BTreeMap<EventAttachSource, OwnedFd>,
     runtime_desired: BTreeSet<EventAttachSource>,
     registrations: BTreeMap<AttachRuntimeSource, ((RawFd, u64), EventAttachSource)>,
+    /// Hands out generations for the runtime sources, which each keep the one
+    /// they were given in `registrations`.
     next_generation: u64,
+    /// The generation of the in-flight suspension. Only one command runs at a
+    /// time, so this single value is the whole of that source's identity,
+    /// which is why it is a counter of its own rather than a ticket from
+    /// `next_generation`.
+    command_generation: u64,
     deadline: Option<Instant>,
     phase: AttachPhase,
     background_commands: Vec<command::BackgroundCommandRequest>,
@@ -221,6 +233,7 @@ impl EventAttachClient {
             runtime_desired: BTreeSet::new(),
             registrations: BTreeMap::new(),
             next_generation: 0,
+            command_generation: 0,
             deadline: None,
             phase: AttachPhase::Session,
             background_commands: Vec::new(),
@@ -240,8 +253,8 @@ impl EventAttachClient {
 
     pub(super) fn source_fd(&self, source: EventAttachSource) -> Option<BorrowedFd<'_>> {
         match source {
-            EventAttachSource::Command => match &self.phase {
-                AttachPhase::Waiting(active) => active
+            EventAttachSource::Command(generation) => match &self.phase {
+                AttachPhase::Waiting(active) if generation == self.command_generation => active
                     .task
                     .wait()
                     .and_then(|wait| wait.sources().first().map(|source| source.fd())),
@@ -298,7 +311,12 @@ impl EventAttachClient {
     }
 
     fn drive(&mut self, source: Option<EventAttachSource>) -> io::Result<()> {
-        if matches!(source, Some(EventAttachSource::Command)) {
+        if let Some(EventAttachSource::Command(generation)) = source {
+            // A readiness event that outlived its suspension names an older
+            // generation; the descriptor it reported on is gone.
+            if generation != self.command_generation {
+                return Ok(());
+            }
             self.complete_pending_command(true)?;
             return self.refresh_wait();
         }
@@ -311,7 +329,7 @@ impl EventAttachClient {
                 Self::mark_ready(&mut ready, kind);
                 ready
             }
-            None | Some(EventAttachSource::Command) => AttachWaitReady::default(),
+            None | Some(EventAttachSource::Command(_)) => AttachWaitReady::default(),
         };
         if source.is_some() {
             self.drive_session(ready)?;
@@ -387,7 +405,8 @@ impl EventAttachClient {
                 if matches!(self.phase, AttachPhase::Finished) {
                     return Ok(());
                 }
-                self.runtime_desired.insert(EventAttachSource::Command);
+                self.runtime_desired
+                    .insert(EventAttachSource::Command(self.command_generation));
                 if let Some(command_deadline) = command_deadline {
                     self.deadline = Some(
                         self.deadline
@@ -398,7 +417,8 @@ impl EventAttachClient {
             }
             AttachPhase::Waiting(active) => {
                 self.runtime_desired.clear();
-                self.runtime_desired.insert(EventAttachSource::Command);
+                self.runtime_desired
+                    .insert(EventAttachSource::Command(self.command_generation));
                 self.deadline = active.task.wait().and_then(|wait| wait.deadline());
                 Ok(())
             }
@@ -515,6 +535,11 @@ impl EventAttachClient {
                 return Ok(());
             };
             active.allows_attach_io = allows_attach_io;
+            // Each suspension waits on a completion descriptor of its own, so
+            // this wait is a new readiness source even when the same command
+            // suspends again — and a burst of queued commands can finish one
+            // and suspend the next without ever leaving this turn.
+            self.command_generation = self.command_generation.wrapping_add(1);
             self.phase = AttachPhase::Waiting(active);
         } else {
             self.deadline = Some(Instant::now());
