@@ -28,17 +28,17 @@ impl Token {
 
 /// Readiness operations requested for a registered descriptor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Interest(u8);
+pub struct Interest(u8);
 
 impl Interest {
-    pub(crate) const READABLE: Self = Self(1 << 0);
-    pub(crate) const WRITABLE: Self = Self(1 << 1);
+    pub const READABLE: Self = Self(1 << 0);
+    pub const WRITABLE: Self = Self(1 << 1);
 
-    pub(crate) fn is_readable(self) -> bool {
+    pub fn is_readable(self) -> bool {
         self.0 & Self::READABLE.0 != 0
     }
 
-    pub(crate) fn is_writable(self) -> bool {
+    pub fn is_writable(self) -> bool {
         self.0 & Self::WRITABLE.0 != 0
     }
 
@@ -68,7 +68,7 @@ impl BitOrAssign for Interest {
 
 /// Readiness observed for a descriptor.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct Readiness {
+pub struct Readiness {
     readable: bool,
     writable: bool,
     read_closed: bool,
@@ -77,23 +77,23 @@ pub(crate) struct Readiness {
 }
 
 impl Readiness {
-    pub(crate) fn is_readable(self) -> bool {
+    pub fn is_readable(self) -> bool {
         self.readable
     }
 
-    pub(crate) fn is_writable(self) -> bool {
+    pub fn is_writable(self) -> bool {
         self.writable
     }
 
-    pub(crate) fn is_read_closed(self) -> bool {
+    pub fn is_read_closed(self) -> bool {
         self.read_closed
     }
 
-    pub(crate) fn is_write_closed(self) -> bool {
+    pub fn is_write_closed(self) -> bool {
         self.write_closed
     }
 
-    pub(crate) fn is_error(self) -> bool {
+    pub fn is_error(self) -> bool {
         self.error
     }
 

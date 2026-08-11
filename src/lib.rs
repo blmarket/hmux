@@ -27,5 +27,6 @@ pub(crate) mod server;
 pub mod tmux;
 
 pub use error::{Error, Result};
+pub use event_loop::future_rt;
 
 pub(crate) use hmux_vt::TMUX_VERSION;

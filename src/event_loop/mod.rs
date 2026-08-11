@@ -2,6 +2,9 @@
 
 pub(crate) mod actor;
 pub(crate) mod driver;
+/// Prototype `Future` executor on the same reactor; example code only,
+/// re-exported at the crate root for `examples/future_rt.rs`.
+pub mod future_rt;
 pub(crate) mod job;
 pub(crate) mod listener;
 pub(crate) mod pane;
