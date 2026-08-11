@@ -272,9 +272,7 @@ pub(crate) trait TerminalCapabilities {
     /// `CLIENT_UTF8` client flag reports it.
     fn utf8(&self) -> bool;
 
-    fn generation(&self) -> u64 {
-        0
-    }
+    fn generation(&self) -> u64;
 
     fn flag(&self, name: &str) -> bool {
         matches!(self.capability(name), Some(CapabilityValue::Flag(true)))

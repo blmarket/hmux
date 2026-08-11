@@ -231,28 +231,20 @@ pub(super) trait FormatContext {
 
     fn loop_items(
         &self,
-        _kind: FormatLoopKind,
-        _flags: &str,
-        _vars: &Vars,
-    ) -> Option<Vec<FormatLoopItem>> {
-        None
-    }
+        kind: FormatLoopKind,
+        flags: &str,
+        vars: &Vars,
+    ) -> Option<Vec<FormatLoopItem>>;
 
-    fn job(&self, _command: &str, _expanded: String, _vars: &Vars) -> String {
-        String::new()
-    }
+    fn job(&self, command: &str, expanded: String, vars: &Vars) -> String;
 
     fn preserve_double_hash(&self) -> bool {
         false
     }
 
-    fn search_pane(&self, _vars: &Vars, _term: &str, _regex: bool, _ignore_case: bool) -> u32 {
-        0
-    }
+    fn search_pane(&self, vars: &Vars, term: &str, regex: bool, ignore_case: bool) -> u32;
 
-    fn name_exists(&self, _vars: &Vars, _scope: NameScope, _name: &str) -> bool {
-        false
-    }
+    fn name_exists(&self, vars: &Vars, scope: NameScope, name: &str) -> bool;
 }
 
 /// Runs a `#()` command substitution and returns its cached output. tmux starts

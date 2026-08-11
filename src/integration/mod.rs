@@ -172,9 +172,7 @@ pub(crate) trait AgentDetector {
 
     /// Where this agent exposes its stable session id. `None` means the agent
     /// has no discoverable session id.
-    fn session_id_source(&self) -> Option<SessionIdSource> {
-        None
-    }
+    fn session_id_source(&self) -> Option<SessionIdSource>;
 
     /// Extract a session id from an open file owned by the agent process.
     fn session_id_from_open_file(&self, _path: &Path) -> Option<String> {
@@ -935,9 +933,7 @@ pub(crate) trait ProcessSource {
     /// used to scan agent session files incrementally. An empty vector means
     /// end of file; `None` means the file is unreadable or the platform does
     /// not support inspection.
-    fn read_span(&self, _path: &Path, _offset: u64, _max_len: usize) -> Option<Vec<u8>> {
-        None
-    }
+    fn read_span(&self, path: &Path, offset: u64, max_len: usize) -> Option<Vec<u8>>;
 }
 
 /// The production [`ProcessSource`], backed by the host OS process table.
