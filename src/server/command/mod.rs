@@ -33,7 +33,7 @@ use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::integration::status::PaneAgents;
 use crate::observability::v1::PaneId;
@@ -51,9 +51,7 @@ use super::state::{
     Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
 };
 use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
-use super::task::{
-    Completion, Coroutine, FdInterest, ReadySet, TaskPoll, TaskState, WaitRequest, WaitToken,
-};
+use super::task::{Completion, Coroutine, ReadySet, TaskPoll, TaskState, WaitRequest};
 use hmux_vt::{CaptureExtent, CellWidth, Grid, GridRow};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
@@ -77,7 +75,6 @@ pub struct CommandResult {
     pub stdout_bytes: Vec<u8>,
     pub stderr: String,
     pub exit: i32,
-    pub(crate) pane_output_wait: Option<(Rc<super::pane::NativePaneObservation>, u64)>,
     pub(crate) deferred_commands: Vec<DeferredCommand>,
     pub(crate) background_commands: Vec<BackgroundCommandRequest>,
     /// Continue the containing command list despite a nonzero client status.
@@ -232,7 +229,6 @@ impl CommandResult {
             stdout_bytes: Vec::new(),
             stderr: String::new(),
             exit: 0,
-            pane_output_wait: None,
             deferred_commands: Vec::new(),
             background_commands: Vec::new(),
             continue_queue: false,
@@ -247,7 +243,6 @@ impl CommandResult {
             stdout_bytes: Vec::new(),
             stderr: stderr.into(),
             exit: 1,
-            pane_output_wait: None,
             deferred_commands: Vec::new(),
             background_commands: Vec::new(),
             continue_queue: false,
@@ -264,7 +259,6 @@ impl CommandResult {
                 stdout_bytes: error.into_bytes(),
                 stderr: String::new(),
                 exit: 0,
-                pane_output_wait: None,
                 deferred_commands: Vec::new(),
                 background_commands: Vec::new(),
                 continue_queue: false,
@@ -920,7 +914,6 @@ pub(crate) enum CommandSuspension {
     ClientInteraction {
         completed: Completion<Option<PromptCompletion>>,
     },
-    PaneOutput(PaneOutputSuspension),
 }
 
 pub(crate) enum CommandSuspensionResult {
@@ -946,74 +939,6 @@ impl SourceFileRead {
     }
 }
 
-pub(crate) struct PaneOutputSuspension {
-    observation: Rc<super::pane::NativePaneObservation>,
-    before: u64,
-    subscription: super::pane::OutputSubscription,
-    deadline: Instant,
-    result: Option<CommandResult>,
-}
-
-impl PaneOutputSuspension {
-    const OUTPUT_READY: WaitToken = WaitToken::new(0);
-
-    fn new(
-        observation: Rc<super::pane::NativePaneObservation>,
-        before: u64,
-        result: CommandResult,
-    ) -> Result<Self, CommandResult> {
-        let subscription = match observation.subscribe_output() {
-            Ok(subscription) => subscription,
-            Err(_) => return Err(result),
-        };
-        subscription.drain();
-        Ok(Self {
-            observation,
-            before,
-            subscription,
-            deadline: Instant::now() + Duration::from_millis(10),
-            result: Some(result),
-        })
-    }
-
-    fn complete(&mut self) -> CommandSuspensionResult {
-        self.subscription.drain();
-        CommandSuspensionResult::Completed(
-            self.result
-                .take()
-                .expect("pane-output suspension completed twice"),
-        )
-    }
-}
-
-impl Coroutine for PaneOutputSuspension {
-    type Output = CommandSuspensionResult;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        WaitRequest::new(
-            vec![FdInterest::readable(
-                Self::OUTPUT_READY,
-                self.subscription.as_fd(),
-            )],
-            Some(self.deadline),
-        )
-    }
-
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        let output_changed = self.observation.contract_revision() != self.before;
-        let deadline_elapsed = Instant::now() >= self.deadline;
-        if output_changed
-            || deadline_elapsed
-            || ready.contains(Self::OUTPUT_READY)
-            || ready.timed_out()
-        {
-            TaskPoll::Ready(self.complete())
-        } else {
-            TaskPoll::Pending
-        }
-    }
-}
-
 /// Runtime operation used only for work that cannot be polled directly.
 ///
 /// Implementations must return promptly. The returned completion descriptor
@@ -1025,56 +950,15 @@ pub(crate) trait CommandRuntime {
     ) -> io::Result<Completion<CommandSuspensionResult>>;
 }
 
-/// One nonblocking command suspension, regardless of how it is implemented.
-pub(crate) enum CommandTask {
-    Readiness(PaneOutputSuspension),
-    Runtime(Completion<CommandSuspensionResult>),
-}
-
-impl CommandTask {
-    pub(crate) fn start(
-        suspension: CommandSuspension,
-        runtime: &dyn CommandRuntime,
-    ) -> io::Result<Self> {
-        match suspension {
-            CommandSuspension::PaneOutput(wait) => Ok(Self::Readiness(wait)),
-            suspension => runtime.submit(suspension).map(Self::Runtime),
-        }
-    }
-}
-
-impl Coroutine for CommandTask {
-    type Output = io::Result<CommandSuspensionResult>;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        match self {
-            Self::Readiness(task) => task.wait(),
-            Self::Runtime(task) => task.wait(),
-        }
-    }
-
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        match self {
-            Self::Readiness(task) => match task.resume(ready) {
-                TaskPoll::Ready(result) => TaskPoll::Ready(Ok(result)),
-                TaskPoll::Pending => TaskPoll::Pending,
-            },
-            Self::Runtime(task) => task.resume(ready),
-        }
-    }
-}
-
 /// Runtime-facing state for a command suspension.
-pub(crate) struct CommandTaskState(TaskState<CommandTask>);
+pub(crate) struct CommandTaskState(TaskState<Completion<CommandSuspensionResult>>);
 
 impl CommandTaskState {
     pub(crate) fn start(
         suspension: CommandSuspension,
         runtime: &dyn CommandRuntime,
     ) -> io::Result<Self> {
-        Ok(Self(TaskState::new(CommandTask::start(
-            suspension, runtime,
-        )?)))
+        Ok(Self(TaskState::new(runtime.submit(suspension)?)))
     }
 
     fn wait(&self) -> WaitRequest<'_> {
@@ -1686,20 +1570,6 @@ impl ResumableCommandQueue {
                     Err(result) => execution.result = result,
                 }
             }
-            if let Some((observation, before)) = execution.result.pane_output_wait.take() {
-                match PaneOutputSuspension::new(observation, before, execution.result) {
-                    Ok(wait) => {
-                        self.suspended = Some(inflight);
-                        return ResumableCommandTurn::Suspended(CommandSuspension::PaneOutput(
-                            wait,
-                        ));
-                    }
-                    Err(result) => {
-                        execution.result = result;
-                    }
-                }
-            }
-
             self.finish_execution(inflight, execution, state);
         }
         ResumableCommandTurn::Pending
@@ -2144,7 +2014,6 @@ fn interaction_completion_result(completion: PromptCompletion) -> CommandResult 
         stdout_bytes: Vec::new(),
         stderr: completion.stderr,
         exit: completion.exit,
-        pane_output_wait: None,
         deferred_commands: Vec::new(),
         background_commands: Vec::new(),
         continue_queue: true,

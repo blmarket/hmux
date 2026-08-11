@@ -37,7 +37,7 @@ use super::execution::{self, WaitForOutcome};
 use super::{
     flag_value, has_flag, interaction_completion_result, io_error_message, job_delay, positionals,
     shell_command, ClientContext, ClientFileWrite, CommandResult, CommandSuspension,
-    CommandSuspensionResult, PaneOutputSuspension, RunShellCompletion, SourceFileRead,
+    CommandSuspensionResult, RunShellCompletion, SourceFileRead,
 };
 
 /// One suspension expressed as the coroutine that resolves it.
@@ -55,7 +55,6 @@ pub(crate) enum SuspensionJob {
     SaveBuffer(FileWriteJob),
     WaitFor(WaitForJob),
     ClientPrompt(ClientPromptJob),
-    PaneOutput(PaneOutputSuspension),
 }
 
 impl SuspensionJob {
@@ -101,7 +100,6 @@ impl SuspensionJob {
             CommandSuspension::ClientInteraction { completed } => {
                 Self::ClientPrompt(ClientPromptJob::interaction(completed))
             }
-            CommandSuspension::PaneOutput(wait) => Self::PaneOutput(wait),
         }
     }
 }
@@ -119,7 +117,6 @@ impl Coroutine for SuspensionJob {
             Self::SaveBuffer(job) => job.wait(),
             Self::WaitFor(job) => job.wait(),
             Self::ClientPrompt(job) => job.wait(),
-            Self::PaneOutput(job) => job.wait(),
         }
     }
 
@@ -133,7 +130,6 @@ impl Coroutine for SuspensionJob {
             Self::SaveBuffer(job) => job.resume(ready).map(CommandSuspensionResult::SaveBuffer),
             Self::WaitFor(job) => job.resume(ready).map(CommandSuspensionResult::Completed),
             Self::ClientPrompt(job) => job.resume(ready).map(CommandSuspensionResult::Completed),
-            Self::PaneOutput(job) => job.resume(ready),
         }
     }
 }

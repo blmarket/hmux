@@ -14,7 +14,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::io::{self, Read, Write};
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::raw::{c_int, c_void};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -583,10 +583,6 @@ impl OutputSubscription {
 
     pub(crate) fn as_raw_fd(&self) -> c_int {
         self.event.wakeup.as_fd().as_raw_fd()
-    }
-
-    pub(crate) fn as_fd(&self) -> BorrowedFd<'_> {
-        self.event.wakeup.as_fd()
     }
 
     pub(crate) fn drain(&self) {
