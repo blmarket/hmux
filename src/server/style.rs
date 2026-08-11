@@ -4,7 +4,7 @@
 //! module owns only cell presentation and transitions between presentations.
 
 use super::term::{
-    expand_capability, number_capability, string_capability, terminal_utf8, CapabilityParameter,
+    expand_capability, number_capability, string_capability, CapabilityParameter,
     TerminalCapabilities,
 };
 
@@ -801,7 +801,7 @@ impl<'a> TerminalStyleWriter<'a> {
         {
             value.style.attributes.set(Attributes::REVERSE, false);
         }
-        if terminal_utf8(self.terminal)
+        if self.terminal.utf8()
             || string_capability(self.terminal, "smacs").is_none()
             || string_capability(self.terminal, "rmacs").is_none()
         {

@@ -268,6 +268,10 @@ pub(crate) trait TerminalCapabilities {
     #[allow(dead_code)] // consumed as terminal-feature-driven output migrates here
     fn has_feature(&self, name: &str) -> bool;
 
+    /// Whether the client's terminal is UTF-8 capable, as tmux's
+    /// `CLIENT_UTF8` client flag reports it.
+    fn utf8(&self) -> bool;
+
     fn generation(&self) -> u64 {
         0
     }
@@ -549,10 +553,6 @@ impl ResolvedTerm {
         }
         self.recompute_derived_flags(feature_flags);
         self.rebuild_acs();
-        if self.identity.utf8 {
-            self.capabilities
-                .insert("__hmux_utf8".into(), CapabilityValue::Flag(true));
-        }
     }
 
     pub(crate) fn validation_error(&self) -> Option<&'static str> {
@@ -766,6 +766,10 @@ impl TerminalCapabilities for ResolvedTerm {
         self.capabilities.get(name)
     }
 
+    fn utf8(&self) -> bool {
+        self.identity.utf8
+    }
+
     fn has_feature(&self, name: &str) -> bool {
         if self.features.contains(name) {
             return true;
@@ -788,10 +792,6 @@ impl TerminalCapabilities for ResolvedTerm {
     fn generation(&self) -> u64 {
         self.generation
     }
-}
-
-pub(crate) fn terminal_utf8(terminal: &dyn TerminalCapabilities) -> bool {
-    terminal.flag("__hmux_utf8")
 }
 
 pub(crate) fn terminal_acs(terminal: &dyn TerminalCapabilities, input: u8) -> Option<u8> {

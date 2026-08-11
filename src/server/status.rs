@@ -10,7 +10,7 @@ use super::state::{ClientRenderRegistry, RenderInvalidation, ServerState, Sessio
 #[cfg(test)]
 use super::style::CaptureStyleWriter;
 use super::style::{self, CellPresentation, CellStyle, Colour, TerminalStyleWriter, VisualToken};
-use super::term::{terminal_acs, terminal_utf8, TerminalCapabilities};
+use super::term::{terminal_acs, TerminalCapabilities};
 use crate::integration::status::{PaneAgents, StatusSnapshot};
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
 use hmux_vt::codepoint_width;
@@ -2499,7 +2499,7 @@ fn write_terminal_cell_text(
         out.extend_from_slice(cell.text.as_bytes());
         return;
     }
-    if terminal_utf8(terminal) {
+    if terminal.utf8() {
         for byte in cell.text.bytes() {
             if let Some(mapped) = utf8_acs(byte) {
                 out.extend_from_slice(mapped);
