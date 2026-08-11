@@ -4,7 +4,8 @@
 //! module owns only cell presentation and transitions between presentations.
 
 use super::term::{
-    expand_capability, number_capability, string_capability, CapabilityParameter,
+    expand_capability, number_capability, string_capability, Capability,
+    CapabilityParameter,
     TerminalCapabilities,
 };
 
@@ -720,7 +721,7 @@ impl<'a> TerminalStyleWriter<'a> {
     }
 
     pub(crate) fn reset(&mut self, out: &mut Vec<u8>) {
-        if let Some(value) = string_capability(self.terminal, "sgr0") {
+        if let Some(value) = string_capability(self.terminal, Capability::sgr0) {
             out.extend_from_slice(value);
             self.current = Some(CellPresentation::default());
         } else {
@@ -737,7 +738,7 @@ impl<'a> TerminalStyleWriter<'a> {
                 && old.style.underline != next.style.underline)
             || (old.style.underline_colour != Colour::Default
                 && next.style.underline_colour == Colour::Default)
-            || (!self.terminal.flag("AX")
+            || (!self.terminal.flag(Capability::AX)
                 && ((old.style.fg != Colour::Default && next.style.fg == Colour::Default)
                     || (old.style.bg != Colour::Default && next.style.bg == Colour::Default)))
         {
@@ -750,7 +751,7 @@ impl<'a> TerminalStyleWriter<'a> {
             append_capability(
                 out,
                 self.terminal,
-                if next.acs { "smacs" } else { "rmacs" },
+                if next.acs { Capability::smacs } else { Capability::rmacs },
                 &[],
             );
         }
@@ -764,46 +765,46 @@ impl<'a> TerminalStyleWriter<'a> {
         value.style.bg = terminal_colour(self.terminal, value.style.bg);
         if value.style.underline != Underline::None {
             if value.style.underline != Underline::Single
-                && string_capability(self.terminal, "Smulx").is_none()
+                && string_capability(self.terminal, Capability::Smulx).is_none()
             {
                 value.style.underline = Underline::Single;
             }
             if value.style.underline == Underline::Single
-                && string_capability(self.terminal, "smul").is_none()
+                && string_capability(self.terminal, Capability::smul).is_none()
             {
                 value.style.underline = Underline::None;
             }
         }
         if value.style.underline_colour != Colour::Default
-            && string_capability(self.terminal, "Setulc").is_none()
-            && string_capability(self.terminal, "Setulc1").is_none()
+            && string_capability(self.terminal, Capability::Setulc).is_none()
+            && string_capability(self.terminal, Capability::Setulc1).is_none()
         {
             value.style.underline_colour = Colour::Default;
         }
         for (flag, capability) in [
-            (Attributes::BOLD, "bold"),
-            (Attributes::DIM, "dim"),
-            (Attributes::ITALICS, "sitm"),
-            (Attributes::BLINK, "blink"),
-            (Attributes::HIDDEN, "invis"),
-            (Attributes::STRIKETHROUGH, "smxx"),
-            (Attributes::OVERLINE, "Smol"),
+            (Attributes::BOLD, Capability::bold),
+            (Attributes::DIM, Capability::dim),
+            (Attributes::ITALICS, Capability::sitm),
+            (Attributes::BLINK, Capability::blink),
+            (Attributes::HIDDEN, Capability::invis),
+            (Attributes::STRIKETHROUGH, Capability::smxx),
+            (Attributes::OVERLINE, Capability::Smol),
         ] {
             if string_capability(self.terminal, capability).is_none() {
                 value.style.attributes.set(flag, false);
             }
         }
-        if string_capability(self.terminal, "Hls").is_none() {
+        if string_capability(self.terminal, Capability::Hls).is_none() {
             value.hyperlink = None;
         }
-        if string_capability(self.terminal, "rev").is_none()
-            && string_capability(self.terminal, "smso").is_none()
+        if string_capability(self.terminal, Capability::rev).is_none()
+            && string_capability(self.terminal, Capability::smso).is_none()
         {
             value.style.attributes.set(Attributes::REVERSE, false);
         }
         if self.terminal.utf8()
-            || string_capability(self.terminal, "smacs").is_none()
-            || string_capability(self.terminal, "rmacs").is_none()
+            || string_capability(self.terminal, Capability::smacs).is_none()
+            || string_capability(self.terminal, Capability::rmacs).is_none()
         {
             value.acs = false;
         }
@@ -819,17 +820,17 @@ impl<'a> TerminalStyleWriter<'a> {
         }
         if old.underline_colour != new.underline_colour {
             match new.underline_colour {
-                Colour::Default => append_capability(out, self.terminal, "ol", &[]),
+                Colour::Default => append_capability(out, self.terminal, Capability::ol, &[]),
                 Colour::Palette(index) | Colour::Indexed(index) => append_capability(
                     out,
                     self.terminal,
-                    "Setulc1",
+                    Capability::Setulc1,
                     &[CapabilityParameter::Number(index.into())],
                 ),
                 Colour::Rgb(red, green, blue) => append_capability(
                     out,
                     self.terminal,
-                    "Setulc",
+                    Capability::Setulc,
                     &[CapabilityParameter::Number(
                         (i32::from(red) << 16) | (i32::from(green) << 8) | i32::from(blue),
                     )],
@@ -840,20 +841,20 @@ impl<'a> TerminalStyleWriter<'a> {
 
     fn write_colour(&self, out: &mut Vec<u8>, colour: Colour, background: bool) {
         match colour {
-            Colour::Default if self.terminal.flag("AX") => {
+            Colour::Default if self.terminal.flag(Capability::AX) => {
                 out.extend_from_slice(if background { b"\x1b[49m" } else { b"\x1b[39m" });
             }
             Colour::Default => {}
             Colour::Palette(index) | Colour::Indexed(index) => append_capability(
                 out,
                 self.terminal,
-                if background { "setab" } else { "setaf" },
+                if background { Capability::setab } else { Capability::setaf },
                 &[CapabilityParameter::Number(index.into())],
             ),
             Colour::Rgb(red, green, blue) => append_capability(
                 out,
                 self.terminal,
-                if background { "setrgbb" } else { "setrgbf" },
+                if background { Capability::setrgbb } else { Capability::setrgbf },
                 &[
                     CapabilityParameter::Number(red.into()),
                     CapabilityParameter::Number(green.into()),
@@ -865,13 +866,13 @@ impl<'a> TerminalStyleWriter<'a> {
 
     fn write_attributes(&self, out: &mut Vec<u8>, old: &CellStyle, new: &CellStyle) {
         for (flag, capability) in [
-            (Attributes::BOLD, "bold"),
-            (Attributes::DIM, "dim"),
-            (Attributes::ITALICS, "sitm"),
-            (Attributes::BLINK, "blink"),
-            (Attributes::HIDDEN, "invis"),
-            (Attributes::STRIKETHROUGH, "smxx"),
-            (Attributes::OVERLINE, "Smol"),
+            (Attributes::BOLD, Capability::bold),
+            (Attributes::DIM, Capability::dim),
+            (Attributes::ITALICS, Capability::sitm),
+            (Attributes::BLINK, Capability::blink),
+            (Attributes::HIDDEN, Capability::invis),
+            (Attributes::STRIKETHROUGH, Capability::smxx),
+            (Attributes::OVERLINE, Capability::Smol),
         ] {
             if new.attributes.has(flag) && !old.attributes.has(flag) {
                 append_capability(out, self.terminal, capability, &[]);
@@ -881,22 +882,22 @@ impl<'a> TerminalStyleWriter<'a> {
             append_capability(
                 out,
                 self.terminal,
-                if string_capability(self.terminal, "rev").is_some() {
-                    "rev"
+                if string_capability(self.terminal, Capability::rev).is_some() {
+                    Capability::rev
                 } else {
-                    "smso"
+                    Capability::smso
                 },
                 &[],
             );
         }
         if new.underline != Underline::None && new.underline != old.underline {
             if new.underline == Underline::Single {
-                append_capability(out, self.terminal, "smul", &[]);
+                append_capability(out, self.terminal, Capability::smul, &[]);
             } else {
                 append_capability(
                     out,
                     self.terminal,
-                    "Smulx",
+                    Capability::Smulx,
                     &[CapabilityParameter::Number(new.underline.sgr().into())],
                 );
             }
@@ -911,7 +912,7 @@ impl<'a> TerminalStyleWriter<'a> {
         append_capability(
             out,
             self.terminal,
-            "Hls",
+            Capability::Hls,
             &[
                 CapabilityParameter::String(id),
                 CapabilityParameter::String(uri),
@@ -923,24 +924,24 @@ impl<'a> TerminalStyleWriter<'a> {
 fn append_capability(
     out: &mut Vec<u8>,
     terminal: &dyn TerminalCapabilities,
-    name: &str,
+    capability: Capability,
     parameters: &[CapabilityParameter<'_>],
 ) {
     if parameters.is_empty() {
-        if let Some(value) = string_capability(terminal, name) {
+        if let Some(value) = string_capability(terminal, capability) {
             out.extend_from_slice(value);
         }
-    } else if let Some(value) = expand_capability(terminal, name, parameters) {
+    } else if let Some(value) = expand_capability(terminal, capability, parameters) {
         out.extend_from_slice(&value);
     }
 }
 
 fn terminal_colour(terminal: &dyn TerminalCapabilities, colour: Colour) -> Colour {
-    let colours = number_capability(terminal, "colors").unwrap_or(8).max(0) as u16;
+    let colours = number_capability(terminal, Capability::colors).unwrap_or(8).max(0) as u16;
     match colour {
         Colour::Rgb(red, green, blue)
-            if string_capability(terminal, "setrgbf").is_some()
-                && string_capability(terminal, "setrgbb").is_some() =>
+            if string_capability(terminal, Capability::setrgbf).is_some()
+                && string_capability(terminal, Capability::setrgbb).is_some() =>
         {
             Colour::Rgb(red, green, blue)
         }

@@ -62,7 +62,7 @@ use super::state::{
     PopupRequest, ServerState, SharedState,
 };
 use super::status;
-use super::term::{self, ResolvedTerm, TerminalCapabilities, TerminalIdentity};
+use super::term::{self, Capability, ResolvedTerm, TerminalCapabilities, TerminalIdentity};
 pub(super) use actions::dispatch_control_client_keys;
 #[cfg(test)]
 use actions::dispatch_prefix_key;
@@ -1362,9 +1362,9 @@ fn take_large_scroll_repaint(
     let Ok((window, _)) = state.active_window_panes(session) else {
         return false;
     };
-    let has_scroll_region = term::string_capability(terminal, "csr").is_some();
-    let has_margins = term::string_capability(terminal, "Cmg").is_some()
-        && term::string_capability(terminal, "Clmg").is_some();
+    let has_scroll_region = term::string_capability(terminal, Capability::csr).is_some();
+    let has_margins = term::string_capability(terminal, Capability::Cmg).is_some()
+        && term::string_capability(terminal, Capability::Clmg).is_some();
     let mut repaint = false;
     for node in &window.panes {
         let revision = node.pane.observation_state().large_scroll_revision();
@@ -1511,15 +1511,15 @@ fn get_winsize(fd: RawFd) -> io::Result<ClientWinsize> {
 
 fn tty_start_sequence(terminal: &ResolvedTerm, focus_events: bool) -> Vec<u8> {
     let mut output = Vec::new();
-    for name in ["smcup", "smkx", "clear", "cnorm"] {
-        if let Some(value) = term::string_capability(terminal, name) {
+    for capability in [Capability::smcup, Capability::smkx, Capability::clear, Capability::cnorm] {
+        if let Some(value) = term::string_capability(terminal, capability) {
             output.extend_from_slice(value);
         }
     }
-    if terminal.capability("kmous").is_some() {
+    if terminal.capability(Capability::kmous).is_some() {
         output.extend_from_slice(b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1005l");
     }
-    if let Some(value) = term::string_capability(terminal, "Enbp") {
+    if let Some(value) = term::string_capability(terminal, Capability::Enbp) {
         output.extend_from_slice(value);
     }
     if terminal.is_vt100_like() {
@@ -1530,7 +1530,7 @@ fn tty_start_sequence(terminal: &ResolvedTerm, focus_events: bool) -> Vec<u8> {
     // tmux enables focus reporting from `tty_update_features`, gated on the
     // `focus-events` server option.
     if focus_events {
-        if let Some(value) = term::string_capability(terminal, "Enfcs") {
+        if let Some(value) = term::string_capability(terminal, Capability::Enfcs) {
             output.extend_from_slice(value);
         }
     }
@@ -1540,23 +1540,29 @@ fn tty_start_sequence(terminal: &ResolvedTerm, focus_events: bool) -> Vec<u8> {
 fn tty_stop_sequence(terminal: &ResolvedTerm, rows: u16) -> Vec<u8> {
     let mut output = term::expand_capability(
         terminal,
-        "csr",
+        Capability::csr,
         &[
             term::CapabilityParameter::Number(0),
             term::CapabilityParameter::Number(i32::from(rows.saturating_sub(1))),
         ],
     )
     .unwrap_or_default();
-    for name in ["sgr0", "rmkx", "clear", "cnorm"] {
-        if let Some(value) = term::string_capability(terminal, name) {
+    for capability in [Capability::sgr0, Capability::rmkx, Capability::clear, Capability::cnorm] {
+        if let Some(value) = term::string_capability(terminal, capability) {
             output.extend_from_slice(value);
         }
     }
-    if terminal.capability("kmous").is_some() {
+    if terminal.capability(Capability::kmous).is_some() {
         output.extend_from_slice(b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1005l");
     }
-    for name in ["Dsbp", "Dsfcs", "Dseks", "Dsmg", "rmcup"] {
-        if let Some(value) = term::string_capability(terminal, name) {
+    for capability in [
+        Capability::Dsbp,
+        Capability::Dsfcs,
+        Capability::Dseks,
+        Capability::Dsmg,
+        Capability::rmcup,
+    ] {
+        if let Some(value) = term::string_capability(terminal, capability) {
             output.extend_from_slice(value);
         }
     }
@@ -1779,8 +1785,8 @@ fn terminal_title_update(
     *last_title = Some(title.clone());
 
     let (Some(start), Some(finish)) = (
-        term::string_capability(terminal, "tsl"),
-        term::string_capability(terminal, "fsl"),
+        term::string_capability(terminal, Capability::tsl),
+        term::string_capability(terminal, Capability::fsl),
     ) else {
         return Vec::new();
     };
@@ -1856,7 +1862,7 @@ fn render_status_message_row_at(
 }
 
 fn append_terminal_style_reset(out: &mut Vec<u8>, terminal: &dyn TerminalCapabilities) {
-    if let Some(reset) = term::string_capability(terminal, "sgr0") {
+    if let Some(reset) = term::string_capability(terminal, Capability::sgr0) {
         out.extend_from_slice(reset);
     }
 }
