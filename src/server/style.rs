@@ -596,11 +596,7 @@ fn write_capture_style(out: &mut Vec<u8>, old: &CellStyle, new: &CellStyle) {
     let reset = old.attributes.removed_from(new.attributes)
         || (old.underline != Underline::None && new.underline != old.underline)
         || (old.underline_colour != Colour::Default && new.underline_colour == Colour::Default);
-    let baseline = if reset {
-        CellStyle::default()
-    } else {
-        *old
-    };
+    let baseline = if reset { CellStyle::default() } else { *old };
     // `grid_string_cells_code` collects the reset and every attribute that has
     // to be set again into one parameter list, so a capture that has to reset
     // before it can set writes `ESC [ 0 ; 7 m` rather than two sequences.

@@ -34,12 +34,7 @@ pub fn snapshot(screen: &Screen, start: usize, count: usize) -> Grid {
 ///
 /// The screen is still what resolves a cell's link, as in tmux: `-a` swaps the
 /// grid it walks but keeps reading `wp->base`'s hyperlink table.
-pub fn snapshot_grid(
-    screen: &Screen,
-    grid: &EngineGrid,
-    start: usize,
-    count: usize,
-) -> Grid {
+pub fn snapshot_grid(screen: &Screen, grid: &EngineGrid, start: usize, count: usize) -> Grid {
     let total = grid.total();
     let start = start.min(total);
     let end = start.saturating_add(count).min(total);
@@ -585,4 +580,3 @@ mod tests {
         assert!(dump.contains("\x1b[38;2;1;2;3m"), "got {dump:?}");
     }
 }
-

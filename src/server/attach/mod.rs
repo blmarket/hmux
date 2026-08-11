@@ -2571,15 +2571,7 @@ fn compose_frame_cached(
     terminal: &dyn TerminalCapabilities,
 ) -> io::Result<Vec<u8>> {
     if st.active_window_panes(target)?.0.panes.len() > 1 {
-        return compose_split_frame(
-            st,
-            target,
-            cols,
-            rows,
-            status_h,
-            status_cache,
-            terminal,
-        );
+        return compose_split_frame(st, target, cols, rows, status_h, status_cache, terminal);
     }
     let pane_height = if status_h > 0 {
         rows.saturating_sub(status_h).max(1)
@@ -3347,8 +3339,7 @@ fn compose_split_frame(
     );
     out.extend_from_slice(format!("\x1b[{} q", win.panes[active].pane.cursor_shape()).as_bytes());
     if win.panes[active].mode_view.is_none()
-        && (win.panes[active].copy.is_some()
-            || win.panes[active].pane.cursor_visible())
+        && (win.panes[active].copy.is_some() || win.panes[active].pane.cursor_visible())
     {
         out.extend_from_slice(b"\x1b[?25h");
     }

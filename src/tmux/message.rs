@@ -156,7 +156,10 @@ pub enum Message {
     /// `MSG_EXEC`: server→client, `detach-client -E`. The payload is the
     /// command and then the shell to run it with, each NUL-terminated; the
     /// client execs `shell -c command` in place of detaching.
-    Exec { command: String, shell: String },
+    Exec {
+        command: String,
+        shell: String,
+    },
     Shutdown,
     /// `MSG_FLAGS`: 64-bit client flags update.
     Flags(i64),

@@ -55,8 +55,11 @@ impl CopyState {
     /// `#{search_count}`: how many matches are marked up, or `None` while
     /// nothing is — tmux reports the count only alongside a live searchmark.
     pub(crate) fn search_count(&self) -> Option<usize> {
-        self.search_marks
-            .then(|| self.search.as_ref().map_or(0, |search| search.matches.len()))
+        self.search_marks.then(|| {
+            self.search
+                .as_ref()
+                .map_or(0, |search| search.matches.len())
+        })
     }
 
     pub(crate) fn vt_rows(&self) -> impl Iterator<Item = &[u8]> {
@@ -441,7 +444,10 @@ pub(super) fn clamp_copy_state(state: &mut CopyState, vi: bool) {
             copy_cursor_limit(grid, row, vi)
         }
     };
-    state.cursor.row = state.cursor.row.min(state.grid.rows.len().saturating_sub(1));
+    state.cursor.row = state
+        .cursor
+        .row
+        .min(state.grid.rows.len().saturating_sub(1));
     state.cursor.col = state.cursor.col.min(limit(&state.grid, state.cursor.row));
     state.desired_col = state.desired_col.min(state.grid.cols as usize);
     if let Some(selection) = state.selection.as_mut() {

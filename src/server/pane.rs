@@ -30,19 +30,17 @@ use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, Scr
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 use crate::server::input_keys::ExtendedKeys;
 use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
-use hmux_vt::{Terminal, TerminalEvent as VtEvent};
 use hmux_vt::StringEnd;
+use hmux_vt::{Terminal, TerminalEvent as VtEvent};
 
-use hmux_vt::MouseEvent;
 pub(crate) use hmux_vt::parse_packed_colour;
+use hmux_vt::MouseEvent;
+use hmux_vt::PaneScreen;
+use hmux_vt::{mode, CaptureExtent, Grid, GridDims, RowExtent, ScreenOptions, ScreenSnapshot};
 pub(crate) use hmux_vt::{
     ClipboardEvent as PaneClipboardEvent, CursorShape as PaneCursorShape,
     OutputPolicy as PaneOutputPolicy, PassthroughPolicy,
 };
-use hmux_vt::{
-    mode, CaptureExtent, Grid, GridDims, RowExtent, ScreenOptions, ScreenSnapshot,
-};
-use hmux_vt::PaneScreen;
 
 /// A single pane. Holds the emulated screen and, if live, the child on its pty.
 pub struct Pane {
@@ -1003,7 +1001,10 @@ impl NativePaneObservation {
     #[allow(dead_code)]
     pub(crate) fn contract_terminal_tail(&self, max_rows: usize) -> io::Result<String> {
         let terminal = self.term.borrow();
-        Ok(trailing_lines(&plain_dump(terminal.screen(), false), max_rows))
+        Ok(trailing_lines(
+            &plain_dump(terminal.screen(), false),
+            max_rows,
+        ))
     }
 }
 
@@ -1480,7 +1481,10 @@ impl Pane {
     /// Like the output policy, these are pushed rather than looked up, and for
     /// the same reason: the screen has no view of the option tables.
     pub(crate) fn set_screen_options(&self, options: ScreenOptions) {
-        self.observation.term.borrow_mut().set_screen_options(options);
+        self.observation
+            .term
+            .borrow_mut()
+            .set_screen_options(options);
     }
 
     /// Apply the session's history cap to the pane's primary scrollback.
@@ -1578,7 +1582,10 @@ impl Pane {
 
     /// `resize-pane -T`; see [`PaneScreen::trim_history_below_cursor`].
     pub(crate) fn trim_history_below_cursor(&self) {
-        self.observation.term.borrow_mut().trim_history_below_cursor();
+        self.observation
+            .term
+            .borrow_mut()
+            .trim_history_below_cursor();
     }
 
     /// The screen the alternate-screen switch displaced, which
@@ -1612,11 +1619,11 @@ impl Pane {
     /// Rows as `capture-pane -e` wants them, which is not the same read as the
     /// compositor's: see [`PaneScreen::dump_vt_rows`].
     pub(crate) fn dump_rows_vt(&self, start: usize, rows: usize, extent: CaptureExtent) -> Vec<u8> {
-        self.observation
-            .term
-            .borrow()
-            .screen()
-            .dump_vt_rows(start, rows, RowExtent::Capture(extent))
+        self.observation.term.borrow().screen().dump_vt_rows(
+            start,
+            rows,
+            RowExtent::Capture(extent),
+        )
     }
 
     /// One physical row as trimmed plain text, without formatting the rest of
@@ -2683,7 +2690,11 @@ mod tests {
                 None,
                 "{emoji:?} is more than one codepoint"
             );
-            assert_eq!(codepoint_width(first as u32), 2, "{emoji:?} is not 2 columns");
+            assert_eq!(
+                codepoint_width(first as u32),
+                2,
+                "{emoji:?} is not 2 columns"
+            );
         }
 
         // Unknown stays empty on purpose: it is what lets the state emoji fall
@@ -2872,10 +2883,7 @@ mod tests {
         pane.clear_history().expect("clear history");
 
         assert_eq!(pane.scrollback_rows(), 0);
-        assert_eq!(
-            pane.dump_viewport_vt(0, 4).0,
-            visible_before
-        );
+        assert_eq!(pane.dump_viewport_vt(0, 4).0, visible_before);
     }
 
     #[test]

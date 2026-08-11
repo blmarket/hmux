@@ -299,7 +299,8 @@ impl Engine {
             // CUP / HVP.
             (None, [], b'H' | b'f') => {
                 if let (Some(row), Some(column)) = (count(0), count(1)) {
-                    self.screen.cursor_move(Some(column - 1), Some(row - 1), true);
+                    self.screen
+                        .cursor_move(Some(column - 1), Some(row - 1), true);
                 }
             }
             // ED.
@@ -409,7 +410,9 @@ impl Engine {
             // the pane wants. Only the two bits are recorded here; whether the
             // pane actually gets them is `extended-keys`'s decision, made where
             // the key is encoded.
-            (Some(b'>'), [], b'm') if params.first().is_none_or(|param| param.get(4) == Some(4)) => {
+            (Some(b'>'), [], b'm')
+                if params.first().is_none_or(|param| param.get(4) == Some(4)) =>
+            {
                 self.screen.mode_clear(mode::ALL_KEYS_EXTENDED);
                 match get(1, 0) {
                     Some(1) => self.screen.mode_set(mode::KEYS_EXTENDED),
@@ -921,8 +924,10 @@ impl Engine {
 fn esc_is_known(intermediates: &[u8], final_byte: u8) -> bool {
     matches!(
         (intermediates, final_byte),
-        ([], b'7' | b'8' | b'=' | b'>' | b'D' | b'E' | b'H' | b'M' | b'\\' | b'c')
-            | ([b'#'], b'8')
+        (
+            [],
+            b'7' | b'8' | b'=' | b'>' | b'D' | b'E' | b'H' | b'M' | b'\\' | b'c'
+        ) | ([b'#'], b'8')
             | ([b'('] | [b')'], b'0' | b'B')
     )
 }

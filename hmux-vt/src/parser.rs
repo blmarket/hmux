@@ -1252,10 +1252,7 @@ mod tests {
         parser.parse("界".as_bytes()[..2].as_ref(), |token| out.push(token.kind));
         assert_eq!(out, vec![TokenKind::Utf8Started]);
         parser.parse("界".as_bytes()[2..].as_ref(), |token| out.push(token.kind));
-        assert_eq!(
-            out,
-            vec![TokenKind::Utf8Started, TokenKind::Print('界')]
-        );
+        assert_eq!(out, vec![TokenKind::Utf8Started, TokenKind::Print('界')]);
     }
 
     #[test]
@@ -1283,12 +1280,16 @@ mod tests {
         // A continuation byte after the sequence still continues the character
         // the sequence interrupted: nothing stopped it.
         assert_eq!(
-            tokens("\u{754c}".as_bytes()[..1].iter().copied()
-                .chain(b"\x1b[m".iter().copied())
-                .chain("\u{754c}".as_bytes()[1..].iter().copied())
-                .collect::<Vec<u8>>()
-                .as_slice())
-                .last(),
+            tokens(
+                "\u{754c}".as_bytes()[..1]
+                    .iter()
+                    .copied()
+                    .chain(b"\x1b[m".iter().copied())
+                    .chain("\u{754c}".as_bytes()[1..].iter().copied())
+                    .collect::<Vec<u8>>()
+                    .as_slice()
+            )
+            .last(),
             Some(&TokenKind::Print('\u{754c}'))
         );
     }
@@ -1428,7 +1429,10 @@ mod tests {
         let mut payload = b"\x1b[".to_vec();
         payload.extend(std::iter::repeat_n(&b"1;"[..], 23).flatten().copied());
         payload.extend_from_slice(b"5B");
-        assert!(tokens(&payload).is_empty(), "24 positions drop the sequence");
+        assert!(
+            tokens(&payload).is_empty(),
+            "24 positions drop the sequence"
+        );
     }
 
     #[test]

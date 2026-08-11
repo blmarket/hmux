@@ -3667,7 +3667,13 @@ fn new_window(args: &[String], st: &mut ServerState, context: &ClientContext) ->
     let command = trailing_command(args, VALUE_FLAGS);
     let argv = pane_command_argv(command.as_slice(), st, Some(&session));
     let spawn_environment = flag_values(args, "-e");
-    let argv = pane_argv(argv, context, &spawn_environment, st, SpawnSession::Existing(&session));
+    let argv = pane_argv(
+        argv,
+        context,
+        &spawn_environment,
+        st,
+        SpawnSession::Existing(&session),
+    );
     let result = if relative {
         match anchor_window_index(&session, explicit, st) {
             Some(anchor) => st.new_window_relative_with_spawn(
@@ -5503,7 +5509,13 @@ fn split_window(args: &[String], st: &mut ServerState, context: &ClientContext) 
     }
     let argv = pane_command_argv(command.as_slice(), st, Some(&target));
     let spawn_environment = flag_values(args, "-e");
-    let argv = pane_argv(argv, context, &spawn_environment, st, SpawnSession::Existing(&target));
+    let argv = pane_argv(
+        argv,
+        context,
+        &spawn_environment,
+        st,
+        SpawnSession::Existing(&target),
+    );
     let created = if empty {
         st.split_window_direction_with_spec(
             &target,
@@ -5645,7 +5657,13 @@ fn new_pane(args: &[String], st: &mut ServerState, context: &ClientContext) -> C
             .collect(),
     };
     let spawn_environment = flag_values(args, "-e");
-    let argv = pane_argv(argv, context, &spawn_environment, st, SpawnSession::Existing(&target));
+    let argv = pane_argv(
+        argv,
+        context,
+        &spawn_environment,
+        st,
+        SpawnSession::Existing(&target),
+    );
     let select = !has_flag(args, "-d");
     let created = if has_flag(args, "-L") {
         let direction = if has_flag(args, "-h") {
@@ -5922,7 +5940,15 @@ fn respawn_pane(args: &[String], st: &mut ServerState, context: &ClientContext) 
             }
             Some(saved.argv)
         });
-        base.map(|argv| pane_argv(argv, context, &environment, st, SpawnSession::Existing(&target)))
+        base.map(|argv| {
+            pane_argv(
+                argv,
+                context,
+                &environment,
+                st,
+                SpawnSession::Existing(&target),
+            )
+        })
     };
     match st.respawn_pane_process(&target, argv, cwd) {
         Ok(()) => CommandResult::ok(""),
@@ -5969,7 +5995,15 @@ fn respawn_window(args: &[String], st: &mut ServerState, context: &ClientContext
     let argv = if environment.is_empty() {
         argv
     } else {
-        argv.map(|argv| pane_argv(argv, context, &environment, st, SpawnSession::Existing(&target)))
+        argv.map(|argv| {
+            pane_argv(
+                argv,
+                context,
+                &environment,
+                st,
+                SpawnSession::Existing(&target),
+            )
+        })
     };
     let cwd = command_option_value(args, "-c", &["-c", "-e", "-t"]).map(PathBuf::from);
     match st.respawn_window_process(&target, argv, cwd) {
@@ -7272,7 +7306,9 @@ fn capture_pane(args: &[String], st: &mut ServerState, agents: &PaneAgents) -> C
                 let rows = range.bottom - range.top + 1;
                 let grid = node.pane.grid_snapshot_range(range.top, rows);
                 let styled_rows = styled.then(|| {
-                    let bytes = node.pane.dump_rows_vt(range.top, rows, capture_extent(args));
+                    let bytes = node
+                        .pane
+                        .dump_rows_vt(range.top, rows, capture_extent(args));
                     capture_vt_normalize_rows(&bytes, rows)
                 });
                 serialize_capture(args, &grid, range.top, range, styled_rows.as_deref())
@@ -7649,7 +7685,8 @@ fn capture_vt_normalize_row(
         // back with `ESC ( B`; a capture spells the same run SO … SI, so both
         // ends of it have to be recognized — a missed `ESC ( B` would leave the
         // `B` in the captured text and the run open to the end of the row.
-        if bytes.get(index + 1) == Some(&b'(') && matches!(bytes.get(index + 2), Some(b'0' | b'B')) {
+        if bytes.get(index + 1) == Some(&b'(') && matches!(bytes.get(index + 2), Some(b'0' | b'B'))
+        {
             let acs = bytes[index + 2] == b'0';
             index += 3;
             tokens.push(CaptureToken::Acs(acs));
@@ -8699,7 +8736,10 @@ fn pin_run_shell_view_target(args: &[String], state: &ServerState) -> Vec<String
     let Some(position) = args.iter().position(|arg| arg == "-t") else {
         return args;
     };
-    let Some(resolved) = args.get(position + 1).and_then(|value| state.resolve(value)) else {
+    let Some(resolved) = args
+        .get(position + 1)
+        .and_then(|value| state.resolve(value))
+    else {
         return args;
     };
     let pane_id = state.window(resolved.session, resolved.window).panes[resolved.pane].id;

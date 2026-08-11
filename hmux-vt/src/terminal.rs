@@ -252,6 +252,7 @@ fn window_size_report(screen: &PaneScreen, operation: u32) -> Vec<u8> {
     let dims = screen.grid_dims();
     let options = screen.options();
     let (cols, rows) = (u32::from(dims.cols), u32::from(dims.viewport_rows));
+    // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
     let (report, height, width) = match operation {
         14 => (4, rows * options.ypixel, cols * options.xpixel),
         15 => (5, rows * options.ypixel, cols * options.xpixel),
@@ -375,7 +376,10 @@ mod tests {
         // Set a steady underline, query it, then change to a bar afterwards in
         // the same chunk: the answer reports the underline.
         let events = process(&mut terminal, b"\x1b[4 q\x1bP$q q\x1b\\\x1b[6 q");
-        assert_eq!(events, [TerminalEvent::Reply(b"\x1bP1$r q4 q\x1b\\".to_vec())]);
+        assert_eq!(
+            events,
+            [TerminalEvent::Reply(b"\x1bP1$r q4 q\x1b\\".to_vec())]
+        );
         assert_eq!(terminal.screen().cursor_style(), 6);
     }
 
@@ -394,7 +398,10 @@ mod tests {
     fn the_title_lives_on_the_screen_and_the_stack_pushes_and_pops() {
         let mut terminal = Terminal::new(80, 24);
         assert_eq!(terminal.screen().title(), None);
-        process(&mut terminal, b"\x1b]2;first\x07\x1b[22;0t\x1b]0;second\x07");
+        process(
+            &mut terminal,
+            b"\x1b]2;first\x07\x1b[22;0t\x1b]0;second\x07",
+        );
         assert_eq!(terminal.screen().title(), Some("second".to_string()));
         process(&mut terminal, b"\x1b[23;0t");
         assert_eq!(

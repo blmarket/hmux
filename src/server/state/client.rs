@@ -2114,7 +2114,8 @@ impl ServerState {
         invoking_tty: Option<&str>,
         exec: Option<&str>,
     ) -> ClientActionResult {
-        self.client_renders.detach_client(target, invoking_tty, exec)
+        self.client_renders
+            .detach_client(target, invoking_tty, exec)
     }
 
     pub(crate) fn suspend_client(

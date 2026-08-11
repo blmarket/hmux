@@ -10,9 +10,9 @@ use std::path::PathBuf;
 
 use super::sizing::{clamp_window_size, parse_size_pair, DEFAULT_XPIXEL, DEFAULT_YPIXEL};
 use super::{
-    fill_spec_spawn_ids, now_epoch, now_micros, pane_start_command, ExitEmpty,
-    LayoutCell, Notification, Pane, PaneNode, PaneSpec, RenderInvalidation, ServerState, Session,
-    Window, Winlink, ALERT_ACTIVITY,
+    fill_spec_spawn_ids, now_epoch, now_micros, pane_start_command, ExitEmpty, LayoutCell,
+    Notification, Pane, PaneNode, PaneSpec, RenderInvalidation, ServerState, Session, Window,
+    Winlink, ALERT_ACTIVITY,
 };
 use crate::server::options::{is_hook, OptionSet};
 

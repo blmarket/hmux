@@ -270,11 +270,9 @@ impl Platform for Linux {
         let Ok(target) = fs::read_link(format!("/proc/{pid}/fd/{descriptor}")) else {
             return Some(false);
         };
-        Some(
-            target
-                .to_str()
-                .is_some_and(|target| target.starts_with("/dev/pts/") || target.starts_with("/dev/tty")),
-        )
+        Some(target.to_str().is_some_and(|target| {
+            target.starts_with("/dev/pts/") || target.starts_with("/dev/tty")
+        }))
     }
 }
 
