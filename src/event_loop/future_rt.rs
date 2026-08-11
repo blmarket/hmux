@@ -19,8 +19,13 @@
 //!   order is observable behavior.
 //!
 //! Everything here is single-threaded; tasks are not `Send` and freely hold
-//! `Rc`/`RefCell` state. The only thread-safe atom is the waker payload,
-//! which the `std::task::Waker` contract requires.
+//! `Rc`/`RefCell` state — including the wakers. Parking uses
+//! [`LocalWaker`] (`#![feature(local_waker)]`), so nothing in the wake path is
+//! atomic and the run queue is a plain `Rc<RefCell<..>>`. The `Waker` half of
+//! the [`Context`] is [`Waker::noop`]: **a leaf that parks `cx.waker()`
+//! instead of `cx.local_waker()` never wakes**. Every leaf here parks the
+//! local waker; a future from elsewhere must do the same to run on this
+//! executor.
 #![warn(clippy::await_holding_refcell_ref)]
 
 use std::cell::RefCell;
@@ -30,8 +35,7 @@ use std::io;
 use std::os::fd::BorrowedFd;
 use std::pin::Pin;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll, Wake, Waker};
+use std::task::{Context, ContextBuilder, LocalWake, LocalWaker, Poll, Waker};
 use std::time::{Duration, Instant};
 
 use super::reactor::{MioReactor, Reactor as _, Token};
@@ -48,7 +52,7 @@ struct IoState {
     /// by later deliveries; fine under the edge-style "drain until
     /// `WouldBlock` before waiting again" discipline the leaves follow.
     pending: Option<Readiness>,
-    waker: Option<Waker>,
+    waker: Option<LocalWaker>,
 }
 
 type IoSlot = Rc<RefCell<IoState>>;
@@ -60,34 +64,36 @@ struct Inner {
     registered: usize,
     /// `(deadline, waker)` pairs; a task may re-arm on every poll, so stale
     /// duplicates exist and the wakes they cause are spurious-but-tolerated.
-    timers: Vec<(Instant, Waker)>,
+    timers: Vec<(Instant, LocalWaker)>,
     /// The slot is `None` while its future is being polled, which lets a
     /// running task spawn, register, and wake others without re-borrowing.
     tasks: HashMap<TaskId, Option<Pin<Box<dyn Future<Output = ()>>>>>,
     next_task: TaskId,
 }
 
+type ReadyQueue = Rc<RefCell<VecDeque<TaskId>>>;
+
 /// Wakes are just "push the task id"; the run queue is the whole mechanism.
-/// `Arc<Mutex<..>>` only because `Waker: Send + Sync` by contract — in this
-/// single-threaded loop the mutex is never contended.
+/// [`LocalWake`] keeps that payload an `Rc` — the `Send + Sync` bound that
+/// would force `Arc<Mutex<..>>` belongs to `Waker`, not `LocalWaker`.
 struct QueueWaker {
     task: TaskId,
-    ready: Arc<Mutex<VecDeque<TaskId>>>,
+    ready: ReadyQueue,
 }
 
-impl Wake for QueueWaker {
-    fn wake(self: Arc<Self>) {
+impl LocalWake for QueueWaker {
+    fn wake(self: Rc<Self>) {
         self.wake_by_ref();
     }
 
-    fn wake_by_ref(self: &Arc<Self>) {
-        self.ready.lock().unwrap().push_back(self.task);
+    fn wake_by_ref(self: &Rc<Self>) {
+        self.ready.borrow_mut().push_back(self.task);
     }
 }
 
 pub struct Runtime {
     inner: Rc<RefCell<Inner>>,
-    ready: Arc<Mutex<VecDeque<TaskId>>>,
+    ready: ReadyQueue,
 }
 
 /// Cloneable capability to spawn tasks and create leaf futures. The `Rc`
@@ -96,7 +102,7 @@ pub struct Runtime {
 #[derive(Clone)]
 pub struct Handle {
     inner: Rc<RefCell<Inner>>,
-    ready: Arc<Mutex<VecDeque<TaskId>>>,
+    ready: ReadyQueue,
 }
 
 impl Handle {
@@ -106,7 +112,7 @@ impl Handle {
         let id = inner.next_task;
         inner.next_task += 1;
         inner.tasks.insert(id, Some(Box::pin(future)));
-        self.ready.lock().unwrap().push_back(id);
+        self.ready.borrow_mut().push_back(id);
         id
     }
 
@@ -125,14 +131,14 @@ impl Runtime {
                 tasks: HashMap::new(),
                 next_task: 0,
             })),
-            ready: Arc::new(Mutex::new(VecDeque::new())),
+            ready: Rc::new(RefCell::new(VecDeque::new())),
         })
     }
 
     pub fn handle(&self) -> Handle {
         Handle {
             inner: Rc::clone(&self.inner),
-            ready: Arc::clone(&self.ready),
+            ready: Rc::clone(&self.ready),
         }
     }
 
@@ -157,7 +163,7 @@ impl Runtime {
     /// `Future` contract tolerates.
     fn run_ready(&self) {
         loop {
-            let next = self.ready.lock().unwrap().pop_front();
+            let next = self.ready.borrow_mut().pop_front();
             let Some(id) = next else { return };
             let taken = self
                 .inner
@@ -170,11 +176,15 @@ impl Runtime {
                 // stale waker can only miss, never hit a newer task.
                 continue;
             };
-            let waker = Waker::from(Arc::new(QueueWaker {
+            let waker = LocalWaker::from(Rc::new(QueueWaker {
                 task: id,
-                ready: Arc::clone(&self.ready),
+                ready: Rc::clone(&self.ready),
             }));
-            let mut cx = Context::from_waker(&waker);
+            // The `Waker` half is inert on purpose: a `Send` wake path would
+            // mean an `Arc<Mutex<..>>` run queue for wakes that never happen.
+            let mut cx = ContextBuilder::from_waker(Waker::noop())
+                .local_waker(&waker)
+                .build();
             match future.as_mut().poll(&mut cx) {
                 Poll::Ready(()) => {
                     self.inner.borrow_mut().tasks.remove(&id);
@@ -278,7 +288,7 @@ impl Future for ReadinessFuture<'_> {
         if let Some(readiness) = slot.pending.take() {
             return Poll::Ready(readiness);
         }
-        slot.waker = Some(cx.waker().clone());
+        slot.waker = Some(cx.local_waker().clone());
         Poll::Pending
     }
 }
@@ -305,7 +315,7 @@ impl Future for Sleep {
         self.inner
             .borrow_mut()
             .timers
-            .push((self.deadline, cx.waker().clone()));
+            .push((self.deadline, cx.local_waker().clone()));
         Poll::Pending
     }
 }
@@ -316,7 +326,7 @@ impl Future for Sleep {
 struct OneshotSlot<T> {
     value: Option<T>,
     closed: bool,
-    waker: Option<Waker>,
+    waker: Option<LocalWaker>,
 }
 
 pub fn oneshot<T>() -> (OneshotSender<T>, OneshotReceiver<T>) {
@@ -372,7 +382,7 @@ impl<T> Future for OneshotReceiver<T> {
         if slot.closed {
             return Poll::Ready(None);
         }
-        slot.waker = Some(cx.waker().clone());
+        slot.waker = Some(cx.local_waker().clone());
         Poll::Pending
     }
 }

@@ -15,6 +15,9 @@
 //! The pane tokenizer and the terminal emulation live in the `hmux-vt` crate;
 //! the daemon consumes them only through that crate's public surface.
 
+// `future_rt` parks non-`Send` wakers on a single-threaded run queue.
+#![feature(local_waker)]
+
 pub mod error;
 pub(crate) mod event_loop;
 pub mod integration;
