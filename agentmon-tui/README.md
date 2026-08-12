@@ -78,11 +78,23 @@ idle at its prompt — so `looper` is what ends the run, with `/exit` and a
 `kill-pane` fallback. An agent that goes `blocked` wants a human instead: the
 loop stops there and leaves the pane up for you, without committing.
 
+`/exit` is typed as separate keystrokes with a pause before its Enter. Sent as
+one burst it reads as a paste, where a newline is inserted rather than
+submitted — the command lands in the composer and the agent never quits, which
+shows up only as the `kill-pane` fallback firing.
+
 A run is also ended once it overstays `--run-timeout`, two hours by default:
 past that a run has usually stopped making progress, so the loop ends it, keeps
 whatever it committed, and starts the next one. `--run-timeout 0` waits forever
 instead. The clock starts once the pane is seen working, so a run can occupy up
 to the startup wait plus this.
+
+A timed-out agent is killed rather than asked. It is still mid-turn, where a
+typed command is queued as its next message instead of being read as one, so
+there is nothing `/exit` can do until the turn unwinds — which is the thing
+that already ran out of time. Whatever it left in the worktree is still
+committed, under a message naming it as partial work rather than a finished
+run.
 
 `--no-commit` leaves the worktree dirty and `-n` caps the number of runs.
 Ctrl-C stops the loop and leaves any running agent alone.

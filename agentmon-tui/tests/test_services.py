@@ -1795,14 +1795,19 @@ def test_exit_agent_pane_asks_the_agent_to_quit(
     service = AgentmonService(None, socket="/tmp/hmux.sock")
     monkeypatch.setattr(service, "pane_status", lambda _pane: None)
 
-    assert service.exit_agent_pane("%7") is True
+    naps: list[float] = []
+    assert service.exit_agent_pane("%7", sleep=naps.append) is True
+    # Three keystrokes, spaced: sent as one burst the Enter reads as a pasted
+    # newline and the command is typed but never submitted.
     assert calls == [
+        ["tmux", "-S", "/tmp/hmux.sock", "send-keys", "-t", "%7", "C-u"],
         ["tmux", "-S", "/tmp/hmux.sock", "send-keys", "-t", "%7", "-l", "/exit"],
         ["tmux", "-S", "/tmp/hmux.sock", "send-keys", "-t", "%7", "Enter"],
     ]
+    assert naps == [services.KEYSTROKE_GAP_SECONDS] * 2
 
 
-def test_exit_agent_pane_kills_a_pane_that_ignores_the_command(
+def test_exit_agent_pane_repeats_the_enter_before_killing_a_pane(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from agentmon import services
@@ -1820,8 +1825,39 @@ def test_exit_agent_pane_kills_a_pane_that_ignores_the_command(
         service, "pane_status", lambda pane: PaneStatus(pane, "codex", "idle")
     )
 
-    assert service.exit_agent_pane("%7", timeout=0.01, poll=0.005) is False
-    assert calls[-1] == ["tmux", "-S", "/tmp/hmux.sock", "kill-pane", "-t", "%7"]
+    assert (
+        service.exit_agent_pane(
+            "%7", timeout=0.01, poll=0.005, sleep=lambda _seconds: None
+        )
+        is False
+    )
+    assert calls[-2:] == [
+        ["tmux", "-S", "/tmp/hmux.sock", "send-keys", "-t", "%7", "Enter"],
+        ["tmux", "-S", "/tmp/hmux.sock", "kill-pane", "-t", "%7"],
+    ]
+
+
+def test_kill_agent_pane_takes_the_pane_down_without_asking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agentmon import services
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        services,
+        "_run",
+        lambda args, **kwargs: (
+            calls.append(args), subprocess.CompletedProcess(args, 0, "", "")
+        )[1],
+    )
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+
+    # What a run ended mid-turn gets: nothing typed at an agent that would
+    # read it as its next message rather than as a command.
+    assert service.kill_agent_pane("%7") is None
+    assert calls == [
+        ["tmux", "-S", "/tmp/hmux.sock", "kill-pane", "-t", "%7"],
+    ]
 
 
 def test_commit_all_changes_harvests_a_dirty_worktree(

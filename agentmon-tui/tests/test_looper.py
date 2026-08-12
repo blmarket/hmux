@@ -59,6 +59,7 @@ class FakeService:
         self.splits: list[dict] = []
         self.done_timeouts: list[float | None] = []
         self.exited: list[str] = []
+        self.killed: list[str] = []
         self.commits: list[tuple[Path, str]] = []
         self.commit_result: str | None = "abc1234"
 
@@ -79,6 +80,9 @@ class FakeService:
     def exit_agent_pane(self, pane: str, **kwargs: object) -> bool:
         self.exited.append(pane)
         return self.exit_clean
+
+    def kill_agent_pane(self, pane: str) -> None:
+        self.killed.append(pane)
 
     def commit_all_changes(self, worktree: Path, message: str) -> str | None:
         self.commits.append((worktree, message))
@@ -207,6 +211,8 @@ def test_loop_runs_the_prompt_and_commits_what_it_produced(tmp_path: Path) -> No
     # The status that follows the active pane should describe the run, so the
     # agent pane takes the focus rather than the pane looper logs into.
     assert service.splits[0]["focus"] is True
+    # An agent that finished is at its prompt, so it is asked rather than killed.
+    assert service.killed == []
     assert any("committed abc1234" in line for line in lines)
 
 
@@ -272,7 +278,12 @@ def test_loop_ends_a_run_that_outstays_the_run_timeout(tmp_path: Path) -> None:
     )
 
     assert looper.run() == 0
-    assert service.exited == ["%1"]
+    # Mid-turn there is no point asking, and what it leaves says as much.
+    assert service.exited == []
+    assert service.killed == ["%1"]
+    assert [message for _worktree, message in service.commits] == [
+        "looper: partial work from timed-out run 1"
+    ]
     assert any("still going after 30m00s" in line for line in lines)
 
 

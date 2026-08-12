@@ -206,21 +206,26 @@ class Looper:
                     "open and stopping the loop"
                 )
                 return 0
+            timed_out = outcome == "timeout"
             if outcome == "exited":
                 self.log(f"run {index}: agent pane closed on its own")
+            elif timed_out:
+                # Mid-turn there is nothing to ask: a typed command is queued
+                # as the agent's next message rather than read as one.
+                self.log(
+                    f"run {index}: still going after "
+                    f"{format_duration(self.config.run_timeout)}, "
+                    "killing the pane"
+                )
+                self.service.kill_agent_pane(pane)
             else:
-                if outcome == "timeout":
-                    self.log(
-                        f"run {index}: still going after "
-                        f"{format_duration(self.config.run_timeout)}, ending it"
-                    )
                 clean = self.service.exit_agent_pane(pane)
                 self.log(
                     f"run {index}: agent ended"
                     if clean
-                    else f"run {index}: agent ignored /exit, pane killed"
+                    else f"run {index}: agent would not quit, pane killed"
                 )
-            self.harvest(index)
+            self.harvest(index, partial=timed_out)
         self.log(f"finished {index} run(s)")
         return 0
 
@@ -315,14 +320,21 @@ class Looper:
         )
         return state or "timeout"
 
-    def harvest(self, index: int) -> None:
-        """Commit whatever the run left behind in the worktree."""
+    def harvest(self, index: int, *, partial: bool = False) -> None:
+        """Commit whatever the run left behind in the worktree.
+
+        A run cut short mid-turn says so in its commit message: what it left
+        behind is as far as it happened to get, not work it called done.
+        """
         if not self.config.commit:
             return
+        message = (
+            f"looper: partial work from timed-out run {index}"
+            if partial
+            else f"looper: auto-commit run {index}"
+        )
         try:
-            commit = self.service.commit_all_changes(
-                self.worktree, f"looper: auto-commit run {index}"
-            )
+            commit = self.service.commit_all_changes(self.worktree, message)
         except CommandError as exc:
             self.log(f"run {index}: auto-commit failed: {exc}")
             return

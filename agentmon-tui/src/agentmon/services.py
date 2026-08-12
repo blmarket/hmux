@@ -54,6 +54,15 @@ CLAUDE_RATE_LIMIT_OPTION_ONE = "Stop and wait for limit to reset"
 # claude, codex and agy all quit on `/exit` typed at their prompt.
 AGENT_EXIT_COMMAND = "/exit"
 
+# Keystrokes arriving in one burst read as a paste to an agent TUI, where a
+# newline is inserted rather than submitting — the same thing shift+Enter
+# does. Spacing a typed command from its Enter keeps them two keystrokes.
+KEYSTROKE_GAP_SECONDS = 0.3
+
+# How long an unaccompanied Enter is given before it is assumed lost and sent
+# again, out of the exit wait as a whole.
+EXIT_RETRY_SECONDS = 3.0
+
 # agy asks whether the project is trusted before it will run anything, and
 # remembers the answer per exact workspace path in this file.
 AGY_SETTINGS = Path(".gemini/antigravity-cli/settings.json")
@@ -1217,32 +1226,61 @@ class AgentmonService:
         return pane
 
     def exit_agent_pane(
-        self, pane: str, *, timeout: float = 15.0, poll: float = 0.5
+        self,
+        pane: str,
+        *,
+        timeout: float = 15.0,
+        poll: float = 0.5,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> bool:
         """Ask the agent in `pane` to quit, killing the pane if it will not.
 
         Interactive agents never exit on their own, so a loop that decides a
         run is done has to end it. Panes started with `exec agent…` close when
         the agent quits, which is the confirmation waited on here. Returns
-        whether `/exit` was enough, as opposed to the kill-pane fallback.
+        whether the agent quit on its own, as opposed to the kill-pane
+        fallback.
+
+        Only for an agent already sitting at its prompt. One still working
+        reads a typed command as its next message rather than a command, and
+        is killed outright instead.
         """
-        _run(
-            [
-                self.tmux, "-S", self.socket, "send-keys", "-t", pane, "-l",
-                AGENT_EXIT_COMMAND,
-            ],
-            check=False,
-        )
-        _run(
-            [self.tmux, "-S", self.socket, "send-keys", "-t", pane, "Enter"],
-            check=False,
-        )
-        if self.wait_for_pane_state(pane, ("exited",), timeout=timeout, poll=poll):
+        self._type_exit_command(pane, sleep=sleep)
+        retry_after = min(timeout, EXIT_RETRY_SECONDS)
+        if self.wait_for_pane_state(pane, ("exited",), timeout=retry_after, poll=poll):
             return True
-        _run(
-            [self.tmux, "-S", self.socket, "kill-pane", "-t", pane], check=False
-        )
+        # A swallowed Enter leaves the command sitting in the composer, which
+        # looks the same from here as an agent taking its time. Another Enter
+        # submits it; at an already-clear prompt it costs an empty submit.
+        self._send_keys(pane, "Enter")
+        if self.wait_for_pane_state(
+            pane, ("exited",), timeout=max(0.0, timeout - retry_after), poll=poll
+        ):
+            return True
+        self.kill_agent_pane(pane)
         return False
+
+    def kill_agent_pane(self, pane: str) -> None:
+        """Take the pane down without asking the agent."""
+        _run([self.tmux, "-S", self.socket, "kill-pane", "-t", pane], check=False)
+
+    def _type_exit_command(
+        self, pane: str, *, sleep: Callable[[float], None]
+    ) -> None:
+        """Type the exit command as three keystrokes an agent TUI can tell apart."""
+        # Whatever the agent left in its composer would otherwise turn the
+        # command into `…/exit`.
+        self._send_keys(pane, "C-u")
+        sleep(KEYSTROKE_GAP_SECONDS)
+        self._send_keys(pane, "-l", AGENT_EXIT_COMMAND)
+        sleep(KEYSTROKE_GAP_SECONDS)
+        self._send_keys(pane, "Enter")
+
+    def _send_keys(self, pane: str, *keys: str) -> None:
+        _run(
+            [self.tmux, "-S", self.socket, "send-keys", "-t", pane, *keys],
+            check=False,
+        )
 
     def commit_all_changes(self, worktree: Path, message: str) -> str | None:
         """Stage and commit everything in `worktree`; None when nothing changed.
