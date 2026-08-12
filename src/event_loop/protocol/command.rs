@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::server::command::{self, ClientContext, CommandResult};
 use crate::server::state::SharedState;
-use crate::server::task::TaskState;
+
 
 /// One validated command line, possibly split around client-side file work.
 pub(crate) struct CommandTransaction {
@@ -14,7 +14,7 @@ pub(crate) struct CommandTransaction {
 
 pub(super) struct ActiveResumableCommand {
     pub(super) transaction: CommandTransaction,
-    pub(super) task: TaskState<command::QueuedCommand>,
+    pub(super) task: command::QueuedCommand,
 }
 
 impl CommandTransaction {

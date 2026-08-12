@@ -80,7 +80,6 @@ pub(crate) enum ProtocolEvent {
     ReadContinuation,
     Writable,
     CommandCompleted,
-    CommandTimeout(u64),
     CommandStepReady(CommandStep),
     CommandQueueContinue,
     ControlReady(EventControlSource),
@@ -132,7 +131,6 @@ pub(super) struct IdentifyingState {
 
 pub(super) struct CommandClientState {
     pub(super) operation: CommandOperation,
-    pub(super) timer_generation: u64,
 }
 
 pub(super) enum CommandOperation {
@@ -420,19 +418,6 @@ impl ProtocolClient {
             ProtocolEvent::CommandCompleted => {
                 self.work_queued.remove(&ProtocolIoSide::Command);
                 self.handle_command_completed(target, true, outbox);
-            }
-            ProtocolEvent::CommandTimeout(generation) => {
-                let current = matches!(
-                    &self.protocol_state,
-                    ProtocolState::Command(CommandClientState {
-                        operation: CommandOperation::WaitingCommand(_),
-                        timer_generation,
-                    }) if generation == *timer_generation
-                );
-                if current {
-                    self.registrations.timer = None;
-                    self.handle_command_completed(target, false, outbox);
-                }
             }
             ProtocolEvent::CommandStepReady(step) => {
                 self.handle_command_step(target, step, outbox);

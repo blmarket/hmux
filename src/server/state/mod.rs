@@ -1283,7 +1283,7 @@ impl ServerState {
 mod tests {
     use super::copy::*;
     use super::*;
-    use crate::event_loop::test_driver::run_on_loop;
+
     use hmux_vt::{CellSemantic, CellWidth, Grid, GridCell, GridRow, RowFlags};
 
     #[test]
@@ -1409,9 +1409,18 @@ mod tests {
             inserted: true,
         });
 
-        let answered = run_on_loop(answer).expect("answer").expect("completion");
+        // The value is already there: a completion resolves the moment the
+        // answering side sends, not when a driver next looks.
+        let answered = answer_now(answer).expect("completion");
         assert_eq!(answered.stdout, "Up");
         assert_eq!(answered.exit, 0);
+    }
+
+    /// Take a prompt answer that has already arrived.
+    fn answer_now(
+        mut answer: crate::server::task::Completion<Option<PromptCompletion>>,
+    ) -> Option<PromptCompletion> {
+        answer.take().expect("answered prompt").expect("answer")
     }
 
     #[test]
@@ -1432,7 +1441,7 @@ mod tests {
         drop(client);
 
         // A detached client answers nothing; the queue continues on its own.
-        assert!(run_on_loop(answer).expect("answer").is_none());
+        assert!(answer_now(answer).is_none());
     }
 
     #[test]

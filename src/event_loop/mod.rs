@@ -31,7 +31,7 @@ pub(crate) mod test_driver {
         CommandRuntime, PendingBackground, ResumableCommandQueue,
     };
     use crate::server::state::SharedState;
-    use crate::server::task::{completion_pair, Coroutine, TaskState, WakeFn};
+    use crate::server::task::{completion_pair, Completion, WakeFn};
 
     use std::future::Future;
 
@@ -44,13 +44,6 @@ pub(crate) mod test_driver {
     const DEADLINE: Duration = Duration::from_secs(30);
     const TURN_TIMEOUT: Duration = Duration::from_millis(10);
     const DISPATCH_BUDGET: usize = 64;
-
-    /// Run one job to completion on a loop of its own and take its result.
-    pub(crate) fn run_on_loop<T: Coroutine>(job: T) -> T::Output {
-        LoopCommandDriver::new()
-            .expect("job test loop")
-            .drive_detached(job)
-    }
 
     /// Run one async suspension to completion on a loop of its own.
     ///
@@ -94,11 +87,8 @@ pub(crate) mod test_driver {
             tasks.spawn(async move {
                 sender.complete(future.await);
             });
-            let mut task = TaskState::new(completion);
-            self.drive_task(&mut task);
-            task.take_output()
-                .expect("completed task")
-                .expect("task result")
+            let mut completion = completion;
+            self.drive_completion(&mut completion).expect("task result")
         }
 
         pub(crate) fn run_queue(
@@ -106,16 +96,30 @@ pub(crate) mod test_driver {
             queue: ResumableCommandQueue,
             state: &SharedState,
         ) -> CommandResult {
-            let queued = match self
+            let mut queued = match self
                 .runtime()
                 .spawn_queue(queue, Rc::clone(state), DISPATCH_BUDGET)
             {
                 Ok(queued) => queued,
                 Err(error) => return CommandResult::err(format!("{error}\n")),
             };
-            let mut task = TaskState::new(queued);
-            self.drive_task(&mut task);
-            match task.take_output() {
+            let deadline = Instant::now() + DEADLINE;
+            let woken = Rc::new(Cell::new(false));
+            let flag = Rc::clone(&woken);
+            let wake: WakeFn = Rc::new(move || flag.set(true));
+            while !queued.poll() {
+                assert!(Instant::now() < deadline, "command queue never completed");
+                queued.set_wake(&wake);
+                let timeout = if woken.replace(false) {
+                    Duration::ZERO
+                } else {
+                    TURN_TIMEOUT
+                };
+                self.loop_
+                    .run_turn(Some(timeout), DISPATCH_BUDGET)
+                    .expect("event loop turn");
+            }
+            match queued.take_output() {
                 Some(Ok(result)) => result,
                 Some(Err(error)) => CommandResult::err(format!("{error}\n")),
                 None => CommandResult::err("command stopped without a result\n"),
@@ -179,14 +183,8 @@ pub(crate) mod test_driver {
             }
         }
 
-        /// Drive a job the loop would otherwise own outright.
-        fn drive_detached<T: Coroutine>(&mut self, job: T) -> T::Output {
-            let mut task = TaskState::new(job);
-            self.drive_task(&mut task);
-            task.take_output().expect("completed job has a result")
-        }
-
-        fn drive_task<T: Coroutine>(&mut self, task: &mut TaskState<T>) {
+        /// Drive loop turns until `completion` has its value.
+        fn drive_completion<T>(&mut self, completion: &mut Completion<T>) -> io::Result<T> {
             let deadline = Instant::now() + DEADLINE;
             // This task belongs to the test, not to the loop, so the loop
             // cannot wake it. Its own wake sets this flag instead, which turns
@@ -196,9 +194,12 @@ pub(crate) mod test_driver {
             let woken = Rc::new(Cell::new(false));
             let flag = Rc::clone(&woken);
             let wake: WakeFn = Rc::new(move || flag.set(true));
-            while !task.poll_optimistically(Instant::now()) {
+            loop {
+                if let Some(value) = completion.take() {
+                    return value;
+                }
                 assert!(Instant::now() < deadline, "job never completed");
-                task.set_wake(&wake);
+                completion.set_wake(&wake);
                 let timeout = if woken.replace(false) {
                     Duration::ZERO
                 } else {

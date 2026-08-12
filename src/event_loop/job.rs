@@ -5,30 +5,28 @@
 //! executor as a job of its own and reports back here when it finishes.
 
 use std::collections::BTreeMap;
+use std::io;
 use std::rc::Rc;
 
 use crate::integration::status::StatusHub;
 use crate::server::command::{
-    self, BackgroundCommand, BackgroundCommandRequest, ClientContext, CommandRuntime as _,
-    PendingBackground,
+    self, BackgroundCommand, BackgroundCommandRequest, ClientContext, PendingBackground,
 };
+use crate::server::command::CommandResult;
 use crate::server::state::SharedState;
-use crate::server::task::completion_pair;
+use crate::server::task::{completion_pair, Completion};
 
 use super::actor::ActorRef;
-use super::driver::Outbox;
-use super::suspend::{EventCommandRuntime, ExecutorJobOutput, SuspensionExecutor};
+use super::driver::{Outbox, WakeQueue};
+use super::suspend::EventCommandRuntime;
 use super::tasks::TaskHandle;
 
 const COMMAND_QUEUE_BUDGET: usize = 64;
 
 pub(crate) enum JobEvent {
     Start(BackgroundCommandRequest),
-    /// One of this actor's executor jobs reported its result.
-    JobFinished {
-        id: u64,
-        output: Option<ExecutorJobOutput>,
-    },
+    /// One of this actor's detached jobs has a result waiting.
+    Ready { id: u64 },
 }
 
 pub(crate) struct BackgroundCommands {
@@ -36,26 +34,38 @@ pub(crate) struct BackgroundCommands {
     tasks: TaskHandle,
     hub: StatusHub,
     runtime: Rc<EventCommandRuntime>,
-    executor: ActorRef<SuspensionExecutor>,
+    wakes: WakeQueue,
     next_id: u64,
     jobs: BTreeMap<u64, JobState>,
 }
 
+/// One piece of detached work and what this actor owes it when it finishes.
+///
+/// Each holds the completion its task reports through. Nothing polls them: the
+/// wake installed alongside is what says a value has arrived.
 enum JobState {
     /// An `if-shell -b` condition is running; its branches wait on the answer.
     ResolvingCondition {
+        completion: Completion<command::CommandSuspensionResult>,
         then_command: Option<String>,
         else_command: Option<String>,
         context: ClientContext,
     },
-    Running,
+    /// A `run-shell -b` child, whose output goes to a pane's view mode.
+    RunningShell {
+        completion: Completion<command::CommandSuspensionResult>,
+    },
+    /// A detached command queue, which may detach more work in turn.
+    RunningQueue {
+        completion: Completion<io::Result<CommandResult>>,
+    },
 }
 
 impl BackgroundCommands {
     pub(crate) fn new(
         state: SharedState,
         hub: StatusHub,
-        executor: ActorRef<SuspensionExecutor>,
+        wakes: WakeQueue,
         tasks: TaskHandle,
     ) -> Self {
         Self {
@@ -63,61 +73,95 @@ impl BackgroundCommands {
             hub,
             runtime: Rc::new(EventCommandRuntime::new(tasks.clone())),
             tasks,
-            executor,
+            wakes,
             next_id: 1,
             jobs: BTreeMap::new(),
         }
     }
 
-    pub(crate) fn handle(&mut self, target: &ActorRef<Self>, event: JobEvent, outbox: &mut Outbox) {
+    /// Nothing here addresses another actor, so the outbox goes unused: a job
+    /// reports through its completion and this actor only reads it.
+    pub(crate) fn handle(&mut self, target: &ActorRef<Self>, event: JobEvent, _outbox: &mut Outbox) {
         match event {
-            JobEvent::Start(request) => self.start(target, request, outbox),
-            JobEvent::JobFinished { id, output } => match self.jobs.remove(&id) {
-                Some(JobState::ResolvingCondition {
-                    then_command,
-                    else_command,
-                    context,
-                }) => {
-                    let matched = matches!(
-                        output,
-                        Some(ExecutorJobOutput::Suspension(
-                            command::CommandSuspensionResult::IfShell(true)
-                        ))
-                    );
-                    let command = if matched { then_command } else { else_command };
-                    self.start_command(target, BackgroundCommand::Line(command), context, outbox);
-                }
-                Some(JobState::Running) => match output {
-                    Some(ExecutorJobOutput::Queue(Ok(mut result))) => {
-                        for request in result.background_commands.drain(..) {
-                            self.start(target, request, outbox);
-                        }
-                    }
-                    // A detached `run-shell -b` child has finished; its output
-                    // goes to a pane's view mode, which needs the state handle
-                    // the job itself does not hold.
-                    Some(ExecutorJobOutput::Suspension(
-                        command::CommandSuspensionResult::RunShell(completion),
-                    )) => {
-                        let mut state = self.state.borrow_mut();
-                        completion.deliver_detached(&mut state);
-                    }
-                    _ => {}
-                },
-                None => {}
-            },
+            JobEvent::Start(request) => self.start(target, request),
+            JobEvent::Ready { id } => self.finish(target, id),
         }
     }
 
-    fn start(
-        &mut self,
-        target: &ActorRef<Self>,
-        request: BackgroundCommandRequest,
-        outbox: &mut Outbox,
-    ) {
+    /// Take one finished job's result, if it has one yet.
+    ///
+    /// A wake can arrive before the value — the task set fires one whenever a
+    /// completion is installed onto — so a job that is not done goes back.
+    fn finish(&mut self, target: &ActorRef<Self>, id: u64) {
+        let Some(mut job) = self.jobs.remove(&id) else {
+            return;
+        };
+        match &mut job {
+            JobState::ResolvingCondition { completion, .. } => {
+                let Some(answer) = completion.take() else {
+                    self.jobs.insert(id, job);
+                    return;
+                };
+                let JobState::ResolvingCondition {
+                    then_command,
+                    else_command,
+                    context,
+                    ..
+                } = job
+                else {
+                    return;
+                };
+                let matched = matches!(
+                    answer,
+                    Ok(command::CommandSuspensionResult::IfShell(true))
+                );
+                let command = if matched { then_command } else { else_command };
+                self.start_command(target, BackgroundCommand::Line(command), context);
+            }
+            JobState::RunningShell { completion } => {
+                let Some(answer) = completion.take() else {
+                    self.jobs.insert(id, job);
+                    return;
+                };
+                // The child's output goes to a pane's view mode, which needs
+                // the state handle the job itself does not hold.
+                if let Ok(command::CommandSuspensionResult::RunShell(output)) = answer {
+                    let mut state = self.state.borrow_mut();
+                    output.deliver_detached(&mut state);
+                }
+            }
+            JobState::RunningQueue { completion } => {
+                let Some(answer) = completion.take() else {
+                    self.jobs.insert(id, job);
+                    return;
+                };
+                if let Ok(Ok(mut result)) = answer {
+                    for request in result.background_commands.drain(..) {
+                        self.start(target, request);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Store one job and install the wake that reports it.
+    fn watch(&mut self, target: &ActorRef<Self>, job: JobState) {
+        let id = self.next_id;
+        self.next_id = self.next_id.wrapping_add(1).max(1);
+        let wake = self.wakes.background_wake(target.downgrade(), id);
+        let mut job = job;
+        match &mut job {
+            JobState::ResolvingCondition { completion, .. }
+            | JobState::RunningShell { completion } => completion.set_wake(&wake),
+            JobState::RunningQueue { completion } => completion.set_wake(&wake),
+        }
+        self.jobs.insert(id, job);
+    }
+
+    fn start(&mut self, target: &ActorRef<Self>, request: BackgroundCommandRequest) {
         match request.into_pending() {
             PendingBackground::Ready(command, context) => {
-                self.start_command(target, command, context, outbox)
+                self.start_command(target, command, context)
             }
             PendingBackground::Condition {
                 condition,
@@ -128,24 +172,21 @@ impl BackgroundCommands {
                 let Ok((completion, sender)) = completion_pair() else {
                     return;
                 };
-                let id = self.allocate_id();
                 let job_context = self.job_context(&context);
                 let tasks = self.tasks.clone();
                 self.tasks.spawn(async move {
                     let matched = command::suspend::if_shell(&tasks, condition, job_context).await;
                     sender.complete(command::CommandSuspensionResult::IfShell(matched));
                 });
-                self.jobs.insert(
-                    id,
+                self.watch(
+                    target,
                     JobState::ResolvingCondition {
+                        completion,
                         then_command,
                         else_command,
                         context,
                     },
                 );
-                self.executor.with_mut(|executor| {
-                    executor.adopt_background_awaiting(completion, target.clone(), id, outbox);
-                });
             }
         }
     }
@@ -164,7 +205,6 @@ impl BackgroundCommands {
         target: &ActorRef<Self>,
         command: BackgroundCommand,
         context: ClientContext,
-        outbox: &mut Outbox,
     ) {
         let agents = self.hub.snapshot().panes;
         let queue = match command {
@@ -184,7 +224,6 @@ impl BackgroundCommands {
                 let Ok((completion, sender)) = completion_pair() else {
                     return;
                 };
-                let id = self.allocate_id();
                 let job_context = self.job_context(&context);
                 let tasks = self.tasks.clone();
                 self.tasks.spawn(async move {
@@ -192,32 +231,20 @@ impl BackgroundCommands {
                         command::suspend::background_shell(&tasks, args, job_context, jobs).await;
                     sender.complete(command::CommandSuspensionResult::RunShell(output));
                 });
-                self.jobs.insert(id, JobState::Running);
-                self.executor.with_mut(|executor| {
-                    executor.adopt_background_awaiting(completion, target.clone(), id, outbox);
-                });
+                self.watch(target, JobState::RunningShell { completion });
                 return;
             }
         };
         let Ok(queue) = queue else { return };
         // A detached queue has no client polling it, so the loop owns the whole
         // thing: the executor holds only the completion its task reports to.
-        let Ok(queued) = self
+        let Ok(completion) = self
             .runtime
-            .spawn_queue(queue, Rc::clone(&self.state), COMMAND_QUEUE_BUDGET)
+            .spawn_detached_queue(queue, Rc::clone(&self.state), COMMAND_QUEUE_BUDGET)
         else {
             return;
         };
-        let id = self.allocate_id();
-        self.jobs.insert(id, JobState::Running);
-        self.executor.with_mut(|executor| {
-            executor.adopt_background_queue(queued, target.clone(), id, outbox);
-        });
+        self.watch(target, JobState::RunningQueue { completion });
     }
 
-    fn allocate_id(&mut self) -> u64 {
-        let id = self.next_id;
-        self.next_id = self.next_id.wrapping_add(1).max(1);
-        id
-    }
 }

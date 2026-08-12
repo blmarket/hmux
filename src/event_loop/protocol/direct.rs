@@ -1,10 +1,9 @@
 use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::rc::Rc;
-use std::time::Instant;
 
 use crate::server::command::{self, CommandResult};
-use crate::server::task::{ReadySet, TaskState, WaitRequest};
+
 use crate::tmux::message::{Frame, Message};
 
 use super::super::actor::ActorRef;
@@ -31,7 +30,6 @@ impl ProtocolClient {
         };
         self.protocol_state = ProtocolState::Command(CommandClientState {
             operation: CommandOperation::AwaitingStep,
-            timer_generation: 0,
         });
         self.start_command_work(target, CommandWork::Initial { args, context }, outbox);
     }
@@ -51,20 +49,14 @@ impl ProtocolClient {
     }
 
     pub(super) fn drive_resumable_command(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
-        let (complete, is_blocking, deadline) = {
+        let complete = {
             let ProtocolState::Command(command) = &mut self.protocol_state else {
                 return;
             };
             let CommandOperation::AwaitingQueue(active) = &mut command.operation else {
                 return;
             };
-            let complete = active.task.poll(&ReadySet::default());
-            let wait = active.task.wait();
-            (
-                complete,
-                wait.as_ref().is_some_and(WaitRequest::is_blocking),
-                wait.and_then(|wait| wait.deadline()),
-            )
+            active.task.poll()
         };
         if complete {
             let ProtocolState::Command(command) = &mut self.protocol_state else {
@@ -95,11 +87,8 @@ impl ProtocolClient {
             return;
         }
 
-        if !is_blocking {
-            outbox.enqueue_protocol(target.clone(), ProtocolEvent::CommandQueueContinue);
-            return;
-        }
-
+        // A queue that has not finished is waiting on something, and its wake
+        // is what brings this client back.
         let ProtocolState::Command(command) = &mut self.protocol_state else {
             return;
         };
@@ -109,14 +98,6 @@ impl ProtocolClient {
         };
         command.operation = CommandOperation::WaitingCommand(active);
         outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Command, true);
-        if let Some(deadline) = deadline {
-            command.timer_generation = command.timer_generation.wrapping_add(1);
-            outbox.set_protocol_timer_event(
-                target.clone(),
-                deadline,
-                ProtocolEvent::CommandTimeout(command.timer_generation),
-            );
-        }
     }
 
     pub(super) fn handle_command_completed(
@@ -125,7 +106,7 @@ impl ProtocolClient {
         source_ready: bool,
         outbox: &mut Outbox,
     ) {
-        let (mut active, had_deadline) = {
+        let mut active = {
             let ProtocolState::Command(command) = &mut self.protocol_state else {
                 return;
             };
@@ -134,20 +115,11 @@ impl ProtocolClient {
             let CommandOperation::WaitingCommand(active) = operation else {
                 return;
             };
-            let had_deadline = active
-                .task
-                .wait()
-                .and_then(|wait| wait.deadline())
-                .is_some();
-            (active, had_deadline)
+            active
         };
-        active
-            .task
-            .poll_after_single_source_wakeup(source_ready, Instant::now());
+        let _ = source_ready;
+        active.task.poll();
         outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Command, false);
-        if had_deadline {
-            outbox.cancel_protocol_timer(target.clone());
-        }
         let ProtocolState::Command(command) = &mut self.protocol_state else {
             return;
         };
@@ -165,7 +137,6 @@ impl ProtocolClient {
             &self.protocol_state,
             ProtocolState::Command(CommandClientState {
                 operation: CommandOperation::AwaitingStep,
-                ..
             })
         );
         if !awaiting_step {
@@ -192,7 +163,7 @@ impl ProtocolClient {
                         command.operation =
                             CommandOperation::AwaitingQueue(ActiveResumableCommand {
                                 transaction,
-                                task: TaskState::new(queued),
+                                task: queued,
                             });
                         self.drive_resumable_command(target, outbox);
                     }

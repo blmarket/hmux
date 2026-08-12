@@ -3,12 +3,12 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::io;
-use std::os::fd::{AsFd, AsRawFd};
+use std::os::fd::AsFd;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use crate::server::pane::PaneIo;
-use crate::server::task::{FdDirection, WaitToken, WakeFn};
+use crate::server::task::WakeFn;
 use crate::server::Server;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 
@@ -21,7 +21,6 @@ use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
 };
 use super::reactor::{Interest, MioReactor, PollResult, Reactor, Ready};
-use super::suspend::{ExecutorEvent, JobRegistration, SuspensionExecutor};
 use super::tasks::{TaskEvent, TaskHandle, TaskId, TaskSet};
 use super::term_signal::{TermSignal, TermSignalEvent};
 use super::timer::{ExpiredTimer, TimerId, TimerQueue};
@@ -53,10 +52,6 @@ pub(crate) enum Envelope {
     Background {
         target: ActorRef<BackgroundCommands>,
         event: JobEvent,
-    },
-    Executor {
-        target: ActorRef<SuspensionExecutor>,
-        event: ExecutorEvent,
     },
     Task {
         target: ActorRef<TaskSet>,
@@ -91,12 +86,6 @@ impl Envelope {
                 let dispatch_target = target.clone();
                 target.with_mut(|jobs| jobs.handle(&dispatch_target, event, outbox));
             }
-            // The executor never changes its own registrations; the loop
-            // reconciles those once per dispatch instead. It does address the
-            // background-command actor, which owns the queues it finishes.
-            Envelope::Executor { target, event } => {
-                target.with_mut(|executor| executor.handle(event, outbox));
-            }
             // A task reaches the reactor and the timer queue only through the
             // inboxes the loop reconciles, so this needs no outbox either.
             Envelope::Task { target, event } => {
@@ -117,10 +106,6 @@ impl Envelope {
 /// its own `command-prompt -w` does exactly that. Deferring the resolution to
 /// the drain keeps the wake itself from reaching into any actor.
 enum PendingWake {
-    Executor {
-        target: WeakActorRef<SuspensionExecutor>,
-        job: u64,
-    },
     Protocol {
         target: WeakActorRef<ProtocolClient>,
         side: ProtocolIoSide,
@@ -129,6 +114,10 @@ enum PendingWake {
     /// task set is the destination, so no address is needed.
     Task {
         task: TaskId,
+    },
+    Background {
+        target: WeakActorRef<BackgroundCommands>,
+        id: u64,
     },
 }
 
@@ -144,18 +133,6 @@ pub(crate) struct WakeQueue {
 }
 
 impl WakeQueue {
-    /// The wake for a job the executor owns, parked on a value another task
-    /// produces.
-    fn executor_wake(&self, target: WeakActorRef<SuspensionExecutor>, job: u64) -> WakeFn {
-        let fired = Rc::clone(&self.fired);
-        Rc::new(move || {
-            fired.borrow_mut().push_back(PendingWake::Executor {
-                target: target.clone(),
-                job,
-            });
-        })
-    }
-
     /// The wake for a client whose command queue is parked on a suspension.
     fn protocol_wake(&self, target: WeakActorRef<ProtocolClient>, side: ProtocolIoSide) -> WakeFn {
         let fired = Rc::clone(&self.fired);
@@ -163,6 +140,22 @@ impl WakeQueue {
             fired.borrow_mut().push_back(PendingWake::Protocol {
                 target: target.clone(),
                 side,
+            });
+        })
+    }
+
+    /// The wake for one piece of detached work the background-command actor is
+    /// waiting on.
+    pub(super) fn background_wake(
+        &self,
+        target: WeakActorRef<BackgroundCommands>,
+        id: u64,
+    ) -> WakeFn {
+        let fired = Rc::clone(&self.fired);
+        Rc::new(move || {
+            fired.borrow_mut().push_back(PendingWake::Background {
+                target: target.clone(),
+                id,
             });
         })
     }
@@ -186,15 +179,6 @@ impl WakeQueue {
         let fired = std::mem::take(&mut *self.fired.borrow_mut());
         for wake in fired {
             match wake {
-                PendingWake::Executor { target, job } => {
-                    let Some(target) = target.upgrade() else {
-                        continue;
-                    };
-                    events.push_back(Envelope::Executor {
-                        target,
-                        event: ExecutorEvent::Wake { job },
-                    });
-                }
                 PendingWake::Protocol { target, side } => {
                     let Some(target) = target.upgrade() else {
                         continue;
@@ -210,6 +194,15 @@ impl WakeQueue {
                     events.push_back(Envelope::Protocol {
                         target,
                         event: protocol_ready_event(side),
+                    });
+                }
+                PendingWake::Background { target, id } => {
+                    let Some(target) = target.upgrade() else {
+                        continue;
+                    };
+                    events.push_back(Envelope::Background {
+                        target,
+                        event: JobEvent::Ready { id },
                     });
                 }
                 PendingWake::Task { task } => {
@@ -434,11 +427,6 @@ enum IoTarget {
         target: WeakActorRef<ProtocolClient>,
         side: ProtocolIoSide,
     },
-    Executor {
-        target: WeakActorRef<SuspensionExecutor>,
-        job: u64,
-        source: WaitToken,
-    },
     /// One `AsyncFd`. The registration names the descriptor, not the task, so
     /// consecutive suspensions never share one and there is nothing to
     /// re-point.
@@ -560,7 +548,6 @@ where
     timers: TimerQueue<Envelope>,
     expired_timers: Vec<ExpiredTimer<Envelope>>,
     background_commands: Option<ActorRef<BackgroundCommands>>,
-    executor: ActorRef<SuspensionExecutor>,
     tasks: ActorRef<TaskSet>,
     task_handle: TaskHandle,
     /// The timer armed for each sleeping task, kept here because the timer
@@ -580,7 +567,6 @@ where
     R: Reactor<IoRecipient>,
 {
     fn with_reactor(reactor: R) -> Self {
-        let executor = SuspensionExecutor::new();
         let wakes = WakeQueue::default();
         let (tasks, task_handle) = TaskSet::new(wakes.clone());
         Self {
@@ -591,7 +577,6 @@ where
             timers: TimerQueue::new(),
             expired_timers: Vec::new(),
             background_commands: None,
-            executor: ActorRef::new(executor),
             tasks: ActorRef::new(tasks),
             task_handle,
             task_timers: HashMap::new(),
@@ -612,7 +597,7 @@ where
                 ActorRef::new(BackgroundCommands::new(
                     server.state(),
                     server.status_hub(),
-                    self.executor.clone(),
+                    self.wakes.clone(),
                     self.task_handle.clone(),
                 ))
             })
@@ -698,7 +683,7 @@ where
                 ActorRef::new(BackgroundCommands::new(
                     server.state(),
                     server.status_hub(),
-                    self.executor.clone(),
+                    self.wakes.clone(),
                     self.task_handle.clone(),
                 ))
             })
@@ -713,36 +698,18 @@ where
     }
 
     pub(crate) fn adopt_format_jobs(&mut self, jobs: Vec<FormatJob>) -> io::Result<()> {
-        if jobs.is_empty() {
-            return Ok(());
-        }
-        let executor = self.executor.clone();
-        let mut outbox = Outbox::new();
-        executor.with_mut(|executor| {
-            for job in jobs {
-                executor.adopt_format_job(job, &mut outbox);
-            }
-        });
-        for effect in outbox.effects {
-            self.apply(effect)?;
+        for job in jobs {
+            let tasks = self.task_handle.clone();
+            self.task_handle.spawn(async move { job.run(&tasks).await });
         }
         Ok(())
     }
 
     /// Adopt every `pipe-pane` child opened since the last pass.
     pub(crate) fn adopt_pane_pipes(&mut self, pipes: Vec<PanePipeIo>) -> io::Result<()> {
-        if pipes.is_empty() {
-            return Ok(());
-        }
-        let executor = self.executor.clone();
-        let mut outbox = Outbox::new();
-        executor.with_mut(|executor| {
-            for pipe in pipes {
-                executor.adopt_pane_pipe(pipe, &mut outbox);
-            }
-        });
-        for effect in outbox.effects {
-            self.apply(effect)?;
+        for pipe in pipes {
+            let tasks = self.task_handle.clone();
+            self.task_handle.spawn(async move { pipe.run(&tasks).await });
         }
         Ok(())
     }
@@ -810,7 +777,6 @@ where
 
     pub(crate) fn dispatch_one(&mut self) -> io::Result<bool> {
         self.sync_tasks()?;
-        self.sync_executor()?;
         // After the syncs, which are what install the wakes that may fire.
         let tasks = self.tasks.clone();
         self.wakes.drain_into(&mut self.events, &tasks);
@@ -836,7 +802,6 @@ where
 
     pub(crate) fn poll(&mut self, timeout: Option<Duration>) -> io::Result<PollResult> {
         self.sync_tasks()?;
-        self.sync_executor()?;
         let tasks = self.tasks.clone();
         self.wakes.drain_into(&mut self.events, &tasks);
         // A wake that fired during the sync is work in hand; blocking on the
@@ -928,107 +893,6 @@ where
         }) else {
             return Ok(());
         };
-        result
-    }
-
-    /// Make the reactor and the timer queue describe exactly what every live
-    /// executor job is waiting for.
-    fn sync_executor(&mut self) -> io::Result<()> {
-        let executor = self.executor.clone();
-        let result = executor
-            .with_mut(|executor| -> io::Result<()> {
-                for id in executor.job_ids() {
-                    let Some(state) = executor.job_mut(id) else {
-                        continue;
-                    };
-                    if state.is_finished() {
-                        // The job already reported its result to the suspended
-                        // command queue; only its registrations are left.
-                        for registration in std::mem::take(&mut state.registrations) {
-                            self.reactor.deregister(registration.token)?;
-                        }
-                        if let Some((_, timer)) = state.timer.take() {
-                            self.timers.cancel(timer);
-                        }
-                        executor.remove_job(id);
-                        continue;
-                    }
-                    let Some(state) = executor.job_mut(id) else {
-                        continue;
-                    };
-                    let Some(wait) = state.task.wait() else {
-                        continue;
-                    };
-                    let sources = wait
-                        .sources()
-                        .iter()
-                        .map(|source| (source.token(), source.fd().as_raw_fd(), source.direction()))
-                        .collect::<Vec<_>>();
-                    if !state.is_registered_for(&sources) {
-                        for registration in std::mem::take(&mut state.registrations) {
-                            self.reactor.deregister(registration.token)?;
-                        }
-                        for source in wait.sources() {
-                            let recipient = IoRecipient {
-                                target: IoTarget::Executor {
-                                    target: self.executor.downgrade(),
-                                    job: id,
-                                    source: source.token(),
-                                },
-                            };
-                            let interest = match source.direction() {
-                                FdDirection::Read => Interest::READABLE,
-                                FdDirection::Write => Interest::WRITABLE,
-                            };
-                            let token = self.reactor.register(source.fd(), interest, recipient)?;
-                            state.registrations.push(JobRegistration {
-                                source: source.token(),
-                                fd: source.fd().as_raw_fd(),
-                                direction: source.direction(),
-                                token,
-                            });
-                        }
-                    }
-                    match (wait.deadline(), state.timer) {
-                        (Some(deadline), Some((armed, _))) if armed == deadline => {}
-                        (Some(deadline), previous) => {
-                            if let Some((_, timer)) = previous {
-                                self.timers.cancel(timer);
-                            }
-                            let timer = self.timers.set(
-                                deadline,
-                                Envelope::Executor {
-                                    target: self.executor.clone(),
-                                    event: ExecutorEvent::Timeout { job: id },
-                                },
-                            );
-                            state.timer = Some((deadline, timer));
-                        }
-                        (None, Some((_, timer))) => {
-                            self.timers.cancel(timer);
-                            state.timer = None;
-                        }
-                        (None, None) => {}
-                    }
-                    // A parked job named no descriptor and no deadline: it is
-                    // waiting on a value another task produces, and the wake is
-                    // the only thing that will resume it. Installing is
-                    // idempotent and fires at once if the value already
-                    // arrived, so re-installing every sync — rather than
-                    // tracking which suspension is current — cannot miss one.
-                    if wait.is_parked() {
-                        let wake = state
-                            .wake
-                            .get_or_insert_with(|| {
-                                self.wakes.executor_wake(self.executor.downgrade(), id)
-                            })
-                            .clone();
-                        state.task.set_wake(&wake);
-                    }
-                }
-                Ok(())
-            })
-            .unwrap_or(Ok(()));
         result
     }
 
@@ -1134,22 +998,6 @@ where
                     ProtocolIoSide::Attach(source) => ProtocolEvent::AttachReady(*source),
                 };
                 self.events.push_back(Envelope::Protocol { target, event });
-            }
-            IoTarget::Executor {
-                target: recipient,
-                job,
-                source,
-            } => {
-                let Some(target) = recipient.upgrade() else {
-                    return;
-                };
-                self.events.push_back(Envelope::Executor {
-                    target,
-                    event: ExecutorEvent::Ready {
-                        job: *job,
-                        source: *source,
-                    },
-                });
             }
             IoTarget::Task {
                 target: recipient,
@@ -1536,7 +1384,7 @@ mod tests {
     use crate::server::command::{
         ClientContext, ClientFileWrite, CommandSuspension, CommandSuspensionResult,
     };
-    use crate::server::task::TaskState;
+    use std::os::fd::AsRawFd as _;
 
     use super::*;
 
@@ -1627,18 +1475,17 @@ mod tests {
         let runtime = super::super::suspend::EventCommandRuntime::new(loop_.task_handle());
         let completion = crate::server::command::CommandRuntime::submit(&runtime, suspension)
             .expect("completion pair");
-        let mut task = TaskState::new(completion);
+        let mut completion = completion;
         let deadline = Instant::now() + Duration::from_secs(10);
-        while !task.poll_after_single_source_wakeup(true, Instant::now()) {
+        loop {
+            if let Some(result) = completion.take() {
+                return result.expect("suspension result");
+            }
             assert!(Instant::now() < deadline, "suspension never completed");
-            // The completion belongs to the caller, not to this loop, so
-            // nothing here wakes it: keep turns short instead of blocking on
-            // the reactor.
+            // The completion belongs to the caller, not to a task, so nothing
+            // here wakes it: keep turns short instead of blocking the reactor.
             loop_.run_turn(Some(Duration::from_millis(10)), 64).unwrap();
         }
-        task.take_output()
-            .expect("completed suspension")
-            .expect("suspension result")
     }
 
     fn run_shell(args: &[&str]) -> CommandSuspension {
@@ -1801,21 +1648,15 @@ mod tests {
     }
 
     #[test]
-    fn executor_releases_every_registration_once_a_job_finishes() {
+    fn a_finished_suspension_leaves_no_registration_behind() {
         let mut loop_ = EventLoop::new().unwrap();
 
         resolve_on_loop(&mut loop_, run_shell(&["true"]));
-        // The completed job is retired by the next sync, not by the poll that
-        // produced its result.
+        // The descriptors go with the task's leaves, which the next sync
+        // releases.
         loop_.dispatch_one().unwrap();
 
-        assert_eq!(
-            loop_
-                .executor
-                .with(|executor| executor.job_ids().len())
-                .unwrap(),
-            0
-        );
+        assert_eq!(loop_.task_handle().registered_io(), 0);
     }
 
     #[test]

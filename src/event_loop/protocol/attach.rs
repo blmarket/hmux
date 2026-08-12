@@ -18,7 +18,7 @@ use crate::server::attach::{
 };
 use crate::server::command::{self, ClientContext};
 use crate::server::state::SharedState;
-use crate::server::task::{ReadySet, TaskState, WakeFn};
+use crate::server::task::WakeFn;
 use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::Frame;
 use crate::tmux::traits::NonblockingFrameReader;
@@ -200,7 +200,7 @@ pub(super) struct EventAttachClient {
 }
 
 struct ActiveAttachCommand {
-    task: TaskState<command::QueuedCommand>,
+    task: command::QueuedCommand,
     continuation: AttachCommandContinuation,
     allows_attach_io: bool,
 }
@@ -255,13 +255,9 @@ impl EventAttachClient {
 
     pub(super) fn source_fd(&self, source: EventAttachSource) -> Option<BorrowedFd<'_>> {
         match source {
-            EventAttachSource::Command(generation) => match &self.phase {
-                AttachPhase::Waiting(active) if generation == self.command_generation => active
-                    .task
-                    .wait()
-                    .and_then(|wait| wait.sources().first().map(|source| source.fd())),
-                _ => None,
-            },
+            // A suspended command queue has no descriptor: it is waited on
+            // through the wake its client installs.
+            EventAttachSource::Command(_) => None,
             EventAttachSource::Runtime { .. } => self.runtime_sources.get(&source).map(AsFd::as_fd),
         }
     }
@@ -414,26 +410,21 @@ impl EventAttachClient {
         }
         match &self.phase {
             AttachPhase::Waiting(active) if active.allows_attach_io => {
-                let command_deadline = active.task.wait().and_then(|wait| wait.deadline());
                 self.refresh_session_sources()?;
                 if matches!(self.phase, AttachPhase::Finished) {
                     return Ok(());
                 }
                 self.runtime_desired
                     .insert(EventAttachSource::Command(self.command_generation));
-                if let Some(command_deadline) = command_deadline {
-                    self.deadline = Some(
-                        self.deadline
-                            .map_or(command_deadline, |deadline| deadline.min(command_deadline)),
-                    );
-                }
                 Ok(())
             }
-            AttachPhase::Waiting(active) => {
+            AttachPhase::Waiting(_) => {
                 self.runtime_desired.clear();
                 self.runtime_desired
                     .insert(EventAttachSource::Command(self.command_generation));
-                self.deadline = active.task.wait().and_then(|wait| wait.deadline());
+                // A parked queue has no deadline of its own; its wake is what
+                // brings this client back.
+                self.deadline = None;
                 Ok(())
             }
             AttachPhase::Running(_) => {
@@ -502,7 +493,7 @@ impl EventAttachClient {
         match queue {
             Ok(queued) => {
                 self.phase = AttachPhase::Running(ActiveAttachCommand {
-                    task: TaskState::new(queued),
+                    task: queued,
                     continuation: request.continuation,
                     allows_attach_io: false,
                 });
@@ -516,15 +507,10 @@ impl EventAttachClient {
     }
 
     fn drive_active_command(&mut self) -> io::Result<()> {
-        let (complete, is_blocking, allows_attach_io) = match &mut self.phase {
+        let (complete, allows_attach_io) = match &mut self.phase {
             AttachPhase::Running(active) => {
-                let complete = active.task.poll(&ReadySet::default());
-                let is_blocking = active
-                    .task
-                    .wait()
-                    .is_some_and(|wait| wait.is_blocking());
-                let allows_attach_io = active.task.task().allows_attach_io();
-                (complete, is_blocking, allows_attach_io)
+                let complete = active.task.poll();
+                (complete, active.task.allows_attach_io())
             }
             _ => return Ok(()),
         };
@@ -543,7 +529,8 @@ impl EventAttachClient {
             self.session
                 .complete_command(active.continuation, result, &self.state);
             self.drive_session(AttachWaitReady::default())?;
-        } else if is_blocking {
+        } else {
+            // A queue that has not finished is waiting on something.
             let phase = std::mem::replace(&mut self.phase, AttachPhase::Finished);
             let AttachPhase::Running(mut active) = phase else {
                 return Ok(());
@@ -555,8 +542,6 @@ impl EventAttachClient {
             // without ever leaving this turn.
             self.command_generation = self.command_generation.wrapping_add(1);
             self.phase = AttachPhase::Waiting(active);
-        } else {
-            self.deadline = Some(Instant::now());
         }
         Ok(())
     }
@@ -570,9 +555,8 @@ impl EventAttachClient {
                 return Ok(());
             }
         };
-        active
-            .task
-            .poll_after_single_source_wakeup(source_ready, Instant::now());
+        let _ = source_ready;
+        active.task.poll();
         active.allows_attach_io = false;
         self.phase = AttachPhase::Running(active);
         self.drive_active_command()
@@ -674,9 +658,9 @@ impl ProtocolClient {
                     return;
                 }
                 self.protocol_state = ProtocolState::Attach(AttachClientState {
+                    timer_generation: 0,
                     client: Box::new(attach),
                     timer_deadline: None,
-                    timer_generation: 0,
                     input_paused: false,
                 });
                 self.sync_attach(target, outbox);
@@ -684,7 +668,6 @@ impl ProtocolClient {
             Err(error) => {
                 self.protocol_state = ProtocolState::Command(CommandClientState {
                     operation: CommandOperation::AwaitingStep,
-                    timer_generation: 0,
                 });
                 self.begin_response(
                     target,

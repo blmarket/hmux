@@ -29,7 +29,12 @@ use libc::pid_t;
 use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, ScreenTail};
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 use crate::server::input_keys::ExtendedKeys;
-use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
+use crate::event_loop::reactor::Interest;
+use crate::event_loop::tasks::{join, sleep, AsyncFd, TaskHandle};
+use crate::server::task::WakeFn;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use hmux_vt::StringEnd;
 use hmux_vt::{Terminal, TerminalEvent as VtEvent};
 
@@ -82,11 +87,18 @@ pub(crate) struct PaneSpawnSpec {
 const PANE_PIPE_OUTBOUND_CAP: usize = 4 * 1024 * 1024;
 
 /// Pane output waiting to be written to an open `pipe-pane` child.
+///
+/// The pane fills this and the pipe's task drains it, so the task has to be
+/// told when it stops being empty: nothing about a buffer another actor writes
+/// is a readiness event, and a task parked on the child's stdin would sleep
+/// through the pane's output.
 #[derive(Default)]
 pub(crate) struct PanePipeOutbound {
     queue: VecDeque<u8>,
     /// Set when the pane stops piping, so the job closes the child's stdin.
     closed: bool,
+    /// Installed by the task while it has nothing left to write.
+    wake: Option<WakeFn>,
 }
 
 impl PanePipeOutbound {
@@ -96,6 +108,43 @@ impl PanePipeOutbound {
         if overflow != 0 {
             self.queue.drain(..overflow);
         }
+        self.wake();
+    }
+
+    fn close(&mut self) {
+        self.closed = true;
+        self.wake();
+    }
+
+    /// Whether the task has anything to do: bytes to write, or an end of input
+    /// to report.
+    fn has_work(&self) -> bool {
+        !self.queue.is_empty() || self.closed
+    }
+
+    fn wake(&mut self) {
+        if let Some(wake) = self.wake.take() {
+            wake();
+        }
+    }
+}
+
+/// Wait until the pane has queued something for the pipe, or closed it.
+struct OutboundReady<'a> {
+    outbound: &'a Rc<RefCell<PanePipeOutbound>>,
+}
+
+impl Future for OutboundReady<'_> {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<()> {
+        let mut outbound = self.outbound.borrow_mut();
+        if outbound.has_work() {
+            return Poll::Ready(());
+        }
+        let waker = context.local_waker().clone();
+        outbound.wake = Some(Rc::new(move || waker.wake_by_ref()));
+        Poll::Pending
     }
 }
 
@@ -109,10 +158,7 @@ impl PanePipe {
     /// Tell the job to close the child's stdin, which is what a `pipe-pane`
     /// command sees as end of input.
     fn close_outbound(&self) {
-        {
-            let mut outbound = self.outbound.borrow_mut();
-            outbound.closed = true;
-        }
+        self.outbound.borrow_mut().close();
     }
 }
 
@@ -146,9 +192,6 @@ pub(crate) struct PanePipeIo {
 }
 
 impl PanePipeIo {
-    const STDIN: WaitToken = WaitToken::new(0);
-    const STDOUT: WaitToken = WaitToken::new(1);
-
     /// A write-only pipe job: `payload` is handed to the child's stdin as it
     /// accepts it, and the child is reaped once it exits.
     ///
@@ -174,100 +217,122 @@ impl PanePipeIo {
             outbound: Rc::new(RefCell::new(PanePipeOutbound {
                 queue: payload.iter().copied().collect(),
                 closed: true,
+                wake: None,
             })),
             alive: Rc::new(Cell::new(true)),
         })
     }
 
-    /// Write what the child will take without blocking. The buffer keeps what
-    /// it will not.
-    fn write_outbound(&mut self) {
-        let Some(stdin) = self.stdin.as_mut() else {
-            return;
-        };
-        let mut outbound = self.outbound.borrow_mut();
-        while !outbound.queue.is_empty() {
-            let (front, _) = outbound.queue.as_slices();
-            match stdin.write(front) {
-                Ok(0) => break,
-                Ok(count) => {
-                    outbound.queue.drain(..count);
-                }
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => return,
-                Err(_) => {
-                    // The child stopped reading; nothing more will reach it.
-                    outbound.queue.clear();
-                    outbound.closed = true;
-                    break;
-                }
-            }
-        }
-        if outbound.closed && outbound.queue.is_empty() {
-            // Dropping the write end reports end of input to the child.
-            self.stdin = None;
-        }
-    }
-
-    /// Feed whatever the child has written back into the pane.
-    fn read_inbound(&mut self) {
-        let Some(stdout) = self.stdout.as_mut() else {
-            return;
-        };
-        let Some(master) = self.master.as_ref() else {
-            self.stdout = None;
-            return;
-        };
-        let mut bytes = [0u8; 4096];
+    /// Run both directions to their end, then collect the child.
+    ///
+    /// What took a two-source wait description and a resume that re-derived it
+    /// every turn is two independent halves joined: each parks on its own
+    /// descriptor, and neither has to describe itself to a driver.
+    pub(crate) async fn run(self, tasks: &TaskHandle) {
+        let Self {
+            mut child,
+            stdin,
+            stdout,
+            master,
+            pending_input,
+            outbound,
+            alive,
+        } = self;
+        join(
+            write_outbound(tasks, stdin, &outbound),
+            read_inbound(tasks, stdout, master, &pending_input),
+        )
+        .await;
+        // Nothing portable makes a child's exit readable, so this last wait is
+        // a poll on a timer rather than on the child.
         loop {
-            match stdout.read(&mut bytes) {
-                Ok(0) => break,
-                Ok(count) => {
-                    enqueue_pane_input(master.as_raw_fd(), &self.pending_input, &bytes[..count]);
-                }
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => return,
-                Err(_) => break,
+            match child.try_wait() {
+                Ok(None) => sleep(tasks, PIPE_REAP_RETRY).await,
+                Ok(Some(_)) | Err(_) => break,
             }
         }
-        self.stdout = None;
+        alive.set(false);
     }
 }
 
-impl Coroutine for PanePipeIo {
-    type Output = ();
-
-    fn wait(&self) -> WaitRequest<'_> {
-        let mut sources = Vec::new();
-        // Writable interest only while there is something to write; an idle
-        // pipe would otherwise report ready on every poll.
-        let outbound = self.outbound.borrow();
-        let has_outbound = !outbound.queue.is_empty() || outbound.closed;
-        drop(outbound);
-        if let Some(stdin) = self.stdin.as_ref().filter(|_| has_outbound) {
-            sources.push(FdInterest::writable(Self::STDIN, stdin.as_fd()));
-        }
-        if let Some(stdout) = self.stdout.as_ref() {
-            sources.push(FdInterest::readable(Self::STDOUT, stdout.as_fd()));
-        }
-        // With neither end left the job is only waiting for the child to exit,
-        // which nothing portable makes readable.
-        let deadline = (sources.is_empty()).then(|| Instant::now() + PIPE_REAP_RETRY);
-        WaitRequest::new(sources, deadline)
-    }
-
-    fn resume(&mut self, _ready: &ReadySet) -> TaskPoll<Self::Output> {
-        self.write_outbound();
-        self.read_inbound();
-        if self.stdin.is_some() || self.stdout.is_some() {
-            return TaskPoll::Pending;
-        }
-        match self.child.try_wait() {
-            Ok(None) => TaskPoll::Pending,
-            Ok(Some(_)) | Err(_) => {
-                self.alive.set(false);
-                TaskPoll::Ready(())
+/// Write what the child will take, waiting for the pane to queue more.
+async fn write_outbound(
+    tasks: &TaskHandle,
+    stdin: Option<std::process::ChildStdin>,
+    outbound: &Rc<RefCell<PanePipeOutbound>>,
+) {
+    let Some(mut stdin) = stdin else {
+        return;
+    };
+    let Ok(source) = AsyncFd::new(tasks, stdin.as_fd(), Interest::WRITABLE) else {
+        return;
+    };
+    loop {
+        let mut blocked = false;
+        {
+            let mut outbound = outbound.borrow_mut();
+            while !outbound.queue.is_empty() {
+                let (front, _) = outbound.queue.as_slices();
+                match stdin.write(front) {
+                    Ok(0) => break,
+                    Ok(count) => {
+                        outbound.queue.drain(..count);
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        blocked = true;
+                        break;
+                    }
+                    Err(_) => {
+                        // The child stopped reading; nothing more will reach it.
+                        outbound.queue.clear();
+                        outbound.closed = true;
+                        break;
+                    }
+                }
             }
+            // Dropping the write end as this returns reports end of input to
+            // the child.
+            if outbound.closed && outbound.queue.is_empty() {
+                return;
+            }
+        }
+        if blocked {
+            source.readiness().await;
+        } else {
+            OutboundReady { outbound }.await;
+        }
+    }
+}
+
+/// Feed whatever the child writes back into the pane.
+async fn read_inbound(
+    tasks: &TaskHandle,
+    stdout: Option<std::process::ChildStdout>,
+    master: Option<OwnedFd>,
+    pending_input: &Rc<RefCell<VecDeque<u8>>>,
+) {
+    let Some(mut stdout) = stdout else {
+        return;
+    };
+    let Some(master) = master else {
+        return;
+    };
+    let Ok(source) = AsyncFd::new(tasks, stdout.as_fd(), Interest::READABLE) else {
+        return;
+    };
+    let mut bytes = [0u8; 4096];
+    loop {
+        match stdout.read(&mut bytes) {
+            Ok(0) => return,
+            Ok(count) => {
+                enqueue_pane_input(master.as_raw_fd(), pending_input, &bytes[..count]);
+            }
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                source.readiness().await;
+            }
+            Err(_) => return,
         }
     }
 }

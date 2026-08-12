@@ -12,7 +12,8 @@ use super::style::CaptureStyleWriter;
 use super::style::{self, CellPresentation, CellStyle, Colour, TerminalStyleWriter, VisualToken};
 use super::term::{terminal_acs, TerminalCapabilities};
 use crate::integration::status::{PaneAgents, StatusSnapshot};
-use crate::server::task::{Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken};
+use crate::event_loop::reactor::Interest;
+use crate::event_loop::tasks::{sleep, AsyncFd, TaskHandle};
 use hmux_vt::codepoint_width;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -393,29 +394,15 @@ pub(crate) struct FormatJob {
     /// Kept alive so the entry's `show-messages -J` view stays valid, and so
     /// cancellation still has the process group to kill.
     _process: Rc<FormatJobProcess>,
-    stage: FormatJobStage,
+    /// Held until the reap; `None` when the child could not be spawned.
+    child: Option<Child>,
+    /// Held until the read; `None` when the job has no pipe to read.
+    stdout: Option<ChildStdout>,
     /// The last line seen, which is what the finished job reports.
     output: String,
 }
 
-enum FormatJobStage {
-    Reading {
-        child: Child,
-        stdout: ChildStdout,
-        /// Bytes of the line currently being accumulated.
-        partial: Vec<u8>,
-    },
-    Reaping {
-        child: Child,
-        retry: Instant,
-        backoff: Duration,
-    },
-    Done,
-}
-
 impl FormatJob {
-    const STDOUT: WaitToken = WaitToken::new(0);
-
     #[allow(clippy::too_many_arguments)]
     fn spawn(
         registry: Weak<FormatJobRegistry>,
@@ -428,36 +415,19 @@ impl FormatJob {
         environment: &[String],
         process: Rc<FormatJobProcess>,
     ) -> Self {
-        let done = |process| Self {
-            registry: registry.clone(),
-            key: key.clone(),
+        let mut job = Self {
+            registry,
+            key,
             generation,
             session_id,
             status,
-            _process: process,
-            stage: FormatJobStage::Done,
-            output: String::new(),
-        };
-        // A child that was spawned but cannot be read from still has to be
-        // collected. `wait(2)` here would stall the loop for as long as the
-        // child lives, so hand it to the same nonblocking reap the ordinary
-        // path ends with — which also reports the job as finished.
-        let reap = |process, child| Self {
-            registry: registry.clone(),
-            key: key.clone(),
-            generation,
-            session_id,
-            status,
-            _process: process,
-            stage: FormatJobStage::Reaping {
-                child,
-                retry: Instant::now(),
-                backoff: FORMAT_REAP_RETRY_MIN,
-            },
+            _process: Rc::clone(&process),
+            child: None,
+            stdout: None,
             output: String::new(),
         };
         if process.cancelled.get() {
-            return done(process);
+            return job;
         }
         let mut shell = Command::new("sh");
         shell
@@ -479,41 +449,86 @@ impl FormatJob {
             }
         }
         let Ok(mut child) = shell.spawn() else {
-            return done(process);
+            return job;
         };
+        // A child that was spawned but cannot be read from still has to be
+        // collected, so it is kept for the reap even when its pipe is not.
         if !process.register(child.id() as i32) {
-            return reap(process, child);
+            job.child = Some(child);
+            return job;
         }
         let Some(stdout) = child.stdout.take() else {
-            return reap(process, child);
+            job.child = Some(child);
+            return job;
         };
         process.fd.set(stdout.as_raw_fd());
         // The loop reads this pipe between its other work, so the read may
         // never block once the child stalls mid-line.
         if set_nonblocking(stdout.as_fd()).is_err() {
-            return reap(process, child);
+            job.child = Some(child);
+            return job;
         }
-        Self {
-            registry,
-            key,
-            generation,
-            session_id,
-            status,
-            _process: process,
-            stage: FormatJobStage::Reading {
-                child,
-                stdout,
-                partial: Vec::new(),
-            },
-            output: String::new(),
+        job.child = Some(child);
+        job.stdout = Some(stdout);
+        job
+    }
+
+    /// Read the child's output to end of file, publishing each complete line,
+    /// then collect its exit status and report the job finished.
+    ///
+    /// tmux publishes a `#()` job's output line by line as it arrives, which is
+    /// why this reads rather than collecting: the `run_shell` drain would only
+    /// report the whole thing at the end.
+    pub(crate) async fn run(mut self, tasks: &TaskHandle) {
+        if let Some(mut stdout) = self.stdout.take() {
+            if let Ok(source) = AsyncFd::new(tasks, stdout.as_fd(), Interest::READABLE) {
+                let mut partial = Vec::new();
+                let mut bytes = [0u8; 4096];
+                loop {
+                    match stdout.read(&mut bytes) {
+                        Ok(0) => break,
+                        Ok(count) => {
+                            partial.extend_from_slice(&bytes[..count]);
+                            self.take_lines(&mut partial);
+                        }
+                        Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                            source.readiness().await;
+                        }
+                        Err(_) => break,
+                    }
+                }
+                self.take_lines(&mut partial);
+                self.take_trailing_line(&mut partial);
+            }
+        }
+        if let Some(mut child) = self.child.take() {
+            // The child can close its pipe and keep running; ask again rather
+            // than blocking the loop in `wait(2)`.
+            let mut backoff = FORMAT_REAP_RETRY_MIN;
+            loop {
+                match child.try_wait() {
+                    Ok(Some(_)) | Err(_) => break,
+                    Ok(None) => {
+                        sleep(tasks, backoff).await;
+                        backoff = (backoff * 2).min(FORMAT_REAP_RETRY_MAX);
+                    }
+                }
+            }
+        }
+        if let Some(registry) = Weak::upgrade(&self.registry) {
+            registry.complete(
+                self.key.clone(),
+                self.generation,
+                self.session_id,
+                self.status,
+                std::mem::take(&mut self.output),
+            );
         }
     }
 
     /// Consume whatever complete lines `partial` now holds, publishing each.
-    fn take_lines(&mut self) {
-        let FormatJobStage::Reading { partial, .. } = &mut self.stage else {
-            return;
-        };
+    fn take_lines(&mut self, partial: &mut Vec<u8>) {
         let mut lines = Vec::new();
         while let Some(end) = partial.iter().position(|byte| *byte == b'\n') {
             let mut line: Vec<u8> = partial.drain(..=end).collect();
@@ -539,10 +554,7 @@ impl FormatJob {
 
     /// At end of file a line without its newline is still the job's output, but
     /// tmux never published it as an update.
-    fn take_trailing_line(&mut self) {
-        let FormatJobStage::Reading { partial, .. } = &mut self.stage else {
-            return;
-        };
+    fn take_trailing_line(&mut self, partial: &mut Vec<u8>) {
         if partial.is_empty() {
             return;
         }
@@ -551,82 +563,6 @@ impl FormatJob {
         }
         self.output = String::from_utf8_lossy(partial).into_owned();
         partial.clear();
-    }
-}
-
-impl Coroutine for FormatJob {
-    type Output = ();
-
-    fn wait(&self) -> WaitRequest<'_> {
-        match &self.stage {
-            FormatJobStage::Reading { stdout, .. } => WaitRequest::new(
-                vec![FdInterest::readable(Self::STDOUT, stdout.as_fd())],
-                None,
-            ),
-            FormatJobStage::Reaping { retry, .. } => WaitRequest::new(Vec::new(), Some(*retry)),
-            FormatJobStage::Done => WaitRequest::new(Vec::new(), Some(Instant::now())),
-        }
-    }
-
-    fn resume(&mut self, _ready: &ReadySet) -> TaskPoll<Self::Output> {
-        if let FormatJobStage::Reading {
-            stdout, partial, ..
-        } = &mut self.stage
-        {
-            let mut bytes = [0u8; 4096];
-            let ended = loop {
-                match stdout.read(&mut bytes) {
-                    Ok(0) => break true,
-                    Ok(count) => partial.extend_from_slice(&bytes[..count]),
-                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => break false,
-                    Err(_) => break true,
-                }
-            };
-            self.take_lines();
-            if !ended {
-                return TaskPoll::Pending;
-            }
-            self.take_trailing_line();
-            let FormatJobStage::Reading { child, .. } =
-                std::mem::replace(&mut self.stage, FormatJobStage::Done)
-            else {
-                unreachable!("the reading stage was just observed");
-            };
-            self.stage = FormatJobStage::Reaping {
-                child,
-                retry: Instant::now(),
-                backoff: FORMAT_REAP_RETRY_MIN,
-            };
-        }
-        if let FormatJobStage::Reaping {
-            child,
-            retry,
-            backoff,
-        } = &mut self.stage
-        {
-            match child.try_wait() {
-                Ok(Some(_)) | Err(_) => {}
-                Ok(None) => {
-                    // The child can close its pipe and keep running; ask again
-                    // rather than blocking the loop in `wait(2)`.
-                    *retry = Instant::now() + *backoff;
-                    *backoff = (*backoff * 2).min(FORMAT_REAP_RETRY_MAX);
-                    return TaskPoll::Pending;
-                }
-            }
-            self.stage = FormatJobStage::Done;
-            if let Some(registry) = Weak::upgrade(&self.registry) {
-                registry.complete(
-                    self.key.clone(),
-                    self.generation,
-                    self.session_id,
-                    self.status,
-                    std::mem::take(&mut self.output),
-                );
-            }
-        }
-        TaskPoll::Ready(())
     }
 }
 

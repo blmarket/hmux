@@ -20,7 +20,7 @@ use super::state::{
     ControlStateSnapshot, ServerState, SharedState,
 };
 use super::status;
-use super::task::{ReadySet, TaskState, WakeFn};
+use super::task::WakeFn;
 
 const CONTROL_BUFFER_HIGH: usize = 8192;
 const CLIENT_CONTROLCONTROL: i64 = 0x4000;
@@ -315,14 +315,9 @@ impl EventControlClient {
             EventControlSource::Input => self.client_tty.stdin.as_ref()?.as_raw_fd(),
             EventControlSource::Output => self.output_fd.as_raw_fd(),
             EventControlSource::State => self.render_attachment.as_raw_fd(),
-            EventControlSource::Command(generation) => match &self.command_state {
-                ControlCommandState::Waiting(active) if generation == self.command_generation => {
-                    active.task.wait().and_then(|wait| {
-                        wait.sources().first().map(|source| source.fd().as_raw_fd())
-                    })?
-                }
-                _ => return None,
-            },
+            // A suspended command queue has no descriptor: it is waited on
+            // through the wake its client installs.
+            EventControlSource::Command(_) => return None,
             EventControlSource::Pane(pane_id) => {
                 self.streams.get(&pane_id)?.subscription.as_raw_fd()
             }
@@ -352,9 +347,9 @@ impl EventControlClient {
             return None;
         }
         match &self.command_state {
-            ControlCommandState::Waiting(active) => {
-                return active.task.wait().and_then(|wait| wait.deadline())
-            }
+            // A parked queue has no deadline of its own; its wake is what
+            // brings this client back.
+            ControlCommandState::Waiting(_) => return None,
             ControlCommandState::Running(_) => return None,
             ControlCommandState::Idle => {}
         }
@@ -474,7 +469,7 @@ impl EventControlClient {
         }
 
         let pending_complete = match &mut self.command_state {
-            ControlCommandState::Waiting(active) => active.task.poll(&ReadySet::default()),
+            ControlCommandState::Waiting(active) => active.task.poll(),
             _ => false,
         };
         if source.is_none() && pending_complete {
@@ -771,9 +766,8 @@ impl EventControlClient {
                 return Ok(());
             }
         };
-        active
-            .task
-            .poll_after_single_source_wakeup(source_ready, Instant::now());
+        let _ = source_ready;
+        active.task.poll();
         self.command_state = ControlCommandState::Running(active);
         self.drive_active_command()
     }
@@ -961,18 +955,14 @@ impl EventControlClient {
             ticket,
             id,
             argv,
-            task: TaskState::new(queued),
+            task: queued,
         });
         self.drive_active_command()
     }
 
     fn drive_active_command(&mut self) -> io::Result<()> {
-        let (complete, is_blocking) = match &mut self.command_state {
-            ControlCommandState::Running(active) => {
-                let complete = active.task.poll(&ReadySet::default());
-                let is_blocking = active.task.wait().is_some_and(|wait| wait.is_blocking());
-                (complete, is_blocking)
-            }
+        let complete = match &mut self.command_state {
+            ControlCommandState::Running(active) => active.task.poll(),
             _ => return Ok(()),
         };
         if complete {
@@ -985,7 +975,8 @@ impl EventControlClient {
                 .take_output()
                 .ok_or_else(|| io::Error::other("completed control command has no result"))??;
             self.finish_control_command(active.ticket, active.id, active.argv, result)
-        } else if is_blocking {
+        } else {
+            // A queue that has not finished is waiting on something.
             let state = std::mem::replace(&mut self.command_state, ControlCommandState::Idle);
             let ControlCommandState::Running(active) = state else {
                 return Ok(());
@@ -994,9 +985,6 @@ impl EventControlClient {
             // new source even when the same command suspends again.
             self.command_generation = self.command_generation.wrapping_add(1);
             self.command_state = ControlCommandState::Waiting(active);
-            Ok(())
-        } else {
-            self.command_continuation = true;
             Ok(())
         }
     }
@@ -1200,7 +1188,7 @@ struct ActiveControlCommand {
     ticket: QueueTicket,
     id: ControlCommandId,
     argv: Vec<String>,
-    task: TaskState<command::QueuedCommand>,
+    task: command::QueuedCommand,
 }
 
 fn control_command_has_flag(args: &[String], flag: char) -> bool {

@@ -29,7 +29,7 @@ use std::rc::Rc;
 use std::task::{Context, ContextBuilder, LocalWake, LocalWaker, Poll, Waker};
 use std::time::{Duration, Instant};
 
-use crate::server::task::{completion_pair, Coroutine as _, ReadySet, TaskPoll, WakeFn};
+use crate::server::task::{completion_pair, WakeFn};
 
 use super::driver::{EventLoop, IoRecipient, WakeQueue};
 use super::reactor::{Interest, MioReactor, Readiness, Token};
@@ -549,7 +549,7 @@ impl TaskRuntime {
         let flag = Rc::clone(&woken);
         let wake: WakeFn = Rc::new(move || flag.set(true));
         loop {
-            if let TaskPoll::Ready(value) = completion.resume(&ReadySet::default()) {
+            if let Some(value) = completion.take() {
                 return value.expect("the spawned task reported a value");
             }
             completion.set_wake(&wake);
@@ -589,7 +589,7 @@ mod tests {
     /// A `run-shell` in miniature: wait for the child's output, capture, reap.
     ///
     /// `source` borrowing the pipe across the `.await` is the thing a
-    /// `Coroutine`'s states cannot express.
+    /// hand-written state machine cannot express.
     async fn run_shell(tasks: &TaskHandle, command: &str) -> io::Result<Vec<u8>> {
         let mut child = Command::new("/bin/sh")
             .arg("-c")

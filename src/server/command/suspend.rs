@@ -6,14 +6,15 @@
 //! statements in [`run_shell`] rather than states of a hand-written machine,
 //! and each child's descriptors are owned by the [`AsyncFd`]s that read them.
 //!
-//! The remaining suspensions are still [`Coroutine`]s, which describe their
-//! descriptors to the suspension executor and are resumed by it.
-//!
 //! `source-file`, `load-buffer` and `save-buffer` name a path. Regular files
 //! are read and written inline (tmux 3.7b reads its configuration on its own
 //! loop, so nothing is gained by deferring them), but a FIFO makes the transfer
 //! wait for a peer that may be another client of this very server — so those
-//! become [`FifoRead`] and [`FifoWrite`] jobs.
+//! await [`fifo_read`] and [`fifo_write`].
+//!
+//! `wait-for` and the interactive prompts touch a registry, and the order they
+//! do so in is the order their commands ran in. Those keep the registry call
+//! synchronous ([`SuspensionStart`]) and defer only the waiting.
 
 use std::fs::File;
 use std::io::{self, Read, Write};

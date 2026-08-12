@@ -51,7 +51,7 @@ use super::state::{
     Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
 };
 use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
-use super::task::{Completion, Coroutine, ReadySet, TaskPoll, WaitRequest, WakeFn};
+use super::task::{Completion, WakeFn};
 use crate::event_loop::tasks::yield_now;
 use std::cell::Cell;
 use hmux_vt::{CaptureExtent, CellWidth, Grid, GridRow};
@@ -1002,6 +1002,7 @@ impl QueueStatus {
 pub(crate) struct QueuedCommand {
     completion: Completion<io::Result<CommandResult>>,
     status: Rc<QueueStatus>,
+    output: Option<io::Result<CommandResult>>,
 }
 
 impl QueuedCommand {
@@ -1009,32 +1010,38 @@ impl QueuedCommand {
         completion: Completion<io::Result<CommandResult>>,
         status: Rc<QueueStatus>,
     ) -> Self {
-        Self { completion, status }
+        Self {
+            completion,
+            status,
+            output: None,
+        }
     }
 
     pub(crate) fn allows_attach_io(&self) -> bool {
         self.status.allows_attach_io()
     }
-}
 
-impl Coroutine for QueuedCommand {
-    type Output = io::Result<CommandResult>;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        WaitRequest::parked()
+    /// Whether the queue has finished. Until it has, it is waiting on
+    /// something and its owner has nothing to do.
+    pub(crate) fn poll(&mut self) -> bool {
+        if self.output.is_none() {
+            // The outer error is the task disappearing; the inner one is the
+            // queue's own. Both read the same way to the owner.
+            self.output = self
+                .completion
+                .take()
+                .map(|result| result.and_then(|result| result));
+        }
+        self.output.is_some()
     }
 
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        // The outer error is the task disappearing; the inner one is the
-        // queue's own. Both read the same way to the owner.
-        self.completion
-            .resume(ready)
-            .map(|result| result.and_then(|result| result))
+    pub(crate) fn take_output(&mut self) -> Option<io::Result<CommandResult>> {
+        self.output.take()
     }
 
     /// Both halves take the wake: the value arriving and the parked suspension
     /// changing are each reasons for the owner to look again.
-    fn set_wake(&mut self, wake: &WakeFn) {
+    pub(crate) fn set_wake(&mut self, wake: &WakeFn) {
         self.completion.set_wake(wake);
         self.status.set_wake(wake);
     }
@@ -1043,8 +1050,8 @@ impl Coroutine for QueuedCommand {
 /// Run one command queue to completion, suspending as its commands need to.
 ///
 /// This is [`ResumableCommandQueue::drive`] with the waiting written out: what
-/// took a `CommandCoroutine` plus a `CommandTaskState` to express as states is
-/// the shape of the loop below.
+/// took a coroutine plus its own task state to express as states is the shape
+/// of the loop below.
 pub(crate) async fn run_command_queue(
     mut queue: ResumableCommandQueue,
     state: SharedState,
@@ -9585,6 +9592,130 @@ mod tests {
     fn run_str_agents(st: &SharedState, agents: &PaneAgents, args: &[&str]) -> CommandResult {
         let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
         run(&owned, st, agents)
+    }
+
+    /// A runtime that parks every suspension, so a queue that reaches one stays
+    /// there for the test to look at.
+    #[derive(Default)]
+    struct ParkedRuntime {
+        /// Kept so the completions handed out are never closed, which would
+        /// resolve the queue with an error instead of leaving it parked.
+        senders: RefCell<Vec<crate::server::task::CompletionSender<CommandSuspensionResult>>>,
+    }
+
+    impl CommandRuntime for ParkedRuntime {
+        fn submit(
+            &self,
+            _suspension: CommandSuspension,
+        ) -> io::Result<Completion<CommandSuspensionResult>> {
+            let (completion, sender) = crate::server::task::completion_pair()?;
+            self.senders.borrow_mut().push(sender);
+            Ok(completion)
+        }
+
+        fn spawn_queue(
+            &self,
+            _queue: ResumableCommandQueue,
+            _state: SharedState,
+            _budget: usize,
+        ) -> io::Result<QueuedCommand> {
+            unreachable!("this runtime is only ever asked for suspensions")
+        }
+    }
+
+    fn queued_command() -> (
+        QueuedCommand,
+        Rc<QueueStatus>,
+        crate::server::task::CompletionSender<io::Result<CommandResult>>,
+    ) {
+        let (completion, sender) = crate::server::task::completion_pair().expect("completion pair");
+        let status = Rc::new(QueueStatus::default());
+        (
+            QueuedCommand::new(completion, Rc::clone(&status)),
+            status,
+            sender,
+        )
+    }
+
+    /// A wake that counts how many times it fired.
+    fn counting_wake() -> (WakeFn, Rc<Cell<u32>>) {
+        let fired = Rc::new(Cell::new(0));
+        let counter = Rc::clone(&fired);
+        (Rc::new(move || counter.set(counter.get() + 1)), fired)
+    }
+
+    #[test]
+    fn a_queued_command_wakes_its_owner_for_a_value_or_for_a_change() {
+        // A running task is opaque to its owner, so both of the things an owner
+        // can care about have to reach it the same way: the queue finishing,
+        // and the queue parking on something only the owner can answer.
+        let (mut queued, status, sender) = queued_command();
+        let (wake, fired) = counting_wake();
+
+        queued.set_wake(&wake);
+        status.set_allows_attach_io(true);
+        assert_eq!(fired.get(), 1, "the parked suspension changed");
+        assert!(queued.allows_attach_io());
+        assert!(!queued.poll(), "the queue has not finished");
+
+        queued.set_wake(&wake);
+        sender.complete(Ok(CommandResult::ok("")));
+        assert_eq!(fired.get(), 2, "the queue finished");
+        assert!(queued.poll());
+    }
+
+    #[test]
+    fn an_unchanged_attach_io_flag_leaves_its_owner_alone() {
+        // The queue sets the flag on both sides of every suspension, so only a
+        // change is worth a turn of the owner's.
+        let (mut queued, status, _sender) = queued_command();
+        let (wake, fired) = counting_wake();
+        queued.set_wake(&wake);
+
+        status.set_allows_attach_io(false);
+
+        assert_eq!(fired.get(), 0);
+    }
+
+    #[test]
+    fn a_queue_parked_on_a_prompt_says_so_before_it_finishes() {
+        // A waiting `command-prompt` is answered by the very client whose queue
+        // is parked on it, so that client has to learn it is the one being
+        // asked while the queue is still parked. A client that had stopped
+        // reading its own input would never answer.
+        let state = state();
+        let context = ClientContext {
+            kind: ClientKind::Command,
+            ..ClientContext::default()
+        };
+        let queue = match start_resumable_command(
+            &["command-prompt".to_string()],
+            &state,
+            &PaneAgents::new(),
+            &context,
+        ) {
+            Ok(queue) => queue,
+            Err(result) => panic!("command-prompt parsed: {}", result.stderr),
+        };
+
+        let runtime = crate::event_loop::tasks::TaskRuntime::new().expect("task runtime");
+        let status = Rc::new(QueueStatus::default());
+        let (completion, sender) = crate::server::task::completion_pair().expect("completion pair");
+        let parked: Rc<dyn CommandRuntime> = Rc::new(ParkedRuntime::default());
+        let queue_status = Rc::clone(&status);
+        let queue_state = Rc::clone(&state);
+        // The first turn is taken inline, which is what starting a queue from a
+        // client's own dispatch does.
+        runtime.handle().spawn_now(async move {
+            sender.complete(run_command_queue(queue, queue_state, parked, 64, queue_status).await);
+        });
+
+        let mut queued = QueuedCommand::new(completion, status);
+        assert!(!queued.poll(), "the queue is parked on the prompt");
+        assert!(
+            queued.allows_attach_io(),
+            "the owner is the one being prompted"
+        );
     }
 
     #[test]
