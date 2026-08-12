@@ -738,7 +738,7 @@ def test_runs_track_each_window_and_prefer_its_agent_pane(
     monkeypatch.setattr(
         service,
         "_git_common_dir",
-        lambda cwd: None if cwd == Path("/tmp/non-git") else repository.common_dir,
+        lambda cwd: None if cwd == Path("/tmp/non-git").resolve() else repository.common_dir,
     )
     monkeypatch.setattr(
         service,
