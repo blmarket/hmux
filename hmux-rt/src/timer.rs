@@ -1,4 +1,4 @@
-//! Deterministic timer scheduling for the server event loop.
+//! Deterministic timer scheduling for the host event loop.
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 /// Stable identity for one scheduled timer.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct TimerId(u64);
+pub struct TimerId(u64);
 
 struct Timer<T> {
     deadline: Instant,
@@ -21,29 +21,27 @@ struct Deadline {
 
 /// A timer removed from the queue after reaching its deadline.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ExpiredTimer<T> {
+pub struct ExpiredTimer<T> {
     id: TimerId,
     value: T,
 }
 
 impl<T> ExpiredTimer<T> {
-    #[cfg(test)]
-    pub(crate) fn id(&self) -> TimerId {
+    pub fn id(&self) -> TimerId {
         self.id
     }
 
-    #[cfg(test)]
-    pub(crate) fn value(&self) -> &T {
+    pub fn value(&self) -> &T {
         &self.value
     }
 
-    pub(crate) fn into_value(self) -> T {
+    pub fn into_value(self) -> T {
         self.value
     }
 }
 
 /// Timer queue ordered by deadline and then insertion order.
-pub(crate) struct TimerQueue<T> {
+pub struct TimerQueue<T> {
     deadlines: BinaryHeap<Reverse<Deadline>>,
     timers: HashMap<TimerId, Timer<T>>,
     next_id: u64,
@@ -60,34 +58,34 @@ impl<T> Default for TimerQueue<T> {
 }
 
 impl<T> TimerQueue<T> {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 
-    pub(crate) fn set(&mut self, deadline: Instant, value: T) -> TimerId {
+    pub fn set(&mut self, deadline: Instant, value: T) -> TimerId {
         let id = self.allocate_id();
         self.deadlines.push(Reverse(Deadline { at: deadline, id }));
         self.timers.insert(id, Timer { deadline, value });
         id
     }
 
-    pub(crate) fn cancel(&mut self, id: TimerId) -> Option<T> {
+    pub fn cancel(&mut self, id: TimerId) -> Option<T> {
         let value = self.timers.remove(&id).map(|timer| timer.value);
         self.compact_if_sparse();
         value
     }
 
-    pub(crate) fn next_deadline(&mut self) -> Option<Instant> {
+    pub fn next_deadline(&mut self) -> Option<Instant> {
         self.remove_stale_deadlines();
         self.deadlines.peek().map(|entry| entry.0.at)
     }
 
-    pub(crate) fn time_until_next(&mut self, now: Instant) -> Option<Duration> {
+    pub fn time_until_next(&mut self, now: Instant) -> Option<Duration> {
         self.next_deadline()
             .map(|deadline| deadline.saturating_duration_since(now))
     }
 
-    pub(crate) fn drain_expired(&mut self, now: Instant, output: &mut Vec<ExpiredTimer<T>>) {
+    pub fn drain_expired(&mut self, now: Instant, output: &mut Vec<ExpiredTimer<T>>) {
         self.remove_stale_deadlines();
         while self
             .deadlines
@@ -106,13 +104,11 @@ impl<T> TimerQueue<T> {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.timers.is_empty()
     }
 
-    #[cfg(test)]
-    pub(crate) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.timers.len()
     }
 

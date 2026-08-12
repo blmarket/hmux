@@ -389,7 +389,7 @@ pub struct Window {
     /// the size it was created at) and moved only by `resize-window`.
     pub manual_size: (u16, u16),
     /// The client that most recently sized this window, as the sequence number
-    /// [`AttachedClient::size_seq`] carries — tmux's `w->latest`, which is what
+    /// `ClientRenderEntry::size_seq` carries — tmux's `w->latest`, which is what
     /// `window-size latest` follows once more than one client can see the
     /// window.
     pub(crate) latest_client: Option<u64>,
@@ -1418,7 +1418,7 @@ mod tests {
 
     /// Take a prompt answer that has already arrived.
     fn answer_now(
-        mut answer: crate::server::task::Completion<Option<PromptCompletion>>,
+        mut answer: hmux_rt::Completion<Option<PromptCompletion>>,
     ) -> Option<PromptCompletion> {
         answer.take().expect("answered prompt").expect("answer")
     }

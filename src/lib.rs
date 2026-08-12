@@ -13,9 +13,12 @@
 //! - [`serve`] — listeners and connection lifecycle management.
 //!
 //! The pane tokenizer and the terminal emulation live in the `hmux-vt` crate;
-//! the daemon consumes them only through that crate's public surface.
+//! the async task layer (futures, `AsyncFd`, completions, reactor, timers)
+//! lives in the `hmux-rt` crate. The daemon consumes both only through those
+//! crates' public surfaces.
 
-// The loop's task set parks non-`Send` wakers on the event queue.
+// Leaves the daemon writes itself park non-`Send` wakers, the same contract
+// as `hmux-rt`.
 #![feature(local_waker)]
 
 pub mod error;
@@ -28,18 +31,6 @@ mod platform;
 pub mod serve;
 pub(crate) mod server;
 pub mod tmux;
-
-/// The event loop's `Future` executor.
-///
-/// Exposed for the demo in `examples/tasks.rs`: the daemon itself reaches these
-/// through the loop, not through this module.
-pub mod tasks {
-    pub use crate::event_loop::reactor::{Interest, Readiness};
-    pub use crate::event_loop::tasks::{
-        join, sleep, sleep_until, AsyncFd, Join, ReadinessFuture, Sleep, TaskHandle, TaskRuntime,
-    };
-    pub use crate::server::task::{completion_pair, Completion, CompletionSender};
-}
 
 pub use error::{Error, Result};
 

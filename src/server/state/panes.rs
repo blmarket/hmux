@@ -1986,7 +1986,7 @@ impl ServerState {
     }
 
     /// Spell one key the way the pane's own terminal type and modes describe
-    /// it, per [`super::input_keys`].
+    /// it, per [`crate::server::input_keys`].
     pub(crate) fn encode_pane_key(
         &self,
         target: &str,

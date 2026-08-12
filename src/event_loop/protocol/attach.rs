@@ -18,7 +18,7 @@ use crate::server::attach::{
 };
 use crate::server::command::{self, ClientContext};
 use crate::server::state::SharedState;
-use crate::server::task::WakeFn;
+use hmux_rt::WakeFn;
 use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::Frame;
 use crate::tmux::traits::NonblockingFrameReader;

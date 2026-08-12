@@ -31,9 +31,9 @@ use crate::server::state::{
     BackgroundJobRegistry, ClientPromptRegistry, CommandPromptRequestResult, PromptCompletion,
     WaitRegistry,
 };
-use crate::event_loop::reactor::Interest;
-use crate::event_loop::tasks::{join, sleep, AsyncFd, TaskHandle};
-use crate::server::task::Completion;
+use hmux_rt::Interest;
+use hmux_rt::{join, sleep, AsyncFd, TaskHandle};
+use hmux_rt::Completion;
 
 use super::execution::{self, WaitForOutcome};
 use super::{

@@ -21,7 +21,7 @@ use crate::server::Server;
 use crate::tmux::codec::{split_nonblocking_stream_with_queue_limit, MAX_IMSGSIZE};
 
 type ReadinessEventLoop =
-    EventLoop<crate::event_loop::reactor::MioReactor<crate::event_loop::driver::IoRecipient>>;
+    EventLoop<hmux_rt::MioReactor<crate::event_loop::driver::IoRecipient>>;
 const PROTOCOL_WRITE_QUEUE_LIMIT: usize = MAX_IMSGSIZE;
 
 /// Bind `listen_path` and serve a concrete [`Server`] through the

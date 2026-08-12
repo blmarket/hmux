@@ -1,5 +1,5 @@
 [workspace]
-members = ["hmux-vt"]
+members = ["hmux-rt", "hmux-vt"]
 
 [package]
 name = "hmux"
@@ -17,6 +17,7 @@ name = "hmux"
 path = "src/lib.rs"
 
 [dependencies]
+hmux-rt = { path = "hmux-rt" }
 hmux-vt = { path = "hmux-vt" }
 libc = "0.2"
 mio = { version = "1.2", features = ["os-ext", "os-poll"] }

@@ -1,10 +1,7 @@
 //! The handoff between a task and whoever is waiting for what it produces.
 //!
 //! Both ends live on one thread, so this is a shared slot and a callback rather
-//! than anything the kernel knows about. It is all that is left of a much
-//! larger vocabulary — resumable coroutines and the descriptor sets they
-//! described — now that the work itself is expressed as futures on the loop's
-//! task set.
+//! than anything the kernel knows about.
 
 use std::cell::RefCell;
 use std::future::Future;
@@ -20,7 +17,7 @@ use std::task::{Context, Poll};
 /// driver's own wake event and returns. Resuming the task inline from here
 /// would make dispatch order depend on which producer happened to finish
 /// first, which is observable behavior.
-pub(crate) type WakeFn = Rc<dyn Fn()>;
+pub type WakeFn = Rc<dyn Fn()>;
 
 /// The value a job the loop owns will produce, and the wake that says it has.
 ///
@@ -96,7 +93,7 @@ impl<T> Drop for CompletionSender<T> {
 impl<T> Completion<T> {
     /// The value, if it has arrived, or the error a producer that stopped
     /// without one leaves behind.
-    pub(crate) fn take(&mut self) -> Option<io::Result<T>> {
+    pub fn take(&mut self) -> Option<io::Result<T>> {
         let mut slot = self.slot.borrow_mut();
         if let Some(value) = slot.value.take() {
             return Some(Ok(value));
@@ -115,7 +112,7 @@ impl<T> Completion<T> {
     /// so a completion can never be installed onto too late. That is what lets
     /// a driver (re-)install on whatever schedule suits it instead of having to
     /// interleave with the producer.
-    pub(crate) fn set_wake(&mut self, wake: &WakeFn) {
+    pub fn set_wake(&mut self, wake: &WakeFn) {
         let mut slot = self.slot.borrow_mut();
         if slot.value.is_some() || slot.closed {
             drop(slot);

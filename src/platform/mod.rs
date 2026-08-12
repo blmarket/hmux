@@ -90,7 +90,7 @@ pub(crate) trait Platform {
         Vec::new()
     }
 
-    /// Full process argument vector, including argv[0], when readable.
+    /// Full process argument vector, including `argv[0]`, when readable.
     fn process_arguments(_pid: u32) -> Vec<OsString> {
         Vec::new()
     }

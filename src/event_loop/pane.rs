@@ -7,8 +7,8 @@ use crate::server::pane::PaneIo;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;
-use super::reactor::{Readiness, Token};
-use super::timer::TimerId;
+use hmux_rt::{Readiness, Token};
+use hmux_rt::TimerId;
 
 /// tmux's ground timer: how long `input.c` waits for the terminator of a
 /// string sequence before giving up on it and returning the parser to ground,

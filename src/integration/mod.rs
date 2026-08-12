@@ -152,8 +152,8 @@ pub(crate) trait AgentDetector {
     /// name — belongs to this agent.
     fn matches_program(&self, program: &OsStr) -> bool;
 
-    /// Whether a process argv identifies this agent. By default, check argv[0]
-    /// and argv[1]: argv[0] covers ordinary direct execution, while argv[1]
+    /// Whether a process argv identifies this agent. By default, check `argv[0]`
+    /// and `argv[1]`: `argv[0]` covers ordinary direct execution, while `argv[1]`
     /// covers runtime wrappers such as `node path/to/claude.js` without making
     /// the platform layer understand language runtimes.
     fn matches_invocation(&self, arguments: &[OsString]) -> bool {
@@ -924,7 +924,7 @@ pub(crate) trait ProcessSource {
     /// Empty when the process cannot be read.
     fn programs(&self, pid: u32) -> Vec<OsString>;
 
-    /// Full process argument vector, including argv[0]. Empty when unreadable.
+    /// Full process argument vector, including `argv[0]`. Empty when unreadable.
     fn arguments(&self, _pid: u32) -> Vec<OsString> {
         Vec::new()
     }

@@ -1,26 +1,26 @@
-//! `Future` tasks running on the server's own reactor.
+//! `Future` tasks running on a host-owned reactor.
 //!
-//! This is the prototype in [`super::future_rt`] wired into the live loop. The
-//! differences are all consequences of not owning the loop:
+//! The task set is a tenant of its host's event loop, not an owner, and the
+//! design here is all consequences of that:
 //!
-//! - The reactor belongs to [`super::driver::EventLoop`], so an [`AsyncFd`]
-//!   cannot register itself: it records the request and the loop makes it on
-//!   the next sync, the same deferral the suspension executor already uses for
-//!   the descriptors a job names. Nothing is missed in between, because a
+//! - The reactor belongs to the host, so an [`AsyncFd`] cannot register
+//!   itself: it records the request and the host makes it on the next sync
+//!   ([`TaskSet::take_new_io`]). Nothing is missed in between, because a
 //!   registration only ever happens between dispatches and readiness that
 //!   predates it is reported when the descriptor is added.
 //! - There is no `block_on` and no run queue of its own. A task that can make
-//!   progress is an ordinary envelope in the loop's one FIFO, so a task
-//!   resuming is ordered against every other thing the loop does — which is
-//!   observable behavior and not ours to reorder.
+//!   progress is reported through the host's [`WakeSink`], so a task resuming
+//!   is ordered against every other thing the host does — which may be
+//!   observable behavior and is not ours to reorder.
 //!
 //! Everything is single-threaded: tasks are not `Send`, hold `Rc`/`RefCell`
-//! state freely, and park [`LocalWaker`]s. As in the prototype, the `Waker`
-//! half of the [`Context`] is [`Waker::noop`], so **a leaf that parks
-//! `cx.waker()` instead of `cx.local_waker()` never wakes**.
+//! state freely, and park [`LocalWaker`]s. The `Waker` half of the
+//! [`Context`] is [`Waker::noop`], so **a leaf that parks `cx.waker()`
+//! instead of `cx.local_waker()` never wakes**.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::future::Future;
 use std::io;
 use std::os::fd::{BorrowedFd, OwnedFd};
@@ -29,15 +29,19 @@ use std::rc::Rc;
 use std::task::{Context, ContextBuilder, LocalWake, LocalWaker, Poll, Waker};
 use std::time::{Duration, Instant};
 
-use crate::server::task::{completion_pair, WakeFn};
+use crate::reactor::{Interest, Readiness, Token};
 
-use super::driver::{EventLoop, IoRecipient, WakeQueue};
-use super::reactor::{Interest, MioReactor, Readiness, Token};
+pub type TaskId = u64;
 
-pub(crate) type TaskId = u64;
+/// Where a task's wake lands.
+///
+/// The host queues "poll this task" however it orders the rest of its work;
+/// nothing here resumes a task inline, because dispatch order is the host's
+/// observable behavior.
+pub type WakeSink = Rc<dyn Fn(TaskId)>;
 
 /// Work addressed to one task.
-pub(crate) enum TaskEvent {
+pub enum TaskEvent {
     /// The task can make progress: poll it.
     Poll(TaskId),
     /// The deadline the task asked for has elapsed.
@@ -107,7 +111,7 @@ impl TaskShared {
 #[derive(Clone)]
 pub struct TaskHandle {
     shared: Rc<TaskShared>,
-    wakes: WakeQueue,
+    wake: WakeSink,
 }
 
 impl TaskHandle {
@@ -134,7 +138,7 @@ impl TaskHandle {
         let mut future: Pin<Box<dyn Future<Output = ()>>> = Box::pin(future);
         let waker = LocalWaker::from(Rc::new(TaskWaker {
             task: id,
-            wakes: self.wakes.clone(),
+            wake: self.wake.clone(),
         }));
         let mut context = ContextBuilder::from_waker(Waker::noop())
             .local_waker(&waker)
@@ -149,8 +153,7 @@ impl TaskHandle {
     }
 
     /// Descriptors this task set has live registrations for.
-    #[cfg(test)]
-    pub(crate) fn registered_io(&self) -> usize {
+    pub fn registered_io(&self) -> usize {
         self.shared
             .io
             .borrow()
@@ -161,30 +164,30 @@ impl TaskHandle {
 }
 
 /// The loop's task table.
-pub(crate) struct TaskSet {
+pub struct TaskSet {
     /// The slot is `None` while its future is being polled, which lets a
     /// running task spawn and register without re-borrowing.
     tasks: HashMap<TaskId, Option<Pin<Box<dyn Future<Output = ()>>>>>,
     shared: Rc<TaskShared>,
-    wakes: WakeQueue,
+    wake: WakeSink,
 }
 
 impl TaskSet {
-    pub(crate) fn new(wakes: WakeQueue) -> (Self, TaskHandle) {
+    pub fn new(wake: WakeSink) -> (Self, TaskHandle) {
         let shared = Rc::new(TaskShared::default());
         (
             Self {
                 tasks: HashMap::new(),
                 shared: Rc::clone(&shared),
-                wakes: wakes.clone(),
+                wake: wake.clone(),
             },
-            TaskHandle { shared, wakes },
+            TaskHandle { shared, wake },
         )
     }
 
     /// Adopt every task spawned since the last sync, reporting the ids that
     /// still owe a first poll.
-    pub(crate) fn take_spawned(&mut self) -> Vec<TaskId> {
+    pub fn take_spawned(&mut self) -> Vec<TaskId> {
         let spawned = std::mem::take(&mut *self.shared.spawned.borrow_mut());
         spawned
             .into_iter()
@@ -196,7 +199,7 @@ impl TaskSet {
     }
 
     /// Poll one task, dropping it if it finishes.
-    pub(crate) fn poll(&mut self, id: TaskId) {
+    pub fn poll(&mut self, id: TaskId) {
         let Some(Some(mut future)) = self.tasks.get_mut(&id).map(Option::take) else {
             // Finished task, or a second wake for one already being polled.
             // Ids are never reused, so a stale wake can only miss.
@@ -204,7 +207,7 @@ impl TaskSet {
         };
         let waker = LocalWaker::from(Rc::new(TaskWaker {
             task: id,
-            wakes: self.wakes.clone(),
+            wake: self.wake.clone(),
         }));
         // The `Waker` half is inert on purpose: a `Send` wake path would mean
         // an `Arc<Mutex<..>>` behind wakes that never cross a thread.
@@ -229,7 +232,7 @@ impl TaskSet {
 
     /// Hand readiness to the descriptor it was registered for, reporting the
     /// task to poll. `None` once the `AsyncFd` is gone.
-    pub(crate) fn deliver_io(&mut self, io: u64, readiness: Readiness) -> Option<TaskId> {
+    pub fn deliver_io(&mut self, io: u64, readiness: Readiness) -> Option<TaskId> {
         let entries = self.shared.io.borrow();
         let entry = entries.get(&io)?;
         if entry.dropped {
@@ -240,7 +243,7 @@ impl TaskSet {
     }
 
     /// Descriptors to release: every entry whose `AsyncFd` is gone.
-    pub(crate) fn take_released_io(&mut self) -> Vec<Token> {
+    pub fn take_released_io(&mut self) -> Vec<Token> {
         let mut entries = self.shared.io.borrow_mut();
         let released = entries
             .iter()
@@ -254,7 +257,7 @@ impl TaskSet {
     }
 
     /// Descriptors to register: every entry the loop has not registered yet.
-    pub(crate) fn take_new_io(&mut self) -> Vec<(u64, TaskId, OwnedFd, Interest)> {
+    pub fn take_new_io(&mut self) -> Vec<(u64, TaskId, OwnedFd, Interest)> {
         let mut entries = self.shared.io.borrow_mut();
         entries
             .iter_mut()
@@ -268,7 +271,7 @@ impl TaskSet {
             .collect()
     }
 
-    pub(crate) fn set_io_token(&mut self, io: u64, token: Token) {
+    pub fn set_io_token(&mut self, io: u64, token: Token) {
         if let Some(entry) = self.shared.io.borrow_mut().get_mut(&io) {
             entry.token = Some(token);
         }
@@ -276,18 +279,19 @@ impl TaskSet {
 
     /// What every sleeping task is waiting for, for the loop to arm timers
     /// against.
-    pub(crate) fn deadlines(&self) -> BTreeMap<TaskId, Instant> {
+    pub fn deadlines(&self) -> BTreeMap<TaskId, Instant> {
         self.shared.deadlines.borrow().clone()
     }
 }
 
-/// Wakes are just "poll this task"; the loop's FIFO is the whole mechanism.
+/// Wakes are just "poll this task"; the host's [`WakeSink`] is the whole
+/// mechanism.
 ///
 /// [`LocalWake`] keeps the payload an `Rc` — the `Send + Sync` bound that would
 /// force an `Arc` belongs to `Waker`, not `LocalWaker`.
 struct TaskWaker {
     task: TaskId,
-    wakes: WakeQueue,
+    wake: WakeSink,
 }
 
 impl LocalWake for TaskWaker {
@@ -296,7 +300,7 @@ impl LocalWake for TaskWaker {
     }
 
     fn wake_by_ref(self: &Rc<Self>) {
-        self.wakes.wake_task(self.task);
+        (self.wake)(self.task);
     }
 }
 
@@ -504,187 +508,5 @@ impl<A: Future, B: Future> Future for Join<A, B> {
             return Poll::Ready((this.first.take(), this.second.take()));
         }
         Poll::Pending
-    }
-}
-
-/// How much the runtime dispatches before it polls, and how long it blocks in
-/// the reactor when nothing has woken it.
-const RUNTIME_DISPATCH_BUDGET: usize = 64;
-const RUNTIME_TURN_TIMEOUT: Duration = Duration::from_millis(10);
-
-/// An event loop that exists to run tasks and nothing else.
-///
-/// The daemon drives its task set from the server loop in
-/// [`serve`](crate::serve); this is that same loop with a `block_on` in front,
-/// for tests and for the demo in `examples/tasks.rs`. It is not a second
-/// executor: every turn here is the loop's own dispatch-then-poll, so a task
-/// runs exactly as it would in the daemon.
-pub struct TaskRuntime {
-    loop_: EventLoop<MioReactor<IoRecipient>>,
-    handle: TaskHandle,
-}
-
-impl TaskRuntime {
-    pub fn new() -> io::Result<Self> {
-        let loop_ = EventLoop::new()?;
-        let handle = loop_.task_handle();
-        Ok(Self { loop_, handle })
-    }
-
-    pub fn handle(&self) -> TaskHandle {
-        self.handle.clone()
-    }
-
-    /// Spawn `future` and run turns until it produces a value.
-    ///
-    /// The value comes back through a completion, which is also how a suspended
-    /// command queue collects one. Nothing outside the loop can wake this
-    /// waiter, so a turn is bounded rather than blocking outright.
-    pub fn block_on<T: 'static>(&mut self, future: impl Future<Output = T> + 'static) -> T {
-        let (mut completion, sender) = completion_pair().expect("completion pair");
-        self.handle.spawn(async move {
-            sender.complete(future.await);
-        });
-        let woken = Rc::new(Cell::new(false));
-        let flag = Rc::clone(&woken);
-        let wake: WakeFn = Rc::new(move || flag.set(true));
-        loop {
-            if let Some(value) = completion.take() {
-                return value.expect("the spawned task reported a value");
-            }
-            completion.set_wake(&wake);
-            let timeout = if woken.replace(false) {
-                Duration::ZERO
-            } else {
-                RUNTIME_TURN_TIMEOUT
-            };
-            self.loop_
-                .dispatch_with_budget(RUNTIME_DISPATCH_BUDGET)
-                .expect("task runtime dispatch");
-            self.loop_.poll(Some(timeout)).expect("task runtime poll");
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::io::Read as _;
-    use std::os::fd::{AsFd as _, AsRawFd as _, BorrowedFd};
-    use std::process::{Command, Stdio};
-
-    use super::*;
-
-    fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
-        let raw = fd.as_raw_fd();
-        let flags = unsafe { libc::fcntl(raw, libc::F_GETFL) };
-        if flags < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        if unsafe { libc::fcntl(raw, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(())
-    }
-
-    /// A `run-shell` in miniature: wait for the child's output, capture, reap.
-    ///
-    /// `source` borrowing the pipe across the `.await` is the thing a
-    /// hand-written state machine cannot express.
-    async fn run_shell(tasks: &TaskHandle, command: &str) -> io::Result<Vec<u8>> {
-        let mut child = Command::new("/bin/sh")
-            .arg("-c")
-            .arg(command)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
-        let mut stdout = child.stdout.take().expect("piped stdout");
-        set_nonblocking(stdout.as_fd())?;
-        let source = AsyncFd::new(tasks, stdout.as_fd(), Interest::READABLE)?;
-        let mut output = Vec::new();
-        let mut chunk = [0u8; 4096];
-        loop {
-            match stdout.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(count) => output.extend_from_slice(&chunk[..count]),
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                    source.readiness().await;
-                }
-                Err(error) => return Err(error),
-            }
-        }
-        drop(source);
-        child.wait()?;
-        Ok(output)
-    }
-
-    #[test]
-    fn a_completion_wakes_a_task_without_any_descriptor() {
-        let mut runtime = TaskRuntime::new().expect("runtime");
-        let handle = runtime.handle();
-        let probe = runtime.handle();
-        let (completion, sender) = completion_pair::<u32>().expect("completion pair");
-        let result = runtime.block_on(async move {
-            // Spawned second in program order but the receiver parks first, so
-            // the send happens while the waiter is suspended.
-            handle.spawn(async move {
-                sender.complete(41);
-            });
-            completion.await
-        });
-        assert_eq!(result.expect("the sender completed"), 41);
-        assert_eq!(
-            probe.registered_io(),
-            0,
-            "task-to-task waiting must not touch the reactor"
-        );
-    }
-
-    #[test]
-    fn consecutive_suspensions_need_no_generation_bookkeeping() {
-        // The pipelined-wedge shape: one task runs two suspending commands back
-        // to back, each waiting on a brand-new descriptor. Each suspension is
-        // its own `AsyncFd` with its own reactor token, so there is no
-        // registration to re-point and nothing to version.
-        let mut runtime = TaskRuntime::new().expect("runtime");
-        let handle = runtime.handle();
-        let (one, two) = runtime.block_on(async move {
-            let one = run_shell(&handle, "echo one").await.expect("first");
-            let two = run_shell(&handle, "echo two").await.expect("second");
-            (one, two)
-        });
-        assert_eq!(one, b"one\n");
-        assert_eq!(two, b"two\n");
-    }
-
-    #[test]
-    fn a_task_can_wait_on_io_while_another_waits_on_it() {
-        // The control-client shape: a "client" task waits on a "command" task
-        // through a completion (userland), while the command task waits on the
-        // kernel (child stdout). Both waits are the same thing to the loop: a
-        // task that is not on the event queue.
-        let mut runtime = TaskRuntime::new().expect("runtime");
-        let handle = runtime.handle();
-        let result = runtime.block_on(async move {
-            let (completion, sender) = completion_pair().expect("completion pair");
-            let shell = handle.clone();
-            handle.spawn(async move {
-                let output = run_shell(&shell, "echo done").await;
-                sender.complete(output.expect("shell output"));
-            });
-            completion.await.expect("command task completed")
-        });
-        assert_eq!(result, b"done\n");
-    }
-
-    #[test]
-    fn sleep_parks_on_the_loops_timer_queue() {
-        let mut runtime = TaskRuntime::new().expect("runtime");
-        let handle = runtime.handle();
-        let started = Instant::now();
-        runtime.block_on(async move {
-            sleep(&handle, Duration::from_millis(20)).await;
-        });
-        assert!(started.elapsed() >= Duration::from_millis(20));
     }
 }

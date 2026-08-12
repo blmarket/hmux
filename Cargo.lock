@@ -140,6 +140,7 @@ name = "hmux"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "hmux-rt",
  "hmux-vt",
  "libc",
  "mio",
@@ -149,6 +150,14 @@ dependencies = [
  "thiserror",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "hmux-rt"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "mio",
 ]
 
 [[package]]

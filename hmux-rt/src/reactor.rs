@@ -1,4 +1,4 @@
-//! Readiness polling boundary for the server event loop.
+//! Readiness polling boundary for the host event loop.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -18,10 +18,10 @@ const DEFAULT_EVENT_CAPACITY: usize = 1024;
 /// Values are not reused during a reactor's lifetime, preventing stale kernel
 /// events from being delivered to a newer registration.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct Token(usize);
+pub struct Token(usize);
 
 impl Token {
-    pub(crate) fn as_usize(self) -> usize {
+    pub fn as_usize(self) -> usize {
         self.0
     }
 }
@@ -110,46 +110,44 @@ impl Readiness {
 
 /// One readiness notification addressed to its registered recipient.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Ready<R> {
+pub struct Ready<R> {
     token: Token,
     recipient: R,
     readiness: Readiness,
 }
 
 impl<R> Ready<R> {
-    #[cfg(test)]
-    pub(crate) fn token(&self) -> Token {
+    pub fn token(&self) -> Token {
         self.token
     }
 
-    pub(crate) fn recipient(&self) -> &R {
+    pub fn recipient(&self) -> &R {
         &self.recipient
     }
 
-    pub(crate) fn readiness(&self) -> Readiness {
+    pub fn readiness(&self) -> Readiness {
         self.readiness
     }
 }
 
 /// Result metadata for one poll operation.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct PollResult {
+pub struct PollResult {
     ready_count: usize,
 }
 
 impl PollResult {
-    #[cfg(test)]
-    pub(crate) fn ready_count(self) -> usize {
+    pub fn ready_count(self) -> usize {
         self.ready_count
     }
 }
 
-/// Backend-independent operations needed by the server event loop.
+/// Backend-independent operations needed by the host event loop.
 ///
 /// The backend duplicates every registered descriptor so deferred
 /// deregistration remains valid if an actor replaces its source while effects
 /// are being applied. `poll` appends readiness notifications to `output`.
-pub(crate) trait Reactor<R>
+pub trait Reactor<R>
 where
     R: Clone,
 {
@@ -178,7 +176,7 @@ struct Registration<R> {
 }
 
 /// `mio` readiness backend used on Linux and macOS.
-pub(crate) struct MioReactor<R> {
+pub struct MioReactor<R> {
     poll: Poll,
     events: Events,
     registrations: HashMap<Token, Registration<R>>,
@@ -196,7 +194,7 @@ impl<R> fmt::Debug for MioReactor<R> {
 }
 
 impl<R> MioReactor<R> {
-    pub(crate) fn new() -> io::Result<Self> {
+    pub fn new() -> io::Result<Self> {
         Self::with_event_capacity(DEFAULT_EVENT_CAPACITY)
     }
 
@@ -324,8 +322,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::tmux::codec::{ImsgReader, ImsgWriter};
-    use crate::tmux::message::{Frame, Message};
     use std::io::Write as _;
     use std::os::fd::AsFd as _;
     use std::os::unix::net::UnixStream;
@@ -408,7 +404,7 @@ mod tests {
     #[test]
     fn deregistering_duplicated_write_fd_preserves_read_readiness() {
         use std::io::{Read as _, Write as _};
-        use std::os::fd::{AsFd as _, OwnedFd};
+        use std::os::fd::{AsFd as _, AsRawFd as _, OwnedFd};
 
         let mut reactor = MioReactor::new().expect("reactor");
         let (client, mut peer) = UnixStream::pair().expect("socket pair");
@@ -522,29 +518,5 @@ mod tests {
             .collect::<Vec<_>>();
         delivered.sort();
         assert_eq!(delivered, vec![first_token, second_token]);
-    }
-
-    #[test]
-    fn existing_imsg_descriptor_is_readiness_driven() {
-        let mut reactor = MioReactor::new().expect("reactor");
-        let (sender, receiver) = socket_pair();
-        let mut reader = ImsgReader::new(receiver.into());
-        let mut writer = ImsgWriter::new(sender.into());
-        let token = reactor
-            .register(reader.as_fd(), Interest::READABLE, Recipient::Client(42))
-            .expect("register imsg reader");
-        writer
-            .send(Frame::new(Message::Command(vec!["list-sessions".into()])))
-            .expect("send frame");
-
-        let mut ready = Vec::new();
-        reactor
-            .poll(Some(Duration::from_secs(1)), &mut ready)
-            .expect("poll");
-
-        assert_eq!(ready.len(), 1);
-        assert_eq!(ready[0].token(), token);
-        let frame = reader.try_recv().expect("receive ready frame");
-        assert_eq!(frame.msg, Message::Command(vec!["list-sessions".into()]));
     }
 }

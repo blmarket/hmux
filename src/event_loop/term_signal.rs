@@ -16,7 +16,7 @@ use tracing::info;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;
-use super::reactor::Token;
+use hmux_rt::Token;
 
 pub(crate) enum TermSignalEvent {
     Start,

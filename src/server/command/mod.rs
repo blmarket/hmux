@@ -1,9 +1,9 @@
-//! A tiny tmux command interpreter.
+//! The tmux command interpreter.
 //!
-//! Only the handful of commands the prototype needs are implemented; anything
-//! else returns a nonzero exit with an error line, like tmux does for an unknown
-//! command. Output is returned as text + streams; the protocol layer
-//! ([`super::protocol`]) delivers it over the imsg file protocol.
+//! Commands that are not implemented return a nonzero exit with an error line,
+//! like tmux does for an unknown command. Output is returned as text + streams;
+//! the protocol layer ([`crate::event_loop::protocol`]) delivers it over the
+//! imsg file protocol.
 //!
 //! Behaviors here are pinned against real tmux by the differential conformance
 //! suite (`hmux_conformance::behaviors`), which runs the identical command
@@ -51,8 +51,8 @@ use super::state::{
     Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
 };
 use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
-use super::task::{Completion, WakeFn};
-use crate::event_loop::tasks::yield_now;
+use hmux_rt::{Completion, WakeFn};
+use hmux_rt::yield_now;
 use std::cell::Cell;
 use hmux_vt::{CaptureExtent, CellWidth, Grid, GridRow};
 
@@ -3013,7 +3013,7 @@ fn unbind_key(args: &[String], st: &mut ServerState) -> CommandResult {
     CommandResult::ok("")
 }
 
-/// list-keys [-T table] [key] for the shared mutable key tables.
+/// `list-keys [-T table] [key]` for the shared mutable key tables.
 fn list_keys(args: &[String], st: &ServerState) -> CommandResult {
     let table = flag_value(args, "-T");
     if let Some(table) = table {
@@ -9600,7 +9600,7 @@ mod tests {
     struct ParkedRuntime {
         /// Kept so the completions handed out are never closed, which would
         /// resolve the queue with an error instead of leaving it parked.
-        senders: RefCell<Vec<crate::server::task::CompletionSender<CommandSuspensionResult>>>,
+        senders: RefCell<Vec<hmux_rt::CompletionSender<CommandSuspensionResult>>>,
     }
 
     impl CommandRuntime for ParkedRuntime {
@@ -9608,7 +9608,7 @@ mod tests {
             &self,
             _suspension: CommandSuspension,
         ) -> io::Result<Completion<CommandSuspensionResult>> {
-            let (completion, sender) = crate::server::task::completion_pair()?;
+            let (completion, sender) = hmux_rt::completion_pair()?;
             self.senders.borrow_mut().push(sender);
             Ok(completion)
         }
@@ -9626,9 +9626,9 @@ mod tests {
     fn queued_command() -> (
         QueuedCommand,
         Rc<QueueStatus>,
-        crate::server::task::CompletionSender<io::Result<CommandResult>>,
+        hmux_rt::CompletionSender<io::Result<CommandResult>>,
     ) {
-        let (completion, sender) = crate::server::task::completion_pair().expect("completion pair");
+        let (completion, sender) = hmux_rt::completion_pair().expect("completion pair");
         let status = Rc::new(QueueStatus::default());
         (
             QueuedCommand::new(completion, Rc::clone(&status)),
@@ -9698,9 +9698,9 @@ mod tests {
             Err(result) => panic!("command-prompt parsed: {}", result.stderr),
         };
 
-        let runtime = crate::event_loop::tasks::TaskRuntime::new().expect("task runtime");
+        let runtime = hmux_rt::TaskRuntime::new().expect("task runtime");
         let status = Rc::new(QueueStatus::default());
-        let (completion, sender) = crate::server::task::completion_pair().expect("completion pair");
+        let (completion, sender) = hmux_rt::completion_pair().expect("completion pair");
         let parked: Rc<dyn CommandRuntime> = Rc::new(ParkedRuntime::default());
         let queue_status = Rc::clone(&status);
         let queue_state = Rc::clone(&state);

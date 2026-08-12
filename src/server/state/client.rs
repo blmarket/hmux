@@ -21,7 +21,7 @@ use super::{
 };
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
 use crate::server::pane::NativePaneObservation;
-use crate::server::task::{completion_pair, Completion, CompletionSender};
+use hmux_rt::{completion_pair, Completion, CompletionSender};
 use crate::server::term::ResolvedTerm;
 
 /// Client-scoped `command-prompt -k` routing. This is an internal server
