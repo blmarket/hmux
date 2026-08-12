@@ -21,7 +21,7 @@ impl Command {
             Self::Set => set_buffer(args, context.state, context.client),
             Self::Load => load_buffer(args, context.state, context.client),
             Self::Show => show_buffer(args, context.state),
-            Self::Save => save_buffer(args, context.state),
+            Self::Save => save_buffer(args, context.state, context.client),
             Self::List => list_buffers(args, context.state),
             Self::Delete => delete_buffer(args, context.state),
             Self::Paste => paste_buffer(args, context.state),

@@ -8356,7 +8356,7 @@ fn show_buffer(args: &[String], st: &ServerState) -> CommandResult {
 /// shared `cmd-save-buffer.c`: an unknown named buffer is `no buffer NAME` and no
 /// buffer at all is `no buffers`. Arity (the mandatory path) is checked first, as
 /// tmux does it at parse time before the command runs.
-fn save_buffer(args: &[String], st: &ServerState) -> CommandResult {
+fn save_buffer(args: &[String], st: &ServerState, context: &ClientContext) -> CommandResult {
     // `positionals` treats a bare `-` as a flag, so scan for the path directly.
     let path = match save_buffer_path(args) {
         Some(p) => p,
@@ -8380,18 +8380,24 @@ fn save_buffer(args: &[String], st: &ServerState) -> CommandResult {
         // stdout sink: emit the raw bytes with no trailing newline, like tmux.
         return CommandResult::ok_bytes(data);
     }
+    // tmux's `file_write` stores the expanded path and reports it on failure.
+    let resolved = client_file_path(path, context);
     let result = if has_flag(args, "-a") {
         std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(path)
+            .open(&resolved)
             .and_then(|mut f| std::io::Write::write_all(&mut f, &data))
     } else {
-        std::fs::write(path, &data)
+        std::fs::write(&resolved, &data)
     };
     match result {
         Ok(()) => CommandResult::ok(""),
-        Err(e) => CommandResult::err(format!("{}: {path}\n", io_error_message(&e))),
+        Err(e) => CommandResult::err(format!(
+            "{}: {}\n",
+            io_error_message(&e),
+            resolved.display()
+        )),
     }
 }
 
@@ -8429,16 +8435,7 @@ pub(crate) fn save_buffer_client_request(
             }));
         }
     };
-    let requested = PathBuf::from(path);
-    let path = if requested.is_relative() {
-        context
-            .cwd
-            .as_deref()
-            .unwrap_or_else(|| Path::new("."))
-            .join(requested)
-    } else {
-        requested
-    };
+    let path = client_file_path(path, context);
     let flags = libc::O_WRONLY
         | libc::O_CREAT
         | if has_flag(&normalized, "-a") {
