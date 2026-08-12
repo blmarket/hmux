@@ -8195,15 +8195,12 @@ fn load_buffer(args: &[String], st: &mut ServerState, context: &ClientContext) -
             return CommandResult::err("command load-buffer: too few arguments (need at least 1)\n")
         }
     };
-    let path_buf = PathBuf::from(path);
-    let resolved = if path_buf.is_relative() {
-        context
-            .cwd
-            .as_deref()
-            .unwrap_or_else(|| Path::new("."))
-            .join(path_buf)
+    // tmux's `file_read` keeps `-` verbatim and otherwise stores the expanded
+    // path, which is also what its error message reports.
+    let resolved = if path == "-" {
+        PathBuf::from(path)
     } else {
-        path_buf
+        client_file_path(path, context)
     };
     let loaded = context
         .input_file
@@ -8226,7 +8223,33 @@ fn load_buffer(args: &[String], st: &mut ServerState, context: &ClientContext) -
             }
             CommandResult::ok("")
         }
-        Err(error) => CommandResult::err(format!("{}: {path}\n", io_error_message(&error))),
+        Err(error) => CommandResult::err(format!(
+            "{}: {}\n",
+            io_error_message(&error),
+            resolved.display()
+        )),
+    }
+}
+
+/// tmux's `file_get_path`: expand a leading `~/` against the home directory,
+/// then resolve any remaining relative path against the command client's
+/// working directory.
+pub(crate) fn client_file_path(path: &str, context: &ClientContext) -> PathBuf {
+    let expanded = match path.strip_prefix("~/") {
+        Some(rest) => {
+            let home = std::env::var("HOME").unwrap_or_default();
+            PathBuf::from(format!("{home}/{rest}"))
+        }
+        None => PathBuf::from(path),
+    };
+    if expanded.is_absolute() {
+        expanded
+    } else {
+        context
+            .cwd
+            .as_deref()
+            .unwrap_or_else(|| Path::new("."))
+            .join(expanded)
     }
 }
 
@@ -8246,19 +8269,10 @@ pub(crate) fn client_input_path(args: &[String], context: &ClientContext) -> Opt
         return None;
     }
     let path = positionals(&normalized, &["-b", "-t"]).into_iter().next()?;
-    let path = PathBuf::from(path);
-    if path.as_os_str() == "-" {
-        return Some(path);
+    if path == "-" {
+        return Some(PathBuf::from(path));
     }
-    Some(if path.is_relative() {
-        context
-            .cwd
-            .as_deref()
-            .unwrap_or_else(|| Path::new("."))
-            .join(path)
-    } else {
-        path
-    })
+    Some(client_file_path(path, context))
 }
 
 pub(crate) fn load_buffer_client_path(args: &[String], context: &ClientContext) -> Option<PathBuf> {
