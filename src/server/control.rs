@@ -20,7 +20,7 @@ use super::state::{
     ControlStateSnapshot, ServerState, SharedState,
 };
 use super::status;
-use super::task::WakeFn;
+use hmux_rt::WakeFn;
 
 const CONTROL_BUFFER_HIGH: usize = 8192;
 const CLIENT_CONTROLCONTROL: i64 = 0x4000;

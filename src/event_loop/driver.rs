@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use crate::server::pane::PaneIo;
-use crate::server::task::WakeFn;
+use hmux_rt::WakeFn;
 use crate::server::Server;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 
@@ -20,10 +20,10 @@ use super::process::{ChildSignal, ChildSignalEvent};
 use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
 };
-use super::reactor::{Interest, MioReactor, PollResult, Reactor, Ready};
-use super::tasks::{TaskEvent, TaskHandle, TaskId, TaskSet};
+use hmux_rt::{Interest, MioReactor, PollResult, Reactor, Ready};
+use hmux_rt::{TaskEvent, TaskHandle, TaskId, TaskSet};
 use super::term_signal::{TermSignal, TermSignalEvent};
-use super::timer::{ExpiredTimer, TimerId, TimerQueue};
+use hmux_rt::{ExpiredTimer, TimerId, TimerQueue};
 use crate::server::pane::PanePipeIo;
 use crate::server::status::FormatJob;
 
@@ -568,7 +568,9 @@ where
 {
     fn with_reactor(reactor: R) -> Self {
         let wakes = WakeQueue::default();
-        let (tasks, task_handle) = TaskSet::new(wakes.clone());
+        let task_wakes = wakes.clone();
+        let (tasks, task_handle) =
+            TaskSet::new(Rc::new(move |task| task_wakes.wake_task(task)));
         Self {
             reactor,
             events: VecDeque::new(),
@@ -771,6 +773,9 @@ where
         self.events.len() + self.wakes.len()
     }
 
+    /// Test scaffolding: the daemon's own actors get the handle at
+    /// construction, so only a test ever asks the loop for it.
+    #[cfg(test)]
     pub(crate) fn task_handle(&self) -> TaskHandle {
         self.task_handle.clone()
     }
@@ -833,10 +838,10 @@ where
     /// Adopt newly spawned tasks and make the reactor and the timer queue
     /// describe what the live ones are waiting for.
     ///
-    /// Unlike [`Self::sync_executor`] there is nothing to diff: a task's
-    /// descriptors are owned by the leaves that created them, so this only
-    /// makes registrations that were asked for and releases the ones whose
-    /// `AsyncFd` is gone.
+    /// Unlike the actors' effect-driven interest updates there is nothing to
+    /// diff: a task's descriptors are owned by the leaves that created them,
+    /// so this only makes registrations that were asked for and releases the
+    /// ones whose `AsyncFd` is gone.
     fn sync_tasks(&mut self) -> io::Result<()> {
         let tasks = self.tasks.clone();
         let Some(result) = tasks.with_mut(|set| -> io::Result<()> {
@@ -1390,6 +1395,37 @@ mod tests {
 
     const POLL_TIMEOUT: Duration = Duration::from_secs(1);
     static NEXT_LISTENER_PATH: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn existing_imsg_descriptor_is_readiness_driven() {
+        use crate::tmux::codec::{ImsgReader, ImsgWriter};
+        use crate::tmux::message::{Frame, Message};
+
+        let mut reactor = MioReactor::new().expect("reactor");
+        let (sender, receiver) = UnixStream::pair().expect("socket pair");
+        sender.set_nonblocking(true).expect("nonblocking sender");
+        receiver
+            .set_nonblocking(true)
+            .expect("nonblocking receiver");
+        let mut reader = ImsgReader::new(receiver.into());
+        let mut writer = ImsgWriter::new(sender.into());
+        let token = reactor
+            .register(reader.as_fd(), Interest::READABLE, 42u32)
+            .expect("register imsg reader");
+        writer
+            .send(Frame::new(Message::Command(vec!["list-sessions".into()])))
+            .expect("send frame");
+
+        let mut ready = Vec::new();
+        reactor
+            .poll(Some(POLL_TIMEOUT), &mut ready)
+            .expect("poll");
+
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].token(), token);
+        let frame = reader.try_recv().expect("receive ready frame");
+        assert_eq!(frame.msg, Message::Command(vec!["list-sessions".into()]));
+    }
 
     struct ListenerPath(PathBuf);
 

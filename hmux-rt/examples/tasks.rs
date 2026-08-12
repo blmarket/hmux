@@ -1,19 +1,20 @@
-//! Demo for the event loop's task executor in `hmux::tasks`.
+//! Demo for the `hmux-rt` task executor.
 //!
 //! Run with `cargo run --example tasks`. Each scene mirrors a shape from the
-//! daemon: consecutive suspensions on fresh descriptors (the pipelined wedge), a
-//! client task waiting on a command task without any kernel object, and
-//! independent tasks interleaving on one thread.
+//! hmux daemon: consecutive suspensions on fresh descriptors (the pipelined
+//! wedge), a client task waiting on a command task without any kernel object,
+//! and independent tasks interleaving on one thread.
 //!
-//! The runtime here is the daemon's own event loop with a `block_on` in front,
-//! so what these scenes show is what `run-shell` and `if-shell` actually do.
+//! The runtime here is the same executor the daemon embeds, driven by the
+//! standalone `block_on` host, so what these scenes show is what `run-shell`
+//! and `if-shell` actually do.
 
 use std::io::{self, Read as _};
 use std::os::fd::{AsFd as _, AsRawFd as _, BorrowedFd};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use hmux::tasks::{completion_pair, sleep, AsyncFd, Interest, TaskHandle, TaskRuntime};
+use hmux_rt::{completion_pair, sleep, AsyncFd, Interest, TaskHandle, TaskRuntime};
 
 fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
     let raw = fd.as_raw_fd();

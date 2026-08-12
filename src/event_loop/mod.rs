@@ -7,11 +7,8 @@ pub(crate) mod listener;
 pub(crate) mod pane;
 pub(crate) mod process;
 pub(crate) mod protocol;
-pub(crate) mod reactor;
 pub(crate) mod suspend;
-pub(crate) mod tasks;
 pub(crate) mod term_signal;
-pub(crate) mod timer;
 
 /// Drive one command queue to completion on a loop of its own.
 ///
@@ -31,14 +28,14 @@ pub(crate) mod test_driver {
         CommandRuntime, PendingBackground, ResumableCommandQueue,
     };
     use crate::server::state::SharedState;
-    use crate::server::task::{completion_pair, Completion, WakeFn};
+    use hmux_rt::{completion_pair, Completion, WakeFn};
 
     use std::future::Future;
 
     use super::driver::{EventLoop, IoRecipient};
-    use super::reactor::MioReactor;
+    use hmux_rt::MioReactor;
     use super::suspend::EventCommandRuntime;
-    use super::tasks::TaskHandle;
+    use hmux_rt::TaskHandle;
 
     /// How long one command queue may take before the test is declared stuck.
     const DEADLINE: Duration = Duration::from_secs(30);

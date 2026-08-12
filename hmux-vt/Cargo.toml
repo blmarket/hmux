@@ -5,4 +5,7 @@ edition = "2021"
 description = "hmux's terminal emulator: the DEC ANSI tokenizer, the observation stream, and the screen behind it"
 license = "GPL-3.0-only"
 
+[lints]
+workspace = true
+
 [dependencies]

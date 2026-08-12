@@ -1,0 +1,13 @@
+[package]
+name = "hmux-rt"
+version = "0.1.0"
+edition = "2021"
+description = "Single-threaded async runtime layer embedded in a host-owned event loop"
+license = "GPL-3.0-only"
+
+[lints]
+workspace = true
+
+[dependencies]
+libc = "0.2"
+mio = { version = "1.2", features = ["os-ext", "os-poll"] }

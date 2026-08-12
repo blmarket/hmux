@@ -14,9 +14,9 @@ use crate::server::command::{
     run_command_queue, CommandResult, CommandRuntime, CommandSuspension, CommandSuspensionResult,
     QueueStatus, QueuedCommand, ResumableCommandQueue,
 };
-use crate::server::task::{completion_pair, Completion, CompletionSender};
+use hmux_rt::{completion_pair, Completion, CompletionSender};
 
-use super::tasks::TaskHandle;
+use hmux_rt::TaskHandle;
 
 /// Command runtime for clients served by the event loop.
 ///

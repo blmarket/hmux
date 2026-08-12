@@ -1,5 +1,11 @@
 [workspace]
-members = ["hmux-vt"]
+members = ["hmux-rt", "hmux-vt"]
+
+# A future that parks cx.waker() instead of cx.local_waker() hangs silently on
+# this runtime (see hmux-rt/README.md), and no type can express the
+# difference — this lint is the compile-time enforcement.
+[workspace.lints.clippy]
+disallowed_methods = "deny"
 
 [package]
 name = "hmux"
@@ -16,7 +22,11 @@ path = "src/main.rs"
 name = "hmux"
 path = "src/lib.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
+hmux-rt = { path = "hmux-rt" }
 hmux-vt = { path = "hmux-vt" }
 libc = "0.2"
 mio = { version = "1.2", features = ["os-ext", "os-poll"] }

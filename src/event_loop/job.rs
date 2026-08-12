@@ -14,12 +14,12 @@ use crate::server::command::{
 };
 use crate::server::command::CommandResult;
 use crate::server::state::SharedState;
-use crate::server::task::{completion_pair, Completion};
+use hmux_rt::{completion_pair, Completion};
 
 use super::actor::ActorRef;
 use super::driver::{Outbox, WakeQueue};
 use super::suspend::EventCommandRuntime;
-use super::tasks::TaskHandle;
+use hmux_rt::TaskHandle;
 
 const COMMAND_QUEUE_BUDGET: usize = 64;
 

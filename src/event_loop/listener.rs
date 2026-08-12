@@ -11,7 +11,7 @@ use tracing::warn;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;
-use super::reactor::Token;
+use hmux_rt::Token;
 
 /// Accepted sockets waiting for the server adapter to create client actors.
 #[derive(Clone, Default)]

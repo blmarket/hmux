@@ -32,7 +32,6 @@ pub mod registry;
 pub mod state;
 pub mod status;
 pub(crate) mod style;
-pub(crate) mod task;
 pub(crate) mod term;
 
 use std::cell::RefCell;
