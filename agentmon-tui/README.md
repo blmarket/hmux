@@ -78,9 +78,14 @@ idle at its prompt — so `looper` is what ends the run, with `/exit` and a
 `kill-pane` fallback. An agent that goes `blocked` wants a human instead: the
 loop stops there and leaves the pane up for you, without committing.
 
-`--no-commit` leaves the worktree dirty, `-n` caps the number of runs, and
-`--run-timeout` ends a run that overstays it. Ctrl-C stops the loop and leaves
-any running agent alone.
+A run is also ended once it overstays `--run-timeout`, two hours by default:
+past that a run has usually stopped making progress, so the loop ends it, keeps
+whatever it committed, and starts the next one. `--run-timeout 0` waits forever
+instead. The clock starts once the pane is seen working, so a run can occupy up
+to the startup wait plus this.
+
+`--no-commit` leaves the worktree dirty and `-n` caps the number of runs.
+Ctrl-C stops the loop and leaves any running agent alone.
 
 ## Opinion
 

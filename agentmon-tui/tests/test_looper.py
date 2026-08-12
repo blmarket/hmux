@@ -57,6 +57,7 @@ class FakeService:
         self.outcomes = list(outcomes)
         self.exit_clean = exit_clean
         self.splits: list[dict] = []
+        self.done_timeouts: list[float | None] = []
         self.exited: list[str] = []
         self.commits: list[tuple[Path, str]] = []
         self.commit_result: str | None = "abc1234"
@@ -69,6 +70,7 @@ class FakeService:
         if "working" in states:
             return "working"
         assert tuple(states) == DONE_STATES
+        self.done_timeouts.append(timeout)
         return self.outcomes.pop(0)
 
     def pane_status(self, pane: str) -> PaneStatus | None:
@@ -233,6 +235,30 @@ def test_loop_harvests_an_agent_that_closed_its_own_pane(tmp_path: Path) -> None
     assert looper.run() == 0
     assert service.exited == []
     assert len(service.commits) == 1
+
+
+def test_a_run_is_capped_at_two_hours_by_default(tmp_path: Path) -> None:
+    service = FakeService("idle")
+    looper, _lines, _naps = build(
+        service, FakeQuotaService(report(codex_window(10.0))), tmp_path, max_runs=1
+    )
+
+    assert looper.run() == 0
+    assert service.done_timeouts == [7200.0]
+
+
+def test_a_run_timeout_of_zero_waits_for_the_agent_forever(tmp_path: Path) -> None:
+    service = FakeService("idle")
+    looper, _lines, _naps = build(
+        service,
+        FakeQuotaService(report(codex_window(10.0))),
+        tmp_path,
+        max_runs=1,
+        run_timeout=0.0,
+    )
+
+    assert looper.run() == 0
+    assert service.done_timeouts == [None]
 
 
 def test_loop_ends_a_run_that_outstays_the_run_timeout(tmp_path: Path) -> None:
