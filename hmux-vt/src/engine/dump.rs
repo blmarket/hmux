@@ -226,26 +226,30 @@ fn vt_row(
     mut pen: Cell,
     out: &mut String,
 ) -> Cell {
-    // Whether SO is in effect. tmux reads this off the carried `lastgc` rather
-    // than from a row-local flag, so a row that starts in the character set the
-    // row above ended in emits no SO — and a capture that ends inside one ends
-    // without an SI.
     let mut charset = pen.attr & attr::CHARSET != 0;
-    // tmux's `has_link`, which is local to one row while the cell it compares
-    // against — `pen`, its `lastgc` — is carried across them. A row whose first
-    // cell continues the link the row above ended in emits no sequence for it,
-    // and so has nothing to close either.
     let mut has_link = false;
-    // tmux's `code`: the escape sequences one cell needs, built in a buffer
-    // `grid_string_cells_code` clears and rewrites per cell. The buffer outlives
-    // the loop, and the close a row still holding a link appends at the end is
-    // appended *to it* rather than to a fresh one — so a row whose last cell is
-    // the one that opened the link re-emits that cell's sequences before the
-    // close. Keeping the buffer rather than writing straight out is what lets a
-    // capture reproduce that.
     let mut code = String::new();
     let width = match extent {
-        RowExtent::Redraw => grid.line_length(py),
+        RowExtent::Redraw => {
+            let allocated = grid
+                .line(py)
+                .map_or(0, super::grid::Line::size)
+                .min(grid.sx);
+            let mut px = allocated;
+            while px > 0 {
+                let cell = grid.get(px - 1, py);
+                if cell.is_padding()
+                    || !cell.data.is_space()
+                    || cell.attr != 0
+                    || !super::grid::colour_is_default(cell.bg)
+                    || cell.link != 0
+                {
+                    break;
+                }
+                px -= 1;
+            }
+            px
+        }
         RowExtent::Capture(CaptureExtent::Allocated) => grid
             .line(py)
             .map_or(0, super::grid::Line::size)
@@ -266,15 +270,11 @@ fn vt_row(
             code.push_str(&sgr(&pen, &cell));
             pen = cell.clone();
         }
-        // tmux writes the shift in/out between the style codes and the
-        // hyperlink, so a cell that changes both is preceded by SO then OSC 8.
         let wants_charset = cell.attr & attr::CHARSET != 0;
         if wants_charset != charset {
             code.push_str(if wants_charset { "\x1b(0" } else { "\x1b(B" });
             charset = wants_charset;
         }
-        // tmux writes the hyperlink after the style codes, and only when the
-        // cell's link differs from the last cell's.
         if cell.link != last_link {
             match screen.hyperlinks.get(cell.link) {
                 Some((uri, Some(id))) => {
@@ -285,9 +285,6 @@ fn vt_row(
                     let _ = write!(code, "\x1b]8;;{uri}\x1b\\");
                     has_link = true;
                 }
-                // The cell is not in a link. Only a link this row opened is
-                // closed here: one carried in from the row above is left as it
-                // is, which is what tmux's row-local `has_link` decides.
                 None if has_link => {
                     code.push_str(CLOSE_HYPERLINK);
                     has_link = false;
@@ -296,51 +293,26 @@ fn vt_row(
             }
         }
         out.push_str(&code);
-        // tmux copies the whole cell into `lastgc` for every cell, so the link
-        // it compares against moves on even when the style did not.
         pen.link = cell.link;
-        // A capture puts the tab back: tmux's `grid_string_cells` writes one
-        // `\t` for a tab cell whatever blanks it holds, so the captured row is
-        // narrower than the columns the tab covered. A redraw keeps the blanks
-        // — the client's own tab stops are not the pane's, and a `\t` there
-        // would land the rest of the row somewhere else.
         if extent != RowExtent::Redraw && cell.flags & flag::TAB != 0 {
             out.push('\t');
         } else {
             out.push_str(cell.data.text());
         }
     }
-    // A redraw closes the character set it opened, because the next row is
-    // painted somewhere else. A capture hands it on instead, as tmux's carried
-    // `lastgc` does — and so a capture that ends inside SO ends without SI.
     if extent == RowExtent::Redraw && charset {
         out.push_str("\x1b(B");
     }
     if has_link {
-        // `grid_string_cells` appends the close to the buffer the last cell
-        // left behind and writes the pair, so a row whose last cell opened the
-        // link repeats that cell's sequences here — an open immediately
-        // followed by its close. A capture reproduces it because a capture is
-        // what that code serializes; the redraw path is tmux's `tty_draw_line`,
-        // which builds its bytes from the cells and never sees this buffer.
         if extent != RowExtent::Redraw {
             out.push_str(&code);
         }
         out.push_str(CLOSE_HYPERLINK);
     }
-    // A redraw closes whatever the row opened, because the next row is painted
-    // somewhere else. A capture leaves it open and hands it to the next row,
-    // which is what tmux's carried `lastgc` does.
     if extent == RowExtent::Redraw && !pen.looks_equal(&Cell::default()) {
         out.push_str("\x1b[0m");
         pen = Cell::default();
     }
-    // Nothing is erased here. A pane is not always the full width of the
-    // client's line — inside a popup, or beside another pane, the columns to
-    // the right belong to something else — and erasing to end of line takes
-    // them with it, a popup's own right border included. The compositor
-    // already blanks exactly the pane's width with ECH before painting each
-    // row, so the row only has to carry its own cells.
     pen
 }
 
@@ -519,6 +491,49 @@ mod tests {
         assert!(dump.contains("RED"), "got {dump:?}");
         assert!(dump.contains("\x1b[31m"), "got {dump:?}");
         assert!(dump.ends_with("\x1b[1;4H"), "cursor last, got {dump:?}");
+    }
+
+    #[test]
+    fn a_redraw_carries_the_background_an_erase_left_behind() {
+        // An erase to a colour — BCE — leaves blank cells that carry the
+        // pending background, and the redraw has to show them: this is what
+        // nvim's cleared-to-colorscheme screen is made of. tmux's redraw
+        // clamps to `cellsize` for the same reason.
+        let engine = engine(8, 3, b"\x1b[44m\x1b[2J\x1b[1;1Hhi");
+        let dump = String::from_utf8(vt(&engine.screen, 0, 3, RowExtent::Redraw)).expect("utf8");
+        let rows: Vec<&str> = dump.split("\r\n").collect();
+        assert!(
+            rows[0].contains("\x1b[44mhi      "),
+            "the erased tail of the text row keeps its colour, got {:?}",
+            rows[0]
+        );
+        assert!(
+            rows[1].contains("\x1b[44m        "),
+            "a fully erased row is its background, got {:?}",
+            rows[1]
+        );
+    }
+
+    #[test]
+    fn a_redraw_still_trims_a_default_background_tail() {
+        // A trailing blank on the default background draws nothing: tmux's
+        // redraw folds such runs into a clear, and the compositor's per-row
+        // blank already paints them. Written spaces (columns 2-4 here) are
+        // trimmed the same way — only the allocation extent distinguishes
+        // them, and that is not observable.
+        let engine = engine(8, 2, b"a   \x1b[2;1Hb\x1b[41m \x1b[49m ");
+        let dump = String::from_utf8(vt(&engine.screen, 0, 2, RowExtent::Redraw)).expect("utf8");
+        let rows: Vec<&str> = dump.split("\r\n").collect();
+        assert!(
+            rows[0].starts_with('a') && !rows[0].contains("a "),
+            "written default-background spaces are trimmed, got {:?}",
+            rows[0]
+        );
+        assert!(
+            rows[1].contains("b\x1b[41m \x1b[0m"),
+            "the coloured space stays, the default one after it goes, got {:?}",
+            rows[1]
+        );
     }
 
     #[test]

@@ -217,10 +217,12 @@ impl PaneScreen {
     ///
     /// The extent picks which of the two reads this is — they are not the
     /// same. A [`Capture`](RowExtent::Capture) runs to one of the row's two
-    /// extents, so a space a program wrote — perhaps carrying a background
-    /// colour — is part of the captured row. A [`Redraw`](RowExtent::Redraw)
-    /// stops at the last non-blank cell and erases the rest, which is cheaper
-    /// and is what a client tty wants. tmux keeps the same two paths apart.
+    /// extents and puts tabs back, serializing the row as *text*. A
+    /// [`Redraw`](RowExtent::Redraw) runs to the allocated extent — an erase
+    /// to a colour leaves blank cells that carry its background, and a client
+    /// tty has to be shown that colour — keeps a tab's blanks, and closes the
+    /// styles it opened because its rows are painted in different places.
+    /// tmux keeps the same two paths apart.
     pub fn dump_vt_rows(&self, start: usize, rows: usize, extent: RowExtent) -> Vec<u8> {
         if rows == 0 {
             return Vec::new();
