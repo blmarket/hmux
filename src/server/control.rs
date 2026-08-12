@@ -582,16 +582,23 @@ impl EventControlClient {
             None => None,
         };
         if let Some((session_id, destroyed)) = requested_switch {
-            let stable = format!("${session_id}");
-            let checkpoint = {
-                let state = self.state.borrow_mut();
-                state
-                    .control_snapshot(&stable)
-                    .map(|_| state.control_checkpoint_end())
-            };
-            if let Some(checkpoint) = checkpoint {
-                self.replace_session(session_id, stable, checkpoint, destroyed)?;
-            }
+            self.apply_switch(session_id, destroyed)?;
+        }
+        Ok(())
+    }
+
+    /// Move this client onto `session_id`, reporting it as tmux's
+    /// `server_client_set_session` does.
+    fn apply_switch(&mut self, session_id: u32, destroyed: bool) -> io::Result<()> {
+        let stable = format!("${session_id}");
+        let checkpoint = {
+            let state = self.state.borrow_mut();
+            state
+                .control_snapshot(&stable)
+                .map(|_| state.control_checkpoint_end())
+        };
+        if let Some(checkpoint) = checkpoint {
+            self.replace_session(session_id, stable, checkpoint, destroyed)?;
         }
         Ok(())
     }
@@ -1024,6 +1031,16 @@ impl EventControlClient {
         if result.exit != 0 || !switches_client {
             self.advance_snapshot()?;
             self.pump_output()?;
+        } else {
+            // tmux switches the client inside `switch-client` itself, so the
+            // session is already the new one by the time the next queued
+            // command is dispatched and `%session-changed` precedes its
+            // `%begin`. Claiming the action here instead of leaving it for the
+            // next event-loop pass keeps that order, which a client that
+            // pipelines a command behind the switch can otherwise observe.
+            if let Some((session_id, destroyed)) = self.render_attachment.take_switch() {
+                self.apply_switch(session_id, destroyed)?;
+            }
         }
         let completion = QueueCompletion {
             discard_group_tail: result.exit != 0 && !result.continue_queue,
@@ -1080,6 +1097,7 @@ impl EventControlClient {
             &self.state,
             self.session_id,
             &self.stable_session,
+            &self.client_name,
             &mut self.checkpoint,
             &mut self.snapshot,
             &mut self.streams,
@@ -1445,6 +1463,7 @@ fn advance_control_snapshot(
     state: &SharedState,
     session_id: u32,
     stable_session: &str,
+    client_name: &str,
     checkpoint: &mut u64,
     snapshot: &mut ControlStateSnapshot,
     streams: &mut BTreeMap<u32, ControlPaneStream>,
@@ -1460,7 +1479,7 @@ fn advance_control_snapshot(
         updates.push(current);
     }
     for next in updates {
-        write_control_notifications(writer, snapshot, &next);
+        write_control_notifications(writer, client_name, snapshot, &next);
         sync_control_pane_streams(&next, streams)?;
         *snapshot = next;
     }
@@ -1535,6 +1554,7 @@ fn write_control_output(
 
 fn write_control_notifications(
     writer: &mut ControlWriter,
+    client_name: &str,
     before: &ControlStateSnapshot,
     after: &ControlStateSnapshot,
 ) {
@@ -1670,6 +1690,13 @@ fn write_control_notifications(
     }
 
     for (name, (session_id, session_name)) in &after.clients {
+        // A client hears about its own move as `%session-changed`, raised
+        // where the move is applied; `%client-session-changed` is what the
+        // other clients get. tmux draws the same line in
+        // `control_notify_client_session_changed`.
+        if name == client_name {
+            continue;
+        }
         if before.clients.get(name) != Some(&(*session_id, session_name.clone())) {
             writer.enqueue_line(format!(
                 "%client-session-changed {name} ${session_id} {session_name}"

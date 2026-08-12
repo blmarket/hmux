@@ -1582,6 +1582,25 @@ impl ClientRenderAttachment {
         self.slot.action.borrow_mut().take()
     }
 
+    /// Take the pending action only when it is a session switch.
+    ///
+    /// A `switch-client` has to take effect within the command that asked for
+    /// it, so the command path claims that one action as it finishes rather
+    /// than leaving it for the next event-loop pass. Every other action stays
+    /// in the slot for the loop to handle.
+    pub(crate) fn take_switch(&self) -> Option<(u32, bool)> {
+        let mut action = self.slot.action.borrow_mut();
+        let Some(ClientAction::Switch {
+            session_id,
+            destroyed,
+        }) = *action
+        else {
+            return None;
+        };
+        *action = None;
+        Some((session_id, destroyed))
+    }
+
     pub(crate) fn take_messages(&self) -> Vec<ClientMessage> {
         self.slot.messages.borrow_mut().drain(..).collect()
     }
