@@ -1,12 +1,14 @@
 //! Central FIFO dispatch and deferred reactor effects.
 
-use std::collections::VecDeque;
+use std::cell::RefCell;
+use std::collections::{HashMap, VecDeque};
 use std::io;
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsFd, AsRawFd};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use crate::server::pane::PaneIo;
-use crate::server::task::{FdDirection, WaitToken};
+use crate::server::task::{FdDirection, WaitToken, WakeFn};
 use crate::server::Server;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 
@@ -19,11 +21,10 @@ use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
 };
 use super::reactor::{Interest, MioReactor, PollResult, Reactor, Ready};
-use super::suspend::{
-    ExecutorEvent, JobRegistration, SuspensionExecutor, SuspensionExecutorHandle,
-};
+use super::suspend::{ExecutorEvent, JobRegistration, SuspensionExecutor};
+use super::tasks::{TaskEvent, TaskHandle, TaskId, TaskSet};
 use super::term_signal::{TermSignal, TermSignalEvent};
-use super::timer::{ExpiredTimer, TimerQueue};
+use super::timer::{ExpiredTimer, TimerId, TimerQueue};
 use crate::server::pane::PanePipeIo;
 use crate::server::status::FormatJob;
 
@@ -56,6 +57,10 @@ pub(crate) enum Envelope {
     Executor {
         target: ActorRef<SuspensionExecutor>,
         event: ExecutorEvent,
+    },
+    Task {
+        target: ActorRef<TaskSet>,
+        event: TaskEvent,
     },
 }
 
@@ -92,7 +97,140 @@ impl Envelope {
             Envelope::Executor { target, event } => {
                 target.with_mut(|executor| executor.handle(event, outbox));
             }
+            // A task reaches the reactor and the timer queue only through the
+            // inboxes the loop reconciles, so this needs no outbox either.
+            Envelope::Task { target, event } => {
+                target.with_mut(|tasks| match event {
+                    TaskEvent::Poll(task) | TaskEvent::Timeout(task) => tasks.poll(task),
+                });
+            }
         }
+    }
+}
+
+/// A wake that has fired but has not yet become an event.
+///
+/// Only the destination's address is recorded. Resolving it — upgrading that
+/// address and deduplicating against work already queued — touches the
+/// destination actor, and a wake fires from inside its *producer's* dispatch,
+/// where the producer may be the very actor being woken: a client that answers
+/// its own `command-prompt -w` does exactly that. Deferring the resolution to
+/// the drain keeps the wake itself from reaching into any actor.
+enum PendingWake {
+    Executor {
+        target: WeakActorRef<SuspensionExecutor>,
+        job: u64,
+    },
+    Protocol {
+        target: WeakActorRef<ProtocolClient>,
+        side: ProtocolIoSide,
+    },
+    /// A task parked on something that is not a descriptor — the loop's own
+    /// task set is the destination, so no address is needed.
+    Task {
+        task: TaskId,
+    },
+}
+
+/// Where a fired [`WakeFn`] leaves its event.
+///
+/// Dispatch order is observable behavior, so a wake never resumes its consumer
+/// inline; it queues here and the loop picks it up like anything else. Draining
+/// into the main FIFO before each dispatch keeps one order over everything the
+/// loop does, rather than a second, competing one.
+#[derive(Clone, Default)]
+pub(crate) struct WakeQueue {
+    fired: Rc<RefCell<VecDeque<PendingWake>>>,
+}
+
+impl WakeQueue {
+    /// The wake for a job the executor owns, parked on a value another task
+    /// produces.
+    fn executor_wake(&self, target: WeakActorRef<SuspensionExecutor>, job: u64) -> WakeFn {
+        let fired = Rc::clone(&self.fired);
+        Rc::new(move || {
+            fired.borrow_mut().push_back(PendingWake::Executor {
+                target: target.clone(),
+                job,
+            });
+        })
+    }
+
+    /// The wake for a client whose command queue is parked on a suspension.
+    fn protocol_wake(&self, target: WeakActorRef<ProtocolClient>, side: ProtocolIoSide) -> WakeFn {
+        let fired = Rc::clone(&self.fired);
+        Rc::new(move || {
+            fired.borrow_mut().push_back(PendingWake::Protocol {
+                target: target.clone(),
+                side,
+            });
+        })
+    }
+
+    /// The wake a task's [`LocalWaker`](std::task::LocalWaker) fires.
+    pub(super) fn wake_task(&self, task: TaskId) {
+        self.fired
+            .borrow_mut()
+            .push_back(PendingWake::Task { task });
+    }
+
+    fn len(&self) -> usize {
+        self.fired.borrow().len()
+    }
+
+    /// Turn every fired wake into an event. Runs between dispatches, so
+    /// reaching into a destination actor here is safe.
+    fn drain_into(&self, events: &mut VecDeque<Envelope>, tasks: &ActorRef<TaskSet>) {
+        // The borrow ends before any actor is touched: resolving one wake can
+        // fire another, and that wake has to find this queue free.
+        let fired = std::mem::take(&mut *self.fired.borrow_mut());
+        for wake in fired {
+            match wake {
+                PendingWake::Executor { target, job } => {
+                    let Some(target) = target.upgrade() else {
+                        continue;
+                    };
+                    events.push_back(Envelope::Executor {
+                        target,
+                        event: ExecutorEvent::Wake { job },
+                    });
+                }
+                PendingWake::Protocol { target, side } => {
+                    let Some(target) = target.upgrade() else {
+                        continue;
+                    };
+                    // Same dedup a readiness notification gets: a client woken
+                    // twice before it runs is one turn's work.
+                    let should_enqueue = target
+                        .with_mut(|client| client.mark_work_queued(side))
+                        .unwrap_or(false);
+                    if !should_enqueue {
+                        continue;
+                    }
+                    events.push_back(Envelope::Protocol {
+                        target,
+                        event: protocol_ready_event(side),
+                    });
+                }
+                PendingWake::Task { task } => {
+                    events.push_back(Envelope::Task {
+                        target: tasks.clone(),
+                        event: TaskEvent::Poll(task),
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// The event a protocol client gets when `side` has work.
+fn protocol_ready_event(side: ProtocolIoSide) -> ProtocolEvent {
+    match side {
+        ProtocolIoSide::Read => ProtocolEvent::Readable,
+        ProtocolIoSide::Write => ProtocolEvent::Writable,
+        ProtocolIoSide::Command => ProtocolEvent::CommandCompleted,
+        ProtocolIoSide::Control(source) => ProtocolEvent::ControlReady(source),
+        ProtocolIoSide::Attach(source) => ProtocolEvent::AttachReady(source),
     }
 }
 
@@ -301,6 +439,13 @@ enum IoTarget {
         job: u64,
         source: WaitToken,
     },
+    /// One `AsyncFd`. The registration names the descriptor, not the task, so
+    /// consecutive suspensions never share one and there is nothing to
+    /// re-point.
+    Task {
+        target: WeakActorRef<TaskSet>,
+        io: u64,
+    },
 }
 
 /// References returned when a Unix listener is added to the loop.
@@ -410,12 +555,17 @@ where
 {
     reactor: R,
     events: VecDeque<Envelope>,
+    wakes: WakeQueue,
     ready: Vec<Ready<IoRecipient>>,
     timers: TimerQueue<Envelope>,
     expired_timers: Vec<ExpiredTimer<Envelope>>,
     background_commands: Option<ActorRef<BackgroundCommands>>,
     executor: ActorRef<SuspensionExecutor>,
-    executor_handle: SuspensionExecutorHandle,
+    tasks: ActorRef<TaskSet>,
+    task_handle: TaskHandle,
+    /// The timer armed for each sleeping task, kept here because the timer
+    /// queue is the loop's.
+    task_timers: HashMap<TaskId, (Instant, TimerId)>,
     term_signal: Option<ActorRef<TermSignal>>,
 }
 
@@ -430,16 +580,21 @@ where
     R: Reactor<IoRecipient>,
 {
     fn with_reactor(reactor: R) -> Self {
-        let (executor, executor_handle) = SuspensionExecutor::new();
+        let executor = SuspensionExecutor::new();
+        let wakes = WakeQueue::default();
+        let (tasks, task_handle) = TaskSet::new(wakes.clone());
         Self {
             reactor,
             events: VecDeque::new(),
+            wakes,
             ready: Vec::new(),
             timers: TimerQueue::new(),
             expired_timers: Vec::new(),
             background_commands: None,
             executor: ActorRef::new(executor),
-            executor_handle,
+            tasks: ActorRef::new(tasks),
+            task_handle,
+            task_timers: HashMap::new(),
             term_signal: None,
         }
     }
@@ -451,7 +606,6 @@ where
         server: Server,
         peer_uid: Option<u32>,
     ) -> ProtocolHandle {
-        let executor_handle = self.executor_handle.clone();
         let background_commands = self
             .background_commands
             .get_or_insert_with(|| {
@@ -459,7 +613,7 @@ where
                     server.state(),
                     server.status_hub(),
                     self.executor.clone(),
-                    executor_handle.clone(),
+                    self.task_handle.clone(),
                 ))
             })
             .clone();
@@ -468,7 +622,7 @@ where
             writer,
             server,
             background_commands,
-            executor_handle,
+            self.task_handle.clone(),
             peer_uid,
         );
         let protocol = ActorRef::new(protocol);
@@ -538,7 +692,6 @@ where
         if requests.is_empty() {
             return Ok(());
         }
-        let executor_handle = self.executor_handle.clone();
         let target = self
             .background_commands
             .get_or_insert_with(|| {
@@ -546,7 +699,7 @@ where
                     server.state(),
                     server.status_hub(),
                     self.executor.clone(),
-                    executor_handle,
+                    self.task_handle.clone(),
                 ))
             })
             .clone();
@@ -644,17 +797,23 @@ where
         }
     }
 
+    /// Work the loop can do without waiting for the kernel. A fired wake counts
+    /// even before it is drained, so the server never blocks in the reactor
+    /// with a resumable task in hand.
     pub(crate) fn pending_events(&self) -> usize {
-        self.events.len()
+        self.events.len() + self.wakes.len()
     }
 
-    #[cfg(test)]
-    pub(crate) fn executor_handle(&self) -> SuspensionExecutorHandle {
-        self.executor_handle.clone()
+    pub(crate) fn task_handle(&self) -> TaskHandle {
+        self.task_handle.clone()
     }
 
     pub(crate) fn dispatch_one(&mut self) -> io::Result<bool> {
+        self.sync_tasks()?;
         self.sync_executor()?;
+        // After the syncs, which are what install the wakes that may fire.
+        let tasks = self.tasks.clone();
+        self.wakes.drain_into(&mut self.events, &tasks);
         let Some(envelope) = self.events.pop_front() else {
             return Ok(false);
         };
@@ -676,7 +835,17 @@ where
     }
 
     pub(crate) fn poll(&mut self, timeout: Option<Duration>) -> io::Result<PollResult> {
+        self.sync_tasks()?;
         self.sync_executor()?;
+        let tasks = self.tasks.clone();
+        self.wakes.drain_into(&mut self.events, &tasks);
+        // A wake that fired during the sync is work in hand; blocking on the
+        // kernel now would hold it until something unrelated happened.
+        let timeout = if self.events.is_empty() {
+            timeout
+        } else {
+            Some(Duration::ZERO)
+        };
         let timer_timeout = self.timers.time_until_next(Instant::now());
         let timeout = match (timeout, timer_timeout) {
             (Some(requested), Some(timer)) => Some(requested.min(timer)),
@@ -696,17 +865,78 @@ where
         Ok(result)
     }
 
-    /// Adopt newly submitted suspension jobs, then make the reactor and the
-    /// timer queue describe exactly what every live job is waiting for.
+    /// Adopt newly spawned tasks and make the reactor and the timer queue
+    /// describe what the live ones are waiting for.
+    ///
+    /// Unlike [`Self::sync_executor`] there is nothing to diff: a task's
+    /// descriptors are owned by the leaves that created them, so this only
+    /// makes registrations that were asked for and releases the ones whose
+    /// `AsyncFd` is gone.
+    fn sync_tasks(&mut self) -> io::Result<()> {
+        let tasks = self.tasks.clone();
+        let Some(result) = tasks.with_mut(|set| -> io::Result<()> {
+            for token in set.take_released_io() {
+                self.reactor.deregister(token)?;
+            }
+            for (io, task, fd, interest) in set.take_new_io() {
+                let recipient = IoRecipient {
+                    target: IoTarget::Task {
+                        target: tasks.downgrade(),
+                        io,
+                    },
+                };
+                let token = self.reactor.register(fd.as_fd(), interest, recipient)?;
+                set.set_io_token(io, token);
+                // The reactor took its own duplicate.
+                drop(fd);
+                let _ = task;
+            }
+            let deadlines = set.deadlines();
+            self.task_timers.retain(|task, (_, timer)| {
+                let keep = deadlines.contains_key(task);
+                if !keep {
+                    self.timers.cancel(*timer);
+                }
+                keep
+            });
+            for (task, deadline) in deadlines {
+                match self.task_timers.get(&task) {
+                    Some((armed, _)) if *armed == deadline => continue,
+                    Some((_, timer)) => {
+                        self.timers.cancel(*timer);
+                    }
+                    None => {}
+                }
+                let timer = self.timers.set(
+                    deadline,
+                    Envelope::Task {
+                        target: tasks.clone(),
+                        event: TaskEvent::Timeout(task),
+                    },
+                );
+                self.task_timers.insert(task, (deadline, timer));
+            }
+            // A task's first turn is an event like any other, so a spawn never
+            // runs ahead of work already queued.
+            for task in set.take_spawned() {
+                self.events.push_back(Envelope::Task {
+                    target: tasks.clone(),
+                    event: TaskEvent::Poll(task),
+                });
+            }
+            Ok(())
+        }) else {
+            return Ok(());
+        };
+        result
+    }
+
+    /// Make the reactor and the timer queue describe exactly what every live
+    /// executor job is waiting for.
     fn sync_executor(&mut self) -> io::Result<()> {
         let executor = self.executor.clone();
-        // A job adopted here can finish on its very first turn and address the
-        // background-command actor, so collect effects and apply them once the
-        // executor's borrow is released.
-        let mut outbox = Outbox::new();
         let result = executor
             .with_mut(|executor| -> io::Result<()> {
-                executor.adopt_submitted(&mut outbox);
                 for id in executor.job_ids() {
                     let Some(state) = executor.job_mut(id) else {
                         continue;
@@ -780,13 +1010,25 @@ where
                         }
                         (None, None) => {}
                     }
+                    // A parked job named no descriptor and no deadline: it is
+                    // waiting on a value another task produces, and the wake is
+                    // the only thing that will resume it. Installing is
+                    // idempotent and fires at once if the value already
+                    // arrived, so re-installing every sync — rather than
+                    // tracking which suspension is current — cannot miss one.
+                    if wait.is_parked() {
+                        let wake = state
+                            .wake
+                            .get_or_insert_with(|| {
+                                self.wakes.executor_wake(self.executor.downgrade(), id)
+                            })
+                            .clone();
+                        state.task.set_wake(&wake);
+                    }
                 }
                 Ok(())
             })
             .unwrap_or(Ok(()));
-        for effect in outbox.effects {
-            self.apply(effect)?;
-        }
         result
     }
 
@@ -907,6 +1149,26 @@ where
                         job: *job,
                         source: *source,
                     },
+                });
+            }
+            IoTarget::Task {
+                target: recipient,
+                io,
+            } => {
+                let Some(target) = recipient.upgrade() else {
+                    return;
+                };
+                // The readiness goes to the leaf that asked for it; the task is
+                // enqueued here rather than through the leaf's parked waker, so
+                // it keeps its place among the rest of this poll's batch.
+                let Some(Some(task)) =
+                    target.with_mut(|tasks| tasks.deliver_io(*io, notification.readiness()))
+                else {
+                    return;
+                };
+                self.events.push_back(Envelope::Task {
+                    target,
+                    event: TaskEvent::Poll(task),
                 });
             }
         }
@@ -1126,6 +1388,9 @@ where
         side: ProtocolIoSide,
         enabled: bool,
     ) -> io::Result<()> {
+        if side.is_command() {
+            return self.set_command_wake(target, side, enabled);
+        }
         let token = target.with(|client| client.token(side)).flatten();
         match (enabled, token) {
             (true, None) => {
@@ -1183,6 +1448,43 @@ where
                 target.with_mut(|client| client.set_token(side, None));
             }
             _ => {}
+        }
+        Ok(())
+    }
+
+    /// Interest in a suspended command queue, which has no descriptor to
+    /// register: what the client gets instead is the wake its completion fires.
+    ///
+    /// Nothing here is keyed by which suspension is current. The client routes
+    /// the wake to whatever it is parked on now, and a completion that already
+    /// has its value fires the wake as it is installed — so unlike a
+    /// registration that had to be re-pointed at each new descriptor, this
+    /// cannot be left aimed at a suspension that is over.
+    fn set_command_wake(
+        &mut self,
+        target: &ActorRef<ProtocolClient>,
+        side: ProtocolIoSide,
+        enabled: bool,
+    ) -> io::Result<()> {
+        let installed = target
+            .with(|client| client.command_wake_installed(side))
+            .unwrap_or(false);
+        match (enabled, installed) {
+            (true, _) => {
+                let wake = self.wakes.protocol_wake(target.downgrade(), side);
+                let installed = target
+                    .with_mut(|client| client.install_command_wake(side, &wake))
+                    .unwrap_or(false);
+                if !installed {
+                    // The queue this side named is gone — the same nothing a
+                    // vanished descriptor leaves behind.
+                    return Ok(());
+                }
+            }
+            (false, true) => {
+                target.with_mut(|client| client.clear_command_wake(side));
+            }
+            (false, false) => {}
         }
         Ok(())
     }
@@ -1322,16 +1624,16 @@ mod tests {
         loop_: &mut EventLoop<MioReactor<IoRecipient>>,
         suspension: CommandSuspension,
     ) -> CommandSuspensionResult {
-        let completion = loop_
-            .executor_handle()
-            .submit(suspension)
+        let runtime = super::super::suspend::EventCommandRuntime::new(loop_.task_handle());
+        let completion = crate::server::command::CommandRuntime::submit(&runtime, suspension)
             .expect("completion pair");
         let mut task = TaskState::new(completion);
         let deadline = Instant::now() + Duration::from_secs(10);
         while !task.poll_after_single_source_wakeup(true, Instant::now()) {
             assert!(Instant::now() < deadline, "suspension never completed");
-            // The completion descriptor belongs to the caller, not to this
-            // loop, so keep turns short instead of blocking on the reactor.
+            // The completion belongs to the caller, not to this loop, so
+            // nothing here wakes it: keep turns short instead of blocking on
+            // the reactor.
             loop_.run_turn(Some(Duration::from_millis(10)), 64).unwrap();
         }
         task.take_output()

@@ -2,9 +2,6 @@
 
 pub(crate) mod actor;
 pub(crate) mod driver;
-/// Prototype `Future` executor on the same reactor; example code only,
-/// re-exported at the crate root for `examples/future_rt.rs`.
-pub mod future_rt;
 pub(crate) mod job;
 pub(crate) mod listener;
 pub(crate) mod pane;
@@ -12,6 +9,7 @@ pub(crate) mod process;
 pub(crate) mod protocol;
 pub(crate) mod reactor;
 pub(crate) mod suspend;
+pub(crate) mod tasks;
 pub(crate) mod term_signal;
 pub(crate) mod timer;
 
@@ -23,21 +21,24 @@ pub(crate) mod timer;
 /// same executor the daemon uses — instead of a second, blocking one.
 #[cfg(test)]
 pub(crate) mod test_driver {
+    use std::cell::Cell;
     use std::io;
     use std::rc::Rc;
     use std::time::{Duration, Instant};
 
-    use crate::server::command::suspend::IfShellJob;
     use crate::server::command::{
-        BackgroundCommand, BackgroundCommandRequest, CommandCoroutine, CommandResult,
+        BackgroundCommand, BackgroundCommandRequest, CommandResult,
         CommandRuntime, PendingBackground, ResumableCommandQueue,
     };
     use crate::server::state::SharedState;
-    use crate::server::task::{Coroutine, TaskState};
+    use crate::server::task::{completion_pair, Coroutine, TaskState, WakeFn};
+
+    use std::future::Future;
 
     use super::driver::{EventLoop, IoRecipient};
     use super::reactor::MioReactor;
     use super::suspend::EventCommandRuntime;
+    use super::tasks::TaskHandle;
 
     /// How long one command queue may take before the test is declared stuck.
     const DEADLINE: Duration = Duration::from_secs(30);
@@ -51,11 +52,19 @@ pub(crate) mod test_driver {
             .drive_detached(job)
     }
 
-    /// Drive an already-started job on a loop of its own until it finishes.
-    pub(crate) fn finish_on_loop<T: Coroutine>(task: &mut TaskState<T>) {
+    /// Run one async suspension to completion on a loop of its own.
+    ///
+    /// The daemon spawns these on the loop it already has; a test has none, so
+    /// this builds one, spawns the task on it and drives turns until the
+    /// task's completion carries its value.
+    pub(crate) fn run_task_on_loop<T, F>(spawn: impl FnOnce(TaskHandle) -> F) -> T
+    where
+        T: 'static,
+        F: Future<Output = T> + 'static,
+    {
         LoopCommandDriver::new()
             .expect("job test loop")
-            .drive_task(task);
+            .drive_task_future(spawn)
     }
 
     pub(crate) struct LoopCommandDriver {
@@ -70,7 +79,26 @@ pub(crate) mod test_driver {
         }
 
         fn runtime(&self) -> Rc<dyn CommandRuntime> {
-            Rc::new(EventCommandRuntime::new(self.loop_.executor_handle()))
+            Rc::new(EventCommandRuntime::new(self.loop_.task_handle()))
+        }
+
+        /// Spawn one future on this loop and drive turns until it finishes.
+        pub(crate) fn drive_task_future<T, F>(&mut self, spawn: impl FnOnce(TaskHandle) -> F) -> T
+        where
+            T: 'static,
+            F: Future<Output = T> + 'static,
+        {
+            let tasks = self.loop_.task_handle();
+            let (completion, sender) = completion_pair().expect("completion pair");
+            let future = spawn(tasks.clone());
+            tasks.spawn(async move {
+                sender.complete(future.await);
+            });
+            let mut task = TaskState::new(completion);
+            self.drive_task(&mut task);
+            task.take_output()
+                .expect("completed task")
+                .expect("task result")
         }
 
         pub(crate) fn run_queue(
@@ -78,21 +106,15 @@ pub(crate) mod test_driver {
             queue: ResumableCommandQueue,
             state: &SharedState,
         ) -> CommandResult {
-            let mut task = TaskState::new(CommandCoroutine::new(
-                queue,
-                Rc::clone(state),
-                self.runtime(),
-                DISPATCH_BUDGET,
-            ));
-            let deadline = Instant::now() + DEADLINE;
-            // The queue's completion descriptor belongs to this task, not to
-            // the loop, so turns stay short instead of blocking the reactor.
-            while !task.poll_optimistically(Instant::now()) {
-                assert!(Instant::now() < deadline, "command queue never completed");
-                self.loop_
-                    .run_turn(Some(TURN_TIMEOUT), DISPATCH_BUDGET)
-                    .expect("event loop turn");
-            }
+            let queued = match self
+                .runtime()
+                .spawn_queue(queue, Rc::clone(state), DISPATCH_BUDGET)
+            {
+                Ok(queued) => queued,
+                Err(error) => return CommandResult::err(format!("{error}\n")),
+            };
+            let mut task = TaskState::new(queued);
+            self.drive_task(&mut task);
             match task.take_output() {
                 Some(Ok(result)) => result,
                 Some(Err(error)) => CommandResult::err(format!("{error}\n")),
@@ -116,7 +138,11 @@ pub(crate) mod test_driver {
                     else_command,
                     context,
                 } => {
-                    let matched = self.drive_detached(IfShellJob::new(&condition, &context));
+                    let job_context = context.clone();
+                    let matched = self.drive_task_future(|tasks| async move {
+                        crate::server::command::suspend::if_shell(&tasks, condition, job_context)
+                            .await
+                    });
                     let command = if matched { then_command } else { else_command };
                     (BackgroundCommand::Line(command), context)
                 }
@@ -137,10 +163,12 @@ pub(crate) mod test_driver {
                     crate::server::command::start_resumable_command(&args, state, agents, &context)
                 }
                 BackgroundCommand::RunShell { args, jobs } => {
-                    let job = crate::server::command::suspend::BackgroundShellJob::new(
-                        &args, &context, jobs,
-                    );
-                    self.drive_detached(job);
+                    self.drive_task_future(|tasks| async move {
+                        crate::server::command::suspend::background_shell(
+                            &tasks, args, context, jobs,
+                        )
+                        .await
+                    });
                     return;
                 }
             };
@@ -160,10 +188,24 @@ pub(crate) mod test_driver {
 
         fn drive_task<T: Coroutine>(&mut self, task: &mut TaskState<T>) {
             let deadline = Instant::now() + DEADLINE;
+            // This task belongs to the test, not to the loop, so the loop
+            // cannot wake it. Its own wake sets this flag instead, which turns
+            // the next turn into a poll that does not block: without it, every
+            // suspension resolved inside a dispatch would cost a full
+            // `TURN_TIMEOUT` before the test noticed.
+            let woken = Rc::new(Cell::new(false));
+            let flag = Rc::clone(&woken);
+            let wake: WakeFn = Rc::new(move || flag.set(true));
             while !task.poll_optimistically(Instant::now()) {
                 assert!(Instant::now() < deadline, "job never completed");
+                task.set_wake(&wake);
+                let timeout = if woken.replace(false) {
+                    Duration::ZERO
+                } else {
+                    TURN_TIMEOUT
+                };
                 self.loop_
-                    .run_turn(Some(TURN_TIMEOUT), DISPATCH_BUDGET)
+                    .run_turn(Some(timeout), DISPATCH_BUDGET)
                     .expect("event loop turn");
             }
         }

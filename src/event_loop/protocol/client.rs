@@ -12,6 +12,7 @@ use crate::server::attach::ClientTty;
 use crate::server::command::{self, ClientContext, ClientKind, CommandResult};
 use crate::server::control::{EventControlClient, EventControlSource};
 use crate::server::state::SharedState;
+use crate::server::task::WakeFn;
 use crate::server::Server;
 use crate::tmux::codec::{encode_bytes, ImsgReader, NonblockingImsgWriter, MAX_IMSGSIZE};
 use crate::tmux::introspect::{log_frame, Direction};
@@ -22,7 +23,8 @@ use super::super::actor::ActorRef;
 use super::super::driver::Outbox;
 use super::super::job::{BackgroundCommands, JobEvent};
 use super::super::reactor::Token;
-use super::super::suspend::{EventCommandRuntime, SuspensionExecutorHandle};
+use super::super::suspend::EventCommandRuntime;
+use super::super::tasks::TaskHandle;
 use super::super::timer::TimerId;
 use super::attach::{EventAttachClient, EventAttachSource};
 use super::command::{ActiveResumableCommand, CommandStep, CommandTransaction, CommandWork};
@@ -43,6 +45,22 @@ pub(crate) enum ProtocolIoSide {
     Command,
     Control(EventControlSource),
     Attach(EventAttachSource),
+}
+
+impl ProtocolIoSide {
+    /// Whether this side is a suspended command queue.
+    ///
+    /// Those are the sides with no descriptor behind them: a suspension hands
+    /// its result back through a completion both ends of which live on the
+    /// loop, so the client waits on a wake instead of on readiness.
+    pub(crate) fn is_command(self) -> bool {
+        matches!(
+            self,
+            Self::Command
+                | Self::Control(EventControlSource::Command(_))
+                | Self::Attach(EventAttachSource::Command(_))
+        )
+    }
 }
 
 /// Why an event-loop protocol client stopped.
@@ -160,10 +178,12 @@ pub(super) struct AttachClientState {
 pub(super) struct ProtocolRegistrations {
     pub(super) read: Option<Token>,
     pub(super) write: Option<Token>,
-    pub(super) command: Option<Token>,
     pub(super) control: BTreeMap<EventControlSource, Token>,
     pub(super) attach: BTreeMap<EventAttachSource, Token>,
     pub(super) timer: Option<TimerId>,
+    /// Command sides whose wake this client has installed. They hold no
+    /// reactor token because they have no descriptor.
+    pub(super) command_wakes: BTreeSet<ProtocolIoSide>,
 }
 
 /// Event-loop-owned command, control-mode, and interactive-attach protocol state.
@@ -187,7 +207,7 @@ impl ProtocolClient {
         writer: NonblockingImsgWriter,
         server: Server,
         background_commands: ActorRef<BackgroundCommands>,
-        executor: SuspensionExecutorHandle,
+        tasks: TaskHandle,
         peer_uid: Option<u32>,
     ) -> (Self, ProtocolStatus) {
         let status = ProtocolStatus::new();
@@ -200,7 +220,7 @@ impl ProtocolClient {
                 state,
                 hub,
                 background_commands,
-                command_runtime: Rc::new(EventCommandRuntime::new(executor)),
+                command_runtime: Rc::new(EventCommandRuntime::new(tasks)),
                 protocol_state: ProtocolState::Identifying(IdentifyingState {
                     context: ClientContext {
                         kind: ClientKind::Command,
@@ -224,16 +244,10 @@ impl ProtocolClient {
         match side {
             ProtocolIoSide::Read => Some(self.reader.as_fd()),
             ProtocolIoSide::Write => Some(self.writer.as_fd()),
-            ProtocolIoSide::Command => match &self.protocol_state {
-                ProtocolState::Command(CommandClientState {
-                    operation: CommandOperation::WaitingCommand(active),
-                    ..
-                }) => active
-                    .task
-                    .wait()
-                    .and_then(|wait| wait.sources().first().map(|source| source.fd())),
-                _ => None,
-            },
+            // No descriptor: a suspended command queue is woken, not polled.
+            ProtocolIoSide::Command => None,
+            ProtocolIoSide::Control(EventControlSource::Command(_))
+            | ProtocolIoSide::Attach(EventAttachSource::Command(_)) => None,
             ProtocolIoSide::Control(source) => match &self.protocol_state {
                 ProtocolState::Control(control) => control.client.source_fd(source),
                 _ => None,
@@ -257,7 +271,7 @@ impl ProtocolClient {
         match side {
             ProtocolIoSide::Read => self.registrations.read,
             ProtocolIoSide::Write => self.registrations.write,
-            ProtocolIoSide::Command => self.registrations.command,
+            ProtocolIoSide::Command => None,
             ProtocolIoSide::Control(source) => self.registrations.control.get(&source).copied(),
             ProtocolIoSide::Attach(source) => self.registrations.attach.get(&source).copied(),
         }
@@ -267,7 +281,8 @@ impl ProtocolClient {
         match side {
             ProtocolIoSide::Read => self.registrations.read = token,
             ProtocolIoSide::Write => self.registrations.write = token,
-            ProtocolIoSide::Command => self.registrations.command = token,
+            // A command side has no descriptor, so no token to keep.
+            ProtocolIoSide::Command => {}
             ProtocolIoSide::Control(source) => match token {
                 Some(token) => {
                     self.registrations.control.insert(source, token);
@@ -285,6 +300,52 @@ impl ProtocolClient {
                 }
             },
         }
+    }
+
+    pub(crate) fn command_wake_installed(&self, side: ProtocolIoSide) -> bool {
+        self.registrations.command_wakes.contains(&side)
+    }
+
+    /// Install `wake` on the command queue `side` names.
+    ///
+    /// Reports whether a queue was there to take it: a client that finished or
+    /// moved on since the loop was asked for this side has nothing to wake, and
+    /// the caller drops the request the way a vanished descriptor is dropped.
+    pub(crate) fn install_command_wake(&mut self, side: ProtocolIoSide, wake: &WakeFn) -> bool {
+        let installed = match (side, &mut self.protocol_state) {
+            (
+                ProtocolIoSide::Command,
+                ProtocolState::Command(CommandClientState {
+                    operation: CommandOperation::WaitingCommand(active),
+                    ..
+                }),
+            ) => {
+                active.task.set_wake(wake);
+                true
+            }
+            (
+                ProtocolIoSide::Control(EventControlSource::Command(generation)),
+                ProtocolState::Control(control),
+            ) => control.client.set_command_wake(generation, wake),
+            (
+                ProtocolIoSide::Attach(EventAttachSource::Command(generation)),
+                ProtocolState::Attach(attach),
+            ) => attach.client.set_command_wake(generation, wake),
+            _ => false,
+        };
+        if installed {
+            self.registrations.command_wakes.insert(side);
+        }
+        installed
+    }
+
+    /// Forget that `side`'s wake was installed.
+    ///
+    /// The completion it was installed on is consumed by the resume that
+    /// prompted this, so there is nothing to take back — and a wake that fires
+    /// anyway costs one turn that finds no work.
+    pub(crate) fn clear_command_wake(&mut self, side: ProtocolIoSide) {
+        self.registrations.command_wakes.remove(&side);
     }
 
     pub(crate) fn timer(&self) -> Option<TimerId> {

@@ -6,37 +6,40 @@
 //! deadline with its reactor and resumes the job when they are ready.
 //!
 //! Two kinds of work arrive here. A client's suspension is submitted by its
-//! command runtime and reported back through the fd-backed [`Completion`] the
-//! protocol drivers already poll. A detached (`-b`) command queue has no client
-//! waiting on a descriptor, so the loop owns the whole queue and hands its
-//! result straight to the background-command actor.
+//! command runtime and reported back through a [`Completion`], which wakes the
+//! client rather than making a descriptor readable — both ends of it live on
+//! this loop. A detached (`-b`) command queue has no client waiting at all, so
+//! the loop owns the whole queue and hands its result straight to the
+//! background-command actor.
 //!
 //! The suspension jobs themselves live with the commands
 //! ([`SuspensionJob`](crate::server::command::suspend::SuspensionJob)) so the
 //! blocking test driver resolves a suspension exactly the way the loop does.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::io;
 use std::os::fd::RawFd;
-use std::rc::Rc;
 use std::time::Instant;
 
-use crate::server::command::suspend::SuspensionJob;
+use std::rc::Rc;
+
+use crate::server::command::suspend::{self, SuspensionStart, SuspensionWait};
 use crate::server::command::{
-    CommandCoroutine, CommandResult, CommandRuntime, CommandSuspension, CommandSuspensionResult,
+    run_command_queue, CommandResult, CommandRuntime, CommandSuspension, CommandSuspensionResult,
+    QueueStatus, QueuedCommand, ResumableCommandQueue,
 };
 use crate::server::pane::PanePipeIo;
 use crate::server::status::FormatJob;
 use crate::server::task::{
     completion_pair, Completion, CompletionSender, Coroutine, FdDirection, ReadySet, TaskPoll,
-    TaskState, WaitRequest, WaitToken,
+    TaskState, WaitRequest, WaitToken, WakeFn,
 };
 
 use super::actor::ActorRef;
 use super::driver::{Envelope, Outbox};
 use super::job::{BackgroundCommands, JobEvent};
 use super::reactor::Token;
+use super::tasks::TaskHandle;
 use super::timer::TimerId;
 
 /// Command runtime for clients served by the event loop.
@@ -45,21 +48,127 @@ use super::timer::TimerId;
 /// drives it as one of its own jobs.
 #[derive(Clone)]
 pub(crate) struct EventCommandRuntime {
-    executor: SuspensionExecutorHandle,
+    tasks: TaskHandle,
 }
 
 impl EventCommandRuntime {
-    pub(crate) fn new(executor: SuspensionExecutorHandle) -> Self {
-        Self { executor }
+    pub(crate) fn new(tasks: TaskHandle) -> Self {
+        Self { tasks }
     }
 }
 
 impl CommandRuntime for EventCommandRuntime {
+    /// Every suspension is a task on the loop's task set, reporting through the
+    /// completion the queue is parked on.
+    ///
+    /// The two registry-backed suspensions do their registry work here rather
+    /// than in their task: the order they touch a registry in is the order the
+    /// commands ran in, which a deferred first turn would not preserve.
+    fn spawn_queue(
+        &self,
+        queue: ResumableCommandQueue,
+        state: crate::server::state::SharedState,
+        budget: usize,
+    ) -> io::Result<QueuedCommand> {
+        self.spawn_command_queue(queue, state, budget)
+    }
+
     fn submit(
         &self,
         suspension: CommandSuspension,
     ) -> io::Result<Completion<CommandSuspensionResult>> {
-        self.executor.submit(suspension)
+        let (completion, sender) = completion_pair()?;
+        let tasks = self.tasks.clone();
+        match suspension {
+            CommandSuspension::RunShell { args, context } => {
+                self.tasks.spawn(async move {
+                    let output = suspend::run_shell(&tasks, args, context).await;
+                    sender.complete(CommandSuspensionResult::RunShell(output));
+                });
+            }
+            CommandSuspension::IfShell { condition, context } => {
+                self.tasks.spawn(async move {
+                    let matched = suspend::if_shell(&tasks, condition, context).await;
+                    sender.complete(CommandSuspensionResult::IfShell(matched));
+                });
+            }
+            CommandSuspension::SourceFile { paths } => {
+                self.tasks.spawn(async move {
+                    let reads = suspend::source_file(&tasks, paths).await;
+                    sender.complete(CommandSuspensionResult::SourceFile(reads));
+                });
+            }
+            CommandSuspension::LoadBuffer { path } => {
+                self.tasks.spawn(async move {
+                    let contents = suspend::load_buffer(&tasks, path).await;
+                    sender.complete(CommandSuspensionResult::LoadBuffer(contents));
+                });
+            }
+            CommandSuspension::SaveBuffer { request } => {
+                self.tasks.spawn(async move {
+                    let result = suspend::save_buffer(&tasks, request).await;
+                    sender.complete(CommandSuspensionResult::SaveBuffer(result));
+                });
+            }
+            CommandSuspension::WaitFor { args, registry } => {
+                self.start(suspend::wait_for(&args, &registry), sender);
+            }
+            CommandSuspension::CommandPrompt {
+                args,
+                registry,
+                target,
+                tty_name,
+                wait,
+            } => {
+                self.start(
+                    suspend::client_prompt(args, &registry, target, tty_name, wait),
+                    sender,
+                );
+            }
+            CommandSuspension::ClientInteraction { completed } => {
+                self.start(
+                    SuspensionStart::Waiting(SuspensionWait::Interaction(completed)),
+                    sender,
+                );
+            }
+        }
+        Ok(completion)
+    }
+}
+
+impl EventCommandRuntime {
+    /// Report a registry-backed suspension: at once if it already finished,
+    /// otherwise from a task that waits for the answer.
+    fn start(&self, start: SuspensionStart, sender: CompletionSender<CommandSuspensionResult>) {
+        match start {
+            SuspensionStart::Ready(result) => {
+                sender.complete(CommandSuspensionResult::Completed(result));
+            }
+            SuspensionStart::Waiting(wait) => {
+                self.tasks.spawn(async move {
+                    sender.complete(CommandSuspensionResult::Completed(wait.resolve().await));
+                });
+            }
+        }
+    }
+}
+
+impl EventCommandRuntime {
+    fn spawn_command_queue(
+        &self,
+        queue: ResumableCommandQueue,
+        state: crate::server::state::SharedState,
+        budget: usize,
+    ) -> io::Result<QueuedCommand> {
+        let (completion, sender) = completion_pair()?;
+        let status = Rc::new(QueueStatus::default());
+        let runtime: Rc<dyn CommandRuntime> = Rc::new(self.clone());
+        let queue_status = Rc::clone(&status);
+        self.tasks.spawn_now(async move {
+            let result = run_command_queue(queue, state, runtime, budget, queue_status).await;
+            sender.complete(result);
+        });
+        Ok(QueuedCommand::new(completion, status))
     }
 }
 
@@ -69,14 +178,19 @@ pub(crate) enum ExecutorEvent {
     Ready { job: u64, source: WaitToken },
     /// A job's deadline elapsed.
     Timeout { job: u64 },
+    /// A completion the job was parked on has a value.
+    Wake { job: u64 },
 }
 
 /// One piece of waiting work the loop drives to completion.
 pub(crate) enum ExecutorJob {
-    /// One suspension of a command queue someone else is driving.
-    Suspension(SuspensionJob),
-    /// A detached command queue the loop owns outright.
-    Queue(CommandCoroutine),
+    /// A detached command queue running as a task; the executor holds only the
+    /// handle its result arrives through.
+    Queue(QueuedCommand),
+    /// A suspension running as a task on the loop's task set. The executor
+    /// contributes nothing but the wait: it holds the completion so the result
+    /// still reaches the background-command actor through the usual sink.
+    Awaiting(Completion<CommandSuspensionResult>),
     /// A `#()` format job, which publishes to its registry as it reads.
     Format(FormatJob),
     /// An open `pipe-pane` child, in both directions.
@@ -85,6 +199,9 @@ pub(crate) enum ExecutorJob {
 
 pub(crate) enum ExecutorJobOutput {
     Suspension(CommandSuspensionResult),
+    /// The work stopped without a result, which only happens as the server
+    /// goes away.
+    Cancelled,
     Queue(io::Result<CommandResult>),
     Format,
     PanePipe,
@@ -95,8 +212,8 @@ impl Coroutine for ExecutorJob {
 
     fn wait(&self) -> WaitRequest<'_> {
         match self {
-            Self::Suspension(job) => job.wait(),
             Self::Queue(queue) => queue.wait(),
+            Self::Awaiting(completion) => completion.wait(),
             Self::Format(job) => job.wait(),
             Self::PanePipe(pipe) => pipe.wait(),
         }
@@ -104,18 +221,29 @@ impl Coroutine for ExecutorJob {
 
     fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
         match self {
-            Self::Suspension(job) => job.resume(ready).map(ExecutorJobOutput::Suspension),
             Self::Queue(queue) => queue.resume(ready).map(ExecutorJobOutput::Queue),
+            Self::Awaiting(completion) => completion.resume(ready).map(|result| match result {
+                Ok(result) => ExecutorJobOutput::Suspension(result),
+                Err(_) => ExecutorJobOutput::Cancelled,
+            }),
             Self::Format(job) => job.resume(ready).map(|()| ExecutorJobOutput::Format),
             Self::PanePipe(pipe) => pipe.resume(ready).map(|()| ExecutorJobOutput::PanePipe),
+        }
+    }
+
+    /// A format job and a `pipe-pane` child only ever wait on their own
+    /// descriptors; the other two can be parked on a completion.
+    fn set_wake(&mut self, wake: &WakeFn) {
+        match self {
+            Self::Queue(queue) => queue.set_wake(wake),
+            Self::Awaiting(completion) => completion.set_wake(wake),
+            Self::Format(_) | Self::PanePipe(_) => {}
         }
     }
 }
 
 /// Where a finished job reports its result.
 enum JobSink {
-    /// Readable to the command queue that is suspended on it.
-    Completion(CompletionSender<CommandSuspensionResult>),
     /// Delivered to the background-command actor as a loop event.
     Background {
         target: ActorRef<BackgroundCommands>,
@@ -128,12 +256,6 @@ enum JobSink {
 impl JobSink {
     fn deliver(self, output: Option<ExecutorJobOutput>, outbox: &mut Outbox) {
         match (self, output) {
-            (Self::Completion(sender), Some(ExecutorJobOutput::Suspension(result))) => {
-                sender.complete(result);
-            }
-            // A job that reported nothing leaves its waiter to see the dropped
-            // sender, which reads as the work having stopped without a result.
-            (Self::Completion(sender), _) => drop(sender),
             (Self::Background { target, id }, output) => {
                 outbox.enqueue(Envelope::Background {
                     target,
@@ -143,12 +265,6 @@ impl JobSink {
             (Self::Detached, _) => {}
         }
     }
-}
-
-/// A suspension handed to the executor but not yet adopted by the loop.
-struct SubmittedJob {
-    job: SuspensionJob,
-    sender: CompletionSender<CommandSuspensionResult>,
 }
 
 /// One reactor registration made on behalf of a job's wait source.
@@ -165,6 +281,9 @@ pub(super) struct ExecutorJobState {
     pub(super) task: TaskState<ExecutorJob>,
     pub(super) registrations: Vec<JobRegistration>,
     pub(super) timer: Option<(Instant, TimerId)>,
+    /// The wake the loop hands a parked job, built once and re-installed on
+    /// every suspension this job goes through.
+    pub(super) wake: Option<WakeFn>,
     sink: Option<JobSink>,
 }
 
@@ -188,51 +307,18 @@ impl ExecutorJobState {
     }
 }
 
-/// Submission side of the executor, held by the command runtimes.
-#[derive(Clone)]
-pub(crate) struct SuspensionExecutorHandle {
-    submitted: Rc<RefCell<Vec<SubmittedJob>>>,
-}
-
-impl SuspensionExecutorHandle {
-    /// Hand one suspension to the loop, which resolves it as a job of its own.
-    pub(crate) fn submit(
-        &self,
-        suspension: CommandSuspension,
-    ) -> io::Result<Completion<CommandSuspensionResult>> {
-        self.enqueue(SuspensionJob::new(suspension))
-    }
-
-    fn enqueue(&self, job: SuspensionJob) -> io::Result<Completion<CommandSuspensionResult>> {
-        let (completion, sender) = completion_pair()?;
-        self.submitted
-            .borrow_mut()
-            .push(SubmittedJob { job, sender });
-        // Every submitter runs on the loop, inside a dispatch the executor may
-        // itself be driving, so the job is handed over through this inbox and
-        // adopted by the next sync rather than by re-entering the executor.
-        Ok(completion)
-    }
-}
-
 /// Loop-owned driver for every adopted suspension job.
 pub(crate) struct SuspensionExecutor {
-    submitted: Rc<RefCell<Vec<SubmittedJob>>>,
     jobs: BTreeMap<u64, ExecutorJobState>,
     next_id: u64,
 }
 
 impl SuspensionExecutor {
-    pub(crate) fn new() -> (Self, SuspensionExecutorHandle) {
-        let submitted = Rc::new(RefCell::new(Vec::new()));
-        (
-            Self {
-                submitted: Rc::clone(&submitted),
-                jobs: BTreeMap::new(),
-                next_id: 1,
-            },
-            SuspensionExecutorHandle { submitted },
-        )
+    pub(crate) fn new() -> Self {
+        Self {
+            jobs: BTreeMap::new(),
+            next_id: 1,
+        }
     }
 
     pub(crate) fn handle(&mut self, event: ExecutorEvent, outbox: &mut Outbox) {
@@ -248,28 +334,19 @@ impl SuspensionExecutor {
                 }
                 self.poll_job(job, &ReadySet::from_sources(Vec::new(), true), outbox);
             }
+            // A parked job reads its value out of the completion itself, so
+            // the wake carries no readiness of its own.
+            ExecutorEvent::Wake { job } => {
+                self.poll_job(job, &ReadySet::default(), outbox);
+            }
         }
     }
 
-    /// Take ownership of everything submitted since the last sync and give each
-    /// new job its first turn.
-    pub(super) fn adopt_submitted(&mut self, outbox: &mut Outbox) {
-        // The borrow ends before any adopted job runs, so a job that submits
-        // another one during adoption does not re-enter this borrow.
-        let submitted = std::mem::take(&mut *self.submitted.borrow_mut());
-        for SubmittedJob { job, sender } in submitted {
-            self.adopt(
-                ExecutorJob::Suspension(job),
-                JobSink::Completion(sender),
-                outbox,
-            );
-        }
-    }
-
-    /// Take on one detached command queue, which the loop owns from here.
+    /// Take on one detached command queue's handle, so its result reaches the
+    /// background-command actor.
     pub(crate) fn adopt_background_queue(
         &mut self,
-        queue: CommandCoroutine,
+        queue: QueuedCommand,
         target: ActorRef<BackgroundCommands>,
         id: u64,
         outbox: &mut Outbox,
@@ -281,17 +358,17 @@ impl SuspensionExecutor {
         );
     }
 
-    /// Take on one job the background-command actor needs resolved before it
-    /// can decide what to run.
-    pub(crate) fn adopt_background_suspension(
+    /// Take on one suspension the background-command actor needs resolved
+    /// before it can decide what to run, and which runs as a task.
+    pub(crate) fn adopt_background_awaiting(
         &mut self,
-        job: SuspensionJob,
+        completion: Completion<CommandSuspensionResult>,
         target: ActorRef<BackgroundCommands>,
         id: u64,
         outbox: &mut Outbox,
     ) {
         self.adopt(
-            ExecutorJob::Suspension(job),
+            ExecutorJob::Awaiting(completion),
             JobSink::Background { target, id },
             outbox,
         );
@@ -316,6 +393,7 @@ impl SuspensionExecutor {
                 task: TaskState::new(job),
                 registrations: Vec::new(),
                 timer: None,
+                wake: None,
                 sink: Some(sink),
             },
         );

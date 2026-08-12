@@ -1,16 +1,19 @@
-//! Demo for the prototype `Future` executor in `hmux::future_rt`.
+//! Demo for the event loop's task executor in `hmux::tasks`.
 //!
-//! Run with `cargo run --example future_rt`. Each scene mirrors a shape from
-//! the daemon: consecutive suspensions on fresh descriptors (the pipelined
-//! wedge), a client task waiting on a command task without any kernel
-//! object, and independent tasks interleaving on one thread.
+//! Run with `cargo run --example tasks`. Each scene mirrors a shape from the
+//! daemon: consecutive suspensions on fresh descriptors (the pipelined wedge), a
+//! client task waiting on a command task without any kernel object, and
+//! independent tasks interleaving on one thread.
+//!
+//! The runtime here is the daemon's own event loop with a `block_on` in front,
+//! so what these scenes show is what `run-shell` and `if-shell` actually do.
 
 use std::io::{self, Read as _};
 use std::os::fd::{AsFd as _, AsRawFd as _, BorrowedFd};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use hmux::future_rt::{oneshot, sleep, AsyncFd, Handle, Interest, Runtime};
+use hmux::tasks::{completion_pair, sleep, AsyncFd, Interest, TaskHandle, TaskRuntime};
 
 fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
     let raw = fd.as_raw_fd();
@@ -24,10 +27,12 @@ fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
     Ok(())
 }
 
-/// The run-shell suspension as an `async fn`: spawn the child, wait for its
-/// output on a fresh descriptor, capture, reap. The equivalent of what takes
-/// `RunningShell` plus a driver as a hand-written state machine.
-async fn run_shell(handle: &Handle, command: &str) -> io::Result<Vec<u8>> {
+/// The `run-shell` suspension, in miniature: spawn the child, wait for its
+/// output on a fresh descriptor, capture, reap.
+///
+/// The daemon's version is `server::command::suspend::run_shell`; this one drops
+/// the flag parsing and the tmux-shaped reporting to leave the waiting visible.
+async fn run_shell(tasks: &TaskHandle, command: &str) -> io::Result<Vec<u8>> {
     let mut child = Command::new("/bin/sh")
         .arg("-c")
         .arg(command)
@@ -37,23 +42,23 @@ async fn run_shell(handle: &Handle, command: &str) -> io::Result<Vec<u8>> {
         .spawn()?;
     let mut stdout = child.stdout.take().expect("piped stdout");
     set_nonblocking(stdout.as_fd())?;
-    let fd = AsyncFd::new(handle, stdout.as_fd(), Interest::READABLE)?;
+    let source = AsyncFd::new(tasks, stdout.as_fd(), Interest::READABLE)?;
     let mut output = Vec::new();
-    'eof: loop {
-        fd.readiness().await;
-        loop {
-            let mut chunk = [0u8; 4096];
-            match stdout.read(&mut chunk) {
-                Ok(0) => break 'eof,
-                Ok(count) => output.extend_from_slice(&chunk[..count]),
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
-                Err(error) => return Err(error),
+    let mut chunk = [0u8; 4096];
+    loop {
+        match stdout.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(count) => output.extend_from_slice(&chunk[..count]),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                source.readiness().await;
             }
+            Err(error) => return Err(error),
         }
     }
-    drop(fd);
-    // EOF means the child closed stdout, so this reap blocks at most
-    // momentarily.
+    drop(source);
+    // End of file means the child closed stdout; it has exited or is exiting,
+    // so this reap blocks at most momentarily. Good enough for a demo — the
+    // daemon backs off on the loop's timer queue instead.
     child.wait()?;
     Ok(output)
 }
@@ -63,14 +68,15 @@ fn text(bytes: &[u8]) -> String {
 }
 
 fn main() -> io::Result<()> {
-    let runtime = Runtime::new()?;
+    let mut runtime = TaskRuntime::new()?;
     let handle = runtime.handle();
     let started = Instant::now();
     let stamp = move || format!("[{:>6.1}ms]", started.elapsed().as_secs_f64() * 1e3);
 
     // Scene 1 — the pipelined-wedge shape: one task runs two suspending
-    // commands back to back. Each suspension registers a brand-new
-    // descriptor; nothing is re-pointed, nothing is versioned.
+    // commands back to back. Each suspension registers a brand-new descriptor
+    // owned by the `AsyncFd` that reads it; nothing is re-pointed, nothing is
+    // versioned.
     println!("== consecutive suspensions, fresh fd each ==");
     let scene = handle.clone();
     let print = stamp.clone();
@@ -81,54 +87,48 @@ fn main() -> io::Result<()> {
         println!("{} second suspension: {:?}", print(), text(&two));
     });
 
-    // Scene 2 — the control-client shape: a "client" task waits on a
-    // "command" task through a oneshot. While only the oneshot wait is
-    // pending, the reactor holds zero registrations: waiting on another task
-    // costs no kernel object.
+    // Scene 2 — the control-client shape: a "client" task waits on a "command"
+    // task through the same completion a suspended command queue uses. Waiting
+    // on another task costs no kernel object at all.
     println!("== client waits on command, no fd ==");
     let scene = handle.clone();
-    let probe = handle.clone();
     let print = stamp.clone();
     let reply = runtime.block_on(async move {
-        let (sender, receiver) = oneshot();
+        let (completion, sender) = completion_pair().expect("completion pair");
         let shell = scene.clone();
         scene.spawn(async move {
             let output = run_shell(&shell, "sleep 0.05; echo done").await;
-            sender.send(output.expect("shell output"));
+            sender.complete(output.expect("shell output"));
         });
-        println!(
-            "{} client parked on oneshot ({} fds registered so far)",
-            print(),
-            probe.registered_fds(),
-        );
-        receiver.await.expect("command task completed")
+        println!("{} client parked on a completion", print());
+        completion.await.expect("command task completed")
     });
     println!("{} client resumed with {:?}", stamp(), text(&reply));
 
-    // Scene 3 — interleaving: three tasks suspended at once on one thread —
-    // two on child stdout, one on the timer wheel. Completion order follows
+    // Scene 3 — interleaving: three tasks suspended at once on one thread — two
+    // on child stdout, one on the loop's timer queue. Completion order follows
     // event order, not spawn order.
     println!("== three tasks interleave ==");
     let scene = handle.clone();
     let print = stamp.clone();
     runtime.block_on(async move {
-        let (slow_sender, slow_receiver) = oneshot();
-        let (fast_sender, fast_receiver) = oneshot();
+        let (slow, slow_sender) = completion_pair().expect("completion pair");
+        let (fast, fast_sender) = completion_pair().expect("completion pair");
         let shell = scene.clone();
         scene.spawn(async move {
             let output = run_shell(&shell, "sleep 0.10; echo slow").await;
-            slow_sender.send(output.expect("slow shell"));
+            slow_sender.complete(output.expect("slow shell"));
         });
         let shell = scene.clone();
         scene.spawn(async move {
             let output = run_shell(&shell, "sleep 0.02; echo fast").await;
-            fast_sender.send(output.expect("fast shell"));
+            fast_sender.complete(output.expect("fast shell"));
         });
         sleep(&scene, Duration::from_millis(50)).await;
         println!("{} timer fired between the two shells", print());
-        let fast = fast_receiver.await.expect("fast task");
+        let fast = fast.await.expect("fast task");
         println!("{} fast shell: {:?}", print(), text(&fast));
-        let slow = slow_receiver.await.expect("slow task");
+        let slow = slow.await.expect("slow task");
         println!("{} slow shell: {:?}", print(), text(&slow));
     });
 

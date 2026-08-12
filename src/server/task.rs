@@ -1,11 +1,22 @@
 //! Runtime-neutral resumable tasks and any-of wait descriptions.
 
 use std::cell::RefCell;
-use std::io::{self, Read, Write};
-use std::os::fd::{AsFd, BorrowedFd};
-use std::os::unix::net::UnixStream;
+use std::future::Future;
+use std::io;
+use std::os::fd::BorrowedFd;
+use std::pin::Pin;
 use std::rc::Rc;
+use std::task::{Context, Poll};
 use std::time::Instant;
+
+/// Called once, by the producer, to tell whoever drives a parked task that its
+/// value has arrived.
+///
+/// The callback belongs to the driver that installed it: it enqueues that
+/// driver's own wake event and returns. Resuming the task inline from here
+/// would make dispatch order depend on which producer happened to finish
+/// first, which is observable behavior.
+pub(crate) type WakeFn = Rc<dyn Fn()>;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct WaitToken(u32);
@@ -65,11 +76,29 @@ impl<'a> FdInterest<'a> {
 pub(crate) struct WaitRequest<'a> {
     sources: Vec<FdInterest<'a>>,
     deadline: Option<Instant>,
+    parked: bool,
 }
 
 impl<'a> WaitRequest<'a> {
     pub(crate) fn new(sources: Vec<FdInterest<'a>>, deadline: Option<Instant>) -> Self {
-        Self { sources, deadline }
+        Self {
+            sources,
+            deadline,
+            parked: false,
+        }
+    }
+
+    /// A task waiting on a value another task produces: no descriptor, no
+    /// deadline, resumed by the [`WakeFn`] its driver installs.
+    ///
+    /// Distinct from an empty [`Self::new`], which describes a task that wants
+    /// its next turn rather than one that is blocked.
+    pub(crate) fn parked() -> Self {
+        Self {
+            sources: Vec::new(),
+            deadline: None,
+            parked: true,
+        }
     }
 
     pub(crate) fn sources(&self) -> &[FdInterest<'a>] {
@@ -78,6 +107,16 @@ impl<'a> WaitRequest<'a> {
 
     pub(crate) fn deadline(&self) -> Option<Instant> {
         self.deadline
+    }
+
+    pub(crate) fn is_parked(&self) -> bool {
+        self.parked
+    }
+
+    /// Whether the task cannot make progress until something else happens —
+    /// either a descriptor it named or the wake it is parked on.
+    pub(crate) fn is_blocking(&self) -> bool {
+        self.parked || !self.sources.is_empty()
     }
 }
 
@@ -88,18 +127,16 @@ pub(crate) struct ReadySet {
 }
 
 impl ReadySet {
-    #[cfg(test)]
-    pub(crate) fn source(token: WaitToken) -> Self {
-        Self {
-            sources: vec![token],
-            timed_out: false,
-        }
-    }
-
+    // Which source woke a job is no longer consulted by any of them: every
+    // remaining job attempts its I/O and reads `WouldBlock` as "not yet". The
+    // detail is still carried because the executor's registrations are keyed by
+    // source, and goes when they do.
+    #[allow(dead_code)]
     pub(crate) fn contains(&self, token: WaitToken) -> bool {
         self.sources.contains(&token)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn timed_out(&self) -> bool {
         self.timed_out
     }
@@ -129,75 +166,140 @@ impl ReadySet {
     }
 }
 
-/// Readable completion descriptor returned by a job the loop owns.
+/// The value a job the loop owns will produce, and the wake that says it has.
 ///
-/// The descriptor is what makes the result pollable; the slot beside it only
-/// carries the value between the two ends, both of which live on the loop.
-pub(crate) struct Completion<T> {
-    reader: UnixStream,
-    result: Rc<RefCell<Option<T>>>,
+/// Both ends live on the loop, so the handoff is a shared slot rather than a
+/// descriptor: the producer stores the value and calls the consumer's
+/// [`WakeFn`]. Nothing here is pollable, which is why waiting on one describes
+/// itself as [`WaitRequest::parked`].
+pub struct Completion<T> {
+    slot: Rc<RefCell<CompletionSlot<T>>>,
 }
 
 /// The producing side of a [`Completion`].
-pub(crate) struct CompletionSender<T> {
-    writer: UnixStream,
-    result: Rc<RefCell<Option<T>>>,
+///
+/// Dropping it without a value closes the completion, which the consumer reads
+/// as the work having stopped without a result.
+pub struct CompletionSender<T> {
+    slot: Rc<RefCell<CompletionSlot<T>>>,
 }
 
-pub(crate) fn completion_pair<T>() -> io::Result<(Completion<T>, CompletionSender<T>)> {
-    let (reader, writer) = UnixStream::pair()?;
-    reader.set_nonblocking(true)?;
-    writer.set_nonblocking(true)?;
-    let result = Rc::new(RefCell::new(None));
+struct CompletionSlot<T> {
+    value: Option<T>,
+    closed: bool,
+    wake: Option<WakeFn>,
+}
+
+/// Fallible for its callers' sake only: nothing here can fail now that the
+/// pair costs no descriptor.
+pub fn completion_pair<T>() -> io::Result<(Completion<T>, CompletionSender<T>)> {
+    let slot = Rc::new(RefCell::new(CompletionSlot {
+        value: None,
+        closed: false,
+        wake: None,
+    }));
     Ok((
         Completion {
-            reader,
-            result: Rc::clone(&result),
+            slot: Rc::clone(&slot),
         },
-        CompletionSender { writer, result },
+        CompletionSender { slot },
     ))
 }
 
 impl<T> CompletionSender<T> {
-    pub(crate) fn complete(mut self, value: T) {
-        *self.result.borrow_mut() = Some(value);
-        let _ = self.writer.write_all(&[1]);
+    pub fn complete(self, value: T) {
+        let wake = {
+            let mut slot = self.slot.borrow_mut();
+            slot.value = Some(value);
+            slot.wake.take()
+        };
+        // Outside the borrow: the wake reaches a driver that may look at this
+        // very completion before returning.
+        if let Some(wake) = wake {
+            wake();
+        }
+    }
+}
+
+impl<T> Drop for CompletionSender<T> {
+    fn drop(&mut self) {
+        let wake = {
+            let mut slot = self.slot.borrow_mut();
+            if slot.value.is_some() {
+                return;
+            }
+            slot.closed = true;
+            slot.wake.take()
+        };
+        if let Some(wake) = wake {
+            wake();
+        }
     }
 }
 
 impl<T> Completion<T> {
-    const COMPLETED: WaitToken = WaitToken::new(0);
+    /// Install the wake to call when the value arrives.
+    ///
+    /// A value that arrived before the driver got here fires the wake at once,
+    /// so a completion can never be installed onto too late. That is what lets
+    /// a driver (re-)install on whatever schedule suits it instead of having to
+    /// interleave with the producer.
+    pub(crate) fn set_wake(&mut self, wake: &WakeFn) {
+        let mut slot = self.slot.borrow_mut();
+        if slot.value.is_some() || slot.closed {
+            drop(slot);
+            wake();
+            return;
+        }
+        slot.wake = Some(Rc::clone(wake));
+    }
+}
+
+impl<T> Future for Completion<T> {
+    type Output = io::Result<T>;
+
+    /// Awaiting a completion is the same wait a [`Coroutine`] describes as
+    /// parked, with the task's own waker standing in for the driver's.
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut slot = self.slot.borrow_mut();
+        if let Some(value) = slot.value.take() {
+            return Poll::Ready(Ok(value));
+        }
+        if slot.closed {
+            return Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "task worker stopped without a result",
+            )));
+        }
+        let waker = context.local_waker().clone();
+        slot.wake = Some(Rc::new(move || waker.wake_by_ref()));
+        Poll::Pending
+    }
 }
 
 impl<T> Coroutine for Completion<T> {
     type Output = io::Result<T>;
 
     fn wait(&self) -> WaitRequest<'_> {
-        WaitRequest::new(
-            vec![FdInterest::readable(Self::COMPLETED, self.reader.as_fd())],
-            None,
-        )
+        WaitRequest::parked()
     }
 
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        if !ready.contains(Self::COMPLETED) {
-            return TaskPoll::Pending;
+    fn resume(&mut self, _ready: &ReadySet) -> TaskPoll<Self::Output> {
+        let mut slot = self.slot.borrow_mut();
+        if let Some(value) = slot.value.take() {
+            return TaskPoll::Ready(Ok(value));
         }
-        let mut byte = [0u8; 1];
-        match self.reader.read(&mut byte) {
-            Ok(0) => TaskPoll::Ready(Err(io::Error::new(
+        if slot.closed {
+            return TaskPoll::Ready(Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 "task worker stopped without a result",
-            ))),
-            Ok(_) => TaskPoll::Ready(
-                self.result
-                    .borrow_mut()
-                    .take()
-                    .ok_or_else(|| io::Error::other("task completed without a result")),
-            ),
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => TaskPoll::Pending,
-            Err(error) => TaskPoll::Ready(Err(error)),
+            )));
         }
+        TaskPoll::Pending
+    }
+
+    fn set_wake(&mut self, wake: &WakeFn) {
+        Completion::set_wake(self, wake);
     }
 }
 
@@ -221,6 +323,14 @@ pub(crate) trait Coroutine {
 
     fn wait(&self) -> WaitRequest<'_>;
     fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output>;
+
+    /// Install the wake for whatever this task is parked on, if anything.
+    ///
+    /// Only a task that can report [`WaitRequest::is_parked`] has to implement
+    /// this; a task that waits on descriptors is resumed by its driver's
+    /// readiness bookkeeping instead. Installing is idempotent, so a driver may
+    /// call it on every turn rather than tracking which suspension is current.
+    fn set_wake(&mut self, _wake: &WakeFn) {}
 }
 
 pub(crate) struct TaskState<T: Coroutine> {
@@ -239,6 +349,14 @@ impl<T: Coroutine> TaskState<T> {
 
     pub(crate) fn task(&self) -> &T {
         &self.task
+    }
+
+    /// Install the wake for a task that is still running. A finished task has
+    /// nothing left to be woken for.
+    pub(crate) fn set_wake(&mut self, wake: &WakeFn) {
+        if self.output.is_none() {
+            self.task.set_wake(wake);
+        }
     }
 
     pub(crate) fn poll(&mut self, ready: &ReadySet) -> bool {
@@ -294,10 +412,11 @@ impl<T: Coroutine> TaskState<T> {
 #[cfg(test)]
 mod tests {
     use super::{
-        completion_pair, Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken,
+        completion_pair, Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken, WakeFn,
     };
     use std::os::fd::AsFd;
     use std::os::unix::net::UnixStream;
+    use std::rc::Rc;
     use std::time::{Duration, Instant};
 
     #[test]
@@ -330,8 +449,9 @@ mod tests {
     }
 
     #[test]
-    fn completion_is_nonblocking_until_its_sender_finishes() {
+    fn completion_is_pending_until_its_sender_finishes() {
         let (mut completion, sender) = completion_pair().expect("completion pair");
+        assert!(completion.wait().is_parked());
         assert!(matches!(
             completion.resume(&ReadySet::default()),
             TaskPoll::Pending
@@ -339,8 +459,51 @@ mod tests {
 
         sender.complete(42);
         assert!(matches!(
-            completion.resume(&ReadySet::source(super::Completion::<i32>::COMPLETED)),
+            completion.resume(&ReadySet::default()),
             TaskPoll::Ready(Ok(42))
+        ));
+    }
+
+    #[test]
+    fn a_dropped_sender_reports_work_that_stopped() {
+        let (mut completion, sender) = completion_pair::<i32>().expect("completion pair");
+        drop(sender);
+        let TaskPoll::Ready(Err(error)) = completion.resume(&ReadySet::default()) else {
+            panic!("a closed completion resolves");
+        };
+        assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn a_wake_installed_after_the_value_fires_at_once() {
+        // The install-order race the fd-backed completion could not have: a
+        // driver that reaches the completion only after its producer finished
+        // still gets told, so a late install can never wedge the waiter.
+        let (mut completion, sender) = completion_pair().expect("completion pair");
+        let woken = Rc::new(std::cell::Cell::new(0));
+        let counter = Rc::clone(&woken);
+        let wake: WakeFn = Rc::new(move || counter.set(counter.get() + 1));
+
+        sender.complete(7);
+        assert_eq!(woken.get(), 0, "no wake is installed yet");
+        completion.set_wake(&wake);
+        assert_eq!(woken.get(), 1);
+    }
+
+    #[test]
+    fn a_wake_installed_before_the_value_fires_on_completion() {
+        let (mut completion, sender) = completion_pair().expect("completion pair");
+        let woken = Rc::new(std::cell::Cell::new(0));
+        let counter = Rc::clone(&woken);
+        let wake: WakeFn = Rc::new(move || counter.set(counter.get() + 1));
+
+        completion.set_wake(&wake);
+        assert_eq!(woken.get(), 0);
+        sender.complete(7);
+        assert_eq!(woken.get(), 1);
+        assert!(matches!(
+            completion.resume(&ReadySet::default()),
+            TaskPoll::Ready(Ok(7))
         ));
     }
 }

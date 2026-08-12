@@ -14,7 +14,7 @@ pub(crate) struct CommandTransaction {
 
 pub(super) struct ActiveResumableCommand {
     pub(super) transaction: CommandTransaction,
-    pub(super) task: TaskState<command::CommandCoroutine>,
+    pub(super) task: TaskState<command::QueuedCommand>,
 }
 
 impl CommandTransaction {

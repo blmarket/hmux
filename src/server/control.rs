@@ -20,19 +20,21 @@ use super::state::{
     ControlStateSnapshot, ServerState, SharedState,
 };
 use super::status;
-use super::task::{ReadySet, TaskState};
+use super::task::{ReadySet, TaskState, WakeFn};
 
 const CONTROL_BUFFER_HIGH: usize = 8192;
 const CLIENT_CONTROLCONTROL: i64 = 0x4000;
 
 /// One readiness source owned by an event-loop control client.
 ///
-/// `Command` carries the suspension generation that produced its descriptor.
-/// A suspended command's completion descriptor is created per suspension, so
-/// the generation is what makes the readiness source of one suspension a
-/// distinct key from the next: the driver keys registrations by source, and a
-/// key that repeated across suspensions would leave the loop polling the
-/// finished command's closed descriptor.
+/// `Command` carries the generation of the suspension it stands for, which
+/// makes one suspension's source a distinct key from the next's.
+///
+/// The generation dates from when the source was a descriptor: a repeated key
+/// left the loop polling the finished command's closed fd. A suspension is now
+/// waited on through a wake that the client routes to whatever it is parked on,
+/// so the distinct key is no longer what keeps consecutive suspensions apart —
+/// only what keeps a stale wake from being credited to a newer one.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum EventControlSource {
     Input,
@@ -327,6 +329,18 @@ impl EventControlClient {
         };
         // Every descriptor is owned by a field in `self` for the returned borrow.
         Some(unsafe { BorrowedFd::borrow_raw(fd) })
+    }
+
+    /// Install the wake for the suspension this client's command queue is
+    /// parked on, if `generation` still names it.
+    pub(crate) fn set_command_wake(&mut self, generation: u64, wake: &WakeFn) -> bool {
+        match &mut self.command_state {
+            ControlCommandState::Waiting(active) if generation == self.command_generation => {
+                active.task.set_wake(wake);
+                true
+            }
+            _ => false,
+        }
     }
 
     pub(crate) fn source_is_writable(source: EventControlSource) -> bool {
@@ -929,34 +943,35 @@ impl EventControlClient {
         self.command_queue
             .wait(ticket)
             .map_err(|_| io::Error::other("stale control queue wait"))?;
-        let queue =
-            match command::start_resumable_command(&argv, &self.state, &agents, &self.context) {
-                Ok(queue) => queue,
-                Err(result) => return self.finish_control_command(ticket, id, argv, result),
-            };
+        let queued = match command::start_resumable_command(
+            &argv,
+            &self.state,
+            &agents,
+            &self.context,
+        )
+        .and_then(|queue| {
+            self.command_runtime
+                .spawn_queue(queue, Rc::clone(&self.state), 64)
+                .map_err(|error| command::CommandResult::err(format!("{error}\n")))
+        }) {
+            Ok(queued) => queued,
+            Err(result) => return self.finish_control_command(ticket, id, argv, result),
+        };
         self.command_state = ControlCommandState::Running(ActiveControlCommand {
             ticket,
             id,
             argv,
-            task: TaskState::new(command::CommandCoroutine::new(
-                queue,
-                Rc::clone(&self.state),
-                Rc::clone(&self.command_runtime),
-                64,
-            )),
+            task: TaskState::new(queued),
         });
         self.drive_active_command()
     }
 
     fn drive_active_command(&mut self) -> io::Result<()> {
-        let (complete, has_source) = match &mut self.command_state {
+        let (complete, is_blocking) = match &mut self.command_state {
             ControlCommandState::Running(active) => {
                 let complete = active.task.poll(&ReadySet::default());
-                let has_source = active
-                    .task
-                    .wait()
-                    .is_some_and(|wait| !wait.sources().is_empty());
-                (complete, has_source)
+                let is_blocking = active.task.wait().is_some_and(|wait| wait.is_blocking());
+                (complete, is_blocking)
             }
             _ => return Ok(()),
         };
@@ -970,14 +985,13 @@ impl EventControlClient {
                 .take_output()
                 .ok_or_else(|| io::Error::other("completed control command has no result"))??;
             self.finish_control_command(active.ticket, active.id, active.argv, result)
-        } else if has_source {
+        } else if is_blocking {
             let state = std::mem::replace(&mut self.command_state, ControlCommandState::Idle);
             let ControlCommandState::Running(active) = state else {
                 return Ok(());
             };
-            // Each suspension waits on its own completion descriptor, so this
-            // wait is a new readiness source even when the same command
-            // suspends again.
+            // Each suspension parks on its own completion, so this wait is a
+            // new source even when the same command suspends again.
             self.command_generation = self.command_generation.wrapping_add(1);
             self.command_state = ControlCommandState::Waiting(active);
             Ok(())
@@ -1186,7 +1200,7 @@ struct ActiveControlCommand {
     ticket: QueueTicket,
     id: ControlCommandId,
     argv: Vec<String>,
-    task: TaskState<command::CommandCoroutine>,
+    task: TaskState<command::QueuedCommand>,
 }
 
 fn control_command_has_flag(args: &[String], flag: char) -> bool {
@@ -2088,7 +2102,7 @@ mod tests {
             hub.clone(),
             &command::ClientContext::default(),
             Rc::new(crate::event_loop::suspend::EventCommandRuntime::new(
-                event_loop.executor_handle(),
+                event_loop.task_handle(),
             )),
         )?;
 

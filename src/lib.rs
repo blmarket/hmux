@@ -15,7 +15,7 @@
 //! The pane tokenizer and the terminal emulation live in the `hmux-vt` crate;
 //! the daemon consumes them only through that crate's public surface.
 
-// `future_rt` parks non-`Send` wakers on a single-threaded run queue.
+// The loop's task set parks non-`Send` wakers on the event queue.
 #![feature(local_waker)]
 
 pub mod error;
@@ -29,7 +29,18 @@ pub mod serve;
 pub(crate) mod server;
 pub mod tmux;
 
+/// The event loop's `Future` executor.
+///
+/// Exposed for the demo in `examples/tasks.rs`: the daemon itself reaches these
+/// through the loop, not through this module.
+pub mod tasks {
+    pub use crate::event_loop::reactor::{Interest, Readiness};
+    pub use crate::event_loop::tasks::{
+        join, sleep, sleep_until, AsyncFd, Join, ReadinessFuture, Sleep, TaskHandle, TaskRuntime,
+    };
+    pub use crate::server::task::{completion_pair, Completion, CompletionSender};
+}
+
 pub use error::{Error, Result};
-pub use event_loop::future_rt;
 
 pub(crate) use hmux_vt::TMUX_VERSION;

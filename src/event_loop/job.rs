@@ -9,15 +9,16 @@ use std::rc::Rc;
 
 use crate::integration::status::StatusHub;
 use crate::server::command::{
-    self, BackgroundCommand, BackgroundCommandRequest, ClientContext, PendingBackground,
+    self, BackgroundCommand, BackgroundCommandRequest, ClientContext, CommandRuntime as _,
+    PendingBackground,
 };
 use crate::server::state::SharedState;
+use crate::server::task::completion_pair;
 
 use super::actor::ActorRef;
 use super::driver::Outbox;
-use super::suspend::{
-    EventCommandRuntime, ExecutorJobOutput, SuspensionExecutor, SuspensionExecutorHandle,
-};
+use super::suspend::{EventCommandRuntime, ExecutorJobOutput, SuspensionExecutor};
+use super::tasks::TaskHandle;
 
 const COMMAND_QUEUE_BUDGET: usize = 64;
 
@@ -32,6 +33,7 @@ pub(crate) enum JobEvent {
 
 pub(crate) struct BackgroundCommands {
     state: SharedState,
+    tasks: TaskHandle,
     hub: StatusHub,
     runtime: Rc<EventCommandRuntime>,
     executor: ActorRef<SuspensionExecutor>,
@@ -54,12 +56,13 @@ impl BackgroundCommands {
         state: SharedState,
         hub: StatusHub,
         executor: ActorRef<SuspensionExecutor>,
-        executor_handle: SuspensionExecutorHandle,
+        tasks: TaskHandle,
     ) -> Self {
         Self {
             state,
             hub,
-            runtime: Rc::new(EventCommandRuntime::new(executor_handle)),
+            runtime: Rc::new(EventCommandRuntime::new(tasks.clone())),
+            tasks,
             executor,
             next_id: 1,
             jobs: BTreeMap::new(),
@@ -122,11 +125,16 @@ impl BackgroundCommands {
                 else_command,
                 context,
             } => {
+                let Ok((completion, sender)) = completion_pair() else {
+                    return;
+                };
                 let id = self.allocate_id();
-                let job = command::suspend::SuspensionJob::if_shell(
-                    &condition,
-                    &self.job_context(&context),
-                );
+                let job_context = self.job_context(&context);
+                let tasks = self.tasks.clone();
+                self.tasks.spawn(async move {
+                    let matched = command::suspend::if_shell(&tasks, condition, job_context).await;
+                    sender.complete(command::CommandSuspensionResult::IfShell(matched));
+                });
                 self.jobs.insert(
                     id,
                     JobState::ResolvingCondition {
@@ -136,7 +144,7 @@ impl BackgroundCommands {
                     },
                 );
                 self.executor.with_mut(|executor| {
-                    executor.adopt_background_suspension(job, target.clone(), id, outbox);
+                    executor.adopt_background_awaiting(completion, target.clone(), id, outbox);
                 });
             }
         }
@@ -173,30 +181,37 @@ impl BackgroundCommands {
                 command::start_resumable_command(&args, &self.state, &agents, &context)
             }
             BackgroundCommand::RunShell { args, jobs } => {
+                let Ok((completion, sender)) = completion_pair() else {
+                    return;
+                };
                 let id = self.allocate_id();
-                let job = command::suspend::SuspensionJob::background_shell(
-                    &args,
-                    &self.job_context(&context),
-                    jobs,
-                );
+                let job_context = self.job_context(&context);
+                let tasks = self.tasks.clone();
+                self.tasks.spawn(async move {
+                    let output =
+                        command::suspend::background_shell(&tasks, args, job_context, jobs).await;
+                    sender.complete(command::CommandSuspensionResult::RunShell(output));
+                });
                 self.jobs.insert(id, JobState::Running);
                 self.executor.with_mut(|executor| {
-                    executor.adopt_background_suspension(job, target.clone(), id, outbox);
+                    executor.adopt_background_awaiting(completion, target.clone(), id, outbox);
                 });
                 return;
             }
         };
         let Ok(queue) = queue else { return };
+        // A detached queue has no client polling it, so the loop owns the whole
+        // thing: the executor holds only the completion its task reports to.
+        let Ok(queued) = self
+            .runtime
+            .spawn_queue(queue, Rc::clone(&self.state), COMMAND_QUEUE_BUDGET)
+        else {
+            return;
+        };
         let id = self.allocate_id();
-        let coroutine = command::CommandCoroutine::new(
-            queue,
-            Rc::clone(&self.state),
-            Rc::clone(&self.runtime) as Rc<dyn command::CommandRuntime>,
-            COMMAND_QUEUE_BUDGET,
-        );
         self.jobs.insert(id, JobState::Running);
         self.executor.with_mut(|executor| {
-            executor.adopt_background_queue(coroutine, target.clone(), id, outbox);
+            executor.adopt_background_queue(queued, target.clone(), id, outbox);
         });
     }
 

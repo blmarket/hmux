@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use crate::server::command::{self, CommandResult};
-use crate::server::task::{ReadySet, TaskState};
+use crate::server::task::{ReadySet, TaskState, WaitRequest};
 use crate::tmux::message::{Frame, Message};
 
 use super::super::actor::ActorRef;
@@ -51,7 +51,7 @@ impl ProtocolClient {
     }
 
     pub(super) fn drive_resumable_command(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
-        let (complete, has_source, deadline) = {
+        let (complete, is_blocking, deadline) = {
             let ProtocolState::Command(command) = &mut self.protocol_state else {
                 return;
             };
@@ -62,7 +62,7 @@ impl ProtocolClient {
             let wait = active.task.wait();
             (
                 complete,
-                wait.as_ref().is_some_and(|wait| !wait.sources().is_empty()),
+                wait.as_ref().is_some_and(WaitRequest::is_blocking),
                 wait.and_then(|wait| wait.deadline()),
             )
         };
@@ -95,7 +95,7 @@ impl ProtocolClient {
             return;
         }
 
-        if !has_source {
+        if !is_blocking {
             outbox.enqueue_protocol(target.clone(), ProtocolEvent::CommandQueueContinue);
             return;
         }
@@ -179,20 +179,20 @@ impl ProtocolClient {
                 context,
             } => {
                 let agents = self.hub.snapshot().panes;
-                match command::start_resumable_command(&args, &self.state, &agents, &context) {
-                    Ok(queue) => {
+                match command::start_resumable_command(&args, &self.state, &agents, &context)
+                    .and_then(|queue| {
+                        self.command_runtime
+                            .spawn_queue(queue, Rc::clone(&self.state), COMMAND_QUEUE_BUDGET)
+                            .map_err(|error| CommandResult::err(format!("{error}\n")))
+                    }) {
+                    Ok(queued) => {
                         let ProtocolState::Command(command) = &mut self.protocol_state else {
                             return;
                         };
                         command.operation =
                             CommandOperation::AwaitingQueue(ActiveResumableCommand {
                                 transaction,
-                                task: TaskState::new(command::CommandCoroutine::new(
-                                    queue,
-                                    Rc::clone(&self.state),
-                                    Rc::clone(&self.command_runtime),
-                                    COMMAND_QUEUE_BUDGET,
-                                )),
+                                task: TaskState::new(queued),
                             });
                         self.drive_resumable_command(target, outbox);
                     }

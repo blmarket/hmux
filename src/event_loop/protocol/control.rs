@@ -97,11 +97,24 @@ impl ProtocolClient {
             ),
             _ => return,
         };
+        // A command source holds a wake rather than a token, but it is still
+        // something this client has taken out and has to give back: without it
+        // here, the source is never disabled and the client accumulates one
+        // stale entry per suspension it goes through.
         let registered = self
             .registrations
             .control
             .keys()
             .copied()
+            .chain(
+                self.registrations
+                    .command_wakes
+                    .iter()
+                    .filter_map(|side| match side {
+                        ProtocolIoSide::Control(source) => Some(*source),
+                        _ => None,
+                    }),
+            )
             .collect::<BTreeSet<_>>();
         for source in registered.union(&desired).copied() {
             outbox.set_protocol_interest(

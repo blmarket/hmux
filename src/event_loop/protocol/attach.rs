@@ -18,7 +18,7 @@ use crate::server::attach::{
 };
 use crate::server::command::{self, ClientContext};
 use crate::server::state::SharedState;
-use crate::server::task::{ReadySet, TaskState};
+use crate::server::task::{ReadySet, TaskState, WakeFn};
 use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::Frame;
 use crate::tmux::traits::NonblockingFrameReader;
@@ -33,13 +33,15 @@ use super::client::{
 
 const ATTACH_QUEUE_LIMIT: usize = MAX_IMSGSIZE * 64;
 const IMMEDIATE_TURN_BUDGET: usize = 64;
+const COMMAND_QUEUE_BUDGET: usize = 64;
 
-/// One native attach descriptor watched by the central reactor.
+/// One source an attached client waits on, watched by the central reactor.
 ///
-/// Both variants carry a generation, for the same reason: the reactor keys a
-/// registration by its source, so a source whose descriptor is replaced has to
-/// become a new key. `Command`'s descriptor belongs to the in-flight
-/// suspension and is created afresh for each one.
+/// `Runtime` carries a generation because the reactor keys a registration by
+/// its source, so a source whose descriptor is replaced has to become a new
+/// key. `Command` has no descriptor — a suspension is waited on through a wake
+/// — and its generation now only keeps a stale wake from being credited to a
+/// newer suspension.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum EventAttachSource {
     Runtime {
@@ -198,7 +200,7 @@ pub(super) struct EventAttachClient {
 }
 
 struct ActiveAttachCommand {
-    task: TaskState<command::CommandCoroutine>,
+    task: TaskState<command::QueuedCommand>,
     continuation: AttachCommandContinuation,
     allows_attach_io: bool,
 }
@@ -261,6 +263,18 @@ impl EventAttachClient {
                 _ => None,
             },
             EventAttachSource::Runtime { .. } => self.runtime_sources.get(&source).map(AsFd::as_fd),
+        }
+    }
+
+    /// Install the wake for the suspension this client's command queue is
+    /// parked on, if `generation` still names it.
+    pub(super) fn set_command_wake(&mut self, generation: u64, wake: &WakeFn) -> bool {
+        match &mut self.phase {
+            AttachPhase::Waiting(active) if generation == self.command_generation => {
+                active.task.set_wake(wake);
+                true
+            }
+            _ => false,
         }
     }
 
@@ -480,15 +494,15 @@ impl EventAttachClient {
                 )
             }
         };
+        let queue = queue.and_then(|queue| {
+            self.command_runtime
+                .spawn_queue(queue, Rc::clone(&self.state), COMMAND_QUEUE_BUDGET)
+                .map_err(|error| command::CommandResult::err(format!("{error}\n")))
+        });
         match queue {
-            Ok(queue) => {
+            Ok(queued) => {
                 self.phase = AttachPhase::Running(ActiveAttachCommand {
-                    task: TaskState::new(command::CommandCoroutine::new(
-                        queue,
-                        Rc::clone(&self.state),
-                        Rc::clone(&self.command_runtime),
-                        64,
-                    )),
+                    task: TaskState::new(queued),
                     continuation: request.continuation,
                     allows_attach_io: false,
                 });
@@ -502,15 +516,15 @@ impl EventAttachClient {
     }
 
     fn drive_active_command(&mut self) -> io::Result<()> {
-        let (complete, has_source, allows_attach_io) = match &mut self.phase {
+        let (complete, is_blocking, allows_attach_io) = match &mut self.phase {
             AttachPhase::Running(active) => {
                 let complete = active.task.poll(&ReadySet::default());
-                let has_source = active
+                let is_blocking = active
                     .task
                     .wait()
-                    .is_some_and(|wait| !wait.sources().is_empty());
+                    .is_some_and(|wait| wait.is_blocking());
                 let allows_attach_io = active.task.task().allows_attach_io();
-                (complete, has_source, allows_attach_io)
+                (complete, is_blocking, allows_attach_io)
             }
             _ => return Ok(()),
         };
@@ -529,16 +543,16 @@ impl EventAttachClient {
             self.session
                 .complete_command(active.continuation, result, &self.state);
             self.drive_session(AttachWaitReady::default())?;
-        } else if has_source {
+        } else if is_blocking {
             let phase = std::mem::replace(&mut self.phase, AttachPhase::Finished);
             let AttachPhase::Running(mut active) = phase else {
                 return Ok(());
             };
             active.allows_attach_io = allows_attach_io;
-            // Each suspension waits on a completion descriptor of its own, so
-            // this wait is a new readiness source even when the same command
-            // suspends again — and a burst of queued commands can finish one
-            // and suspend the next without ever leaving this turn.
+            // Each suspension parks on a completion of its own, so this wait is
+            // a new source even when the same command suspends again — and a
+            // burst of queued commands can finish one and suspend the next
+            // without ever leaving this turn.
             self.command_generation = self.command_generation.wrapping_add(1);
             self.phase = AttachPhase::Waiting(active);
         } else {
@@ -756,11 +770,24 @@ impl ProtocolClient {
             self.schedule_read_continuation(target, outbox);
         }
 
+        // A command source holds a wake rather than a token, but it is still
+        // something this client has taken out and has to give back: without it
+        // here, the source is never disabled and the client accumulates one
+        // stale entry per suspension it goes through.
         let registered = self
             .registrations
             .attach
             .keys()
             .copied()
+            .chain(
+                self.registrations
+                    .command_wakes
+                    .iter()
+                    .filter_map(|side| match side {
+                        ProtocolIoSide::Attach(source) => Some(*source),
+                        _ => None,
+                    }),
+            )
             .collect::<BTreeSet<_>>();
         for source in registered.union(&desired).copied() {
             outbox.set_protocol_interest(

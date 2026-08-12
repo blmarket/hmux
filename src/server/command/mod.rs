@@ -33,7 +33,7 @@ use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::integration::status::PaneAgents;
 use crate::observability::v1::PaneId;
@@ -51,7 +51,9 @@ use super::state::{
     Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
 };
 use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
-use super::task::{Completion, Coroutine, ReadySet, TaskPoll, TaskState, WaitRequest};
+use super::task::{Completion, Coroutine, ReadySet, TaskPoll, WaitRequest, WakeFn};
+use crate::event_loop::tasks::yield_now;
+use std::cell::Cell;
 use hmux_vt::{CaptureExtent, CellWidth, Grid, GridRow};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
@@ -941,127 +943,129 @@ impl SourceFileRead {
 
 /// Runtime operation used only for work that cannot be polled directly.
 ///
-/// Implementations must return promptly. The returned completion descriptor
-/// becomes readable once the runtime has resolved the suspension.
+/// Implementations must return promptly. The returned completion carries the
+/// value once the runtime has resolved the suspension, and wakes whoever
+/// installed a wake on it.
 pub(crate) trait CommandRuntime {
     fn submit(
         &self,
         suspension: CommandSuspension,
     ) -> io::Result<Completion<CommandSuspensionResult>>;
-}
 
-/// Runtime-facing state for a command suspension.
-pub(crate) struct CommandTaskState(TaskState<Completion<CommandSuspensionResult>>);
-
-impl CommandTaskState {
-    pub(crate) fn start(
-        suspension: CommandSuspension,
-        runtime: &dyn CommandRuntime,
-    ) -> io::Result<Self> {
-        Ok(Self(TaskState::new(runtime.submit(suspension)?)))
-    }
-
-    fn wait(&self) -> WaitRequest<'_> {
-        self.0
-            .wait()
-            .expect("completed command task must not remain registered")
-    }
-
-    fn is_complete(&mut self) -> bool {
-        self.0.poll(&ReadySet::default())
-    }
-
-    fn poll(&mut self, ready: &ReadySet) -> bool {
-        self.0.poll(ready)
-    }
-
-    fn take_ready_result(&mut self) -> io::Result<CommandSuspensionResult> {
-        self.0
-            .take_output()
-            .ok_or_else(|| io::Error::other("command task has not completed"))?
-    }
-}
-
-/// A complete command queue represented as one runtime-neutral coroutine.
-pub(crate) struct CommandCoroutine {
-    queue: ResumableCommandQueue,
-    state: SharedState,
-    runtime: Rc<dyn CommandRuntime>,
-    pending: Option<CommandTaskState>,
-    pending_allows_attach_io: bool,
-    budget: usize,
-}
-
-impl CommandCoroutine {
-    pub(crate) fn new(
+    /// Run a whole command queue as work of the runtime's own, reporting
+    /// through the handle the caller polls.
+    fn spawn_queue(
+        &self,
         queue: ResumableCommandQueue,
         state: SharedState,
-        runtime: Rc<dyn CommandRuntime>,
         budget: usize,
-    ) -> Self {
-        Self {
-            queue,
-            state,
-            runtime,
-            pending: None,
-            pending_allows_attach_io: false,
-            budget,
+    ) -> io::Result<QueuedCommand>;
+}
+
+/// What a queue's owner can see while the queue is parked.
+///
+/// A running task is opaque to the actor that started it, but an attached
+/// client has to know one thing about the suspension its queue is on: whether
+/// answering it is the client's own job. The queue publishes that here, and a
+/// change fires the owner's wake so it looks again — a `command-prompt -w`
+/// whose client had stopped reading input would never be answered.
+#[derive(Default)]
+pub(crate) struct QueueStatus {
+    allows_attach_io: Cell<bool>,
+    wake: RefCell<Option<WakeFn>>,
+}
+
+impl QueueStatus {
+    pub(crate) fn allows_attach_io(&self) -> bool {
+        self.allows_attach_io.get()
+    }
+
+    fn set_allows_attach_io(&self, allows: bool) {
+        if self.allows_attach_io.replace(allows) == allows {
+            return;
         }
+        let wake = self.wake.borrow_mut().take();
+        if let Some(wake) = wake {
+            wake();
+        }
+    }
+
+    fn set_wake(&self, wake: &WakeFn) {
+        *self.wake.borrow_mut() = Some(Rc::clone(wake));
+    }
+}
+
+/// One command queue running as a task, from its owner's side.
+///
+/// The owner polls this exactly as it polled the queue itself: it reports the
+/// same output, and it is parked until the queue produces one.
+pub(crate) struct QueuedCommand {
+    completion: Completion<io::Result<CommandResult>>,
+    status: Rc<QueueStatus>,
+}
+
+impl QueuedCommand {
+    pub(crate) fn new(
+        completion: Completion<io::Result<CommandResult>>,
+        status: Rc<QueueStatus>,
+    ) -> Self {
+        Self { completion, status }
     }
 
     pub(crate) fn allows_attach_io(&self) -> bool {
-        self.pending.is_some() && self.pending_allows_attach_io
+        self.status.allows_attach_io()
     }
 }
 
-impl Coroutine for CommandCoroutine {
+impl Coroutine for QueuedCommand {
     type Output = io::Result<CommandResult>;
 
     fn wait(&self) -> WaitRequest<'_> {
-        match &self.pending {
-            Some(pending) => pending.wait(),
-            None => WaitRequest::new(Vec::new(), Some(Instant::now())),
-        }
+        WaitRequest::parked()
     }
 
     fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        if let Some(pending) = self.pending.as_mut() {
-            if !pending.poll(ready) {
-                return TaskPoll::Pending;
-            }
-            let result = match pending.take_ready_result() {
-                Ok(result) => result,
-                Err(error) => return TaskPoll::Ready(Err(error)),
-            };
-            self.pending = None;
-            self.pending_allows_attach_io = false;
-            self.queue.resume(result, &self.state);
-        }
+        // The outer error is the task disappearing; the inner one is the
+        // queue's own. Both read the same way to the owner.
+        self.completion
+            .resume(ready)
+            .map(|result| result.and_then(|result| result))
+    }
 
-        loop {
-            match self.queue.drive(&self.state, self.budget) {
-                ResumableCommandTurn::Pending => return TaskPoll::Pending,
-                ResumableCommandTurn::Suspended(suspension) => {
-                    let allows_attach_io = suspension.allows_attach_io();
-                    let mut pending =
-                        match CommandTaskState::start(suspension, self.runtime.as_ref()) {
-                            Ok(pending) => pending,
-                            Err(error) => return TaskPoll::Ready(Err(error)),
-                        };
-                    if !pending.is_complete() {
-                        self.pending = Some(pending);
-                        self.pending_allows_attach_io = allows_attach_io;
-                        return TaskPoll::Pending;
-                    }
-                    let result = match pending.take_ready_result() {
-                        Ok(result) => result,
-                        Err(error) => return TaskPoll::Ready(Err(error)),
-                    };
-                    self.queue.resume(result, &self.state);
-                }
-                ResumableCommandTurn::Complete(result) => {
-                    return TaskPoll::Ready(Ok(result));
-                }
+    /// Both halves take the wake: the value arriving and the parked suspension
+    /// changing are each reasons for the owner to look again.
+    fn set_wake(&mut self, wake: &WakeFn) {
+        self.completion.set_wake(wake);
+        self.status.set_wake(wake);
+    }
+}
+
+/// Run one command queue to completion, suspending as its commands need to.
+///
+/// This is [`ResumableCommandQueue::drive`] with the waiting written out: what
+/// took a `CommandCoroutine` plus a `CommandTaskState` to express as states is
+/// the shape of the loop below.
+pub(crate) async fn run_command_queue(
+    mut queue: ResumableCommandQueue,
+    state: SharedState,
+    runtime: Rc<dyn CommandRuntime>,
+    budget: usize,
+    status: Rc<QueueStatus>,
+) -> io::Result<CommandResult> {
+    loop {
+        // `drive` borrows the state, and returns before anything is awaited.
+        match queue.drive(&state, budget) {
+            ResumableCommandTurn::Complete(result) => return Ok(result),
+            // The queue spent its budget and wants another turn, which it takes
+            // behind whatever else the loop already has queued.
+            ResumableCommandTurn::Pending => yield_now().await,
+            ResumableCommandTurn::Suspended(suspension) => {
+                let allows_attach_io = suspension.allows_attach_io();
+                let completion = runtime.submit(suspension)?;
+                status.set_allows_attach_io(allows_attach_io);
+                let result = completion.await;
+                status.set_allows_attach_io(false);
+                queue.resume(result?, &state);
             }
         }
     }
@@ -8587,9 +8591,9 @@ impl RunShellCompletion {
             return;
         };
         if state.append_view_output(&target, &output).is_err()
-            && target != suspend::BackgroundShellJob::VIEW_FALLBACK
+            && target != suspend::VIEW_FALLBACK
         {
-            let _ = state.append_view_output(suspend::BackgroundShellJob::VIEW_FALLBACK, &output);
+            let _ = state.append_view_output(suspend::VIEW_FALLBACK, &output);
         }
     }
 }

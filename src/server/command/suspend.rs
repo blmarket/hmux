@@ -1,12 +1,13 @@
-//! Runtime-neutral coroutines for the command suspensions the loop can drive.
+//! The command suspensions the loop resolves.
 //!
 //! `run-shell` and `if-shell` both run `sh -c` and need the child's output and
-//! exit status before the command queue can continue. Expressing them as
-//! [`Coroutine`]s instead of a blocking `Command::output()` gives the suspension
-//! an explicit readiness description — an optional pre-spawn delay, then the
-//! child's stdout and stderr pipes — so the server loop can drive the job
-//! between its other work, and a blocking test driver can run the very same
-//! job on the calling thread.
+//! exit status before the command queue can continue. They are `async fn`s
+//! spawned on the loop's task set: the delay, the two pipes and the reap are
+//! statements in [`run_shell`] rather than states of a hand-written machine,
+//! and each child's descriptors are owned by the [`AsyncFd`]s that read them.
+//!
+//! The remaining suspensions are still [`Coroutine`]s, which describe their
+//! descriptors to the suspension executor and are resumed by it.
 //!
 //! `source-file`, `load-buffer` and `save-buffer` name a path. Regular files
 //! are read and written inline (tmux 3.7b reads its configuration on its own
@@ -22,259 +23,124 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::platform::{CurrentPlatform, Platform};
 use crate::server::state::{
     BackgroundJobRegistry, ClientPromptRegistry, CommandPromptRequestResult, PromptCompletion,
     WaitRegistry,
 };
-use crate::server::task::{
-    Completion, Coroutine, FdInterest, ReadySet, TaskPoll, WaitRequest, WaitToken,
-};
+use crate::event_loop::reactor::Interest;
+use crate::event_loop::tasks::{join, sleep, AsyncFd, TaskHandle};
+use crate::server::task::Completion;
 
 use super::execution::{self, WaitForOutcome};
 use super::{
     flag_value, has_flag, interaction_completion_result, io_error_message, job_delay, positionals,
-    shell_command, ClientContext, ClientFileWrite, CommandResult, CommandSuspension,
-    CommandSuspensionResult, RunShellCompletion, SourceFileRead,
+    shell_command, ClientContext, ClientFileWrite, CommandResult, RunShellCompletion,
+    SourceFileRead,
 };
 
-/// One suspension expressed as the coroutine that resolves it.
+/// What a `wait-for` or an interactive prompt did before anything waits.
 ///
-/// Both drivers build this from the same [`CommandSuspension`]: the server
-/// loop's executor registers its descriptors and deadlines with the reactor,
-/// and the blocking test driver runs it on the calling thread. There is only
-/// ever one implementation of what a suspension does.
-pub(crate) enum SuspensionJob {
-    BackgroundShell(BackgroundShellJob),
-    RunShell(RunShellJob),
-    IfShell(IfShellJob),
-    SourceFile(SourceFileJob),
-    LoadBuffer(LoadBufferJob),
-    SaveBuffer(FileWriteJob),
-    WaitFor(WaitForJob),
-    ClientPrompt(ClientPromptJob),
+/// Both touch a registry, and both must do so at the moment the command runs
+/// rather than when a task first gets a turn: `wait-for -L` hands out the lock
+/// in request order, and a prompt has to reach its client before the next
+/// command can answer it. So the registry call stays synchronous and only the
+/// waiting is deferred.
+pub(crate) enum SuspensionStart {
+    /// Nothing to wait for; this is the result.
+    Ready(CommandResult),
+    /// Resolved when the completion the registry holds is signalled.
+    Waiting(SuspensionWait),
 }
 
-impl SuspensionJob {
-    /// An `if-shell -b` condition, whose branch the caller picks.
-    pub(crate) fn if_shell(condition: &str, context: &ClientContext) -> Self {
-        Self::IfShell(IfShellJob::new(condition, context))
-    }
-
-    /// A `run-shell -b` job, which reports nothing but has to be reaped.
-    pub(crate) fn background_shell(
-        args: &[String],
-        context: &ClientContext,
-        jobs: Rc<BackgroundJobRegistry>,
-    ) -> Self {
-        Self::BackgroundShell(BackgroundShellJob::new(args, context, jobs))
-    }
-
-    pub(crate) fn new(suspension: CommandSuspension) -> Self {
-        match suspension {
-            CommandSuspension::RunShell { args, context } => {
-                Self::RunShell(RunShellJob::new(&args, &context))
-            }
-            CommandSuspension::IfShell { condition, context } => {
-                Self::IfShell(IfShellJob::new(&condition, &context))
-            }
-            CommandSuspension::SourceFile { paths } => Self::SourceFile(SourceFileJob::new(paths)),
-            CommandSuspension::LoadBuffer { path } => Self::LoadBuffer(LoadBufferJob::new(path)),
-            CommandSuspension::SaveBuffer { request } => {
-                Self::SaveBuffer(FileWriteJob::new(request))
-            }
-            CommandSuspension::WaitFor { args, registry } => {
-                Self::WaitFor(WaitForJob::new(&args, &registry))
-            }
-            CommandSuspension::CommandPrompt {
-                args,
-                registry,
-                target,
-                tty_name,
-                wait,
-            } => Self::ClientPrompt(ClientPromptJob::prompt(
-                args, &registry, target, tty_name, wait,
-            )),
-            CommandSuspension::ClientInteraction { completed } => {
-                Self::ClientPrompt(ClientPromptJob::interaction(completed))
-            }
-        }
-    }
+/// The wait half of a [`SuspensionStart`], and what to make of its answer.
+pub(crate) enum SuspensionWait {
+    WaitFor(Completion<()>),
+    /// An unanswered `command-prompt` reports the empty completion, which is
+    /// what the stock client's queue continues with.
+    Prompt(Completion<Option<PromptCompletion>>),
+    /// A client that goes away mid-overlay leaves the queue running.
+    Interaction(Completion<Option<PromptCompletion>>),
 }
 
-impl Coroutine for SuspensionJob {
-    type Output = CommandSuspensionResult;
-
-    fn wait(&self) -> WaitRequest<'_> {
+impl SuspensionWait {
+    /// Wait for the answer and render it the way the queue expects.
+    pub(crate) async fn resolve(self) -> CommandResult {
         match self {
-            Self::BackgroundShell(job) => job.wait(),
-            Self::RunShell(job) => job.wait(),
-            Self::IfShell(job) => job.wait(),
-            Self::SourceFile(job) => job.wait(),
-            Self::LoadBuffer(job) => job.wait(),
-            Self::SaveBuffer(job) => job.wait(),
-            Self::WaitFor(job) => job.wait(),
-            Self::ClientPrompt(job) => job.wait(),
-        }
-    }
-
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        match self {
-            Self::BackgroundShell(job) => job.resume(ready).map(CommandSuspensionResult::RunShell),
-            Self::RunShell(job) => job.resume(ready).map(CommandSuspensionResult::RunShell),
-            Self::IfShell(job) => job.resume(ready).map(CommandSuspensionResult::IfShell),
-            Self::SourceFile(job) => job.resume(ready).map(CommandSuspensionResult::SourceFile),
-            Self::LoadBuffer(job) => job.resume(ready).map(CommandSuspensionResult::LoadBuffer),
-            Self::SaveBuffer(job) => job.resume(ready).map(CommandSuspensionResult::SaveBuffer),
-            Self::WaitFor(job) => job.resume(ready).map(CommandSuspensionResult::Completed),
-            Self::ClientPrompt(job) => job.resume(ready).map(CommandSuspensionResult::Completed),
-        }
-    }
-}
-
-/// `run-shell -b command`: a detached job, whose output has no client to go
-/// back to and whose child has to appear in `list-jobs` for as long as it runs.
-///
-/// The shape is [`RunShellJob`]'s: wait out `-d`, run the command, and hold the
-/// registry entry until the child is reaped. The reporting differs only in
-/// where it lands — tmux's `cmd_run_shell_print` has no `cmdq_item` to print
-/// through for a detached job, so the output goes to a pane's view mode
-/// instead, and [`Self::VIEW_FALLBACK`] stands for the pane it picks when the
-/// job named none.
-pub(crate) struct BackgroundShellJob {
-    process: Option<ShellProcess>,
-    /// `(registry, command)` until the child exists to register.
-    pending: Option<(Rc<BackgroundJobRegistry>, String)>,
-    registered: Option<(Rc<BackgroundJobRegistry>, u64)>,
-    command: String,
-    capture_stderr: bool,
-    /// The `-t` pane, pinned to its `%id`, or [`Self::VIEW_FALLBACK`].
-    view_target: String,
-}
-
-impl BackgroundShellJob {
-    /// The target a detached job's output goes to when it named no pane.
-    ///
-    /// An empty target is the current session's active window's active pane,
-    /// which is what tmux's `cmd_find_from_nothing` resolves to. It is also the
-    /// fallback for a `-t` pane that has died by the time the child finishes:
-    /// tmux re-runs the same lookup rather than dropping the output.
-    pub(crate) const VIEW_FALLBACK: &'static str = "";
-
-    pub(crate) fn new(
-        args: &[String],
-        context: &ClientContext,
-        jobs: Rc<BackgroundJobRegistry>,
-    ) -> Self {
-        let done = Self {
-            process: None,
-            pending: None,
-            registered: None,
-            command: String::new(),
-            capture_stderr: false,
-            view_target: Self::VIEW_FALLBACK.to_string(),
-        };
-        let Some(command) = positionals(args, &["-t", "-c", "-d"])
-            .into_iter()
-            .next()
-            .map(str::to_string)
-        else {
-            return done;
-        };
-        let Ok(delay) = job_delay(args) else {
-            return done;
-        };
-        let mut shell = shell_command(&command, context);
-        if let Some(cwd) = flag_value(args, "-c") {
-            shell.current_dir(cwd);
-        }
-        // Identified client streams are open in the daemon as descriptors above
-        // stderr. A background job retaining one would make the command client
-        // wait for EOF until the job exits, defeating `-b`.
-        unsafe {
-            shell.pre_exec(|| {
-                CurrentPlatform::close_fds_from(3);
-                Ok(())
-            });
-        }
-        Self {
-            process: Some(ShellProcess::new(shell, delay)),
-            pending: Some((jobs, command.clone())),
-            registered: None,
-            command,
-            capture_stderr: has_flag(args, "-E"),
-            view_target: flag_value(args, "-t")
-                .unwrap_or(Self::VIEW_FALLBACK)
-                .to_string(),
-        }
-    }
-}
-
-impl Coroutine for BackgroundShellJob {
-    type Output = RunShellCompletion;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        match &self.process {
-            Some(process) => process.wait(),
-            None => WaitRequest::new(Vec::new(), Some(Instant::now())),
-        }
-    }
-
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        let Some(process) = self.process.as_mut() else {
-            return TaskPoll::Ready(RunShellCompletion {
-                result: CommandResult::ok(""),
-                view: None,
-            });
-        };
-        let poll = process.resume(ready);
-        // The child exists from the first resume that gets past `-d`, and
-        // `list-jobs` has to see it for as long as it runs.
-        if self.registered.is_none() {
-            if let Some((jobs, command)) =
-                self.pending.take_if(|_| process.child_stdout().is_some())
-            {
-                let fd = process.child_stdout().map_or(-1, AsRawFd::as_raw_fd);
-                let pid = process.child_pid().unwrap_or(0);
-                let id = jobs.register(command, fd, pid);
-                self.registered = Some((jobs, id));
+            // The registry drops a sender only when the server is going away,
+            // which the stock client sees as the wait being over.
+            Self::WaitFor(completion) => {
+                let _ = completion.await;
+                CommandResult::ok("")
             }
-        }
-        match poll {
-            TaskPoll::Ready(output) => {
-                self.process = None;
-                self.pending = None;
-                if let Some((jobs, id)) = self.registered.take() {
-                    jobs.remove(id);
+            Self::Prompt(completion) => match completion.await.ok().flatten() {
+                Some(answer) => interaction_completion_result(answer),
+                None => interaction_completion_result(PromptCompletion {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit: 0,
+                    inserted: false,
+                }),
+            },
+            Self::Interaction(completion) => match completion.await.ok().flatten() {
+                Some(answer) => interaction_completion_result(answer),
+                None => {
+                    let mut result = CommandResult::ok("");
+                    result.continue_queue = true;
+                    result
                 }
-                // A child that could not be run at all reports nothing: there
-                // is no client to raise the error with, and tmux's own failure
-                // path here only sets a status message on a client it has.
-                let view = output.ok().map(|output| {
-                    let text = run_shell_report(&self.command, self.capture_stderr, &output);
-                    (self.view_target.clone(), text.into_bytes())
-                });
-                TaskPoll::Ready(RunShellCompletion {
-                    result: CommandResult::ok(""),
-                    view,
-                })
-            }
-            TaskPoll::Pending => TaskPoll::Pending,
+            },
         }
     }
+}
+
+/// `wait-for`, in whichever of its four forms.
+///
+/// `-S`, `-U` and an uncontended `-L` finish the moment the registry is
+/// touched; the forms that have to wait for another client report the
+/// completion the registry will signal.
+pub(crate) fn wait_for(args: &[String], registry: &WaitRegistry) -> SuspensionStart {
+    match execution::wait_for(args, registry) {
+        WaitForOutcome::Done(result) => SuspensionStart::Ready(result),
+        WaitForOutcome::Pending(completion) => {
+            SuspensionStart::Waiting(SuspensionWait::WaitFor(completion))
+        }
+    }
+}
+
+/// `command-prompt -w`: put the prompt up on one client and wait for it.
+pub(crate) fn client_prompt(
+    args: Vec<String>,
+    registry: &ClientPromptRegistry,
+    target: Option<String>,
+    tty_name: Option<String>,
+    wait: bool,
+) -> SuspensionStart {
+    let result = match registry.request_command(target.as_deref(), tty_name.as_deref(), args, wait) {
+        CommandPromptRequestResult::Waiting(completion) => {
+            return SuspensionStart::Waiting(SuspensionWait::Prompt(completion))
+        }
+        CommandPromptRequestResult::Queued | CommandPromptRequestResult::Busy => {
+            CommandResult::ok("")
+        }
+        CommandPromptRequestResult::NoCurrentClient => CommandResult::err("no current client\n"),
+        CommandPromptRequestResult::TargetNotFound => CommandResult::err(format!(
+            "can't find client: {}\n",
+            target.unwrap_or_default()
+        )),
+    };
+    SuspensionStart::Ready(result)
 }
 
 /// A finished `sh -c` child.
-struct ShellOutput {
+pub(crate) struct ShellOutput {
     stdout: Vec<u8>,
     stderr: Vec<u8>,
     exit: i32,
 }
 
-/// `run-shell command`, without `-b` (a background job) or `-C` (no child at
-/// all): wait out `-d`, run the command and report its output.
 /// What tmux's `cmd_run_shell_callback` renders for one finished child: the
 /// captured output, then a status line for an exit that was not a clean zero.
 ///
@@ -301,387 +167,268 @@ fn run_shell_report(command: &str, capture_stderr: bool, output: &ShellOutput) -
     text
 }
 
-pub(crate) struct RunShellJob {
-    /// Set when the arguments resolved before any child was needed.
-    resolved: Option<RunShellCompletion>,
-    process: Option<ShellProcess>,
-    command: String,
-    capture_stderr: bool,
-    view_target: Option<String>,
-}
-
-impl RunShellJob {
-    pub(crate) fn new(args: &[String], context: &ClientContext) -> Self {
-        debug_assert!(!has_flag(args, "-b"));
-        let resolve = |result: CommandResult| Self {
-            resolved: Some(RunShellCompletion { result, view: None }),
-            process: None,
-            command: String::new(),
-            capture_stderr: false,
-            view_target: None,
-        };
-        let Some(command) = positionals(args, &["-t", "-c", "-d"])
-            .into_iter()
-            .next()
-            .map(str::to_string)
-        else {
-            return resolve(CommandResult::ok(""));
-        };
-        let delay = match job_delay(args) {
-            Ok(delay) => delay,
-            Err(error) => return resolve(error),
-        };
-        let mut shell = shell_command(&command, context);
-        if let Some(cwd) = flag_value(args, "-c") {
-            shell.current_dir(cwd);
-        }
-        Self {
-            resolved: None,
-            process: Some(ShellProcess::new(shell, delay)),
-            command,
-            capture_stderr: has_flag(args, "-E"),
-            view_target: flag_value(args, "-t").map(str::to_string),
-        }
-    }
-
-    /// Render one finished child the way tmux reports `run-shell`.
-    fn finish(&self, output: io::Result<ShellOutput>) -> RunShellCompletion {
-        let output = match output {
-            Ok(output) => output,
-            Err(error) => {
-                return RunShellCompletion {
-                    result: CommandResult::err(format!("{error}\n")),
-                    view: None,
-                };
-            }
-        };
-        let text = run_shell_report(&self.command, self.capture_stderr, &output);
-        let view = self
-            .view_target
-            .as_ref()
-            .map(|target| (target.clone(), text.as_bytes().to_vec()));
-        let mut result = CommandResult::ok(if view.is_some() { String::new() } else { text });
-        result.exit = output.exit;
-        result.continue_queue = true;
-        RunShellCompletion { result, view }
-    }
-}
-
-impl Coroutine for RunShellJob {
-    type Output = RunShellCompletion;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        match &self.process {
-            Some(process) => process.wait(),
-            None => WaitRequest::new(Vec::new(), Some(Instant::now())),
-        }
-    }
-
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        if let Some(resolved) = self.resolved.take() {
-            return TaskPoll::Ready(resolved);
-        }
-        let Some(process) = self.process.as_mut() else {
-            return TaskPoll::Pending;
-        };
-        match process.resume(ready) {
-            TaskPoll::Ready(output) => {
-                self.process = None;
-                TaskPoll::Ready(self.finish(output))
-            }
-            TaskPoll::Pending => TaskPoll::Pending,
-        }
-    }
-}
-
-/// `if-shell cond`, without `-b` or `-F`: run the condition and report whether
-/// it succeeded. Unlike `run-shell` the output is discarded, but the pipes are
-/// still what makes the child's progress observable.
-pub(crate) struct IfShellJob {
-    resolved: Option<bool>,
-    process: Option<ShellProcess>,
-}
-
-impl IfShellJob {
-    pub(crate) fn new(condition: &str, context: &ClientContext) -> Self {
-        if condition
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .ends_with(&["run", "\"true\""])
-        {
-            return Self {
-                resolved: Some(true),
-                process: None,
-            };
-        }
-        Self {
-            resolved: None,
-            process: Some(ShellProcess::new(
-                shell_command(condition, context),
-                Duration::ZERO,
-            )),
-        }
-    }
-}
-
-impl Coroutine for IfShellJob {
-    type Output = bool;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        match &self.process {
-            Some(process) => process.wait(),
-            None => WaitRequest::new(Vec::new(), Some(Instant::now())),
-        }
-    }
-
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        if let Some(resolved) = self.resolved.take() {
-            return TaskPoll::Ready(resolved);
-        }
-        let Some(process) = self.process.as_mut() else {
-            return TaskPoll::Pending;
-        };
-        match process.resume(ready) {
-            TaskPoll::Ready(output) => {
-                self.process = None;
-                TaskPoll::Ready(output.is_ok_and(|output| output.exit == 0))
-            }
-            TaskPoll::Pending => TaskPoll::Pending,
-        }
-    }
-}
-
 /// How long to wait before asking again for the exit status of a child that
 /// closed its pipes without exiting. The first attempt is always immediate, so
 /// only a child that outlives its own output ever waits this long.
 const REAP_RETRY_MIN: Duration = Duration::from_millis(1);
 const REAP_RETRY_MAX: Duration = Duration::from_millis(50);
 
-enum Stage {
-    /// Waiting out `run-shell -d` before the child is spawned.
-    Delay { deadline: Instant, spawn: Command },
-    /// Draining the child's pipes until both report end of file.
-    Running(RunningShell),
-    /// Both pipes reported end of file; collecting the exit status.
-    Reaping {
-        shell: RunningShell,
-        retry: Instant,
-        backoff: Duration,
-    },
-    /// The child was reaped; the job has produced its output.
-    Done,
-}
-
-/// The `sh -c` child shared by every shell-backed suspension.
-struct ShellProcess {
-    stage: Stage,
-}
-
-impl ShellProcess {
-    fn new(spawn: Command, delay: Duration) -> Self {
-        Self {
-            stage: Stage::Delay {
-                deadline: Instant::now() + delay,
-                spawn,
-            },
-        }
-    }
-
-    /// The running child's stdout, while it is still open.
-    fn child_stdout(&self) -> Option<&ChildStdout> {
-        match &self.stage {
-            Stage::Running(running) => running.stdout.as_ref(),
-            _ => None,
-        }
-    }
-
-    fn child_pid(&self) -> Option<u32> {
-        match &self.stage {
-            Stage::Running(running) => Some(running.child.id()),
-            _ => None,
-        }
-    }
-}
-
-impl Coroutine for ShellProcess {
-    type Output = io::Result<ShellOutput>;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        match &self.stage {
-            Stage::Delay { deadline, .. } => WaitRequest::new(Vec::new(), Some(*deadline)),
-            Stage::Running(running) => WaitRequest::new(running.sources(), None),
-            Stage::Reaping { retry, .. } => WaitRequest::new(Vec::new(), Some(*retry)),
-            Stage::Done => WaitRequest::new(Vec::new(), Some(Instant::now())),
-        }
-    }
-
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        if let Stage::Delay { deadline, .. } = &self.stage {
-            if Instant::now() < *deadline && !ready.timed_out() {
-                return TaskPoll::Pending;
-            }
-            let Stage::Delay { spawn, .. } = std::mem::replace(&mut self.stage, Stage::Done) else {
-                unreachable!("the delay stage was just observed");
-            };
-            match RunningShell::spawn(spawn) {
-                Ok(running) => self.stage = Stage::Running(running),
-                Err(error) => return TaskPoll::Ready(Err(error)),
-            }
-        }
-        if let Stage::Running(running) = &mut self.stage {
-            running.drain(ready);
-            if !running.is_drained() {
-                return TaskPoll::Pending;
-            }
-            let Stage::Running(shell) = std::mem::replace(&mut self.stage, Stage::Done) else {
-                unreachable!("the running stage was just observed");
-            };
-            self.stage = Stage::Reaping {
-                shell,
-                retry: Instant::now(),
-                backoff: REAP_RETRY_MIN,
-            };
-        }
-        let Stage::Reaping {
-            shell,
-            retry,
-            backoff,
-        } = &mut self.stage
-        else {
-            return TaskPoll::Pending;
-        };
-        let Some(output) = shell.try_reap() else {
-            // A child may close both pipes and keep running. Nothing portable
-            // makes that observable, so ask again on a backing-off deadline
-            // rather than blocking the driver in `wait(2)`.
-            *retry = Instant::now() + *backoff;
-            *backoff = (*backoff * 2).min(REAP_RETRY_MAX);
-            return TaskPoll::Pending;
-        };
-        self.stage = Stage::Done;
-        TaskPoll::Ready(Ok(output))
-    }
-}
-
+/// A spawned `sh -c` child with its pipes, before anything has been read.
 struct RunningShell {
     child: Child,
     stdout: Option<ChildStdout>,
     stderr: Option<ChildStderr>,
-    captured_stdout: Vec<u8>,
-    captured_stderr: Vec<u8>,
 }
 
-impl RunningShell {
-    const STDOUT: WaitToken = WaitToken::new(0);
-    const STDERR: WaitToken = WaitToken::new(1);
-
-    fn spawn(mut spawn: Command) -> io::Result<Self> {
-        let mut child = spawn
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
-        // Both pipes are read on whichever thread drives the job, so neither
-        // read may block once the other side stalls.
-        if let Some(stdout) = stdout.as_ref() {
-            set_nonblocking(stdout.as_fd())?;
-        }
-        if let Some(stderr) = stderr.as_ref() {
-            set_nonblocking(stderr.as_fd())?;
-        }
-        Ok(Self {
-            child,
-            stdout,
-            stderr,
-            captured_stdout: Vec::new(),
-            captured_stderr: Vec::new(),
-        })
+/// Wait out `-d`, then start the child.
+///
+/// Split from [`collect_shell`] because a detached job has to put the running
+/// child in the registry `list-jobs` reads before it starts draining it.
+async fn spawn_shell(
+    tasks: &TaskHandle,
+    mut spawn: Command,
+    delay: Duration,
+) -> io::Result<RunningShell> {
+    if !delay.is_zero() {
+        sleep(tasks, delay).await;
     }
-
-    fn sources(&self) -> Vec<FdInterest<'_>> {
-        let mut sources = Vec::new();
-        if let Some(stdout) = self.stdout.as_ref() {
-            sources.push(FdInterest::readable(Self::STDOUT, stdout.as_fd()));
-        }
-        if let Some(stderr) = self.stderr.as_ref() {
-            sources.push(FdInterest::readable(Self::STDERR, stderr.as_fd()));
-        }
-        sources
+    let mut child = spawn
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    // Both pipes are read by one task, so neither read may block once the
+    // other side stalls.
+    if let Some(stdout) = stdout.as_ref() {
+        set_nonblocking(stdout.as_fd())?;
     }
-
-    fn drain(&mut self, ready: &ReadySet) {
-        if ready.contains(Self::STDOUT) {
-            drain_pipe(&mut self.stdout, &mut self.captured_stdout);
-        }
-        if ready.contains(Self::STDERR) {
-            drain_pipe(&mut self.stderr, &mut self.captured_stderr);
-        }
+    if let Some(stderr) = stderr.as_ref() {
+        set_nonblocking(stderr.as_fd())?;
     }
+    Ok(RunningShell {
+        child,
+        stdout,
+        stderr,
+    })
+}
 
-    fn is_drained(&self) -> bool {
-        self.stdout.is_none() && self.stderr.is_none()
-    }
-
-    /// Collect the exit status if the child has already exited. Both pipes are
-    /// closed by the time this is called, so the usual answer is immediate —
-    /// but unlike `Command::output()` a driver that shares its thread with
-    /// other work must not block here.
-    fn try_reap(&mut self) -> Option<ShellOutput> {
-        let exit = match self.child.try_wait() {
-            Ok(Some(status)) => status.code().unwrap_or_else(|| {
-                std::os::unix::process::ExitStatusExt::signal(&status)
-                    .map_or(0, |signal| 128 + signal)
-            }),
-            Ok(None) => return None,
-            Err(_) => 0,
-        };
-        Some(ShellOutput {
-            stdout: std::mem::take(&mut self.captured_stdout),
-            stderr: std::mem::take(&mut self.captured_stderr),
-            exit,
-        })
+/// Drain both pipes, then collect the exit status.
+async fn collect_shell(tasks: &TaskHandle, running: RunningShell) -> ShellOutput {
+    let RunningShell {
+        mut child,
+        stdout,
+        stderr,
+    } = running;
+    // Both at once: draining one to end of file first deadlocks as soon as the
+    // other fills its pipe buffer.
+    let (stdout, stderr) = join(
+        drain_pipe(tasks, stdout),
+        drain_pipe(tasks, stderr),
+    )
+    .await;
+    // A child may close both pipes and keep running. Nothing portable makes
+    // that observable, so ask again on a backing-off deadline rather than
+    // blocking the loop in `wait(2)`.
+    let mut backoff = REAP_RETRY_MIN;
+    let exit = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                break status.code().unwrap_or_else(|| {
+                    std::os::unix::process::ExitStatusExt::signal(&status)
+                        .map_or(0, |signal| 128 + signal)
+                })
+            }
+            Ok(None) => {}
+            Err(_) => break 0,
+        }
+        sleep(tasks, backoff).await;
+        backoff = (backoff * 2).min(REAP_RETRY_MAX);
+    };
+    ShellOutput {
+        stdout,
+        stderr,
+        exit,
     }
 }
 
-/// Read a ready pipe until it would block; clear it once it reports end of
-/// file or fails, which is what retires the descriptor from the wait set.
-fn drain_pipe<T: Read>(pipe: &mut Option<T>, captured: &mut Vec<u8>) {
-    let Some(reader) = pipe.as_mut() else { return };
+/// Read one pipe until end of file, waiting on the reactor in between.
+///
+/// The descriptor's registration lives exactly as long as this call: the
+/// `AsyncFd` is created here and dropped on return, so consecutive children
+/// never share one.
+async fn drain_pipe<T: Read + AsFd>(tasks: &TaskHandle, pipe: Option<T>) -> Vec<u8> {
+    let mut captured = Vec::new();
+    let Some(mut pipe) = pipe else {
+        return captured;
+    };
+    let Ok(source) = AsyncFd::new(tasks, pipe.as_fd(), Interest::READABLE) else {
+        return captured;
+    };
     let mut chunk = [0u8; 8192];
     loop {
-        match reader.read(&mut chunk) {
-            Ok(0) => break,
+        match pipe.read(&mut chunk) {
+            Ok(0) => return captured,
             Ok(read) => captured.extend_from_slice(&chunk[..read]),
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => return,
-            Err(_) => break,
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                source.readiness().await;
+            }
+            // A pipe that fails is finished, as it was when this was a
+            // hand-written drain: the captured bytes are what there is.
+            Err(_) => return captured,
         }
     }
-    *pipe = None;
 }
 
-/// `source-file paths`: read every path in order, reporting what each one
-/// held so the caller can queue the commands it parsed.
-pub(crate) struct SourceFileJob {
-    remaining: std::vec::IntoIter<String>,
-    reads: Vec<SourceFileRead>,
-    current: Option<(String, FifoRead)>,
-}
-
-impl SourceFileJob {
-    pub(crate) fn new(paths: Vec<String>) -> Self {
-        Self {
-            remaining: paths.into_iter(),
-            reads: Vec::new(),
-            current: None,
-        }
+/// `run-shell command`, without `-b` (a background job) or `-C` (no child at
+/// all): wait out `-d`, run the command and report its output.
+///
+/// The whole suspension is this function. What used to be a `Stage` enum plus a
+/// driver — delay, then two pipes to end of file, then a backing-off reap — is
+/// the order of the statements below.
+pub(crate) async fn run_shell(
+    tasks: &TaskHandle,
+    args: Vec<String>,
+    context: ClientContext,
+) -> RunShellCompletion {
+    debug_assert!(!has_flag(&args, "-b"));
+    let resolved = |result: CommandResult| RunShellCompletion { result, view: None };
+    let Some(command) = positionals(&args, &["-t", "-c", "-d"])
+        .into_iter()
+        .next()
+        .map(str::to_string)
+    else {
+        return resolved(CommandResult::ok(""));
+    };
+    let delay = match job_delay(&args) {
+        Ok(delay) => delay,
+        Err(error) => return resolved(error),
+    };
+    let mut shell = shell_command(&command, &context);
+    if let Some(cwd) = flag_value(&args, "-c") {
+        shell.current_dir(cwd);
     }
+    let running = match spawn_shell(tasks, shell, delay).await {
+        Ok(running) => running,
+        Err(error) => return resolved(CommandResult::err(format!("{error}\n"))),
+    };
+    let output = collect_shell(tasks, running).await;
 
-    fn record(&mut self, path: String, contents: io::Result<Vec<u8>>) {
+    let text = run_shell_report(&command, has_flag(&args, "-E"), &output);
+    let view = flag_value(&args, "-t").map(|target| (target.to_string(), text.as_bytes().to_vec()));
+    let mut result = CommandResult::ok(if view.is_some() { String::new() } else { text });
+    result.exit = output.exit;
+    result.continue_queue = true;
+    RunShellCompletion { result, view }
+}
+
+/// `if-shell cond`, without `-b` or `-F`: run the condition and report whether
+/// it succeeded. Unlike `run-shell` the output is discarded, but the pipes are
+/// still what makes the child's progress observable.
+pub(crate) async fn if_shell(tasks: &TaskHandle, condition: String, context: ClientContext) -> bool {
+    if condition
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .ends_with(&["run", "\"true\""])
+    {
+        return true;
+    }
+    let shell = shell_command(&condition, &context);
+    let Ok(running) = spawn_shell(tasks, shell, Duration::ZERO).await else {
+        return false;
+    };
+    collect_shell(tasks, running).await.exit == 0
+}
+
+/// `run-shell -b command`: a detached job, whose output has no client to go
+/// back to and whose child has to appear in `list-jobs` for as long as it runs.
+///
+/// The shape is [`run_shell`]'s. The reporting differs only in where it lands —
+/// tmux's `cmd_run_shell_print` has no `cmdq_item` to print through for a
+/// detached job, so the output goes to a pane's view mode instead, and
+/// [`VIEW_FALLBACK`] stands for the pane it picks when the job named none.
+pub(crate) async fn background_shell(
+    tasks: &TaskHandle,
+    args: Vec<String>,
+    context: ClientContext,
+    jobs: Rc<BackgroundJobRegistry>,
+) -> RunShellCompletion {
+    let done = RunShellCompletion {
+        result: CommandResult::ok(""),
+        view: None,
+    };
+    let Some(command) = positionals(&args, &["-t", "-c", "-d"])
+        .into_iter()
+        .next()
+        .map(str::to_string)
+    else {
+        return done;
+    };
+    let Ok(delay) = job_delay(&args) else {
+        return done;
+    };
+    let mut shell = shell_command(&command, &context);
+    if let Some(cwd) = flag_value(&args, "-c") {
+        shell.current_dir(cwd);
+    }
+    // Identified client streams are open in the daemon as descriptors above
+    // stderr. A background job retaining one would make the command client
+    // wait for EOF until the job exits, defeating `-b`.
+    unsafe {
+        shell.pre_exec(|| {
+            CurrentPlatform::close_fds_from(3);
+            Ok(())
+        });
+    }
+    // A child that could not be run at all reports nothing: there is no client
+    // to raise the error with, and tmux's own failure path here only sets a
+    // status message on a client it has.
+    let Ok(running) = spawn_shell(tasks, shell, delay).await else {
+        return done;
+    };
+    // `list-jobs` has to see the child for as long as it runs.
+    let registered = running.stdout.as_ref().map(|stdout| {
+        jobs.register(
+            command.clone(),
+            stdout.as_raw_fd(),
+            running.child.id(),
+        )
+    });
+    let output = collect_shell(tasks, running).await;
+    if let Some(id) = registered {
+        jobs.remove(id);
+    }
+    let text = run_shell_report(&command, has_flag(&args, "-E"), &output);
+    RunShellCompletion {
+        result: CommandResult::ok(""),
+        view: Some((
+            flag_value(&args, "-t").unwrap_or(VIEW_FALLBACK).to_string(),
+            text.into_bytes(),
+        )),
+    }
+}
+
+/// The target a detached job's output goes to when it named no pane.
+///
+/// An empty target is the current session's active window's active pane, which
+/// is what tmux's `cmd_find_from_nothing` resolves to. It is also the fallback
+/// for a `-t` pane that has died by the time the child finishes: tmux re-runs
+/// the same lookup rather than dropping the output.
+pub(crate) const VIEW_FALLBACK: &str = "";
+
+/// `source-file paths`: read every path in order, reporting what each one held
+/// so the caller can queue the commands it parsed.
+pub(crate) async fn source_file(tasks: &TaskHandle, paths: Vec<String>) -> Vec<SourceFileRead> {
+    let mut reads = Vec::new();
+    for path in paths {
+        let contents = match open_path(Path::new(&path)) {
+            PathOpen::Inline(contents) => contents,
+            PathOpen::Fifo(file) => fifo_read(tasks, file).await,
+        };
         let existed = Path::new(&path).exists();
-        self.reads.push(SourceFileRead {
+        reads.push(SourceFileRead {
             path,
             contents: contents.and_then(|bytes| {
                 String::from_utf8(bytes).map_err(|_| {
@@ -694,296 +441,51 @@ impl SourceFileJob {
             existed,
         });
     }
-}
-
-impl Coroutine for SourceFileJob {
-    type Output = Vec<SourceFileRead>;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        match &self.current {
-            Some((_, read)) => read.wait(),
-            None => WaitRequest::new(Vec::new(), Some(Instant::now())),
-        }
-    }
-
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        loop {
-            if let Some((_, read)) = self.current.as_mut() {
-                let TaskPoll::Ready(contents) = read.resume(ready) else {
-                    return TaskPoll::Pending;
-                };
-                let (path, _) = self.current.take().expect("the read was just observed");
-                self.record(path, contents);
-            }
-            let Some(path) = self.remaining.next() else {
-                return TaskPoll::Ready(std::mem::take(&mut self.reads));
-            };
-            match open_path(Path::new(&path)) {
-                PathOpen::Inline(contents) => self.record(path, contents),
-                PathOpen::Fifo(read) => self.current = Some((path, read)),
-            }
-        }
-    }
+    reads
 }
 
 /// `load-buffer path`, without `-` (the client's stdin): read the file into a
 /// paste buffer, or report the `errno` the stock client would have seen.
-pub(crate) struct LoadBufferJob {
-    open: Option<PathBuf>,
-    read: Option<FifoRead>,
-}
-
-impl LoadBufferJob {
-    pub(crate) fn new(path: PathBuf) -> Self {
-        Self {
-            open: Some(path),
-            read: None,
-        }
-    }
-
-    fn finish(contents: io::Result<Vec<u8>>) -> Result<Vec<u8>, i32> {
-        contents.map_err(|error| error.raw_os_error().unwrap_or(libc::EIO))
-    }
-}
-
-impl Coroutine for LoadBufferJob {
-    type Output = Result<Vec<u8>, i32>;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        match &self.read {
-            Some(read) => read.wait(),
-            None => WaitRequest::new(Vec::new(), Some(Instant::now())),
-        }
-    }
-
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        if let Some(path) = self.open.take() {
-            match open_path(&path) {
-                PathOpen::Inline(contents) => return TaskPoll::Ready(Self::finish(contents)),
-                PathOpen::Fifo(read) => self.read = Some(read),
-            }
-        }
-        let Some(read) = self.read.as_mut() else {
-            return TaskPoll::Pending;
-        };
-        match read.resume(ready) {
-            TaskPoll::Ready(contents) => {
-                self.read = None;
-                TaskPoll::Ready(Self::finish(contents))
-            }
-            TaskPoll::Pending => TaskPoll::Pending,
-        }
-    }
+pub(crate) async fn load_buffer(tasks: &TaskHandle, path: PathBuf) -> Result<Vec<u8>, i32> {
+    let contents = match open_path(&path) {
+        PathOpen::Inline(contents) => contents,
+        PathOpen::Fifo(file) => fifo_read(tasks, file).await,
+    };
+    contents.map_err(|error| error.raw_os_error().unwrap_or(libc::EIO))
 }
 
 /// `save-buffer path`, without `-` (the client's stdout): write a paste buffer
 /// out, or report the `errno` the stock client would have seen. Regular files
 /// are written inline for the same reason they are read inline; a FIFO waits
 /// for its reader instead.
-pub(crate) struct FileWriteJob {
-    /// Set until the first resume classifies the path.
-    request: Option<ClientFileWrite>,
-    display_path: String,
-    write: Option<FifoWrite>,
-}
-
-impl FileWriteJob {
-    pub(crate) fn new(request: ClientFileWrite) -> Self {
-        Self {
-            display_path: request.display_path.clone(),
-            request: Some(request),
-            write: None,
+pub(crate) async fn save_buffer(tasks: &TaskHandle, request: ClientFileWrite) -> CommandResult {
+    let display_path = request.display_path.clone();
+    let wrote = match open_write_path(request) {
+        WriteOpen::Inline(wrote) => wrote,
+        WriteOpen::Fifo { path, flags, data } => fifo_write(tasks, path, flags, data).await,
+    };
+    match wrote {
+        Ok(()) => CommandResult::ok(""),
+        Err(error) => {
+            let mut result = CommandResult::err(format!(
+                "{}: {}\n",
+                io_error_message(&error),
+                display_path
+            ));
+            result.continue_queue = true;
+            result
         }
-    }
-
-    fn finish(&self, wrote: io::Result<()>) -> CommandResult {
-        match wrote {
-            Ok(()) => CommandResult::ok(""),
-            Err(error) => {
-                let mut result = CommandResult::err(format!(
-                    "{}: {}\n",
-                    io_error_message(&error),
-                    self.display_path
-                ));
-                result.continue_queue = true;
-                result
-            }
-        }
-    }
-}
-
-impl Coroutine for FileWriteJob {
-    type Output = CommandResult;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        match &self.write {
-            Some(write) => write.wait(),
-            None => WaitRequest::new(Vec::new(), Some(Instant::now())),
-        }
-    }
-
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        if let Some(request) = self.request.take() {
-            match open_write_path(request) {
-                WriteOpen::Inline(wrote) => return TaskPoll::Ready(self.finish(wrote)),
-                WriteOpen::Fifo(write) => self.write = Some(write),
-            }
-        }
-        let Some(write) = self.write.as_mut() else {
-            return TaskPoll::Pending;
-        };
-        match write.resume(ready) {
-            TaskPoll::Ready(wrote) => {
-                self.write = None;
-                TaskPoll::Ready(self.finish(wrote))
-            }
-            TaskPoll::Pending => TaskPoll::Pending,
-        }
-    }
-}
-
-/// `wait-for`, in whichever of its four forms.
-///
-/// `-S`, `-U` and an uncontended `-L` finish the moment the registry is
-/// touched; the forms that have to wait for another client hold the completion
-/// the registry signals, so the waiting queue is resumed by its own driver
-/// rather than by parking a thread inside the registry.
-pub(crate) enum WaitForJob {
-    Done(Option<CommandResult>),
-    Waiting(Completion<()>),
-}
-
-impl WaitForJob {
-    pub(crate) fn new(args: &[String], registry: &WaitRegistry) -> Self {
-        match execution::wait_for(args, registry) {
-            WaitForOutcome::Done(result) => Self::Done(Some(result)),
-            WaitForOutcome::Pending(completion) => Self::Waiting(completion),
-        }
-    }
-}
-
-impl Coroutine for WaitForJob {
-    type Output = CommandResult;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        match self {
-            // Already resolved: `resume` reports it before anyone waits.
-            Self::Done(_) => WaitRequest::new(Vec::new(), Some(Instant::now())),
-            Self::Waiting(completion) => completion.wait(),
-        }
-    }
-
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        match self {
-            Self::Done(result) => TaskPoll::Ready(
-                result
-                    .take()
-                    .expect("resolved wait-for reported its result twice"),
-            ),
-            Self::Waiting(completion) => match completion.resume(ready) {
-                // The registry drops a sender only when the server is going
-                // away, which the stock client sees as the wait being over.
-                TaskPoll::Ready(_) => TaskPoll::Ready(CommandResult::ok("")),
-                TaskPoll::Pending => TaskPoll::Pending,
-            },
-        }
-    }
-}
-
-/// A command queue waiting for a client to answer something.
-///
-/// `command-prompt -w` waits for the prompt it put up on one client;
-/// `confirm-before`, `display-menu` and `display-popup` wait for the overlay
-/// they opened. Both hold the completion the answering side signals, so the
-/// queue is resumed by its own driver instead of blocking on a receive.
-pub(crate) enum ClientPromptJob {
-    /// Nothing to wait for: no client took the request, or `-w` was absent.
-    Done(Option<CommandResult>),
-    /// An unanswered `command-prompt` reports the empty completion, which is
-    /// what the stock client's queue continues with.
-    Prompt(Completion<Option<PromptCompletion>>),
-    /// A client that goes away mid-overlay leaves the queue running.
-    Interaction(Completion<Option<PromptCompletion>>),
-}
-
-impl ClientPromptJob {
-    pub(crate) fn prompt(
-        args: Vec<String>,
-        registry: &ClientPromptRegistry,
-        target: Option<String>,
-        tty_name: Option<String>,
-        wait: bool,
-    ) -> Self {
-        let result =
-            match registry.request_command(target.as_deref(), tty_name.as_deref(), args, wait) {
-                CommandPromptRequestResult::Waiting(completion) => return Self::Prompt(completion),
-                CommandPromptRequestResult::Queued | CommandPromptRequestResult::Busy => {
-                    CommandResult::ok("")
-                }
-                CommandPromptRequestResult::NoCurrentClient => {
-                    CommandResult::err("no current client\n")
-                }
-                CommandPromptRequestResult::TargetNotFound => CommandResult::err(format!(
-                    "can't find client: {}\n",
-                    target.unwrap_or_default()
-                )),
-            };
-        Self::Done(Some(result))
-    }
-
-    pub(crate) fn interaction(completed: Completion<Option<PromptCompletion>>) -> Self {
-        Self::Interaction(completed)
-    }
-}
-
-impl Coroutine for ClientPromptJob {
-    type Output = CommandResult;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        match self {
-            // Already resolved: `resume` reports it before anyone waits.
-            Self::Done(_) => WaitRequest::new(Vec::new(), Some(Instant::now())),
-            Self::Prompt(completion) | Self::Interaction(completion) => completion.wait(),
-        }
-    }
-
-    fn resume(&mut self, ready: &ReadySet) -> TaskPoll<Self::Output> {
-        let answered = match self {
-            Self::Done(result) => {
-                return TaskPoll::Ready(
-                    result
-                        .take()
-                        .expect("resolved client prompt reported its result twice"),
-                )
-            }
-            Self::Prompt(completion) | Self::Interaction(completion) => {
-                match completion.resume(ready) {
-                    TaskPoll::Ready(answered) => answered.ok().flatten(),
-                    TaskPoll::Pending => return TaskPoll::Pending,
-                }
-            }
-        };
-        TaskPoll::Ready(match (&self, answered) {
-            (_, Some(completion)) => interaction_completion_result(completion),
-            (Self::Prompt(_), None) => interaction_completion_result(PromptCompletion {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit: 0,
-                inserted: false,
-            }),
-            (_, None) => {
-                let mut result = CommandResult::ok("");
-                result.continue_queue = true;
-                result
-            }
-        })
     }
 }
 
 /// How a path is written: everything but a FIFO is written on the spot.
 enum WriteOpen {
     Inline(io::Result<()>),
-    Fifo(FifoWrite),
+    Fifo {
+        path: PathBuf,
+        flags: i32,
+        data: Vec<u8>,
+    },
 }
 
 fn open_write_path(request: ClientFileWrite) -> WriteOpen {
@@ -1006,130 +508,62 @@ fn open_write_path(request: ClientFileWrite) -> WriteOpen {
         );
     }
     // Opening the write end blocks until a reader attaches, and the reader is
-    // very often another client of this server, so let the job wait for it.
-    WriteOpen::Fifo(FifoWrite::new(path, flags, data))
-}
-
-enum FifoWriteStage {
-    /// No reader has attached yet, so the open still reports `ENXIO`; retrying
-    /// on a backing-off deadline, since an unopened FIFO is not pollable.
-    Opening { retry: Instant, backoff: Duration },
-    /// The write end is open: drain the buffer as the reader consumes it.
-    Writing { file: File, written: usize },
-    /// The buffer was written, or the write failed.
-    Done,
+    // very often another client of this server, so let the task wait for it.
+    WriteOpen::Fifo { path, flags, data }
 }
 
 /// The write end of a FIFO, filled until the buffer is gone.
-struct FifoWrite {
+async fn fifo_write(
+    tasks: &TaskHandle,
     path: PathBuf,
     flags: i32,
     data: Vec<u8>,
-    stage: FifoWriteStage,
-}
-
-impl FifoWrite {
-    const WRITABLE: WaitToken = WaitToken::new(0);
-
-    fn new(path: PathBuf, flags: i32, data: Vec<u8>) -> Self {
-        Self {
-            path,
-            flags,
-            data,
-            stage: FifoWriteStage::Opening {
-                retry: Instant::now(),
-                backoff: FIFO_WRITER_RETRY_MIN,
-            },
-        }
-    }
-
-    /// Try the non-blocking open once. `ENXIO` — no reader yet — is the only
-    /// outcome worth retrying; everything else is the error tmux would report.
-    fn open(&mut self) -> TaskPoll<io::Result<()>> {
-        // `O_TRUNC` and `O_APPEND` mean nothing on a FIFO, but passing the
-        // request's flags through keeps the open identical to the client's.
+) -> io::Result<()> {
+    // An unopened FIFO is not pollable — `ENXIO` means no reader yet — so this
+    // one wait is a backing-off retry rather than a readiness wait.
+    //
+    // `O_TRUNC` and `O_APPEND` mean nothing on a FIFO, but passing the
+    // request's flags through keeps the open identical to the client's.
+    let mut backoff = FIFO_WRITER_RETRY_MIN;
+    let mut file = loop {
         match std::fs::OpenOptions::new()
             .write(true)
-            .custom_flags(self.flags | libc::O_NONBLOCK)
-            .open(&self.path)
+            .custom_flags(flags | libc::O_NONBLOCK)
+            .open(&path)
         {
-            Ok(file) => {
-                self.stage = FifoWriteStage::Writing { file, written: 0 };
-                TaskPoll::Pending
-            }
+            Ok(file) => break file,
             Err(error) if error.raw_os_error() == Some(libc::ENXIO) => {
-                let FifoWriteStage::Opening { retry, backoff } = &mut self.stage else {
-                    unreachable!("only the opening stage opens the FIFO");
-                };
-                *retry = Instant::now() + *backoff;
-                *backoff = (*backoff * 2).min(FIFO_WRITER_RETRY_MAX);
-                TaskPoll::Pending
+                sleep(tasks, backoff).await;
+                backoff = (backoff * 2).min(FIFO_WRITER_RETRY_MAX);
             }
-            Err(error) => {
-                self.stage = FifoWriteStage::Done;
-                TaskPoll::Ready(Err(error))
+            Err(error) => return Err(error),
+        }
+    };
+    let source = AsyncFd::new(tasks, file.as_fd(), Interest::WRITABLE)?;
+    // Write as much as the pipe takes per wakeup: an 8 MiB buffer moves in
+    // pipe-sized bites, and one write per readiness would need a wakeup for
+    // every one of them.
+    let mut written = 0;
+    while written < data.len() {
+        match file.write(&data[written..]) {
+            Ok(0) => return Err(io::Error::from(io::ErrorKind::WriteZero)),
+            Ok(wrote) => written += wrote,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                source.readiness().await;
             }
+            Err(error) => return Err(error),
         }
     }
-}
-
-impl Coroutine for FifoWrite {
-    type Output = io::Result<()>;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        match &self.stage {
-            FifoWriteStage::Opening { retry, .. } => WaitRequest::new(Vec::new(), Some(*retry)),
-            FifoWriteStage::Writing { file, .. } => WaitRequest::new(
-                vec![FdInterest::writable(Self::WRITABLE, file.as_fd())],
-                None,
-            ),
-            FifoWriteStage::Done => WaitRequest::new(Vec::new(), Some(Instant::now())),
-        }
-    }
-
-    fn resume(&mut self, _ready: &ReadySet) -> TaskPoll<Self::Output> {
-        // Like the read side, every stage only attempts non-blocking work, so a
-        // spurious wakeup costs one syscall and no driver has to describe which
-        // source woke it.
-        if matches!(self.stage, FifoWriteStage::Opening { .. }) {
-            if let TaskPoll::Ready(result) = self.open() {
-                return TaskPoll::Ready(result);
-            }
-        }
-        let FifoWriteStage::Writing { file, written } = &mut self.stage else {
-            return TaskPoll::Pending;
-        };
-        // Write as much as the pipe takes per wakeup: an 8 MiB buffer moves in
-        // pipe-sized bites, and one write per readiness would need a wakeup for
-        // every one of them.
-        while *written < self.data.len() {
-            match file.write(&self.data[*written..]) {
-                Ok(0) => {
-                    self.stage = FifoWriteStage::Done;
-                    return TaskPoll::Ready(Err(io::Error::from(io::ErrorKind::WriteZero)));
-                }
-                Ok(wrote) => *written += wrote,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                    return TaskPoll::Pending
-                }
-                Err(error) => {
-                    self.stage = FifoWriteStage::Done;
-                    return TaskPoll::Ready(Err(error));
-                }
-            }
-        }
-        // Dropping the write end here, rather than when the executor retires
-        // the job, is what reports end of file to the reader.
-        self.stage = FifoWriteStage::Done;
-        TaskPoll::Ready(Ok(()))
-    }
+    // Dropping the write end as this returns is what reports end of file to the
+    // reader.
+    Ok(())
 }
 
 /// How a path is read: everything but a FIFO is read on the spot.
 enum PathOpen {
     Inline(io::Result<Vec<u8>>),
-    Fifo(FifoRead),
+    Fifo(File),
 }
 
 fn open_path(path: &Path) -> PathOpen {
@@ -1139,107 +573,52 @@ fn open_path(path: &Path) -> PathOpen {
     }
     // A blocking open would wait here for a writer that is very often another
     // client of this server, so open the read end without blocking and let the
-    // job wait for the data instead.
+    // task wait for the data instead.
     match std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NONBLOCK)
         .open(path)
     {
-        Ok(file) => PathOpen::Fifo(FifoRead::new(file)),
+        Ok(file) => PathOpen::Fifo(file),
         Err(error) => PathOpen::Inline(Err(error)),
     }
 }
 
 /// How long to wait before looking again for a writer on a FIFO nobody has
 /// opened yet. A read end with no writer reports end of file rather than
-/// blocking, and an absent writer is not a readiness event, so this stage
-/// cannot be described to a poller.
+/// blocking, and an absent writer is not a readiness event, so that wait cannot
+/// be a readiness wait.
 const FIFO_WRITER_RETRY_MIN: Duration = Duration::from_millis(1);
 const FIFO_WRITER_RETRY_MAX: Duration = Duration::from_millis(50);
 
-enum FifoStage {
-    /// No writer has appeared yet; retrying the read on a backing-off deadline.
-    Waiting { retry: Instant, backoff: Duration },
-    /// A writer is attached: end of file now means the writer is done.
-    Reading,
-    /// The contents were reported.
-    Done,
-}
-
 /// The read end of a FIFO, drained until the writer closes it.
-struct FifoRead {
-    file: File,
-    data: Vec<u8>,
-    stage: FifoStage,
-}
-
-impl FifoRead {
-    const READABLE: WaitToken = WaitToken::new(0);
-
-    fn new(file: File) -> Self {
-        Self {
-            file,
-            data: Vec::new(),
-            stage: FifoStage::Waiting {
-                retry: Instant::now(),
-                backoff: FIFO_WRITER_RETRY_MIN,
-            },
-        }
-    }
-}
-
-impl Coroutine for FifoRead {
-    type Output = io::Result<Vec<u8>>;
-
-    fn wait(&self) -> WaitRequest<'_> {
-        match &self.stage {
-            FifoStage::Waiting { retry, .. } => WaitRequest::new(Vec::new(), Some(*retry)),
-            FifoStage::Reading => WaitRequest::new(
-                vec![FdInterest::readable(Self::READABLE, self.file.as_fd())],
-                None,
-            ),
-            FifoStage::Done => WaitRequest::new(Vec::new(), Some(Instant::now())),
-        }
-    }
-
-    fn resume(&mut self, _ready: &ReadySet) -> TaskPoll<Self::Output> {
-        // Every stage only ever attempts a non-blocking read, so a spurious
-        // wakeup costs one syscall and no driver has to describe which source
-        // woke it.
-        let mut chunk = [0u8; 8192];
-        loop {
-            let read = match self.file.read(&mut chunk) {
-                Ok(read) => read,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                    // Only an attached writer leaves the pipe empty without
-                    // reporting end of file.
-                    self.stage = FifoStage::Reading;
-                    return TaskPoll::Pending;
-                }
-                Err(error) => {
-                    self.stage = FifoStage::Done;
-                    return TaskPoll::Ready(Err(error));
-                }
-            };
-            if read > 0 {
-                self.data.extend_from_slice(&chunk[..read]);
-                self.stage = FifoStage::Reading;
-                continue;
+async fn fifo_read(tasks: &TaskHandle, mut file: File) -> io::Result<Vec<u8>> {
+    let source = AsyncFd::new(tasks, file.as_fd(), Interest::READABLE)?;
+    let mut data = Vec::new();
+    // Until a writer has been seen, end of file says nothing about the writer
+    // this is waiting for; after one has, it says the transfer is over.
+    let mut writer_seen = false;
+    let mut backoff = FIFO_WRITER_RETRY_MIN;
+    let mut chunk = [0u8; 8192];
+    loop {
+        match file.read(&mut chunk) {
+            Ok(0) if writer_seen => return Ok(data),
+            Ok(0) => {
+                sleep(tasks, backoff).await;
+                backoff = (backoff * 2).min(FIFO_WRITER_RETRY_MAX);
             }
-            return match &mut self.stage {
-                // End of file before any writer appeared says nothing about the
-                // writer that `source-file` is waiting for; ask again shortly.
-                FifoStage::Waiting { retry, backoff } => {
-                    *retry = Instant::now() + *backoff;
-                    *backoff = (*backoff * 2).min(FIFO_WRITER_RETRY_MAX);
-                    TaskPoll::Pending
-                }
-                _ => {
-                    self.stage = FifoStage::Done;
-                    TaskPoll::Ready(Ok(std::mem::take(&mut self.data)))
-                }
-            };
+            Ok(read) => {
+                data.extend_from_slice(&chunk[..read]);
+                writer_seen = true;
+            }
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                // Only an attached writer leaves the pipe empty without
+                // reporting end of file.
+                writer_seen = true;
+                source.readiness().await;
+            }
+            Err(error) => return Err(error),
         }
     }
 }
@@ -1257,17 +636,20 @@ fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FileWriteJob, IfShellJob, LoadBufferJob, RunShellJob, SourceFileJob, WaitForJob};
-    use crate::event_loop::test_driver::{finish_on_loop, run_on_loop};
+    use super::{if_shell, load_buffer, run_shell, save_buffer, source_file, wait_for};
+    use super::{SuspensionStart, SuspensionWait};
+    use crate::server::command::CommandResult;
+    use crate::event_loop::test_driver::run_task_on_loop;
     use crate::server::command::{ClientContext, ClientFileWrite};
     use crate::server::state::WaitRegistry;
-    use crate::server::task::{ReadySet, TaskState};
+
     use std::fs;
     use std::io;
     use std::path::{Path, PathBuf};
     use std::process;
+    use std::time::Instant;
     use std::thread;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     fn args(values: &[&str]) -> Vec<String> {
         std::iter::once("run-shell")
@@ -1290,10 +672,14 @@ mod tests {
 
     #[test]
     fn run_shell_job_reports_stdout_and_the_exit_status() {
-        let completion = run_on_loop(RunShellJob::new(
-            &args(&["echo hello; exit 3"]),
-            &ClientContext::default(),
-        ));
+        let completion = run_task_on_loop(|tasks| async move {
+            run_shell(
+                &tasks,
+                args(&["echo hello; exit 3"]),
+                ClientContext::default(),
+            )
+            .await
+        });
 
         assert_eq!(completion.result.exit, 3);
         assert_eq!(
@@ -1307,10 +693,9 @@ mod tests {
         // The writer holds stdout open past the stderr burst, so a driver that
         // read the pipes in order would deadlock on a full stderr buffer.
         let command = "sh -c 'yes error >&2 & sleep 0.2; kill %1' 2>&1 >/dev/null | head -c 200000 >&2; echo done";
-        let completion = run_on_loop(RunShellJob::new(
-            &args(&["-E", command]),
-            &context_with_path(),
-        ));
+        let completion = run_task_on_loop(|tasks| async move {
+            run_shell(&tasks, args(&["-E", command]), context_with_path()).await
+        });
 
         assert_eq!(completion.result.exit, 0);
         assert!(completion.result.stdout.starts_with("done\n"));
@@ -1320,10 +705,14 @@ mod tests {
     #[test]
     fn run_shell_job_waits_out_the_requested_delay() {
         let started = Instant::now();
-        let completion = run_on_loop(RunShellJob::new(
-            &args(&["-d", "0.2", "echo late"]),
-            &ClientContext::default(),
-        ));
+        let completion = run_task_on_loop(|tasks| async move {
+            run_shell(
+                &tasks,
+                args(&["-d", "0.2", "echo late"]),
+                ClientContext::default(),
+            )
+            .await
+        });
 
         assert!(started.elapsed() >= Duration::from_millis(150));
         assert_eq!(completion.result.stdout, "late\n");
@@ -1331,19 +720,26 @@ mod tests {
 
     #[test]
     fn run_shell_job_rejects_an_invalid_delay_without_a_child() {
-        let completion = run_on_loop(RunShellJob::new(
-            &args(&["-d", "soon", "echo never"]),
-            &ClientContext::default(),
-        ));
+        let completion = run_task_on_loop(|tasks| async move {
+            run_shell(
+                &tasks,
+                args(&["-d", "soon", "echo never"]),
+                ClientContext::default(),
+            )
+            .await
+        });
 
         assert_eq!(completion.result.stderr, "invalid delay time: soon\n");
     }
 
     #[test]
     fn if_shell_job_reports_the_condition_status() {
-        let context = ClientContext::default();
-        assert!(run_on_loop(IfShellJob::new("true", &context)));
-        assert!(!run_on_loop(IfShellJob::new("exit 7", &context)));
+        assert!(run_task_on_loop(|tasks| async move {
+            if_shell(&tasks, "true".to_string(), ClientContext::default()).await
+        }));
+        assert!(!run_task_on_loop(|tasks| async move {
+            if_shell(&tasks, "exit 7".to_string(), ClientContext::default()).await
+        }));
     }
 
     fn temporary_directory(name: &str) -> PathBuf {
@@ -1371,10 +767,8 @@ mod tests {
         let second = directory.join("missing.conf");
         fs::write(&first, "set-buffer -b one yes\n").expect("write config");
 
-        let reads = run_on_loop(SourceFileJob::new(vec![
-            first.display().to_string(),
-            second.display().to_string(),
-        ]));
+        let paths = vec![first.display().to_string(), second.display().to_string()];
+        let reads = run_task_on_loop(|tasks| async move { source_file(&tasks, paths).await });
 
         assert_eq!(reads.len(), 2);
         assert_eq!(
@@ -1399,7 +793,8 @@ mod tests {
             }
         });
 
-        let reads = run_on_loop(SourceFileJob::new(vec![fifo.display().to_string()]));
+        let path = fifo.display().to_string();
+        let reads = run_task_on_loop(|tasks| async move { source_file(&tasks, vec![path]).await });
 
         writer.join().expect("writer");
         assert_eq!(
@@ -1426,7 +821,8 @@ mod tests {
             }
         });
 
-        let contents = run_on_loop(LoadBufferJob::new(fifo.clone()));
+        let path = fifo.clone();
+        let contents = run_task_on_loop(|tasks| async move { load_buffer(&tasks, path).await });
 
         writer.join().expect("writer");
         assert_eq!(contents.expect("FIFO contents"), b"first second".to_vec());
@@ -1437,7 +833,8 @@ mod tests {
     fn load_buffer_job_reports_the_errno_of_a_missing_path() {
         let directory = temporary_directory("load-missing");
 
-        let contents = run_on_loop(LoadBufferJob::new(directory.join("absent")));
+        let path = directory.join("absent");
+        let contents = run_task_on_loop(|tasks| async move { load_buffer(&tasks, path).await });
 
         assert_eq!(contents, Err(libc::ENOENT));
         let _ = fs::remove_dir_all(&directory);
@@ -1458,10 +855,12 @@ mod tests {
         let path = directory.join("buffer");
 
         let truncating = libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC;
-        let result = run_on_loop(FileWriteJob::new(file_write(&path, truncating, b"first\n")));
+        let request = file_write(&path, truncating, b"first\n");
+        let result = run_task_on_loop(|tasks| async move { save_buffer(&tasks, request).await });
         assert_eq!(result.exit, 0, "{}", result.stderr);
         let appending = libc::O_WRONLY | libc::O_CREAT | libc::O_APPEND;
-        let result = run_on_loop(FileWriteJob::new(file_write(&path, appending, b"second\n")));
+        let request = file_write(&path, appending, b"second\n");
+        let result = run_task_on_loop(|tasks| async move { save_buffer(&tasks, request).await });
         assert_eq!(result.exit, 0, "{}", result.stderr);
 
         assert_eq!(fs::read(&path).expect("saved file"), b"first\nsecond\n");
@@ -1483,11 +882,8 @@ mod tests {
             }
         });
 
-        let result = run_on_loop(FileWriteJob::new(file_write(
-            &fifo,
-            libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
-            &payload,
-        )));
+        let request = file_write(&fifo, libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC, &payload);
+        let result = run_task_on_loop(|tasks| async move { save_buffer(&tasks, request).await });
 
         assert_eq!(result.exit, 0, "{}", result.stderr);
         assert_eq!(reader.join().expect("reader"), payload);
@@ -1498,11 +894,12 @@ mod tests {
     fn file_write_job_reports_an_unwritable_path_and_continues_the_queue() {
         let directory = temporary_directory("save-unwritable");
 
-        let result = run_on_loop(FileWriteJob::new(file_write(
+        let request = file_write(
             &directory,
             libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
             b"buffer",
-        )));
+        );
+        let result = run_task_on_loop(|tasks| async move { save_buffer(&tasks, request).await });
 
         assert_ne!(result.exit, 0);
         assert!(
@@ -1527,35 +924,41 @@ mod tests {
     fn wait_for_job_consumes_a_signal_that_already_arrived() {
         let registry = WaitRegistry::default();
 
-        run_on_loop(WaitForJob::new(&wait_for_args(&["-S", "ready"]), &registry));
+        resolved(wait_for(&wait_for_args(&["-S", "ready"]), &registry));
         let started = Instant::now();
-        let result = run_on_loop(WaitForJob::new(&wait_for_args(&["ready"]), &registry));
+        let result = resolved(wait_for(&wait_for_args(&["ready"]), &registry));
 
         assert_eq!(result.exit, 0, "{}", result.stderr);
         assert!(started.elapsed() < Duration::from_millis(50));
     }
 
-    /// Start a `wait-for` job and check it has not resolved yet. The registry
-    /// and the waiter share a thread, so the job is driven one poll at a time
-    /// instead of parked on a helper thread.
-    fn pending_wait_for(args: &[&str], registry: &WaitRegistry) -> TaskState<WaitForJob> {
-        let mut task = TaskState::new(WaitForJob::new(&wait_for_args(args), registry));
-        assert!(
-            !task.poll(&ReadySet::default()),
-            "wait-for resolved before the channel was touched"
-        );
-        task
+    /// The result of a `wait-for` that finished the moment it touched the
+    /// registry.
+    fn resolved(start: SuspensionStart) -> CommandResult {
+        match start {
+            SuspensionStart::Ready(result) => result,
+            SuspensionStart::Waiting(_) => panic!("wait-for waited when it should not have"),
+        }
+    }
+
+    /// The wait half of a `wait-for` that has to queue behind another client.
+    fn pending_wait_for(args: &[&str], registry: &WaitRegistry) -> SuspensionWait {
+        match wait_for(&wait_for_args(args), registry) {
+            SuspensionStart::Waiting(wait) => wait,
+            SuspensionStart::Ready(_) => {
+                panic!("wait-for resolved before the channel was touched")
+            }
+        }
     }
 
     #[test]
     fn wait_for_job_resumes_when_the_signal_arrives() {
         let registry = WaitRegistry::default();
-        let mut waiter = pending_wait_for(&["later"], &registry);
+        let waiter = pending_wait_for(&["later"], &registry);
 
         registry.signal("later");
 
-        finish_on_loop(&mut waiter);
-        let result = waiter.take_output().expect("signalled wait-for");
+        let result = run_task_on_loop(|_| async move { waiter.resolve().await });
         assert_eq!(result.exit, 0, "{}", result.stderr);
     }
 
@@ -1564,14 +967,13 @@ mod tests {
         let registry = WaitRegistry::default();
 
         // The first `-L` takes the lock outright.
-        let result = run_on_loop(WaitForJob::new(&wait_for_args(&["-L", "gate"]), &registry));
+        let result = resolved(wait_for(&wait_for_args(&["-L", "gate"]), &registry));
         assert_eq!(result.exit, 0, "{}", result.stderr);
 
-        let mut waiter = pending_wait_for(&["-L", "gate"], &registry);
+        let waiter = pending_wait_for(&["-L", "gate"], &registry);
         assert!(registry.unlock("gate"), "first unlock");
 
-        finish_on_loop(&mut waiter);
-        let result = waiter.take_output().expect("handed-off wait-for");
+        let result = run_task_on_loop(|_| async move { waiter.resolve().await });
         assert_eq!(result.exit, 0, "{}", result.stderr);
         // The handoff kept the channel locked, so the second holder can release
         // it and nobody else can.
@@ -1583,7 +985,7 @@ mod tests {
     fn wait_for_job_reports_an_unlock_of_a_free_channel() {
         let registry = WaitRegistry::default();
 
-        let result = run_on_loop(WaitForJob::new(&wait_for_args(&["-U", "free"]), &registry));
+        let result = resolved(wait_for(&wait_for_args(&["-U", "free"]), &registry));
 
         assert_ne!(result.exit, 0);
         assert_eq!(result.stderr, "channel free not locked\n");
