@@ -15,7 +15,7 @@ mod tasks;
 mod timer;
 
 pub use completion::{completion_pair, Completion, CompletionSender, WakeFn};
-pub use reactor::{Interest, MioReactor, PollResult, Readiness, Reactor, Ready, Token};
+pub use reactor::{Interest, MioReactor, PollResult, Reactor, Readiness, Ready, Token};
 pub use runtime::TaskRuntime;
 pub use tasks::{
     join, sleep, sleep_until, yield_now, AsyncFd, Join, ReadinessFuture, Sleep, TaskEvent,

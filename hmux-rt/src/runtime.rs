@@ -152,7 +152,8 @@ impl TaskRuntime {
             } else {
                 TURN_TIMEOUT
             };
-            self.dispatch(DISPATCH_BUDGET).expect("task runtime dispatch");
+            self.dispatch(DISPATCH_BUDGET)
+                .expect("task runtime dispatch");
             self.poll(Some(timeout)).expect("task runtime poll");
         }
     }

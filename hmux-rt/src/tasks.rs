@@ -321,11 +321,7 @@ impl AsyncFd {
     ///
     /// The duplicate is what the loop hands the reactor, so the caller stays
     /// free to close the original whenever its own logic is done with it.
-    pub fn new(
-        handle: &TaskHandle,
-        fd: BorrowedFd<'_>,
-        interest: Interest,
-    ) -> io::Result<Self> {
+    pub fn new(handle: &TaskHandle, fd: BorrowedFd<'_>, interest: Interest) -> io::Result<Self> {
         let task = handle
             .shared
             .polling
@@ -411,7 +407,10 @@ impl Future for Sleep {
             self.shared.deadlines.borrow_mut().remove(&task);
             return Poll::Ready(());
         }
-        self.shared.deadlines.borrow_mut().insert(task, self.deadline);
+        self.shared
+            .deadlines
+            .borrow_mut()
+            .insert(task, self.deadline);
         Poll::Pending
     }
 }

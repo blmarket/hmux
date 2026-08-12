@@ -33,8 +33,12 @@ not imported into the project.
 - **The invariant:** every future that returns `Poll::Pending` must have
   parked `cx.local_waker()` (or live in a task something else re-polls).
   This is unenforceable in the type system — there is no `LocalFuture`; both
-  wakers arrive through the same `Context` — so it is enforced by review and
-  by keeping foreign leaves out.
+  wakers arrive through the same `Context` — so it is enforced by lint:
+  `Context::waker` is a disallowed method (`clippy.toml` at the workspace
+  root, denied via `[workspace.lints.clippy]`), checked by `make lint` and
+  the merge gate. The lint sees all workspace-compiled code, vendored code
+  included; external dependencies are outside its reach, which is what the
+  no-external-async rule covers.
 - **Vendoring means porting.** Copying a third-party async primitive into the
   tree does not make it safe; its wake path must be ported to
   `LocalWaker`/`LocalWake`. For `Arc`-waker-based schedulers that is a
