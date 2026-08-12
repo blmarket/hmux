@@ -149,7 +149,9 @@ class LooperConfig:
     provider: str = PRESETS[DEFAULT_PRESET].provider
     # 0 means "until the user stops it" for both limits below.
     max_runs: int = 0
-    run_timeout: float = 0.0
+    # A run that has gone this long has stopped making progress far more often
+    # than it is still working, so end it and let the next run start fresh.
+    run_timeout: float = 7200.0
     agent_size_percent: int = 75
     startup_timeout: float = 120.0
     poll_seconds: float = 2.0
@@ -356,8 +358,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="run regardless of quota pacing, without waiting between runs",
     )
     parser.add_argument(
-        "--run-timeout", type=float, default=0.0, metavar="SECONDS",
-        help="end a run that has not finished in this long (default: no limit)",
+        "--run-timeout", type=float, default=LooperConfig.run_timeout,
+        metavar="SECONDS",
+        help="end a run that has not finished in this long, 0 for no limit "
+             "(default: %(default)gs)",
     )
     parser.add_argument(
         "--size", type=int, default=LooperConfig.agent_size_percent,
