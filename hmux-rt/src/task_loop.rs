@@ -66,9 +66,20 @@ impl TaskLoop {
         for token in self.tasks.take_released_io() {
             reactor.deregister(token)?;
         }
-        for (io, _task, fd, interest) in self.tasks.take_new_io() {
-            let token = reactor.register(fd.as_fd(), interest, recipient(io))?;
-            self.tasks.set_io_token(io, token);
+        for (io, task, fd, interest) in self.tasks.take_new_io() {
+            match reactor.register(fd.as_fd(), interest, recipient(io)) {
+                Ok(token) => self.tasks.set_io_token(io, token),
+                // A descriptor with no poll operation — a regular file, or a
+                // client that redirected its output to `/dev/null` — is
+                // rejected by `epoll_ctl` with EPERM. Such a descriptor is
+                // never *not* ready, so serve it directly instead of taking
+                // the host down with it.
+                Err(error) if error.raw_os_error() == Some(libc::EPERM) => {
+                    self.tasks.mark_io_unpollable(io);
+                    enqueue(TaskEvent::Poll(task));
+                }
+                Err(error) => return Err(error),
+            }
             // The reactor took its own duplicate.
             drop(fd);
         }

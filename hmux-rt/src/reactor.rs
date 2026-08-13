@@ -106,6 +106,17 @@ impl Readiness {
             error: event.is_error(),
         }
     }
+
+    /// What an unpollable descriptor reports: never *not* ready.
+    pub(crate) fn always() -> Self {
+        Self {
+            readable: true,
+            writable: true,
+            read_closed: false,
+            write_closed: false,
+            error: false,
+        }
+    }
 }
 
 /// One readiness notification addressed to its registered recipient.

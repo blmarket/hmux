@@ -55,6 +55,10 @@ struct IoState {
     /// an unread one, which is fine under the "drain until `WouldBlock` before
     /// waiting again" discipline every leaf here follows.
     pending: Option<Readiness>,
+    /// Set when the descriptor has no poll operation (`epoll` rejects regular
+    /// files and `/dev/null` with `EPERM`). Such a descriptor is never *not*
+    /// ready, so waits on it resolve immediately instead of parking forever.
+    always_ready: bool,
     waker: Option<LocalWaker>,
 }
 
@@ -277,6 +281,15 @@ impl TaskSet {
         }
     }
 
+    /// Record that the descriptor cannot be polled, so waits on it resolve
+    /// immediately. Reports the owning task so the host can queue its poll.
+    pub fn mark_io_unpollable(&mut self, io: u64) -> Option<TaskId> {
+        let entries = self.shared.io.borrow();
+        let entry = entries.get(&io)?;
+        entry.slot.borrow_mut().always_ready = true;
+        Some(entry.task)
+    }
+
     /// What every sleeping task is waiting for, for the loop to arm timers
     /// against.
     pub fn deadlines(&self) -> BTreeMap<TaskId, Instant> {
@@ -374,6 +387,9 @@ impl Future for ReadinessFuture<'_> {
         if let Some(readiness) = slot.pending.take() {
             return Poll::Ready(readiness);
         }
+        if slot.always_ready {
+            return Poll::Ready(Readiness::always());
+        }
         slot.waker = Some(context.local_waker().clone());
         Poll::Pending
     }
@@ -384,6 +400,7 @@ pub fn sleep_until(handle: &TaskHandle, deadline: Instant) -> Sleep {
     Sleep {
         shared: Rc::clone(&handle.shared),
         deadline,
+        parked: Cell::new(None),
     }
 }
 
@@ -394,6 +411,9 @@ pub fn sleep(handle: &TaskHandle, duration: Duration) -> Sleep {
 pub struct Sleep {
     shared: Rc<TaskShared>,
     deadline: Instant,
+    /// The task whose deadline this sleep armed, so dropping the sleep —
+    /// losing a [`select`] is the usual way — disarms it.
+    parked: Cell<Option<TaskId>>,
 }
 
 impl Future for Sleep {
@@ -405,12 +425,66 @@ impl Future for Sleep {
         };
         if Instant::now() >= self.deadline {
             self.shared.deadlines.borrow_mut().remove(&task);
+            self.parked.set(None);
             return Poll::Ready(());
         }
         self.shared
             .deadlines
             .borrow_mut()
             .insert(task, self.deadline);
+        self.parked.set(Some(task));
+        Poll::Pending
+    }
+}
+
+impl Drop for Sleep {
+    fn drop(&mut self) {
+        let Some(task) = self.parked.get() else {
+            return;
+        };
+        let mut deadlines = self.shared.deadlines.borrow_mut();
+        // Only this sleep's own deadline: the task may already be parked on a
+        // newer one.
+        if deadlines.get(&task) == Some(&self.deadline) {
+            deadlines.remove(&task);
+        }
+    }
+}
+
+/// The two outcomes of a [`select`].
+pub enum Either<A, B> {
+    First(A),
+    Second(B),
+}
+
+/// Run two futures on one task, finishing when the first of them does.
+///
+/// Biased: `first` is polled before `second` on every turn, so a turn where
+/// both are ready deterministically reports `first`. The loser is dropped with
+/// the `Select`, which disarms whatever it parked — a lost [`Sleep`] takes its
+/// deadline with it.
+pub fn select<A: Future, B: Future>(first: A, second: B) -> Select<A, B> {
+    Select { first, second }
+}
+
+pub struct Select<A, B> {
+    first: A,
+    second: B,
+}
+
+impl<A: Future, B: Future> Future for Select<A, B> {
+    type Output = Either<A::Output, B::Output>;
+
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        // Safety: `Select` is only ever pinned as a whole, and the projections
+        // below are the standard structural ones.
+        let this = unsafe { self.get_unchecked_mut() };
+        if let Poll::Ready(output) = unsafe { Pin::new_unchecked(&mut this.first) }.poll(context) {
+            return Poll::Ready(Either::First(output));
+        }
+        if let Poll::Ready(output) = unsafe { Pin::new_unchecked(&mut this.second) }.poll(context) {
+            return Poll::Ready(Either::Second(output));
+        }
         Poll::Pending
     }
 }

@@ -263,4 +263,45 @@ mod tests {
         });
         assert!(started.elapsed() >= Duration::from_millis(20));
     }
+
+    #[test]
+    fn a_lost_select_sleep_disarms_its_deadline() {
+        use crate::tasks::{select, Either};
+
+        let mut runtime = TaskRuntime::new().expect("runtime");
+        let handle = runtime.handle();
+        let started = Instant::now();
+        runtime.block_on(async move {
+            // The shell finishes far before the fallback deadline; losing the
+            // race must drop the deadline with the sleep, or the tail of this
+            // task would stall a blocking host poll for the full two seconds.
+            let raced = select(
+                run_shell(&handle, "echo raced"),
+                sleep(&handle, Duration::from_secs(2)),
+            )
+            .await;
+            let Either::First(output) = raced else {
+                panic!("the shell lost to a two-second sleep");
+            };
+            assert_eq!(output.expect("shell output"), b"raced\n");
+            // A fresh sleep proves the stale deadline is gone: it must wake at
+            // its own time, not at the raced sleep's.
+            sleep(&handle, Duration::from_millis(20)).await;
+        });
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn an_unpollable_descriptor_reports_always_ready() {
+        let mut runtime = TaskRuntime::new().expect("runtime");
+        let handle = runtime.handle();
+        let readiness = runtime.block_on(async move {
+            let file = std::fs::File::open("/dev/null").expect("open /dev/null");
+            let source =
+                AsyncFd::new(&handle, file.as_fd(), Interest::READABLE).expect("register");
+            source.readiness().await
+        });
+        assert!(readiness.is_readable());
+        assert!(readiness.is_writable());
+    }
 }

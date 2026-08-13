@@ -9,6 +9,7 @@
 #![feature(local_waker)]
 
 mod completion;
+mod notify;
 mod reactor;
 mod runtime;
 mod task_loop;
@@ -16,11 +17,12 @@ mod tasks;
 mod timer;
 
 pub use completion::{completion_pair, Completion, CompletionSender, WakeFn};
+pub use notify::{Notified, Notify};
 pub use reactor::{Interest, MioReactor, PollResult, Reactor, Readiness, Ready, Token};
 pub use runtime::TaskRuntime;
 pub use task_loop::TaskLoop;
 pub use tasks::{
-    join, sleep, sleep_until, yield_now, AsyncFd, Join, ReadinessFuture, Sleep, TaskEvent,
-    TaskHandle, TaskId, TaskSet, WakeSink, YieldNow,
+    join, select, sleep, sleep_until, yield_now, AsyncFd, Either, Join, ReadinessFuture, Select,
+    Sleep, TaskEvent, TaskHandle, TaskId, TaskSet, WakeSink, YieldNow,
 };
 pub use timer::{ExpiredTimer, TimerId, TimerQueue};
