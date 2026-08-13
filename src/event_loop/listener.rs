@@ -1,17 +1,15 @@
-//! Readiness-driven Unix listener actor.
+//! Task-driven Unix listener.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::io;
-use std::os::fd::{AsFd, BorrowedFd};
+use std::os::fd::AsFd;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::rc::Rc;
 
 use tracing::warn;
 
-use super::actor::ActorRef;
-use super::driver::Outbox;
-use hmux_rt::Token;
+use hmux_rt::{select, yield_now, AsyncFd, Either, Interest, Notify, TaskHandle};
 
 /// Accepted sockets waiting for the server adapter to create client actors.
 #[derive(Clone, Default)]
@@ -34,110 +32,95 @@ impl AcceptedClients {
     }
 }
 
-/// Events delivered to the listener actor.
-pub(crate) enum ListenerEvent {
-    Start,
-    Readable,
-    AcceptContinuation,
-    Shutdown,
-}
-
-/// Listener ownership and bounded accept state.
-pub(crate) struct Listener {
-    listener: UnixListener,
+/// The loop's handle to the listener task.
+pub(crate) struct ListenerHandle {
     accepted: AcceptedClients,
-    token: Option<Token>,
-    accept_budget: usize,
-    accept_work_queued: bool,
-    stopping: bool,
+    shutdown: Notify,
+    done: Rc<Cell<bool>>,
 }
 
-impl Listener {
-    pub(crate) fn new(listener: UnixListener, accept_budget: usize) -> (Self, AcceptedClients) {
-        assert!(accept_budget > 0, "listener accept budget must be nonzero");
-        let accepted = AcceptedClients::default();
-        (
-            Self {
-                listener,
-                accepted: accepted.clone(),
-                token: None,
-                accept_budget,
-                accept_work_queued: false,
-                stopping: false,
-            },
-            accepted,
-        )
+impl ListenerHandle {
+    pub(crate) fn pop_accepted(&self) -> Option<UnixStream> {
+        self.accepted.pop_front()
     }
 
-    pub(crate) fn fd(&self) -> BorrowedFd<'_> {
-        self.listener.as_fd()
+    #[cfg(test)]
+    pub(crate) fn accepted_len(&self) -> usize {
+        self.accepted.len()
     }
 
-    pub(crate) fn token(&self) -> Option<Token> {
-        self.token
+    /// Stop accepting; the task finishes on its next turn.
+    pub(crate) fn shutdown(&self) {
+        self.shutdown.notify();
     }
 
-    pub(crate) fn set_token(&mut self, token: Option<Token>) {
-        self.token = token;
+    pub(crate) fn is_alive(&self) -> bool {
+        !self.done.get()
     }
+}
 
-    pub(crate) fn mark_accept_work_queued(&mut self) -> bool {
-        if self.stopping || self.accept_work_queued {
-            return false;
-        }
-        self.accept_work_queued = true;
-        true
-    }
-
-    pub(crate) fn request_shutdown(&mut self) -> bool {
-        if self.stopping {
-            return false;
-        }
-        self.stopping = true;
-        true
-    }
-
-    pub(crate) fn handle(
-        &mut self,
-        target: &ActorRef<Self>,
-        event: ListenerEvent,
-        outbox: &mut Outbox,
-    ) {
-        match event {
-            ListenerEvent::Start if !self.stopping => {
-                outbox.set_listener_interest(target.clone(), true);
-            }
-            ListenerEvent::Readable | ListenerEvent::AcceptContinuation if !self.stopping => {
-                self.accept_work_queued = false;
-                self.handle_readable(target, outbox);
-            }
-            ListenerEvent::Shutdown => {
-                outbox.set_listener_interest(target.clone(), false);
-                outbox.stop_listener(target.clone());
-            }
-            ListenerEvent::Start | ListenerEvent::Readable | ListenerEvent::AcceptContinuation => {}
-        }
-    }
-
-    fn handle_readable(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
-        let mut accepted = 0;
-        while accepted < self.accept_budget {
-            match self.listener.accept() {
-                Ok((stream, _)) => {
-                    self.accepted.push_back(stream);
-                    accepted += 1;
-                }
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => return,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) => {
-                    warn!(error = %error, "accept failed");
-                    return;
+/// Accept clients on the loop, `accept_budget` per turn.
+pub(crate) fn spawn(
+    tasks: &TaskHandle,
+    listener: UnixListener,
+    accept_budget: usize,
+) -> io::Result<ListenerHandle> {
+    assert!(accept_budget > 0, "listener accept budget must be nonzero");
+    listener.set_nonblocking(true)?;
+    let accepted = AcceptedClients::default();
+    let shutdown = Notify::new();
+    let done = Rc::new(Cell::new(false));
+    let task_accepted = accepted.clone();
+    let task_shutdown = shutdown.clone();
+    let task_done = Rc::clone(&done);
+    let handle = tasks.clone();
+    tasks.spawn(async move {
+        let Ok(readiness) = AsyncFd::new(&handle, listener.as_fd(), Interest::READABLE) else {
+            task_done.set(true);
+            return;
+        };
+        'run: loop {
+            match select(task_shutdown.notified(), readiness.readiness()).await {
+                Either::First(()) => break,
+                Either::Second(_) => {
+                    // Edge-style: accept until `WouldBlock` before waiting
+                    // again, yielding after every budget's worth so a
+                    // connection flood cannot starve the rest of the loop.
+                    'draining: loop {
+                        let mut accepted = 0;
+                        while accepted < accept_budget {
+                            match listener.accept() {
+                                Ok((stream, _)) => {
+                                    task_accepted.push_back(stream);
+                                    accepted += 1;
+                                }
+                                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                                    break 'draining;
+                                }
+                                Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                                    continue;
+                                }
+                                Err(error) => {
+                                    warn!(error = %error, "accept failed");
+                                    break 'draining;
+                                }
+                            }
+                        }
+                        // A yield that a shutdown can still win: the backlog
+                        // does not hold the listener past its stop.
+                        match select(task_shutdown.notified(), yield_now()).await {
+                            Either::First(()) => break 'run,
+                            Either::Second(()) => {}
+                        }
+                    }
                 }
             }
         }
-
-        if self.mark_accept_work_queued() {
-            outbox.enqueue_listener(target.clone(), ListenerEvent::AcceptContinuation);
-        }
-    }
+        task_done.set(true);
+    });
+    Ok(ListenerHandle {
+        accepted,
+        shutdown,
+        done,
+    })
 }

@@ -13,7 +13,6 @@ use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 
 use super::actor::{ActorRef, WeakActorRef};
 use super::job::{BackgroundCommands, JobEvent};
-use super::listener::{AcceptedClients, Listener, ListenerEvent};
 use super::pane::{EventPane, PaneEvent, PaneInterest};
 use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
@@ -25,10 +24,6 @@ use crate::server::status::FormatJob;
 
 /// One queued event with a direct reference to its destination.
 pub(crate) enum Envelope {
-    Listener {
-        target: ActorRef<Listener>,
-        event: ListenerEvent,
-    },
     Pane {
         target: ActorRef<EventPane>,
         event: PaneEvent,
@@ -51,10 +46,6 @@ pub(crate) enum Envelope {
 impl Envelope {
     fn dispatch(self, outbox: &mut Outbox) {
         match self {
-            Envelope::Listener { target, event } => {
-                let dispatch_target = target.clone();
-                target.with_mut(|listener| listener.handle(&dispatch_target, event, outbox));
-            }
             Envelope::Pane { target, event } => {
                 let dispatch_target = target.clone();
                 target.with_mut(|pane| pane.handle(&dispatch_target, event, outbox));
@@ -243,10 +234,6 @@ fn protocol_ready_event(side: ProtocolIoSide) -> ProtocolEvent {
 
 enum Effect {
     Enqueue(Envelope),
-    SetListenerInterest {
-        target: ActorRef<Listener>,
-        enabled: bool,
-    },
     SetPaneInterest {
         target: ActorRef<EventPane>,
         interest: PaneInterest,
@@ -266,7 +253,6 @@ enum Effect {
         deadline: Instant,
         generation: u64,
     },
-    StopListener(ActorRef<Listener>),
     StopPane(ActorRef<EventPane>),
     StopProtocol(ActorRef<ProtocolClient>),
 }
@@ -287,10 +273,6 @@ impl Outbox {
         self.effects.push(Effect::Enqueue(envelope));
     }
 
-    pub(crate) fn enqueue_listener(&mut self, target: ActorRef<Listener>, event: ListenerEvent) {
-        self.enqueue(Envelope::Listener { target, event });
-    }
-
     pub(crate) fn enqueue_pane(&mut self, target: ActorRef<EventPane>, event: PaneEvent) {
         self.enqueue(Envelope::Pane { target, event });
     }
@@ -309,11 +291,6 @@ impl Outbox {
         event: JobEvent,
     ) {
         self.enqueue(Envelope::Background { target, event });
-    }
-
-    pub(crate) fn set_listener_interest(&mut self, target: ActorRef<Listener>, enabled: bool) {
-        self.effects
-            .push(Effect::SetListenerInterest { target, enabled });
     }
 
     pub(crate) fn set_pane_interest(
@@ -366,10 +343,6 @@ impl Outbox {
         });
     }
 
-    pub(crate) fn stop_listener(&mut self, target: ActorRef<Listener>) {
-        self.effects.push(Effect::StopListener(target));
-    }
-
     pub(crate) fn stop_pane(&mut self, target: ActorRef<EventPane>) {
         self.effects.push(Effect::StopPane(target));
     }
@@ -386,9 +359,6 @@ pub(crate) struct IoRecipient {
 
 #[derive(Clone, Debug)]
 enum IoTarget {
-    Listener {
-        target: WeakActorRef<Listener>,
-    },
     Pane {
         target: WeakActorRef<EventPane>,
     },
@@ -402,12 +372,6 @@ enum IoTarget {
     Task {
         io: u64,
     },
-}
-
-/// References returned when a Unix listener is added to the loop.
-pub(crate) struct ListenerHandle {
-    listener: ActorRef<Listener>,
-    accepted: AcceptedClients,
 }
 
 pub(crate) struct PaneHandle {
@@ -451,21 +415,6 @@ impl ProtocolHandle {
         self.protocol
             .with(ProtocolClient::is_attach)
             .unwrap_or(false)
-    }
-}
-
-impl ListenerHandle {
-    pub(crate) fn pop_accepted(&self) -> Option<std::os::unix::net::UnixStream> {
-        self.accepted.pop_front()
-    }
-
-    #[cfg(test)]
-    fn accepted_len(&self) -> usize {
-        self.accepted.len()
-    }
-
-    pub(crate) fn is_alive(&self) -> bool {
-        self.listener.is_alive()
     }
 }
 
@@ -572,15 +521,8 @@ where
         &mut self,
         listener: std::os::unix::net::UnixListener,
         accept_budget: usize,
-    ) -> io::Result<ListenerHandle> {
-        listener.set_nonblocking(true)?;
-        let (listener, accepted) = Listener::new(listener, accept_budget);
-        let listener = ActorRef::new(listener);
-        self.events.push_back(Envelope::Listener {
-            target: listener.clone(),
-            event: ListenerEvent::Start,
-        });
-        Ok(ListenerHandle { listener, accepted })
+    ) -> io::Result<super::listener::ListenerHandle> {
+        super::listener::spawn(&self.task_handle, listener, accept_budget)
     }
 
     pub(crate) fn add_pane(&mut self, io: PaneIo) -> PaneHandle {
@@ -665,19 +607,6 @@ where
             self.set_pane_interest(&target.pane, interest)?;
         }
         Ok(())
-    }
-
-    pub(crate) fn shutdown_listener(&mut self, target: &ListenerHandle) {
-        let should_enqueue = target
-            .listener
-            .with_mut(Listener::request_shutdown)
-            .unwrap_or(false);
-        if should_enqueue {
-            self.events.push_back(Envelope::Listener {
-                target: target.listener.clone(),
-                event: ListenerEvent::Shutdown,
-            });
-        }
     }
 
     pub(crate) fn shutdown_pane(&mut self, target: &PaneHandle) {
@@ -804,20 +733,6 @@ where
 
     fn enqueue_readiness(&mut self, notification: Ready<IoRecipient>) {
         match &notification.recipient().target {
-            IoTarget::Listener { target: recipient } => {
-                let Some(target) = recipient.upgrade() else {
-                    return;
-                };
-                let should_enqueue = target
-                    .with_mut(Listener::mark_accept_work_queued)
-                    .unwrap_or(false);
-                if should_enqueue {
-                    self.events.push_back(Envelope::Listener {
-                        target,
-                        event: ListenerEvent::Readable,
-                    });
-                }
-            }
             IoTarget::Pane { target: recipient } => {
                 let Some(target) = recipient.upgrade() else {
                     return;
@@ -871,9 +786,6 @@ where
     fn apply(&mut self, effect: Effect) -> io::Result<()> {
         match effect {
             Effect::Enqueue(envelope) => self.events.push_back(envelope),
-            Effect::SetListenerInterest { target, enabled } => {
-                self.set_listener_interest(&target, enabled)?;
-            }
             Effect::SetPaneInterest { target, interest } => {
                 self.set_pane_interest(&target, interest)?;
             }
@@ -906,9 +818,6 @@ where
                     wakes.fire_pane_timer(target, generation);
                 });
             }
-            Effect::StopListener(target) => {
-                target.stop();
-            }
             Effect::StopPane(target) => {
                 target.stop();
             }
@@ -925,38 +834,6 @@ where
             hmux_rt::sleep_until(&tasks, deadline).await;
             fire();
         });
-    }
-
-    fn set_listener_interest(
-        &mut self,
-        target: &ActorRef<Listener>,
-        enabled: bool,
-    ) -> io::Result<()> {
-        let token = target.with(Listener::token).flatten();
-        match (enabled, token) {
-            (true, None) => {
-                let recipient = IoRecipient {
-                    target: IoTarget::Listener {
-                        target: target.downgrade(),
-                    },
-                };
-                if let Some(result) = target.with_mut(|listener| {
-                    let token =
-                        self.reactor
-                            .register(listener.fd(), Interest::READABLE, recipient)?;
-                    listener.set_token(Some(token));
-                    Ok::<(), io::Error>(())
-                }) {
-                    result?;
-                }
-            }
-            (false, Some(token)) => {
-                self.reactor.deregister(token)?;
-                target.with_mut(|listener| listener.set_token(None));
-            }
-            _ => {}
-        }
-        Ok(())
     }
 
     fn set_pane_interest(
@@ -1221,7 +1098,7 @@ mod tests {
         assert!(listener.pop_accepted().is_none());
         drop((accepted, client));
 
-        loop_.shutdown_listener(&listener);
+        listener.shutdown();
         dispatch_all(&mut loop_);
         assert!(!listener.is_alive());
     }
@@ -1249,7 +1126,7 @@ mod tests {
 
         while listener.pop_accepted().is_some() {}
         drop(clients);
-        loop_.shutdown_listener(&listener);
+        listener.shutdown();
         dispatch_all(&mut loop_);
         assert!(!listener.is_alive());
     }
@@ -1474,11 +1351,10 @@ mod tests {
 
     #[test]
     fn turn_skips_poll_while_dispatch_budget_leaves_queued_work() {
-        let path = ListenerPath::new();
-        let listener = UnixListener::bind(&path.0).unwrap();
         let mut loop_ = EventLoop::new().unwrap();
-        let listener = loop_.add_listener(listener, 1).unwrap();
-        loop_.shutdown_listener(&listener);
+        let tasks = loop_.task_handle();
+        tasks.spawn(async {});
+        tasks.spawn(async {});
 
         let result = loop_.run_turn(Some(POLL_TIMEOUT), 1).unwrap();
 
@@ -1487,6 +1363,5 @@ mod tests {
         assert_eq!(loop_.pending_events(), 1);
 
         dispatch_all(&mut loop_);
-        assert!(!listener.is_alive());
     }
 }

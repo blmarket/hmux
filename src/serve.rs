@@ -13,7 +13,8 @@ use std::time::Instant;
 
 use tracing::{info, warn};
 
-use crate::event_loop::driver::{EventLoop, ListenerHandle, PaneHandle, ProtocolHandle};
+use crate::event_loop::driver::{EventLoop, PaneHandle, ProtocolHandle};
+use crate::event_loop::listener::ListenerHandle;
 use crate::event_loop::protocol::ProtocolCloseReason;
 use crate::integration::AgentObserver;
 use crate::platform::{CurrentPlatform, Platform};
@@ -78,7 +79,7 @@ pub fn run_event_loop(
 
     // Match the compatibility listener's shutdown behavior: stop accepting,
     // then allow already accepted clients to finish their final handshake.
-    event_loop.shutdown_listener(&listener);
+    listener.shutdown();
     while listener.is_alive() {
         if !event_loop.dispatch_one()? {
             return Err(io::Error::other(
