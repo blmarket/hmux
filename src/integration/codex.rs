@@ -10,7 +10,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::Path;
 
 use super::{
-    is_braille, is_uuid, title_working_spinner, AgentDetector, AgentState, CursorEvidence,
+    is_title_spinner, is_uuid, title_working_spinner, AgentDetector, AgentState, CursorEvidence,
     Detection, SessionIdSource,
 };
 
@@ -204,10 +204,10 @@ fn title_indicates_blocked(title: &str) -> bool {
 }
 
 /// Herdr `osc_title_idle`: the title has visible text but is neither a spinner
-/// (leading braille) nor an approval request.
+/// (a leading spinner cell) nor an approval request.
 fn title_indicates_idle(title: &str) -> bool {
     title.chars().any(|c| !c.is_whitespace())
-        && !title.starts_with(is_braille)
+        && !title.starts_with(is_title_spinner)
         && !title.to_lowercase().contains("action required")
 }
 

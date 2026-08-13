@@ -5,7 +5,7 @@
 //! box, the last horizontal rule), this prototype approximates them from the
 //! plain-text screen tail plus the window title. Signals, high priority first:
 //!
-//! - a braille working spinner in the title (OSC 0/2) → working;
+//! - a working spinner in the title (OSC 0/2) → working;
 //! - the detailed-transcript viewer → keep previous;
 //! - a live selection form / dynamic-workflow prompt → blocked;
 //! - a live prompt box (`❯`) with no pending question → idle;
@@ -105,7 +105,9 @@ fn session_id_from_transcript_name(name: &OsStr) -> Option<String> {
 }
 
 fn detect(screen: &str, title: Option<&str>) -> Detection {
-    // 1100 — a braille spinner in the title means a turn is in progress.
+    // 1100 — a spinner in the title means a turn is in progress. Claude Code
+    // animates it with half-circles (`◐ …`) as of 2.1.229 and with braille
+    // (`⠹ …`) before that; both spell "working".
     if let Some(title) = title {
         if title_working_spinner(title) {
             return Detection::State(AgentState::Working);
@@ -337,11 +339,27 @@ mod tests {
 
     #[test]
     fn title_spinner_reports_working() {
-        // The braille spinner in the title outranks a resting prompt box.
+        // The spinner in the title outranks a resting prompt box, whether it is
+        // the half-circle animation current Claude Code draws or the braille one
+        // older releases drew.
+        let screen = "───────\n❯ ";
+        for title in ["◐ Claude", "◑ Claude", "◒ Claude", "◓ Claude", "⠹ Claude"] {
+            assert_eq!(
+                detect(screen, Some(title)),
+                Detection::State(AgentState::Working),
+                "{title}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_spinner_glyph_alone_is_not_a_working_title() {
+        // The signal is the spinner cell plus its separating space; a title that
+        // merely starts with the glyph is not the animation.
         let screen = "───────\n❯ ";
         assert_eq!(
-            detect(screen, Some("⠹ Claude")),
-            Detection::State(AgentState::Working)
+            detect(screen, Some("◐Claude")),
+            Detection::State(AgentState::Idle)
         );
     }
 

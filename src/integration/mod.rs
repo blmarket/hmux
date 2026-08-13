@@ -233,17 +233,31 @@ pub(crate) fn default_detectors() -> Vec<Box<dyn AgentDetector>> {
     ]
 }
 
-/// A single braille cell (U+2800–U+28FF). Codex and Claude both animate their
-/// "working" spinner with these in the window title.
+/// A single braille cell (U+2800–U+28FF). Codex, pi, and agy animate their
+/// "working" spinner with these, as older Claude Code releases did.
 pub(crate) fn is_braille(c: char) -> bool {
     ('\u{2800}'..='\u{28FF}').contains(&c)
 }
 
-/// Whether a window title begins with a braille spinner cell followed by a space
-/// (`^[⠀-⣿] `) — the shared "working" title signal.
+/// A half-filled circle (U+25D0–U+25D3). Claude Code 2.1.229 animates its title
+/// spinner with `◐`/`◑` instead of braille; the other two cells of the family
+/// are accepted so a longer frame cycle does not read as "not working".
+pub(crate) fn is_half_circle(c: char) -> bool {
+    ('\u{25D0}'..='\u{25D3}').contains(&c)
+}
+
+/// A window-title spinner cell of either family agents animate. Both are
+/// recognized everywhere: agents change their spinner glyphs between releases,
+/// and a pane may be running an older build than the one last observed.
+pub(crate) fn is_title_spinner(c: char) -> bool {
+    is_braille(c) || is_half_circle(c)
+}
+
+/// Whether a window title begins with a spinner cell followed by a space
+/// (`^[⠀-⣿◐-◓] `) — the shared "working" title signal.
 pub(crate) fn title_working_spinner(title: &str) -> bool {
     let mut chars = title.chars();
-    matches!(chars.next(), Some(first) if is_braille(first)) && chars.next() == Some(' ')
+    matches!(chars.next(), Some(first) if is_title_spinner(first)) && chars.next() == Some(' ')
 }
 
 /// Observer which logs agent state transitions for native panes.

@@ -374,8 +374,8 @@ fn claude_below_shell_is_detected_and_transitions_are_logged() {
         vec![
             // A resting prompt box: idle.
             frame(Some("✳ hmux"), "earlier output\n──────────\n❯ "),
-            // Braille spinner in the title: working.
-            frame(Some("⠹ hmux"), "running a tool…"),
+            // Spinner in the title: working.
+            frame(Some("◐ hmux"), "running a tool…"),
             // A permission prompt: blocked.
             frame(
                 None,
