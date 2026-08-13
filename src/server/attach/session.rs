@@ -576,6 +576,15 @@ impl AttachSession {
             st.find(target).is_some()
         };
         if !target_exists {
+            // The session may be gone *because* this client was told to move:
+            // `kill-session` under `detach-on-destroy off` publishes the
+            // switch and destroys the session in one step, and which of the
+            // two notifications is seen first is a scheduling accident. Honor
+            // the pending switch before concluding the session ended.
+            if let Some((session_id, _)) = self.attachments.render_attachment.take_switch() {
+                self.compositor.transition = Some(AttachTransition::SwitchSession(session_id));
+                return self.prepare_wait(state, control_fd, control_buffered);
+            }
             self.begin_finish(AttachFinishReason::SessionEnded);
             return Ok(self.prepare_finish(control_fd, control_buffered));
         }
@@ -595,6 +604,10 @@ impl AttachSession {
             }
             Ok(false) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                if let Some((session_id, _)) = self.attachments.render_attachment.take_switch() {
+                    self.compositor.transition = Some(AttachTransition::SwitchSession(session_id));
+                    return self.prepare_wait(state, control_fd, control_buffered);
+                }
                 self.begin_finish(AttachFinishReason::SessionEnded);
                 return Ok(self.prepare_finish(control_fd, control_buffered));
             }
@@ -1099,6 +1112,14 @@ impl AttachSession {
             }
             Ok(false) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                // A wake from a non-render source can observe the session's
+                // destruction before the render notification that carries the
+                // client's reassignment is processed; honor the pending
+                // switch before concluding the session ended.
+                if let Some((session_id, _)) = self.attachments.render_attachment.take_switch() {
+                    self.compositor.transition = Some(AttachTransition::SwitchSession(session_id));
+                    return Ok(AttachNotificationOutcome::Return(AttachDrive::Continue));
+                }
                 return Ok(AttachNotificationOutcome::Return(
                     self.begin_finish(AttachFinishReason::SessionEnded),
                 ));
