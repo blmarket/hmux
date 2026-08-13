@@ -10,13 +10,13 @@ use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::future::Future;
 use std::io;
-use std::os::fd::AsFd as _;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use crate::completion::{completion_pair, WakeFn};
 use crate::reactor::{MioReactor, Reactor as _, Ready};
-use crate::tasks::{TaskHandle, TaskId, TaskSet, WakeSink};
+use crate::task_loop::TaskLoop;
+use crate::tasks::{TaskEvent, TaskHandle, WakeSink};
 
 /// How much the runtime dispatches before it polls, and how long it blocks in
 /// the reactor when nothing has woken it.
@@ -26,10 +26,9 @@ const TURN_TIMEOUT: Duration = Duration::from_millis(10);
 /// An event loop that exists to run tasks and nothing else.
 pub struct TaskRuntime {
     reactor: MioReactor<u64>,
-    tasks: TaskSet,
-    handle: TaskHandle,
+    tasks: TaskLoop,
     /// The run queue: every wake is "poll this task", in fire order.
-    woken: Rc<RefCell<VecDeque<TaskId>>>,
+    woken: Rc<RefCell<VecDeque<TaskEvent>>>,
     ready: Vec<Ready<u64>>,
 }
 
@@ -38,39 +37,28 @@ impl TaskRuntime {
         let woken = Rc::new(RefCell::new(VecDeque::new()));
         let sink: WakeSink = {
             let woken = Rc::clone(&woken);
-            Rc::new(move |task| woken.borrow_mut().push_back(task))
+            Rc::new(move |task| woken.borrow_mut().push_back(TaskEvent::Poll(task)))
         };
-        let (tasks, handle) = TaskSet::new(sink);
         Ok(Self {
             reactor: MioReactor::new()?,
-            tasks,
-            handle,
+            tasks: TaskLoop::new(sink),
             woken,
             ready: Vec::new(),
         })
     }
 
     pub fn handle(&self) -> TaskHandle {
-        self.handle.clone()
+        self.tasks.handle()
     }
 
     /// Make the reactor and the run queue describe the task set: adopt
     /// spawns, make the registrations that were asked for, release the ones
     /// whose `AsyncFd` is gone.
     fn sync(&mut self) -> io::Result<()> {
-        for token in self.tasks.take_released_io() {
-            self.reactor.deregister(token)?;
-        }
-        for (io, _task, fd, interest) in self.tasks.take_new_io() {
-            let token = self.reactor.register(fd.as_fd(), interest, io)?;
-            self.tasks.set_io_token(io, token);
-        }
-        // A task's first turn is an event like any other, so a spawn never
-        // runs ahead of work already queued.
-        for task in self.tasks.take_spawned() {
-            self.woken.borrow_mut().push_back(task);
-        }
-        Ok(())
+        let woken = Rc::clone(&self.woken);
+        self.tasks.sync(&mut self.reactor, |io| io, |event| {
+            woken.borrow_mut().push_back(event);
+        })
     }
 
     fn dispatch(&mut self, budget: usize) -> io::Result<usize> {
@@ -79,11 +67,11 @@ impl TaskRuntime {
             // Before every poll, so a registration or spawn made by the last
             // task is honored before the next runs.
             self.sync()?;
-            let task = self.woken.borrow_mut().pop_front();
-            let Some(task) = task else {
+            let event = self.woken.borrow_mut().pop_front();
+            let Some(event) = event else {
                 return Ok(dispatched);
             };
-            self.tasks.poll(task);
+            self.tasks.dispatch(event);
             dispatched += 1;
         }
         self.sync()?;
@@ -97,13 +85,7 @@ impl TaskRuntime {
         } else {
             Some(Duration::ZERO)
         };
-        let now = Instant::now();
-        let deadline_timeout = self
-            .tasks
-            .deadlines()
-            .values()
-            .min()
-            .map(|deadline| deadline.saturating_duration_since(now));
+        let deadline_timeout = self.tasks.time_until_next_deadline(Instant::now());
         let timeout = match (timeout, deadline_timeout) {
             (Some(requested), Some(deadline)) => Some(requested.min(deadline)),
             (requested, None) => requested,
@@ -116,16 +98,14 @@ impl TaskRuntime {
                 .tasks
                 .deliver_io(*notification.recipient(), notification.readiness())
             {
-                self.woken.borrow_mut().push_back(task);
+                self.woken.borrow_mut().push_back(TaskEvent::Poll(task));
             }
         }
         self.ready = ready;
-        let now = Instant::now();
-        for (task, deadline) in self.tasks.deadlines() {
-            if deadline <= now {
-                self.woken.borrow_mut().push_back(task);
-            }
-        }
+        let woken = Rc::clone(&self.woken);
+        self.tasks.drain_expired(Instant::now(), |event| {
+            woken.borrow_mut().push_back(event);
+        });
         Ok(())
     }
 
@@ -136,7 +116,7 @@ impl TaskRuntime {
     /// waiter, so a turn is bounded rather than blocking outright.
     pub fn block_on<T: 'static>(&mut self, future: impl Future<Output = T> + 'static) -> T {
         let (mut completion, sender) = completion_pair().expect("completion pair");
-        self.handle.spawn(async move {
+        self.handle().spawn(async move {
             sender.complete(future.await);
         });
         let woken = Rc::new(Cell::new(false));

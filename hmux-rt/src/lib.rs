@@ -11,12 +11,14 @@
 mod completion;
 mod reactor;
 mod runtime;
+mod task_loop;
 mod tasks;
 mod timer;
 
 pub use completion::{completion_pair, Completion, CompletionSender, WakeFn};
 pub use reactor::{Interest, MioReactor, PollResult, Reactor, Readiness, Ready, Token};
 pub use runtime::TaskRuntime;
+pub use task_loop::TaskLoop;
 pub use tasks::{
     join, sleep, sleep_until, yield_now, AsyncFd, Join, ReadinessFuture, Sleep, TaskEvent,
     TaskHandle, TaskId, TaskSet, WakeSink, YieldNow,

@@ -1,9 +1,8 @@
 //! Central FIFO dispatch and deferred reactor effects.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::io;
-use std::os::fd::AsFd;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -21,9 +20,8 @@ use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
 };
 use hmux_rt::{Interest, MioReactor, PollResult, Reactor, Ready};
-use hmux_rt::{TaskEvent, TaskHandle, TaskId, TaskSet};
+use hmux_rt::{TaskEvent, TaskHandle, TaskId, TaskLoop};
 use super::term_signal::{TermSignal, TermSignalEvent};
-use hmux_rt::{ExpiredTimer, TimerId, TimerQueue};
 use crate::server::pane::PanePipeIo;
 use crate::server::status::FormatJob;
 
@@ -53,8 +51,9 @@ pub(crate) enum Envelope {
         target: ActorRef<BackgroundCommands>,
         event: JobEvent,
     },
+    /// Work for the loop's own task set, which is not an actor: the loop
+    /// dispatches it directly.
     Task {
-        target: ActorRef<TaskSet>,
         event: TaskEvent,
     },
 }
@@ -87,11 +86,10 @@ impl Envelope {
                 target.with_mut(|jobs| jobs.handle(&dispatch_target, event, outbox));
             }
             // A task reaches the reactor and the timer queue only through the
-            // inboxes the loop reconciles, so this needs no outbox either.
-            Envelope::Task { target, event } => {
-                target.with_mut(|tasks| match event {
-                    TaskEvent::Poll(task) | TaskEvent::Timeout(task) => tasks.poll(task),
-                });
+            // inboxes the loop reconciles, so the loop dispatches it before
+            // this is ever reached.
+            Envelope::Task { .. } => {
+                unreachable!("task events are dispatched by the loop, not the envelope")
             }
         }
     }
@@ -193,7 +191,7 @@ impl WakeQueue {
 
     /// Turn every fired wake into an event. Runs between dispatches, so
     /// reaching into a destination actor here is safe.
-    fn drain_into(&self, events: &mut VecDeque<Envelope>, tasks: &ActorRef<TaskSet>) {
+    fn drain_into(&self, events: &mut VecDeque<Envelope>) {
         // The borrow ends before any actor is touched: resolving one wake can
         // fire another, and that wake has to find this queue free.
         let fired = std::mem::take(&mut *self.fired.borrow_mut());
@@ -227,7 +225,6 @@ impl WakeQueue {
                 }
                 PendingWake::Task { task } => {
                     events.push_back(Envelope::Task {
-                        target: tasks.clone(),
                         event: TaskEvent::Poll(task),
                     });
                 }
@@ -462,7 +459,6 @@ enum IoTarget {
     /// consecutive suspensions never share one and there is nothing to
     /// re-point.
     Task {
-        target: WeakActorRef<TaskSet>,
         io: u64,
     },
 }
@@ -576,14 +572,9 @@ where
     events: VecDeque<Envelope>,
     wakes: WakeQueue,
     ready: Vec<Ready<IoRecipient>>,
-    timers: TimerQueue<Envelope>,
-    expired_timers: Vec<ExpiredTimer<Envelope>>,
     background_commands: Option<ActorRef<BackgroundCommands>>,
-    tasks: ActorRef<TaskSet>,
+    task_loop: TaskLoop,
     task_handle: TaskHandle,
-    /// The timer armed for each sleeping task, kept here because the timer
-    /// queue is the loop's.
-    task_timers: HashMap<TaskId, (Instant, TimerId)>,
     term_signal: Option<ActorRef<TermSignal>>,
 }
 
@@ -600,19 +591,16 @@ where
     fn with_reactor(reactor: R) -> Self {
         let wakes = WakeQueue::default();
         let task_wakes = wakes.clone();
-        let (tasks, task_handle) =
-            TaskSet::new(Rc::new(move |task| task_wakes.wake_task(task)));
+        let task_loop = TaskLoop::new(Rc::new(move |task| task_wakes.wake_task(task)));
+        let task_handle = task_loop.handle();
         Self {
             reactor,
             events: VecDeque::new(),
             wakes,
             ready: Vec::new(),
-            timers: TimerQueue::new(),
-            expired_timers: Vec::new(),
             background_commands: None,
-            tasks: ActorRef::new(tasks),
+            task_loop,
             task_handle,
-            task_timers: HashMap::new(),
             term_signal: None,
         }
     }
@@ -814,11 +802,17 @@ where
     pub(crate) fn dispatch_one(&mut self) -> io::Result<bool> {
         self.sync_tasks()?;
         // After the syncs, which are what install the wakes that may fire.
-        let tasks = self.tasks.clone();
-        self.wakes.drain_into(&mut self.events, &tasks);
+        self.wakes.drain_into(&mut self.events);
         let Some(envelope) = self.events.pop_front() else {
             return Ok(false);
         };
+
+        // The task set is the loop's own, not an actor: its events carry no
+        // target and go straight to it.
+        if let Envelope::Task { event } = envelope {
+            self.task_loop.dispatch(event);
+            return Ok(true);
+        }
 
         let mut outbox = Outbox::new();
         envelope.dispatch(&mut outbox);
@@ -838,8 +832,7 @@ where
 
     pub(crate) fn poll(&mut self, timeout: Option<Duration>) -> io::Result<PollResult> {
         self.sync_tasks()?;
-        let tasks = self.tasks.clone();
-        self.wakes.drain_into(&mut self.events, &tasks);
+        self.wakes.drain_into(&mut self.events);
         // A wake that fired during the sync is work in hand; blocking on the
         // kernel now would hold it until something unrelated happened.
         let timeout = if self.events.is_empty() {
@@ -847,7 +840,7 @@ where
         } else {
             Some(Duration::ZERO)
         };
-        let timer_timeout = self.timers.time_until_next(Instant::now());
+        let timer_timeout = self.task_loop.time_until_next_deadline(Instant::now());
         let timeout = match (timeout, timer_timeout) {
             (Some(requested), Some(timer)) => Some(requested.min(timer)),
             (requested, None) => requested,
@@ -859,77 +852,23 @@ where
             self.enqueue_readiness(notification);
         }
         self.ready = ready;
-        self.timers
-            .drain_expired(Instant::now(), &mut self.expired_timers);
-        self.events
-            .extend(self.expired_timers.drain(..).map(ExpiredTimer::into_value));
+        let events = &mut self.events;
+        self.task_loop.drain_expired(Instant::now(), |event| {
+            events.push_back(Envelope::Task { event });
+        });
         Ok(result)
     }
 
-    /// Adopt newly spawned tasks and make the reactor and the timer queue
-    /// describe what the live ones are waiting for.
-    ///
-    /// Unlike the actors' effect-driven interest updates there is nothing to
-    /// diff: a task's descriptors are owned by the leaves that created them,
-    /// so this only makes registrations that were asked for and releases the
-    /// ones whose `AsyncFd` is gone.
+    /// Reconcile the task set with the reactor and the loop's event queue.
     fn sync_tasks(&mut self) -> io::Result<()> {
-        let tasks = self.tasks.clone();
-        let Some(result) = tasks.with_mut(|set| -> io::Result<()> {
-            for token in set.take_released_io() {
-                self.reactor.deregister(token)?;
-            }
-            for (io, task, fd, interest) in set.take_new_io() {
-                let recipient = IoRecipient {
-                    target: IoTarget::Task {
-                        target: tasks.downgrade(),
-                        io,
-                    },
-                };
-                let token = self.reactor.register(fd.as_fd(), interest, recipient)?;
-                set.set_io_token(io, token);
-                // The reactor took its own duplicate.
-                drop(fd);
-                let _ = task;
-            }
-            let deadlines = set.deadlines();
-            self.task_timers.retain(|task, (_, timer)| {
-                let keep = deadlines.contains_key(task);
-                if !keep {
-                    self.timers.cancel(*timer);
-                }
-                keep
-            });
-            for (task, deadline) in deadlines {
-                match self.task_timers.get(&task) {
-                    Some((armed, _)) if *armed == deadline => continue,
-                    Some((_, timer)) => {
-                        self.timers.cancel(*timer);
-                    }
-                    None => {}
-                }
-                let timer = self.timers.set(
-                    deadline,
-                    Envelope::Task {
-                        target: tasks.clone(),
-                        event: TaskEvent::Timeout(task),
-                    },
-                );
-                self.task_timers.insert(task, (deadline, timer));
-            }
-            // A task's first turn is an event like any other, so a spawn never
-            // runs ahead of work already queued.
-            for task in set.take_spawned() {
-                self.events.push_back(Envelope::Task {
-                    target: tasks.clone(),
-                    event: TaskEvent::Poll(task),
-                });
-            }
-            Ok(())
-        }) else {
-            return Ok(());
-        };
-        result
+        let events = &mut self.events;
+        self.task_loop.sync(
+            &mut self.reactor,
+            |io| IoRecipient {
+                target: IoTarget::Task { io },
+            },
+            |event| events.push_back(Envelope::Task { event }),
+        )
     }
 
     /// Drive one dispatch-then-poll turn. Test scaffolding; the server runs
@@ -1035,23 +974,14 @@ where
                 };
                 self.events.push_back(Envelope::Protocol { target, event });
             }
-            IoTarget::Task {
-                target: recipient,
-                io,
-            } => {
-                let Some(target) = recipient.upgrade() else {
-                    return;
-                };
+            IoTarget::Task { io } => {
                 // The readiness goes to the leaf that asked for it; the task is
                 // enqueued here rather than through the leaf's parked waker, so
                 // it keeps its place among the rest of this poll's batch.
-                let Some(Some(task)) =
-                    target.with_mut(|tasks| tasks.deliver_io(*io, notification.readiness()))
-                else {
+                let Some(task) = self.task_loop.deliver_io(*io, notification.readiness()) else {
                     return;
                 };
                 self.events.push_back(Envelope::Task {
-                    target,
                     event: TaskEvent::Poll(task),
                 });
             }
@@ -1403,7 +1333,7 @@ mod tests {
     use crate::server::command::{
         ClientContext, ClientFileWrite, CommandSuspension, CommandSuspensionResult,
     };
-    use std::os::fd::AsRawFd as _;
+    use std::os::fd::{AsFd as _, AsRawFd as _};
 
     use super::*;
 
@@ -1576,7 +1506,11 @@ mod tests {
         };
         assert!(started.elapsed() >= Duration::from_millis(150));
         assert_eq!(completion.result().stdout, "late\n");
-        assert!(loop_.timers.is_empty(), "the job's timer outlived the job");
+        assert_eq!(
+            loop_.task_loop.armed_timers(),
+            0,
+            "the job's timer outlived the job"
+        );
     }
 
     #[test]
