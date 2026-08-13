@@ -280,6 +280,8 @@ impl AttachSession {
                         let mut state = state.borrow_mut();
                         let _ = state.resize_session(&target, cols, pane_rows);
                     }
+                } else {
+                    self.show_command_error(state, &result.stderr);
                 }
                 self.compositor.render.force_clear = true;
             }
@@ -303,7 +305,11 @@ impl AttachSession {
             }
             AttachCommandContinuation::Prompt { mut prompt } => {
                 prompt.apply_deferred_side_effect(&result, state);
-                prompt.complete(&result, state, &self.compositor.target.context);
+                if let Some(error) =
+                    prompt.complete(&result, state, &self.compositor.target.context)
+                {
+                    self.show_command_error(state, &error);
+                }
                 self.compositor.render.force_clear = true;
             }
             AttachCommandContinuation::Message {
@@ -334,6 +340,8 @@ impl AttachSession {
                             .checked_add(Duration::from_millis(milliseconds))
                             .unwrap_or_else(Instant::now),
                     });
+                } else {
+                    self.show_command_error(state, &result.stderr);
                 }
                 self.compositor.render.force_clear = true;
             }
@@ -348,6 +356,31 @@ impl AttachSession {
             }
         }
         self.compositor.render.last_render.clear();
+    }
+
+    /// A failed command's report on the status line, as tmux's `cmdq_error`
+    /// shows it for an attached client: first letter uppercased, displayed
+    /// for `display-time`.
+    pub(super) fn show_command_error(&mut self, state: &SharedState, stderr: &str) {
+        let text = stderr.strip_suffix('\n').unwrap_or(stderr);
+        let mut chars = text.chars();
+        let Some(first) = chars.next() else {
+            return;
+        };
+        let milliseconds = state
+            .borrow_mut()
+            .option_for_target(
+                self.compositor.target.stable_target.as_str(),
+                "display-time",
+            )
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(750);
+        self.compositor.ui.status_message = Some(StatusMessage {
+            text: format!("{}{}", first.to_ascii_uppercase(), chars.as_str()),
+            deadline: Instant::now()
+                .checked_add(Duration::from_millis(milliseconds))
+                .unwrap_or_else(Instant::now),
+        });
     }
 
     pub(super) fn begin_finish(&mut self, reason: AttachFinishReason) -> AttachDrive {
@@ -380,7 +413,7 @@ impl AttachSession {
                             popup_read: -1,
                             popup_write: -1,
                         },
-                        timeout: -1,
+                        deadline: None,
                     }
                 } else {
                     AttachPrepared::Ready(AttachWaitReady::default())
@@ -406,7 +439,7 @@ impl AttachSession {
                             popup_read: -1,
                             popup_write: -1,
                         },
-                        timeout: deadline_poll_timeout(Some(deadline), Instant::now()),
+                        deadline: Some(deadline),
                     }
                 }
             }
@@ -596,56 +629,41 @@ impl AttachSession {
         }
 
         let now = Instant::now();
-        let timeout = minimum_poll_timeout(
-            self.status.status_timer.poll_timeout(now),
-            deadline_poll_timeout(
-                self.compositor
-                    .ui
-                    .status_message
-                    .as_ref()
-                    .map(|message| message.deadline),
-                now,
-            ),
-        );
-        let timeout = minimum_poll_timeout(timeout, self.status.output_refresh.poll_timeout(now));
-        let timeout = minimum_poll_timeout(
-            timeout,
+        // The overlay owns its cadence; without one, a clock window ticks on
+        // its own so the minute can advance with no other activity.
+        let overlay_deadline = match self.compositor.ui.active_overlay.as_ref() {
+            Some(overlay) => overlay.deadline(now),
+            None => state
+                .borrow_mut()
+                .active_mode_view(target)
+                .is_some_and(|view| view.kind == ModeKind::Clock)
+                .then(|| now + Duration::from_secs(1)),
+        };
+        // Every timed concern of this session, as a plain list: the earliest
+        // entry bounds the wait, and each one is re-checked from state on the
+        // pass that wakes us. A concern missing here sleeps through its
+        // deadline — extend the list, don't fold outside it.
+        let deadline = [
+            self.status.status_timer.deadline(),
             self.compositor
                 .ui
-                .active_overlay
+                .status_message
                 .as_ref()
-                .map(|overlay| overlay.poll_timeout(now))
-                .unwrap_or_else(|| {
-                    if state
-                        .borrow_mut()
-                        .active_mode_view(target)
-                        .is_some_and(|view| view.kind == ModeKind::Clock)
-                    {
-                        1000
-                    } else {
-                        -1
-                    }
-                }),
-        );
-        let timeout = minimum_poll_timeout(
-            timeout,
-            deadline_poll_timeout(self.compositor.input.key_prompt.deadline(), now),
-        );
-        let timeout =
-            minimum_poll_timeout(timeout, deadline_poll_timeout(self.repeat_deadline(), now));
-        let timeout =
-            minimum_poll_timeout(timeout, deadline_poll_timeout(self.click_deadline(), now));
-        let timeout = minimum_poll_timeout(
-            timeout,
-            deadline_poll_timeout(
-                self.compositor
-                    .input
-                    .terminal_reply
-                    .as_ref()
-                    .map(|reply| reply.deadline),
-                now,
-            ),
-        );
+                .map(|message| message.deadline),
+            self.status.output_refresh.due(),
+            overlay_deadline,
+            self.compositor.input.key_prompt.deadline(),
+            self.repeat_deadline(),
+            self.click_deadline(),
+            self.compositor
+                .input
+                .terminal_reply
+                .as_ref()
+                .map(|reply| reply.deadline),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
         let tty_backpressured = self.tty.output.has_pending();
         if !tty_backpressured && control_buffered {
             return Ok(AttachPrepared::Ready(AttachWaitReady {
@@ -691,7 +709,7 @@ impl AttachSession {
                 popup_read,
                 popup_write,
             },
-            timeout: if tty_backpressured { -1 } else { timeout },
+            deadline: if tty_backpressured { None } else { deadline },
         })
     }
 

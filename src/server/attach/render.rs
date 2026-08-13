@@ -257,6 +257,14 @@ impl AttachSession {
                             ),
                         )
                     };
+                    // The message owns its row: drop the composed status
+                    // content beneath it so covered state never reaches the
+                    // wire while the message is alive. With `status off` the
+                    // row is a pane row that may carry the cursor tail, so
+                    // the message keeps painting over it as before.
+                    if self.viewport.status_height > 0 {
+                        frame = frame_without_row(&frame, row);
+                    }
                     frame.extend_from_slice(&render_status_message_row_at(
                         row,
                         &rendered,

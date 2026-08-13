@@ -430,12 +430,17 @@ impl CommandPrompt {
         result
     }
 
+    /// Resolve the prompt's owner with the command's result. An external
+    /// requester receives the whole result in its completion; for the
+    /// attached client stdout goes to the view, and a failure comes back as
+    /// the error text to show on the status line — the attached client's
+    /// only error channel.
     pub(super) fn complete(
         &mut self,
         result: &command::CommandResult,
         state: &SharedState,
         context: &command::ClientContext,
-    ) {
+    ) -> Option<String> {
         match std::mem::replace(&mut self.execution.owner, PromptOwner::Resolved) {
             PromptOwner::External(external) => {
                 external.complete(state::PromptCompletion {
@@ -444,6 +449,7 @@ impl CommandPrompt {
                     exit: result.exit,
                     inserted: true,
                 });
+                None
             }
             PromptOwner::Attached => {
                 if !result.stdout_data().is_empty() {
@@ -451,8 +457,9 @@ impl CommandPrompt {
                         append_view_output(state, &format!("${session_id}"), result.stdout_data());
                     }
                 }
+                (result.exit != 0).then(|| result.stderr.clone())
             }
-            PromptOwner::Resolved => {}
+            PromptOwner::Resolved => None,
         }
     }
 

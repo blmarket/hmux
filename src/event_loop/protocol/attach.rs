@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd, RawFd};
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::integration::status::StatusHub;
 use crate::server::attach::FrameSink;
@@ -444,8 +444,8 @@ impl EventAttachClient {
                 .prepare_wait(&self.state, -1, !self.input.is_empty())?
             {
                 AttachPrepared::Ready(ready) => self.drive_session(ready)?,
-                AttachPrepared::Wait { sources, timeout } => {
-                    self.apply_wait(sources, timeout)?;
+                AttachPrepared::Wait { sources, deadline } => {
+                    self.apply_wait(sources, deadline)?;
                     return Ok(());
                 }
                 AttachPrepared::Finished => {
@@ -562,7 +562,11 @@ impl EventAttachClient {
         self.drive_active_command()
     }
 
-    fn apply_wait(&mut self, sources: AttachWaitSources, timeout: i32) -> io::Result<()> {
+    fn apply_wait(
+        &mut self,
+        sources: AttachWaitSources,
+        deadline: Option<Instant>,
+    ) -> io::Result<()> {
         let sources = [
             (AttachRuntimeSource::Control, sources.control, 0),
             (AttachRuntimeSource::Input, sources.input, 0),
@@ -604,11 +608,7 @@ impl EventAttachClient {
         self.runtime_desired = desired;
         self.runtime_sources
             .retain(|source, _| self.runtime_desired.contains(source));
-        self.deadline = (timeout >= 0).then(|| {
-            Instant::now()
-                .checked_add(Duration::from_millis(timeout as u64))
-                .unwrap_or_else(Instant::now)
-        });
+        self.deadline = deadline;
         Ok(())
     }
 

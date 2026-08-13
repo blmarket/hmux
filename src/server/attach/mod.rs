@@ -111,22 +111,10 @@ impl StatusTimer {
         self.deadline = interval.map(|duration| status_deadline(now, duration));
     }
 
-    /// Milliseconds for `poll(2)`, rounded up so a sub-millisecond remainder
-    /// cannot spin. `-1` retains the ordinary indefinite wait when disabled.
-    fn poll_timeout(&self, now: Instant) -> i32 {
-        let Some(deadline) = self.deadline else {
-            return -1;
-        };
-        let remaining = deadline.saturating_duration_since(now);
-        if remaining.is_zero() {
-            return 0;
-        }
-        remaining
-            .as_nanos()
-            .saturating_add(999_999)
-            .checked_div(1_000_000)
-            .unwrap_or(u128::MAX)
-            .min(i32::MAX as u128) as i32
+    /// When the repeating status recomposition is next due. `None` when
+    /// disabled.
+    fn deadline(&self) -> Option<Instant> {
+        self.deadline
     }
 
     /// Advance an expired repeating timer and report that status must be
@@ -192,31 +180,9 @@ impl OutputStatusRefresh {
         true
     }
 
-    fn poll_timeout(&self, now: Instant) -> i32 {
-        deadline_poll_timeout(self.due, now)
-    }
-}
-
-fn deadline_poll_timeout(deadline: Option<Instant>, now: Instant) -> i32 {
-    let Some(deadline) = deadline else {
-        return -1;
-    };
-    let remaining = deadline.saturating_duration_since(now);
-    if remaining.is_zero() {
-        return 0;
-    }
-    remaining
-        .as_nanos()
-        .saturating_add(999_999)
-        .checked_div(1_000_000)
-        .unwrap_or(u128::MAX)
-        .min(i32::MAX as u128) as i32
-}
-
-fn minimum_poll_timeout(left: i32, right: i32) -> i32 {
-    match (left, right) {
-        (-1, timeout) | (timeout, -1) => timeout,
-        (left, right) => left.min(right),
+    /// When an armed deferred refresh comes due. `None` when nothing is armed.
+    fn due(&self) -> Option<Instant> {
+        self.due
     }
 }
 
@@ -513,7 +479,10 @@ pub(crate) enum AttachPrepared {
     Ready(AttachWaitReady),
     Wait {
         sources: AttachWaitSources,
-        timeout: i32,
+        /// Earliest deadline of the session's timed concerns; the event
+        /// loop's timer queue turns it into the wakeup. `None` waits on the
+        /// sources alone.
+        deadline: Option<Instant>,
     },
     Finished,
 }
@@ -659,13 +628,20 @@ impl AttachCompositorState {
     }
 }
 
+/// What a prompt key resolved to beyond editing: a deferred command to run,
+/// or an error from a callback that completed on the spot.
+enum PromptKeyOutcome {
+    Request(AttachCommandRequest),
+    ShowError(String),
+}
+
 fn handle_command_prompt_key(
     prompt: &mut Option<CommandPrompt>,
     key: &str,
     state: &SharedState,
     hub: &StatusHub,
     context: &command::ClientContext,
-) -> Option<AttachCommandRequest> {
+) -> Option<PromptKeyOutcome> {
     let Some(active) = prompt.as_mut() else {
         return None;
     };
@@ -674,15 +650,17 @@ fn handle_command_prompt_key(
         CommandPromptInput::Finish(mut result) => {
             let mut active = prompt.take().expect("command prompt checked");
             if let Some(source) = take_deferred_attach_command(&mut result) {
-                return Some(AttachCommandRequest {
+                return Some(PromptKeyOutcome::Request(AttachCommandRequest {
                     source,
                     context: context.clone(),
                     continuation: AttachCommandContinuation::Prompt {
                         prompt: Box::new(active),
                     },
-                });
+                }));
             }
-            active.complete(&result, state, context);
+            return active
+                .complete(&result, state, context)
+                .map(PromptKeyOutcome::ShowError);
         }
         CommandPromptInput::Cancel => {
             let mut active = prompt.take().expect("command prompt checked");
@@ -2960,6 +2938,31 @@ fn row_payloads(frame: &ParsedFrame<'_>) -> BTreeMap<u16, Vec<u8>> {
     rows
 }
 
+/// The frame with every paint section on `row` removed.
+///
+/// A status message substitutes for its row rather than painting over it:
+/// tmux never sends what a message covers (`status_message_redraw` draws from
+/// its cache instead of the live status), and the row-keyed diff above
+/// re-emits a changed row's full payload, so leaving the covered content in
+/// the frame would put it on the wire whenever the state behind the message
+/// changes.
+fn frame_without_row(frame: &[u8], row: u16) -> Vec<u8> {
+    let Some(parsed) = parse_positioned_frame(frame) else {
+        return frame.to_vec();
+    };
+    let mut out = Vec::with_capacity(frame.len());
+    out.extend_from_slice(parsed.prefix);
+    for section in &parsed.paint {
+        if section.row != row {
+            out.extend_from_slice(section.bytes);
+        }
+    }
+    if let Some(cursor) = parsed.cursor {
+        out.extend_from_slice(cursor.bytes);
+    }
+    out
+}
+
 fn diff_rendered_frame(previous: &[u8], current: &[u8]) -> FrameDelta {
     let (previous, _) = strip_cursor_visibility(previous);
     let (current, requested_visibility) = strip_cursor_visibility(current);
@@ -3524,7 +3527,7 @@ mod tests {
         let two_seconds = Some(Duration::from_secs(2));
         let mut timer = StatusTimer::new(two_seconds, start);
 
-        assert_eq!(timer.poll_timeout(start), 2_000);
+        assert_eq!(timer.deadline(), Some(start + Duration::from_secs(2)));
         assert!(!timer.take_expired(start + Duration::from_secs(1)));
 
         timer.configure(two_seconds, start + Duration::from_secs(1));
@@ -3533,8 +3536,8 @@ mod tests {
             "an unrelated status invalidation must not postpone the deadline"
         );
         assert_eq!(
-            timer.poll_timeout(start + Duration::from_secs(2)),
-            2_000,
+            timer.deadline(),
+            Some(start + Duration::from_secs(4)),
             "the repeating timer is scheduled from the callback"
         );
     }
@@ -3549,7 +3552,7 @@ mod tests {
         assert!(timer.take_expired(start + Duration::from_secs(6)));
 
         timer.configure(None, start + Duration::from_secs(6));
-        assert_eq!(timer.poll_timeout(start + Duration::from_secs(100)), -1);
+        assert_eq!(timer.deadline(), None);
         assert!(!timer.take_expired(start + Duration::from_secs(100)));
     }
 
@@ -3805,6 +3808,32 @@ mod tests {
         assert!(!contains_seq(&output, b"\x1b[1;1Hsame"));
         assert!(contains_seq(&output, b"\x1b[2;1Hnew"));
         assert!(output.ends_with(b"\x1b[2;4H\x1b[0 q\x1b[?25h"));
+    }
+
+    #[test]
+    fn frame_without_row_drops_only_the_covered_row() {
+        let frame = b"\x1b[?25l\x1b[m\x1b[1;1Hpane\x1b[K\x1b[2;1Hstatus\x1b[K\
+            \x1b[3;1Hextra\x1b[K\x1b[1;2H\x1b[0 q";
+
+        let output = frame_without_row(frame, 2);
+
+        assert_eq!(
+            output,
+            b"\x1b[?25l\x1b[m\x1b[1;1Hpane\x1b[K\x1b[3;1Hextra\x1b[K\x1b[1;2H\x1b[0 q"
+        );
+    }
+
+    #[test]
+    fn frame_without_row_keeps_the_cursor_tail_on_the_covered_row() {
+        let frame = b"\x1b[?25l\x1b[m\x1b[1;1Hpane\x1b[K\x1b[2;1Hstatus\x1b[K\
+            \x1b[1;2H\x1b[0 q";
+
+        let output = frame_without_row(frame, 1);
+
+        assert_eq!(
+            output,
+            b"\x1b[?25l\x1b[m\x1b[2;1Hstatus\x1b[K\x1b[1;2H\x1b[0 q"
+        );
     }
 
     #[test]

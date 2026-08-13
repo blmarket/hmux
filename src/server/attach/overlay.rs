@@ -227,13 +227,14 @@ impl ActiveOverlay {
         }
     }
 
-    pub(super) fn poll_timeout(&self, now: Instant) -> i32 {
+    /// When this overlay next needs a pass without other activity: the
+    /// display-panes expiry, or a popup's 50ms output poll. A menu waits on
+    /// input alone.
+    pub(super) fn deadline(&self, now: Instant) -> Option<Instant> {
         match &self.state {
-            OverlayState::DisplayPanes(overlay) => {
-                deadline_poll_timeout(Some(overlay.deadline), now)
-            }
-            OverlayState::Popup(_) => 50,
-            OverlayState::Menu(_) => -1,
+            OverlayState::DisplayPanes(overlay) => Some(overlay.deadline),
+            OverlayState::Popup(_) => Some(now + Duration::from_millis(50)),
+            OverlayState::Menu(_) => None,
         }
     }
 

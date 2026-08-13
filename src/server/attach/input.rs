@@ -461,7 +461,7 @@ impl AttachSession {
                         if let Some((key, consumed)) = decoded {
                             let tail =
                                 self.compositor.input.key_prompt.bytes()[consumed..].to_vec();
-                            let request = handle_command_prompt_key(
+                            let outcome = handle_command_prompt_key(
                                 &mut self.compositor.ui.command_prompt,
                                 &key,
                                 state,
@@ -470,15 +470,21 @@ impl AttachSession {
                             );
                             self.compositor.input.key_prompt.clear();
                             force_render = true;
-                            if let Some(request) = request {
-                                if !tail.is_empty() {
-                                    self.compositor.input.injected.push_front(ClientKey {
-                                        bytes: tail,
-                                        forward_unbound,
-                                    });
+                            match outcome {
+                                Some(PromptKeyOutcome::Request(request)) => {
+                                    if !tail.is_empty() {
+                                        self.compositor.input.injected.push_front(ClientKey {
+                                            bytes: tail,
+                                            forward_unbound,
+                                        });
+                                    }
+                                    self.commands.pending.push_back(request);
+                                    break;
                                 }
-                                self.commands.pending.push_back(request);
-                                break;
+                                Some(PromptKeyOutcome::ShowError(error)) => {
+                                    self.show_command_error(state, &error);
+                                }
+                                None => {}
                             }
                             replay_input = tail;
                             replay_forward_unbound = forward_unbound;
@@ -549,27 +555,34 @@ impl AttachSession {
                     decode_prompt_key(self.compositor.input.key_prompt.bytes())
                 {
                     let tail = self.compositor.input.key_prompt.bytes()[consumed..].to_vec();
-                    if let Some(request) = handle_command_prompt_key(
+                    match handle_command_prompt_key(
                         &mut self.compositor.ui.command_prompt,
                         &key,
                         state,
                         hub,
                         &self.compositor.target.context,
                     ) {
-                        self.compositor.input.key_prompt.clear();
-                        if !tail.is_empty() {
-                            self.compositor.input.injected.push_front(ClientKey {
-                                bytes: tail,
-                                forward_unbound,
-                            });
+                        Some(PromptKeyOutcome::Request(request)) => {
+                            self.compositor.input.key_prompt.clear();
+                            if !tail.is_empty() {
+                                self.compositor.input.injected.push_front(ClientKey {
+                                    bytes: tail,
+                                    forward_unbound,
+                                });
+                            }
+                            self.commands.pending.push_back(request);
+                            force_render = true;
+                            break;
                         }
-                        self.commands.pending.push_back(request);
-                        force_render = true;
-                        break;
+                        outcome => {
+                            if let Some(PromptKeyOutcome::ShowError(error)) = outcome {
+                                self.show_command_error(state, &error);
+                            }
+                            prompt_tail = Some(tail);
+                            self.compositor.input.key_prompt.clear();
+                            force_render = true;
+                        }
                     }
-                    prompt_tail = Some(tail);
-                    self.compositor.input.key_prompt.clear();
-                    force_render = true;
                 } else if self
                     .compositor
                     .input
@@ -707,7 +720,11 @@ impl AttachSession {
                                 });
                                 break;
                             }
-                            prompt.complete(&result, state, &self.compositor.target.context);
+                            if let Some(error) =
+                                prompt.complete(&result, state, &self.compositor.target.context)
+                            {
+                                self.show_command_error(state, &error);
+                            }
                         }
                         CommandPromptInput::Cancel => {
                             let mut prompt = self
