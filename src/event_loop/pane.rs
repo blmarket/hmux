@@ -8,7 +8,6 @@ use crate::server::pane::PaneIo;
 use super::actor::ActorRef;
 use super::driver::Outbox;
 use hmux_rt::{Readiness, Token};
-use hmux_rt::TimerId;
 
 /// tmux's ground timer: how long `input.c` waits for the terminator of a
 /// string sequence before giving up on it and returning the parser to ground,
@@ -22,7 +21,7 @@ pub(crate) enum PaneEvent {
     ReadContinuation,
     /// The ground timer expired on a string sequence still waiting for its
     /// terminator.
-    GroundTimer,
+    GroundTimer(u64),
     Shutdown,
 }
 
@@ -39,8 +38,10 @@ pub(crate) struct EventPane {
     writable_interest: bool,
     work_queued: bool,
     stopping: bool,
-    /// The armed ground timer, if any.
-    timer: Option<TimerId>,
+    /// Identifies the current ground timer so a sleep from an older parser
+    /// state cannot expire a newer string sequence.
+    timer_generation: u64,
+    timer_armed: bool,
     /// Whether the parser was inside a string sequence at the end of the last
     /// read. tmux restarts the timer whenever such a sequence *begins*; this
     /// watches the same edge once per read, which against five seconds is not
@@ -56,17 +57,10 @@ impl EventPane {
             writable_interest: false,
             work_queued: false,
             stopping: false,
-            timer: None,
+            timer_generation: 0,
+            timer_armed: false,
             awaiting_terminator: false,
         }
-    }
-
-    pub(crate) fn timer(&self) -> Option<TimerId> {
-        self.timer
-    }
-
-    pub(crate) fn set_timer(&mut self, timer: Option<TimerId>) {
-        self.timer = timer;
     }
 
     pub(crate) fn fd(&self) -> BorrowedFd<'_> {
@@ -121,8 +115,10 @@ impl EventPane {
     ) {
         match event {
             PaneEvent::Start if !self.stopping => self.sync_interest(target, outbox),
-            PaneEvent::GroundTimer if !self.stopping => {
-                self.timer = None;
+            PaneEvent::GroundTimer(generation)
+                if !self.stopping && self.timer_armed && generation == self.timer_generation =>
+            {
+                self.timer_armed = false;
                 self.awaiting_terminator = false;
                 self.io.expire_ground();
                 self.sync_interest(target, outbox);
@@ -184,16 +180,14 @@ impl EventPane {
             }
             PaneEvent::Shutdown => {
                 self.stopping = true;
-                if self.timer.is_some() {
-                    outbox.cancel_pane_timer(target.clone());
-                }
+                self.timer_armed = false;
                 outbox.set_pane_interest(target.clone(), PaneInterest::Disabled);
                 outbox.stop_pane(target.clone());
             }
             PaneEvent::Start
             | PaneEvent::Ready(_)
             | PaneEvent::ReadContinuation
-            | PaneEvent::GroundTimer => {}
+            | PaneEvent::GroundTimer(_) => {}
         }
     }
 
@@ -216,9 +210,15 @@ impl EventPane {
         }
         self.awaiting_terminator = awaiting;
         if awaiting {
-            outbox.set_pane_timer(target.clone(), Instant::now() + GROUND_TIMEOUT);
-        } else if self.timer.is_some() {
-            outbox.cancel_pane_timer(target.clone());
+            self.timer_generation = self.timer_generation.wrapping_add(1);
+            self.timer_armed = true;
+            outbox.set_pane_timer(
+                target.clone(),
+                Instant::now() + GROUND_TIMEOUT,
+                self.timer_generation,
+            );
+        } else {
+            self.timer_armed = false;
         }
     }
 }

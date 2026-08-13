@@ -793,13 +793,12 @@ impl ProtocolClient {
                 }
                 _ => return,
             };
-            match deadline {
-                Some(deadline) => outbox.set_protocol_timer_event(
+            if let Some(deadline) = deadline {
+                outbox.set_protocol_timer_event(
                     target.clone(),
                     deadline,
                     ProtocolEvent::AttachTimer(generation),
-                ),
-                None => outbox.cancel_protocol_timer(target.clone()),
+                );
             }
         }
 

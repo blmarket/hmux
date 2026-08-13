@@ -25,7 +25,6 @@ use super::super::job::{BackgroundCommands, JobEvent};
 use hmux_rt::Token;
 use super::super::suspend::EventCommandRuntime;
 use hmux_rt::TaskHandle;
-use hmux_rt::TimerId;
 use super::attach::{EventAttachClient, EventAttachSource};
 use super::command::{ActiveResumableCommand, CommandStep, CommandTransaction, CommandWork};
 use super::response::CommandResponse;
@@ -178,7 +177,6 @@ pub(super) struct ProtocolRegistrations {
     pub(super) write: Option<Token>,
     pub(super) control: BTreeMap<EventControlSource, Token>,
     pub(super) attach: BTreeMap<EventAttachSource, Token>,
-    pub(super) timer: Option<TimerId>,
     /// Command sides whose wake this client has installed. They hold no
     /// reactor token because they have no descriptor.
     pub(super) command_wakes: BTreeSet<ProtocolIoSide>,
@@ -346,14 +344,6 @@ impl ProtocolClient {
         self.registrations.command_wakes.remove(&side);
     }
 
-    pub(crate) fn timer(&self) -> Option<TimerId> {
-        self.registrations.timer
-    }
-
-    pub(crate) fn set_timer(&mut self, timer: Option<TimerId>) {
-        self.registrations.timer = timer;
-    }
-
     pub(crate) fn mark_work_queued(&mut self, side: ProtocolIoSide) -> bool {
         if side == ProtocolIoSide::Read && (self.reads_paused || !self.accepts_protocol_input()) {
             return false;
@@ -438,7 +428,6 @@ impl ProtocolClient {
                     ProtocolState::Control(control) if generation == control.timer_generation
                 );
                 if current {
-                    self.registrations.timer = None;
                     if let ProtocolState::Control(control) = &mut self.protocol_state {
                         control.timer_deadline = None;
                     }
@@ -455,7 +444,6 @@ impl ProtocolClient {
                     ProtocolState::Attach(attach) if generation == attach.timer_generation
                 );
                 if current {
-                    self.registrations.timer = None;
                     let result = match &mut self.protocol_state {
                         ProtocolState::Attach(attach) => {
                             attach.timer_deadline = None;
@@ -892,7 +880,6 @@ impl ProtocolClient {
             attach.client.shutdown();
         }
         self.protocol_state = ProtocolState::Closed;
-        outbox.cancel_protocol_timer(target.clone());
         outbox.stop_protocol(target.clone());
     }
 }

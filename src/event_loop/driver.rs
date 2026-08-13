@@ -115,6 +115,14 @@ enum PendingWake {
     Task {
         task: TaskId,
     },
+    ProtocolTimer {
+        target: WeakActorRef<ProtocolClient>,
+        event: ProtocolEvent,
+    },
+    PaneTimer {
+        target: WeakActorRef<EventPane>,
+        generation: u64,
+    },
     Background {
         target: WeakActorRef<BackgroundCommands>,
         id: u64,
@@ -167,6 +175,18 @@ impl WakeQueue {
             .push_back(PendingWake::Task { task });
     }
 
+    fn fire_protocol_timer(&self, target: WeakActorRef<ProtocolClient>, event: ProtocolEvent) {
+        self.fired
+            .borrow_mut()
+            .push_back(PendingWake::ProtocolTimer { target, event });
+    }
+
+    fn fire_pane_timer(&self, target: WeakActorRef<EventPane>, generation: u64) {
+        self.fired
+            .borrow_mut()
+            .push_back(PendingWake::PaneTimer { target, generation });
+    }
+
     fn len(&self) -> usize {
         self.fired.borrow().len()
     }
@@ -209,6 +229,21 @@ impl WakeQueue {
                     events.push_back(Envelope::Task {
                         target: tasks.clone(),
                         event: TaskEvent::Poll(task),
+                    });
+                }
+                PendingWake::ProtocolTimer { target, event } => {
+                    let Some(target) = target.upgrade() else {
+                        continue;
+                    };
+                    events.push_back(Envelope::Protocol { target, event });
+                }
+                PendingWake::PaneTimer { target, generation } => {
+                    let Some(target) = target.upgrade() else {
+                        continue;
+                    };
+                    events.push_back(Envelope::Pane {
+                        target,
+                        event: PaneEvent::GroundTimer(generation),
                     });
                 }
             }
@@ -255,15 +290,10 @@ enum Effect {
         deadline: Instant,
         event: ProtocolEvent,
     },
-    CancelProtocolTimer {
-        target: ActorRef<ProtocolClient>,
-    },
     SetPaneTimer {
         target: ActorRef<EventPane>,
         deadline: Instant,
-    },
-    CancelPaneTimer {
-        target: ActorRef<EventPane>,
+        generation: u64,
     },
     StopListener(ActorRef<Listener>),
     StopPane(ActorRef<EventPane>),
@@ -373,18 +403,19 @@ impl Outbox {
         });
     }
 
-    pub(crate) fn cancel_protocol_timer(&mut self, target: ActorRef<ProtocolClient>) {
-        self.effects.push(Effect::CancelProtocolTimer { target });
-    }
-
     /// Arm the pane's ground timer, tmux's five seconds of patience with a
     /// string sequence whose terminator has not arrived.
-    pub(crate) fn set_pane_timer(&mut self, target: ActorRef<EventPane>, deadline: Instant) {
-        self.effects.push(Effect::SetPaneTimer { target, deadline });
-    }
-
-    pub(crate) fn cancel_pane_timer(&mut self, target: ActorRef<EventPane>) {
-        self.effects.push(Effect::CancelPaneTimer { target });
+    pub(crate) fn set_pane_timer(
+        &mut self,
+        target: ActorRef<EventPane>,
+        deadline: Instant,
+        generation: u64,
+    ) {
+        self.effects.push(Effect::SetPaneTimer {
+            target,
+            deadline,
+            generation,
+        });
     }
 
     pub(crate) fn stop_listener(&mut self, target: ActorRef<Listener>) {
@@ -1054,32 +1085,22 @@ where
                 deadline,
                 event,
             } => {
-                self.cancel_protocol_timer(&target);
-                let timer = self.timers.set(
-                    deadline,
-                    Envelope::Protocol {
-                        target: target.clone(),
-                        event,
-                    },
-                );
-                target.with_mut(|client| client.set_timer(Some(timer)));
+                let target = target.downgrade();
+                let wakes = self.wakes.clone();
+                self.spawn_timer(deadline, move || {
+                    wakes.fire_protocol_timer(target, event);
+                });
             }
-            Effect::CancelProtocolTimer { target } => {
-                self.cancel_protocol_timer(&target);
-            }
-            Effect::SetPaneTimer { target, deadline } => {
-                self.cancel_pane_timer(&target);
-                let timer = self.timers.set(
-                    deadline,
-                    Envelope::Pane {
-                        target: target.clone(),
-                        event: PaneEvent::GroundTimer,
-                    },
-                );
-                target.with_mut(|pane| pane.set_timer(Some(timer)));
-            }
-            Effect::CancelPaneTimer { target } => {
-                self.cancel_pane_timer(&target);
+            Effect::SetPaneTimer {
+                target,
+                deadline,
+                generation,
+            } => {
+                let target = target.downgrade();
+                let wakes = self.wakes.clone();
+                self.spawn_timer(deadline, move || {
+                    wakes.fire_pane_timer(target, generation);
+                });
             }
             Effect::StopListener(target) => {
                 target.stop();
@@ -1095,6 +1116,14 @@ where
             }
         }
         Ok(())
+    }
+
+    fn spawn_timer(&self, deadline: Instant, fire: impl FnOnce() + 'static) {
+        let tasks = self.task_handle.clone();
+        self.task_handle.spawn(async move {
+            hmux_rt::sleep_until(&tasks, deadline).await;
+            fire();
+        });
     }
 
     fn set_listener_interest(
@@ -1362,26 +1391,11 @@ where
             event,
         });
     }
-
-    fn cancel_protocol_timer(&mut self, target: &ActorRef<ProtocolClient>) {
-        let timer = target.with(ProtocolClient::timer).flatten();
-        if let Some(timer) = timer {
-            self.timers.cancel(timer);
-            target.with_mut(|client| client.set_timer(None));
-        }
-    }
-
-    fn cancel_pane_timer(&mut self, target: &ActorRef<EventPane>) {
-        let timer = target.with(EventPane::timer).flatten();
-        if let Some(timer) = timer {
-            self.timers.cancel(timer);
-            target.with_mut(|pane| pane.set_timer(None));
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -1563,6 +1577,28 @@ mod tests {
         assert!(started.elapsed() >= Duration::from_millis(150));
         assert_eq!(completion.result().stdout, "late\n");
         assert!(loop_.timers.is_empty(), "the job's timer outlived the job");
+    }
+
+    #[test]
+    fn event_loop_timer_uses_runtime_sleep() {
+        let mut loop_ = EventLoop::new().unwrap();
+        let fired = Rc::new(Cell::new(false));
+        let fired_by_timer = Rc::clone(&fired);
+        let started = Instant::now();
+        loop_.spawn_timer(
+            started + Duration::from_millis(20),
+            move || fired_by_timer.set(true),
+        );
+
+        let test_deadline = started + Duration::from_secs(1);
+        while !fired.get() {
+            assert!(Instant::now() < test_deadline, "timer task never completed");
+            loop_
+                .run_turn(Some(Duration::from_millis(10)), 64)
+                .unwrap();
+        }
+
+        assert!(started.elapsed() >= Duration::from_millis(20));
     }
 
     #[test]
