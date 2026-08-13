@@ -7,22 +7,22 @@
 //! an elapsed deadline — is reported through the callbacks the host passes in,
 //! so the host queues it in its own order.
 
-use std::collections::HashMap;
+use std::collections::BTreeSet;
 use std::io;
 use std::os::fd::AsFd as _;
 use std::time::{Duration, Instant};
 
 use crate::reactor::{Reactor, Readiness};
 use crate::tasks::{TaskEvent, TaskHandle, TaskId, TaskSet, WakeSink};
-use crate::timer::{ExpiredTimer, TimerId, TimerQueue};
+use crate::timer::ExpiredTimer;
 
 /// One task set with the timer and registration bookkeeping its host owes it.
 pub struct TaskLoop {
     tasks: TaskSet,
     handle: TaskHandle,
-    /// The timer armed for each sleeping task, at most one apiece.
-    timers: TimerQueue<TaskId>,
-    armed: HashMap<TaskId, (Instant, TimerId)>,
+    /// Scratch for [`TaskLoop::drain_expired`], reused so a turn full of
+    /// deadlines does not allocate. The deadlines themselves live in the task
+    /// set, where the sleeps that own them can reach them.
     expired: Vec<ExpiredTimer<TaskId>>,
 }
 
@@ -34,8 +34,6 @@ impl TaskLoop {
         Self {
             tasks,
             handle,
-            timers: TimerQueue::new(),
-            armed: HashMap::new(),
             expired: Vec::new(),
         }
     }
@@ -83,25 +81,9 @@ impl TaskLoop {
             // The reactor took its own duplicate.
             drop(fd);
         }
-        let deadlines = self.tasks.deadlines();
-        self.armed.retain(|task, (_, timer)| {
-            let keep = deadlines.contains_key(task);
-            if !keep {
-                self.timers.cancel(*timer);
-            }
-            keep
-        });
-        for (task, deadline) in deadlines {
-            match self.armed.get(&task) {
-                Some((armed, _)) if *armed == deadline => continue,
-                Some((_, timer)) => {
-                    self.timers.cancel(*timer);
-                }
-                None => {}
-            }
-            let timer = self.timers.set(deadline, task);
-            self.armed.insert(task, (deadline, timer));
-        }
+        // Deadlines need no sync at all: a sleep arms and cancels its own,
+        // inside the poll that parks or drops it.
+        //
         // A task's first turn is an event like any other, so a spawn never
         // runs ahead of work already queued.
         for task in self.tasks.take_spawned() {
@@ -125,20 +107,28 @@ impl TaskLoop {
 
     /// How long the host may block before the nearest task deadline.
     pub fn time_until_next_deadline(&mut self, now: Instant) -> Option<Duration> {
-        self.timers.time_until_next(now)
+        self.tasks.time_until_next_deadline(now)
     }
 
     /// Turn every elapsed deadline into an event.
     pub fn drain_expired(&mut self, now: Instant, mut enqueue: impl FnMut(TaskEvent)) {
-        self.timers.drain_expired(now, &mut self.expired);
+        self.tasks.drain_expired(now, &mut self.expired);
+        let mut woken = BTreeSet::new();
         for timer in self.expired.drain(..) {
-            enqueue(TaskEvent::Timeout(timer.into_value()));
+            let task = timer.into_value();
+            // Several of one task's sleeps coming due together is still one
+            // turn's work: the poll re-checks every leaf the task holds, and a
+            // second event for it would only find nothing left to do.
+            if woken.insert(task) {
+                enqueue(TaskEvent::Timeout(task));
+            }
         }
     }
 
-    /// Deadlines currently armed. Zero once every sleeping task has resumed.
+    /// Timers currently armed, one per parked sleep. Zero once every sleeping
+    /// task has resumed.
     pub fn armed_timers(&self) -> usize {
-        self.timers.len()
+        self.tasks.armed_timers()
     }
 
     /// Tasks spawned since the last sync, still owed their first poll.

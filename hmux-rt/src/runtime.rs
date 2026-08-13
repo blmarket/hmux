@@ -58,7 +58,8 @@ impl TaskRuntime {
         self.woken.borrow().len() + self.tasks.pending_spawned()
     }
 
-    /// Deadlines currently armed. Zero once every sleeping task has resumed.
+    /// Timers currently armed, one per parked sleep rather than one per
+    /// sleeping task. Zero once every sleeping task has resumed.
     pub fn armed_timers(&self) -> usize {
         self.tasks.armed_timers()
     }
@@ -281,6 +282,53 @@ mod tests {
             sleep(&handle, Duration::from_millis(20)).await;
         });
         assert!(started.elapsed() >= Duration::from_millis(20));
+    }
+
+    /// Timers belong to sleeps, not to tasks: one task parked on two of them
+    /// arms two, and neither displaces the other. Collapsing them to the
+    /// earliest would arm one here and let the later deadline go missing.
+    #[test]
+    fn one_task_parked_on_two_sleeps_arms_a_timer_for_each() {
+        use crate::tasks::join;
+
+        let mut runtime = TaskRuntime::new().expect("runtime");
+        let handle = runtime.handle();
+        let sleeper = handle.clone();
+        handle.spawn(async move {
+            join(
+                sleep(&sleeper, Duration::from_millis(20)),
+                sleep(&sleeper, Duration::from_secs(30)),
+            )
+            .await;
+        });
+        // Adopt the spawn and give it the first poll that parks both halves.
+        runtime.dispatch(8).expect("dispatch");
+        assert_eq!(runtime.armed_timers(), 2);
+
+        // Dropping the task releases both, one entry apiece.
+        drop(runtime);
+    }
+
+    /// The near deadline firing must not disturb the far one still parked
+    /// beside it, nor wake the task a second time for a timer that has gone.
+    #[test]
+    fn a_fired_sleep_leaves_its_siblings_timer_alone() {
+        use crate::tasks::{select, Either};
+
+        let mut runtime = TaskRuntime::new().expect("runtime");
+        let handle = runtime.handle();
+        let started = Instant::now();
+        runtime.block_on(async move {
+            let near = sleep(&handle, Duration::from_millis(20));
+            let far = sleep(&handle, Duration::from_secs(30));
+            let Either::First(()) = select(near, far).await else {
+                panic!("the far deadline beat the near one");
+            };
+        });
+        assert!(started.elapsed() >= Duration::from_millis(20));
+        assert!(started.elapsed() < Duration::from_secs(5));
+        // The loser went with the `select`, taking its timer with it.
+        assert_eq!(runtime.armed_timers(), 0);
     }
 
     #[test]

@@ -8,6 +8,11 @@
 //!   ([`TaskSet::take_new_io`]). Nothing is missed in between, because a
 //!   registration only ever happens between dispatches and readiness that
 //!   predates it is reported when the descriptor is added.
+//! - Deadlines are the exception, and the asymmetry is deliberate. A timer
+//!   queue is plain data, not a host-exclusive handle behind `&mut` and a
+//!   syscall, so a [`Sleep`] arms and cancels its own from inside its poll.
+//!   No request, no reconciliation, and no window in which the host has yet
+//!   to hear about a deadline that is already due.
 //! - There is no `block_on` and no run queue of its own. A task that can make
 //!   progress is reported through the host's [`WakeSink`], so a task resuming
 //!   is ordered against every other thing the host does — which may be
@@ -18,6 +23,7 @@
 //! [`Context`] is [`Waker::noop`], so **a leaf that parks `cx.waker()`
 //! instead of `cx.local_waker()` never wakes**.
 
+use std::async_iter::AsyncIterator;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::error::Error;
@@ -32,6 +38,7 @@ use std::time::{Duration, Instant};
 
 use crate::completion::{completion_pair, Completion};
 use crate::reactor::{Interest, Readiness, Token};
+use crate::timer::{ExpiredTimer, TimerId, TimerQueue};
 
 pub type TaskId = u64;
 
@@ -90,8 +97,15 @@ struct TaskShared {
     /// Tasks waiting to be adopted, with whether they still owe a first poll.
     spawned: RefCell<Vec<(TaskId, Pin<Box<dyn Future<Output = ()>>>, bool)>>,
     io: RefCell<BTreeMap<u64, IoEntry>>,
-    /// The deadline each task is sleeping until, at most one apiece.
-    deadlines: RefCell<BTreeMap<TaskId, Instant>>,
+    /// Every armed deadline, one entry per parked [`Sleep`] and naming the
+    /// task to poll when it lands.
+    ///
+    /// Unlike the reactor this is plain data — no syscall, no host-exclusive
+    /// handle, no callback that could re-enter — so a sleep arms and cancels
+    /// its own entry directly from inside its poll. A descriptor cannot do
+    /// that, which is why [`IoEntry`] above still has to be a request the host
+    /// picks up later.
+    timers: RefCell<TimerQueue<TaskId>>,
     /// Every task that has been spawned and has not finished or been dropped.
     live: RefCell<BTreeSet<TaskId>>,
     /// Cancellation requests waiting for the task set to drop their futures.
@@ -223,8 +237,9 @@ impl TaskHandle {
             .count()
     }
 
+    // Sleeps need nothing here: dropping the task's future drops its leaves,
+    // and each one hands its own entry back on the way out.
     fn finish(&self, task: TaskId) {
-        self.shared.deadlines.borrow_mut().remove(&task);
         self.shared.cancelled.borrow_mut().remove(&task);
         self.shared.live.borrow_mut().remove(&task);
     }
@@ -412,15 +427,28 @@ impl TaskSet {
         Some(entry.task)
     }
 
-    /// What every sleeping task is waiting for, for the loop to arm timers
-    /// against.
-    pub fn deadlines(&self) -> BTreeMap<TaskId, Instant> {
-        self.shared.deadlines.borrow().clone()
+    /// How long the host may block before the nearest armed deadline.
+    ///
+    /// Nothing has to be synced first: a sleep is in the queue from the moment
+    /// it parks, so this reads what is armed right now.
+    pub fn time_until_next_deadline(&self, now: Instant) -> Option<Duration> {
+        self.shared.timers.borrow_mut().time_until_next(now)
     }
 
+    /// Take every deadline that has elapsed, naming the task each belongs to.
+    pub fn drain_expired(&self, now: Instant, output: &mut Vec<ExpiredTimer<TaskId>>) {
+        self.shared.timers.borrow_mut().drain_expired(now, output);
+    }
+
+    /// Deadlines armed, one per parked sleep.
+    pub fn armed_timers(&self) -> usize {
+        self.shared.timers.borrow().len()
+    }
+
+    // As in `TaskShared::finish`: removing the future drops the sleeps it was
+    // holding, and each cancels its own deadline on the way out.
     fn finish(&mut self, task: TaskId) {
         self.tasks.remove(&task);
-        self.shared.deadlines.borrow_mut().remove(&task);
         self.shared.cancelled.borrow_mut().remove(&task);
         self.shared.live.borrow_mut().remove(&task);
     }
@@ -435,7 +463,7 @@ impl Drop for TaskSet {
         let spawned = std::mem::take(&mut *self.shared.spawned.borrow_mut());
         drop(spawned);
         self.shared.io.borrow_mut().clear();
-        self.shared.deadlines.borrow_mut().clear();
+        *self.shared.timers.borrow_mut() = TimerQueue::default();
         self.shared.cancelled.borrow_mut().clear();
         self.shared.live.borrow_mut().clear();
         self.shared.polling.set(None);
@@ -510,6 +538,13 @@ impl AsyncFd {
     pub fn readiness(&self) -> ReadinessFuture<'_> {
         ReadinessFuture { fd: self }
     }
+
+    /// Every readiness delivery, as an async iterator: the same edge-style
+    /// contract as [`AsyncFd::readiness`], in the shape that composes with the
+    /// other sources one loop is driven by.
+    pub fn readiness_iter(&self) -> ReadinessIter<'_> {
+        ReadinessIter { fd: self }
+    }
 }
 
 impl Drop for AsyncFd {
@@ -517,6 +552,28 @@ impl Drop for AsyncFd {
         if let Some(entry) = self.shared.io.borrow_mut().get_mut(&self.io) {
             entry.dropped = true;
         }
+    }
+}
+
+/// An [`AsyncFd`] as an async iterator of readiness reports. Never ends: a
+/// descriptor stops reporting when it is dropped, not by saying so.
+pub struct ReadinessIter<'a> {
+    fd: &'a AsyncFd,
+}
+
+impl AsyncIterator for ReadinessIter<'_> {
+    type Item = Readiness;
+
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Readiness>> {
+        let mut slot = self.fd.slot.borrow_mut();
+        if let Some(readiness) = slot.pending.take() {
+            return Poll::Ready(Some(readiness));
+        }
+        if slot.always_ready {
+            return Poll::Ready(Some(Readiness::always()));
+        }
+        slot.waker = Some(context.local_waker().clone());
+        Poll::Pending
     }
 }
 
@@ -545,7 +602,7 @@ pub fn sleep_until(handle: &TaskHandle, deadline: Instant) -> Sleep {
     Sleep {
         shared: Rc::clone(&handle.shared),
         deadline,
-        parked: Cell::new(None),
+        armed: Cell::new(None),
     }
 }
 
@@ -556,9 +613,24 @@ pub fn sleep(handle: &TaskHandle, duration: Duration) -> Sleep {
 pub struct Sleep {
     shared: Rc<TaskShared>,
     deadline: Instant,
-    /// The task whose deadline this sleep armed, so dropping the sleep —
-    /// losing a [`select`] is the usual way — disarms it.
-    parked: Cell<Option<TaskId>>,
+    /// The timer this sleep armed for itself, held so that dropping it —
+    /// losing a [`select`] is the usual way — cancels that one and no other.
+    ///
+    /// Identity lives here rather than in a table the host reconciles, so two
+    /// sleeps parked on one task, the shape a merged pair of timed sources
+    /// produces, neither collide nor cancel each other.
+    armed: Cell<Option<TimerId>>,
+}
+
+impl Sleep {
+    /// Give up the deadline this sleep armed, if it still holds one.
+    fn disarm(&self) {
+        if let Some(timer) = self.armed.replace(None) {
+            // A timer already drained by the host is gone from the queue, so
+            // this finds nothing — which is the same as having cancelled it.
+            self.shared.timers.borrow_mut().cancel(timer);
+        }
+    }
 }
 
 impl Future for Sleep {
@@ -569,30 +641,24 @@ impl Future for Sleep {
             return Poll::Pending;
         };
         if Instant::now() >= self.deadline {
-            self.shared.deadlines.borrow_mut().remove(&task);
-            self.parked.set(None);
+            self.disarm();
             return Poll::Ready(());
         }
-        self.shared
-            .deadlines
-            .borrow_mut()
-            .insert(task, self.deadline);
-        self.parked.set(Some(task));
+        if self.armed.get().is_none() {
+            // Armed the moment it parks: the queue is plain data reachable
+            // from inside this poll, so there is no window where the host has
+            // yet to hear about the deadline. A re-poll before the deadline —
+            // a sibling leaf woke the task — keeps the timer it already has.
+            let timer = self.shared.timers.borrow_mut().set(self.deadline, task);
+            self.armed.set(Some(timer));
+        }
         Poll::Pending
     }
 }
 
 impl Drop for Sleep {
     fn drop(&mut self) {
-        let Some(task) = self.parked.get() else {
-            return;
-        };
-        let mut deadlines = self.shared.deadlines.borrow_mut();
-        // Only this sleep's own deadline: the task may already be parked on a
-        // newer one.
-        if deadlines.get(&task) == Some(&self.deadline) {
-            deadlines.remove(&task);
-        }
+        self.disarm();
     }
 }
 
