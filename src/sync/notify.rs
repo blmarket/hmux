@@ -1,6 +1,6 @@
 //! Multi-shot notification between a producer and one parked task.
 //!
-//! A [`Completion`](crate::Completion) hands over one value and is done; a
+//! A [`Completion`](super::Completion) hands over one value and is done; a
 //! `Notify` is the recurring version of the same handoff with no value at all.
 //! Notifying stores one permit and wakes the parked waiter; waiting takes the
 //! permit. Notifies delivered while nobody waits collapse into that one
@@ -83,7 +83,8 @@ impl Future for Notified {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::TaskRuntime;
+    use crate::sync::{completion_pair, yield_now};
+    use hmux_rt::TaskRuntime;
 
     #[test]
     fn a_permit_stored_before_the_wait_resolves_it_at_once() {
@@ -99,13 +100,13 @@ mod tests {
         let mut runtime = TaskRuntime::new().expect("runtime");
         let handle = runtime.handle();
         let woken_again = runtime.block_on(async move {
-            let (completion, sender) = crate::completion_pair().expect("pair");
+            let (completion, sender) = completion_pair().expect("pair");
             let waiter = notify.clone();
             handle.spawn(async move {
                 waiter.notified().await;
                 sender.complete(true);
             });
-            crate::yield_now().await;
+            yield_now().await;
             notify.notify();
             completion.await.expect("waiter finished")
         });
@@ -119,14 +120,14 @@ mod tests {
         let notify = Notify::new();
         let signal = notify.clone();
         let observed = runtime.block_on(async move {
-            let (completion, sender) = crate::completion_pair().expect("pair");
+            let (completion, sender) = completion_pair().expect("pair");
             let waiter = notify.clone();
             handle.spawn(async move {
                 waiter.notified().await;
                 sender.complete(7u32);
             });
             // Give the waiter its first turn so it parks before the signal.
-            crate::yield_now().await;
+            yield_now().await;
             signal.notify();
             completion.await.expect("waiter finished")
         });

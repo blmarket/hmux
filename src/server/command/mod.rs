@@ -51,8 +51,7 @@ use super::state::{
     Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
 };
 use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
-use hmux_rt::{Completion, WakeFn};
-use hmux_rt::yield_now;
+use crate::sync::{yield_now, Completion, WakeFn};
 use std::cell::Cell;
 use hmux_vt::{CaptureExtent, CellWidth, Grid, GridRow};
 
@@ -9611,7 +9610,7 @@ mod tests {
     struct ParkedRuntime {
         /// Kept so the completions handed out are never closed, which would
         /// resolve the queue with an error instead of leaving it parked.
-        senders: RefCell<Vec<hmux_rt::CompletionSender<CommandSuspensionResult>>>,
+        senders: RefCell<Vec<crate::sync::CompletionSender<CommandSuspensionResult>>>,
     }
 
     impl CommandRuntime for ParkedRuntime {
@@ -9619,7 +9618,7 @@ mod tests {
             &self,
             _suspension: CommandSuspension,
         ) -> io::Result<Completion<CommandSuspensionResult>> {
-            let (completion, sender) = hmux_rt::completion_pair()?;
+            let (completion, sender) = crate::sync::completion_pair()?;
             self.senders.borrow_mut().push(sender);
             Ok(completion)
         }
@@ -9637,9 +9636,9 @@ mod tests {
     fn queued_command() -> (
         QueuedCommand,
         Rc<QueueStatus>,
-        hmux_rt::CompletionSender<io::Result<CommandResult>>,
+        crate::sync::CompletionSender<io::Result<CommandResult>>,
     ) {
-        let (completion, sender) = hmux_rt::completion_pair().expect("completion pair");
+        let (completion, sender) = crate::sync::completion_pair().expect("completion pair");
         let status = Rc::new(QueueStatus::default());
         (
             QueuedCommand::new(completion, Rc::clone(&status)),
@@ -9711,7 +9710,7 @@ mod tests {
 
         let runtime = hmux_rt::TaskRuntime::new().expect("task runtime");
         let status = Rc::new(QueueStatus::default());
-        let (completion, sender) = hmux_rt::completion_pair().expect("completion pair");
+        let (completion, sender) = crate::sync::completion_pair().expect("completion pair");
         let parked: Rc<dyn CommandRuntime> = Rc::new(ParkedRuntime::default());
         let queue_status = Rc::clone(&status);
         let queue_state = Rc::clone(&state);

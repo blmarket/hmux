@@ -1418,7 +1418,7 @@ mod tests {
 
     /// Take a prompt answer that has already arrived.
     fn answer_now(
-        mut answer: hmux_rt::Completion<Option<PromptCompletion>>,
+        mut answer: crate::sync::Completion<Option<PromptCompletion>>,
     ) -> Option<PromptCompletion> {
         answer.take().expect("answered prompt").expect("answer")
     }

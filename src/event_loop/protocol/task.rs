@@ -16,7 +16,8 @@ use std::time::Instant;
 
 use crate::server::Server;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
-use hmux_rt::{yield_now, AsyncFd, Interest, JoinHandle, Notify, TaskHandle, TaskId, WakeFn};
+use crate::sync::{yield_now, Notify, WakeFn};
+use hmux_rt::{AsyncFd, Interest, JoinHandle, TaskHandle, TaskId};
 
 use super::super::job::BackgroundRunner;
 use super::{ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus};

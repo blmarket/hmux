@@ -14,7 +14,7 @@ use std::os::fd::{AsFd as _, AsRawFd as _, BorrowedFd};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use hmux_rt::{completion_pair, sleep, AsyncFd, Interest, TaskHandle, TaskRuntime};
+use hmux_rt::{sleep, AsyncFd, Interest, TaskHandle, TaskRuntime};
 
 fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
     let raw = fd.as_raw_fd();
@@ -89,20 +89,19 @@ fn main() -> io::Result<()> {
     });
 
     // Scene 2 — the control-client shape: a "client" task waits on a "command"
-    // task through the same completion a suspended command queue uses. Waiting
-    // on another task costs no kernel object at all.
+    // task through its join handle. Waiting on another task costs no kernel
+    // object at all.
     println!("== client waits on command, no fd ==");
     let scene = handle.clone();
     let print = stamp.clone();
     let reply = runtime.block_on(async move {
-        let (completion, sender) = completion_pair().expect("completion pair");
         let shell = scene.clone();
-        scene.spawn(async move {
+        let command = scene.spawn_join(async move {
             let output = run_shell(&shell, "sleep 0.05; echo done").await;
-            sender.complete(output.expect("shell output"));
+            output.expect("shell output")
         });
-        println!("{} client parked on a completion", print());
-        completion.await.expect("command task completed")
+        println!("{} client parked on the command's join handle", print());
+        command.await.expect("command task completed")
     });
     println!("{} client resumed with {:?}", stamp(), text(&reply));
 
@@ -113,17 +112,15 @@ fn main() -> io::Result<()> {
     let scene = handle.clone();
     let print = stamp.clone();
     runtime.block_on(async move {
-        let (slow, slow_sender) = completion_pair().expect("completion pair");
-        let (fast, fast_sender) = completion_pair().expect("completion pair");
         let shell = scene.clone();
-        scene.spawn(async move {
+        let slow = scene.spawn_join(async move {
             let output = run_shell(&shell, "sleep 0.10; echo slow").await;
-            slow_sender.complete(output.expect("slow shell"));
+            output.expect("slow shell")
         });
         let shell = scene.clone();
-        scene.spawn(async move {
+        let fast = scene.spawn_join(async move {
             let output = run_shell(&shell, "sleep 0.02; echo fast").await;
-            fast_sender.complete(output.expect("fast shell"));
+            output.expect("fast shell")
         });
         sleep(&scene, Duration::from_millis(50)).await;
         println!("{} timer fired between the two shells", print());

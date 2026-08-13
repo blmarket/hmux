@@ -10,7 +10,8 @@ use signal_hook::SigId;
 
 use crate::server::Server;
 
-use hmux_rt::{yield_now, AsyncFd, Interest, JoinHandle, TaskHandle};
+use crate::sync::yield_now;
+use hmux_rt::{AsyncFd, Interest, JoinHandle, TaskHandle};
 
 /// The self-pipe `SIGCHLD` writes into, and its registration's lifetime.
 struct ChildSignalSource {

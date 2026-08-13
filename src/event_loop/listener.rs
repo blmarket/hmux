@@ -9,7 +9,8 @@ use std::rc::Rc;
 
 use tracing::warn;
 
-use hmux_rt::{yield_now, AsyncFd, Interest, JoinHandle, TaskHandle};
+use crate::sync::yield_now;
+use hmux_rt::{AsyncFd, Interest, JoinHandle, TaskHandle};
 
 /// Accepted sockets waiting for the server adapter to create client actors.
 #[derive(Clone, Default)]

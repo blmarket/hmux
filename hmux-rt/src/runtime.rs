@@ -166,9 +166,49 @@ mod tests {
 
     use crate::reactor::Interest;
     use crate::tasks::{sleep, AsyncFd, JoinError};
-    use crate::Notify;
 
     use super::*;
+
+    use std::future::Future;
+    use std::task::Poll;
+
+    /// Race two futures on one task, `Ok` if the first wins. The loser is
+    /// dropped before the race resolves, taking whatever it parked with it.
+    ///
+    /// The daemon composes its own combinators over this crate's leaves; this
+    /// test-local one exists to pin the leaf semantics a race exercises.
+    async fn race<A: Future, B: Future>(first: A, second: B) -> Result<A::Output, B::Output> {
+        let mut first = Box::pin(first);
+        let mut second = Box::pin(second);
+        std::future::poll_fn(move |context| {
+            if let Poll::Ready(output) = first.as_mut().poll(context) {
+                return Poll::Ready(Ok(output));
+            }
+            if let Poll::Ready(output) = second.as_mut().poll(context) {
+                return Poll::Ready(Err(output));
+            }
+            Poll::Pending
+        })
+        .await
+    }
+
+    /// Drive two futures on one task until both finish.
+    async fn both(first: impl Future<Output = ()>, second: impl Future<Output = ()>) {
+        let mut first = Box::pin(first);
+        let mut second = Box::pin(second);
+        let mut first_done = false;
+        let mut second_done = false;
+        std::future::poll_fn(move |context| {
+            first_done = first_done || first.as_mut().poll(context).is_ready();
+            second_done = second_done || second.as_mut().poll(context).is_ready();
+            if first_done && second_done {
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        })
+        .await
+    }
 
     fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
         let raw = fd.as_raw_fd();
@@ -289,13 +329,11 @@ mod tests {
     /// earliest would arm one here and let the later deadline go missing.
     #[test]
     fn one_task_parked_on_two_sleeps_arms_a_timer_for_each() {
-        use crate::tasks::join;
-
         let mut runtime = TaskRuntime::new().expect("runtime");
         let handle = runtime.handle();
         let sleeper = handle.clone();
         handle.spawn(async move {
-            join(
+            both(
                 sleep(&sleeper, Duration::from_millis(20)),
                 sleep(&sleeper, Duration::from_secs(30)),
             )
@@ -313,15 +351,13 @@ mod tests {
     /// beside it, nor wake the task a second time for a timer that has gone.
     #[test]
     fn a_fired_sleep_leaves_its_siblings_timer_alone() {
-        use crate::tasks::{select, Either};
-
         let mut runtime = TaskRuntime::new().expect("runtime");
         let handle = runtime.handle();
         let started = Instant::now();
         runtime.block_on(async move {
             let near = sleep(&handle, Duration::from_millis(20));
             let far = sleep(&handle, Duration::from_secs(30));
-            let Either::First(()) = select(near, far).await else {
+            let Ok(()) = race(near, far).await else {
                 panic!("the far deadline beat the near one");
             };
         });
@@ -333,8 +369,6 @@ mod tests {
 
     #[test]
     fn a_lost_select_sleep_disarms_its_deadline() {
-        use crate::tasks::{select, Either};
-
         let mut runtime = TaskRuntime::new().expect("runtime");
         let handle = runtime.handle();
         let started = Instant::now();
@@ -342,12 +376,12 @@ mod tests {
             // The shell finishes far before the fallback deadline; losing the
             // race must drop the deadline with the sleep, or the tail of this
             // task would stall a blocking host poll for the full two seconds.
-            let raced = select(
+            let raced = race(
                 run_shell(&handle, "echo raced"),
                 sleep(&handle, Duration::from_secs(2)),
             )
             .await;
-            let Either::First(output) = raced else {
+            let Ok(output) = raced else {
                 panic!("the shell lost to a two-second sleep");
             };
             assert_eq!(output.expect("shell output"), b"raced\n");
@@ -408,16 +442,15 @@ mod tests {
         let mut runtime = TaskRuntime::new().expect("runtime");
         let tasks = runtime.handle();
         let probe = runtime.handle();
-        let started = Notify::new();
-        let child_started = started.clone();
+        let (started, child_started) = completion_pair::<()>().expect("completion pair");
         runtime.block_on(async move {
             let sleeper = tasks.clone();
             let task = tasks.spawn_join(async move {
-                child_started.notify();
+                child_started.complete(());
                 sleep(&sleeper, Duration::from_secs(60)).await;
                 42
             });
-            started.notified().await;
+            started.await.expect("the child started");
             assert!(task.cancel());
             assert_eq!(task.await, Err(JoinError));
         });
@@ -435,15 +468,14 @@ mod tests {
         reader.set_nonblocking(true).expect("nonblocking reader");
         runtime.block_on(async move {
             let io_tasks = tasks.clone();
-            let started = Notify::new();
-            let child_started = started.clone();
+            let (started, child_started) = completion_pair::<()>().expect("completion pair");
             let task = tasks.spawn_join(async move {
                 let source =
                     AsyncFd::new(&io_tasks, reader.as_fd(), Interest::READABLE).expect("async fd");
-                child_started.notify();
+                child_started.complete(());
                 source.readiness().await;
             });
-            started.notified().await;
+            started.await.expect("the child started");
             assert_eq!(probe.registered_io(), 1);
             assert!(task.cancel());
             assert_eq!(task.await, Err(JoinError));

@@ -13,9 +13,10 @@
 //! - [`serve`] — listeners and connection lifecycle management.
 //!
 //! The pane tokenizer and the terminal emulation live in the `hmux-vt` crate;
-//! the async task layer (futures, `AsyncFd`, completions, reactor, timers)
-//! lives in the `hmux-rt` crate. The daemon consumes both only through those
-//! crates' public surfaces.
+//! the async runtime layer (`AsyncFd`, reactor, timers, tasks) lives in the
+//! `hmux-rt` crate. The daemon consumes both only through those crates' public
+//! surfaces. The dataflow primitives composed over those leaves — completions,
+//! notifies, `select`/`join` — are the daemon's own, in [`sync`].
 
 // Leaves the daemon writes itself park non-`Send` wakers, the same contract
 // as `hmux-rt`.
@@ -30,6 +31,7 @@ pub mod observability;
 mod platform;
 pub mod serve;
 pub(crate) mod server;
+pub(crate) mod sync;
 pub mod tmux;
 
 pub use error::{Error, Result};

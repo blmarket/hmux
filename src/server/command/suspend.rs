@@ -32,8 +32,8 @@ use crate::server::state::{
     WaitRegistry,
 };
 use hmux_rt::Interest;
-use hmux_rt::{join, sleep, AsyncFd, TaskHandle};
-use hmux_rt::Completion;
+use crate::sync::{join, Completion};
+use hmux_rt::{sleep, AsyncFd, TaskHandle};
 
 use super::execution::{self, WaitForOutcome};
 use super::{

@@ -30,8 +30,8 @@ use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, Scr
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 use crate::server::input_keys::ExtendedKeys;
 use hmux_rt::Interest;
-use hmux_rt::{join, sleep, AsyncFd, TaskHandle};
-use hmux_rt::WakeFn;
+use crate::sync::{join, WakeFn};
+use hmux_rt::{sleep, AsyncFd, TaskHandle};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};

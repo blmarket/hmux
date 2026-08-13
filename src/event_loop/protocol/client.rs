@@ -12,7 +12,7 @@ use crate::server::attach::ClientTty;
 use crate::server::command::{self, ClientContext, ClientKind, CommandResult};
 use crate::server::control::{EventControlClient, EventControlSource};
 use crate::server::state::SharedState;
-use hmux_rt::WakeFn;
+use crate::sync::WakeFn;
 use crate::server::Server;
 use crate::tmux::codec::{encode_bytes, ImsgReader, NonblockingImsgWriter, MAX_IMSGSIZE};
 use crate::tmux::introspect::{log_frame, Direction};

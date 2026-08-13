@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 use std::os::fd::RawFd;
 
-use hmux_rt::{completion_pair, Completion, CompletionSender};
+use crate::sync::{completion_pair, Completion, CompletionSender};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct BackgroundJob {

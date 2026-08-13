@@ -26,7 +26,7 @@ pub(crate) mod test_driver {
         CommandRuntime, PendingBackground, ResumableCommandQueue,
     };
     use crate::server::state::SharedState;
-    use hmux_rt::{completion_pair, Completion, WakeFn};
+    use crate::sync::{completion_pair, Completion, WakeFn};
 
     use std::future::Future;
 
