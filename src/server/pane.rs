@@ -2038,6 +2038,13 @@ impl PaneIo {
         !self.pending_input.borrow().is_empty()
     }
 
+    /// A probe the loop keeps after the io moves into its task: whether input
+    /// is queued for the PTY.
+    pub(crate) fn write_probe(&self) -> Rc<dyn Fn() -> bool> {
+        let pending = Rc::clone(&self.pending_input);
+        Rc::new(move || !pending.borrow().is_empty())
+    }
+
     pub(crate) fn drive_writable(&mut self) {
         if self.closed {
             return;

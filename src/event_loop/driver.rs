@@ -13,7 +13,6 @@ use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 
 use super::actor::{ActorRef, WeakActorRef};
 use super::job::{BackgroundCommands, JobEvent};
-use super::pane::{EventPane, PaneEvent, PaneInterest};
 use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
 };
@@ -24,10 +23,6 @@ use crate::server::status::FormatJob;
 
 /// One queued event with a direct reference to its destination.
 pub(crate) enum Envelope {
-    Pane {
-        target: ActorRef<EventPane>,
-        event: PaneEvent,
-    },
     Protocol {
         target: ActorRef<ProtocolClient>,
         event: ProtocolEvent,
@@ -46,10 +41,6 @@ pub(crate) enum Envelope {
 impl Envelope {
     fn dispatch(self, outbox: &mut Outbox) {
         match self {
-            Envelope::Pane { target, event } => {
-                let dispatch_target = target.clone();
-                target.with_mut(|pane| pane.handle(&dispatch_target, event, outbox));
-            }
             Envelope::Protocol { target, event } => {
                 let dispatch_target = target.clone();
                 target.with_mut(|client| client.handle(&dispatch_target, event, outbox));
@@ -89,10 +80,6 @@ enum PendingWake {
     ProtocolTimer {
         target: WeakActorRef<ProtocolClient>,
         event: ProtocolEvent,
-    },
-    PaneTimer {
-        target: WeakActorRef<EventPane>,
-        generation: u64,
     },
     Background {
         target: WeakActorRef<BackgroundCommands>,
@@ -152,12 +139,6 @@ impl WakeQueue {
             .push_back(PendingWake::ProtocolTimer { target, event });
     }
 
-    fn fire_pane_timer(&self, target: WeakActorRef<EventPane>, generation: u64) {
-        self.fired
-            .borrow_mut()
-            .push_back(PendingWake::PaneTimer { target, generation });
-    }
-
     fn len(&self) -> usize {
         self.fired.borrow().len()
     }
@@ -207,15 +188,6 @@ impl WakeQueue {
                     };
                     events.push_back(Envelope::Protocol { target, event });
                 }
-                PendingWake::PaneTimer { target, generation } => {
-                    let Some(target) = target.upgrade() else {
-                        continue;
-                    };
-                    events.push_back(Envelope::Pane {
-                        target,
-                        event: PaneEvent::GroundTimer(generation),
-                    });
-                }
             }
         }
     }
@@ -234,10 +206,6 @@ fn protocol_ready_event(side: ProtocolIoSide) -> ProtocolEvent {
 
 enum Effect {
     Enqueue(Envelope),
-    SetPaneInterest {
-        target: ActorRef<EventPane>,
-        interest: PaneInterest,
-    },
     SetProtocolInterest {
         target: ActorRef<ProtocolClient>,
         side: ProtocolIoSide,
@@ -248,12 +216,6 @@ enum Effect {
         deadline: Instant,
         event: ProtocolEvent,
     },
-    SetPaneTimer {
-        target: ActorRef<EventPane>,
-        deadline: Instant,
-        generation: u64,
-    },
-    StopPane(ActorRef<EventPane>),
     StopProtocol(ActorRef<ProtocolClient>),
 }
 
@@ -273,10 +235,6 @@ impl Outbox {
         self.effects.push(Effect::Enqueue(envelope));
     }
 
-    pub(crate) fn enqueue_pane(&mut self, target: ActorRef<EventPane>, event: PaneEvent) {
-        self.enqueue(Envelope::Pane { target, event });
-    }
-
     pub(crate) fn enqueue_protocol(
         &mut self,
         target: ActorRef<ProtocolClient>,
@@ -291,15 +249,6 @@ impl Outbox {
         event: JobEvent,
     ) {
         self.enqueue(Envelope::Background { target, event });
-    }
-
-    pub(crate) fn set_pane_interest(
-        &mut self,
-        target: ActorRef<EventPane>,
-        interest: PaneInterest,
-    ) {
-        self.effects
-            .push(Effect::SetPaneInterest { target, interest });
     }
 
     pub(crate) fn set_protocol_interest(
@@ -328,25 +277,6 @@ impl Outbox {
         });
     }
 
-    /// Arm the pane's ground timer, tmux's five seconds of patience with a
-    /// string sequence whose terminator has not arrived.
-    pub(crate) fn set_pane_timer(
-        &mut self,
-        target: ActorRef<EventPane>,
-        deadline: Instant,
-        generation: u64,
-    ) {
-        self.effects.push(Effect::SetPaneTimer {
-            target,
-            deadline,
-            generation,
-        });
-    }
-
-    pub(crate) fn stop_pane(&mut self, target: ActorRef<EventPane>) {
-        self.effects.push(Effect::StopPane(target));
-    }
-
     pub(crate) fn stop_protocol(&mut self, target: ActorRef<ProtocolClient>) {
         self.effects.push(Effect::StopProtocol(target));
     }
@@ -359,9 +289,6 @@ pub(crate) struct IoRecipient {
 
 #[derive(Clone, Debug)]
 enum IoTarget {
-    Pane {
-        target: WeakActorRef<EventPane>,
-    },
     Protocol {
         target: WeakActorRef<ProtocolClient>,
         side: ProtocolIoSide,
@@ -372,10 +299,6 @@ enum IoTarget {
     Task {
         io: u64,
     },
-}
-
-pub(crate) struct PaneHandle {
-    pane: ActorRef<EventPane>,
 }
 
 /// References returned when a protocol client is added to the loop.
@@ -415,12 +338,6 @@ impl ProtocolHandle {
         self.protocol
             .with(ProtocolClient::is_attach)
             .unwrap_or(false)
-    }
-}
-
-impl PaneHandle {
-    pub(crate) fn is_alive(&self) -> bool {
-        self.pane.is_alive()
     }
 }
 
@@ -525,13 +442,8 @@ where
         super::listener::spawn(&self.task_handle, listener, accept_budget)
     }
 
-    pub(crate) fn add_pane(&mut self, io: PaneIo) -> PaneHandle {
-        let pane = ActorRef::new(EventPane::new(io));
-        self.events.push_back(Envelope::Pane {
-            target: pane.clone(),
-            event: PaneEvent::Start,
-        });
-        PaneHandle { pane }
+    pub(crate) fn add_pane(&mut self, io: PaneIo) -> super::pane::PaneHandle {
+        super::pane::spawn(&self.task_handle, io)
     }
 
     /// Watch for `SIGINT`/`SIGTERM` on the loop. The task lives as long as
@@ -596,30 +508,6 @@ where
             self.task_handle.spawn(async move { pipe.run(&tasks).await });
         }
         Ok(())
-    }
-
-    pub(crate) fn sync_pane(&mut self, target: &PaneHandle) -> io::Result<()> {
-        if let Some(interest) = target
-            .pane
-            .with_mut(EventPane::take_interest_change)
-            .flatten()
-        {
-            self.set_pane_interest(&target.pane, interest)?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn shutdown_pane(&mut self, target: &PaneHandle) {
-        let should_enqueue = target
-            .pane
-            .with_mut(EventPane::request_shutdown)
-            .unwrap_or(false);
-        if should_enqueue {
-            self.events.push_back(Envelope::Pane {
-                target: target.pane.clone(),
-                event: PaneEvent::Shutdown,
-            });
-        }
     }
 
     /// Work the loop can do without waiting for the kernel. A fired wake counts
@@ -733,20 +621,6 @@ where
 
     fn enqueue_readiness(&mut self, notification: Ready<IoRecipient>) {
         match &notification.recipient().target {
-            IoTarget::Pane { target: recipient } => {
-                let Some(target) = recipient.upgrade() else {
-                    return;
-                };
-                let should_enqueue = target
-                    .with_mut(EventPane::mark_work_queued)
-                    .unwrap_or(false);
-                if should_enqueue {
-                    self.events.push_back(Envelope::Pane {
-                        target,
-                        event: PaneEvent::Ready(notification.readiness()),
-                    });
-                }
-            }
             IoTarget::Protocol {
                 target: recipient,
                 side,
@@ -786,9 +660,6 @@ where
     fn apply(&mut self, effect: Effect) -> io::Result<()> {
         match effect {
             Effect::Enqueue(envelope) => self.events.push_back(envelope),
-            Effect::SetPaneInterest { target, interest } => {
-                self.set_pane_interest(&target, interest)?;
-            }
             Effect::SetProtocolInterest {
                 target,
                 side,
@@ -807,20 +678,6 @@ where
                     wakes.fire_protocol_timer(target, event);
                 });
             }
-            Effect::SetPaneTimer {
-                target,
-                deadline,
-                generation,
-            } => {
-                let target = target.downgrade();
-                let wakes = self.wakes.clone();
-                self.spawn_timer(deadline, move || {
-                    wakes.fire_pane_timer(target, generation);
-                });
-            }
-            Effect::StopPane(target) => {
-                target.stop();
-            }
             Effect::StopProtocol(target) => {
                 target.stop();
             }
@@ -834,48 +691,6 @@ where
             hmux_rt::sleep_until(&tasks, deadline).await;
             fire();
         });
-    }
-
-    fn set_pane_interest(
-        &mut self,
-        target: &ActorRef<EventPane>,
-        interest: PaneInterest,
-    ) -> io::Result<()> {
-        let token = target.with(EventPane::token).flatten();
-        let reactor_interest = match interest {
-            PaneInterest::Disabled => {
-                if let Some(token) = token {
-                    self.reactor.deregister(token)?;
-                    target.with_mut(|pane| pane.set_token(None));
-                }
-                return Ok(());
-            }
-            PaneInterest::Readable => Interest::READABLE,
-            PaneInterest::ReadableWritable => Interest::READABLE | Interest::WRITABLE,
-        };
-
-        match token {
-            None => {
-                let recipient = IoRecipient {
-                    target: IoTarget::Pane {
-                        target: target.downgrade(),
-                    },
-                };
-                if let Some(result) = target.with_mut(|pane| {
-                    let token = self
-                        .reactor
-                        .register(pane.fd(), reactor_interest, recipient)?;
-                    pane.set_token(Some(token));
-                    Ok::<(), io::Error>(())
-                }) {
-                    result?;
-                }
-            }
-            Some(token) => {
-                self.reactor.reregister(token, reactor_interest)?;
-            }
-        }
-        Ok(())
     }
 
     fn set_protocol_interest(

@@ -13,8 +13,9 @@ use std::time::Instant;
 
 use tracing::{info, warn};
 
-use crate::event_loop::driver::{EventLoop, PaneHandle, ProtocolHandle};
+use crate::event_loop::driver::{EventLoop, ProtocolHandle};
 use crate::event_loop::listener::ListenerHandle;
+use crate::event_loop::pane::PaneHandle;
 use crate::event_loop::protocol::ProtocolCloseReason;
 use crate::integration::AgentObserver;
 use crate::platform::{CurrentPlatform, Platform};
@@ -98,7 +99,7 @@ pub fn run_event_loop(
         }
     }
     for pane in panes.values() {
-        event_loop.shutdown_pane(pane);
+        pane.shutdown();
     }
     while panes.values().any(PaneHandle::is_alive) {
         if !event_loop.dispatch_one()? {
@@ -157,11 +158,11 @@ fn sync_event_loop_panes(
         .collect::<Vec<_>>();
     for runtime_id in removed {
         if let Some(pane) = panes.remove(&runtime_id) {
-            event_loop.shutdown_pane(&pane);
+            pane.shutdown();
         }
     }
     for pane in panes.values() {
-        event_loop.sync_pane(pane)?;
+        pane.poke_write();
     }
     Ok(())
 }

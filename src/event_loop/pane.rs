@@ -1,13 +1,14 @@
-//! Reactor-owned pane PTY I/O.
+//! Task-driven pane PTY I/O.
 
-use std::os::fd::BorrowedFd;
+use std::cell::Cell;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use crate::server::pane::PaneIo;
 
-use super::actor::ActorRef;
-use super::driver::Outbox;
-use hmux_rt::{Readiness, Token};
+use hmux_rt::{
+    select, sleep_until, yield_now, AsyncFd, Either, Interest, Notify, Readiness, TaskHandle,
+};
 
 /// tmux's ground timer: how long `input.c` waits for the terminator of a
 /// string sequence before giving up on it and returning the parser to ground,
@@ -15,210 +16,193 @@ use hmux_rt::{Readiness, Token};
 /// it writes afterwards.
 const GROUND_TIMEOUT: Duration = Duration::from_secs(5);
 
-pub(crate) enum PaneEvent {
-    Start,
-    Ready(Readiness),
-    ReadContinuation,
-    /// The ground timer expired on a string sequence still waiting for its
-    /// terminator.
-    GroundTimer(u64),
-    Shutdown,
+/// The loop's handle to one pane task.
+pub(crate) struct PaneHandle {
+    poke: Notify,
+    stop: Rc<Cell<bool>>,
+    done: Rc<Cell<bool>>,
+    write_pending: Rc<dyn Fn() -> bool>,
+    /// Whether a poke is already out for the current spell of queued input.
+    /// The task clears it when the queue drains; while a full PTY holds the
+    /// input back — a child ignoring its stdin — this stays set, so the host's
+    /// sync passes stop producing wakes and the loop can block in the reactor.
+    poke_armed: Rc<Cell<bool>>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum PaneInterest {
-    Disabled,
-    Readable,
-    ReadableWritable,
+impl PaneHandle {
+    pub(crate) fn is_alive(&self) -> bool {
+        !self.done.get()
+    }
+
+    /// Ask the task to stop; it finishes on its next turn.
+    pub(crate) fn shutdown(&self) {
+        self.stop.set(true);
+        self.poke.notify();
+    }
+
+    /// Wake the pane task when the server has queued input for its PTY.
+    ///
+    /// The task writes opportunistically on the poke: the PTY is almost always
+    /// writable, and after a real `WouldBlock` the kernel owes it a writable
+    /// edge, so nothing re-registers interest.
+    pub(crate) fn poke_write(&self) {
+        if (self.write_pending)() && !self.poke_armed.get() {
+            self.poke_armed.set(true);
+            self.poke.notify();
+        }
+    }
 }
 
-pub(crate) struct EventPane {
-    io: PaneIo,
-    token: Option<Token>,
-    writable_interest: bool,
-    work_queued: bool,
-    stopping: bool,
-    /// Identifies the current ground timer so a sleep from an older parser
-    /// state cannot expire a newer string sequence.
-    timer_generation: u64,
-    timer_armed: bool,
-    /// Whether the parser was inside a string sequence at the end of the last
-    /// read. tmux restarts the timer whenever such a sequence *begins*; this
-    /// watches the same edge once per read, which against five seconds is not
-    /// an observable difference.
-    awaiting_terminator: bool,
+enum Wakeup {
+    Io(Readiness),
+    Poke,
+    Ground,
 }
 
-impl EventPane {
-    pub(crate) fn new(io: PaneIo) -> Self {
-        Self {
-            io,
-            token: None,
-            writable_interest: false,
-            work_queued: false,
-            stopping: false,
-            timer_generation: 0,
-            timer_armed: false,
-            awaiting_terminator: false,
-        }
+/// Drive one pane's PTY on the loop.
+pub(crate) fn spawn(tasks: &TaskHandle, mut io: PaneIo) -> PaneHandle {
+    let poke = Notify::new();
+    let stop = Rc::new(Cell::new(false));
+    let done = Rc::new(Cell::new(false));
+    let poke_armed = Rc::new(Cell::new(false));
+    let write_pending = io.write_probe();
+    let task_poke = poke.clone();
+    let task_stop = Rc::clone(&stop);
+    let task_done = Rc::clone(&done);
+    let task_armed = Rc::clone(&poke_armed);
+    let handle = tasks.clone();
+    tasks.spawn(async move {
+        run(&handle, &mut io, &task_poke, &task_stop, &task_armed).await;
+        task_done.set(true);
+    });
+    PaneHandle {
+        poke,
+        stop,
+        done,
+        write_pending,
+        poke_armed,
     }
+}
 
-    pub(crate) fn fd(&self) -> BorrowedFd<'_> {
-        self.io.as_fd()
-    }
-
-    pub(crate) fn token(&self) -> Option<Token> {
-        self.token
-    }
-
-    pub(crate) fn set_token(&mut self, token: Option<Token>) {
-        self.token = token;
-    }
-
-    pub(crate) fn mark_work_queued(&mut self) -> bool {
-        if self.stopping || self.work_queued {
-            return false;
-        }
-        self.work_queued = true;
-        true
-    }
-
-    pub(crate) fn request_shutdown(&mut self) -> bool {
-        if self.stopping {
-            return false;
-        }
-        self.stopping = true;
-        true
-    }
-
-    pub(crate) fn take_interest_change(&mut self) -> Option<PaneInterest> {
-        if self.stopping {
-            return None;
-        }
-        let writable = self.io.wants_write();
-        if self.token.is_some() && writable == self.writable_interest {
-            return None;
-        }
-        self.writable_interest = writable;
-        Some(if writable {
-            PaneInterest::ReadableWritable
-        } else {
-            PaneInterest::Readable
-        })
-    }
-
-    pub(crate) fn handle(
-        &mut self,
-        target: &ActorRef<Self>,
-        event: PaneEvent,
-        outbox: &mut Outbox,
-    ) {
-        match event {
-            PaneEvent::Start if !self.stopping => self.sync_interest(target, outbox),
-            PaneEvent::GroundTimer(generation)
-                if !self.stopping && self.timer_armed && generation == self.timer_generation =>
-            {
-                self.timer_armed = false;
-                self.awaiting_terminator = false;
-                self.io.expire_ground();
-                self.sync_interest(target, outbox);
-            }
-            PaneEvent::Ready(readiness) if !self.stopping => {
-                self.work_queued = false;
-                if readiness.is_writable() {
-                    self.io.drive_writable();
-                }
-                if readiness.is_readable()
-                    || readiness.is_read_closed()
-                    || readiness.is_write_closed()
-                    || readiness.is_error()
-                {
-                    match self.io.drive_readable() {
-                        Ok(result) if result.closed => {
-                            self.stopping = true;
-                            outbox.set_pane_interest(target.clone(), PaneInterest::Disabled);
-                            outbox.stop_pane(target.clone());
-                            return;
-                        }
-                        Ok(result) if result.continuation => {
-                            self.work_queued = true;
-                            outbox.enqueue_pane(target.clone(), PaneEvent::ReadContinuation);
-                        }
-                        Ok(_) => {}
-                        Err(_) => {
-                            self.stopping = true;
-                            outbox.set_pane_interest(target.clone(), PaneInterest::Disabled);
-                            outbox.stop_pane(target.clone());
-                            return;
-                        }
-                    }
-                }
-                self.sync_interest(target, outbox);
-            }
-            PaneEvent::ReadContinuation if !self.stopping => {
-                self.work_queued = false;
-                match self.io.drive_readable() {
-                    Ok(result) if result.closed => {
-                        self.stopping = true;
-                        outbox.set_pane_interest(target.clone(), PaneInterest::Disabled);
-                        outbox.stop_pane(target.clone());
-                        return;
-                    }
-                    Ok(result) if result.continuation => {
-                        self.work_queued = true;
-                        outbox.enqueue_pane(target.clone(), PaneEvent::ReadContinuation);
-                    }
-                    Ok(_) => {}
-                    Err(_) => {
-                        self.stopping = true;
-                        outbox.set_pane_interest(target.clone(), PaneInterest::Disabled);
-                        outbox.stop_pane(target.clone());
-                        return;
-                    }
-                }
-                self.sync_interest(target, outbox);
-            }
-            PaneEvent::Shutdown => {
-                self.stopping = true;
-                self.timer_armed = false;
-                outbox.set_pane_interest(target.clone(), PaneInterest::Disabled);
-                outbox.stop_pane(target.clone());
-            }
-            PaneEvent::Start
-            | PaneEvent::Ready(_)
-            | PaneEvent::ReadContinuation
-            | PaneEvent::GroundTimer(_) => {}
-        }
-    }
-
-    fn sync_interest(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
-        self.sync_ground_timer(target, outbox);
-        if let Some(interest) = self.take_interest_change() {
-            outbox.set_pane_interest(target.clone(), interest);
-        }
-    }
-
-    /// Arm the ground timer when the pane has just entered a string sequence,
-    /// and drop it when the sequence is over. `input_start_ground_timer` runs
-    /// on the way into each of those states and `input_ground` cancels it, so
-    /// the timer measures from where the sequence began rather than from the
-    /// last byte of it.
-    fn sync_ground_timer(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
-        let awaiting = self.io.awaiting_terminator();
-        if awaiting == self.awaiting_terminator {
+async fn run(
+    tasks: &TaskHandle,
+    io: &mut PaneIo,
+    poke: &Notify,
+    stop: &Cell<bool>,
+    poke_armed: &Cell<bool>,
+) {
+    let Ok(readiness) = AsyncFd::new(
+        tasks,
+        io.as_fd(),
+        Interest::READABLE | Interest::WRITABLE,
+    ) else {
+        return;
+    };
+    // Whether the parser was inside a string sequence at the end of the last
+    // read. tmux restarts the timer whenever such a sequence *begins*; this
+    // watches the same edge once per read, which against five seconds is not
+    // an observable difference.
+    let mut awaiting = false;
+    let mut ground_deadline: Option<Instant> = None;
+    loop {
+        if stop.get() {
             return;
         }
-        self.awaiting_terminator = awaiting;
-        if awaiting {
-            self.timer_generation = self.timer_generation.wrapping_add(1);
-            self.timer_armed = true;
-            outbox.set_pane_timer(
-                target.clone(),
-                Instant::now() + GROUND_TIMEOUT,
-                self.timer_generation,
-            );
+        let wakeup = if let Some(deadline) = ground_deadline {
+            match select(
+                select(readiness.readiness(), poke.notified()),
+                sleep_until(tasks, deadline),
+            )
+            .await
+            {
+                Either::First(Either::First(ready)) => Wakeup::Io(ready),
+                Either::First(Either::Second(())) => Wakeup::Poke,
+                Either::Second(()) => Wakeup::Ground,
+            }
         } else {
-            self.timer_armed = false;
+            match select(readiness.readiness(), poke.notified()).await {
+                Either::First(ready) => Wakeup::Io(ready),
+                Either::Second(()) => Wakeup::Poke,
+            }
+        };
+        if stop.get() {
+            return;
         }
+        match wakeup {
+            Wakeup::Ground => {
+                ground_deadline = None;
+                awaiting = false;
+                io.expire_ground();
+                continue;
+            }
+            Wakeup::Poke => {
+                io.drive_writable();
+                poke_armed.set(io.wants_write());
+            }
+            Wakeup::Io(ready) => {
+                if ready.is_writable() {
+                    io.drive_writable();
+                    poke_armed.set(io.wants_write());
+                }
+                if ready.is_readable()
+                    || ready.is_read_closed()
+                    || ready.is_write_closed()
+                    || ready.is_error()
+                {
+                    // Edge-style: read until `WouldBlock` before waiting
+                    // again, yielding after every coalesced chunk so a pane
+                    // flood cannot starve the rest of the loop.
+                    loop {
+                        let result = match io.drive_readable() {
+                            Ok(result) => result,
+                            Err(_) => return,
+                        };
+                        if result.closed {
+                            return;
+                        }
+                        sync_ground_timer(io, &mut awaiting, &mut ground_deadline);
+                        // The timer keeps its place inside a burst: the actor
+                        // dispatched its expiry between read continuations,
+                        // and a task checks the deadline in the same seams.
+                        if expire_if_due(io, &mut awaiting, &mut ground_deadline) {
+                            continue;
+                        }
+                        if !result.continuation {
+                            break;
+                        }
+                        yield_now().await;
+                        if stop.get() {
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        sync_ground_timer(io, &mut awaiting, &mut ground_deadline);
     }
+}
+
+/// Arm the ground timer when the pane has just entered a string sequence,
+/// and drop it when the sequence is over. `input_start_ground_timer` runs
+/// on the way into each of those states and `input_ground` cancels it, so
+/// the timer measures from where the sequence began rather than from the
+/// last byte of it.
+fn sync_ground_timer(io: &PaneIo, awaiting: &mut bool, ground_deadline: &mut Option<Instant>) {
+    let now_awaiting = io.awaiting_terminator();
+    if now_awaiting == *awaiting {
+        return;
+    }
+    *awaiting = now_awaiting;
+    *ground_deadline = now_awaiting.then(|| Instant::now() + GROUND_TIMEOUT);
+}
+
+/// Expire a sequence whose armed deadline has already passed.
+fn expire_if_due(io: &PaneIo, awaiting: &mut bool, ground_deadline: &mut Option<Instant>) -> bool {
+    let due = ground_deadline.is_some_and(|deadline| Instant::now() >= deadline);
+    if due {
+        *ground_deadline = None;
+        *awaiting = false;
+        io.expire_ground();
+    }
+    due
 }
