@@ -21,7 +21,7 @@ use crate::tmux::traits::NonblockingFrameWriter;
 
 use super::super::actor::ActorRef;
 use super::super::driver::Outbox;
-use super::super::job::{BackgroundCommands, JobEvent};
+use super::super::job::BackgroundRunner;
 use hmux_rt::Token;
 use super::super::suspend::EventCommandRuntime;
 use hmux_rt::TaskHandle;
@@ -188,7 +188,7 @@ pub(crate) struct ProtocolClient {
     pub(super) writer: NonblockingImsgWriter,
     pub(super) state: SharedState,
     pub(super) hub: StatusHub,
-    pub(super) background_commands: ActorRef<BackgroundCommands>,
+    pub(super) background_commands: BackgroundRunner,
     pub(super) command_runtime: Rc<dyn command::CommandRuntime>,
     pub(super) protocol_state: ProtocolState,
     pub(super) registrations: ProtocolRegistrations,
@@ -202,7 +202,7 @@ impl ProtocolClient {
         reader: ImsgReader,
         writer: NonblockingImsgWriter,
         server: Server,
-        background_commands: ActorRef<BackgroundCommands>,
+        background_commands: BackgroundRunner,
         tasks: TaskHandle,
         peer_uid: Option<u32>,
     ) -> (Self, ProtocolStatus) {
@@ -758,10 +758,7 @@ impl ProtocolClient {
                         )
                     };
                     for request in hooks {
-                        outbox.enqueue_background(
-                            self.background_commands.clone(),
-                            JobEvent::Start(request),
-                        );
+                        self.background_commands.start(request);
                     }
                     if transaction.complete_group(&result) {
                         transaction.groups.clear();

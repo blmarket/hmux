@@ -25,7 +25,6 @@ use crate::tmux::traits::NonblockingFrameReader;
 
 use super::super::actor::ActorRef;
 use super::super::driver::Outbox;
-use super::super::job::JobEvent;
 use super::client::{
     AttachClientState, CommandClientState, CommandOperation, ProtocolClient, ProtocolCloseReason,
     ProtocolEvent, ProtocolIoSide, ProtocolState,
@@ -738,7 +737,7 @@ impl ProtocolClient {
                 _ => return,
             };
         for request in background_commands {
-            outbox.enqueue_background(self.background_commands.clone(), JobEvent::Start(request));
+            self.background_commands.start(request);
         }
         let was_input_paused = match &self.protocol_state {
             ProtocolState::Attach(attach) => attach.input_paused,

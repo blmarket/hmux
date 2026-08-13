@@ -12,7 +12,7 @@ use crate::server::Server;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 
 use super::actor::{ActorRef, WeakActorRef};
-use super::job::{BackgroundCommands, JobEvent};
+use super::job::BackgroundRunner;
 use super::protocol::{
     ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus,
 };
@@ -27,10 +27,6 @@ pub(crate) enum Envelope {
         target: ActorRef<ProtocolClient>,
         event: ProtocolEvent,
     },
-    Background {
-        target: ActorRef<BackgroundCommands>,
-        event: JobEvent,
-    },
     /// Work for the loop's own task set, which is not an actor: the loop
     /// dispatches it directly.
     Task {
@@ -44,10 +40,6 @@ impl Envelope {
             Envelope::Protocol { target, event } => {
                 let dispatch_target = target.clone();
                 target.with_mut(|client| client.handle(&dispatch_target, event, outbox));
-            }
-            Envelope::Background { target, event } => {
-                let dispatch_target = target.clone();
-                target.with_mut(|jobs| jobs.handle(&dispatch_target, event, outbox));
             }
             // A task reaches the reactor and the timer queue only through the
             // inboxes the loop reconciles, so the loop dispatches it before
@@ -81,10 +73,6 @@ enum PendingWake {
         target: WeakActorRef<ProtocolClient>,
         event: ProtocolEvent,
     },
-    Background {
-        target: WeakActorRef<BackgroundCommands>,
-        id: u64,
-    },
 }
 
 /// Where a fired [`WakeFn`] leaves its event.
@@ -106,22 +94,6 @@ impl WakeQueue {
             fired.borrow_mut().push_back(PendingWake::Protocol {
                 target: target.clone(),
                 side,
-            });
-        })
-    }
-
-    /// The wake for one piece of detached work the background-command actor is
-    /// waiting on.
-    pub(super) fn background_wake(
-        &self,
-        target: WeakActorRef<BackgroundCommands>,
-        id: u64,
-    ) -> WakeFn {
-        let fired = Rc::clone(&self.fired);
-        Rc::new(move || {
-            fired.borrow_mut().push_back(PendingWake::Background {
-                target: target.clone(),
-                id,
             });
         })
     }
@@ -166,15 +138,6 @@ impl WakeQueue {
                     events.push_back(Envelope::Protocol {
                         target,
                         event: protocol_ready_event(side),
-                    });
-                }
-                PendingWake::Background { target, id } => {
-                    let Some(target) = target.upgrade() else {
-                        continue;
-                    };
-                    events.push_back(Envelope::Background {
-                        target,
-                        event: JobEvent::Ready { id },
                     });
                 }
                 PendingWake::Task { task } => {
@@ -241,14 +204,6 @@ impl Outbox {
         event: ProtocolEvent,
     ) {
         self.enqueue(Envelope::Protocol { target, event });
-    }
-
-    pub(crate) fn enqueue_background(
-        &mut self,
-        target: ActorRef<BackgroundCommands>,
-        event: JobEvent,
-    ) {
-        self.enqueue(Envelope::Background { target, event });
     }
 
     pub(crate) fn set_protocol_interest(
@@ -369,7 +324,7 @@ where
     events: VecDeque<Envelope>,
     wakes: WakeQueue,
     ready: Vec<Ready<IoRecipient>>,
-    background_commands: Option<ActorRef<BackgroundCommands>>,
+    background_commands: Option<BackgroundRunner>,
     task_loop: TaskLoop,
     task_handle: TaskHandle,
 }
@@ -407,17 +362,7 @@ where
         server: Server,
         peer_uid: Option<u32>,
     ) -> ProtocolHandle {
-        let background_commands = self
-            .background_commands
-            .get_or_insert_with(|| {
-                ActorRef::new(BackgroundCommands::new(
-                    server.state(),
-                    server.status_hub(),
-                    self.wakes.clone(),
-                    self.task_handle.clone(),
-                ))
-            })
-            .clone();
+        let background_commands = self.background_runner(&server);
         let (protocol, status) = ProtocolClient::new(
             reader,
             writer,
@@ -473,24 +418,17 @@ where
         if requests.is_empty() {
             return Ok(());
         }
-        let target = self
-            .background_commands
-            .get_or_insert_with(|| {
-                ActorRef::new(BackgroundCommands::new(
-                    server.state(),
-                    server.status_hub(),
-                    self.wakes.clone(),
-                    self.task_handle.clone(),
-                ))
-            })
-            .clone();
+        let runner = self.background_runner(server);
         for request in requests {
-            self.events.push_back(Envelope::Background {
-                target: target.clone(),
-                event: JobEvent::Start(request),
-            });
+            runner.start(request);
         }
         Ok(())
+    }
+
+    fn background_runner(&mut self, server: &Server) -> BackgroundRunner {
+        self.background_commands
+            .get_or_insert_with(|| BackgroundRunner::new(server, self.task_handle.clone()))
+            .clone()
     }
 
     pub(crate) fn adopt_format_jobs(&mut self, jobs: Vec<FormatJob>) -> io::Result<()> {

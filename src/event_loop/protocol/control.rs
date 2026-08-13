@@ -7,7 +7,6 @@ use crate::tmux::message::{Frame, Message};
 
 use super::super::actor::ActorRef;
 use super::super::driver::Outbox;
-use super::super::job::JobEvent;
 use super::client::{
     ControlClientState, ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide,
     ProtocolState,
@@ -181,7 +180,7 @@ impl ProtocolClient {
             outbox.enqueue_protocol(target.clone(), ProtocolEvent::ControlContinue);
         }
         for request in background_commands {
-            outbox.enqueue_background(self.background_commands.clone(), JobEvent::Start(request));
+            self.background_commands.start(request);
         }
         if finished {
             self.protocol_state = ProtocolState::Draining;

@@ -8,7 +8,6 @@ use crate::tmux::message::{Frame, Message};
 
 use super::super::actor::ActorRef;
 use super::super::driver::Outbox;
-use super::super::job::JobEvent;
 use super::client::{
     CommandClientState, CommandOperation, ProtocolClient, ProtocolCloseReason, ProtocolEvent,
     ProtocolIoSide, ProtocolState, COMMAND_QUEUE_BUDGET, FILE_STREAM,
@@ -76,8 +75,7 @@ impl ProtocolClient {
                 None => return,
             };
             for request in result.background_commands.drain(..) {
-                outbox
-                    .enqueue_background(self.background_commands.clone(), JobEvent::Start(request));
+                self.background_commands.start(request);
             }
             let mut transaction = active.transaction;
             if transaction.complete_group(&result) {
