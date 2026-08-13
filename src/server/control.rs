@@ -2109,7 +2109,7 @@ mod tests {
         // The control client submits its command work to a loop, the same as
         // it does in the daemon; this test never suspends, so the loop only
         // has to exist.
-        let event_loop = crate::event_loop::driver::EventLoop::new()?;
+        let runtime = hmux_rt::TaskRuntime::new()?;
         let mut control = EventControlClient::new(
             &args,
             tty,
@@ -2117,7 +2117,7 @@ mod tests {
             hub.clone(),
             &command::ClientContext::default(),
             Rc::new(crate::event_loop::suspend::EventCommandRuntime::new(
-                event_loop.task_handle(),
+                runtime.handle(),
             )),
         )?;
 

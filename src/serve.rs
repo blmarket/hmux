@@ -13,21 +13,21 @@ use std::time::Instant;
 
 use tracing::{info, warn};
 
-use crate::event_loop::driver::{EventLoop, ProtocolHandle};
+use crate::event_loop::job::BackgroundRunner;
 use crate::event_loop::listener::ListenerHandle;
 use crate::event_loop::pane::PaneHandle;
-use crate::event_loop::protocol::ProtocolCloseReason;
+use crate::event_loop::protocol::{self, ProtocolCloseReason, ProtocolHandle};
+use crate::event_loop::{listener, pane, process, term_signal};
 use crate::integration::AgentObserver;
 use crate::platform::{CurrentPlatform, Platform};
 use crate::server::Server;
 use crate::tmux::codec::{split_nonblocking_stream_with_queue_limit, MAX_IMSGSIZE};
+use hmux_rt::{TaskHandle, TaskRuntime};
 
-type ReadinessEventLoop =
-    EventLoop<hmux_rt::MioReactor<crate::event_loop::driver::IoRecipient>>;
 const PROTOCOL_WRITE_QUEUE_LIMIT: usize = MAX_IMSGSIZE;
 
 /// Bind `listen_path` and serve a concrete [`Server`] through the
-/// nonblocking event-loop protocol engine.
+/// nonblocking task-based protocol engine.
 pub fn run_event_loop(
     listen_path: &Path,
     server: Server,
@@ -36,10 +36,12 @@ pub fn run_event_loop(
     const ACCEPT_BUDGET: usize = 64;
     const DISPATCH_BUDGET: usize = 256;
 
-    let mut event_loop = EventLoop::new()?;
-    let child_signal = event_loop.add_child_signal(server.clone())?;
-    event_loop.add_term_signal()?;
-    let listener = event_loop.add_listener(bind_listener(listen_path)?, ACCEPT_BUDGET)?;
+    let mut runtime = TaskRuntime::new()?;
+    let tasks = runtime.handle();
+    let child_signal = process::spawn(&tasks, server.clone())?;
+    term_signal::spawn(&tasks)?;
+    let listener = listener::spawn(&tasks, bind_listener(listen_path)?, ACCEPT_BUDGET)?;
+    let background = BackgroundRunner::new(&server, tasks.clone());
     let mut clients = Vec::new();
     let mut panes = BTreeMap::new();
     let mut next_observer_tick = Instant::now();
@@ -48,13 +50,8 @@ pub fn run_event_loop(
         if server.event_loop_shutdown_requested() {
             break;
         }
-        dispatch_event_loop_events(
-            &server,
-            &mut event_loop,
-            &listener,
-            &mut clients,
-            DISPATCH_BUDGET,
-        )?;
+        runtime.dispatch(DISPATCH_BUDGET)?;
+        adopt_accepted_clients(&tasks, &server, &background, &listener, &mut clients);
         server.reconcile_event_observations()?;
         let now = Instant::now();
         if now >= next_observer_tick {
@@ -65,13 +62,14 @@ pub fn run_event_loop(
             earliest_timeout(server.refresh_alerts()?, server.refresh_lock_timers()?),
             Some(next_observer_tick.saturating_duration_since(Instant::now())),
         );
-        sync_event_loop_panes(&server, &mut event_loop, &mut panes)?;
-        event_loop.adopt_format_jobs(server.take_pending_format_jobs())?;
-        event_loop.adopt_pane_pipes(server.take_new_pane_pipes())?;
+        sync_event_loop_panes(&tasks, &server, &mut panes)?;
+        adopt_spawned_io(&tasks, &server);
         reap_protocol_clients(&mut clients);
-        event_loop.adopt_background_commands(&server, server.enforce_lifecycle_policies()?)?;
-        if event_loop.pending_events() == 0 {
-            event_loop.poll(timeout)?;
+        for request in server.enforce_lifecycle_policies()? {
+            background.start(request);
+        }
+        if runtime.pending() == 0 {
+            runtime.poll(timeout)?;
         }
     }
 
@@ -82,7 +80,7 @@ pub fn run_event_loop(
     // then allow already accepted clients to finish their final handshake.
     listener.shutdown();
     while listener.is_alive() {
-        if !event_loop.dispatch_one()? {
+        if runtime.dispatch(1)? == 0 {
             return Err(io::Error::other(
                 "listener shutdown event disappeared before deregistration",
             ));
@@ -90,19 +88,19 @@ pub fn run_event_loop(
         while listener.pop_accepted().is_some() {}
     }
     while !clients.is_empty() {
-        event_loop.dispatch_with_budget(DISPATCH_BUDGET)?;
+        runtime.dispatch(DISPATCH_BUDGET)?;
         server.reconcile_event_observations()?;
-        sync_event_loop_panes(&server, &mut event_loop, &mut panes)?;
+        sync_event_loop_panes(&tasks, &server, &mut panes)?;
         reap_protocol_clients(&mut clients);
-        if !clients.is_empty() && event_loop.pending_events() == 0 {
-            event_loop.poll(None)?;
+        if !clients.is_empty() && runtime.pending() == 0 {
+            runtime.poll(None)?;
         }
     }
     for pane in panes.values() {
         pane.shutdown();
     }
     while panes.values().any(PaneHandle::is_alive) {
-        if !event_loop.dispatch_one()? {
+        if runtime.dispatch(1)? == 0 {
             return Err(io::Error::other(
                 "pane shutdown event disappeared before deregistration",
             ));
@@ -110,7 +108,7 @@ pub fn run_event_loop(
     }
     child_signal.shutdown();
     while child_signal.is_alive() {
-        if !event_loop.dispatch_one()? {
+        if runtime.dispatch(1)? == 0 {
             return Err(io::Error::other(
                 "child signal shutdown event disappeared before deregistration",
             ));
@@ -132,9 +130,23 @@ fn earliest_timeout(
     }
 }
 
+/// Format `#()` jobs and `pipe-pane` children launched since the last pass.
+/// Both are collected deep inside rendering and command handling, so the
+/// server hands them over here and they run as tasks of their own.
+fn adopt_spawned_io(tasks: &TaskHandle, server: &Server) {
+    for job in server.take_pending_format_jobs() {
+        let handle = tasks.clone();
+        tasks.spawn(async move { job.run(&handle).await });
+    }
+    for pipe in server.take_new_pane_pipes() {
+        let handle = tasks.clone();
+        tasks.spawn(async move { pipe.run(&handle).await });
+    }
+}
+
 fn sync_event_loop_panes(
+    tasks: &TaskHandle,
     server: &Server,
-    event_loop: &mut ReadinessEventLoop,
     panes: &mut BTreeMap<u64, PaneHandle>,
 ) -> io::Result<()> {
     let Some((new_panes, active_ids)) = server.try_event_pane_snapshot()? else {
@@ -146,7 +158,7 @@ fn sync_event_loop_panes(
                 "duplicate pane runtime id {runtime_id}"
             )));
         }
-        panes.insert(runtime_id, event_loop.add_pane(io));
+        panes.insert(runtime_id, pane::spawn(tasks, io));
     }
 
     let active_ids = active_ids.into_iter().collect::<BTreeSet<_>>();
@@ -183,36 +195,38 @@ fn bind_listener(listen_path: &Path) -> io::Result<UnixListener> {
 
 fn add_protocol_client(
     client: UnixStream,
+    tasks: &TaskHandle,
     server: &Server,
-    event_loop: &mut ReadinessEventLoop,
+    background: &BackgroundRunner,
 ) -> io::Result<ProtocolHandle> {
     // The peer's uid is a property of the connection, so it is read while the
     // socket is still whole — tmux's `proc_add_peer` does the same at accept.
     let peer_uid = CurrentPlatform::peer_uid(client.as_fd());
     let (reader, writer) =
         split_nonblocking_stream_with_queue_limit(client, PROTOCOL_WRITE_QUEUE_LIMIT)?;
-    Ok(event_loop.add_protocol(reader, writer, server.clone(), peer_uid))
+    Ok(protocol::spawn(
+        tasks,
+        reader,
+        writer,
+        server.clone(),
+        background.clone(),
+        peer_uid,
+    ))
 }
 
-fn dispatch_event_loop_events(
+fn adopt_accepted_clients(
+    tasks: &TaskHandle,
     server: &Server,
-    event_loop: &mut ReadinessEventLoop,
+    background: &BackgroundRunner,
     listener: &ListenerHandle,
     clients: &mut Vec<ProtocolHandle>,
-    budget: usize,
-) -> io::Result<()> {
-    for _ in 0..budget {
-        if !event_loop.dispatch_one()? {
-            break;
-        }
-        while let Some(stream) = listener.pop_accepted() {
-            match add_protocol_client(stream, server, event_loop) {
-                Ok(client) => clients.push(client),
-                Err(error) => warn!(error = %error, "failed to create event-loop protocol client"),
-            }
+) {
+    while let Some(stream) = listener.pop_accepted() {
+        match add_protocol_client(stream, tasks, server, background) {
+            Ok(client) => clients.push(client),
+            Err(error) => warn!(error = %error, "failed to create event-loop protocol client"),
         }
     }
-    Ok(())
 }
 
 fn reap_protocol_clients(clients: &mut Vec<ProtocolHandle>) {
@@ -305,8 +319,10 @@ mod tests {
         let server = Server::new().unwrap();
         let (peer, endpoint) = UnixStream::pair().unwrap();
         let (mut reader, mut writer) = split_stream(peer).unwrap();
-        let mut event_loop = EventLoop::new().unwrap();
-        let client = add_protocol_client(endpoint, &server, &mut event_loop).unwrap();
+        let mut runtime = TaskRuntime::new().unwrap();
+        let background = BackgroundRunner::new(&server, runtime.handle());
+        let client =
+            add_protocol_client(endpoint, &runtime.handle(), &server, &background).unwrap();
 
         let mut frame = Frame::new(Message::Command(vec!["list-sessions".into()]));
         frame.version = PROTOCOL_VERSION - 1;
@@ -314,15 +330,15 @@ mod tests {
 
         let deadline = Instant::now() + Duration::from_secs(2);
         let reply = loop {
-            event_loop.dispatch_with_budget(256).unwrap();
+            runtime.dispatch(256).unwrap();
             match reader.try_recv() {
                 Ok(frame) => break frame,
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
                 Err(error) => panic!("failed to receive version response: {error}"),
             }
             assert!(Instant::now() < deadline, "timed out waiting for reply");
-            if event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            if runtime.pending() == 0 {
+                runtime.poll(Some(Duration::from_millis(10))).unwrap();
             }
         };
 
@@ -330,9 +346,9 @@ mod tests {
         drop(reader);
         drop(writer);
         while client.is_alive() && Instant::now() < deadline {
-            event_loop.dispatch_with_budget(256).unwrap();
-            if client.is_alive() && event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            runtime.dispatch(256).unwrap();
+            if client.is_alive() && runtime.pending() == 0 {
+                runtime.poll(Some(Duration::from_millis(10))).unwrap();
             }
         }
         assert!(!client.is_alive());
@@ -345,9 +361,16 @@ mod tests {
         let (mut reader, mut writer) = split_stream(peer).unwrap();
         let (protocol_reader, protocol_writer) =
             split_nonblocking_stream_with_queue_limit(endpoint, 1).unwrap();
-        let mut event_loop = EventLoop::new().unwrap();
-        let client =
-            event_loop.add_protocol(protocol_reader, protocol_writer, server.clone(), None);
+        let mut runtime = TaskRuntime::new().unwrap();
+        let background = BackgroundRunner::new(&server, runtime.handle());
+        let client = protocol::spawn(
+            &runtime.handle(),
+            protocol_reader,
+            protocol_writer,
+            server.clone(),
+            background,
+            None,
+        );
 
         writer
             .send(Frame::new(Message::Command(vec![
@@ -363,15 +386,15 @@ mod tests {
             .unwrap();
 
         let deadline = Instant::now() + Duration::from_secs(3);
-        event_loop.dispatch_with_budget(256).unwrap();
-        event_loop.poll(Some(Duration::from_secs(1))).unwrap();
-        event_loop.dispatch_with_budget(256).unwrap();
+        runtime.dispatch(256).unwrap();
+        runtime.poll(Some(Duration::from_secs(1))).unwrap();
+        runtime.dispatch(256).unwrap();
         assert!(client.is_direct());
 
         let mut stdout = Vec::new();
         let mut exit_status = None;
         let exit = loop {
-            event_loop.dispatch_with_budget(256).unwrap();
+            runtime.dispatch(256).unwrap();
             loop {
                 match reader.try_recv() {
                     Ok(frame) => match frame.msg {
@@ -396,8 +419,8 @@ mod tests {
                 Instant::now() < deadline,
                 "timed out waiting for command response"
             );
-            if event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            if runtime.pending() == 0 {
+                runtime.poll(Some(Duration::from_millis(10))).unwrap();
             }
         };
 
@@ -405,9 +428,9 @@ mod tests {
         assert_eq!(stdout, b"direct\n");
         drop((reader, writer));
         while client.is_alive() && Instant::now() < deadline {
-            event_loop.dispatch_with_budget(256).unwrap();
-            if client.is_alive() && event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            runtime.dispatch(256).unwrap();
+            if client.is_alive() && runtime.pending() == 0 {
+                runtime.poll(Some(Duration::from_millis(10))).unwrap();
             }
         }
         assert!(!client.is_alive());
@@ -423,8 +446,10 @@ mod tests {
         let (mut control_input, passed_stdin) = UnixStream::pair().unwrap();
         let (mut control_output, passed_stdout) = UnixStream::pair().unwrap();
         control_output.set_nonblocking(true).unwrap();
-        let mut event_loop = EventLoop::new().unwrap();
-        let client = add_protocol_client(endpoint, &server, &mut event_loop).unwrap();
+        let mut runtime = TaskRuntime::new().unwrap();
+        let background = BackgroundRunner::new(&server, runtime.handle());
+        let client =
+            add_protocol_client(endpoint, &runtime.handle(), &server, &background).unwrap();
 
         writer
             .send(Frame::new(Message::IdentifyLongFlags(CLIENT_CONTROL)))
@@ -450,13 +475,13 @@ mod tests {
 
         let deadline = Instant::now() + Duration::from_secs(3);
         while !client.is_control() {
-            event_loop.dispatch_with_budget(256).unwrap();
+            runtime.dispatch(256).unwrap();
             assert!(
                 Instant::now() < deadline,
                 "control client stayed identifying"
             );
-            if event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            if runtime.pending() == 0 {
+                runtime.poll(Some(Duration::from_millis(10))).unwrap();
             }
         }
 
@@ -468,7 +493,7 @@ mod tests {
             .windows(b"direct-control\n".len())
             .any(|window| window == b"direct-control\n")
         {
-            event_loop.dispatch_with_budget(256).unwrap();
+            runtime.dispatch(256).unwrap();
             let mut buffer = [0u8; 4096];
             match control_output.read(&mut buffer) {
                 Ok(count) => output.extend_from_slice(&buffer[..count]),
@@ -479,14 +504,14 @@ mod tests {
                 Instant::now() < deadline,
                 "timed out waiting for control output"
             );
-            if event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            if runtime.pending() == 0 {
+                runtime.poll(Some(Duration::from_millis(10))).unwrap();
             }
         }
 
         drop(control_input);
         let exit = loop {
-            event_loop.dispatch_with_budget(256).unwrap();
+            runtime.dispatch(256).unwrap();
             match reader.try_recv() {
                 Ok(frame) => {
                     if let Message::Exit(exit) = frame.msg {
@@ -500,8 +525,8 @@ mod tests {
                 Instant::now() < deadline,
                 "timed out waiting for control exit"
             );
-            if event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            if runtime.pending() == 0 {
+                runtime.poll(Some(Duration::from_millis(10))).unwrap();
             }
         };
         assert_eq!(exit, Some(0));
@@ -521,8 +546,10 @@ mod tests {
         );
         let stdin = dup_fd(slave.as_fd()).unwrap();
         let stdout = dup_fd(slave.as_fd()).unwrap();
-        let mut event_loop = EventLoop::new().unwrap();
-        let client = add_protocol_client(endpoint, &server, &mut event_loop).unwrap();
+        let mut runtime = TaskRuntime::new().unwrap();
+        let background = BackgroundRunner::new(&server, runtime.handle());
+        let client =
+            add_protocol_client(endpoint, &runtime.handle(), &server, &background).unwrap();
 
         writer
             .send(Frame::new(Message::IdentifyTerm("event-loop-test".into())))
@@ -555,7 +582,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut tty_output = Vec::new();
         let ready = loop {
-            event_loop.dispatch_with_budget(512).unwrap();
+            runtime.dispatch(512).unwrap();
             drain_fd(&master, &mut tty_output);
             match reader.try_recv() {
                 Ok(frame) if frame.msg == Message::Ready => break true,
@@ -564,8 +591,8 @@ mod tests {
                 Err(error) => panic!("failed to receive attach response: {error}"),
             }
             assert!(Instant::now() < deadline, "timed out starting attach");
-            if event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            if runtime.pending() == 0 {
+                runtime.poll(Some(Duration::from_millis(10))).unwrap();
             }
         };
         assert!(ready);
@@ -583,7 +610,7 @@ mod tests {
         );
         writer.send(Frame::new(Message::Resize)).unwrap();
         loop {
-            event_loop.dispatch_with_budget(512).unwrap();
+            runtime.dispatch(512).unwrap();
             drain_fd(&master, &mut tty_output);
             let size = server
                 .state()
@@ -599,8 +626,8 @@ mod tests {
                 Instant::now() < deadline,
                 "timed out resizing attach client"
             );
-            if event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            if runtime.pending() == 0 {
+                runtime.poll(Some(Duration::from_millis(10))).unwrap();
             }
         }
 
@@ -617,7 +644,7 @@ mod tests {
         );
 
         loop {
-            event_loop.dispatch_with_budget(512).unwrap();
+            runtime.dispatch(512).unwrap();
             drain_fd(&master, &mut tty_output);
             match reader.try_recv() {
                 Ok(frame) => match frame.msg {
@@ -635,15 +662,15 @@ mod tests {
                 Instant::now() < deadline,
                 "timed out detaching attach client"
             );
-            if event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            if runtime.pending() == 0 {
+                runtime.poll(Some(Duration::from_millis(10))).unwrap();
             }
         }
 
         while client.is_alive() && Instant::now() < deadline {
-            event_loop.dispatch_with_budget(512).unwrap();
-            if event_loop.pending_events() == 0 {
-                event_loop.poll(Some(Duration::from_millis(10))).unwrap();
+            runtime.dispatch(512).unwrap();
+            if runtime.pending() == 0 {
+                runtime.poll(Some(Duration::from_millis(10))).unwrap();
             }
         }
         assert!(!client.is_alive());

@@ -23,8 +23,7 @@ use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::Frame;
 use crate::tmux::traits::NonblockingFrameReader;
 
-use super::super::actor::ActorRef;
-use super::super::driver::Outbox;
+use super::task::Outbox;
 use super::client::{
     AttachClientState, CommandClientState, CommandOperation, ProtocolClient, ProtocolCloseReason,
     ProtocolEvent, ProtocolIoSide, ProtocolState,
@@ -636,7 +635,6 @@ impl EventAttachClient {
 impl ProtocolClient {
     pub(super) fn begin_attach(
         &mut self,
-        target: &ActorRef<Self>,
         args: Vec<String>,
         outbox: &mut Outbox,
     ) {
@@ -653,7 +651,7 @@ impl ProtocolClient {
         ) {
             Ok(mut attach) => {
                 if let Err(error) = attach.drive(None) {
-                    self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+                    self.close(ProtocolCloseReason::Error(error.kind()), outbox);
                     return;
                 }
                 self.protocol_state = ProtocolState::Attach(AttachClientState {
@@ -662,14 +660,13 @@ impl ProtocolClient {
                     timer_deadline: None,
                     input_paused: false,
                 });
-                self.sync_attach(target, outbox);
+                self.sync_attach(outbox);
             }
             Err(error) => {
                 self.protocol_state = ProtocolState::Command(CommandClientState {
                     operation: CommandOperation::AwaitingStep,
                 });
                 self.begin_response(
-                    target,
                     command::CommandResult::err(error.into_message()),
                     outbox,
                 );
@@ -679,7 +676,6 @@ impl ProtocolClient {
 
     pub(super) fn handle_attach_protocol_frame(
         &mut self,
-        target: &ActorRef<Self>,
         frame: Frame,
         outbox: &mut Outbox,
     ) {
@@ -688,15 +684,14 @@ impl ProtocolClient {
             _ => return,
         };
         if let Err(error) = result {
-            self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+            self.close(ProtocolCloseReason::Error(error.kind()), outbox);
             return;
         }
-        self.sync_attach(target, outbox);
+        self.sync_attach(outbox);
     }
 
     pub(super) fn handle_attach_event(
         &mut self,
-        target: &ActorRef<Self>,
         source: Option<EventAttachSource>,
         outbox: &mut Outbox,
     ) {
@@ -705,13 +700,13 @@ impl ProtocolClient {
             _ => return,
         };
         if let Err(error) = result {
-            self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+            self.close(ProtocolCloseReason::Error(error.kind()), outbox);
             return;
         }
-        self.sync_attach(target, outbox);
+        self.sync_attach(outbox);
     }
 
-    pub(super) fn sync_attach(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
+    pub(super) fn sync_attach(&mut self, outbox: &mut Outbox) {
         while self.writer_is_below_high_water() {
             let frame = match &mut self.protocol_state {
                 ProtocolState::Attach(attach) => attach.client.pop_frame(),
@@ -720,7 +715,7 @@ impl ProtocolClient {
             let Some(frame) = frame else {
                 break;
             };
-            if !self.queue_frame(target, frame, outbox) {
+            if !self.queue_frame(frame, outbox) {
                 break;
             }
         }
@@ -747,9 +742,9 @@ impl ProtocolClient {
             attach.input_paused = !accepts_input;
         }
         let read_enabled = !self.reads_paused && accepts_input && !finished;
-        outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, read_enabled);
+        outbox.set_protocol_interest(ProtocolIoSide::Read, read_enabled);
         if was_input_paused && read_enabled && self.reader.has_buffered_frame() {
-            self.schedule_read_continuation(target, outbox);
+            self.schedule_read_continuation(outbox);
         }
 
         // A command source holds a wake rather than a token, but it is still
@@ -759,7 +754,7 @@ impl ProtocolClient {
         let registered = self
             .registrations
             .attach
-            .keys()
+            .iter()
             .copied()
             .chain(
                 self.registrations
@@ -773,7 +768,6 @@ impl ProtocolClient {
             .collect::<BTreeSet<_>>();
         for source in registered.union(&desired).copied() {
             outbox.set_protocol_interest(
-                target.clone(),
                 ProtocolIoSide::Attach(source),
                 desired.contains(&source),
             );
@@ -794,7 +788,6 @@ impl ProtocolClient {
             };
             if let Some(deadline) = deadline {
                 outbox.set_protocol_timer_event(
-                    target.clone(),
                     deadline,
                     ProtocolEvent::AttachTimer(generation),
                 );
@@ -803,9 +796,9 @@ impl ProtocolClient {
 
         if finished {
             self.protocol_state = ProtocolState::Draining;
-            outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, false);
+            outbox.set_protocol_interest(ProtocolIoSide::Read, false);
         }
-        self.drive_output(target, outbox);
+        self.drive_output(outbox);
     }
 }
 

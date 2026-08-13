@@ -5,8 +5,7 @@ use std::time::Instant;
 use crate::server::control::{EventControlClient, EventControlSource};
 use crate::tmux::message::{Frame, Message};
 
-use super::super::actor::ActorRef;
-use super::super::driver::Outbox;
+use super::task::Outbox;
 use super::client::{
     ControlClientState, ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide,
     ProtocolState,
@@ -15,7 +14,6 @@ use super::client::{
 impl ProtocolClient {
     pub(super) fn begin_control(
         &mut self,
-        target: &ActorRef<Self>,
         args: Vec<String>,
         outbox: &mut Outbox,
     ) {
@@ -32,7 +30,7 @@ impl ProtocolClient {
         ) {
             Ok(mut control) => {
                 if let Err(error) = control.drive(None) {
-                    self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+                    self.close(ProtocolCloseReason::Error(error.kind()), outbox);
                     return;
                 }
                 self.protocol_state = ProtocolState::Control(ControlClientState {
@@ -42,18 +40,17 @@ impl ProtocolClient {
                 });
                 // Control mode moves subsequent input to the passed stdin fd.
                 // The native control loop likewise stops reading imsg here.
-                outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, false);
-                self.sync_control(target, outbox);
+                outbox.set_protocol_interest(ProtocolIoSide::Read, false);
+                self.sync_control(outbox);
             }
             Err(error) => {
-                self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+                self.close(ProtocolCloseReason::Error(error.kind()), outbox);
             }
         }
     }
 
     pub(super) fn handle_control_protocol_frame(
         &mut self,
-        target: &ActorRef<Self>,
         frame: Frame,
         outbox: &mut Outbox,
     ) {
@@ -61,13 +58,12 @@ impl ProtocolClient {
             frame.msg,
             Message::Detach(_) | Message::DetachKill(_) | Message::Exit(_) | Message::Shutdown
         ) {
-            self.close(target, ProtocolCloseReason::Completed, outbox);
+            self.close(ProtocolCloseReason::Completed, outbox);
         }
     }
 
     pub(super) fn handle_control_event(
         &mut self,
-        target: &ActorRef<Self>,
         source: Option<EventControlSource>,
         outbox: &mut Outbox,
     ) {
@@ -77,13 +73,13 @@ impl ProtocolClient {
         };
         if let Err(error) = result {
             tracing::warn!(%error, "event-loop control client failed");
-            self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+            self.close(ProtocolCloseReason::Error(error.kind()), outbox);
             return;
         }
-        self.sync_control(target, outbox);
+        self.sync_control(outbox);
     }
 
-    pub(super) fn sync_control(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
+    pub(super) fn sync_control(&mut self, outbox: &mut Outbox) {
         let (desired, deadline, finished) = match &self.protocol_state {
             ProtocolState::Control(control) => (
                 control
@@ -103,7 +99,7 @@ impl ProtocolClient {
         let registered = self
             .registrations
             .control
-            .keys()
+            .iter()
             .copied()
             .chain(
                 self.registrations
@@ -117,7 +113,6 @@ impl ProtocolClient {
             .collect::<BTreeSet<_>>();
         for source in registered.union(&desired).copied() {
             outbox.set_protocol_interest(
-                target.clone(),
                 ProtocolIoSide::Control(source),
                 desired.contains(&source),
             );
@@ -138,7 +133,6 @@ impl ProtocolClient {
             };
             if let Some(deadline) = deadline {
                 outbox.set_protocol_timer_event(
-                    target.clone(),
                     deadline,
                     ProtocolEvent::ControlTimer(generation),
                 );
@@ -153,7 +147,7 @@ impl ProtocolClient {
             let Some(frame) = frame else {
                 break;
             };
-            if !self.queue_frame(target, frame, outbox) {
+            if !self.queue_frame(frame, outbox) {
                 return;
             }
         }
@@ -164,10 +158,7 @@ impl ProtocolClient {
         if continue_input
             && self.mark_work_queued(ProtocolIoSide::Control(EventControlSource::Input))
         {
-            outbox.enqueue_protocol(
-                target.clone(),
-                ProtocolEvent::ControlReady(EventControlSource::Input),
-            );
+            outbox.enqueue_protocol(ProtocolEvent::ControlReady(EventControlSource::Input));
         }
         let (continue_command, background_commands) = match &mut self.protocol_state {
             ProtocolState::Control(control) => (
@@ -177,15 +168,15 @@ impl ProtocolClient {
             _ => (false, Vec::new()),
         };
         if continue_command {
-            outbox.enqueue_protocol(target.clone(), ProtocolEvent::ControlContinue);
+            outbox.enqueue_protocol(ProtocolEvent::ControlContinue);
         }
         for request in background_commands {
             self.background_commands.start(request);
         }
         if finished {
             self.protocol_state = ProtocolState::Draining;
-            outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Read, false);
+            outbox.set_protocol_interest(ProtocolIoSide::Read, false);
         }
-        self.drive_output(target, outbox);
+        self.drive_output(outbox);
     }
 }

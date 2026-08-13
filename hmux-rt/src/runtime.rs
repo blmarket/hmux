@@ -51,17 +51,34 @@ impl TaskRuntime {
         self.tasks.handle()
     }
 
+    /// Work in hand: wakes and readiness already queued, plus spawns not yet
+    /// adopted. While this is nonzero a host should keep dispatching rather
+    /// than block in [`TaskRuntime::poll`].
+    pub fn pending(&self) -> usize {
+        self.woken.borrow().len() + self.tasks.pending_spawned()
+    }
+
+    /// Deadlines currently armed. Zero once every sleeping task has resumed.
+    pub fn armed_timers(&self) -> usize {
+        self.tasks.armed_timers()
+    }
+
     /// Make the reactor and the run queue describe the task set: adopt
     /// spawns, make the registrations that were asked for, release the ones
     /// whose `AsyncFd` is gone.
     fn sync(&mut self) -> io::Result<()> {
         let woken = Rc::clone(&self.woken);
-        self.tasks.sync(&mut self.reactor, |io| io, |event| {
-            woken.borrow_mut().push_back(event);
-        })
+        self.tasks.sync(
+            &mut self.reactor,
+            |io| io,
+            |event| {
+                woken.borrow_mut().push_back(event);
+            },
+        )
     }
 
-    fn dispatch(&mut self, budget: usize) -> io::Result<usize> {
+    /// Run up to `budget` queued task polls.
+    pub fn dispatch(&mut self, budget: usize) -> io::Result<usize> {
         let mut dispatched = 0;
         while dispatched < budget {
             // Before every poll, so a registration or spawn made by the last
@@ -78,7 +95,8 @@ impl TaskRuntime {
         Ok(dispatched)
     }
 
-    fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    /// Wait for readiness or the nearest deadline, queueing what arrives.
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         // Work in hand caps the wait at zero; so does the nearest deadline.
         let timeout = if self.woken.borrow().is_empty() {
             timeout
@@ -297,8 +315,7 @@ mod tests {
         let handle = runtime.handle();
         let readiness = runtime.block_on(async move {
             let file = std::fs::File::open("/dev/null").expect("open /dev/null");
-            let source =
-                AsyncFd::new(&handle, file.as_fd(), Interest::READABLE).expect("register");
+            let source = AsyncFd::new(&handle, file.as_fd(), Interest::READABLE).expect("register");
             source.readiness().await
         });
         assert!(readiness.is_readable());

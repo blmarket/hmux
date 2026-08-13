@@ -6,8 +6,7 @@ use crate::server::command::{self, CommandResult};
 
 use crate::tmux::message::{Frame, Message};
 
-use super::super::actor::ActorRef;
-use super::super::driver::Outbox;
+use super::task::Outbox;
 use super::client::{
     CommandClientState, CommandOperation, ProtocolClient, ProtocolCloseReason, ProtocolEvent,
     ProtocolIoSide, ProtocolState, COMMAND_QUEUE_BUDGET, FILE_STREAM,
@@ -17,7 +16,6 @@ use super::command::{run_command_work, ActiveResumableCommand, CommandStep, Comm
 impl ProtocolClient {
     pub(super) fn begin_command(
         &mut self,
-        target: &ActorRef<Self>,
         args: Vec<String>,
         outbox: &mut Outbox,
     ) {
@@ -30,12 +28,11 @@ impl ProtocolClient {
         self.protocol_state = ProtocolState::Command(CommandClientState {
             operation: CommandOperation::AwaitingStep,
         });
-        self.start_command_work(target, CommandWork::Initial { args, context }, outbox);
+        self.start_command_work(CommandWork::Initial { args, context }, outbox);
     }
 
     pub(super) fn start_command_work(
         &mut self,
-        target: &ActorRef<Self>,
         work: CommandWork,
         outbox: &mut Outbox,
     ) {
@@ -44,10 +41,10 @@ impl ProtocolClient {
         };
         command.operation = CommandOperation::AwaitingStep;
         let step = run_command_work(work, &self.state);
-        outbox.enqueue_protocol(target.clone(), ProtocolEvent::CommandStepReady(step));
+        outbox.enqueue_protocol(ProtocolEvent::CommandStepReady(step));
     }
 
-    pub(super) fn drive_resumable_command(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
+    pub(super) fn drive_resumable_command(&mut self, outbox: &mut Outbox) {
         let complete = {
             let ProtocolState::Command(command) = &mut self.protocol_state else {
                 return;
@@ -69,7 +66,7 @@ impl ProtocolClient {
             let mut result = match active.task.take_output() {
                 Some(Ok(result)) => result,
                 Some(Err(error)) => {
-                    self.close(target, ProtocolCloseReason::Error(error.kind()), outbox);
+                    self.close(ProtocolCloseReason::Error(error.kind()), outbox);
                     return;
                 }
                 None => return,
@@ -81,7 +78,7 @@ impl ProtocolClient {
             if transaction.complete_group(&result) {
                 transaction.groups.clear();
             }
-            self.start_command_work(target, CommandWork::Advance(transaction), outbox);
+            self.start_command_work(CommandWork::Advance(transaction), outbox);
             return;
         }
 
@@ -95,12 +92,11 @@ impl ProtocolClient {
             return;
         };
         command.operation = CommandOperation::WaitingCommand(active);
-        outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Command, true);
+        outbox.set_protocol_interest(ProtocolIoSide::Command, true);
     }
 
     pub(super) fn handle_command_completed(
         &mut self,
-        target: &ActorRef<Self>,
         source_ready: bool,
         outbox: &mut Outbox,
     ) {
@@ -117,17 +113,16 @@ impl ProtocolClient {
         };
         let _ = source_ready;
         active.task.poll();
-        outbox.set_protocol_interest(target.clone(), ProtocolIoSide::Command, false);
+        outbox.set_protocol_interest(ProtocolIoSide::Command, false);
         let ProtocolState::Command(command) = &mut self.protocol_state else {
             return;
         };
         command.operation = CommandOperation::AwaitingQueue(active);
-        outbox.enqueue_protocol(target.clone(), ProtocolEvent::CommandQueueContinue);
+        outbox.enqueue_protocol(ProtocolEvent::CommandQueueContinue);
     }
 
     pub(super) fn handle_command_step(
         &mut self,
-        target: &ActorRef<Self>,
         step: CommandStep,
         outbox: &mut Outbox,
     ) {
@@ -141,7 +136,7 @@ impl ProtocolClient {
             return;
         }
         match step {
-            CommandStep::Complete(result) => self.begin_response(target, result, outbox),
+            CommandStep::Complete(result) => self.begin_response(result, outbox),
             CommandStep::Execute {
                 transaction,
                 args,
@@ -163,14 +158,14 @@ impl ProtocolClient {
                                 transaction,
                                 task: queued,
                             });
-                        self.drive_resumable_command(target, outbox);
+                        self.drive_resumable_command(outbox);
                     }
                     Err(result) => {
                         let mut transaction = transaction;
                         if transaction.complete_group(&result) {
                             transaction.groups.clear();
                         }
-                        self.start_command_work(target, CommandWork::Advance(transaction), outbox);
+                        self.start_command_work(CommandWork::Advance(transaction), outbox);
                     }
                 }
             }
@@ -191,7 +186,6 @@ impl ProtocolClient {
                     data: Vec::new(),
                 };
                 self.queue_frame(
-                    target,
                     Frame::new(Message::ReadOpen {
                         stream: FILE_STREAM,
                         fd,
@@ -199,7 +193,7 @@ impl ProtocolClient {
                     }),
                     outbox,
                 );
-                self.drive_output(target, outbox);
+                self.drive_output(outbox);
             }
             CommandStep::Write {
                 transaction,
@@ -218,7 +212,6 @@ impl ProtocolClient {
                     request,
                 };
                 self.queue_frame(
-                    target,
                     Frame::new(Message::WriteOpen {
                         stream: FILE_STREAM,
                         fd: -1,
@@ -227,14 +220,13 @@ impl ProtocolClient {
                     }),
                     outbox,
                 );
-                self.drive_output(target, outbox);
+                self.drive_output(outbox);
             }
         }
     }
 
     pub(super) fn handle_direct_frame(
         &mut self,
-        target: &ActorRef<Self>,
         frame: Frame,
         outbox: &mut Outbox,
     ) {
@@ -270,14 +262,11 @@ impl ProtocolClient {
                 };
                 let mut context = transaction.context.clone();
                 context.input_file = Some(if error == 0 { Ok(data) } else { Err(error) });
-                outbox.enqueue_protocol(
-                    target.clone(),
-                    ProtocolEvent::CommandStepReady(CommandStep::Execute {
-                        transaction,
-                        args,
-                        context,
-                    }),
-                );
+                outbox.enqueue_protocol(ProtocolEvent::CommandStepReady(CommandStep::Execute {
+                    transaction,
+                    args,
+                    context,
+                }));
             }
             Message::WriteReady {
                 stream: FILE_STREAM,
@@ -306,7 +295,7 @@ impl ProtocolClient {
                     if transaction.complete_group(&result) {
                         transaction.groups.clear();
                     }
-                    self.start_command_work(target, CommandWork::Advance(transaction), outbox);
+                    self.start_command_work(CommandWork::Advance(transaction), outbox);
                 } else {
                     let ProtocolState::Command(command) = &mut self.protocol_state else {
                         return;
@@ -318,7 +307,7 @@ impl ProtocolClient {
                         offset: 0,
                         close_generated: false,
                     };
-                    self.drive_output(target, outbox);
+                    self.drive_output(outbox);
                 }
             }
             Message::WriteReady { stream, error } => {
@@ -328,11 +317,11 @@ impl ProtocolClient {
                 }) = &mut self.protocol_state
                 {
                     response.acknowledge(stream, error);
-                    self.drive_output(target, outbox);
+                    self.drive_output(outbox);
                 }
             }
             Message::Detach(_) | Message::DetachKill(_) | Message::Exit(_) | Message::Shutdown => {
-                self.close(target, ProtocolCloseReason::Completed, outbox);
+                self.close(ProtocolCloseReason::Completed, outbox);
             }
             _ => {}
         }

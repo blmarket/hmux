@@ -189,6 +189,11 @@ impl TaskSet {
         )
     }
 
+    /// Tasks spawned since the last sync, still owed their first poll.
+    pub fn pending_spawned(&self) -> usize {
+        self.shared.spawned.borrow().len()
+    }
+
     /// Adopt every task spawned since the last sync, reporting the ids that
     /// still owe a first poll.
     pub fn take_spawned(&mut self) -> Vec<TaskId> {

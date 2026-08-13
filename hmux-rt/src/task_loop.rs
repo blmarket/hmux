@@ -140,4 +140,9 @@ impl TaskLoop {
     pub fn armed_timers(&self) -> usize {
         self.timers.len()
     }
+
+    /// Tasks spawned since the last sync, still owed their first poll.
+    pub fn pending_spawned(&self) -> usize {
+        self.tasks.pending_spawned()
+    }
 }
