@@ -29,7 +29,6 @@ workspace = true
 hmux-rt = { path = "hmux-rt" }
 hmux-vt = { path = "hmux-vt" }
 libc = "0.2"
-mio = { version = "1.2", features = ["os-ext", "os-poll"] }
 regex = "1"
 signal-hook = "0.3"
 terminfo = "0.9"

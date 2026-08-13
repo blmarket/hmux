@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::io;
+use std::num::NonZeroU8;
 use std::ops::{BitOr, BitOrAssign};
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::time::Duration;
@@ -27,27 +28,29 @@ impl Token {
 }
 
 /// Readiness operations requested for a registered descriptor.
+///
+/// `NonZeroU8` makes the empty set unrepresentable: every value requests at
+/// least one operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Interest(u8);
+pub struct Interest(NonZeroU8);
 
 impl Interest {
-    pub const READABLE: Self = Self(1 << 0);
-    pub const WRITABLE: Self = Self(1 << 1);
+    pub const READABLE: Self = Self(NonZeroU8::new(1 << 0).unwrap());
+    pub const WRITABLE: Self = Self(NonZeroU8::new(1 << 1).unwrap());
 
     pub fn is_readable(self) -> bool {
-        self.0 & Self::READABLE.0 != 0
+        self.0.get() & Self::READABLE.0.get() != 0
     }
 
     pub fn is_writable(self) -> bool {
-        self.0 & Self::WRITABLE.0 != 0
+        self.0.get() & Self::WRITABLE.0.get() != 0
     }
 
     fn to_mio(self) -> mio::Interest {
         match (self.is_readable(), self.is_writable()) {
             (true, true) => mio::Interest::READABLE | mio::Interest::WRITABLE,
             (true, false) => mio::Interest::READABLE,
-            (false, true) => mio::Interest::WRITABLE,
-            (false, false) => unreachable!("Interest has no empty public value"),
+            (false, _) => mio::Interest::WRITABLE,
         }
     }
 }

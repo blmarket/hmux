@@ -143,7 +143,6 @@ dependencies = [
  "hmux-rt",
  "hmux-vt",
  "libc",
- "mio",
  "regex",
  "signal-hook",
  "terminfo",
