@@ -164,7 +164,8 @@ mod tests {
     use std::process::{Command, Stdio};
 
     use crate::reactor::Interest;
-    use crate::tasks::{sleep, AsyncFd};
+    use crate::tasks::{sleep, AsyncFd, JoinError};
+    use crate::Notify;
 
     use super::*;
 
@@ -320,5 +321,97 @@ mod tests {
         });
         assert!(readiness.is_readable());
         assert!(readiness.is_writable());
+    }
+
+    #[test]
+    fn join_handle_reports_a_tasks_result() {
+        let mut runtime = TaskRuntime::new().expect("runtime");
+        let tasks = runtime.handle();
+        let probe = runtime.handle();
+        let value = runtime.block_on(async move {
+            let task = tasks.spawn_join(async { 42 });
+            let id = task.id();
+            assert!(tasks.is_active(id));
+            let value = task.await;
+            assert!(!tasks.is_active(id));
+            value
+        });
+
+        assert_eq!(value, Ok(42));
+        assert_eq!(probe.active_tasks(), 0);
+    }
+
+    #[test]
+    fn a_task_can_be_cancelled_before_its_first_poll() {
+        let mut runtime = TaskRuntime::new().expect("runtime");
+        let tasks = runtime.handle();
+        let result = runtime.block_on(async move {
+            let task = tasks.spawn_join(async { 42 });
+            assert!(task.cancel());
+            assert!(!task.cancel(), "cancellation is idempotent");
+            task.await
+        });
+
+        assert_eq!(result, Err(JoinError));
+    }
+
+    #[test]
+    fn cancelling_a_sleeping_task_resolves_its_join_handle() {
+        let mut runtime = TaskRuntime::new().expect("runtime");
+        let tasks = runtime.handle();
+        let probe = runtime.handle();
+        let started = Notify::new();
+        let child_started = started.clone();
+        runtime.block_on(async move {
+            let sleeper = tasks.clone();
+            let task = tasks.spawn_join(async move {
+                child_started.notify();
+                sleep(&sleeper, Duration::from_secs(60)).await;
+                42
+            });
+            started.notified().await;
+            assert!(task.cancel());
+            assert_eq!(task.await, Err(JoinError));
+        });
+
+        assert_eq!(probe.active_tasks(), 0);
+        assert_eq!(runtime.armed_timers(), 0);
+    }
+
+    #[test]
+    fn cancellation_releases_a_tasks_descriptor() {
+        let mut runtime = TaskRuntime::new().expect("runtime");
+        let tasks = runtime.handle();
+        let probe = runtime.handle();
+        let (reader, _writer) = std::os::unix::net::UnixStream::pair().expect("socket pair");
+        reader.set_nonblocking(true).expect("nonblocking reader");
+        runtime.block_on(async move {
+            let io_tasks = tasks.clone();
+            let started = Notify::new();
+            let child_started = started.clone();
+            let task = tasks.spawn_join(async move {
+                let source =
+                    AsyncFd::new(&io_tasks, reader.as_fd(), Interest::READABLE).expect("async fd");
+                child_started.notify();
+                source.readiness().await;
+            });
+            started.notified().await;
+            assert_eq!(probe.registered_io(), 1);
+            assert!(task.cancel());
+            assert_eq!(task.await, Err(JoinError));
+            assert_eq!(probe.registered_io(), 0);
+        });
+    }
+
+    #[test]
+    fn dropping_the_runtime_finishes_join_handles() {
+        let task = {
+            let runtime = TaskRuntime::new().expect("runtime");
+            runtime.handle().spawn_join(std::future::pending::<u32>())
+        };
+
+        assert!(task.is_finished());
+        let mut runtime = TaskRuntime::new().expect("second runtime");
+        assert_eq!(runtime.block_on(task), Err(JoinError));
     }
 }

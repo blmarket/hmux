@@ -6,8 +6,9 @@ one themselves.
 
 ## Layout
 
-- `src/tasks.rs` — task set, `TaskHandle`, `AsyncFd`, `Sleep`, `yield_now`,
-  `join`, and the `WakeSink` seam the host's wake queue plugs into
+- `src/tasks.rs` — task set, cancellation and join handles, `TaskHandle`,
+  `AsyncFd`, `Sleep`, `yield_now`, `join`, and the `WakeSink` seam the host's
+  wake queue plugs into
 - `src/reactor.rs` — `Reactor` trait and the mio backend
 - `src/timer.rs` — timer queue
 - `src/completion.rs` — `Completion` / `CompletionSender`
@@ -59,7 +60,7 @@ Consequences:
 - The seam is frozen before the split, because changing it later forces
   cross-boundary commits:
   - crate side: the leaves (`AsyncFd`, `Sleep`, `Completion`, `yield_now`,
-    `join`), `TaskHandle::spawn`/`spawn_now`, and a narrow wake-sink trait
+    `join`), task spawning and cancellation, and a narrow wake-sink trait
     replacing the daemon's `WakeQueue` coupling;
   - host side: the sync contract the daemon's loop drives (`take_spawned`,
     `deliver_io`, `take_new_io`, `take_released_io`, `set_io_token`,
@@ -71,3 +72,13 @@ Consequences:
   host. `TaskRuntime` exists only so tests and examples can drive the same
   dispatch-then-poll turn without a daemon behind it — it is a standalone
   driver for the one executor, not a second executor.
+
+## Task ownership
+
+- `TaskHandle::spawn` is detached and returns only its `TaskId`.
+- `TaskHandle::spawn_join` returns an awaitable `JoinHandle`. Dropping that
+  handle also detaches; owners responsible for the child lifetime cancel it
+  explicitly before dropping the handle.
+- Cancellation drops the task future before its next poll and wakes the host
+  immediately. Dropping the future releases its `AsyncFd` leaves and removes
+  its sleep deadline through the ordinary host sync.

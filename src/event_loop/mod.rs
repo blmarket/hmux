@@ -349,6 +349,24 @@ mod tests {
         assert!(!listener.is_alive());
     }
 
+    #[test]
+    fn dropping_a_listener_handle_cancels_its_task() {
+        let path = ListenerPath::new();
+        let listener = UnixListener::bind(&path.0).unwrap();
+        let mut runtime = TaskRuntime::new().unwrap();
+        let tasks = runtime.handle();
+        let listener = super::listener::spawn(&tasks, listener, 64).unwrap();
+        dispatch_all(&mut runtime);
+        assert_eq!(tasks.active_tasks(), 1);
+        assert_eq!(tasks.registered_io(), 1);
+
+        drop(listener);
+        dispatch_all(&mut runtime);
+
+        assert_eq!(tasks.active_tasks(), 0);
+        assert_eq!(tasks.registered_io(), 0);
+    }
+
     /// Run runtime turns until a submitted suspension reports its result.
     fn resolve_on_loop(
         runtime: &mut TaskRuntime,

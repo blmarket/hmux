@@ -19,8 +19,9 @@
 //! instead of `cx.local_waker()` never wakes**.
 
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::error::Error;
+use std::fmt;
 use std::future::Future;
 use std::io;
 use std::os::fd::{BorrowedFd, OwnedFd};
@@ -29,6 +30,7 @@ use std::rc::Rc;
 use std::task::{Context, ContextBuilder, LocalWake, LocalWaker, Poll, Waker};
 use std::time::{Duration, Instant};
 
+use crate::completion::{completion_pair, Completion};
 use crate::reactor::{Interest, Readiness, Token};
 
 pub type TaskId = u64;
@@ -90,6 +92,10 @@ struct TaskShared {
     io: RefCell<BTreeMap<u64, IoEntry>>,
     /// The deadline each task is sleeping until, at most one apiece.
     deadlines: RefCell<BTreeMap<TaskId, Instant>>,
+    /// Every task that has been spawned and has not finished or been dropped.
+    live: RefCell<BTreeSet<TaskId>>,
+    /// Cancellation requests waiting for the task set to drop their futures.
+    cancelled: RefCell<BTreeSet<TaskId>>,
     next_task: Cell<TaskId>,
     next_io: Cell<u64>,
     /// The task currently being polled, which is who a descriptor created now
@@ -122,11 +128,59 @@ impl TaskHandle {
     /// No `Send` bound: tasks live and die on this thread.
     pub fn spawn(&self, future: impl Future<Output = ()> + 'static) -> TaskId {
         let id = self.shared.allocate_task();
+        self.shared.live.borrow_mut().insert(id);
         self.shared
             .spawned
             .borrow_mut()
             .push((id, Box::pin(future), true));
         id
+    }
+
+    /// Spawn a task whose result can be awaited or whose lifetime can be
+    /// cancelled through the returned handle.
+    ///
+    /// Dropping the [`JoinHandle`] detaches the task. Owners responsible for
+    /// the child's lifetime cancel it explicitly or wrap the handle in an
+    /// owner whose `Drop` implementation does so.
+    pub fn spawn_join<T: 'static>(
+        &self,
+        future: impl Future<Output = T> + 'static,
+    ) -> JoinHandle<T> {
+        let (completion, sender) = completion_pair().expect("completion pairs are infallible");
+        let task = self.spawn(async move {
+            sender.complete(future.await);
+        });
+        JoinHandle {
+            task,
+            tasks: self.clone(),
+            completion,
+        }
+    }
+
+    /// Request that a task be dropped before its next poll.
+    ///
+    /// Cancellation is idempotent and wakes the host even when the task is
+    /// parked on I/O or a distant deadline. Returns `false` if the task has
+    /// already finished or cancellation was already requested.
+    pub fn cancel(&self, task: TaskId) -> bool {
+        if !self.shared.live.borrow().contains(&task) {
+            return false;
+        }
+        if !self.shared.cancelled.borrow_mut().insert(task) {
+            return false;
+        }
+        (self.wake)(task);
+        true
+    }
+
+    /// Whether the task has not yet finished or processed cancellation.
+    pub fn is_active(&self, task: TaskId) -> bool {
+        self.shared.live.borrow().contains(&task)
+    }
+
+    /// Number of spawned tasks that are still live.
+    pub fn active_tasks(&self) -> usize {
+        self.shared.live.borrow().len()
     }
 
     /// Spawn and give the task its first turn right here, in the caller's own
@@ -139,6 +193,7 @@ impl TaskHandle {
     /// ordinary task.
     pub fn spawn_now(&self, future: impl Future<Output = ()> + 'static) {
         let id = self.shared.allocate_task();
+        self.shared.live.borrow_mut().insert(id);
         let mut future: Pin<Box<dyn Future<Output = ()>>> = Box::pin(future);
         let waker = LocalWaker::from(Rc::new(TaskWaker {
             task: id,
@@ -150,9 +205,11 @@ impl TaskHandle {
         let previous = self.shared.polling.replace(Some(id));
         let poll = future.as_mut().poll(&mut context);
         self.shared.polling.set(previous);
-        if poll.is_pending() {
+        if poll.is_pending() && !self.shared.cancelled.borrow().contains(&id) {
             // Already polled: whatever it parked on is what will wake it.
             self.shared.spawned.borrow_mut().push((id, future, false));
+        } else {
+            self.finish(id);
         }
     }
 
@@ -165,7 +222,58 @@ impl TaskHandle {
             .filter(|entry| !entry.dropped)
             .count()
     }
+
+    fn finish(&self, task: TaskId) {
+        self.shared.deadlines.borrow_mut().remove(&task);
+        self.shared.cancelled.borrow_mut().remove(&task);
+        self.shared.live.borrow_mut().remove(&task);
+    }
 }
+
+/// The awaitable lifetime of one spawned task.
+pub struct JoinHandle<T> {
+    task: TaskId,
+    tasks: TaskHandle,
+    completion: Completion<T>,
+}
+
+impl<T> JoinHandle<T> {
+    pub fn id(&self) -> TaskId {
+        self.task
+    }
+
+    pub fn cancel(&self) -> bool {
+        self.tasks.cancel(self.task)
+    }
+
+    pub fn is_finished(&self) -> bool {
+        !self.tasks.is_active(self.task)
+    }
+}
+
+impl<T> Future for JoinHandle<T> {
+    type Output = Result<T, JoinError>;
+
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        match Pin::new(&mut self.completion).poll(context) {
+            Poll::Ready(Ok(value)) => Poll::Ready(Ok(value)),
+            Poll::Ready(Err(_)) => Poll::Ready(Err(JoinError)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+/// A joined task stopped before producing its result.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct JoinError;
+
+impl fmt::Display for JoinError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("task ended without producing its result")
+    }
+}
+
+impl Error for JoinError {}
 
 /// The loop's task table.
 pub struct TaskSet {
@@ -201,6 +309,11 @@ impl TaskSet {
         spawned
             .into_iter()
             .filter_map(|(id, future, needs_poll)| {
+                if self.shared.cancelled.borrow().contains(&id) {
+                    drop(future);
+                    self.finish(id);
+                    return None;
+                }
                 self.tasks.insert(id, Some(future));
                 needs_poll.then_some(id)
             })
@@ -209,6 +322,10 @@ impl TaskSet {
 
     /// Poll one task, dropping it if it finishes.
     pub fn poll(&mut self, id: TaskId) {
+        if self.shared.cancelled.borrow().contains(&id) {
+            self.finish(id);
+            return;
+        }
         let Some(Some(mut future)) = self.tasks.get_mut(&id).map(Option::take) else {
             // Finished task, or a second wake for one already being polled.
             // Ids are never reused, so a stale wake can only miss.
@@ -228,14 +345,14 @@ impl TaskSet {
         self.shared.polling.set(previous);
         match poll {
             Poll::Ready(()) => {
-                self.tasks.remove(&id);
                 // The future's leaves went with it; their entries are marked
                 // dropped and the loop releases them on the next sync.
-                self.shared.deadlines.borrow_mut().remove(&id);
+                self.finish(id);
             }
-            Poll::Pending => {
+            Poll::Pending if !self.shared.cancelled.borrow().contains(&id) => {
                 self.tasks.insert(id, Some(future));
             }
+            Poll::Pending => self.finish(id),
         }
     }
 
@@ -299,6 +416,29 @@ impl TaskSet {
     /// against.
     pub fn deadlines(&self) -> BTreeMap<TaskId, Instant> {
         self.shared.deadlines.borrow().clone()
+    }
+
+    fn finish(&mut self, task: TaskId) {
+        self.tasks.remove(&task);
+        self.shared.deadlines.borrow_mut().remove(&task);
+        self.shared.cancelled.borrow_mut().remove(&task);
+        self.shared.live.borrow_mut().remove(&task);
+    }
+}
+
+impl Drop for TaskSet {
+    fn drop(&mut self) {
+        // Drop adopted futures first, then tasks that never received their
+        // first poll. Their completion senders close join handles and their
+        // leaves mark registrations for release in the usual way.
+        self.tasks.clear();
+        let spawned = std::mem::take(&mut *self.shared.spawned.borrow_mut());
+        drop(spawned);
+        self.shared.io.borrow_mut().clear();
+        self.shared.deadlines.borrow_mut().clear();
+        self.shared.cancelled.borrow_mut().clear();
+        self.shared.live.borrow_mut().clear();
+        self.shared.polling.set(None);
     }
 }
 

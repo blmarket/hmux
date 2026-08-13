@@ -7,7 +7,8 @@ use std::time::{Duration, Instant};
 use crate::server::pane::PaneIo;
 
 use hmux_rt::{
-    select, sleep_until, yield_now, AsyncFd, Either, Interest, Notify, Readiness, TaskHandle,
+    select, sleep_until, yield_now, AsyncFd, Either, Interest, JoinHandle, Notify, Readiness,
+    TaskHandle,
 };
 
 /// tmux's ground timer: how long `input.c` waits for the terminator of a
@@ -18,9 +19,8 @@ const GROUND_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The loop's handle to one pane task.
 pub(crate) struct PaneHandle {
+    task: JoinHandle<()>,
     poke: Notify,
-    stop: Rc<Cell<bool>>,
-    done: Rc<Cell<bool>>,
     write_pending: Rc<dyn Fn() -> bool>,
     /// Whether a poke is already out for the current spell of queued input.
     /// The task clears it when the queue drains; while a full PTY holds the
@@ -31,13 +31,12 @@ pub(crate) struct PaneHandle {
 
 impl PaneHandle {
     pub(crate) fn is_alive(&self) -> bool {
-        !self.done.get()
+        !self.task.is_finished()
     }
 
     /// Ask the task to stop; it finishes on its next turn.
     pub(crate) fn shutdown(&self) {
-        self.stop.set(true);
-        self.poke.notify();
+        self.task.cancel();
     }
 
     /// Wake the pane task when the server has queued input for its PTY.
@@ -53,6 +52,12 @@ impl PaneHandle {
     }
 }
 
+impl Drop for PaneHandle {
+    fn drop(&mut self) {
+        self.task.cancel();
+    }
+}
+
 enum Wakeup {
     Io(Readiness),
     Poke,
@@ -62,23 +67,17 @@ enum Wakeup {
 /// Drive one pane's PTY on the loop.
 pub(crate) fn spawn(tasks: &TaskHandle, mut io: PaneIo) -> PaneHandle {
     let poke = Notify::new();
-    let stop = Rc::new(Cell::new(false));
-    let done = Rc::new(Cell::new(false));
     let poke_armed = Rc::new(Cell::new(false));
     let write_pending = io.write_probe();
     let task_poke = poke.clone();
-    let task_stop = Rc::clone(&stop);
-    let task_done = Rc::clone(&done);
     let task_armed = Rc::clone(&poke_armed);
     let handle = tasks.clone();
-    tasks.spawn(async move {
-        run(&handle, &mut io, &task_poke, &task_stop, &task_armed).await;
-        task_done.set(true);
+    let task = tasks.spawn_join(async move {
+        run(&handle, &mut io, &task_poke, &task_armed).await;
     });
     PaneHandle {
+        task,
         poke,
-        stop,
-        done,
         write_pending,
         poke_armed,
     }
@@ -88,7 +87,6 @@ async fn run(
     tasks: &TaskHandle,
     io: &mut PaneIo,
     poke: &Notify,
-    stop: &Cell<bool>,
     poke_armed: &Cell<bool>,
 ) {
     let Ok(readiness) = AsyncFd::new(
@@ -105,9 +103,6 @@ async fn run(
     let mut awaiting = false;
     let mut ground_deadline: Option<Instant> = None;
     loop {
-        if stop.get() {
-            return;
-        }
         let wakeup = if let Some(deadline) = ground_deadline {
             match select(
                 select(readiness.readiness(), poke.notified()),
@@ -125,9 +120,6 @@ async fn run(
                 Either::Second(()) => Wakeup::Poke,
             }
         };
-        if stop.get() {
-            return;
-        }
         match wakeup {
             Wakeup::Ground => {
                 ground_deadline = None;
@@ -171,9 +163,6 @@ async fn run(
                             break;
                         }
                         yield_now().await;
-                        if stop.get() {
-                            return;
-                        }
                     }
                 }
             }

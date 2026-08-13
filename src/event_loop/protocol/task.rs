@@ -16,7 +16,7 @@ use std::time::Instant;
 
 use crate::server::Server;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
-use hmux_rt::{yield_now, AsyncFd, Interest, Notify, TaskHandle, WakeFn};
+use hmux_rt::{yield_now, AsyncFd, Interest, JoinHandle, Notify, TaskHandle, TaskId, WakeFn};
 
 use super::super::job::BackgroundRunner;
 use super::{ProtocolClient, ProtocolCloseReason, ProtocolEvent, ProtocolIoSide, ProtocolStatus};
@@ -98,11 +98,12 @@ type SharedClient = Rc<RefCell<Option<ProtocolClient>>>;
 pub(crate) struct ProtocolHandle {
     client: SharedClient,
     status: ProtocolStatus,
+    task: JoinHandle<()>,
 }
 
 impl ProtocolHandle {
     pub(crate) fn is_alive(&self) -> bool {
-        self.client.borrow().is_some()
+        !self.task.is_finished() && self.client.borrow().is_some()
     }
 
     pub(crate) fn close_reason(&self) -> Option<ProtocolCloseReason> {
@@ -138,6 +139,12 @@ impl ProtocolHandle {
     }
 }
 
+impl Drop for ProtocolHandle {
+    fn drop(&mut self) {
+        self.task.cancel();
+    }
+}
+
 /// Serve one accepted connection on the loop.
 pub(crate) fn spawn(
     tasks: &TaskHandle,
@@ -150,19 +157,21 @@ pub(crate) fn spawn(
     let (client, status) =
         ProtocolClient::new(reader, writer, server, background_commands, tasks.clone(), peer_uid);
     let client: SharedClient = Rc::new(RefCell::new(Some(client)));
-    let handle = ProtocolHandle {
+    let task_client = Rc::clone(&client);
+    let task_handle = tasks.clone();
+    let task = tasks.spawn_join(async move {
+        run(&task_handle, task_client).await;
+    });
+    ProtocolHandle {
         client: Rc::clone(&client),
         status,
-    };
-    let task_handle = tasks.clone();
-    tasks.spawn(async move {
-        run(&task_handle, client).await;
-    });
-    handle
+        task,
+    }
 }
 
 async fn run(tasks: &TaskHandle, client: SharedClient) {
     let inbox = Inbox::default();
+    let mut timers = ChildTasks::new(tasks.clone());
     let mut fds: BTreeMap<ProtocolIoSide, AsyncFd> = BTreeMap::new();
     let mut events: VecDeque<ProtocolEvent> = VecDeque::new();
     events.push_back(ProtocolEvent::Start);
@@ -190,7 +199,7 @@ async fn run(tasks: &TaskHandle, client: SharedClient) {
                 Effect::SetTimer { deadline, event } => {
                     let inbox = inbox.clone();
                     let sleeper = tasks.clone();
-                    tasks.spawn(async move {
+                    timers.spawn(async move {
                         hmux_rt::sleep_until(&sleeper, deadline).await;
                         inbox.push(PendingItem::Timer(event));
                     });
@@ -205,6 +214,37 @@ async fn run(tasks: &TaskHandle, client: SharedClient) {
         // One event per turn, the granularity one envelope per dispatch had:
         // follow-up work goes behind everything the loop already has queued.
         yield_now().await;
+    }
+}
+
+/// Detached timer tasks whose lifetime is bounded by their protocol owner.
+///
+/// Completed ids are pruned when another timer starts. Dropping the protocol
+/// future, including through cancellation, cancels every timer still parked.
+struct ChildTasks {
+    tasks: TaskHandle,
+    live: Vec<TaskId>,
+}
+
+impl ChildTasks {
+    fn new(tasks: TaskHandle) -> Self {
+        Self {
+            tasks,
+            live: Vec::new(),
+        }
+    }
+
+    fn spawn(&mut self, future: impl std::future::Future<Output = ()> + 'static) {
+        self.live.retain(|task| self.tasks.is_active(*task));
+        self.live.push(self.tasks.spawn(future));
+    }
+}
+
+impl Drop for ChildTasks {
+    fn drop(&mut self) {
+        for task in self.live.drain(..) {
+            self.tasks.cancel(task);
+        }
     }
 }
 
@@ -372,4 +412,3 @@ async fn wait(
         }
     }
 }
-

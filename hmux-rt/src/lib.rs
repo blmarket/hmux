@@ -22,7 +22,7 @@ pub use reactor::{Interest, MioReactor, PollResult, Reactor, Readiness, Ready, T
 pub use runtime::TaskRuntime;
 pub use task_loop::TaskLoop;
 pub use tasks::{
-    join, select, sleep, sleep_until, yield_now, AsyncFd, Either, Join, ReadinessFuture, Select,
-    Sleep, TaskEvent, TaskHandle, TaskId, TaskSet, WakeSink, YieldNow,
+    join, select, sleep, sleep_until, yield_now, AsyncFd, Either, Join, JoinError, JoinHandle,
+    ReadinessFuture, Select, Sleep, TaskEvent, TaskHandle, TaskId, TaskSet, WakeSink, YieldNow,
 };
 pub use timer::{ExpiredTimer, TimerId, TimerQueue};
