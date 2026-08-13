@@ -106,7 +106,7 @@ pub fn run_event_loop(
             ));
         }
     }
-    event_loop.shutdown_child_signal(&child_signal);
+    child_signal.shutdown();
     while child_signal.is_alive() {
         if !event_loop.dispatch_one()? {
             return Err(io::Error::other(

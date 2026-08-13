@@ -1,8 +1,10 @@
-//! Readiness-driven child-exit notification.
+//! Task-driven child-exit notification.
 
+use std::cell::Cell;
 use std::io::{self, Read};
-use std::os::fd::{AsFd, BorrowedFd};
+use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
+use std::rc::Rc;
 
 use signal_hook::consts::signal::SIGCHLD;
 use signal_hook::low_level::{pipe, unregister};
@@ -10,95 +12,23 @@ use signal_hook::SigId;
 
 use crate::server::Server;
 
-use super::actor::ActorRef;
-use super::driver::Outbox;
-use hmux_rt::Token;
+use hmux_rt::{select, yield_now, AsyncFd, Either, Interest, Notify, TaskHandle};
 
-pub(crate) enum ChildSignalEvent {
-    Start,
-    Readable,
-    Retry,
-    Shutdown,
-}
-
-pub(crate) struct ChildSignal {
+/// The self-pipe `SIGCHLD` writes into, and its registration's lifetime.
+struct ChildSignalSource {
     reader: UnixStream,
     registration: SigId,
-    server: Server,
-    token: Option<Token>,
-    work_queued: bool,
-    stopping: bool,
 }
 
-impl ChildSignal {
-    pub(crate) fn new(server: Server) -> io::Result<Self> {
+impl ChildSignalSource {
+    fn new() -> io::Result<Self> {
         let (reader, writer) = UnixStream::pair()?;
         reader.set_nonblocking(true)?;
         let registration = pipe::register(SIGCHLD, writer)?;
         Ok(Self {
             reader,
             registration,
-            server,
-            token: None,
-            work_queued: false,
-            stopping: false,
         })
-    }
-
-    pub(crate) fn fd(&self) -> BorrowedFd<'_> {
-        self.reader.as_fd()
-    }
-
-    pub(crate) fn token(&self) -> Option<Token> {
-        self.token
-    }
-
-    pub(crate) fn set_token(&mut self, token: Option<Token>) {
-        self.token = token;
-    }
-
-    pub(crate) fn mark_work_queued(&mut self) -> bool {
-        if self.stopping || self.work_queued {
-            return false;
-        }
-        self.work_queued = true;
-        true
-    }
-
-    pub(crate) fn request_shutdown(&mut self) -> bool {
-        if self.stopping {
-            return false;
-        }
-        self.stopping = true;
-        true
-    }
-
-    pub(crate) fn handle(
-        &mut self,
-        target: &ActorRef<Self>,
-        event: ChildSignalEvent,
-        outbox: &mut Outbox,
-    ) {
-        match event {
-            ChildSignalEvent::Start if !self.stopping => {
-                outbox.set_child_signal_interest(target.clone(), true);
-            }
-            ChildSignalEvent::Readable if !self.stopping => {
-                self.work_queued = false;
-                self.drain();
-                self.try_reap(target, outbox);
-            }
-            ChildSignalEvent::Retry if !self.stopping => {
-                self.work_queued = false;
-                self.try_reap(target, outbox);
-            }
-            ChildSignalEvent::Shutdown => {
-                self.stopping = true;
-                outbox.set_child_signal_interest(target.clone(), false);
-                outbox.stop_child_signal(target.clone());
-            }
-            ChildSignalEvent::Start | ChildSignalEvent::Readable | ChildSignalEvent::Retry => {}
-        }
     }
 
     fn drain(&mut self) {
@@ -113,18 +43,60 @@ impl ChildSignal {
             }
         }
     }
-
-    fn try_reap(&mut self, target: &ActorRef<Self>, outbox: &mut Outbox) {
-        if self.server.try_reap_event_children() {
-            return;
-        }
-        self.work_queued = true;
-        outbox.enqueue_child_signal(target.clone(), ChildSignalEvent::Retry);
-    }
 }
 
-impl Drop for ChildSignal {
+impl Drop for ChildSignalSource {
     fn drop(&mut self) {
         unregister(self.registration);
     }
+}
+
+/// The loop's handle to the child-signal task.
+pub(crate) struct ChildSignalHandle {
+    shutdown: Notify,
+    done: Rc<Cell<bool>>,
+}
+
+impl ChildSignalHandle {
+    /// Ask the task to stop; it finishes on its next turn.
+    pub(crate) fn shutdown(&self) {
+        self.shutdown.notify();
+    }
+
+    pub(crate) fn is_alive(&self) -> bool {
+        !self.done.get()
+    }
+}
+
+/// Watch for `SIGCHLD` on the loop and reap exited children as it arrives.
+pub(crate) fn spawn(tasks: &TaskHandle, server: Server) -> io::Result<ChildSignalHandle> {
+    let mut source = ChildSignalSource::new()?;
+    let shutdown = Notify::new();
+    let done = Rc::new(Cell::new(false));
+    let task_shutdown = shutdown.clone();
+    let task_done = Rc::clone(&done);
+    let handle = tasks.clone();
+    tasks.spawn(async move {
+        let Ok(readiness) = AsyncFd::new(&handle, source.reader.as_fd(), Interest::READABLE)
+        else {
+            task_done.set(true);
+            return;
+        };
+        loop {
+            match select(readiness.readiness(), task_shutdown.notified()).await {
+                Either::First(_) => {
+                    source.drain();
+                    // The reap can lose to a concurrent borrow of the server's
+                    // state; give the loop a turn and try again, the same
+                    // retry the actor's `Retry` event carried.
+                    while !server.try_reap_event_children() {
+                        yield_now().await;
+                    }
+                }
+                Either::Second(()) => break,
+            }
+        }
+        task_done.set(true);
+    });
+    Ok(ChildSignalHandle { shutdown, done })
 }

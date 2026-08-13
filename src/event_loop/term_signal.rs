@@ -1,12 +1,12 @@
-//! Readiness-driven `SIGINT`/`SIGTERM` teardown.
+//! Task-driven `SIGINT`/`SIGTERM` teardown.
 //!
-//! Both signals write into a self-pipe the loop polls, so the shutdown decision
-//! is made on the loop like every other event rather than by a thread parked in
-//! `sigwait`. The signals stay deliverable process-wide: nothing blocks them, so
-//! a child that never clears its mask is unaffected.
+//! Both signals write into a self-pipe a task waits on, so the shutdown
+//! decision is made on the loop like every other event rather than by a thread
+//! parked in `sigwait`. The signals stay deliverable process-wide: nothing
+//! blocks them, so a child that never clears its mask is unaffected.
 
 use std::io::{self, Read};
-use std::os::fd::{AsFd, BorrowedFd};
+use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
 
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
@@ -14,24 +14,16 @@ use signal_hook::low_level::{pipe, unregister};
 use signal_hook::SigId;
 use tracing::info;
 
-use super::actor::ActorRef;
-use super::driver::Outbox;
-use hmux_rt::Token;
+use hmux_rt::{AsyncFd, Interest, TaskHandle};
 
-pub(crate) enum TermSignalEvent {
-    Start,
-    Readable,
-}
-
-pub(crate) struct TermSignal {
+/// The self-pipe both signals write into, and its registrations' lifetime.
+struct TermSignalSource {
     reader: UnixStream,
     registrations: Vec<SigId>,
-    token: Option<Token>,
-    work_queued: bool,
 }
 
-impl TermSignal {
-    pub(crate) fn new() -> io::Result<Self> {
+impl TermSignalSource {
+    fn new() -> io::Result<Self> {
         let (reader, writer) = UnixStream::pair()?;
         reader.set_nonblocking(true)?;
         let mut registrations = Vec::new();
@@ -50,53 +42,7 @@ impl TermSignal {
         Ok(Self {
             reader,
             registrations,
-            token: None,
-            work_queued: false,
         })
-    }
-
-    pub(crate) fn fd(&self) -> BorrowedFd<'_> {
-        self.reader.as_fd()
-    }
-
-    pub(crate) fn token(&self) -> Option<Token> {
-        self.token
-    }
-
-    pub(crate) fn set_token(&mut self, token: Option<Token>) {
-        self.token = token;
-    }
-
-    pub(crate) fn mark_work_queued(&mut self) -> bool {
-        if self.work_queued {
-            return false;
-        }
-        self.work_queued = true;
-        true
-    }
-
-    pub(crate) fn handle(
-        &mut self,
-        target: &ActorRef<Self>,
-        event: TermSignalEvent,
-        outbox: &mut Outbox,
-    ) {
-        match event {
-            TermSignalEvent::Start => {
-                outbox.set_term_signal_interest(target.clone(), true);
-            }
-            TermSignalEvent::Readable => {
-                self.work_queued = false;
-                if !self.drain() {
-                    return;
-                }
-                info!("shutting down");
-                // Exactly what the `sigwait` teardown did, and what tmux does:
-                // leave the socket pathname in place — it is only ever unlinked
-                // when a new server binds it.
-                std::process::exit(0);
-            }
-        }
     }
 
     /// Whether a signal actually arrived, as opposed to a spurious wakeup.
@@ -114,10 +60,34 @@ impl TermSignal {
     }
 }
 
-impl Drop for TermSignal {
+impl Drop for TermSignalSource {
     fn drop(&mut self) {
         for registration in std::mem::take(&mut self.registrations) {
             unregister(registration);
         }
     }
+}
+
+/// Watch for `SIGINT`/`SIGTERM` on the loop. The task lives as long as the
+/// process does; the first signal ends it.
+pub(crate) fn spawn(tasks: &TaskHandle) -> io::Result<()> {
+    let mut source = TermSignalSource::new()?;
+    let handle = tasks.clone();
+    tasks.spawn(async move {
+        let Ok(readiness) = AsyncFd::new(&handle, source.reader.as_fd(), Interest::READABLE)
+        else {
+            return;
+        };
+        loop {
+            readiness.readiness().await;
+            if source.drain() {
+                info!("shutting down");
+                // Exactly what the `sigwait` teardown did, and what tmux does:
+                // leave the socket pathname in place — it is only ever unlinked
+                // when a new server binds it.
+                std::process::exit(0);
+            }
+        }
+    });
+    Ok(())
 }
