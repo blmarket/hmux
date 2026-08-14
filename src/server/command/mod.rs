@@ -783,14 +783,6 @@ pub(crate) struct ResumableCommandQueue {
     out: CommandResult,
     agents: PaneAgents,
     context: ClientContext,
-    suspended: Option<SuspendedCommand>,
-    nested: Option<ActiveNestedCommand>,
-}
-
-pub(crate) enum ResumableCommandTurn {
-    Pending,
-    Suspended(CommandSuspension),
-    Complete(CommandResult),
 }
 
 pub(crate) enum BackgroundCommandRequest {
@@ -865,18 +857,12 @@ pub(crate) enum BackgroundCommand {
     },
 }
 
-struct SuspendedCommand {
-    ticket: queue::QueueTicket,
+/// The command the queue is running, and what its result counts for.
+struct InflightCommand {
     command: ParsedCommand,
     source: Option<SourceLocation>,
     source_depth: u8,
     contributes_status: bool,
-}
-
-struct ActiveNestedCommand {
-    ticket: queue::QueueTicket,
-    queue: Box<ResumableCommandQueue>,
-    capture: NestedCapture,
 }
 
 #[derive(Clone, Copy)]
@@ -1041,10 +1027,6 @@ impl Future for QueuedCommand {
 }
 
 /// Run one command queue to completion, suspending as its commands need to.
-///
-/// This is [`ResumableCommandQueue::drive`] with the waiting written out: what
-/// took a coroutine plus its own task state to express as states is the shape
-/// of the loop below.
 pub(crate) async fn run_command_queue(
     mut queue: ResumableCommandQueue,
     state: SharedState,
@@ -1052,23 +1034,25 @@ pub(crate) async fn run_command_queue(
     budget: usize,
     status: Rc<QueueStatus>,
 ) -> io::Result<CommandResult> {
-    loop {
-        // `drive` borrows the state, and returns before anything is awaited.
-        match queue.drive(&state, budget) {
-            ResumableCommandTurn::Complete(result) => return Ok(result),
-            // The queue spent its budget and wants another turn, which it takes
-            // behind whatever else the loop already has queued.
-            ResumableCommandTurn::Pending => yield_now().await,
-            ResumableCommandTurn::Suspended(suspension) => {
-                let allows_attach_io = suspension.allows_attach_io();
-                let completion = runtime.submit(suspension)?;
-                status.set_allows_attach_io(allows_attach_io);
-                let result = completion.await;
-                status.set_allows_attach_io(false);
-                queue.resume(result?, &state);
-            }
-        }
-    }
+    queue.run(&state, runtime.as_ref(), budget, &status).await
+}
+
+/// Hand one suspension to the runtime and wait for its answer.
+///
+/// The owner of a parked queue is told whether answering it is the owner's own
+/// job, which it cannot see from the outside: a `command-prompt -w` whose
+/// client had stopped reading its input would never be answered.
+async fn suspend(
+    runtime: &dyn CommandRuntime,
+    status: &QueueStatus,
+    suspension: CommandSuspension,
+) -> io::Result<CommandSuspensionResult> {
+    let allows_attach_io = suspension.allows_attach_io();
+    let completion = runtime.submit(suspension)?;
+    status.set_allows_attach_io(allows_attach_io);
+    let result = completion.await;
+    status.set_allows_attach_io(false);
+    result
 }
 
 impl CommandSuspension {
@@ -1094,47 +1078,35 @@ impl ResumableCommandQueue {
             out: CommandResult::ok(""),
             agents: agents.clone(),
             context: context.clone(),
-            suspended: None,
-            nested: None,
         }
     }
 
-    pub(crate) fn drive(&mut self, state: &SharedState, budget: usize) -> ResumableCommandTurn {
-        for _ in 0..budget {
-            if let Some(nested) = self.nested.as_mut() {
-                match nested.queue.drive(state, 1) {
-                    ResumableCommandTurn::Pending => continue,
-                    ResumableCommandTurn::Suspended(suspension) => {
-                        return ResumableCommandTurn::Suspended(suspension);
-                    }
-                    ResumableCommandTurn::Complete(result) => {
-                        let active = self
-                            .nested
-                            .take()
-                            .expect("completed nested command disappeared");
-                        let stops_group = result.exit != 0 && !result.continue_queue;
-                        self.capture_nested_result(result, active.capture);
-                        self.queue
-                            .complete(
-                                active.ticket,
-                                queue::QueueCompletion {
-                                    discard_group_tail: stops_group,
-                                    insert_next: Vec::new(),
-                                },
-                            )
-                            .expect("nested command owns current queue ticket");
-                        continue;
-                    }
-                }
+    /// Run every command in the queue, waiting wherever one has to.
+    ///
+    /// A command that cannot finish on its own awaits its answer where it
+    /// suspended, rather than reporting the suspension up to a driver and being
+    /// resumed with the answer threaded back in; a command that runs a queue of
+    /// its own runs it here, nested as deep as the commands are.
+    pub(crate) async fn run(
+        &mut self,
+        state: &SharedState,
+        runtime: &dyn CommandRuntime,
+        budget: usize,
+        status: &QueueStatus,
+    ) -> io::Result<CommandResult> {
+        let mut turn = 0usize;
+        loop {
+            // The queue runs in bounded runs: a long one gives the loop a turn
+            // of its own rather than running everything else late.
+            turn += 1;
+            if turn >= budget {
+                turn = 0;
+                yield_now().await;
             }
-            let Some(started) = self.queue.start_next() else {
-                return ResumableCommandTurn::Complete(std::mem::replace(
-                    &mut self.out,
-                    CommandResult::ok(""),
-                ));
+            let Some(item) = self.queue.start_next() else {
+                return Ok(std::mem::replace(&mut self.out, CommandResult::ok("")));
             };
-            let ticket = started.ticket;
-            let (command, source, source_depth, contributes_status) = match started.value {
+            let (command, source, source_depth, contributes_status) = match item {
                 SharedQueueItem::Command {
                     command,
                     source,
@@ -1143,50 +1115,43 @@ impl ResumableCommandQueue {
                 } => (command, source, source_depth, contributes_status),
                 SharedQueueItem::FinalizeSource { args } => {
                     let insert_next = self.plan_command_hooks("source-file", &args, state);
-                    self.queue
-                        .complete(
-                            ticket,
-                            queue::QueueCompletion {
-                                discard_group_tail: false,
-                                insert_next,
-                            },
-                        )
-                        .expect("source finalizer owns current queue ticket");
+                    self.queue.complete(queue::QueueCompletion {
+                        discard_group_tail: false,
+                        insert_next,
+                    });
                     continue;
                 }
                 SharedQueueItem::FinalizeHooks { command, args } => {
                     let insert_next = self.plan_command_hooks(command, &args, state);
-                    self.queue
-                        .complete(
-                            ticket,
-                            queue::QueueCompletion {
-                                discard_group_tail: false,
-                                insert_next,
-                            },
-                        )
-                        .expect("hook finalizer owns current queue ticket");
+                    self.queue.complete(queue::QueueCompletion {
+                        discard_group_tail: false,
+                        insert_next,
+                    });
                     continue;
                 }
-                SharedQueueItem::NestedCommand { queue, capture } => {
-                    self.nested = Some(ActiveNestedCommand {
-                        ticket,
-                        queue,
-                        capture,
+                SharedQueueItem::NestedCommand {
+                    queue: mut nested,
+                    capture,
+                } => {
+                    // Erased, so this queue's future does not contain its own.
+                    let running: Pin<Box<dyn Future<Output = io::Result<CommandResult>> + '_>> =
+                        Box::pin(nested.run(state, runtime, budget, status));
+                    let result = running.await?;
+                    let stops_group = result.exit != 0 && !result.continue_queue;
+                    self.capture_nested_result(result, capture);
+                    self.queue.complete(queue::QueueCompletion {
+                        discard_group_tail: stops_group,
+                        insert_next: Vec::new(),
                     });
                     continue;
                 }
                 SharedQueueItem::CapturedResult(result) => {
                     let stops_group = result.exit != 0 && !result.continue_queue;
                     self.capture_nested_result(result, NestedCapture::Hook);
-                    self.queue
-                        .complete(
-                            ticket,
-                            queue::QueueCompletion {
-                                discard_group_tail: stops_group,
-                                insert_next: Vec::new(),
-                            },
-                        )
-                        .expect("captured result owns current queue ticket");
+                    self.queue.complete(queue::QueueCompletion {
+                        discard_group_tail: stops_group,
+                        insert_next: Vec::new(),
+                    });
                     continue;
                 }
                 SharedQueueItem::EndHook { name } => {
@@ -1195,9 +1160,7 @@ impl ResumableCommandQueue {
                         state.end_hook(&name);
                         state.record_control_checkpoint();
                     }
-                    self.queue
-                        .complete(ticket, queue::QueueCompletion::done())
-                        .expect("hook finalizer owns current queue ticket");
+                    self.queue.complete(queue::QueueCompletion::done());
                     continue;
                 }
             };
@@ -1217,8 +1180,7 @@ impl ResumableCommandQueue {
                 ));
             }
 
-            let inflight = SuspendedCommand {
-                ticket,
+            let inflight = InflightCommand {
                 command,
                 source,
                 source_depth,
@@ -1257,8 +1219,9 @@ impl ResumableCommandQueue {
                         self.context.with_job_environment(&state)
                     },
                 };
-                self.suspended = Some(inflight);
-                return ResumableCommandTurn::Suspended(suspension);
+                let reply = suspend(runtime, status, suspension).await?;
+                self.apply_reply(inflight, reply, state);
+                continue;
             }
             if inflight.command.spec.name == "if-shell" && has_flag(&inflight.command.args, "-b") {
                 let positionals = positionals(&inflight.command.args, &["-t"]);
@@ -1367,8 +1330,9 @@ impl ResumableCommandQueue {
                         self.context.with_job_environment(&state)
                     },
                 };
-                self.suspended = Some(inflight);
-                return ResumableCommandTurn::Suspended(suspension);
+                let reply = suspend(runtime, status, suspension).await?;
+                self.apply_reply(inflight, reply, state);
+                continue;
             }
             if inflight.command.spec.name == "source-file" {
                 if source_depth >= 50 {
@@ -1397,13 +1361,17 @@ impl ResumableCommandQueue {
                         continue;
                     }
                 };
-                self.suspended = Some(inflight);
-                return ResumableCommandTurn::Suspended(CommandSuspension::SourceFile { paths });
+                let reply =
+                    suspend(runtime, status, CommandSuspension::SourceFile { paths }).await?;
+                self.apply_reply(inflight, reply, state);
+                continue;
             }
             if inflight.command.spec.name == "load-buffer" && self.context.input_file.is_none() {
                 if let Some(path) = load_buffer_client_path(&inflight.command.args, &self.context) {
-                    self.suspended = Some(inflight);
-                    return ResumableCommandTurn::Suspended(CommandSuspension::LoadBuffer { path });
+                    let reply =
+                        suspend(runtime, status, CommandSuspension::LoadBuffer { path }).await?;
+                    self.apply_reply(inflight, reply, state);
+                    continue;
                 }
             }
             if inflight.command.spec.name == "save-buffer" {
@@ -1414,10 +1382,14 @@ impl ResumableCommandQueue {
                 if let Some(request) = request {
                     match request {
                         Ok(request) => {
-                            self.suspended = Some(inflight);
-                            return ResumableCommandTurn::Suspended(
+                            let reply = suspend(
+                                runtime,
+                                status,
                                 CommandSuspension::SaveBuffer { request },
-                            );
+                            )
+                            .await?;
+                            self.apply_reply(inflight, reply, state);
+                            continue;
                         }
                         Err(result) => {
                             self.finish_execution(
@@ -1436,11 +1408,14 @@ impl ResumableCommandQueue {
                     state.wait_registry()
                 };
                 let args = inflight.command.args.clone();
-                self.suspended = Some(inflight);
-                return ResumableCommandTurn::Suspended(CommandSuspension::WaitFor {
-                    args,
-                    registry,
-                });
+                let reply = suspend(
+                    runtime,
+                    status,
+                    CommandSuspension::WaitFor { args, registry },
+                )
+                .await?;
+                self.apply_reply(inflight, reply, state);
+                continue;
             }
             if inflight.command.spec.name == "command-prompt"
                 && self.context.wait_for_interactions()
@@ -1464,8 +1439,9 @@ impl ResumableCommandQueue {
                     args: inflight.command.args.clone(),
                     registry,
                 };
-                self.suspended = Some(inflight);
-                return ResumableCommandTurn::Suspended(suspension);
+                let reply = suspend(runtime, status, suspension).await?;
+                self.apply_reply(inflight, reply, state);
+                continue;
             }
             if self.context.wait_for_interactions()
                 && client_interaction_waits(inflight.command.spec.name, &inflight.command.args)
@@ -1495,10 +1471,14 @@ impl ResumableCommandQueue {
                     );
                     continue;
                 }
-                self.suspended = Some(inflight);
-                return ResumableCommandTurn::Suspended(CommandSuspension::ClientInteraction {
-                    completed,
-                });
+                let reply = suspend(
+                    runtime,
+                    status,
+                    CommandSuspension::ClientInteraction { completed },
+                )
+                .await?;
+                self.apply_reply(inflight, reply, state);
+                continue;
             }
             if inflight.command.spec.name == "set-hook" && has_flag(&inflight.command.args, "-R") {
                 let hook = positionals(&inflight.command.args, &["-t"])
@@ -1576,7 +1556,6 @@ impl ResumableCommandQueue {
             }
             self.finish_execution(inflight, execution, state);
         }
-        ResumableCommandTurn::Pending
     }
 
     fn plan_if_shell_branch(
@@ -1691,15 +1670,13 @@ impl ResumableCommandQueue {
         Ok(planned)
     }
 
-    pub(crate) fn resume(&mut self, result: CommandSuspensionResult, state: &SharedState) {
-        if let Some(nested) = self.nested.as_mut() {
-            nested.queue.resume(result, state);
-            return;
-        }
-        let inflight = self
-            .suspended
-            .take()
-            .expect("command suspension completed without an active queue item");
+    /// Take the answer to a suspension back into the command that asked for it.
+    fn apply_reply(
+        &mut self,
+        inflight: InflightCommand,
+        result: CommandSuspensionResult,
+        state: &SharedState,
+    ) {
         let execution = match result {
             CommandSuspensionResult::RunShell(completion) => {
                 let result = {
@@ -1740,7 +1717,7 @@ impl ResumableCommandQueue {
 
     fn finish_execution(
         &mut self,
-        inflight: SuspendedCommand,
+        inflight: InflightCommand,
         mut execution: SharedCommandExecution,
         state: &SharedState,
     ) {
@@ -1807,15 +1784,10 @@ impl ResumableCommandQueue {
             }
         }
 
-        self.queue
-            .complete(
-                inflight.ticket,
-                queue::QueueCompletion {
-                    discard_group_tail: stops_group,
-                    insert_next: execution.insert_next,
-                },
-            )
-            .expect("command owns current queue ticket");
+        self.queue.complete(queue::QueueCompletion {
+            discard_group_tail: stops_group,
+            insert_next: execution.insert_next,
+        });
     }
 
     fn plan_command_hooks(

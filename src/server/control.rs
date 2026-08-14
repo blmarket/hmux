@@ -12,7 +12,7 @@ use crate::tmux::message::{Frame, Message};
 
 use super::attach::{self, ClientTty};
 use super::command;
-use super::command::queue::{CommandQueue, QueueCompletion, QueueState, QueueTicket};
+use super::command::queue::{CommandQueue, QueueCompletion};
 use super::pane::{NativePaneObservation, OutputSubscription};
 use super::registry::{self, Resolution};
 use super::state::{
@@ -425,7 +425,7 @@ impl EventControlClient {
         self.control_writer.flush()?;
         // A queue with a current item is one this client is still running, so
         // an empty queue is the only point where closed input means the end.
-        if !self.stdin_open && matches!(self.command_queue.state(), QueueState::Empty) {
+        if !self.stdin_open && self.command_queue.is_empty() {
             self.pump_output()?;
             return Ok(ControlServing::Stop);
         }
@@ -663,19 +663,16 @@ impl EventControlClient {
     /// rest of the queue behind it.
     pub(crate) fn start_next_command(&mut self) -> io::Result<Option<StartedControlCommand>> {
         loop {
-            let Some(started) = self.command_queue.start_next() else {
+            let Some(item) = self.command_queue.start_next() else {
                 return Ok(None);
             };
-            let ticket = started.ticket;
-            let argv = match started.value {
+            let argv = match item {
                 ControlQueueItem::Completed(result) => {
                     let id = ControlCommandId::next(&mut self.sequence);
                     let flags = result.control_flags;
                     write_control_marker(&mut self.control_writer, "%begin", id, flags);
                     self.enqueue_command_result(&result, id, flags);
-                    self.command_queue
-                        .complete(ticket, QueueCompletion::done())
-                        .map_err(|_| io::Error::other("stale completed control queue item"))?;
+                    self.command_queue.complete(QueueCompletion::done());
                     continue;
                 }
                 ControlQueueItem::ParseError(result) => {
@@ -684,14 +681,12 @@ impl EventControlClient {
                     self.control_writer.enqueue(b"parse error: ");
                     self.control_writer.enqueue(result.stderr.as_bytes());
                     write_control_marker(&mut self.control_writer, "%error", id, 1);
-                    self.command_queue
-                        .complete(ticket, QueueCompletion::failed())
-                        .map_err(|_| io::Error::other("stale control parse error"))?;
+                    self.command_queue.complete(QueueCompletion::failed());
                     continue;
                 }
                 ControlQueueItem::Command(argv) => argv,
             };
-            if let Some(started) = self.run_control_command(ticket, argv)? {
+            if let Some(started) = self.run_control_command(argv)? {
                 return Ok(Some(started));
             }
         }
@@ -699,7 +694,6 @@ impl EventControlClient {
 
     fn run_control_command(
         &mut self,
-        ticket: QueueTicket,
         argv: Vec<String>,
     ) -> io::Result<Option<StartedControlCommand>> {
         let id = ControlCommandId::next(&mut self.sequence);
@@ -744,7 +738,7 @@ impl EventControlClient {
         let handled_subscriptions =
             apply_control_subscription_actions(&argv, &mut self.subscriptions);
         if handled_offsets || handled_subscriptions {
-            self.complete_local(ticket, id)?;
+            self.complete_local(id);
             return Ok(None);
         }
         if let Some(size) = control_size_action(&argv) {
@@ -806,13 +800,11 @@ impl EventControlClient {
                 sync_control_pane_streams(&next, &mut self.streams)?;
                 self.snapshot = next;
             }
-            self.command_queue
-                .complete(ticket, QueueCompletion::done())
-                .map_err(|_| io::Error::other("stale control queue item"))?;
+            self.command_queue.complete(QueueCompletion::done());
             return Ok(None);
         }
         if is_control_refresh_operation(&argv) || handled_colour || !refresh_flags.is_empty() {
-            self.complete_local(ticket, id)?;
+            self.complete_local(id);
             return Ok(None);
         }
         if switch_read_only {
@@ -821,15 +813,10 @@ impl EventControlClient {
                 "%session-changed ${} {}",
                 self.snapshot.session_id, self.snapshot.session_name
             ));
-            self.command_queue
-                .complete(ticket, QueueCompletion::done())
-                .map_err(|_| io::Error::other("stale control queue item"))?;
+            self.command_queue.complete(QueueCompletion::done());
             return Ok(None);
         }
         let agents = self.hub.snapshot().panes;
-        self.command_queue
-            .wait(ticket)
-            .map_err(|_| io::Error::other("stale control queue wait"))?;
         let queued = match command::start_resumable_command(
             &argv,
             &self.state,
@@ -843,12 +830,11 @@ impl EventControlClient {
         }) {
             Ok(queued) => queued,
             Err(result) => {
-                self.finish_control_command(ticket, id, argv, result)?;
+                self.finish_control_command(id, argv, result)?;
                 return Ok(None);
             }
         };
         Ok(Some(StartedControlCommand {
-            ticket,
             id,
             argv,
             task: queued,
@@ -861,15 +847,12 @@ impl EventControlClient {
         started: StartedControlCommand,
         result: io::Result<command::CommandResult>,
     ) -> io::Result<()> {
-        let StartedControlCommand {
-            ticket, id, argv, ..
-        } = started;
-        self.finish_control_command(ticket, id, argv, result?)
+        let StartedControlCommand { id, argv, .. } = started;
+        self.finish_control_command(id, argv, result?)
     }
 
     fn finish_control_command(
         &mut self,
-        ticket: QueueTicket,
         id: ControlCommandId,
         argv: Vec<String>,
         mut result: command::CommandResult,
@@ -920,19 +903,13 @@ impl EventControlClient {
                 .map(|result| vec![ControlQueueItem::Completed(result)])
                 .collect(),
         };
-        self.command_queue
-            .resume(ticket)
-            .map_err(|_| io::Error::other("stale control command resume"))?;
-        self.command_queue
-            .complete(ticket, completion)
-            .map_err(|_| io::Error::other("stale control command result"))
+        self.command_queue.complete(completion);
+        Ok(())
     }
 
-    fn complete_local(&mut self, ticket: QueueTicket, id: ControlCommandId) -> io::Result<()> {
+    fn complete_local(&mut self, id: ControlCommandId) {
         write_control_marker(&mut self.control_writer, "%end", id, 1);
-        self.command_queue
-            .complete(ticket, QueueCompletion::done())
-            .map_err(|_| io::Error::other("stale control queue item"))
+        self.command_queue.complete(QueueCompletion::done());
     }
 
     fn enqueue_command_result(
@@ -1069,7 +1046,6 @@ enum ControlQueueItem {
 /// One control command running as a task, with what its client needs to report
 /// the result under.
 pub(crate) struct StartedControlCommand {
-    ticket: QueueTicket,
     id: ControlCommandId,
     argv: Vec<String>,
     pub(crate) task: command::QueuedCommand,
