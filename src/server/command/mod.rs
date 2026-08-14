@@ -30,9 +30,12 @@ pub(in crate::server) use identity::Command;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::rc::Rc;
+use std::task::{Context, Poll};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::integration::status::PaneAgents;
@@ -1043,6 +1046,25 @@ impl QueuedCommand {
     pub(crate) fn set_wake(&mut self, wake: &WakeFn) {
         self.completion.set_wake(wake);
         self.status.set_wake(wake);
+    }
+}
+
+/// An owner that is itself a task waits for the result rather than polling for
+/// it. The suspension a queue is parked on is not its business, so only the
+/// result half is awaited here — the owners that do care about it keep
+/// [`QueuedCommand::poll`] and [`QueuedCommand::set_wake`].
+impl Future for QueuedCommand {
+    type Output = io::Result<CommandResult>;
+
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some(output) = self.output.take() {
+            return Poll::Ready(output);
+        }
+        // The outer error is the task disappearing; the inner one is the
+        // queue's own. Both read the same way to the owner.
+        Pin::new(&mut self.completion)
+            .poll(context)
+            .map(|result| result.and_then(|result| result))
     }
 }
 

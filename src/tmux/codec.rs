@@ -140,18 +140,6 @@ impl ImsgReader {
         }
     }
 
-    /// Whether a complete frame is already in the userspace receive buffer.
-    /// Used by the native attach event loop: the kernel fd may no longer be
-    /// readable after one `recvmsg` delivered several frames at once.
-    pub(crate) fn has_buffered_frame(&self) -> bool {
-        if self.buf.len() < HEADER_SIZE {
-            return false;
-        }
-        let raw_len = u32::from_ne_bytes(self.buf[4..8].try_into().unwrap());
-        let total = (raw_len & !IMSG_FD_MARK) as usize;
-        (HEADER_SIZE..=MAX_IMSGSIZE).contains(&total) && self.buf.len() >= total
-    }
-
     /// Try to pop one complete frame from the buffer.
     fn try_parse(&mut self) -> io::Result<Option<Frame>> {
         if self.buf.len() < HEADER_SIZE {

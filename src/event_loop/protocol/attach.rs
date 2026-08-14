@@ -18,16 +18,14 @@ use crate::server::attach::{
 };
 use crate::server::command::{self, ClientContext};
 use crate::server::state::SharedState;
-use crate::sync::WakeFn;
+use crate::sync::{maybe, race, select, yield_now, Either, Notify, WakeFn};
 use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::Frame;
 use crate::tmux::traits::NonblockingFrameReader;
+use hmux_rt::{sleep_until, AsyncFd, Interest};
 
-use super::task::Outbox;
-use super::client::{
-    AttachClientState, CommandClientState, CommandOperation, ProtocolClient, ProtocolCloseReason,
-    ProtocolEvent, ProtocolIoSide, ProtocolState,
-};
+use super::wire::Wire;
+use super::{ClientRuntime, ProtocolCloseReason};
 
 const ATTACH_QUEUE_LIMIT: usize = MAX_IMSGSIZE * 64;
 const IMMEDIATE_TURN_BUDGET: usize = 64;
@@ -632,173 +630,193 @@ impl EventAttachClient {
     }
 }
 
-impl ProtocolClient {
-    pub(super) fn begin_attach(
-        &mut self,
-        args: Vec<String>,
-        outbox: &mut Outbox,
+/// Serve one interactive attach client to its end.
+pub(super) async fn run(
+    wire: &mut Wire,
+    runtime: &ClientRuntime,
+    args: Vec<String>,
+    tty: ClientTty,
+    context: ClientContext,
+) -> ProtocolCloseReason {
+    let mut attach = match EventAttachClient::new(
+        &args,
+        tty,
+        Rc::clone(&runtime.state),
+        runtime.hub.clone(),
+        &context,
+        Rc::clone(&runtime.commands),
     ) {
-        let Some((tty, context)) = self.take_identification() else {
-            return;
+        Ok(attach) => attach,
+        // An attach that cannot start is an ordinary command failure: the
+        // client is told why over the response it was already waiting for.
+        Err(error) => {
+            return super::command::report(wire, command::CommandResult::err(error.into_message()))
+                .await;
+        }
+    };
+    match serve(wire, runtime, &mut attach).await {
+        Ok(reason) => reason,
+        Err(reason) => {
+            attach.shutdown();
+            reason
+        }
+    }
+}
+
+/// The next thing the attach engine is given.
+enum Step {
+    /// A source the engine named, or nothing in particular.
+    Drive(Option<EventAttachSource>),
+    /// The deadline the engine asked for landed.
+    Timer,
+    /// One protocol frame from the client.
+    Frame(Frame),
+}
+
+/// Frames taken from the socket before the task gives the loop a turn.
+const READ_FRAME_BUDGET: usize = 32;
+
+async fn serve(
+    wire: &mut Wire,
+    runtime: &ClientRuntime,
+    attach: &mut EventAttachClient,
+) -> Result<ProtocolCloseReason, ProtocolCloseReason> {
+    let notify = Notify::new();
+    let wake: WakeFn = {
+        let notify = notify.clone();
+        Rc::new(move || notify.notify())
+    };
+    let mut sources: BTreeMap<EventAttachSource, AsyncFd> = BTreeMap::new();
+    let mut step = Step::Drive(None);
+    let mut frames = 0usize;
+
+    loop {
+        let driven = match step {
+            Step::Drive(source) => attach.drive(source),
+            Step::Timer => attach.drive_timer(),
+            Step::Frame(frame) => attach.handle_frame(frame),
         };
-        match EventAttachClient::new(
-            &args,
-            tty,
-            Rc::clone(&self.state),
-            self.hub.clone(),
-            &context,
-            Rc::clone(&self.command_runtime),
-        ) {
-            Ok(mut attach) => {
-                if let Err(error) = attach.drive(None) {
-                    self.close(ProtocolCloseReason::Error(error.kind()), outbox);
-                    return;
+        driven.map_err(|error| ProtocolCloseReason::Error(error.kind()))?;
+
+        pump(wire, attach)?;
+        for request in attach.take_background_commands() {
+            runtime.background.start(request);
+        }
+
+        if attach.is_finished() {
+            wire.drain().await?;
+            return Ok(ProtocolCloseReason::Completed);
+        }
+
+        step = wait(wire, runtime, attach, &mut sources, &notify, &wake).await?;
+        // One event per turn, except for input: a client that pipelines has its
+        // frames taken in bounded runs, which is one turn's work rather than
+        // one turn each.
+        if matches!(step, Step::Frame(_)) {
+            frames += 1;
+            if frames % READ_FRAME_BUDGET != 0 {
+                continue;
+            }
+        }
+        frames = 0;
+        yield_now().await;
+    }
+}
+
+/// Move whatever the engine has produced onto the socket, up to what the
+/// connection's queue will hold.
+fn pump(wire: &mut Wire, attach: &mut EventAttachClient) -> Result<(), ProtocolCloseReason> {
+    while wire.is_below_high_water() {
+        let Some(frame) = attach.pop_frame() else {
+            break;
+        };
+        wire.queue(frame)?;
+    }
+    wire.flush()
+}
+
+/// Park until the client, one of the engine's sources, its deadline or its
+/// parked command has something for it.
+async fn wait(
+    wire: &mut Wire,
+    runtime: &ClientRuntime,
+    attach: &mut EventAttachClient,
+    sources: &mut BTreeMap<EventAttachSource, AsyncFd>,
+    notify: &Notify,
+    wake: &WakeFn,
+) -> Result<Step, ProtocolCloseReason> {
+    // Reading is paused both when the engine has taken all the input it can
+    // hold and when this client's own output is above high water; either way
+    // the socket is left unread until it is not.
+    let reading = attach.accepts_protocol_input() && wire.is_below_high_water();
+    if reading {
+        // Ahead of the wait: a frame already decoded is not a socket event, so
+        // nothing would ever report it.
+        if let Some(frame) = wire.try_recv()? {
+            return Ok(Step::Frame(frame));
+        }
+    }
+
+    let desired = attach.sources();
+    // A registration the engine no longer wants goes back by being dropped.
+    sources.retain(|source, _| desired.contains(source));
+    let mut command = None;
+    for source in &desired {
+        if let EventAttachSource::Command(generation) = source {
+            // No descriptor behind a suspended queue: what it offers instead is
+            // the wake its completion fires, which this turns into one
+            // notification the wait can race.
+            attach.set_command_wake(*generation, wake);
+            command = Some(*source);
+            continue;
+        }
+        if sources.contains_key(source) {
+            continue;
+        }
+        let Some(fd) = attach.source_fd(*source) else {
+            continue;
+        };
+        let interest = if EventAttachClient::source_is_writable(*source) {
+            Interest::WRITABLE
+        } else {
+            Interest::READABLE
+        };
+        if let Ok(registered) = AsyncFd::new(&runtime.tasks, fd, interest) {
+            sources.insert(*source, registered);
+        }
+    }
+    let deadline = attach.deadline();
+
+    loop {
+        let readiness = race(
+            sources
+                .iter()
+                .map(|(source, fd)| (*source, fd.readiness()))
+                .collect(),
+        );
+        let timer = maybe(deadline.map(|deadline| sleep_until(&runtime.tasks, deadline)));
+        let readable = maybe(reading.then(|| wire.readable()));
+        let woken = select(
+            select(notify.notified(), timer),
+            select(readiness, select(readable, wire.writable())),
+        )
+        .await;
+        match woken {
+            Either::First(Either::First(())) => return Ok(Step::Drive(command)),
+            Either::First(Either::Second(())) => return Ok(Step::Timer),
+            Either::Second(Either::First((source, _))) => {
+                return Ok(Step::Drive(Some(source)));
+            }
+            Either::Second(Either::Second(Either::First(()))) => {
+                if let Some(frame) = wire.try_recv()? {
+                    return Ok(Step::Frame(frame));
                 }
-                self.protocol_state = ProtocolState::Attach(AttachClientState {
-                    timer_generation: 0,
-                    client: Box::new(attach),
-                    timer_deadline: None,
-                    input_paused: false,
-                });
-                self.sync_attach(outbox);
             }
-            Err(error) => {
-                self.protocol_state = ProtocolState::Command(CommandClientState {
-                    operation: CommandOperation::AwaitingStep,
-                });
-                self.begin_response(
-                    command::CommandResult::err(error.into_message()),
-                    outbox,
-                );
-            }
+            // The socket taking more is not the engine's business; it only
+            // means the frames it has queued can move, including the ones held
+            // back at the high-water mark.
+            Either::Second(Either::Second(Either::Second(()))) => pump(wire, attach)?,
         }
-    }
-
-    pub(super) fn handle_attach_protocol_frame(
-        &mut self,
-        frame: Frame,
-        outbox: &mut Outbox,
-    ) {
-        let result = match &mut self.protocol_state {
-            ProtocolState::Attach(attach) => attach.client.handle_frame(frame),
-            _ => return,
-        };
-        if let Err(error) = result {
-            self.close(ProtocolCloseReason::Error(error.kind()), outbox);
-            return;
-        }
-        self.sync_attach(outbox);
-    }
-
-    pub(super) fn handle_attach_event(
-        &mut self,
-        source: Option<EventAttachSource>,
-        outbox: &mut Outbox,
-    ) {
-        let result = match &mut self.protocol_state {
-            ProtocolState::Attach(attach) => attach.client.drive(source),
-            _ => return,
-        };
-        if let Err(error) = result {
-            self.close(ProtocolCloseReason::Error(error.kind()), outbox);
-            return;
-        }
-        self.sync_attach(outbox);
-    }
-
-    pub(super) fn sync_attach(&mut self, outbox: &mut Outbox) {
-        while self.writer_is_below_high_water() {
-            let frame = match &mut self.protocol_state {
-                ProtocolState::Attach(attach) => attach.client.pop_frame(),
-                _ => None,
-            };
-            let Some(frame) = frame else {
-                break;
-            };
-            if !self.queue_frame(frame, outbox) {
-                break;
-            }
-        }
-
-        let (desired, deadline, finished, accepts_input, background_commands) =
-            match &mut self.protocol_state {
-                ProtocolState::Attach(attach) => (
-                    attach.client.sources(),
-                    attach.client.deadline(),
-                    attach.client.is_finished(),
-                    attach.client.accepts_protocol_input(),
-                    attach.client.take_background_commands(),
-                ),
-                _ => return,
-            };
-        for request in background_commands {
-            self.background_commands.start(request);
-        }
-        let was_input_paused = match &self.protocol_state {
-            ProtocolState::Attach(attach) => attach.input_paused,
-            _ => return,
-        };
-        if let ProtocolState::Attach(attach) = &mut self.protocol_state {
-            attach.input_paused = !accepts_input;
-        }
-        let read_enabled = !self.reads_paused && accepts_input && !finished;
-        outbox.set_protocol_interest(ProtocolIoSide::Read, read_enabled);
-        if was_input_paused && read_enabled && self.reader.has_buffered_frame() {
-            self.schedule_read_continuation(outbox);
-        }
-
-        // A command source holds a wake rather than a token, but it is still
-        // something this client has taken out and has to give back: without it
-        // here, the source is never disabled and the client accumulates one
-        // stale entry per suspension it goes through.
-        let registered = self
-            .registrations
-            .attach
-            .iter()
-            .copied()
-            .chain(
-                self.registrations
-                    .command_wakes
-                    .iter()
-                    .filter_map(|side| match side {
-                        ProtocolIoSide::Attach(source) => Some(*source),
-                        _ => None,
-                    }),
-            )
-            .collect::<BTreeSet<_>>();
-        for source in registered.union(&desired).copied() {
-            outbox.set_protocol_interest(
-                ProtocolIoSide::Attach(source),
-                desired.contains(&source),
-            );
-        }
-
-        let timer_changed = match &self.protocol_state {
-            ProtocolState::Attach(attach) => deadline != attach.timer_deadline,
-            _ => false,
-        };
-        if timer_changed {
-            let generation = match &mut self.protocol_state {
-                ProtocolState::Attach(attach) => {
-                    attach.timer_deadline = deadline;
-                    attach.timer_generation = attach.timer_generation.wrapping_add(1);
-                    attach.timer_generation
-                }
-                _ => return,
-            };
-            if let Some(deadline) = deadline {
-                outbox.set_protocol_timer_event(
-                    deadline,
-                    ProtocolEvent::AttachTimer(generation),
-                );
-            }
-        }
-
-        if finished {
-            self.protocol_state = ProtocolState::Draining;
-            outbox.set_protocol_interest(ProtocolIoSide::Read, false);
-        }
-        self.drive_output(outbox);
     }
 }
 

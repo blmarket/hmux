@@ -30,11 +30,8 @@ use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, Scr
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 use crate::server::input_keys::ExtendedKeys;
 use hmux_rt::Interest;
-use crate::sync::{join, WakeFn};
+use crate::sync::{join, Notify};
 use hmux_rt::{sleep, AsyncFd, TaskHandle};
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use hmux_vt::StringEnd;
 use hmux_vt::{Terminal, TerminalEvent as VtEvent};
 
@@ -97,8 +94,9 @@ pub(crate) struct PanePipeOutbound {
     queue: VecDeque<u8>,
     /// Set when the pane stops piping, so the job closes the child's stdin.
     closed: bool,
-    /// Installed by the task while it has nothing left to write.
-    wake: Option<WakeFn>,
+    /// Signalled whenever the queue grows or the pipe closes, which is what
+    /// the task parks on while it has nothing left to write.
+    ready: Notify,
 }
 
 impl PanePipeOutbound {
@@ -108,12 +106,12 @@ impl PanePipeOutbound {
         if overflow != 0 {
             self.queue.drain(..overflow);
         }
-        self.wake();
+        self.ready.notify();
     }
 
     fn close(&mut self) {
         self.closed = true;
-        self.wake();
+        self.ready.notify();
     }
 
     /// Whether the task has anything to do: bytes to write, or an end of input
@@ -122,29 +120,12 @@ impl PanePipeOutbound {
         !self.queue.is_empty() || self.closed
     }
 
-    fn wake(&mut self) {
-        if let Some(wake) = self.wake.take() {
-            wake();
-        }
-    }
-}
-
-/// Wait until the pane has queued something for the pipe, or closed it.
-struct OutboundReady<'a> {
-    outbound: &'a Rc<RefCell<PanePipeOutbound>>,
-}
-
-impl Future for OutboundReady<'_> {
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<()> {
-        let mut outbound = self.outbound.borrow_mut();
-        if outbound.has_work() {
-            return Poll::Ready(());
-        }
-        let waker = context.local_waker().clone();
-        outbound.wake = Some(Rc::new(move || waker.wake_by_ref()));
-        Poll::Pending
+    /// Start over for a new pipe child, keeping the notification slot: the
+    /// task that is about to be handed the new descriptors may already be
+    /// parked on it.
+    fn reset(&mut self) {
+        self.queue.clear();
+        self.closed = false;
     }
 }
 
@@ -217,7 +198,7 @@ impl PanePipeIo {
             outbound: Rc::new(RefCell::new(PanePipeOutbound {
                 queue: payload.iter().copied().collect(),
                 closed: true,
-                wake: None,
+                ready: Notify::new(),
             })),
             alive: Rc::new(Cell::new(true)),
         })
@@ -300,7 +281,15 @@ async fn write_outbound(
         if blocked {
             source.readiness().await;
         } else {
-            OutboundReady { outbound }.await;
+            // Work still pending here is the write that accepted nothing:
+            // there is more to hand over, so that turn ends without parking.
+            let parked = {
+                let outbound = outbound.borrow();
+                (!outbound.has_work()).then(|| outbound.ready.notified())
+            };
+            if let Some(parked) = parked {
+                parked.await;
+            }
         }
     }
 }
@@ -1376,10 +1365,7 @@ impl Pane {
                 .take()
                 .ok_or_else(|| io::Error::other("pipe child has no stdin"))?;
             set_nonblocking(stdin.as_raw_fd())?;
-            {
-                let mut outbound = self.pipe_output.borrow_mut();
-                *outbound = PanePipeOutbound::default();
-            }
+            self.pipe_output.borrow_mut().reset();
             self.pipe_output_active.set(true);
             Some(stdin)
         } else {

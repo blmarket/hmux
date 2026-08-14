@@ -47,6 +47,68 @@ impl<A: Future, B: Future> Future for Select<A, B> {
     }
 }
 
+/// Race a keyed set of futures on one task, reporting the key of the first to
+/// finish along with what it produced.
+///
+/// [`select`] is the two-future version with the set known at compile time;
+/// this is for a set that is computed — the sources one client is waiting on
+/// this turn. Entries are polled in the order given, so an earlier one wins a
+/// turn where both are ready, and an empty set is a future that never
+/// finishes, which is what "nothing to wait on" means to a caller that races
+/// this against something else.
+///
+/// Every entry is polled on every turn, so the futures raced have to be leaves
+/// that park a fresh waker each poll rather than ones that only park on their
+/// first — the runtime's readiness leaf is one. Dropping the race drops every
+/// entry, which is what gives back whatever they took out.
+pub fn race<K, F: Future + Unpin>(entries: Vec<(K, F)>) -> Race<K, F> {
+    Race { entries }
+}
+
+pub struct Race<K, F> {
+    entries: Vec<(K, F)>,
+}
+
+impl<K: Copy + Unpin, F: Future + Unpin> Future for Race<K, F> {
+    type Output = (K, F::Output);
+
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        for (key, future) in self.get_mut().entries.iter_mut() {
+            if let Poll::Ready(output) = Pin::new(future).poll(context) {
+                return Poll::Ready((*key, output));
+            }
+        }
+        Poll::Pending
+    }
+}
+
+/// Wait on a future that may not be there, where absence means "never".
+///
+/// An optional deadline is the reason this exists: a client that has one races
+/// it against its sources, and one that has none has to race those sources
+/// against something, so `None` becomes the future that never finishes.
+pub fn maybe<F: Future>(future: Option<F>) -> Maybe<F> {
+    Maybe { future }
+}
+
+pub struct Maybe<F> {
+    future: Option<F>,
+}
+
+impl<F: Future> Future for Maybe<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<F::Output> {
+        // Safety: the projection is structural and nothing is moved out of the
+        // pinned option.
+        let this = unsafe { self.get_unchecked_mut() };
+        match &mut this.future {
+            Some(future) => unsafe { Pin::new_unchecked(future) }.poll(context),
+            None => Poll::Pending,
+        }
+    }
+}
+
 /// Give the loop a turn before continuing.
 ///
 /// A task that has more work but has used its budget parks itself behind

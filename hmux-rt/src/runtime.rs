@@ -599,7 +599,9 @@ mod tests {
             drop(AsyncFd::new(&handle, reader.as_fd(), Interest::READABLE).expect("async fd"));
             // The loop is whole afterwards: a descriptor created next still
             // registers and delivers, so nothing was stranded on either list.
-            run_shell(&handle, "echo after").await.expect("shell output")
+            run_shell(&handle, "echo after")
+                .await
+                .expect("shell output")
         });
         assert_eq!(output, b"after\n");
         assert_eq!(probe.registered_io(), 0);

@@ -14,5 +14,5 @@ mod future;
 mod notify;
 
 pub(crate) use completion::{completion_pair, Completion, CompletionSender, WakeFn};
-pub(crate) use future::{join, select, yield_now, Either};
+pub(crate) use future::{join, maybe, race, select, yield_now, Either};
 pub(crate) use notify::Notify;
