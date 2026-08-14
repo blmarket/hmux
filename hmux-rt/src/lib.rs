@@ -18,7 +18,7 @@
 
 #![feature(local_waker)]
 
-mod completion;
+mod handoff;
 mod reactor;
 mod runtime;
 mod task_loop;

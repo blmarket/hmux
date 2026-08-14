@@ -3,7 +3,7 @@
 //! Every turn is the same shape — sync the task set, dispatch queued polls,
 //! poll the reactor — driven by the host through [`TaskRuntime::dispatch`] and
 //! [`TaskRuntime::poll`]. The daemon owns the turn cadence and its dispatch
-//! order; a completion-driven `block_on` sits in front for tests and for the
+//! order; a handoff-driven `block_on` sits in front for tests and for the
 //! demo in `examples/tasks.rs`. Every event source is a task: there is no
 //! side channel to the reactor.
 
@@ -14,7 +14,7 @@ use std::io;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use crate::completion::{completion_pair, WakeFn};
+use crate::handoff::handoff;
 use crate::reactor::{MioReactor, Reactor as _, Ready};
 use crate::task_loop::TaskLoop;
 use crate::tasks::{TaskEvent, TaskHandle, WakeSink};
@@ -131,22 +131,24 @@ impl TaskRuntime {
 
     /// Spawn `future` and run turns until it produces a value.
     ///
-    /// The value comes back through a completion, which is also how a task's
-    /// non-task owner collects one. Nothing inside the loop can wake this
-    /// waiter, so a turn is bounded rather than blocking outright.
+    /// The value comes back through a handoff, the same way a [`JoinHandle`]
+    /// collects one. Nothing inside the loop can wake this waiter, so a turn is
+    /// bounded rather than blocking outright.
+    ///
+    /// [`JoinHandle`]: crate::JoinHandle
     pub fn block_on<T: 'static>(&mut self, future: impl Future<Output = T> + 'static) -> T {
-        let (mut completion, sender) = completion_pair().expect("completion pair");
+        let (mut result, sender) = handoff();
         self.handle().spawn(async move {
             sender.complete(future.await);
         });
         let woken = Rc::new(Cell::new(false));
         let flag = Rc::clone(&woken);
-        let wake: WakeFn = Rc::new(move || flag.set(true));
+        let wake: Rc<dyn Fn()> = Rc::new(move || flag.set(true));
         loop {
-            if let Some(value) = completion.take() {
+            if let Some(value) = result.take() {
                 return value.expect("the spawned task reported a value");
             }
-            completion.set_wake(&wake);
+            result.set_wake(&wake);
             let timeout = if woken.replace(false) {
                 Duration::ZERO
             } else {
@@ -256,18 +258,18 @@ mod tests {
     }
 
     #[test]
-    fn a_completion_wakes_a_task_without_any_descriptor() {
+    fn a_handoff_wakes_a_task_without_any_descriptor() {
         let mut runtime = TaskRuntime::new().expect("runtime");
         let handle = runtime.handle();
         let probe = runtime.handle();
-        let (completion, sender) = completion_pair::<u32>().expect("completion pair");
+        let (value, sender) = handoff::<u32>();
         let result = runtime.block_on(async move {
             // Spawned second in program order but the receiver parks first, so
             // the send happens while the waiter is suspended.
             handle.spawn(async move {
                 sender.complete(41);
             });
-            completion.await
+            value.await
         });
         assert_eq!(result.expect("the sender completed"), 41);
         assert_eq!(
@@ -297,19 +299,19 @@ mod tests {
     #[test]
     fn a_task_can_wait_on_io_while_another_waits_on_it() {
         // The control-client shape: a "client" task waits on a "command" task
-        // through a completion (userland), while the command task waits on the
+        // through a handoff (userland), while the command task waits on the
         // kernel (child stdout). Both waits are the same thing to the loop: a
         // task that is not on the event queue.
         let mut runtime = TaskRuntime::new().expect("runtime");
         let handle = runtime.handle();
         let result = runtime.block_on(async move {
-            let (completion, sender) = completion_pair().expect("completion pair");
+            let (output, sender) = handoff();
             let shell = handle.clone();
             handle.spawn(async move {
                 let output = run_shell(&shell, "echo done").await;
                 sender.complete(output.expect("shell output"));
             });
-            completion.await.expect("command task completed")
+            output.await.expect("command task completed")
         });
         assert_eq!(result, b"done\n");
     }
@@ -443,7 +445,7 @@ mod tests {
         let mut runtime = TaskRuntime::new().expect("runtime");
         let tasks = runtime.handle();
         let probe = runtime.handle();
-        let (started, child_started) = completion_pair::<()>().expect("completion pair");
+        let (started, child_started) = handoff::<()>();
         runtime.block_on(async move {
             let sleeper = tasks.clone();
             let task = tasks.spawn_join(async move {
@@ -469,7 +471,7 @@ mod tests {
         reader.set_nonblocking(true).expect("nonblocking reader");
         runtime.block_on(async move {
             let io_tasks = tasks.clone();
-            let (started, child_started) = completion_pair::<()>().expect("completion pair");
+            let (started, child_started) = handoff::<()>();
             let task = tasks.spawn_join(async move {
                 let source =
                     AsyncFd::new(&io_tasks, reader.as_fd(), Interest::READABLE).expect("async fd");

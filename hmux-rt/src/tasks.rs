@@ -35,7 +35,7 @@ use std::rc::Rc;
 use std::task::{Context, ContextBuilder, LocalWake, LocalWaker, Poll, Waker};
 use std::time::{Duration, Instant};
 
-use crate::completion::{completion_pair, Completion};
+use crate::handoff::{handoff, Handoff};
 use crate::reactor::{Interest, Readiness, Token};
 use crate::timer::{ExpiredTimer, TimerId, TimerQueue};
 
@@ -159,14 +159,14 @@ impl TaskHandle {
         &self,
         future: impl Future<Output = T> + 'static,
     ) -> JoinHandle<T> {
-        let (completion, sender) = completion_pair().expect("completion pairs are infallible");
+        let (result, sender) = handoff();
         let task = self.spawn(async move {
             sender.complete(future.await);
         });
         JoinHandle {
             task,
             tasks: self.clone(),
-            completion,
+            result,
         }
     }
 
@@ -248,7 +248,7 @@ impl TaskHandle {
 pub struct JoinHandle<T> {
     task: TaskId,
     tasks: TaskHandle,
-    completion: Completion<T>,
+    result: Handoff<T>,
 }
 
 impl<T> JoinHandle<T> {
@@ -265,7 +265,7 @@ impl<T> Future for JoinHandle<T> {
     type Output = Result<T, JoinError>;
 
     fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
-        match Pin::new(&mut self.completion).poll(context) {
+        match Pin::new(&mut self.result).poll(context) {
             Poll::Ready(Ok(value)) => Poll::Ready(Ok(value)),
             Poll::Ready(Err(_)) => Poll::Ready(Err(JoinError)),
             Poll::Pending => Poll::Pending,
@@ -452,7 +452,7 @@ impl TaskSet {
 impl Drop for TaskSet {
     fn drop(&mut self) {
         // Drop adopted futures first, then tasks that never received their
-        // first poll. Their completion senders close join handles and their
+        // first poll. Their handoff senders close join handles and their
         // leaves mark registrations for release in the usual way.
         self.tasks.clear();
         let spawned = std::mem::take(&mut *self.shared.spawned.borrow_mut());
