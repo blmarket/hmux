@@ -6283,6 +6283,40 @@ fn canonical_command_list(value: &str, st: &ServerState) -> String {
     printed.join(" ; ")
 }
 
+/// Expand an option-name operand the way tmux's `format_single_from_target`
+/// does: against the command's `-t` target (its pane, window and session), the
+/// server environment and the options visible there. A target that no longer
+/// resolves leaves the operand untouched, so the caller still reports it
+/// verbatim.
+fn expand_option_name_argument(args: &[String], st: &ServerState, argument: &str) -> String {
+    if !argument.contains('#') {
+        return argument.to_string();
+    }
+    let target = flag_value(args, "-t")
+        .map(str::to_string)
+        .or_else(|| current_target(st));
+    let Some(resolved) = target.as_deref().and_then(|target| st.resolve(target)) else {
+        return argument.to_string();
+    };
+    let mut vars = vars_full(
+        st,
+        &st.sessions()[resolved.session],
+        resolved.window,
+        resolved.pane,
+        &PaneAgents::new(),
+        st.marked_pane(),
+    );
+    for (name, value) in st.env_iter() {
+        vars.set(name, value);
+    }
+    if let Ok(entries) = st.format_option_entries(target.as_deref().unwrap_or_default()) {
+        for (name, value) in entries {
+            vars.set(name, value);
+        }
+    }
+    expand_command_format(st, argument, &vars, None)
+}
+
 fn resolve_option_argument(argument: &str) -> Option<(&str, Option<u32>)> {
     let (name, index) = options::parse_option_name(argument)?;
     if name.starts_with('@') {
@@ -6615,8 +6649,13 @@ fn show_options(args: &[String], st: &ServerState, window_command: bool) -> Comm
     // silent success (exit 0, no output) — matching real tmux.
     let quiet = has_bool_flag(args, 'q');
     let pos = positionals(args, &["-t"]);
-    let argument = match pos.first() {
-        Some(n) => *n,
+    // tmux format-expands the option name before matching it against the option
+    // table, so `show-options #{@lookup}` looks up whatever `@lookup` holds.
+    let expanded = pos
+        .first()
+        .map(|argument| expand_option_name_argument(args, st, argument));
+    let argument = match expanded.as_deref() {
+        Some(n) => n,
         None => {
             let target = match option_target_from_flags(args, st, window_command) {
                 Ok(target) => target,
