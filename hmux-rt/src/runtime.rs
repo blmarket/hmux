@@ -1,22 +1,30 @@
 //! The runtime host: the event loop the daemon actually runs.
 //!
-//! Every turn is the same shape — sync the task set, dispatch queued polls,
-//! poll the reactor — driven by the host through [`TaskRuntime::dispatch`] and
+//! Every turn is the same shape — sync, dispatch queued polls, poll the
+//! reactor — driven by the daemon through [`TaskRuntime::dispatch`] and
 //! [`TaskRuntime::poll`]. The daemon owns the turn cadence and its dispatch
 //! order; a handoff-driven `block_on` sits in front for tests and for the
 //! demo in `examples/tasks.rs`. Every event source is a task: there is no
 //! side channel to the reactor.
+//!
+//! The runtime owns what a running task must not touch — the reactor and the
+//! task table — while the state a task reaches from inside its own poll lives
+//! in `TaskShared` beside the leaves that use it.
 
-use std::cell::{Cell, RefCell};
-use std::collections::VecDeque;
+use std::cell::Cell;
+use std::collections::{BTreeSet, HashMap};
 use std::future::Future;
 use std::io;
+use std::os::fd::AsFd as _;
+use std::pin::Pin;
 use std::rc::Rc;
+use std::task::Poll;
 use std::time::{Duration, Instant};
 
 use crate::handoff::handoff;
-use crate::reactor::{MioReactor, Reactor as _, Ready};
-use crate::tasks::{TaskEvent, TaskHandle, TaskSet, WakeSink};
+use crate::reactor::{MioReactor, Reactor as _, Readiness, Ready};
+use crate::tasks::{TaskHandle, TaskId, TaskShared};
+use crate::timer::{ExpiredTimer, TimerQueue};
 
 /// How much the runtime dispatches before it polls, and how long it blocks in
 /// the reactor when nothing has woken it.
@@ -26,56 +34,133 @@ const TURN_TIMEOUT: Duration = Duration::from_millis(10);
 /// An event loop that exists to run tasks and nothing else.
 pub struct TaskRuntime {
     reactor: MioReactor<u64>,
-    tasks: TaskSet,
-    /// The run queue: every wake is "poll this task", in fire order.
-    woken: Rc<RefCell<VecDeque<TaskEvent>>>,
+    /// The slot is `None` while its future is being polled, which lets a
+    /// running task spawn and register without re-borrowing.
+    tasks: HashMap<TaskId, Option<Pin<Box<dyn Future<Output = ()>>>>>,
+    /// Everything a running task may reach, including the run queue every wake
+    /// lands on.
+    shared: Rc<TaskShared>,
+    /// Scratch for [`TaskRuntime::drain_expired`], reused so a turn full of
+    /// deadlines does not allocate. The deadlines themselves live in `shared`,
+    /// where the sleeps that own them can reach them.
+    expired: Vec<ExpiredTimer<TaskId>>,
     ready: Vec<Ready<u64>>,
 }
 
 impl TaskRuntime {
     pub fn new() -> io::Result<Self> {
-        let woken = Rc::new(RefCell::new(VecDeque::new()));
-        let sink: WakeSink = {
-            let woken = Rc::clone(&woken);
-            Rc::new(move |task| woken.borrow_mut().push_back(TaskEvent::Poll(task)))
-        };
         Ok(Self {
             reactor: MioReactor::new()?,
-            tasks: TaskSet::new(sink),
-            woken,
+            tasks: HashMap::new(),
+            shared: Rc::new(TaskShared::default()),
+            expired: Vec::new(),
             ready: Vec::new(),
         })
     }
 
     pub fn handle(&self) -> TaskHandle {
-        self.tasks.handle()
+        TaskHandle::new(Rc::clone(&self.shared))
     }
 
     /// Work in hand: wakes and readiness already queued, plus spawns not yet
-    /// adopted. While this is nonzero a host should keep dispatching rather
+    /// adopted. While this is nonzero the daemon should keep dispatching rather
     /// than block in [`TaskRuntime::poll`].
     pub fn pending(&self) -> usize {
-        self.woken.borrow().len() + self.tasks.pending_spawned()
+        self.shared.woken.borrow().len() + self.shared.spawned.borrow().len()
     }
 
     /// Timers currently armed, one per parked sleep rather than one per
     /// sleeping task. Zero once every sleeping task has resumed.
     pub fn armed_timers(&self) -> usize {
-        self.tasks.armed_timers()
+        self.shared.timers.borrow().len()
     }
 
     /// Make the reactor and the run queue describe the task set: adopt
     /// spawns, make the registrations that were asked for, release the ones
     /// whose `AsyncFd` is gone.
+    ///
+    /// Unlike effect-driven interest updates there is nothing to diff: a
+    /// task's descriptors are owned by the leaves that created them, so this
+    /// only makes registrations that were asked for and releases the ones
+    /// whose `AsyncFd` is gone.
+    ///
+    /// Deadlines need no sync at all: a sleep arms and cancels its own, inside
+    /// the poll that parks or drops it.
     fn sync(&mut self) -> io::Result<()> {
-        let woken = Rc::clone(&self.woken);
-        self.tasks.sync(
-            &mut self.reactor,
-            |io| io,
-            |event| {
-                woken.borrow_mut().push_back(event);
-            },
-        )
+        self.release_dropped_io()?;
+        self.register_new_io()?;
+        self.adopt_spawned();
+        Ok(())
+    }
+
+    /// Release every registration whose `AsyncFd` is gone.
+    fn release_dropped_io(&mut self) -> io::Result<()> {
+        let reactor = &mut self.reactor;
+        let mut failure = None;
+        self.shared.io.borrow_mut().retain(|_, entry| {
+            if !entry.dropped {
+                return true;
+            }
+            if let Some(token) = entry.token {
+                if let Err(error) = reactor.deregister(token) {
+                    if failure.is_none() {
+                        failure = Some(error);
+                    }
+                }
+            }
+            false
+        });
+        failure.map_or(Ok(()), Err)
+    }
+
+    /// Register every descriptor asked for since the last sync. The reactor
+    /// addresses readiness by the entry's own id, which is what comes back to
+    /// [`TaskRuntime::deliver_io`].
+    fn register_new_io(&mut self) -> io::Result<()> {
+        let mut entries = self.shared.io.borrow_mut();
+        for (io, entry) in entries.iter_mut() {
+            if entry.dropped || entry.token.is_some() {
+                continue;
+            }
+            let Some(fd) = entry.fd.take() else {
+                continue;
+            };
+            match self.reactor.register(fd.as_fd(), entry.interest, *io) {
+                Ok(token) => entry.token = Some(token),
+                // A descriptor with no poll operation — a regular file, or a
+                // client that redirected its output to `/dev/null` — is
+                // rejected by `epoll_ctl` with EPERM. Such a descriptor is
+                // never *not* ready, so serve it directly instead of taking
+                // the loop down with it.
+                Err(error) if error.raw_os_error() == Some(libc::EPERM) => {
+                    entry.slot.borrow_mut().always_ready = true;
+                    self.shared.woken.borrow_mut().push_back(entry.task);
+                }
+                Err(error) => return Err(error),
+            }
+            // The reactor took its own duplicate.
+            drop(fd);
+        }
+        Ok(())
+    }
+
+    /// Adopt every task spawned since the last sync, queueing the first poll
+    /// of each that still owes one.
+    fn adopt_spawned(&mut self) {
+        let spawned = std::mem::take(&mut *self.shared.spawned.borrow_mut());
+        for (id, future, needs_poll) in spawned {
+            if self.shared.cancelled.borrow().contains(&id) {
+                drop(future);
+                self.finish(id);
+                continue;
+            }
+            self.tasks.insert(id, Some(future));
+            // A task's first turn is an event like any other, so a spawn never
+            // runs ahead of work already queued.
+            if needs_poll {
+                self.shared.woken.borrow_mut().push_back(id);
+            }
+        }
     }
 
     /// Run up to `budget` queued task polls.
@@ -85,26 +170,63 @@ impl TaskRuntime {
             // Before every poll, so a registration or spawn made by the last
             // task is honored before the next runs.
             self.sync()?;
-            let event = self.woken.borrow_mut().pop_front();
-            let Some(event) = event else {
+            let task = self.shared.woken.borrow_mut().pop_front();
+            let Some(task) = task else {
                 return Ok(dispatched);
             };
-            self.tasks.dispatch(event);
+            self.poll_task(task);
             dispatched += 1;
         }
         self.sync()?;
         Ok(dispatched)
     }
 
+    /// Poll one task, dropping it if it finishes.
+    fn poll_task(&mut self, id: TaskId) {
+        if self.shared.cancelled.borrow().contains(&id) {
+            self.finish(id);
+            return;
+        }
+        let Some(Some(mut future)) = self.tasks.get_mut(&id).map(Option::take) else {
+            // Finished task, or a second wake for one already being polled.
+            // Ids are never reused, so a stale wake can only miss.
+            return;
+        };
+        match self.shared.poll_future(id, future.as_mut()) {
+            Poll::Ready(()) => {
+                // The future's leaves went with it; their entries are marked
+                // dropped and the loop releases them on the next sync.
+                self.finish(id);
+            }
+            Poll::Pending if !self.shared.cancelled.borrow().contains(&id) => {
+                self.tasks.insert(id, Some(future));
+            }
+            Poll::Pending => self.finish(id),
+        }
+    }
+
+    // Removing the future drops the sleeps it was holding, and each cancels
+    // its own deadline on the way out.
+    fn finish(&mut self, task: TaskId) {
+        self.tasks.remove(&task);
+        self.shared.finish(task);
+    }
+
     /// Wait for readiness or the nearest deadline, queueing what arrives.
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         // Work in hand caps the wait at zero; so does the nearest deadline.
-        let timeout = if self.woken.borrow().is_empty() {
+        let timeout = if self.shared.woken.borrow().is_empty() {
             timeout
         } else {
             Some(Duration::ZERO)
         };
-        let deadline_timeout = self.tasks.time_until_next_deadline(Instant::now());
+        // Nothing has to be synced first: a sleep is in the queue from the
+        // moment it parks, so this reads what is armed right now.
+        let deadline_timeout = self
+            .shared
+            .timers
+            .borrow_mut()
+            .time_until_next(Instant::now());
         let timeout = match (timeout, deadline_timeout) {
             (Some(requested), Some(deadline)) => Some(requested.min(deadline)),
             (requested, None) => requested,
@@ -113,19 +235,43 @@ impl TaskRuntime {
         let mut ready = std::mem::take(&mut self.ready);
         self.reactor.poll(timeout, &mut ready)?;
         for notification in ready.drain(..) {
-            if let Some(task) = self
-                .tasks
-                .deliver_io(*notification.recipient(), notification.readiness())
-            {
-                self.woken.borrow_mut().push_back(TaskEvent::Poll(task));
-            }
+            self.deliver_io(*notification.recipient(), notification.readiness());
         }
         self.ready = ready;
-        let woken = Rc::clone(&self.woken);
-        self.tasks.drain_expired(Instant::now(), |event| {
-            woken.borrow_mut().push_back(event);
-        });
+        self.drain_expired(Instant::now());
         Ok(())
+    }
+
+    /// Hand readiness to the descriptor it was registered for and queue the
+    /// task waiting on it. Nothing to deliver once the `AsyncFd` is gone.
+    fn deliver_io(&mut self, io: u64, readiness: Readiness) {
+        let entries = self.shared.io.borrow();
+        let Some(entry) = entries.get(&io) else {
+            return;
+        };
+        if entry.dropped {
+            return;
+        }
+        entry.slot.borrow_mut().pending = Some(readiness);
+        self.shared.woken.borrow_mut().push_back(entry.task);
+    }
+
+    /// Queue a poll for every task whose deadline has elapsed.
+    fn drain_expired(&mut self, now: Instant) {
+        self.shared
+            .timers
+            .borrow_mut()
+            .drain_expired(now, &mut self.expired);
+        let mut woken = BTreeSet::new();
+        for timer in self.expired.drain(..) {
+            let task = timer.into_value();
+            // Several of one task's sleeps coming due together is still one
+            // turn's work: the poll re-checks every leaf the task holds, and a
+            // second event for it would only find nothing left to do.
+            if woken.insert(task) {
+                self.shared.woken.borrow_mut().push_back(task);
+            }
+        }
     }
 
     /// Spawn `future` and run turns until it produces a value.
@@ -160,10 +306,27 @@ impl TaskRuntime {
     }
 }
 
+impl Drop for TaskRuntime {
+    fn drop(&mut self) {
+        // Drop adopted futures first, then tasks that never received their
+        // first poll. Their handoff senders close join handles and their
+        // leaves mark registrations for release in the usual way.
+        self.tasks.clear();
+        let spawned = std::mem::take(&mut *self.shared.spawned.borrow_mut());
+        drop(spawned);
+        self.shared.io.borrow_mut().clear();
+        *self.shared.timers.borrow_mut() = TimerQueue::default();
+        self.shared.cancelled.borrow_mut().clear();
+        self.shared.live.borrow_mut().clear();
+        self.shared.woken.borrow_mut().clear();
+        self.shared.polling.set(None);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Read as _;
-    use std::os::fd::{AsFd as _, AsRawFd as _, BorrowedFd};
+    use std::os::fd::{AsRawFd as _, BorrowedFd};
     use std::process::{Command, Stdio};
 
     use crate::reactor::Interest;
