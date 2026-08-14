@@ -136,14 +136,15 @@ async fn run_queue(
         Ok(queue) => queue,
         Err(result) => return Ok(result),
     };
-    let queued =
-        match runtime
-            .commands
-            .spawn_queue(queue, Rc::clone(&runtime.state), COMMAND_QUEUE_BUDGET)
-        {
-            Ok(queued) => queued,
-            Err(error) => return Ok(CommandResult::err(format!("{error}\n"))),
-        };
+    let queued = match command::spawn_queue(
+        &runtime.tasks,
+        queue,
+        Rc::clone(&runtime.state),
+        COMMAND_QUEUE_BUDGET,
+    ) {
+        Ok(queued) => queued,
+        Err(error) => return Ok(CommandResult::err(format!("{error}\n"))),
+    };
     // The queue takes its first turn as it is spawned, so a command that never
     // has to wait is finished by the time this is awaited. A client that leaves
     // while it runs is still watched for: the queue is the server's work and

@@ -25,7 +25,7 @@ use crate::sync::{maybe, race, select, yield_now, Either, Notify, WakeFn};
 use crate::tmux::codec::{encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::{Frame, Message};
 use crate::tmux::traits::NonblockingFrameReader;
-use hmux_rt::{sleep_until, AsyncFd, Interest};
+use hmux_rt::{sleep_until, AsyncFd, Interest, TaskHandle};
 
 use super::wire::Wire;
 use super::{ClientRuntime, ProtocolCloseReason};
@@ -146,7 +146,7 @@ pub(super) struct EventAttachClient {
     input: AttachInput,
     output: AttachOutput,
     background_commands: Vec<command::BackgroundCommandRequest>,
-    command_runtime: Rc<dyn command::CommandRuntime>,
+    tasks: TaskHandle,
 }
 
 /// One key binding's command running as a task, with what the session needs to
@@ -163,7 +163,7 @@ impl EventAttachClient {
         state: SharedState,
         hub: StatusHub,
         context: &ClientContext,
-        command_runtime: Rc<dyn command::CommandRuntime>,
+        tasks: TaskHandle,
     ) -> Result<Self, AttachStartError> {
         let mut output = AttachOutput::new();
         let session =
@@ -176,7 +176,7 @@ impl EventAttachClient {
             input: AttachInput::new(),
             output,
             background_commands: Vec::new(),
-            command_runtime,
+            tasks,
         })
     }
 
@@ -243,9 +243,13 @@ impl EventAttachClient {
                 }
             };
             let queue = queue.and_then(|queue| {
-                self.command_runtime
-                    .spawn_queue(queue, Rc::clone(&self.state), COMMAND_QUEUE_BUDGET)
-                    .map_err(|error| command::CommandResult::err(format!("{error}\n")))
+                command::spawn_queue(
+                    &self.tasks,
+                    queue,
+                    Rc::clone(&self.state),
+                    COMMAND_QUEUE_BUDGET,
+                )
+                .map_err(|error| command::CommandResult::err(format!("{error}\n")))
             });
             match queue {
                 Ok(task) => {
@@ -422,7 +426,7 @@ pub(super) async fn run(
         Rc::clone(&runtime.state),
         runtime.hub.clone(),
         &context,
-        Rc::clone(&runtime.commands),
+        runtime.tasks.clone(),
     ) {
         Ok(attach) => attach,
         // An attach that cannot start is an ordinary command failure: the

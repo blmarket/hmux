@@ -55,8 +55,10 @@ use super::state::{
 };
 use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
 use crate::sync::{yield_now, Completion, WakeFn};
-use std::cell::Cell;
+use hmux_rt::TaskHandle;
 use hmux_vt::{CaptureExtent, CellWidth, Grid, GridRow};
+use std::cell::Cell;
+use suspend::{SuspensionStart, SuspensionWait};
 
 /// tmux's `NEW_SESSION_TEMPLATE` (cmd-new-session.c): what `new-session -P`
 /// prints when no `-F` is given.
@@ -929,27 +931,6 @@ impl SourceFileRead {
     }
 }
 
-/// Runtime operation used only for work that cannot be polled directly.
-///
-/// Implementations must return promptly. The returned completion carries the
-/// value once the runtime has resolved the suspension, and wakes whoever
-/// installed a wake on it.
-pub(crate) trait CommandRuntime {
-    fn submit(
-        &self,
-        suspension: CommandSuspension,
-    ) -> io::Result<Completion<CommandSuspensionResult>>;
-
-    /// Run a whole command queue as work of the runtime's own, reporting
-    /// through the handle the caller polls.
-    fn spawn_queue(
-        &self,
-        queue: ResumableCommandQueue,
-        state: SharedState,
-        budget: usize,
-    ) -> io::Result<QueuedCommand>;
-}
-
 /// What a queue's owner can see while the queue is parked.
 ///
 /// A running task is opaque to the actor that started it, but an attached
@@ -1030,37 +1011,134 @@ impl Future for QueuedCommand {
 pub(crate) async fn run_command_queue(
     mut queue: ResumableCommandQueue,
     state: SharedState,
-    runtime: Rc<dyn CommandRuntime>,
+    tasks: TaskHandle,
     budget: usize,
     status: Rc<QueueStatus>,
 ) -> io::Result<CommandResult> {
-    queue.run(&state, runtime.as_ref(), budget, &status).await
+    queue.run(&state, &tasks, budget, &status).await
 }
 
-/// Hand one suspension to the runtime and wait for its answer.
+/// Start one command queue as a task, reporting through the handle its owner
+/// polls.
 ///
-/// The owner of a parked queue is told whether answering it is the owner's own
-/// job, which it cannot see from the outside: a `command-prompt -w` whose
-/// client had stopped reading its input would never be answered.
+/// The first turn is taken inline, so whatever the queue does before it first
+/// suspends — the registry work a `wait-for` or a prompt orders by command
+/// order, and the flag saying the owner is the one to answer — has happened by
+/// the time this returns.
+pub(crate) fn spawn_queue(
+    tasks: &TaskHandle,
+    queue: ResumableCommandQueue,
+    state: SharedState,
+    budget: usize,
+) -> io::Result<QueuedCommand> {
+    let (completion, sender) = crate::sync::completion_pair()?;
+    let status = Rc::new(QueueStatus::default());
+    let queue_status = Rc::clone(&status);
+    let handle = tasks.clone();
+    tasks.spawn_now(async move {
+        let result = run_command_queue(queue, state, handle, budget, queue_status).await;
+        sender.complete(result);
+    });
+    Ok(QueuedCommand::new(completion, status))
+}
+
+/// Run a detached queue, whose result nobody polls for: the caller only wants
+/// to be told when it is over.
+pub(crate) fn spawn_detached_queue(
+    tasks: &TaskHandle,
+    queue: ResumableCommandQueue,
+    state: SharedState,
+    budget: usize,
+) -> io::Result<Completion<io::Result<CommandResult>>> {
+    let (completion, sender) = crate::sync::completion_pair()?;
+    let status = Rc::new(QueueStatus::default());
+    let handle = tasks.clone();
+    tasks.spawn_now(async move {
+        let result = run_command_queue(queue, state, handle, budget, status).await;
+        sender.complete(result);
+    });
+    Ok(completion)
+}
+
+/// Run one suspension where the command suspended, and wait for its answer.
+///
+/// The queue is the task, so a suspension is awaited here rather than packaged
+/// up for a driver to resolve and hand back.
 async fn suspend(
-    runtime: &dyn CommandRuntime,
+    tasks: &TaskHandle,
     status: &QueueStatus,
     suspension: CommandSuspension,
-) -> io::Result<CommandSuspensionResult> {
-    let allows_attach_io = suspension.allows_attach_io();
-    let completion = runtime.submit(suspension)?;
-    status.set_allows_attach_io(allows_attach_io);
-    let result = completion.await;
-    status.set_allows_attach_io(false);
-    result
+) -> CommandSuspensionResult {
+    match suspension {
+        CommandSuspension::RunShell { args, context } => {
+            CommandSuspensionResult::RunShell(suspend::run_shell(tasks, args, context).await)
+        }
+        CommandSuspension::IfShell { condition, context } => {
+            CommandSuspensionResult::IfShell(suspend::if_shell(tasks, condition, context).await)
+        }
+        CommandSuspension::SourceFile { paths } => {
+            CommandSuspensionResult::SourceFile(suspend::source_file(tasks, paths).await)
+        }
+        CommandSuspension::LoadBuffer { path } => {
+            CommandSuspensionResult::LoadBuffer(suspend::load_buffer(tasks, path).await)
+        }
+        CommandSuspension::SaveBuffer { request } => {
+            CommandSuspensionResult::SaveBuffer(suspend::save_buffer(tasks, request).await)
+        }
+        CommandSuspension::WaitFor { args, registry } => CommandSuspensionResult::Completed(
+            wait_for_answer(status, false, suspend::wait_for(&args, &registry)).await,
+        ),
+        CommandSuspension::CommandPrompt {
+            args,
+            registry,
+            target,
+            tty_name,
+            wait,
+        } => {
+            let start = suspend::client_prompt(args, &registry, target, tty_name, wait);
+            CommandSuspensionResult::Completed(wait_for_answer(status, true, start).await)
+        }
+        CommandSuspension::ClientInteraction { completed } => {
+            let start = SuspensionStart::Waiting(SuspensionWait::Interaction(completed));
+            CommandSuspensionResult::Completed(wait_for_answer(status, true, start).await)
+        }
+    }
 }
 
-impl CommandSuspension {
-    pub(crate) fn allows_attach_io(&self) -> bool {
-        matches!(
-            self,
-            Self::CommandPrompt { .. } | Self::ClientInteraction { .. }
-        )
+/// Run one suspension outside of a queue, for the tests that exercise the
+/// suspensions themselves rather than the commands that reach them.
+#[cfg(test)]
+pub(crate) async fn resolve_suspension(
+    tasks: &TaskHandle,
+    suspension: CommandSuspension,
+) -> CommandSuspensionResult {
+    suspend(tasks, &QueueStatus::default(), suspension).await
+}
+
+/// Wait for an answer that only another client can give, saying while the queue
+/// is parked whether giving it is the queue owner's own job.
+///
+/// The owner cannot see that from the outside, and a `command-prompt -w` whose
+/// client had stopped reading its input would never be answered.
+///
+/// Whatever had to happen before anything waits — a `wait-for` taking its lock,
+/// a prompt reaching its client — has happened by the time this runs: the order
+/// commands touch a registry in is the order they ran in, which waiting first
+/// would not preserve.
+async fn wait_for_answer(
+    status: &QueueStatus,
+    allows_attach_io: bool,
+    start: SuspensionStart,
+) -> CommandResult {
+    match start {
+        // Nothing waits, so nothing is parked to report.
+        SuspensionStart::Ready(result) => result,
+        SuspensionStart::Waiting(wait) => {
+            status.set_allows_attach_io(allows_attach_io);
+            let result = wait.resolve().await;
+            status.set_allows_attach_io(false);
+            result
+        }
     }
 }
 
@@ -1090,7 +1168,7 @@ impl ResumableCommandQueue {
     pub(crate) async fn run(
         &mut self,
         state: &SharedState,
-        runtime: &dyn CommandRuntime,
+        tasks: &TaskHandle,
         budget: usize,
         status: &QueueStatus,
     ) -> io::Result<CommandResult> {
@@ -1135,7 +1213,7 @@ impl ResumableCommandQueue {
                 } => {
                     // Erased, so this queue's future does not contain its own.
                     let running: Pin<Box<dyn Future<Output = io::Result<CommandResult>> + '_>> =
-                        Box::pin(nested.run(state, runtime, budget, status));
+                        Box::pin(nested.run(state, tasks, budget, status));
                     let result = running.await?;
                     let stops_group = result.exit != 0 && !result.continue_queue;
                     self.capture_nested_result(result, capture);
@@ -1219,7 +1297,7 @@ impl ResumableCommandQueue {
                         self.context.with_job_environment(&state)
                     },
                 };
-                let reply = suspend(runtime, status, suspension).await?;
+                let reply = suspend(tasks, status, suspension).await;
                 self.apply_reply(inflight, reply, state);
                 continue;
             }
@@ -1330,7 +1408,7 @@ impl ResumableCommandQueue {
                         self.context.with_job_environment(&state)
                     },
                 };
-                let reply = suspend(runtime, status, suspension).await?;
+                let reply = suspend(tasks, status, suspension).await;
                 self.apply_reply(inflight, reply, state);
                 continue;
             }
@@ -1361,15 +1439,14 @@ impl ResumableCommandQueue {
                         continue;
                     }
                 };
-                let reply =
-                    suspend(runtime, status, CommandSuspension::SourceFile { paths }).await?;
+                let reply = suspend(tasks, status, CommandSuspension::SourceFile { paths }).await;
                 self.apply_reply(inflight, reply, state);
                 continue;
             }
             if inflight.command.spec.name == "load-buffer" && self.context.input_file.is_none() {
                 if let Some(path) = load_buffer_client_path(&inflight.command.args, &self.context) {
                     let reply =
-                        suspend(runtime, status, CommandSuspension::LoadBuffer { path }).await?;
+                        suspend(tasks, status, CommandSuspension::LoadBuffer { path }).await;
                     self.apply_reply(inflight, reply, state);
                     continue;
                 }
@@ -1382,12 +1459,9 @@ impl ResumableCommandQueue {
                 if let Some(request) = request {
                     match request {
                         Ok(request) => {
-                            let reply = suspend(
-                                runtime,
-                                status,
-                                CommandSuspension::SaveBuffer { request },
-                            )
-                            .await?;
+                            let reply =
+                                suspend(tasks, status, CommandSuspension::SaveBuffer { request })
+                                    .await;
                             self.apply_reply(inflight, reply, state);
                             continue;
                         }
@@ -1408,12 +1482,8 @@ impl ResumableCommandQueue {
                     state.wait_registry()
                 };
                 let args = inflight.command.args.clone();
-                let reply = suspend(
-                    runtime,
-                    status,
-                    CommandSuspension::WaitFor { args, registry },
-                )
-                .await?;
+                let reply =
+                    suspend(tasks, status, CommandSuspension::WaitFor { args, registry }).await;
                 self.apply_reply(inflight, reply, state);
                 continue;
             }
@@ -1439,7 +1509,7 @@ impl ResumableCommandQueue {
                     args: inflight.command.args.clone(),
                     registry,
                 };
-                let reply = suspend(runtime, status, suspension).await?;
+                let reply = suspend(tasks, status, suspension).await;
                 self.apply_reply(inflight, reply, state);
                 continue;
             }
@@ -1472,11 +1542,11 @@ impl ResumableCommandQueue {
                     continue;
                 }
                 let reply = suspend(
-                    runtime,
+                    tasks,
                     status,
                     CommandSuspension::ClientInteraction { completed },
                 )
-                .await?;
+                .await;
                 self.apply_reply(inflight, reply, state);
                 continue;
             }
@@ -9583,35 +9653,6 @@ mod tests {
         run(&owned, st, agents)
     }
 
-    /// A runtime that parks every suspension, so a queue that reaches one stays
-    /// there for the test to look at.
-    #[derive(Default)]
-    struct ParkedRuntime {
-        /// Kept so the completions handed out are never closed, which would
-        /// resolve the queue with an error instead of leaving it parked.
-        senders: RefCell<Vec<crate::sync::CompletionSender<CommandSuspensionResult>>>,
-    }
-
-    impl CommandRuntime for ParkedRuntime {
-        fn submit(
-            &self,
-            _suspension: CommandSuspension,
-        ) -> io::Result<Completion<CommandSuspensionResult>> {
-            let (completion, sender) = crate::sync::completion_pair()?;
-            self.senders.borrow_mut().push(sender);
-            Ok(completion)
-        }
-
-        fn spawn_queue(
-            &self,
-            _queue: ResumableCommandQueue,
-            _state: SharedState,
-            _budget: usize,
-        ) -> io::Result<QueuedCommand> {
-            unreachable!("this runtime is only ever asked for suspensions")
-        }
-    }
-
     fn queued_command() -> (
         QueuedCommand,
         Rc<QueueStatus>,
@@ -9668,6 +9709,15 @@ mod tests {
         // asked while the queue is still parked. A client that had stopped
         // reading its own input would never answer.
         let state = state();
+        // The prompt goes to a client, so there has to be one for the queue to
+        // wait on rather than to fail against.
+        let _client = {
+            let state = state.borrow_mut();
+            let registry = state.client_prompt_registry();
+            registry
+                .attach("/dev/pts/0".to_string(), Some(1), 0)
+                .expect("prompt client")
+        };
         let context = ClientContext {
             kind: ClientKind::Command,
             ..ClientContext::default()
@@ -9683,18 +9733,10 @@ mod tests {
         };
 
         let runtime = hmux_rt::TaskRuntime::new().expect("task runtime");
-        let status = Rc::new(QueueStatus::default());
-        let (completion, sender) = crate::sync::completion_pair().expect("completion pair");
-        let parked: Rc<dyn CommandRuntime> = Rc::new(ParkedRuntime::default());
-        let queue_status = Rc::clone(&status);
-        let queue_state = Rc::clone(&state);
         // The first turn is taken inline, which is what starting a queue from a
         // client's own dispatch does.
-        runtime.handle().spawn_now(async move {
-            sender.complete(run_command_queue(queue, queue_state, parked, 64, queue_status).await);
-        });
-
-        let queued = QueuedCommand::new(completion, status);
+        let queued = spawn_queue(&runtime.handle(), queue, Rc::clone(&state), 64)
+            .expect("spawn command queue");
         assert!(
             queued.allows_attach_io(),
             "the queue is parked on a prompt the owner is the one to answer"

@@ -9,6 +9,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::integration::status::StatusHub;
 use crate::tmux::message::{Frame, Message};
+use hmux_rt::TaskHandle;
 
 use super::attach::{self, ClientTty};
 use super::command;
@@ -43,7 +44,7 @@ pub(crate) enum ControlServing {
 pub(crate) struct EventControlClient {
     state: SharedState,
     hub: StatusHub,
-    command_runtime: Rc<dyn command::CommandRuntime>,
+    tasks: TaskHandle,
     client_tty: ClientTty,
     client_name: String,
     session_id: u32,
@@ -77,7 +78,7 @@ impl EventControlClient {
         state: SharedState,
         hub: StatusHub,
         context: &command::ClientContext,
-        command_runtime: Rc<dyn command::CommandRuntime>,
+        tasks: TaskHandle,
     ) -> io::Result<Self> {
         let session = match command::classify(args) {
             command::Intent::NewAttach => {
@@ -218,7 +219,7 @@ impl EventControlClient {
         Ok(Self {
             state,
             hub,
-            command_runtime,
+            tasks,
             client_tty,
             client_name,
             session_id,
@@ -817,23 +818,18 @@ impl EventControlClient {
             return Ok(None);
         }
         let agents = self.hub.snapshot().panes;
-        let queued = match command::start_resumable_command(
-            &argv,
-            &self.state,
-            &agents,
-            &self.context,
-        )
-        .and_then(|queue| {
-            self.command_runtime
-                .spawn_queue(queue, Rc::clone(&self.state), 64)
-                .map_err(|error| command::CommandResult::err(format!("{error}\n")))
-        }) {
-            Ok(queued) => queued,
-            Err(result) => {
-                self.finish_control_command(id, argv, result)?;
-                return Ok(None);
-            }
-        };
+        let queued =
+            match command::start_resumable_command(&argv, &self.state, &agents, &self.context)
+                .and_then(|queue| {
+                    command::spawn_queue(&self.tasks, queue, Rc::clone(&self.state), 64)
+                        .map_err(|error| command::CommandResult::err(format!("{error}\n")))
+                }) {
+                Ok(queued) => queued,
+                Err(result) => {
+                    self.finish_control_command(id, argv, result)?;
+                    return Ok(None);
+                }
+            };
         Ok(Some(StartedControlCommand {
             id,
             argv,
@@ -1974,9 +1970,7 @@ mod tests {
             state,
             hub.clone(),
             &command::ClientContext::default(),
-            Rc::new(crate::event_loop::suspend::EventCommandRuntime::new(
-                runtime.handle(),
-            )),
+            runtime.handle(),
         )?;
 
         command_input.write_all(b"refresh-client -B 'agent:%*:#{pane_agent_state}'\n")?;

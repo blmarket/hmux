@@ -5,7 +5,6 @@ pub(crate) mod listener;
 pub(crate) mod pane;
 pub(crate) mod process;
 pub(crate) mod protocol;
-pub(crate) mod suspend;
 pub(crate) mod term_signal;
 
 /// Drive one command queue to completion on a runtime of its own.
@@ -22,15 +21,14 @@ pub(crate) mod test_driver {
     use std::time::{Duration, Instant};
 
     use crate::server::command::{
-        BackgroundCommand, BackgroundCommandRequest, CommandResult,
-        CommandRuntime, PendingBackground, ResumableCommandQueue,
+        self, BackgroundCommand, BackgroundCommandRequest, CommandResult, PendingBackground,
+        ResumableCommandQueue,
     };
     use crate::server::state::SharedState;
     use crate::sync::{completion_pair, Completion, WakeFn};
 
     use std::future::Future;
 
-    use super::suspend::EventCommandRuntime;
     use hmux_rt::TaskHandle;
     use hmux_rt::TaskRuntime;
 
@@ -65,10 +63,6 @@ pub(crate) mod test_driver {
             })
         }
 
-        fn command_runtime(&self) -> Rc<dyn CommandRuntime> {
-            Rc::new(EventCommandRuntime::new(self.runtime.handle()))
-        }
-
         /// One dispatch-then-poll turn, polling only when nothing is queued.
         fn run_turn(&mut self, timeout: Duration) -> io::Result<()> {
             self.runtime.dispatch(DISPATCH_BUDGET)?;
@@ -99,12 +93,11 @@ pub(crate) mod test_driver {
             queue: ResumableCommandQueue,
             state: &SharedState,
         ) -> CommandResult {
-            let runtime = self.command_runtime();
             let state = Rc::clone(state);
             // A queue is awaited by whoever started it, which in the daemon is
             // a client's own task; the test runs one for the same reason.
-            let result = self.drive_task_future(move |_| async move {
-                runtime.spawn_queue(queue, state, DISPATCH_BUDGET)?.await
+            let result = self.drive_task_future(move |tasks| async move {
+                command::spawn_queue(&tasks, queue, state, DISPATCH_BUDGET)?.await
             });
             match result {
                 Ok(result) => result,
@@ -356,15 +349,18 @@ mod tests {
         runtime: &mut TaskRuntime,
         suspension: CommandSuspension,
     ) -> CommandSuspensionResult {
-        let command_runtime = super::suspend::EventCommandRuntime::new(runtime.handle());
-        let completion =
-            crate::server::command::CommandRuntime::submit(&command_runtime, suspension)
-                .expect("completion pair");
-        let mut completion = completion;
+        // A suspension is awaited where the command suspended, which in the
+        // daemon is the queue's own task; the test spawns one for it alone.
+        let (mut completion, sender) = crate::sync::completion_pair().expect("completion pair");
+        let tasks = runtime.handle();
+        let handle = tasks.clone();
+        tasks.spawn(async move {
+            sender.complete(crate::server::command::resolve_suspension(&handle, suspension).await);
+        });
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             if let Some(result) = completion.take() {
-                return result.expect("suspension result");
+                return result.expect("suspension task");
             }
             assert!(Instant::now() < deadline, "suspension never completed");
             // The completion belongs to the caller, not to a task, so nothing

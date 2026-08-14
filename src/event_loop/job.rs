@@ -13,7 +13,6 @@ use crate::server::command::{
 use crate::server::state::SharedState;
 use crate::server::Server;
 
-use super::suspend::EventCommandRuntime;
 use hmux_rt::TaskHandle;
 
 const COMMAND_QUEUE_BUDGET: usize = 64;
@@ -24,7 +23,6 @@ pub(crate) struct BackgroundRunner {
     state: SharedState,
     hub: StatusHub,
     tasks: TaskHandle,
-    runtime: Rc<EventCommandRuntime>,
 }
 
 impl BackgroundRunner {
@@ -32,7 +30,6 @@ impl BackgroundRunner {
         Self {
             state: server.state(),
             hub: server.status_hub(),
-            runtime: Rc::new(EventCommandRuntime::new(tasks.clone())),
             tasks,
         }
     }
@@ -109,10 +106,12 @@ impl BackgroundRunner {
         let Ok(queue) = queue else { return };
         // A detached queue has no client polling it, so the loop owns the
         // whole thing; its first turn runs here, inside this job's own task.
-        let Ok(completion) =
-            self.runtime
-                .spawn_detached_queue(queue, Rc::clone(&self.state), COMMAND_QUEUE_BUDGET)
-        else {
+        let Ok(completion) = command::spawn_detached_queue(
+            &self.tasks,
+            queue,
+            Rc::clone(&self.state),
+            COMMAND_QUEUE_BUDGET,
+        ) else {
             return;
         };
         let runner = self.clone();

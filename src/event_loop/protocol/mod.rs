@@ -18,7 +18,6 @@ use std::io;
 use std::rc::Rc;
 
 use crate::integration::status::StatusHub;
-use crate::server::command::CommandRuntime;
 use crate::server::state::SharedState;
 use hmux_rt::TaskHandle;
 
@@ -46,7 +45,6 @@ pub(super) struct ClientRuntime {
     pub(super) state: SharedState,
     pub(super) hub: StatusHub,
     pub(super) background: BackgroundRunner,
-    pub(super) commands: Rc<dyn CommandRuntime>,
 }
 
 /// What a connection has become, published for its owner.

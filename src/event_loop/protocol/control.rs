@@ -37,7 +37,7 @@ pub(super) async fn run(
         Rc::clone(&runtime.state),
         runtime.hub.clone(),
         &context,
-        Rc::clone(&runtime.commands),
+        runtime.tasks.clone(),
     ) {
         Ok(control) => control,
         Err(error) => return ProtocolCloseReason::Error(error.kind()),

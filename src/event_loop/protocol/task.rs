@@ -5,14 +5,11 @@
 //! client ends. Its owner keeps only what outlives it — whether it is still
 //! running, and why it stopped.
 
-use std::rc::Rc;
-
 use crate::server::Server;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 use hmux_rt::{JoinHandle, TaskHandle};
 
 use super::super::job::BackgroundRunner;
-use super::super::suspend::EventCommandRuntime;
 use super::identify::{identify, Role};
 use super::wire::Wire;
 use super::{
@@ -71,7 +68,6 @@ pub(crate) fn spawn(
         state: server.state(),
         hub: server.status_hub(),
         background,
-        commands: Rc::new(EventCommandRuntime::new(tasks.clone())),
     };
     let status = ProtocolStatus::default();
     let task_status = status.clone();
