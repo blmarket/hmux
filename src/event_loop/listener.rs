@@ -33,13 +33,13 @@ impl AcceptedClients {
     }
 }
 
-/// The loop's handle to the listener task.
-pub(crate) struct ListenerHandle {
+/// The loop's app-lifetime listener task.
+pub(crate) struct ListenerSingleton {
     accepted: AcceptedClients,
     task: JoinHandle<()>,
 }
 
-impl ListenerHandle {
+impl ListenerSingleton {
     pub(crate) fn pop_accepted(&self) -> Option<UnixStream> {
         self.accepted.pop_front()
     }
@@ -59,18 +59,12 @@ impl ListenerHandle {
     }
 }
 
-impl Drop for ListenerHandle {
-    fn drop(&mut self) {
-        self.task.cancel();
-    }
-}
-
 /// Accept clients on the loop, `accept_budget` per turn.
 pub(crate) fn spawn(
     tasks: &TaskHandle,
     listener: UnixListener,
     accept_budget: usize,
-) -> io::Result<ListenerHandle> {
+) -> io::Result<ListenerSingleton> {
     assert!(accept_budget > 0, "listener accept budget must be nonzero");
     listener.set_nonblocking(true)?;
     let accepted = AcceptedClients::default();
@@ -107,5 +101,5 @@ pub(crate) fn spawn(
             }
         }
     });
-    Ok(ListenerHandle { accepted, task })
+    Ok(ListenerSingleton { accepted, task })
 }

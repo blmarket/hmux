@@ -14,7 +14,7 @@ use std::time::Instant;
 use tracing::{info, warn};
 
 use crate::event_loop::job::BackgroundRunner;
-use crate::event_loop::listener::ListenerHandle;
+use crate::event_loop::listener::ListenerSingleton;
 use crate::event_loop::pane::PaneHandle;
 use crate::event_loop::protocol::{self, ProtocolCloseReason, ProtocolHandle};
 use crate::event_loop::{listener, pane, process, term_signal};
@@ -232,7 +232,7 @@ fn adopt_accepted_clients(
     tasks: &TaskHandle,
     server: &Server,
     background: &BackgroundRunner,
-    listener: &ListenerHandle,
+    listener: &ListenerSingleton,
     clients: &mut Vec<ProtocolHandle>,
 ) {
     while let Some(stream) = listener.pop_accepted() {
