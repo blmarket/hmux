@@ -273,7 +273,11 @@ pub struct AgentObserver {
 }
 
 impl AgentObserver {
-    /// How often the loop should tick the observer.
+    /// How long the loop should wait between observer sweeps. This is the gap
+    /// from one sweep finishing to the next beginning, not a period the sweep
+    /// runs inside: a sweep reads every visible process, and timing the next
+    /// one from the start of the last would let a slow sweep schedule itself
+    /// back to back.
     pub const INTERVAL: Duration = POLL_INTERVAL;
 
     /// Observe with the built-in detector registry, attributing panes to agents

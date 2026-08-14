@@ -53,10 +53,17 @@ pub fn run_event_loop(
         runtime.dispatch(DISPATCH_BUDGET)?;
         adopt_accepted_clients(&tasks, &server, &background, &listener, &mut clients);
         server.reconcile_event_observations()?;
-        let now = Instant::now();
-        if now >= next_observer_tick {
+        if Instant::now() >= next_observer_tick {
             observer.tick(&server);
-            next_observer_tick = now + AgentObserver::INTERVAL;
+            // Measured from the end of the sweep, not its start: the sweep
+            // reads every visible process, so on a busy machine it can take as
+            // long as the interval itself. Scheduling from the start would then
+            // leave the next sweep already due the moment this one returns, and
+            // the observer would run back to back for as long as the load
+            // lasted. Waiting out the interval from here instead keeps the gap
+            // between sweeps whole, so the cost stays bounded by how long a
+            // sweep takes rather than growing to consume the loop.
+            next_observer_tick = Instant::now() + AgentObserver::INTERVAL;
         }
         let timeout = earliest_timeout(
             earliest_timeout(server.refresh_alerts()?, server.refresh_lock_timers()?),
@@ -68,9 +75,14 @@ pub fn run_event_loop(
         for request in server.enforce_lifecycle_policies()? {
             background.start(request);
         }
-        if runtime.pending() == 0 {
-            runtime.poll(timeout)?;
-        }
+        // Unconditionally, because work in hand is not a reason to skip the
+        // reactor: a task that re-queues itself — the reap retry, a pane
+        // yielding mid-burst — keeps the run queue non-empty for as long as it
+        // spins, and gating the poll on an empty queue would then never
+        // register an accept, never deliver a writable edge, and never expire a
+        // deadline. `poll` already caps its own wait at zero while wakes are
+        // queued, so a busy turn sweeps the reactor instead of blocking in it.
+        runtime.poll(timeout)?;
     }
 
     // tmux saves the command-prompt history as its server loop exits.
@@ -92,7 +104,9 @@ pub fn run_event_loop(
         server.reconcile_event_observations()?;
         sync_event_loop_panes(&tasks, &server, &mut panes)?;
         reap_protocol_clients(&mut clients);
-        if !clients.is_empty() && runtime.pending() == 0 {
+        // As in the main loop: `poll` caps its own wait when wakes are queued,
+        // so this blocks only when the drain really has nothing left to run.
+        if !clients.is_empty() {
             runtime.poll(None)?;
         }
     }
