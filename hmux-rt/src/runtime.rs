@@ -16,8 +16,7 @@ use std::time::{Duration, Instant};
 
 use crate::handoff::handoff;
 use crate::reactor::{MioReactor, Reactor as _, Ready};
-use crate::task_loop::TaskLoop;
-use crate::tasks::{TaskEvent, TaskHandle, WakeSink};
+use crate::tasks::{TaskEvent, TaskHandle, TaskSet, WakeSink};
 
 /// How much the runtime dispatches before it polls, and how long it blocks in
 /// the reactor when nothing has woken it.
@@ -27,7 +26,7 @@ const TURN_TIMEOUT: Duration = Duration::from_millis(10);
 /// An event loop that exists to run tasks and nothing else.
 pub struct TaskRuntime {
     reactor: MioReactor<u64>,
-    tasks: TaskLoop,
+    tasks: TaskSet,
     /// The run queue: every wake is "poll this task", in fire order.
     woken: Rc<RefCell<VecDeque<TaskEvent>>>,
     ready: Vec<Ready<u64>>,
@@ -42,7 +41,7 @@ impl TaskRuntime {
         };
         Ok(Self {
             reactor: MioReactor::new()?,
-            tasks: TaskLoop::new(sink),
+            tasks: TaskSet::new(sink),
             woken,
             ready: Vec::new(),
         })
