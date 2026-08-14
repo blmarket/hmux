@@ -60,11 +60,6 @@ impl<T> Default for TimerQueue<T> {
 }
 
 impl<T> TimerQueue<T> {
-    #[cfg(test)]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn set(&mut self, deadline: Instant, value: T) -> TimerId {
         let id = self.allocate_id();
         self.deadlines.push(Reverse(Deadline { at: deadline, id }));
@@ -159,7 +154,7 @@ mod tests {
     #[test]
     fn timers_expire_by_deadline_then_insertion_order() {
         let start = Instant::now();
-        let mut timers = TimerQueue::new();
+        let mut timers = TimerQueue::default();
         let late = timers.set(start + Duration::from_secs(2), "late");
         let first = timers.set(start + Duration::from_secs(1), "first");
         let second = timers.set(start + Duration::from_secs(1), "second");
@@ -190,7 +185,7 @@ mod tests {
     #[test]
     fn cancellation_returns_value_and_removes_stale_deadline() {
         let start = Instant::now();
-        let mut timers = TimerQueue::new();
+        let mut timers = TimerQueue::default();
         let cancelled = timers.set(start + Duration::from_secs(1), String::from("cancelled"));
         timers.set(start + Duration::from_secs(2), String::from("kept"));
 
@@ -206,7 +201,7 @@ mod tests {
     #[test]
     fn expired_timers_append_and_can_yield_owned_values() {
         let now = Instant::now();
-        let mut timers = TimerQueue::new();
+        let mut timers = TimerQueue::default();
         timers.set(now, String::from("event"));
         let mut expired = vec![ExpiredTimer {
             id: TimerId(999),
