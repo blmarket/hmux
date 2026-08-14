@@ -1048,7 +1048,7 @@ impl AttachSession {
         };
         if let Some(reason) = finish_reason {
             self.compositor.transition = None;
-            return Ok(Some(self.begin_finish(reason)));
+            return Ok(Some(AttachDrive::Finish(reason)));
         }
 
         // A prefix command changed the window/pane layout: drop the cached frame
@@ -1067,7 +1067,7 @@ impl AttachSession {
                     ) = subscription;
                 }
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                    return Ok(Some(self.begin_finish(AttachFinishReason::SessionEnded)));
+                    return Ok(Some(AttachDrive::Finish(AttachFinishReason::SessionEnded)));
                 }
                 Err(error) => return Err(error),
             }

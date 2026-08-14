@@ -230,7 +230,6 @@ impl AttachSession {
                 deferred_prompts: VecDeque::new(),
             },
             compositor,
-            finish: AttachFinishState::Running,
             pending_exec: None,
         })
     }
@@ -383,144 +382,65 @@ impl AttachSession {
         });
     }
 
-    pub(super) fn begin_finish(&mut self, reason: AttachFinishReason) -> AttachDrive {
-        if self.finish == AttachFinishState::Running {
-            let tty_stop = tty_stop_sequence(&self.tty.terminal, self.viewport.rows);
-            let _ = self
-                .tty
-                .output
-                .queue(self.tty.render_fd.as_raw_fd(), &tty_stop);
-            self.finish = AttachFinishState::DrainingTty { reason };
-        }
-        AttachDrive::Continue
+    /// Give the terminal back what this attach took from it. Only the sequence
+    /// is queued here; pushing it out belongs to the caller, which owns the
+    /// waiting.
+    pub(crate) fn stop_terminal(&mut self) {
+        let tty_stop = tty_stop_sequence(&self.tty.terminal, self.viewport.rows);
+        let _ = self
+            .tty
+            .output
+            .queue(self.tty.render_fd.as_raw_fd(), &tty_stop);
     }
 
-    fn prepare_finish(&self, control_fd: RawFd, control_buffered: bool) -> AttachPrepared {
-        match self.finish {
-            AttachFinishState::Running => unreachable!("finish preparation while running"),
-            AttachFinishState::DrainingTty { .. } => {
-                if self.tty.output.has_pending() {
-                    AttachPrepared::Wait {
-                        sources: AttachWaitSources {
-                            control: -1,
-                            input: -1,
-                            tty_output: self.tty.render_fd.as_raw_fd(),
-                            output: -1,
-                            output_generation: self.attachments.output_generation,
-                            prompt: -1,
-                            render: -1,
-                            status: -1,
-                            popup_read: -1,
-                            popup_write: -1,
-                        },
-                        deadline: None,
-                    }
-                } else {
-                    AttachPrepared::Ready(AttachWaitReady::default())
-                }
-            }
-            AttachFinishState::WaitingForAck { deadline } => {
-                if control_buffered {
-                    AttachPrepared::Ready(AttachWaitReady {
-                        control: true,
-                        ..AttachWaitReady::default()
-                    })
-                } else {
-                    AttachPrepared::Wait {
-                        sources: AttachWaitSources {
-                            control: control_fd,
-                            input: -1,
-                            tty_output: -1,
-                            output: -1,
-                            output_generation: self.attachments.output_generation,
-                            prompt: -1,
-                            render: -1,
-                            status: -1,
-                            popup_read: -1,
-                            popup_write: -1,
-                        },
-                        deadline: Some(deadline),
-                    }
-                }
-            }
-            AttachFinishState::Done => AttachPrepared::Finished,
-        }
+    /// The descriptor the terminal is rendered to, for a caller waiting on it
+    /// to take the rest.
+    pub(crate) fn tty_render_fd(&self) -> BorrowedFd<'_> {
+        self.tty.render_fd.as_fd()
     }
 
-    fn drive_finish<R, W>(
+    pub(crate) fn tty_output_pending(&self) -> bool {
+        self.tty.output.has_pending()
+    }
+
+    pub(crate) fn flush_tty_output(&mut self) -> io::Result<()> {
+        self.tty.output.flush(self.tty.render_fd.as_raw_fd())
+    }
+
+    /// Hand the terminal back the way it was found. Nothing more may be queued
+    /// for it after this.
+    pub(crate) fn restore_tty(&mut self) {
+        let _ = set_blocking(self.tty.input_fd.as_raw_fd());
+        let _ = set_blocking(self.tty.render_fd.as_raw_fd());
+        self.tty.termios_guard.restore_and_disarm();
+    }
+
+    /// What the client is told this attach ended as, or nothing when the client
+    /// is the one that went away.
+    pub(crate) fn finish_message(
         &mut self,
+        reason: AttachFinishReason,
         state: &SharedState,
-        ready: AttachWaitReady,
-        reader: &mut R,
-        writer: &mut W,
-    ) -> io::Result<AttachDrive>
-    where
-        R: NonblockingFrameReader,
-        W: FrameSink,
-    {
-        match self.finish {
-            AttachFinishState::Running => unreachable!("finish drive while running"),
-            AttachFinishState::DrainingTty { reason } => {
-                if ready.tty_output {
-                    self.tty.output.flush(self.tty.render_fd.as_raw_fd())?;
-                }
-                if self.tty.output.has_pending() {
-                    return Ok(AttachDrive::Continue);
-                }
-
-                let _ = set_blocking(self.tty.input_fd.as_raw_fd());
-                let _ = set_blocking(self.tty.render_fd.as_raw_fd());
-                self.tty.termios_guard.restore_and_disarm();
-
-                match reason {
-                    // `-E` replaces the detach message entirely: the client
-                    // execs rather than reporting a detach.
-                    AttachFinishReason::Detached if self.pending_exec.is_some() => {
-                        let (command, shell) =
-                            self.pending_exec.take().expect("exec checked above");
-                        writer.send(Frame::new(Message::Exec { command, shell }))?;
-                    }
-                    AttachFinishReason::Detached => {
-                        let session_name = state
-                            .borrow_mut()
-                            .sessions()
-                            .iter()
-                            .find(|candidate| candidate.id == self.compositor.target.session_id)
-                            .map(|candidate| candidate.name.clone())
-                            .unwrap_or_else(|| self.compositor.target.stable_target.clone());
-                        writer.send(Frame::new(Message::Detach(Some(session_name))))?;
-                    }
-                    AttachFinishReason::SessionEnded => {
-                        writer.send(Frame::new(Message::Exit(Some(0))))?;
-                    }
-                    AttachFinishReason::ConnectionClosed => {
-                        self.finish = AttachFinishState::Done;
-                        return Ok(AttachDrive::Finished);
-                    }
-                }
-                self.finish = AttachFinishState::WaitingForAck {
-                    deadline: Instant::now() + Duration::from_secs(2),
-                };
-                Ok(AttachDrive::Continue)
+    ) -> Option<Message> {
+        match reason {
+            // `-E` replaces the detach message entirely: the client execs
+            // rather than reporting a detach.
+            AttachFinishReason::Detached if self.pending_exec.is_some() => {
+                let (command, shell) = self.pending_exec.take().expect("exec checked above");
+                Some(Message::Exec { command, shell })
             }
-            AttachFinishState::WaitingForAck { deadline } => {
-                let acknowledged = if ready.control {
-                    match reader.try_recv() {
-                        Ok(frame) => matches!(frame.msg, Message::Exiting | Message::Exit(_)),
-                        Err(error) if error.kind() == io::ErrorKind::WouldBlock => false,
-                        Err(_) => true,
-                    }
-                } else {
-                    false
-                };
-                if !acknowledged && Instant::now() < deadline {
-                    return Ok(AttachDrive::Continue);
-                }
-                writer.send(Frame::new(Message::Exited))?;
-                self.finish = AttachFinishState::Done;
-                Ok(AttachDrive::Finished)
+            AttachFinishReason::Detached => {
+                let session_name = state
+                    .borrow_mut()
+                    .sessions()
+                    .iter()
+                    .find(|candidate| candidate.id == self.compositor.target.session_id)
+                    .map(|candidate| candidate.name.clone())
+                    .unwrap_or_else(|| self.compositor.target.stable_target.clone());
+                Some(Message::Detach(Some(session_name)))
             }
-            AttachFinishState::Done => Ok(AttachDrive::Finished),
+            AttachFinishReason::SessionEnded => Some(Message::Exit(Some(0))),
+            AttachFinishReason::ConnectionClosed => None,
         }
     }
 
@@ -530,9 +450,6 @@ impl AttachSession {
         control_fd: RawFd,
         control_buffered: bool,
     ) -> io::Result<AttachPrepared> {
-        if self.finish != AttachFinishState::Running {
-            return Ok(self.prepare_finish(control_fd, control_buffered));
-        }
         if let Some(transition) = self.compositor.transition.take() {
             match transition {
                 AttachTransition::SwitchSession(session_id) => {
@@ -556,10 +473,7 @@ impl AttachSession {
                     self.compositor.render.last_render.clear();
                     self.compositor.render.force_clear = true;
                 }
-                AttachTransition::Finish(reason) => {
-                    self.begin_finish(reason);
-                    return Ok(self.prepare_finish(control_fd, control_buffered));
-                }
+                AttachTransition::Finish(reason) => return Ok(AttachPrepared::Finish(reason)),
             }
         }
         let stable_target = self.compositor.target.stable_target.clone();
@@ -585,8 +499,7 @@ impl AttachSession {
                 self.compositor.transition = Some(AttachTransition::SwitchSession(session_id));
                 return self.prepare_wait(state, control_fd, control_buffered);
             }
-            self.begin_finish(AttachFinishReason::SessionEnded);
-            return Ok(self.prepare_finish(control_fd, control_buffered));
+            return Ok(AttachPrepared::Finish(AttachFinishReason::SessionEnded));
         }
 
         match refresh_active_window_output_subscription(
@@ -608,8 +521,7 @@ impl AttachSession {
                     self.compositor.transition = Some(AttachTransition::SwitchSession(session_id));
                     return self.prepare_wait(state, control_fd, control_buffered);
                 }
-                self.begin_finish(AttachFinishReason::SessionEnded);
-                return Ok(self.prepare_finish(control_fd, control_buffered));
+                return Ok(AttachPrepared::Finish(AttachFinishReason::SessionEnded));
             }
             Err(error) => return Err(error),
         }
@@ -738,9 +650,6 @@ impl AttachSession {
         R: NonblockingFrameReader,
         W: FrameSink,
     {
-        if self.finish != AttachFinishState::Running {
-            return self.drive_finish(state, ready, reader, writer);
-        }
         if ready.popup_read || ready.popup_write {
             if let Some(overlay) = self.compositor.ui.active_overlay.as_mut() {
                 overlay.drive_popup_io(ready.popup_read, ready.popup_write)?;
@@ -942,7 +851,7 @@ impl AttachSession {
                             self.pending_exec = Some((command, shell));
                         }
                         return Ok(AttachNotificationOutcome::Return(
-                            self.begin_finish(AttachFinishReason::Detached),
+                            AttachDrive::Finish(AttachFinishReason::Detached),
                         ));
                     }
                     ClientAction::Switch { session_id, .. } => {
@@ -1036,7 +945,7 @@ impl AttachSession {
         }
         if render_invalidation.contains(super::super::state::RenderInvalidation::SESSION_GONE) {
             return Ok(AttachNotificationOutcome::Return(
-                self.begin_finish(AttachFinishReason::SessionEnded),
+                AttachDrive::Finish(AttachFinishReason::SessionEnded),
             ));
         }
         if !render_invalidation.is_empty() {
@@ -1121,7 +1030,7 @@ impl AttachSession {
                     return Ok(AttachNotificationOutcome::Return(AttachDrive::Continue));
                 }
                 return Ok(AttachNotificationOutcome::Return(
-                    self.begin_finish(AttachFinishReason::SessionEnded),
+                    AttachDrive::Finish(AttachFinishReason::SessionEnded),
                 ));
             }
             Err(error) => return Err(error),
@@ -1168,7 +1077,7 @@ impl AttachSession {
                 if frame.version != PROTOCOL_VERSION {
                     let _ = writer.send(Frame::new(Message::Version));
                     return Ok(Some(
-                        self.begin_finish(AttachFinishReason::ConnectionClosed),
+                        AttachDrive::Finish(AttachFinishReason::ConnectionClosed),
                     ));
                 }
                 match frame.msg {
@@ -1274,11 +1183,11 @@ impl AttachSession {
                     Message::Detach(_) | Message::DetachKill(_) => {
                         // A server-driven detach (rare on the inbound path): run
                         // the graceful handshake below, like a `C-b d` detach.
-                        return Ok(Some(self.begin_finish(AttachFinishReason::Detached)));
+                        return Ok(Some(AttachDrive::Finish(AttachFinishReason::Detached)));
                     }
                     Message::Exit(_) | Message::Shutdown => {
                         return Ok(Some(
-                            self.begin_finish(AttachFinishReason::ConnectionClosed),
+                            AttachDrive::Finish(AttachFinishReason::ConnectionClosed),
                         ));
                     }
                     _ => {
@@ -1289,13 +1198,13 @@ impl AttachSession {
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
                 return Ok(Some(
-                    self.begin_finish(AttachFinishReason::ConnectionClosed),
+                    AttachDrive::Finish(AttachFinishReason::ConnectionClosed),
                 ));
             }
             Err(_) => {
                 // Treat as detach on error.
                 return Ok(Some(
-                    self.begin_finish(AttachFinishReason::ConnectionClosed),
+                    AttachDrive::Finish(AttachFinishReason::ConnectionClosed),
                 ));
             }
         }

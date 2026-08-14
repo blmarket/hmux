@@ -8,19 +8,19 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd, RawFd};
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::integration::status::StatusHub;
 use crate::server::attach::FrameSink;
 use crate::server::attach::{
-    self, AttachCommandContinuation, AttachDrive, AttachPrepared, AttachSession,
+    self, AttachCommandContinuation, AttachDrive, AttachFinishReason, AttachPrepared, AttachSession,
     AttachStartFailure, AttachWaitReady, AttachWaitSources, ClientTty,
 };
 use crate::server::command::{self, ClientContext};
 use crate::server::state::SharedState;
 use crate::sync::{maybe, race, select, yield_now, Either, Notify, WakeFn};
 use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
-use crate::tmux::message::Frame;
+use crate::tmux::message::{Frame, Message};
 use crate::tmux::traits::NonblockingFrameReader;
 use hmux_rt::{sleep_until, AsyncFd, Interest};
 
@@ -150,10 +150,6 @@ impl AttachOutput {
         self.bytes = self.bytes.saturating_sub(encode_bytes(&frame).len());
         Some(frame)
     }
-
-    fn is_empty(&self) -> bool {
-        self.frames.is_empty()
-    }
 }
 
 impl FrameSink for AttachOutput {
@@ -191,6 +187,9 @@ pub(super) struct EventAttachClient {
     command_generation: u64,
     deadline: Option<Instant>,
     phase: AttachPhase,
+    /// Why the session stopped, from the step that reported it until the task
+    /// picks it up to run the finish.
+    finish: Option<AttachFinishReason>,
     background_commands: Vec<command::BackgroundCommandRequest>,
     command_runtime: Rc<dyn command::CommandRuntime>,
 }
@@ -234,6 +233,7 @@ impl EventAttachClient {
             command_generation: 0,
             deadline: None,
             phase: AttachPhase::Session,
+            finish: None,
             background_commands: Vec::new(),
             command_runtime,
         };
@@ -300,8 +300,9 @@ impl EventAttachClient {
         accepts && self.input.is_below_high_water()
     }
 
-    fn is_finished(&self) -> bool {
-        matches!(self.phase, AttachPhase::Finished) && self.output.is_empty()
+    /// Why the session stopped, once it has: what the task runs the finish for.
+    fn take_finish(&mut self) -> Option<AttachFinishReason> {
+        self.finish.take()
     }
 
     fn take_background_commands(&mut self) -> Vec<command::BackgroundCommandRequest> {
@@ -379,7 +380,7 @@ impl EventAttachClient {
             &mut self.output,
         )? {
             AttachDrive::Continue => {}
-            AttachDrive::Finished => self.finish(),
+            AttachDrive::Finish(reason) => self.finish(reason),
         }
         Ok(())
     }
@@ -444,8 +445,8 @@ impl EventAttachClient {
                     self.apply_wait(sources, deadline)?;
                     return Ok(());
                 }
-                AttachPrepared::Finished => {
-                    self.finish();
+                AttachPrepared::Finish(reason) => {
+                    self.finish(reason);
                     return Ok(());
                 }
             }
@@ -622,8 +623,9 @@ impl EventAttachClient {
         }
     }
 
-    fn finish(&mut self) {
+    fn finish(&mut self, reason: AttachFinishReason) {
         self.phase = AttachPhase::Finished;
+        self.finish = Some(reason);
         self.runtime_desired.clear();
         self.runtime_sources.clear();
         self.deadline = None;
@@ -703,9 +705,8 @@ async fn serve(
             runtime.background.start(request);
         }
 
-        if attach.is_finished() {
-            wire.drain().await?;
-            return Ok(ProtocolCloseReason::Completed);
+        if let Some(reason) = attach.take_finish() {
+            return finish(wire, runtime, attach, reason).await;
         }
 
         step = wait(wire, runtime, attach, &mut sources, &notify, &wake).await?;
@@ -721,6 +722,87 @@ async fn serve(
         frames = 0;
         yield_now().await;
     }
+}
+
+/// How long the server waits for the client to answer what it was just told.
+const FINISH_ACK_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Take the terminal back and report the end to the client.
+///
+/// This was three states of a machine the loop stepped through; it is the same
+/// three steps, written in the order they happen: what is queued for the
+/// terminal goes out, the terminal is handed back the way it was found, and the
+/// client is told how its attach ended.
+async fn finish(
+    wire: &mut Wire,
+    runtime: &ClientRuntime,
+    attach: &mut EventAttachClient,
+    reason: AttachFinishReason,
+) -> Result<ProtocolCloseReason, ProtocolCloseReason> {
+    attach.session.stop_terminal();
+    let tty = AsyncFd::new(
+        &runtime.tasks,
+        attach.session.tty_render_fd(),
+        Interest::WRITABLE,
+    )
+    .map_err(fault)?;
+    loop {
+        attach.session.flush_tty_output().map_err(fault)?;
+        if !attach.session.tty_output_pending() {
+            break;
+        }
+        tty.readiness().await;
+    }
+    attach.session.restore_tty();
+
+    let Some(message) = attach.session.finish_message(reason, &attach.state) else {
+        // The client is the one that went away; there is nobody left to tell.
+        pump(wire, attach)?;
+        wire.drain().await?;
+        return Ok(ProtocolCloseReason::Completed);
+    };
+    attach.output.send(Frame::new(message)).map_err(fault)?;
+    pump(wire, attach)?;
+
+    await_finish_ack(wire, runtime, attach).await?;
+    attach
+        .output
+        .send(Frame::new(Message::Exited))
+        .map_err(fault)?;
+    pump(wire, attach)?;
+    wire.drain().await?;
+    Ok(ProtocolCloseReason::Completed)
+}
+
+/// Wait for the client to acknowledge what it was told — but not for long: a
+/// client that has stopped listening must not hold the server here.
+async fn await_finish_ack(
+    wire: &mut Wire,
+    runtime: &ClientRuntime,
+    attach: &mut EventAttachClient,
+) -> Result<(), ProtocolCloseReason> {
+    let deadline = Instant::now() + FINISH_ACK_TIMEOUT;
+    loop {
+        // Frames taken off the socket before the finish began are the first
+        // place the answer can be.
+        if let Some(frame) = attach.input.pop() {
+            if is_finish_ack(&frame) {
+                return Ok(());
+            }
+            continue;
+        }
+        match select(wire.recv(), sleep_until(&runtime.tasks, deadline)).await {
+            Either::First(Ok(frame)) if is_finish_ack(&frame) => return Ok(()),
+            Either::First(Ok(_)) => {}
+            // A peer that has stopped talking has said all it is going to.
+            Either::First(Err(_)) => return Ok(()),
+            Either::Second(()) => return Ok(()),
+        }
+    }
+}
+
+fn is_finish_ack(frame: &Frame) -> bool {
+    matches!(frame.msg, Message::Exiting | Message::Exit(_))
 }
 
 /// Move whatever the engine has produced onto the socket, up to what the
@@ -820,10 +902,13 @@ async fn wait(
     }
 }
 
+fn fault(error: io::Error) -> ProtocolCloseReason {
+    ProtocolCloseReason::Error(error.kind())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tmux::message::Message;
 
     #[test]
     fn input_high_water_allows_one_frame_of_bounded_overshoot() {

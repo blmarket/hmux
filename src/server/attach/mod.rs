@@ -257,8 +257,9 @@ enum ClientIoState {
     Suspended,
 }
 
+/// Why an attach ended, which decides what the client is told.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AttachFinishReason {
+pub(crate) enum AttachFinishReason {
     ConnectionClosed,
     Detached,
     SessionEnded,
@@ -348,7 +349,6 @@ pub(crate) struct AttachSession {
     pane_io: AttachPaneIo,
     commands: AttachCommands,
     compositor: AttachCompositorState,
-    finish: AttachFinishState,
     /// `detach-client -E`: the command and shell to hand the client instead of
     /// detaching it. tmux's client keeps only the *last* exit message it was
     /// sent, so a `MSG_DETACH` after `MSG_EXEC` would discard the exec; the
@@ -453,14 +453,6 @@ pub(crate) enum AttachCommandContinuation {
     Ignore,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AttachFinishState {
-    Running,
-    DrainingTty { reason: AttachFinishReason },
-    WaitingForAck { deadline: Instant },
-    Done,
-}
-
 struct AttachRenderTriggers {
     output_ready: bool,
     status_timer_ready: bool,
@@ -484,13 +476,16 @@ pub(crate) enum AttachPrepared {
         /// sources alone.
         deadline: Option<Instant>,
     },
-    Finished,
+    /// The session has nothing left to serve. Its owner takes the terminal
+    /// back and reports the end to the client; nothing else is stepped after
+    /// this.
+    Finish(AttachFinishReason),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum AttachDrive {
     Continue,
-    Finished,
+    Finish(AttachFinishReason),
 }
 
 pub(crate) enum AttachStartFailure {
