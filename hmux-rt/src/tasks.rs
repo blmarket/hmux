@@ -19,13 +19,7 @@ pub type TaskId = u64;
 /// Readiness mailbox shared between one [`AsyncFd`] and the loop.
 #[derive(Default)]
 pub(crate) struct IoState {
-    /// Readiness delivered and not yet consumed. A later delivery overwrites
-    /// an unread one, which is fine under the "drain until `WouldBlock` before
-    /// waiting again" discipline every leaf here follows.
     pub(crate) pending: Option<Readiness>,
-    /// Set when the descriptor has no poll operation (`epoll` rejects regular
-    /// files and `/dev/null` with `EPERM`). Such a descriptor is never *not*
-    /// ready, so waits on it resolve immediately instead of parking forever.
     pub(crate) always_ready: bool,
     waker: Option<LocalWaker>,
 }

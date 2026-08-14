@@ -15,6 +15,14 @@ use hmux_rt::{sleep_until, AsyncFd, Interest, JoinHandle, Readiness, TaskHandle}
 /// it writes afterwards.
 const GROUND_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// What sends the task to the read half. Either end closing, and an error,
+/// join readable here: each of them is only observed by reading, which returns
+/// the end-of-file or the failure that ends the pane.
+const DRAINABLE: Readiness = Readiness::READABLE
+    .or(Readiness::READ_CLOSED)
+    .or(Readiness::WRITE_CLOSED)
+    .or(Readiness::ERROR);
+
 /// The loop's handle to one pane task.
 pub(crate) struct PaneHandle {
     task: JoinHandle<()>,
@@ -134,11 +142,7 @@ async fn run(
                     io.drive_writable();
                     poke_armed.set(io.wants_write());
                 }
-                if ready.is_readable()
-                    || ready.is_read_closed()
-                    || ready.is_write_closed()
-                    || ready.is_error()
-                {
+                if ready.intersects(DRAINABLE) {
                     // Edge-style: read until `WouldBlock` before waiting
                     // again, yielding after every coalesced chunk so a pane
                     // flood cannot starve the rest of the loop.

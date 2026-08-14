@@ -70,55 +70,87 @@ impl BitOrAssign for Interest {
 }
 
 /// Readiness observed for a descriptor.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Readiness {
-    readable: bool,
-    writable: bool,
-    read_closed: bool,
-    write_closed: bool,
-    error: bool,
-}
+///
+/// `NonZeroU8` makes the empty set unrepresentable: a value exists only where
+/// there is something to report, so a waiter that is handed one always has a
+/// reason to run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Readiness(NonZeroU8);
 
 impl Readiness {
+    pub const READABLE: Self = Self(NonZeroU8::new(1 << 0).unwrap());
+    pub const WRITABLE: Self = Self(NonZeroU8::new(1 << 1).unwrap());
+    pub const READ_CLOSED: Self = Self(NonZeroU8::new(1 << 2).unwrap());
+    pub const WRITE_CLOSED: Self = Self(NonZeroU8::new(1 << 3).unwrap());
+    pub const ERROR: Self = Self(NonZeroU8::new(1 << 4).unwrap());
+
+    /// Whether any operation in `other` is reported here. The argument is a
+    /// set, so one call answers what a chain of `is_*` disjunctions would.
+    pub fn intersects(self, other: Self) -> bool {
+        self.0.get() & other.0.get() != 0
+    }
+
+    /// Union, callable where [`BitOr`] is not: building a set of interest as a
+    /// `const` is the reason this exists.
+    pub const fn or(self, other: Self) -> Self {
+        // Neither side is empty, so neither is what they union to.
+        Self(NonZeroU8::new(self.0.get() | other.0.get()).unwrap())
+    }
+
     pub fn is_readable(self) -> bool {
-        self.readable
+        self.intersects(Self::READABLE)
     }
 
     pub fn is_writable(self) -> bool {
-        self.writable
+        self.intersects(Self::WRITABLE)
     }
 
     pub fn is_read_closed(self) -> bool {
-        self.read_closed
+        self.intersects(Self::READ_CLOSED)
     }
 
     pub fn is_write_closed(self) -> bool {
-        self.write_closed
+        self.intersects(Self::WRITE_CLOSED)
     }
 
     pub fn is_error(self) -> bool {
-        self.error
+        self.intersects(Self::ERROR)
     }
 
+    /// We pray mio never gives empty Event
     fn from_mio(event: &mio::event::Event) -> Self {
-        Self {
-            readable: event.is_readable(),
-            writable: event.is_writable(),
-            read_closed: event.is_read_closed(),
-            write_closed: event.is_write_closed(),
-            error: event.is_error(),
+        let mut bits = 0;
+        for (reported, flag) in [
+            (event.is_readable(), Self::READABLE),
+            (event.is_writable(), Self::WRITABLE),
+            (event.is_read_closed(), Self::READ_CLOSED),
+            (event.is_write_closed(), Self::WRITE_CLOSED),
+            (event.is_error(), Self::ERROR),
+        ] {
+            if reported {
+                bits |= flag.0.get();
+            }
         }
+        Self(NonZeroU8::new(bits).expect("mio reported an event with no readiness"))
     }
 
     /// What an unpollable descriptor reports: never *not* ready.
     pub(crate) fn always() -> Self {
-        Self {
-            readable: true,
-            writable: true,
-            read_closed: false,
-            write_closed: false,
-            error: false,
-        }
+        Self::READABLE | Self::WRITABLE
+    }
+}
+
+impl BitOr for Readiness {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        self.or(rhs)
+    }
+}
+
+impl BitOrAssign for Readiness {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
     }
 }
 
@@ -471,7 +503,7 @@ mod tests {
         let mut ready = vec![Ready {
             token: Token(999),
             recipient: Recipient::Client(999),
-            readiness: Readiness::default(),
+            readiness: Readiness::READABLE,
         }];
         let result = reactor
             .poll(Some(Duration::from_secs(1)), &mut ready)
