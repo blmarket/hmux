@@ -131,6 +131,7 @@ pub struct Ready<R> {
 }
 
 impl<R> Ready<R> {
+    #[cfg(test)]
     pub fn token(&self) -> Token {
         self.token
     }
@@ -151,6 +152,7 @@ pub struct PollResult {
 }
 
 impl PollResult {
+    #[cfg(test)]
     pub fn ready_count(self) -> usize {
         self.ready_count
     }
@@ -172,8 +174,6 @@ where
         recipient: R,
     ) -> io::Result<Token>;
 
-    fn reregister(&mut self, token: Token, interest: Interest) -> io::Result<()>;
-
     fn deregister(&mut self, token: Token) -> io::Result<()>;
 
     fn poll(
@@ -186,7 +186,6 @@ where
 struct Registration<R> {
     fd: OwnedFd,
     recipient: R,
-    interest: Interest,
 }
 
 /// `mio` readiness backend used on Linux and macOS.
@@ -265,30 +264,9 @@ where
             mio::Token(token.as_usize()),
             interest.to_mio(),
         )?;
-        self.registrations.insert(
-            token,
-            Registration {
-                fd,
-                recipient,
-                interest,
-            },
-        );
-        Ok(token)
-    }
-
-    fn reregister(&mut self, token: Token, interest: Interest) -> io::Result<()> {
-        let raw_fd = self.registration(token)?.fd.as_raw_fd();
-        let mut source = SourceFd(&raw_fd);
-        self.poll.registry().reregister(
-            &mut source,
-            mio::Token(token.as_usize()),
-            interest.to_mio(),
-        )?;
         self.registrations
-            .get_mut(&token)
-            .expect("registration disappeared after lookup")
-            .interest = interest;
-        Ok(())
+            .insert(token, Registration { fd, recipient });
+        Ok(token)
     }
 
     fn deregister(&mut self, token: Token) -> io::Result<()> {
@@ -380,27 +358,6 @@ mod tests {
     }
 
     #[test]
-    fn reregister_changes_interest_without_changing_token() {
-        let mut reactor = MioReactor::new().expect("reactor");
-        let (_peer, source) = socket_pair();
-        let token = reactor
-            .register(source.as_fd(), Interest::READABLE, Recipient::Client(1))
-            .expect("register");
-
-        reactor
-            .reregister(token, Interest::WRITABLE)
-            .expect("reregister");
-        let mut ready = Vec::new();
-        reactor
-            .poll(Some(Duration::from_secs(1)), &mut ready)
-            .expect("poll");
-
-        assert_eq!(ready.len(), 1);
-        assert_eq!(ready[0].token(), token);
-        assert!(ready[0].readiness().is_writable());
-    }
-
-    #[test]
     fn deregister_remains_valid_after_actor_drops_its_source() {
         let mut reactor = MioReactor::new().expect("reactor");
         let (_peer, source) = socket_pair();
@@ -483,10 +440,6 @@ mod tests {
         assert_eq!(result.ready_count(), 0);
         assert!(ready.is_empty());
 
-        let error = reactor
-            .reregister(token, Interest::READABLE)
-            .expect_err("token was removed");
-        assert_eq!(error.kind(), io::ErrorKind::NotFound);
         let error = reactor
             .deregister(token)
             .expect_err("token is still removed");

@@ -27,10 +27,12 @@ pub struct ExpiredTimer<T> {
 }
 
 impl<T> ExpiredTimer<T> {
+    #[cfg(test)]
     pub fn id(&self) -> TimerId {
         self.id
     }
 
+    #[cfg(test)]
     pub fn value(&self) -> &T {
         &self.value
     }
@@ -58,6 +60,7 @@ impl<T> Default for TimerQueue<T> {
 }
 
 impl<T> TimerQueue<T> {
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
     }
@@ -104,6 +107,7 @@ impl<T> TimerQueue<T> {
         }
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.timers.is_empty()
     }

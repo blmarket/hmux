@@ -1,7 +1,8 @@
-//! Single-threaded async runtime layer for a host-owned event loop.
+//! Single-threaded async runtime for the hmux daemon.
 //!
-//! Futures, leaves, and wake plumbing that embed into an event loop the host
-//! owns; the task set never runs a queue of its own behind the host's back.
+//! [`TaskRuntime`] is the host: the daemon runs its whole event loop through
+//! `dispatch`/`poll` turns, and every event source is a task holding a leaf
+//! from this crate — an [`AsyncFd`] registration or a [`sleep`] deadline.
 //! README.md records the scope and the boundary rules, including why the
 //! `Waker` half of every poll context is inert: only `cx.local_waker()` is
 //! wired, and **a leaf that parks `cx.waker()` never wakes**.
@@ -11,6 +12,9 @@
 //! queue or the wake path. Generic dataflow over them, `map` and `merge` and
 //! the rest, needs none of that and is not this crate's to own; it belongs to
 //! whoever is composing.
+//!
+//! The reactor, timer queue, and task-set plumbing behind the runtime are
+//! implementation detail and stay private.
 
 #![feature(local_waker)]
 
@@ -21,11 +25,6 @@ mod task_loop;
 mod tasks;
 mod timer;
 
-pub use reactor::{Interest, MioReactor, PollResult, Reactor, Readiness, Ready, Token};
+pub use reactor::{Interest, Readiness};
 pub use runtime::TaskRuntime;
-pub use task_loop::TaskLoop;
-pub use tasks::{
-    sleep, sleep_until, AsyncFd, JoinError, JoinHandle, ReadinessFuture, Sleep, TaskEvent,
-    TaskHandle, TaskId, TaskSet, WakeSink,
-};
-pub use timer::{ExpiredTimer, TimerId, TimerQueue};
+pub use tasks::{sleep, sleep_until, AsyncFd, JoinError, JoinHandle, TaskHandle, TaskId};

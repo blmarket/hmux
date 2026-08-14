@@ -266,10 +266,11 @@ mod tests {
     fn existing_imsg_descriptor_is_readiness_driven() {
         use crate::tmux::codec::{ImsgReader, ImsgWriter};
         use crate::tmux::message::{Frame, Message};
-        use hmux_rt::{Interest, MioReactor, Reactor as _};
+        use hmux_rt::{AsyncFd, Interest};
         use std::os::fd::AsFd as _;
 
-        let mut reactor = MioReactor::new().expect("reactor");
+        let mut runtime = TaskRuntime::new().expect("runtime");
+        let tasks = runtime.handle();
         let (sender, receiver) = UnixStream::pair().expect("socket pair");
         sender.set_nonblocking(true).expect("nonblocking sender");
         receiver
@@ -277,21 +278,19 @@ mod tests {
             .expect("nonblocking receiver");
         let mut reader = ImsgReader::new(receiver.into());
         let mut writer = ImsgWriter::new(sender.into());
-        let token = reactor
-            .register(reader.as_fd(), Interest::READABLE, 42u32)
-            .expect("register imsg reader");
         writer
             .send(Frame::new(Message::Command(vec!["list-sessions".into()])))
             .expect("send frame");
 
-        let mut ready = Vec::new();
-        reactor
-            .poll(Some(POLL_TIMEOUT), &mut ready)
-            .expect("poll");
-
-        assert_eq!(ready.len(), 1);
-        assert_eq!(ready[0].token(), token);
-        let frame = reader.try_recv().expect("receive ready frame");
+        // The frame is already in the socket buffer when the descriptor is
+        // registered; readiness that predates the registration must still be
+        // delivered.
+        let frame = runtime.block_on(async move {
+            let source = AsyncFd::new(&tasks, reader.as_fd(), Interest::READABLE)
+                .expect("register imsg reader");
+            source.readiness().await;
+            reader.try_recv().expect("receive ready frame")
+        });
         assert_eq!(frame.msg, Message::Command(vec!["list-sessions".into()]));
     }
 

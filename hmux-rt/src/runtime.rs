@@ -1,10 +1,11 @@
-//! A standalone driver for the executor: `block_on` without a host behind it.
+//! The runtime host: the event loop the daemon actually runs.
 //!
-//! This is not a second executor. Every turn is the same shape a host loop
-//! drives — sync the task set, dispatch queued polls, poll the reactor — with
-//! a completion-driven `block_on` in front, for tests and for the demo in
-//! `examples/tasks.rs`. What it leaves out is everything a real host adds
-//! around the task set: other event sources, actors, and their dispatch order.
+//! Every turn is the same shape — sync the task set, dispatch queued polls,
+//! poll the reactor — driven by the host through [`TaskRuntime::dispatch`] and
+//! [`TaskRuntime::poll`]. The daemon owns the turn cadence and its dispatch
+//! order; a completion-driven `block_on` sits in front for tests and for the
+//! demo in `examples/tasks.rs`. Every event source is a task: there is no
+//! side channel to the reactor.
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -412,10 +413,10 @@ mod tests {
         let probe = runtime.handle();
         let value = runtime.block_on(async move {
             let task = tasks.spawn_join(async { 42 });
-            let id = task.id();
-            assert!(tasks.is_active(id));
+            // Two live tasks: the block_on wrapper and the joined child.
+            assert_eq!(tasks.active_tasks(), 2);
             let value = task.await;
-            assert!(!tasks.is_active(id));
+            assert_eq!(tasks.active_tasks(), 1);
             value
         });
 

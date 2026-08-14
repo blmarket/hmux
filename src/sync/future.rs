@@ -19,7 +19,7 @@ pub enum Either<A, B> {
 ///
 /// Biased: `first` is polled before `second` on every turn, so a turn where
 /// both are ready deterministically reports `first`. The loser is dropped with
-/// the `Select`, which disarms whatever it parked — a lost [`hmux_rt::Sleep`]
+/// the `Select`, which disarms whatever it parked — a lost [`hmux_rt::sleep`]
 /// takes its deadline with it.
 pub fn select<A: Future, B: Future>(first: A, second: B) -> Select<A, B> {
     Select { first, second }

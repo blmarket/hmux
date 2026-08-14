@@ -252,10 +252,6 @@ pub struct JoinHandle<T> {
 }
 
 impl<T> JoinHandle<T> {
-    pub fn id(&self) -> TaskId {
-        self.task
-    }
-
     pub fn cancel(&self) -> bool {
         self.tasks.cancel(self.task)
     }
@@ -534,7 +530,7 @@ impl AsyncFd {
 
     /// Wait for the next readiness delivery. Edge-style: after it resolves,
     /// read or write until `WouldBlock` before waiting again.
-    pub fn readiness(&self) -> ReadinessFuture<'_> {
+    pub fn readiness(&self) -> impl Future<Output = Readiness> + '_ {
         ReadinessFuture { fd: self }
     }
 }
@@ -547,7 +543,7 @@ impl Drop for AsyncFd {
     }
 }
 
-pub struct ReadinessFuture<'a> {
+struct ReadinessFuture<'a> {
     fd: &'a AsyncFd,
 }
 
@@ -568,7 +564,10 @@ impl Future for ReadinessFuture<'_> {
 }
 
 /// Sleep until `deadline`, on the loop's timer queue.
-pub fn sleep_until(handle: &TaskHandle, deadline: Instant) -> Sleep {
+///
+/// The returned future owns its deadline outright: dropping it — losing a
+/// select is the usual way — cancels the timer it armed and no other.
+pub fn sleep_until(handle: &TaskHandle, deadline: Instant) -> impl Future<Output = ()> {
     Sleep {
         shared: Rc::clone(&handle.shared),
         deadline,
@@ -576,11 +575,11 @@ pub fn sleep_until(handle: &TaskHandle, deadline: Instant) -> Sleep {
     }
 }
 
-pub fn sleep(handle: &TaskHandle, duration: Duration) -> Sleep {
+pub fn sleep(handle: &TaskHandle, duration: Duration) -> impl Future<Output = ()> {
     sleep_until(handle, Instant::now() + duration)
 }
 
-pub struct Sleep {
+struct Sleep {
     shared: Rc<TaskShared>,
     deadline: Instant,
     /// The timer this sleep armed for itself, held so that dropping it —
