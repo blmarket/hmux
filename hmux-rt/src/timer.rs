@@ -78,9 +78,19 @@ impl<T> TimerQueue<T> {
         value
     }
 
+    /// Returns the earliest live deadline, discarding stale entries on the way.
     pub fn next_deadline(&mut self) -> Option<Instant> {
-        self.remove_stale_deadlines();
-        self.deadlines.peek().map(|entry| entry.0.at)
+        while let Some(&Reverse(deadline)) = self.deadlines.peek() {
+            if self
+                .timers
+                .get(&deadline.id)
+                .is_some_and(|timer| timer.deadline == deadline.at)
+            {
+                return Some(deadline.at);
+            }
+            self.deadlines.pop();
+        }
+        None
     }
 
     pub fn time_until_next(&mut self, now: Instant) -> Option<Duration> {
@@ -89,21 +99,17 @@ impl<T> TimerQueue<T> {
     }
 
     pub fn drain_expired(&mut self, now: Instant, output: &mut Vec<ExpiredTimer<T>>) {
-        self.remove_stale_deadlines();
-        while self
-            .deadlines
-            .peek()
-            .is_some_and(|deadline| deadline.0.at <= now)
-        {
+        // `next_deadline` drops stale entries first, so the heap top is live.
+        while self.next_deadline().is_some_and(|deadline| deadline <= now) {
             let Reverse(deadline) = self.deadlines.pop().expect("peeked deadline disappeared");
-            let Some(timer) = self.timers.remove(&deadline.id) else {
-                continue;
-            };
+            let timer = self
+                .timers
+                .remove(&deadline.id)
+                .expect("live deadline without timer");
             output.push(ExpiredTimer {
                 id: deadline.id,
                 value: timer.value,
             });
-            self.remove_stale_deadlines();
         }
     }
 
@@ -126,16 +132,6 @@ impl<T> TimerQueue<T> {
             if !self.timers.contains_key(&id) {
                 return id;
             }
-        }
-    }
-
-    fn remove_stale_deadlines(&mut self) {
-        while self.deadlines.peek().is_some_and(|deadline| {
-            self.timers
-                .get(&deadline.0.id)
-                .is_none_or(|timer| timer.deadline != deadline.0.at)
-        }) {
-            self.deadlines.pop();
         }
     }
 
