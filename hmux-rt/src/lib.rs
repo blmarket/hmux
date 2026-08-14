@@ -1,11 +1,6 @@
 //! Single-threaded async runtime for the hmux daemon.
 //!
-//! [`TaskRuntime`] is the host: the daemon runs its whole event loop through
-//! `dispatch`/`poll` turns, and every event source is a task holding a leaf
-//! from this crate — an [`AsyncFd`] registration or a [`sleep`] deadline.
-//! README.md records the scope and the boundary rules, including why the
-//! `Waker` half of every poll context is inert: only `cx.local_waker()` is
-//! wired, and **a leaf that parks `cx.waker()` never wakes**.
+//! This crate does not intend to support multi-threaded, thus no Send, no Sync.
 
 #![feature(local_waker)]
 

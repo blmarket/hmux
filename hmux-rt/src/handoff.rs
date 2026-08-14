@@ -1,16 +1,6 @@
-//! How a finished task hands its value back to whoever is waiting for it.
-//!
-//! This is runtime plumbing, not a primitive for tasks to compose with:
-//! [`JoinHandle`] and [`TaskRuntime::block_on`] are the only waiters, and both
-//! live inside this crate. Whoever composes over the leaves here builds its own
-//! general-purpose version — one that carries no runtime access and so has no
-//! reason to live in this crate.
-//!
-//! Both ends are on one thread, so the handoff is a shared slot and a callback
-//! rather than anything the kernel knows about.
+//! Hand a result to [`JoinHandle`] which is waiting for it.
 //!
 //! [`JoinHandle`]: crate::JoinHandle
-//! [`TaskRuntime::block_on`]: crate::TaskRuntime::block_on
 
 use std::cell::RefCell;
 use std::fmt;
@@ -57,6 +47,7 @@ struct Slot<T> {
     wake: Option<Rc<dyn Fn()>>,
 }
 
+/// Create a new oneshot spsc channel (receiver, sender)
 pub fn handoff<T>() -> (Handoff<T>, HandoffSender<T>) {
     let slot = Rc::new(RefCell::new(Slot {
         value: None,
@@ -78,8 +69,6 @@ impl<T> HandoffSender<T> {
             slot.value = Some(value);
             slot.wake.take()
         };
-        // Outside the borrow: the wake reaches a driver that may look at this
-        // very handoff before returning.
         if let Some(wake) = wake {
             wake();
         }

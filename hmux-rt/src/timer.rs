@@ -74,7 +74,7 @@ impl<T> TimerQueue<T> {
     }
 
     /// Returns the earliest live deadline, discarding stale entries on the way.
-    pub fn next_deadline(&mut self) -> Option<Instant> {
+    fn next_deadline(&mut self) -> Option<Instant> {
         while let Some(&Reverse(deadline)) = self.deadlines.peek() {
             if self
                 .timers

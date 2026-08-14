@@ -134,7 +134,7 @@ impl TaskHandle {
         Self { shared }
     }
 
-    /// No `Send` bound: tasks live and die on this thread.
+    /// Remember, everything is single-threaded
     pub fn spawn(&self, future: impl Future<Output = ()> + 'static) -> TaskId {
         let id = self.shared.allocate_task();
         self.shared.live.borrow_mut().insert(id);
