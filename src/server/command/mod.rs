@@ -1322,7 +1322,7 @@ impl ResumableCommandQueue {
                         let expanded =
                             expand_if_cond(condition, &inflight.command.args, &state, &self.agents);
                         restore_command_target_context(&mut state, previous);
-                        !expanded.is_empty() && expanded != "0"
+                        format::is_true_first_byte(&expanded)
                     };
                     BackgroundCommandRequest::Ready {
                         command: if matched { then_command } else { else_command },
@@ -1394,7 +1394,7 @@ impl ResumableCommandQueue {
                         let expanded =
                             expand_if_cond(condition, &inflight.command.args, &state, &self.agents);
                         restore_command_target_context(&mut state, previous);
-                        !expanded.is_empty() && expanded != "0"
+                        format::is_true_first_byte(&expanded)
                     };
                     let execution =
                         self.plan_if_shell_branch(&inflight.command.args, matched, state);
@@ -8766,7 +8766,7 @@ pub(super) fn resolve_conditional_binding(
         let previous = st.replace_command_mouse(context.mouse.clone());
         let expanded = expand_if_cond(condition, &args, st, agents);
         st.replace_command_mouse(previous);
-        let branch = if !expanded.is_empty() && expanded != "0" {
+        let branch = if format::is_true_first_byte(&expanded) {
             positional.get(1)
         } else {
             positional.get(2)
@@ -10710,6 +10710,29 @@ mod tests {
             &st,
             &["if-shell", "-F", "0", "kill-server", "new-window -t 0:"],
         );
+        assert_eq!(r.exit, 0, "stderr={:?}", r.stderr);
+        let lw = run_str(&st, &["list-windows", "-t", "0", "-F", "#{window_index}"]);
+        assert_eq!(lw.stdout, "0\n1\n", "got {:?}", lw.stdout);
+    }
+
+    #[test]
+    fn if_shell_format_leading_zero_runs_else() {
+        let st = state();
+        // Only the first byte decides: "0abc" starts with '0', so it is falsey
+        // even though `format_true` (used by `-f` filters) would accept it.
+        let r = run_str(
+            &st,
+            &["if-shell", "-F", "0abc", "kill-server", "new-window -t 0:"],
+        );
+        assert_eq!(r.exit, 0, "stderr={:?}", r.stderr);
+        let lw = run_str(&st, &["list-windows", "-t", "0", "-F", "#{window_index}"]);
+        assert_eq!(lw.stdout, "0\n1\n", "got {:?}", lw.stdout);
+    }
+
+    #[test]
+    fn if_shell_format_leading_space_zero_runs_then() {
+        let st = state();
+        let r = run_str(&st, &["if-shell", "-F", " 0", "new-window -t 0:"]);
         assert_eq!(r.exit, 0, "stderr={:?}", r.stderr);
         let lw = run_str(&st, &["list-windows", "-t", "0", "-F", "#{window_index}"]);
         assert_eq!(lw.stdout, "0\n1\n", "got {:?}", lw.stdout);

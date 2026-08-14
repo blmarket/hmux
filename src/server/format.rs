@@ -561,6 +561,13 @@ pub fn is_true(expanded: &str) -> bool {
     !expanded.is_empty() && expanded != "0"
 }
 
+/// Whether an expanded `if-shell -F` condition is "true" in tmux's sense: its
+/// first byte is neither `0` nor NUL. Unlike [`is_true`], anything starting
+/// with `0` — `"00"`, `"0abc"` — is false, while `" 0"` is true.
+pub fn is_true_first_byte(expanded: &str) -> bool {
+    !matches!(expanded.as_bytes().first(), None | Some(b'0'))
+}
+
 /// Evaluate the inside of a `#{…}` directive (the text between the braces).
 impl Expander<'_> {
     fn eval_directive(&self, content: &str, vars: &Vars, depth: usize) -> String {
