@@ -2696,7 +2696,9 @@ fn run_single(
 /// (`cmd-list-commands.c` calls `cmd_find`), so an alias or unambiguous prefix
 /// hits the right command while an ambiguous or unknown one reports the
 /// resolver's own diagnostic (exit 1). `-F` expands once per command with
-/// tmux's three command-list variables.
+/// tmux's three command-list variables; an expansion that comes out empty
+/// prints nothing at all, as `cmd-list-commands.c` only calls `cmdq_print` for
+/// a non-empty line.
 fn list_commands(args: &[String]) -> CommandResult {
     let template = flag_value(args, "-F");
     let render = |name: &'static str| {
@@ -2718,9 +2720,21 @@ fn list_commands(args: &[String]) -> CommandResult {
         }
     };
 
+    let push = |out: &mut String, name: &'static str| {
+        let line = render(name);
+        if !line.is_empty() {
+            out.push_str(&line);
+            out.push('\n');
+        }
+    };
+
     match positionals(args, &["-F"]).into_iter().next() {
         Some(word) => match registry::resolve(word) {
-            Resolution::Name(name) => CommandResult::ok(format!("{}\n", render(name))),
+            Resolution::Name(name) => {
+                let mut out = String::new();
+                push(&mut out, name);
+                CommandResult::ok(out)
+            }
             Resolution::Ambiguous { error } | Resolution::Unknown { error } => {
                 CommandResult::err(error)
             }
@@ -2728,8 +2742,7 @@ fn list_commands(args: &[String]) -> CommandResult {
         None => {
             let mut out = String::new();
             for spec in registry::COMMAND_SPECS {
-                out.push_str(&render(spec.name));
-                out.push('\n');
+                push(&mut out, spec.name);
             }
             CommandResult::ok(out)
         }
@@ -13052,6 +13065,26 @@ mod tests {
 
         let r = run_str(&st, &["list-commands", "-F", template, "kill-server"]);
         assert_eq!(r.stdout, "kill-server||\n");
+    }
+
+    #[test]
+    fn list_commands_empty_format_prints_nothing() {
+        let st = state();
+        // `cmd-list-commands.c` only prints a line when the expansion is
+        // non-empty, so an empty template suppresses every row.
+        let r = run_str(&st, &["list-commands", "-F", "", "new-window"]);
+        assert_eq!(r.exit, 0);
+        assert_eq!(r.stdout, "");
+
+        let r = run_str(&st, &["list-commands", "-F", ""]);
+        assert_eq!(r.exit, 0);
+        assert_eq!(r.stdout, "");
+
+        // A template that is empty for only some commands keeps the others.
+        let r = run_str(&st, &["list-commands", "-F", "#{command_list_alias}"]);
+        assert_eq!(r.exit, 0);
+        assert!(r.stdout.lines().all(|line| !line.is_empty()));
+        assert!(r.stdout.lines().any(|line| line == "has"));
     }
 
     #[test]
