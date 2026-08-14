@@ -41,8 +41,6 @@ pub(crate) struct IoEntry {
     pub(crate) task: TaskId,
     pub(crate) slot: IoSlot,
     pub(crate) token: Option<Token>,
-    /// Set when the `AsyncFd` is dropped; the loop releases it on the next
-    /// sync, since a task cannot reach the reactor from inside its own poll.
     pub(crate) dropped: bool,
 }
 
@@ -56,6 +54,15 @@ pub(crate) struct TaskShared {
     /// Tasks waiting to be adopted, with whether they still owe a first poll.
     pub(crate) spawned: RefCell<Vec<(TaskId, Pin<Box<dyn Future<Output = ()>>>, bool)>>,
     pub(crate) io: RefCell<BTreeMap<u64, IoEntry>>,
+    /// Ids in `io` the loop still owes work on: descriptors created since the
+    /// last sync, and those whose `AsyncFd` is gone.
+    ///
+    /// The leaf records what it did at the moment it does it, so a sync costs
+    /// what was actually asked for rather than a walk of every live
+    /// descriptor. An id can sit on both lists — created and dropped inside
+    /// one window — which is why the loop releases before it registers.
+    pub(crate) io_new: RefCell<Vec<u64>>,
+    pub(crate) io_dropped: RefCell<Vec<u64>>,
     /// Every armed deadline, one entry per parked [`Sleep`] and naming the
     /// task to poll when it lands.
     ///
@@ -319,6 +326,7 @@ impl AsyncFd {
                 dropped: false,
             },
         );
+        handle.shared.io_new.borrow_mut().push(io);
         Ok(Self {
             shared: Rc::clone(&handle.shared),
             io,
@@ -337,6 +345,9 @@ impl Drop for AsyncFd {
     fn drop(&mut self) {
         if let Some(entry) = self.shared.io.borrow_mut().get_mut(&self.io) {
             entry.dropped = true;
+            // An `AsyncFd` owns its entry alone and drops once, so this names
+            // the id exactly once.
+            self.shared.io_dropped.borrow_mut().push(self.io);
         }
     }
 }

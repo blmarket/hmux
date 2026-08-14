@@ -69,8 +69,7 @@ impl TaskRuntime {
         self.shared.woken.borrow().len() + self.shared.spawned.borrow().len()
     }
 
-    /// Timers currently armed, one per parked sleep rather than one per
-    /// sleeping task. Zero once every sleeping task has resumed.
+    /// Number of timers - for testing purpose
     pub fn armed_timers(&self) -> usize {
         self.shared.timers.borrow().len()
     }
@@ -79,10 +78,15 @@ impl TaskRuntime {
     /// spawns, make the registrations that were asked for, release the ones
     /// whose `AsyncFd` is gone.
     ///
-    /// Unlike effect-driven interest updates there is nothing to diff: a
-    /// task's descriptors are owned by the leaves that created them, so this
-    /// only makes registrations that were asked for and releases the ones
-    /// whose `AsyncFd` is gone.
+    /// Unlike effect-driven interest updates there is nothing to diff, and
+    /// nothing to search for either: a descriptor is owned by the leaf that
+    /// created it, and that leaf names its id on the way in and on the way
+    /// out. Each half here drains the ids it was handed, so a sync costs what
+    /// was asked for rather than a walk of every live descriptor.
+    ///
+    /// Release runs first because one id can be on both lists — a descriptor
+    /// created and dropped inside a single window — and releasing it leaves
+    /// nothing for the registration pass to find.
     ///
     /// Deadlines need no sync at all: a sleep arms and cancels its own, inside
     /// the poll that parks or drops it.
@@ -95,21 +99,22 @@ impl TaskRuntime {
 
     /// Release every registration whose `AsyncFd` is gone.
     fn release_dropped_io(&mut self) -> io::Result<()> {
-        let reactor = &mut self.reactor;
+        let dropped = std::mem::take(&mut *self.shared.io_dropped.borrow_mut());
+        let mut entries = self.shared.io.borrow_mut();
         let mut failure = None;
-        self.shared.io.borrow_mut().retain(|_, entry| {
-            if !entry.dropped {
-                return true;
+        for io in dropped {
+            let Some(entry) = entries.remove(&io) else {
+                continue;
+            };
+            let Some(token) = entry.token else {
+                continue;
+            };
+            // Every id is released, so one bad deregister costs its own
+            // registration rather than the tail of the list behind it.
+            if let Err(error) = self.reactor.deregister(token) {
+                failure.get_or_insert(error);
             }
-            if let Some(token) = entry.token {
-                if let Err(error) = reactor.deregister(token) {
-                    if failure.is_none() {
-                        failure = Some(error);
-                    }
-                }
-            }
-            false
-        });
+        }
         failure.map_or(Ok(()), Err)
     }
 
@@ -117,15 +122,19 @@ impl TaskRuntime {
     /// addresses readiness by the entry's own id, which is what comes back to
     /// [`TaskRuntime::deliver_io`].
     fn register_new_io(&mut self) -> io::Result<()> {
+        let created = std::mem::take(&mut *self.shared.io_new.borrow_mut());
         let mut entries = self.shared.io.borrow_mut();
-        for (io, entry) in entries.iter_mut() {
-            if entry.dropped || entry.token.is_some() {
+        let mut failure = None;
+        for io in created {
+            // Gone already: the pass above released a descriptor that did not
+            // outlive the window it was created in.
+            let Some(entry) = entries.get_mut(&io) else {
                 continue;
-            }
+            };
             let Some(fd) = entry.fd.take() else {
                 continue;
             };
-            match self.reactor.register(fd.as_fd(), entry.interest, *io) {
+            match self.reactor.register(fd.as_fd(), entry.interest, io) {
                 Ok(token) => entry.token = Some(token),
                 // A descriptor with no poll operation — a regular file, or a
                 // client that redirected its output to `/dev/null` — is
@@ -136,12 +145,16 @@ impl TaskRuntime {
                     entry.slot.borrow_mut().always_ready = true;
                     self.shared.woken.borrow_mut().push_back(entry.task);
                 }
-                Err(error) => return Err(error),
+                // As above: finish the list rather than stranding the requests
+                // behind this one, which the drain has already taken.
+                Err(error) => {
+                    failure.get_or_insert(error);
+                }
             }
             // The reactor took its own duplicate.
             drop(fd);
         }
-        Ok(())
+        failure.map_or(Ok(()), Err)
     }
 
     /// Adopt every task spawned since the last sync, queueing the first poll
@@ -315,6 +328,8 @@ impl Drop for TaskRuntime {
         let spawned = std::mem::take(&mut *self.shared.spawned.borrow_mut());
         drop(spawned);
         self.shared.io.borrow_mut().clear();
+        self.shared.io_new.borrow_mut().clear();
+        self.shared.io_dropped.borrow_mut().clear();
         *self.shared.timers.borrow_mut() = TimerQueue::default();
         self.shared.cancelled.borrow_mut().clear();
         self.shared.live.borrow_mut().clear();
@@ -568,6 +583,26 @@ mod tests {
         });
         assert!(readiness.is_readable());
         assert!(readiness.is_writable());
+    }
+
+    /// A descriptor created and dropped inside one poll names its id on both
+    /// of the loop's lists before the loop looks at either. Releasing first is
+    /// what leaves the registration pass nothing to find; the other order
+    /// would register a descriptor no task is waiting on.
+    #[test]
+    fn a_descriptor_dropped_before_its_first_sync_is_never_registered() {
+        let mut runtime = TaskRuntime::new().expect("runtime");
+        let handle = runtime.handle();
+        let probe = runtime.handle();
+        let (reader, _writer) = std::os::unix::net::UnixStream::pair().expect("socket pair");
+        let output = runtime.block_on(async move {
+            drop(AsyncFd::new(&handle, reader.as_fd(), Interest::READABLE).expect("async fd"));
+            // The loop is whole afterwards: a descriptor created next still
+            // registers and delivers, so nothing was stranded on either list.
+            run_shell(&handle, "echo after").await.expect("shell output")
+        });
+        assert_eq!(output, b"after\n");
+        assert_eq!(probe.registered_io(), 0);
     }
 
     #[test]
