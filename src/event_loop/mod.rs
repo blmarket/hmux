@@ -99,31 +99,16 @@ pub(crate) mod test_driver {
             queue: ResumableCommandQueue,
             state: &SharedState,
         ) -> CommandResult {
-            let mut queued = match self
-                .command_runtime()
-                .spawn_queue(queue, Rc::clone(state), DISPATCH_BUDGET)
-            {
-                Ok(queued) => queued,
-                Err(error) => return CommandResult::err(format!("{error}\n")),
-            };
-            let deadline = Instant::now() + DEADLINE;
-            let woken = Rc::new(Cell::new(false));
-            let flag = Rc::clone(&woken);
-            let wake: WakeFn = Rc::new(move || flag.set(true));
-            while !queued.poll() {
-                assert!(Instant::now() < deadline, "command queue never completed");
-                queued.set_wake(&wake);
-                let timeout = if woken.replace(false) {
-                    Duration::ZERO
-                } else {
-                    TURN_TIMEOUT
-                };
-                self.run_turn(timeout).expect("event loop turn");
-            }
-            match queued.take_output() {
-                Some(Ok(result)) => result,
-                Some(Err(error)) => CommandResult::err(format!("{error}\n")),
-                None => CommandResult::err("command stopped without a result\n"),
+            let runtime = self.command_runtime();
+            let state = Rc::clone(state);
+            // A queue is awaited by whoever started it, which in the daemon is
+            // a client's own task; the test runs one for the same reason.
+            let result = self.drive_task_future(move |_| async move {
+                runtime.spawn_queue(queue, state, DISPATCH_BUDGET)?.await
+            });
+            match result {
+                Ok(result) => result,
+                Err(error) => CommandResult::err(format!("{error}\n")),
             }
         }
 

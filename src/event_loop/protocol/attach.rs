@@ -1,12 +1,15 @@
-//! Event-loop ownership for interactive attach.
+//! Interactive attach, served as a task.
 //!
-//! The protocol actor owns the native attach session directly. Runtime frames,
-//! tty readiness, pane-output notifications, and deadlines are represented as
-//! bounded queues and reactor sources; no attach worker or bridge is involved.
+//! The task owns the session, the descriptors it reads and writes, and the
+//! sequence it runs through. A source the session does not want this turn is an
+//! arm left out of the wait rather than a registration handed back; a key
+//! binding's command is a future awaited where it was started, with the rest of
+//! the session running behind it only while the client is the one being asked;
+//! and the end of the attach is the epilogue after the loop.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::VecDeque;
 use std::io;
-use std::os::fd::{AsFd, BorrowedFd, OwnedFd, RawFd};
+use std::os::fd::{BorrowedFd, RawFd};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -19,7 +22,7 @@ use crate::server::attach::{
 use crate::server::command::{self, ClientContext};
 use crate::server::state::SharedState;
 use crate::sync::{maybe, race, select, yield_now, Either, Notify, WakeFn};
-use crate::tmux::codec::{dup_fd, encode_bytes, MAX_IMSGSIZE};
+use crate::tmux::codec::{encode_bytes, MAX_IMSGSIZE};
 use crate::tmux::message::{Frame, Message};
 use crate::tmux::traits::NonblockingFrameReader;
 use hmux_rt::{sleep_until, AsyncFd, Interest};
@@ -28,37 +31,13 @@ use super::wire::Wire;
 use super::{ClientRuntime, ProtocolCloseReason};
 
 const ATTACH_QUEUE_LIMIT: usize = MAX_IMSGSIZE * 64;
+/// How many turns the session may take in hand before the loop gets one.
 const IMMEDIATE_TURN_BUDGET: usize = 64;
 const COMMAND_QUEUE_BUDGET: usize = 64;
-
-/// One source an attached client waits on, watched by the central reactor.
-///
-/// `Runtime` carries a generation because the reactor keys a registration by
-/// its source, so a source whose descriptor is replaced has to become a new
-/// key. `Command` has no descriptor — a suspension is waited on through a wake
-/// — and its generation now only keeps a stale wake from being credited to a
-/// newer suspension.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) enum EventAttachSource {
-    Runtime {
-        source: AttachRuntimeSource,
-        generation: u64,
-    },
-    Command(u64),
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) enum AttachRuntimeSource {
-    Control,
-    Input,
-    TtyOutput,
-    Output,
-    Prompt,
-    Render,
-    Status,
-    PopupRead,
-    PopupWrite,
-}
+/// Frames taken from the socket before the task gives the loop a turn.
+const READ_FRAME_BUDGET: usize = 32;
+/// How long the server waits for the client to answer what it was just told.
+const FINISH_ACK_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// An attach startup failure reported through the ordinary command response.
 #[derive(Debug)]
@@ -75,14 +54,6 @@ impl AttachStartError {
 
     fn into_message(self) -> String {
         self.message
-    }
-}
-
-impl From<io::Error> for AttachStartError {
-    fn from(error: io::Error) -> Self {
-        Self {
-            message: format!("{error}\n"),
-        }
     }
 }
 
@@ -167,44 +138,22 @@ impl FrameSink for AttachOutput {
     }
 }
 
-/// Interactive attach state driven directly by one protocol actor.
+/// Interactive attach state driven directly by one protocol task.
 pub(super) struct EventAttachClient {
     session: AttachSession,
     state: SharedState,
     hub: StatusHub,
     input: AttachInput,
     output: AttachOutput,
-    runtime_sources: BTreeMap<EventAttachSource, OwnedFd>,
-    runtime_desired: BTreeSet<EventAttachSource>,
-    registrations: BTreeMap<AttachRuntimeSource, ((RawFd, u64), EventAttachSource)>,
-    /// Hands out generations for the runtime sources, which each keep the one
-    /// they were given in `registrations`.
-    next_generation: u64,
-    /// The generation of the in-flight suspension. Only one command runs at a
-    /// time, so this single value is the whole of that source's identity,
-    /// which is why it is a counter of its own rather than a ticket from
-    /// `next_generation`.
-    command_generation: u64,
-    deadline: Option<Instant>,
-    phase: AttachPhase,
-    /// Why the session stopped, from the step that reported it until the task
-    /// picks it up to run the finish.
-    finish: Option<AttachFinishReason>,
     background_commands: Vec<command::BackgroundCommandRequest>,
     command_runtime: Rc<dyn command::CommandRuntime>,
 }
 
-struct ActiveAttachCommand {
+/// One key binding's command running as a task, with what the session needs to
+/// take the result back.
+struct StartedAttachCommand {
     task: command::QueuedCommand,
     continuation: AttachCommandContinuation,
-    allows_attach_io: bool,
-}
-
-enum AttachPhase {
-    Session,
-    Running(ActiveAttachCommand),
-    Waiting(ActiveAttachCommand),
-    Finished,
 }
 
 impl EventAttachClient {
@@ -220,158 +169,43 @@ impl EventAttachClient {
         let session =
             attach::start_attach_session(args, client_tty, &state, &hub, context, &mut output)
                 .map_err(AttachStartError::from_failure)?;
-        let mut attach = Self {
+        Ok(Self {
             session,
             state,
             hub,
             input: AttachInput::new(),
             output,
-            runtime_sources: BTreeMap::new(),
-            runtime_desired: BTreeSet::new(),
-            registrations: BTreeMap::new(),
-            next_generation: 0,
-            command_generation: 0,
-            deadline: None,
-            phase: AttachPhase::Session,
-            finish: None,
             background_commands: Vec::new(),
             command_runtime,
-        };
-        attach.refresh_wait()?;
-        Ok(attach)
-    }
-
-    fn sources(&self) -> BTreeSet<EventAttachSource> {
-        if matches!(self.phase, AttachPhase::Finished) {
-            BTreeSet::new()
-        } else {
-            self.runtime_desired.clone()
-        }
-    }
-
-    pub(super) fn source_fd(&self, source: EventAttachSource) -> Option<BorrowedFd<'_>> {
-        match source {
-            // A suspended command queue has no descriptor: it is waited on
-            // through the wake its client installs.
-            EventAttachSource::Command(_) => None,
-            EventAttachSource::Runtime { .. } => self.runtime_sources.get(&source).map(AsFd::as_fd),
-        }
-    }
-
-    /// Install the wake for the suspension this client's command queue is
-    /// parked on, if `generation` still names it.
-    pub(super) fn set_command_wake(&mut self, generation: u64, wake: &WakeFn) -> bool {
-        match &mut self.phase {
-            AttachPhase::Waiting(active) if generation == self.command_generation => {
-                active.task.set_wake(wake);
-                true
-            }
-            _ => false,
-        }
-    }
-
-    pub(super) fn source_is_writable(source: EventAttachSource) -> bool {
-        matches!(
-            source,
-            EventAttachSource::Runtime {
-                source: AttachRuntimeSource::TtyOutput,
-                ..
-            } | EventAttachSource::Runtime {
-                source: AttachRuntimeSource::PopupWrite,
-                ..
-            }
-        )
-    }
-
-    fn deadline(&self) -> Option<Instant> {
-        self.deadline
+        })
     }
 
     fn pop_frame(&mut self) -> Option<Frame> {
         self.output.pop()
     }
 
-    fn accepts_protocol_input(&self) -> bool {
-        let accepts = match &self.phase {
-            AttachPhase::Session => true,
-            AttachPhase::Running(active) | AttachPhase::Waiting(active) => active.allows_attach_io,
-            AttachPhase::Finished => false,
-        };
-        accepts && self.input.is_below_high_water()
+    /// Whether the engine can hold another frame from the client.
+    fn accepts_frames(&self) -> bool {
+        self.input.is_below_high_water()
     }
 
-    /// Why the session stopped, once it has: what the task runs the finish for.
-    fn take_finish(&mut self) -> Option<AttachFinishReason> {
-        self.finish.take()
+    fn push_frame(&mut self, frame: Frame) {
+        self.input.push(frame);
     }
 
     fn take_background_commands(&mut self) -> Vec<command::BackgroundCommandRequest> {
         std::mem::take(&mut self.background_commands)
     }
 
-    fn handle_frame(&mut self, frame: Frame) -> io::Result<()> {
-        if matches!(self.phase, AttachPhase::Finished) {
-            return Ok(());
-        }
-        self.input.push(frame);
-        self.refresh_wait()
+    /// What the session wants to wait on, after doing the housekeeping a turn
+    /// starts with.
+    fn prepare(&mut self) -> io::Result<AttachPrepared> {
+        let buffered = !self.input.is_empty();
+        self.session.prepare_wait(&self.state, buffered)
     }
 
-    fn drive(&mut self, source: Option<EventAttachSource>) -> io::Result<()> {
-        if let Some(EventAttachSource::Command(generation)) = source {
-            // A readiness event that outlived its suspension names an older
-            // generation; the descriptor it reported on is gone.
-            if generation != self.command_generation {
-                return Ok(());
-            }
-            self.complete_pending_command(true)?;
-            return self.refresh_wait();
-        }
-        let ready = match source {
-            Some(source @ EventAttachSource::Runtime { source: kind, .. }) => {
-                if !self.runtime_desired.remove(&source) {
-                    return Ok(());
-                }
-                let mut ready = AttachWaitReady::default();
-                Self::mark_ready(&mut ready, kind);
-                ready
-            }
-            None | Some(EventAttachSource::Command(_)) => AttachWaitReady::default(),
-        };
-        if source.is_some() {
-            self.drive_session(ready)?;
-        }
-        self.refresh_wait()
-    }
-
-    pub(super) fn drive_timer(&mut self) -> io::Result<()> {
-        self.deadline = None;
-        if matches!(self.phase, AttachPhase::Waiting(_)) {
-            self.complete_pending_command(false)?;
-            return self.refresh_wait();
-        }
-        match &self.phase {
-            AttachPhase::Running(_) => {
-                self.drive_active_command()?;
-            }
-            AttachPhase::Session => self.drive_session(AttachWaitReady::default())?,
-            AttachPhase::Waiting(_) | AttachPhase::Finished => {}
-        }
-        self.refresh_wait()
-    }
-
-    pub(super) fn shutdown(&mut self) {
-        self.phase = AttachPhase::Finished;
-        self.input.frames.clear();
-        self.input.bytes = 0;
-        self.output.frames.clear();
-        self.output.bytes = 0;
-        self.runtime_desired.clear();
-        self.runtime_sources.clear();
-        self.deadline = None;
-    }
-
-    fn drive_session(&mut self, ready: AttachWaitReady) -> io::Result<()> {
+    /// Give the session a turn with whatever became ready.
+    fn drive(&mut self, ready: AttachWaitReady) -> io::Result<Option<AttachFinishReason>> {
         match self.session.drive_ready(
             &self.state,
             &self.hub,
@@ -379,256 +213,198 @@ impl EventAttachClient {
             &mut self.input,
             &mut self.output,
         )? {
-            AttachDrive::Continue => {}
-            AttachDrive::Finish(reason) => self.finish(reason),
+            AttachDrive::Continue => Ok(None),
+            AttachDrive::Finish(reason) => Ok(Some(reason)),
         }
-        Ok(())
     }
 
-    fn refresh_wait(&mut self) -> io::Result<()> {
-        if matches!(self.phase, AttachPhase::Finished) {
-            return Ok(());
-        }
-        // A command's own turn can defer the next one — a burst of mouse
-        // reports in one read defers one command per report — so keep starting
-        // and draining until the queue is dry. Stopping after one would leave
-        // the rest waiting behind a `prepare_wait` that blocks on the tty while
-        // a command is pending, so the tail of the burst never ran.
-        for _ in 0..IMMEDIATE_TURN_BUDGET {
-            if matches!(self.phase, AttachPhase::Session) {
-                self.start_session_command()?;
-            }
-            if matches!(self.phase, AttachPhase::Running(_)) {
-                self.drive_active_command()?;
-            }
-            if !matches!(self.phase, AttachPhase::Session) || !self.session.has_pending_command() {
-                break;
-            }
-        }
-        match &self.phase {
-            AttachPhase::Waiting(active) if active.allows_attach_io => {
-                self.refresh_session_sources()?;
-                if matches!(self.phase, AttachPhase::Finished) {
-                    return Ok(());
+    /// Start the next command a key binding deferred, if there is one.
+    ///
+    /// A command that cannot start reports its failure where it was asked for,
+    /// so `None` means only that nothing is left to run.
+    fn start_next_command(&mut self) -> Option<StartedAttachCommand> {
+        loop {
+            let request = self.session.take_command_request()?;
+            let agents = self.hub.snapshot().panes;
+            let queue = match &request.source {
+                command::DeferredCommand::Args(args) => {
+                    tracing::debug!(?args, "starting attached-client command");
+                    command::start_resumable_command(args, &self.state, &agents, &request.context)
                 }
-                self.runtime_desired
-                    .insert(EventAttachSource::Command(self.command_generation));
-                Ok(())
-            }
-            AttachPhase::Waiting(_) => {
-                self.runtime_desired.clear();
-                self.runtime_desired
-                    .insert(EventAttachSource::Command(self.command_generation));
-                // A parked queue has no deadline of its own; its wake is what
-                // brings this client back.
-                self.deadline = None;
-                Ok(())
-            }
-            AttachPhase::Running(_) => {
-                self.runtime_desired.clear();
-                self.deadline = Some(Instant::now());
-                Ok(())
-            }
-            AttachPhase::Session => self.refresh_session_sources(),
-            AttachPhase::Finished => Ok(()),
-        }
-    }
-
-    fn refresh_session_sources(&mut self) -> io::Result<()> {
-        for _ in 0..IMMEDIATE_TURN_BUDGET {
-            match self
-                .session
-                .prepare_wait(&self.state, -1, !self.input.is_empty())?
-            {
-                AttachPrepared::Ready(ready) => self.drive_session(ready)?,
-                AttachPrepared::Wait { sources, deadline } => {
-                    self.apply_wait(sources, deadline)?;
-                    return Ok(());
+                command::DeferredCommand::Line { line, tail } => {
+                    tracing::debug!(line, ?tail, "starting attached-client command line");
+                    command::start_resumable_command_string_with_tail(
+                        line,
+                        tail,
+                        &self.state,
+                        &agents,
+                        &request.context,
+                    )
                 }
-                AttachPrepared::Finish(reason) => {
-                    self.finish(reason);
-                    return Ok(());
-                }
-            }
-            if matches!(self.phase, AttachPhase::Finished) {
-                return Ok(());
-            }
-        }
-
-        self.runtime_desired.clear();
-        self.runtime_sources.clear();
-        self.deadline = Some(Instant::now());
-        Ok(())
-    }
-
-    fn start_session_command(&mut self) -> io::Result<()> {
-        let Some(request) = self.session.take_command_request() else {
-            return Ok(());
-        };
-        let agents = self.hub.snapshot().panes;
-        let queue = match &request.source {
-            command::DeferredCommand::Args(args) => {
-                tracing::debug!(?args, "starting attached-client command");
-                command::start_resumable_command(args, &self.state, &agents, &request.context)
-            }
-            command::DeferredCommand::Line { line, tail } => {
-                tracing::debug!(line, ?tail, "starting attached-client command line");
-                command::start_resumable_command_string_with_tail(
-                    line,
-                    tail,
-                    &self.state,
-                    &agents,
-                    &request.context,
-                )
-            }
-        };
-        let queue = queue.and_then(|queue| {
-            self.command_runtime
-                .spawn_queue(queue, Rc::clone(&self.state), COMMAND_QUEUE_BUDGET)
-                .map_err(|error| command::CommandResult::err(format!("{error}\n")))
-        });
-        match queue {
-            Ok(queued) => {
-                self.phase = AttachPhase::Running(ActiveAttachCommand {
-                    task: queued,
-                    continuation: request.continuation,
-                    allows_attach_io: false,
-                });
-            }
-            Err(result) => {
-                self.session
-                    .complete_command(request.continuation, result, &self.state);
-            }
-        }
-        Ok(())
-    }
-
-    fn drive_active_command(&mut self) -> io::Result<()> {
-        let (complete, allows_attach_io) = match &mut self.phase {
-            AttachPhase::Running(active) => {
-                let complete = active.task.poll();
-                (complete, active.task.allows_attach_io())
-            }
-            _ => return Ok(()),
-        };
-        if complete {
-            let phase = std::mem::replace(&mut self.phase, AttachPhase::Session);
-            let AttachPhase::Running(mut active) = phase else {
-                return Ok(());
             };
-            let mut result = active
-                .task
-                .take_output()
-                .ok_or_else(|| io::Error::other("completed attach command has no result"))??;
-            tracing::debug!(exit = result.exit, "attached-client command completed");
-            self.background_commands
-                .append(&mut result.background_commands);
-            self.session
-                .complete_command(active.continuation, result, &self.state);
-            self.drive_session(AttachWaitReady::default())?;
-        } else {
-            // A queue that has not finished is waiting on something.
-            let phase = std::mem::replace(&mut self.phase, AttachPhase::Finished);
-            let AttachPhase::Running(mut active) = phase else {
-                return Ok(());
-            };
-            active.allows_attach_io = allows_attach_io;
-            // Each suspension parks on a completion of its own, so this wait is
-            // a new source even when the same command suspends again — and a
-            // burst of queued commands can finish one and suspend the next
-            // without ever leaving this turn.
-            self.command_generation = self.command_generation.wrapping_add(1);
-            self.phase = AttachPhase::Waiting(active);
-        }
-        Ok(())
-    }
-
-    fn complete_pending_command(&mut self, source_ready: bool) -> io::Result<()> {
-        let phase = std::mem::replace(&mut self.phase, AttachPhase::Finished);
-        let mut active = match phase {
-            AttachPhase::Waiting(active) => active,
-            phase => {
-                self.phase = phase;
-                return Ok(());
+            let queue = queue.and_then(|queue| {
+                self.command_runtime
+                    .spawn_queue(queue, Rc::clone(&self.state), COMMAND_QUEUE_BUDGET)
+                    .map_err(|error| command::CommandResult::err(format!("{error}\n")))
+            });
+            match queue {
+                Ok(task) => {
+                    return Some(StartedAttachCommand {
+                        task,
+                        continuation: request.continuation,
+                    })
+                }
+                Err(result) => {
+                    self.session
+                        .complete_command(request.continuation, result, &self.state)
+                }
             }
-        };
-        let _ = source_ready;
-        active.task.poll();
-        active.allows_attach_io = false;
-        self.phase = AttachPhase::Running(active);
-        self.drive_active_command()
+        }
     }
 
-    fn apply_wait(
+    /// Take a finished command's result back into the session, and give the
+    /// session the turn that its result asks for.
+    fn finish_command(
         &mut self,
-        sources: AttachWaitSources,
-        deadline: Option<Instant>,
-    ) -> io::Result<()> {
-        let sources = [
-            (AttachRuntimeSource::Control, sources.control, 0),
-            (AttachRuntimeSource::Input, sources.input, 0),
-            (AttachRuntimeSource::TtyOutput, sources.tty_output, 0),
-            (
-                AttachRuntimeSource::Output,
-                sources.output,
-                sources.output_generation,
-            ),
-            (AttachRuntimeSource::Prompt, sources.prompt, 0),
-            (AttachRuntimeSource::Render, sources.render, 0),
-            (AttachRuntimeSource::Status, sources.status, 0),
-            (AttachRuntimeSource::PopupRead, sources.popup_read, 0),
-            (AttachRuntimeSource::PopupWrite, sources.popup_write, 0),
-        ];
-        let mut desired = BTreeSet::new();
-        for (kind, raw_fd, logical_generation) in sources {
-            if raw_fd < 0 {
-                self.registrations.remove(&kind);
-                continue;
-            }
-            let identity = (raw_fd, logical_generation);
-            let source = match self.registrations.get(&kind) {
-                Some((registered, source)) if *registered == identity => *source,
-                _ => {
-                    self.next_generation = self.next_generation.wrapping_add(1);
-                    let source = EventAttachSource::Runtime {
-                        source: kind,
-                        generation: self.next_generation,
-                    };
-                    let borrowed = unsafe { BorrowedFd::borrow_raw(raw_fd) };
-                    self.runtime_sources.insert(source, dup_fd(borrowed)?);
-                    self.registrations.insert(kind, (identity, source));
-                    source
-                }
-            };
-            desired.insert(source);
-        }
-        self.runtime_desired = desired;
-        self.runtime_sources
-            .retain(|source, _| self.runtime_desired.contains(source));
-        self.deadline = deadline;
-        Ok(())
+        started: StartedAttachCommand,
+        result: io::Result<command::CommandResult>,
+    ) -> io::Result<Option<AttachFinishReason>> {
+        let mut result = result?;
+        tracing::debug!(exit = result.exit, "attached-client command completed");
+        self.background_commands
+            .append(&mut result.background_commands);
+        self.session
+            .complete_command(started.continuation, result, &self.state);
+        self.drive(AttachWaitReady::default())
+    }
+}
+
+/// One source of the session's, named by the role it plays rather than by the
+/// descriptor behind it, which the session may replace at any time.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AttachRuntimeSource {
+    Input,
+    TtyOutput,
+    Output,
+    Prompt,
+    Render,
+    Status,
+    PopupRead,
+    PopupWrite,
+}
+
+/// One registered descriptor, with the identity that says whether it is still
+/// the one the session means.
+struct Registered {
+    fd: RawFd,
+    generation: u64,
+    ready: AsyncFd,
+}
+
+/// The descriptors an attached client waits on, owned by its task.
+///
+/// The session names them by role each time it prepares a wait: a role it does
+/// not want is dropped, which is what gives the registration back, and a role
+/// whose descriptor was replaced is registered afresh.
+#[derive(Default)]
+struct Sources {
+    input: Option<Registered>,
+    tty_output: Option<Registered>,
+    output: Option<Registered>,
+    prompt: Option<Registered>,
+    render: Option<Registered>,
+    status: Option<Registered>,
+    popup_read: Option<Registered>,
+    popup_write: Option<Registered>,
+}
+
+impl Sources {
+    fn sync(&mut self, runtime: &ClientRuntime, named: &AttachWaitSources) {
+        let read = Interest::READABLE;
+        let write = Interest::WRITABLE;
+        // The pane subscription is the one source that can be replaced without
+        // the descriptor number changing, so it carries a generation of its own.
+        update(
+            &mut self.output,
+            runtime,
+            named.output,
+            named.output_generation,
+            read,
+        );
+        update(&mut self.input, runtime, named.input, 0, read);
+        update(&mut self.tty_output, runtime, named.tty_output, 0, write);
+        update(&mut self.prompt, runtime, named.prompt, 0, read);
+        update(&mut self.render, runtime, named.render, 0, read);
+        update(&mut self.status, runtime, named.status, 0, read);
+        update(&mut self.popup_read, runtime, named.popup_read, 0, read);
+        update(&mut self.popup_write, runtime, named.popup_write, 0, write);
     }
 
-    fn mark_ready(ready: &mut AttachWaitReady, source: AttachRuntimeSource) {
-        match source {
-            AttachRuntimeSource::Control => ready.control = true,
-            AttachRuntimeSource::Input => {}
-            AttachRuntimeSource::TtyOutput => ready.tty_output = true,
-            AttachRuntimeSource::Output => ready.output = true,
-            AttachRuntimeSource::Prompt => ready.prompt = true,
-            AttachRuntimeSource::Render => ready.render = true,
-            AttachRuntimeSource::Status => ready.status = true,
-            AttachRuntimeSource::PopupRead => ready.popup_read = true,
-            AttachRuntimeSource::PopupWrite => ready.popup_write = true,
-        }
+    /// Give every registration back: a client whose session is parked behind a
+    /// command it cannot answer waits on the command alone.
+    fn clear(&mut self) {
+        *self = Self::default();
     }
 
-    fn finish(&mut self, reason: AttachFinishReason) {
-        self.phase = AttachPhase::Finished;
-        self.finish = Some(reason);
-        self.runtime_desired.clear();
-        self.runtime_sources.clear();
-        self.deadline = None;
+    /// The wait's arms, in the order a turn where several are ready reports
+    /// them.
+    fn arms(&self) -> Vec<(AttachRuntimeSource, impl std::future::Future + '_)> {
+        [
+            (AttachRuntimeSource::Input, self.input.as_ref()),
+            (AttachRuntimeSource::TtyOutput, self.tty_output.as_ref()),
+            (AttachRuntimeSource::Output, self.output.as_ref()),
+            (AttachRuntimeSource::Prompt, self.prompt.as_ref()),
+            (AttachRuntimeSource::Render, self.render.as_ref()),
+            (AttachRuntimeSource::Status, self.status.as_ref()),
+            (AttachRuntimeSource::PopupRead, self.popup_read.as_ref()),
+            (AttachRuntimeSource::PopupWrite, self.popup_write.as_ref()),
+        ]
+        .into_iter()
+        .filter_map(|(source, registered)| Some((source, registered?.ready.readiness())))
+        .collect()
+    }
+}
+
+fn update(
+    slot: &mut Option<Registered>,
+    runtime: &ClientRuntime,
+    fd: RawFd,
+    generation: u64,
+    interest: Interest,
+) {
+    if fd < 0 {
+        *slot = None;
+        return;
+    }
+    if slot
+        .as_ref()
+        .is_some_and(|registered| registered.fd == fd && registered.generation == generation)
+    {
+        return;
+    }
+    // The session owns the descriptor for the length of this call, and the
+    // registration takes a duplicate of its own.
+    let borrowed = unsafe { BorrowedFd::borrow_raw(fd) };
+    *slot = AsyncFd::new(&runtime.tasks, borrowed, interest)
+        .ok()
+        .map(|ready| Registered {
+            fd,
+            generation,
+            ready,
+        });
+}
+
+fn mark_ready(ready: &mut AttachWaitReady, source: AttachRuntimeSource) {
+    match source {
+        // The tty is drained by the turn that follows, which needs no flag.
+        AttachRuntimeSource::Input => {}
+        AttachRuntimeSource::TtyOutput => ready.tty_output = true,
+        AttachRuntimeSource::Output => ready.output = true,
+        AttachRuntimeSource::Prompt => ready.prompt = true,
+        AttachRuntimeSource::Render => ready.render = true,
+        AttachRuntimeSource::Status => ready.status = true,
+        AttachRuntimeSource::PopupRead => ready.popup_read = true,
+        AttachRuntimeSource::PopupWrite => ready.popup_write = true,
     }
 }
 
@@ -657,75 +433,213 @@ pub(super) async fn run(
         }
     };
     match serve(wire, runtime, &mut attach).await {
-        Ok(reason) => reason,
-        Err(reason) => {
-            attach.shutdown();
-            reason
-        }
+        Ok(reason) | Err(reason) => reason,
     }
 }
-
-/// The next thing the attach engine is given.
-enum Step {
-    /// A source the engine named, or nothing in particular.
-    Drive(Option<EventAttachSource>),
-    /// The deadline the engine asked for landed.
-    Timer,
-    /// One protocol frame from the client.
-    Frame(Frame),
-}
-
-/// Frames taken from the socket before the task gives the loop a turn.
-const READ_FRAME_BUDGET: usize = 32;
 
 async fn serve(
     wire: &mut Wire,
     runtime: &ClientRuntime,
     attach: &mut EventAttachClient,
 ) -> Result<ProtocolCloseReason, ProtocolCloseReason> {
+    let reason = run_session(wire, runtime, attach).await?;
+    finish(wire, runtime, attach, reason).await
+}
+
+/// What one wait reported.
+enum Wake {
+    /// Frames were taken off the socket into the engine's queue.
+    Frames,
+    /// What the running command is parked on changed.
+    Status,
+    /// One of the session's sources, or its deadline.
+    Ready(AttachWaitReady),
+    /// The running command finished.
+    Command(io::Result<command::CommandResult>),
+}
+
+/// Run the session until it has nothing left to serve, and report why.
+async fn run_session(
+    wire: &mut Wire,
+    runtime: &ClientRuntime,
+    attach: &mut EventAttachClient,
+) -> Result<AttachFinishReason, ProtocolCloseReason> {
+    let mut sources = Sources::default();
     let notify = Notify::new();
     let wake: WakeFn = {
         let notify = notify.clone();
         Rc::new(move || notify.notify())
     };
-    let mut sources: BTreeMap<EventAttachSource, AsyncFd> = BTreeMap::new();
-    let mut step = Step::Drive(None);
-    let mut frames = 0usize;
+    let mut command: Option<StartedAttachCommand> = None;
+    let mut immediate = 0usize;
 
     loop {
-        let driven = match step {
-            Step::Drive(source) => attach.drive(source),
-            Step::Timer => attach.drive_timer(),
-            Step::Frame(frame) => attach.handle_frame(frame),
+        // Commands run one at a time, and the session defers them one per pass:
+        // a burst — one command per mouse report in a coalesced read — drains
+        // through here rather than behind a wait on the tty.
+        if command.is_none() {
+            command = attach.start_next_command();
+        }
+        // A suspension the client itself has to answer leaves the session
+        // running behind the command; any other one parks the whole client,
+        // because nothing it could do would move the command along.
+        let session_runs = match &mut command {
+            Some(started) => {
+                started.task.set_status_wake(&wake);
+                started.task.allows_attach_io()
+            }
+            None => true,
         };
-        driven.map_err(|error| ProtocolCloseReason::Error(error.kind()))?;
 
-        pump(wire, attach)?;
-        for request in attach.take_background_commands() {
-            runtime.background.start(request);
+        let mut deadline = None;
+        if session_runs {
+            match attach.prepare().map_err(fault)? {
+                AttachPrepared::Finish(reason) => return Ok(reason),
+                AttachPrepared::Ready(ready) => {
+                    if let Some(reason) = attach.drive(ready).map_err(fault)? {
+                        return Ok(reason);
+                    }
+                    publish(wire, runtime, attach)?;
+                    // The session had work in hand rather than something to
+                    // wait for. It keeps going, but not for ever: a busy client
+                    // gives the loop a turn before taking its next one.
+                    immediate += 1;
+                    if immediate >= IMMEDIATE_TURN_BUDGET {
+                        immediate = 0;
+                        yield_now().await;
+                    }
+                    continue;
+                }
+                AttachPrepared::Wait {
+                    sources: named,
+                    deadline: due,
+                } => {
+                    sources.sync(runtime, &named);
+                    deadline = due;
+                }
+            }
+        } else {
+            sources.clear();
+        }
+        immediate = 0;
+        publish(wire, runtime, attach)?;
+
+        // A frame already decoded is not a socket event, so nothing would ever
+        // report it: it is taken ahead of the wait rather than waited for.
+        if read_frames(wire, attach, session_runs)? {
+            continue;
         }
 
-        if let Some(reason) = attach.take_finish() {
-            return finish(wire, runtime, attach, reason).await;
-        }
-
-        step = wait(wire, runtime, attach, &mut sources, &notify, &wake).await?;
-        // One event per turn, except for input: a client that pipelines has its
-        // frames taken in bounded runs, which is one turn's work rather than
-        // one turn each.
-        if matches!(step, Step::Frame(_)) {
-            frames += 1;
-            if frames % READ_FRAME_BUDGET != 0 {
-                continue;
+        let woken = wait(
+            wire,
+            runtime,
+            attach,
+            &sources,
+            deadline,
+            session_runs,
+            &mut command,
+            &notify,
+        )
+        .await?;
+        match woken {
+            // Both are the loop looking again with what it now knows.
+            Wake::Frames | Wake::Status => {}
+            Wake::Ready(ready) => {
+                if let Some(reason) = attach.drive(ready).map_err(fault)? {
+                    return Ok(reason);
+                }
+            }
+            Wake::Command(result) => {
+                let started = command.take().expect("a command reported with none running");
+                if let Some(reason) = attach.finish_command(started, result).map_err(fault)? {
+                    return Ok(reason);
+                }
             }
         }
-        frames = 0;
+        publish(wire, runtime, attach)?;
+        // One event per turn: what a wait reported goes behind whatever else
+        // the loop already has queued, rather than ahead of it.
         yield_now().await;
     }
 }
 
-/// How long the server waits for the client to answer what it was just told.
-const FINISH_ACK_TIMEOUT: Duration = Duration::from_secs(2);
+/// Park until the client, one of the session's sources, its deadline or its
+/// running command has something for it.
+#[allow(clippy::too_many_arguments)]
+async fn wait(
+    wire: &mut Wire,
+    runtime: &ClientRuntime,
+    attach: &mut EventAttachClient,
+    sources: &Sources,
+    deadline: Option<Instant>,
+    reading: bool,
+    command: &mut Option<StartedAttachCommand>,
+    notify: &Notify,
+) -> Result<Wake, ProtocolCloseReason> {
+    loop {
+        let task = maybe(command.as_mut().map(|started| &mut started.task));
+        let timer = maybe(deadline.map(|deadline| sleep_until(&runtime.tasks, deadline)));
+        let fds = race(sources.arms());
+        // Reading is paused both when the engine has taken all the input it can
+        // hold and when this client's own output is above high water; either
+        // way the socket is left unread until it is not.
+        let readable = maybe(
+            (reading && attach.accepts_frames() && wire.is_below_high_water())
+                .then(|| wire.readable()),
+        );
+        let woken = select(
+            select(task, notify.notified()),
+            select(select(timer, fds), select(readable, wire.writable())),
+        )
+        .await;
+        match woken {
+            Either::First(Either::First(result)) => return Ok(Wake::Command(result)),
+            Either::First(Either::Second(())) => return Ok(Wake::Status),
+            Either::Second(Either::First(Either::First(()))) => {
+                return Ok(Wake::Ready(AttachWaitReady::default()))
+            }
+            Either::Second(Either::First(Either::Second((source, _)))) => {
+                let mut ready = AttachWaitReady::default();
+                mark_ready(&mut ready, source);
+                return Ok(Wake::Ready(ready));
+            }
+            Either::Second(Either::Second(Either::First(()))) => {
+                if read_frames(wire, attach, reading)? {
+                    return Ok(Wake::Frames);
+                }
+            }
+            // The socket taking more is not the engine's business; it only
+            // means the frames it has queued can move, including the ones held
+            // back at the high-water mark.
+            Either::Second(Either::Second(Either::Second(()))) => pump(wire, attach)?,
+        }
+    }
+}
+
+/// Take what the client has sent into the engine's queue, in a bounded run: a
+/// client that pipelines has its frames taken as one turn's work rather than
+/// one turn each.
+fn read_frames(
+    wire: &mut Wire,
+    attach: &mut EventAttachClient,
+    reading: bool,
+) -> Result<bool, ProtocolCloseReason> {
+    if !reading {
+        return Ok(false);
+    }
+    let mut taken = false;
+    for _ in 0..READ_FRAME_BUDGET {
+        if !attach.accepts_frames() || !wire.is_below_high_water() {
+            break;
+        }
+        let Some(frame) = wire.try_recv()? else {
+            break;
+        };
+        attach.push_frame(frame);
+        taken = true;
+    }
+    Ok(taken)
+}
 
 /// Take the terminal back and report the end to the client.
 ///
@@ -805,6 +719,20 @@ fn is_finish_ack(frame: &Frame) -> bool {
     matches!(frame.msg, Message::Exiting | Message::Exit(_))
 }
 
+/// Move what the engine has produced onto the socket, and start what it asked
+/// the server to run for it.
+fn publish(
+    wire: &mut Wire,
+    runtime: &ClientRuntime,
+    attach: &mut EventAttachClient,
+) -> Result<(), ProtocolCloseReason> {
+    pump(wire, attach)?;
+    for request in attach.take_background_commands() {
+        runtime.background.start(request);
+    }
+    Ok(())
+}
+
 /// Move whatever the engine has produced onto the socket, up to what the
 /// connection's queue will hold.
 fn pump(wire: &mut Wire, attach: &mut EventAttachClient) -> Result<(), ProtocolCloseReason> {
@@ -815,91 +743,6 @@ fn pump(wire: &mut Wire, attach: &mut EventAttachClient) -> Result<(), ProtocolC
         wire.queue(frame)?;
     }
     wire.flush()
-}
-
-/// Park until the client, one of the engine's sources, its deadline or its
-/// parked command has something for it.
-async fn wait(
-    wire: &mut Wire,
-    runtime: &ClientRuntime,
-    attach: &mut EventAttachClient,
-    sources: &mut BTreeMap<EventAttachSource, AsyncFd>,
-    notify: &Notify,
-    wake: &WakeFn,
-) -> Result<Step, ProtocolCloseReason> {
-    // Reading is paused both when the engine has taken all the input it can
-    // hold and when this client's own output is above high water; either way
-    // the socket is left unread until it is not.
-    let reading = attach.accepts_protocol_input() && wire.is_below_high_water();
-    if reading {
-        // Ahead of the wait: a frame already decoded is not a socket event, so
-        // nothing would ever report it.
-        if let Some(frame) = wire.try_recv()? {
-            return Ok(Step::Frame(frame));
-        }
-    }
-
-    let desired = attach.sources();
-    // A registration the engine no longer wants goes back by being dropped.
-    sources.retain(|source, _| desired.contains(source));
-    let mut command = None;
-    for source in &desired {
-        if let EventAttachSource::Command(generation) = source {
-            // No descriptor behind a suspended queue: what it offers instead is
-            // the wake its completion fires, which this turns into one
-            // notification the wait can race.
-            attach.set_command_wake(*generation, wake);
-            command = Some(*source);
-            continue;
-        }
-        if sources.contains_key(source) {
-            continue;
-        }
-        let Some(fd) = attach.source_fd(*source) else {
-            continue;
-        };
-        let interest = if EventAttachClient::source_is_writable(*source) {
-            Interest::WRITABLE
-        } else {
-            Interest::READABLE
-        };
-        if let Ok(registered) = AsyncFd::new(&runtime.tasks, fd, interest) {
-            sources.insert(*source, registered);
-        }
-    }
-    let deadline = attach.deadline();
-
-    loop {
-        let readiness = race(
-            sources
-                .iter()
-                .map(|(source, fd)| (*source, fd.readiness()))
-                .collect(),
-        );
-        let timer = maybe(deadline.map(|deadline| sleep_until(&runtime.tasks, deadline)));
-        let readable = maybe(reading.then(|| wire.readable()));
-        let woken = select(
-            select(notify.notified(), timer),
-            select(readiness, select(readable, wire.writable())),
-        )
-        .await;
-        match woken {
-            Either::First(Either::First(())) => return Ok(Step::Drive(command)),
-            Either::First(Either::Second(())) => return Ok(Step::Timer),
-            Either::Second(Either::First((source, _))) => {
-                return Ok(Step::Drive(Some(source)));
-            }
-            Either::Second(Either::Second(Either::First(()))) => {
-                if let Some(frame) = wire.try_recv()? {
-                    return Ok(Step::Frame(frame));
-                }
-            }
-            // The socket taking more is not the engine's business; it only
-            // means the frames it has queued can move, including the ones held
-            // back at the high-water mark.
-            Either::Second(Either::Second(Either::Second(()))) => pump(wire, attach)?,
-        }
-    }
 }
 
 fn fault(error: io::Error) -> ProtocolCloseReason {
@@ -938,15 +781,5 @@ mod tests {
         output.send(Frame::new(Message::Exited)).unwrap();
         assert_eq!(output.pop().unwrap().msg, Message::Ready);
         assert_eq!(output.pop().unwrap().msg, Message::Exited);
-    }
-
-    #[test]
-    fn tty_output_runtime_source_uses_writable_interest() {
-        assert!(EventAttachClient::source_is_writable(
-            EventAttachSource::Runtime {
-                source: AttachRuntimeSource::TtyOutput,
-                generation: 1,
-            }
-        ));
     }
 }

@@ -93,6 +93,11 @@ impl<T> Drop for CompletionSender<T> {
 impl<T> Completion<T> {
     /// The value, if it has arrived, or the error a producer that stopped
     /// without one leaves behind.
+    ///
+    /// Every owner in the daemon is a task and awaits the value instead. This
+    /// is for the test drivers that stand in for one, which have to step the
+    /// runtime themselves and so cannot be woken by it.
+    #[cfg(test)]
     pub fn take(&mut self) -> Option<io::Result<T>> {
         let mut slot = self.slot.borrow_mut();
         if let Some(value) = slot.value.take() {
@@ -106,12 +111,14 @@ impl<T> Completion<T> {
         })
     }
 
-    /// Install the wake to call when the value arrives.
+    /// Install the wake to call when the value arrives, for the same drivers
+    /// [`Completion::take`] is for.
     ///
     /// A value that arrived before the driver got here fires the wake at once,
     /// so a completion can never be installed onto too late. That is what lets
     /// a driver (re-)install on whatever schedule suits it instead of having to
     /// interleave with the producer.
+    #[cfg(test)]
     pub fn set_wake(&mut self, wake: &WakeFn) {
         let mut slot = self.slot.borrow_mut();
         if slot.value.is_some() || slot.closed {

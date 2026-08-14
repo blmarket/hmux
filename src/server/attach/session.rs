@@ -234,11 +234,6 @@ impl AttachSession {
         })
     }
 
-    /// Whether a key binding has deferred a command that has not started yet.
-    pub(crate) fn has_pending_command(&self) -> bool {
-        !self.commands.pending.is_empty() || !self.commands.deferred_prompts.is_empty()
-    }
-
     pub(crate) fn take_command_request(&mut self) -> Option<AttachCommandRequest> {
         self.commands
             .pending
@@ -447,7 +442,6 @@ impl AttachSession {
     pub(crate) fn prepare_wait(
         &mut self,
         state: &SharedState,
-        control_fd: RawFd,
         control_buffered: bool,
     ) -> io::Result<AttachPrepared> {
         if let Some(transition) = self.compositor.transition.take() {
@@ -497,7 +491,7 @@ impl AttachSession {
             // the pending switch before concluding the session ended.
             if let Some((session_id, _)) = self.attachments.render_attachment.take_switch() {
                 self.compositor.transition = Some(AttachTransition::SwitchSession(session_id));
-                return self.prepare_wait(state, control_fd, control_buffered);
+                return self.prepare_wait(state, control_buffered);
             }
             return Ok(AttachPrepared::Finish(AttachFinishReason::SessionEnded));
         }
@@ -519,7 +513,7 @@ impl AttachSession {
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 if let Some((session_id, _)) = self.attachments.render_attachment.take_switch() {
                     self.compositor.transition = Some(AttachTransition::SwitchSession(session_id));
-                    return self.prepare_wait(state, control_fd, control_buffered);
+                    return self.prepare_wait(state, control_buffered);
                 }
                 return Ok(AttachPrepared::Finish(AttachFinishReason::SessionEnded));
             }
@@ -599,7 +593,6 @@ impl AttachSession {
 
         Ok(AttachPrepared::Wait {
             sources: AttachWaitSources {
-                control: if tty_backpressured { -1 } else { control_fd },
                 input: if tty_backpressured || self.compositor.io_state != ClientIoState::Active {
                     -1
                 } else {

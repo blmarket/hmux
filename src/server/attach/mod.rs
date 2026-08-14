@@ -1247,7 +1247,6 @@ fn append_view_output(state: &SharedState, target: &str, output: &[u8]) {
 /// Tty readiness needs no flag because the non-blocking input drain runs next.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct AttachWaitSources {
-    pub(crate) control: RawFd,
     pub(crate) input: RawFd,
     pub(crate) tty_output: RawFd,
     pub(crate) output: RawFd,

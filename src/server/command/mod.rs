@@ -999,12 +999,11 @@ impl QueueStatus {
 
 /// One command queue running as a task, from its owner's side.
 ///
-/// The owner polls this exactly as it polled the queue itself: it reports the
-/// same output, and it is parked until the queue produces one.
+/// Awaiting this is awaiting the queue: it reports what the queue produced, and
+/// stays pending for as long as the queue is running or parked.
 pub(crate) struct QueuedCommand {
     completion: Completion<io::Result<CommandResult>>,
     status: Rc<QueueStatus>,
-    output: Option<io::Result<CommandResult>>,
 }
 
 impl QueuedCommand {
@@ -1012,54 +1011,27 @@ impl QueuedCommand {
         completion: Completion<io::Result<CommandResult>>,
         status: Rc<QueueStatus>,
     ) -> Self {
-        Self {
-            completion,
-            status,
-            output: None,
-        }
+        Self { completion, status }
     }
 
     pub(crate) fn allows_attach_io(&self) -> bool {
         self.status.allows_attach_io()
     }
 
-    /// Whether the queue has finished. Until it has, it is waiting on
-    /// something and its owner has nothing to do.
-    pub(crate) fn poll(&mut self) -> bool {
-        if self.output.is_none() {
-            // The outer error is the task disappearing; the inner one is the
-            // queue's own. Both read the same way to the owner.
-            self.output = self
-                .completion
-                .take()
-                .map(|result| result.and_then(|result| result));
-        }
-        self.output.is_some()
-    }
-
-    pub(crate) fn take_output(&mut self) -> Option<io::Result<CommandResult>> {
-        self.output.take()
-    }
-
-    /// Both halves take the wake: the value arriving and the parked suspension
-    /// changing are each reasons for the owner to look again.
-    pub(crate) fn set_wake(&mut self, wake: &WakeFn) {
-        self.completion.set_wake(wake);
+    /// Install the wake for a change in what the queue is parked on.
+    ///
+    /// The value is awaited; this is the other thing an owner can care about,
+    /// and it cannot be awaited the same way because the queue is opaque while
+    /// it runs. One-shot: an owner that parks again arms it again.
+    pub(crate) fn set_status_wake(&mut self, wake: &WakeFn) {
         self.status.set_wake(wake);
     }
 }
 
-/// An owner that is itself a task waits for the result rather than polling for
-/// it. The suspension a queue is parked on is not its business, so only the
-/// result half is awaited here — the owners that do care about it keep
-/// [`QueuedCommand::poll`] and [`QueuedCommand::set_wake`].
 impl Future for QueuedCommand {
     type Output = io::Result<CommandResult>;
 
     fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
-        if let Some(output) = self.output.take() {
-            return Poll::Ready(output);
-        }
         // The outer error is the task disappearing; the inner one is the
         // queue's own. Both read the same way to the owner.
         Pin::new(&mut self.completion)
@@ -9690,23 +9662,18 @@ mod tests {
     }
 
     #[test]
-    fn a_queued_command_wakes_its_owner_for_a_value_or_for_a_change() {
-        // A running task is opaque to its owner, so both of the things an owner
-        // can care about have to reach it the same way: the queue finishing,
-        // and the queue parking on something only the owner can answer.
-        let (mut queued, status, sender) = queued_command();
+    fn a_queued_command_wakes_its_owner_when_what_it_is_parked_on_changes() {
+        // A running task is opaque to its owner, so the one thing an owner has
+        // to learn while the queue is still parked — that answering it is the
+        // owner's own job — reaches it as a wake rather than as a value.
+        let (mut queued, status, _sender) = queued_command();
         let (wake, fired) = counting_wake();
 
-        queued.set_wake(&wake);
+        queued.set_status_wake(&wake);
         status.set_allows_attach_io(true);
+
         assert_eq!(fired.get(), 1, "the parked suspension changed");
         assert!(queued.allows_attach_io());
-        assert!(!queued.poll(), "the queue has not finished");
-
-        queued.set_wake(&wake);
-        sender.complete(Ok(CommandResult::ok("")));
-        assert_eq!(fired.get(), 2, "the queue finished");
-        assert!(queued.poll());
     }
 
     #[test]
@@ -9715,7 +9682,7 @@ mod tests {
         // change is worth a turn of the owner's.
         let (mut queued, status, _sender) = queued_command();
         let (wake, fired) = counting_wake();
-        queued.set_wake(&wake);
+        queued.set_status_wake(&wake);
 
         status.set_allows_attach_io(false);
 
@@ -9755,11 +9722,10 @@ mod tests {
             sender.complete(run_command_queue(queue, queue_state, parked, 64, queue_status).await);
         });
 
-        let mut queued = QueuedCommand::new(completion, status);
-        assert!(!queued.poll(), "the queue is parked on the prompt");
+        let queued = QueuedCommand::new(completion, status);
         assert!(
             queued.allows_attach_io(),
-            "the owner is the one being prompted"
+            "the queue is parked on a prompt the owner is the one to answer"
         );
     }
 
