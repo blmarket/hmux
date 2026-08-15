@@ -994,7 +994,6 @@ pub(crate) fn option_array_separator(name: &str) -> Option<&'static str> {
         return Some("");
     }
     match name {
-        "status-format" => Some(""),
         "codepoint-widths" | "command-alias" | "terminal-features" | "terminal-overrides"
         | "user-keys" => Some(","),
         "pane-colours" | "update-environment" => Some(" ,"),
