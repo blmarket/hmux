@@ -11,6 +11,7 @@
 //! asserts the observable results (exit code, stdout, stderr) match. When a gap
 //! is found there, it's closed here.
 
+pub(in crate::server) mod args;
 pub(in crate::server) mod buffers;
 pub(in crate::server) mod clients;
 pub(in crate::server) mod configuration;
@@ -27,6 +28,8 @@ pub(in crate::server) mod windows;
 #[cfg(test)]
 pub(in crate::server) use identity::all as all_commands;
 pub(in crate::server) use identity::Command;
+
+use args::ParsedArgs;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -2088,7 +2091,7 @@ fn run_single_shared(
     };
     let previous = install_command_target_context(&mut state, context);
     let result = run_single(
-        command.spec.command,
+        command.command,
         &command.args,
         &mut state,
         agents,
@@ -2305,8 +2308,14 @@ fn tokenized_command_groups(tokens: &[LineToken]) -> Vec<Vec<String>> {
     owned_groups
 }
 
+/// One command of a command line, ready to run.
+///
+/// The raw (normalized) argv is retained beside the typed command: the queue
+/// logs it, the `hook_*` format variables are built from it, and the name-keyed
+/// hook planning needs it.
 struct ParsedCommand {
     spec: &'static CommandSpec,
+    command: Command,
     args: Vec<String>,
 }
 
@@ -2560,8 +2569,11 @@ fn parse_command_groups(groups: Vec<&[String]>) -> Result<Vec<ParsedCommand>, Co
     let mut parsed = Vec::with_capacity(resolved.len());
     for (spec, group) in resolved {
         let args = normalize_argv(spec.name, group);
+        // Lex the validated argv once: the arity check and the command's own
+        // parse hook both read the same operands.
+        let lexed = ParsedArgs::lex(spec.name, &args);
         if let Some((minimum, maximum)) = registry::argument_limits(spec.name) {
-            let count = positional_argument_count(spec.name, &args);
+            let count = lexed.positionals().len();
             if count < minimum {
                 return Err(CommandResult::err(format!(
                     "command {}: too few arguments (need at least {minimum})\n",
@@ -2575,7 +2587,18 @@ fn parse_command_groups(groups: Vec<&[String]>) -> Result<Vec<ParsedCommand>, Co
                 )));
             }
         }
-        parsed.push(ParsedCommand { spec, args });
+        // Last parse step: let the command shape itself from its arguments. A
+        // rejection here is a parse error like any other, so it aborts the whole
+        // line before anything runs.
+        let command = match (spec.parse)(&lexed) {
+            Ok(command) => command,
+            Err(error) => return Err(CommandResult::err(error)),
+        };
+        parsed.push(ParsedCommand {
+            spec,
+            command,
+            args,
+        });
     }
     Ok(parsed)
 }
@@ -2609,31 +2632,6 @@ fn parse_command_groups_with_aliases(
     }
     let groups = expanded.iter().map(Vec::as_slice).collect::<Vec<_>>();
     parse_command_groups(groups)
-}
-
-fn positional_argument_count(name: &str, args: &[String]) -> usize {
-    let Some(spec) = registry::getopt(name) else {
-        return args.len().saturating_sub(1);
-    };
-    let mut index = 1;
-    while index < args.len() {
-        let argument = args[index].as_str();
-        if argument == "--" {
-            return args.len().saturating_sub(index + 1);
-        }
-        let flag = argument
-            .strip_prefix('-')
-            .filter(|value| value.chars().count() == 1)
-            .and_then(|value| value.chars().next());
-        let Some(flag) = flag else {
-            return args.len() - index;
-        };
-        if registry::flag_kind(spec, flag) == Some(true) {
-            index += 1;
-        }
-        index += 1;
-    }
-    0
 }
 
 /// Expand tmux's legacy trailing-semicolon argv form into the standalone token

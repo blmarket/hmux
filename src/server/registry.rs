@@ -16,24 +16,60 @@
 //!   table order (which is alphabetical);
 //! - no candidate → unknown command.
 
+use super::command::args::ParsedArgs;
 use super::command::{self, Command};
 
-/// Static identity and CLI name for one tmux command.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+/// How one command's lexed arguments become the command itself.
+///
+/// The parse phase has already rejected an unknown flag, a flag missing its
+/// value, and an out-of-range operand count against this command's getopt and
+/// arity entries, so a hook only shapes input that is known to be valid. An
+/// `Err` is a parse error like any other: it aborts the whole command line
+/// before anything runs.
+pub(in crate::server) type ParseFn = fn(&ParsedArgs) -> Result<Command, String>;
+
+/// Static identity, CLI name, and argument parser for one tmux command.
+///
+/// Rows are compared by identity of the catalog entry, never structurally: a
+/// parse hook is a function pointer, whose address says nothing useful.
+#[derive(Clone, Copy, Debug)]
 pub(in crate::server) struct CommandSpec {
     pub(in crate::server) name: &'static str,
     pub(in crate::server) alias: Option<&'static str>,
-    pub(in crate::server) command: Command,
+    pub(in crate::server) parse: ParseFn,
 }
 
 impl CommandSpec {
-    const fn new(name: &'static str, alias: Option<&'static str>, command: Command) -> Self {
-        Self {
-            name,
-            alias,
-            command,
-        }
+    const fn new(name: &'static str, alias: Option<&'static str>, parse: ParseFn) -> Self {
+        Self { name, alias, parse }
     }
+}
+
+/// `Some(alias)` for a row that names one, `None` for a row that doesn't.
+macro_rules! spec_alias {
+    () => {
+        None
+    };
+    ($alias:literal) => {
+        Some($alias)
+    };
+}
+
+/// Build the command catalog: `"name" ("alias") => <parse expression>`, with the
+/// alias omitted for a command that has none.
+///
+/// Each row gets its own parse hook. A command whose arguments are not typed yet
+/// names its bare [`Command`] variant, which the generated hook returns while
+/// ignoring the lexed arguments.
+macro_rules! command_specs {
+    ($($name:literal $(($alias:literal))? => $variant:expr),* $(,)?) => {
+        &[$({
+            fn parse(_args: &ParsedArgs) -> Result<Command, String> {
+                Ok($variant)
+            }
+            CommandSpec::new($name, spec_alias!($($alias)?), parse)
+        }),*]
+    };
 }
 
 use command::buffers::Command as Buffer;
@@ -47,278 +83,98 @@ use command::sessions::Command as Session;
 use command::windows::Command as Window;
 
 /// The tmux command catalog, kept in alphabetical order for ambiguity messages.
-pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = &[
-    CommandSpec::new(
-        "attach-session",
-        Some("attach"),
-        Command::Session(Session::Attach),
-    ),
-    CommandSpec::new("bind-key", Some("bind"), Command::Keys(Keys::Bind)),
-    CommandSpec::new("break-pane", Some("breakp"), Command::Pane(Pane::Break)),
-    CommandSpec::new(
-        "capture-pane",
-        Some("capturep"),
-        Command::Pane(Pane::Capture),
-    ),
-    CommandSpec::new("choose-buffer", None, Command::Client(Client::ChooseBuffer)),
-    CommandSpec::new("choose-client", None, Command::Client(Client::ChooseClient)),
-    CommandSpec::new("choose-tree", None, Command::Client(Client::ChooseTree)),
-    CommandSpec::new(
-        "clear-history",
-        Some("clearhist"),
-        Command::Pane(Pane::ClearHistory),
-    ),
-    CommandSpec::new(
-        "clear-prompt-history",
-        Some("clearphist"),
-        Command::Client(Client::ClearPromptHistory),
-    ),
-    CommandSpec::new("clock-mode", None, Command::Client(Client::ClockMode)),
-    CommandSpec::new("command-prompt", None, Command::Client(Client::Prompt)),
-    CommandSpec::new(
-        "confirm-before",
-        Some("confirm"),
-        Command::Client(Client::ConfirmBefore),
-    ),
-    CommandSpec::new("copy-mode", None, Command::Pane(Pane::CopyMode)),
-    CommandSpec::new(
-        "customize-mode",
-        None,
-        Command::Client(Client::CustomizeMode),
-    ),
-    CommandSpec::new(
-        "delete-buffer",
-        Some("deleteb"),
-        Command::Buffer(Buffer::Delete),
-    ),
-    CommandSpec::new(
-        "detach-client",
-        Some("detach"),
-        Command::Client(Client::Detach),
-    ),
-    CommandSpec::new(
-        "display-menu",
-        Some("menu"),
-        Command::Client(Client::DisplayMenu),
-    ),
-    CommandSpec::new(
-        "display-message",
-        Some("display"),
-        Command::Client(Client::DisplayMessage),
-    ),
-    CommandSpec::new(
-        "display-popup",
-        Some("popup"),
-        Command::Client(Client::DisplayPopup),
-    ),
-    CommandSpec::new(
-        "display-panes",
-        Some("displayp"),
-        Command::Client(Client::DisplayPanes),
-    ),
-    CommandSpec::new("find-window", Some("findw"), Command::Window(Window::Find)),
-    CommandSpec::new("has-session", Some("has"), Command::Session(Session::Has)),
-    CommandSpec::new(
-        "if-shell",
-        Some("if"),
-        Command::Execution(Execution::IfShell),
-    ),
-    CommandSpec::new("join-pane", Some("joinp"), Command::Pane(Pane::Join)),
-    CommandSpec::new("kill-pane", Some("killp"), Command::Pane(Pane::Kill)),
-    CommandSpec::new("kill-server", None, Command::Server(Server::Kill)),
-    CommandSpec::new("kill-session", None, Command::Session(Session::Kill)),
-    CommandSpec::new("kill-window", Some("killw"), Command::Window(Window::Kill)),
-    CommandSpec::new("last-pane", Some("lastp"), Command::Pane(Pane::Last)),
-    CommandSpec::new("last-window", Some("last"), Command::Window(Window::Last)),
-    CommandSpec::new("link-window", Some("linkw"), Command::Window(Window::Link)),
-    CommandSpec::new("list-buffers", Some("lsb"), Command::Buffer(Buffer::List)),
-    CommandSpec::new("list-clients", Some("lsc"), Command::Client(Client::List)),
-    CommandSpec::new(
-        "list-commands",
-        Some("lscm"),
-        Command::Server(Server::ListCommands),
-    ),
-    CommandSpec::new("list-keys", Some("lsk"), Command::Keys(Keys::List)),
-    CommandSpec::new("list-panes", Some("lsp"), Command::Pane(Pane::List)),
-    CommandSpec::new("list-sessions", Some("ls"), Command::Session(Session::List)),
-    CommandSpec::new("list-windows", Some("lsw"), Command::Window(Window::List)),
-    CommandSpec::new("load-buffer", Some("loadb"), Command::Buffer(Buffer::Load)),
-    CommandSpec::new("lock-client", Some("lockc"), Command::Client(Client::Lock)),
-    CommandSpec::new("lock-server", Some("lock"), Command::Server(Server::Lock)),
-    CommandSpec::new(
-        "lock-session",
-        Some("locks"),
-        Command::Server(Server::LockSession),
-    ),
-    CommandSpec::new("move-pane", Some("movep"), Command::Pane(Pane::Move)),
-    CommandSpec::new("move-window", Some("movew"), Command::Window(Window::Move)),
-    CommandSpec::new("new-pane", Some("newp"), Command::Pane(Pane::New)),
-    CommandSpec::new("new-session", Some("new"), Command::Session(Session::New)),
-    CommandSpec::new("new-window", Some("neww"), Command::Window(Window::New)),
-    CommandSpec::new(
-        "next-layout",
-        Some("nextl"),
-        Command::Pane(Pane::NextLayout),
-    ),
-    CommandSpec::new("next-window", Some("next"), Command::Window(Window::Next)),
-    CommandSpec::new(
-        "paste-buffer",
-        Some("pasteb"),
-        Command::Buffer(Buffer::Paste),
-    ),
-    CommandSpec::new("pipe-pane", Some("pipep"), Command::Pane(Pane::Pipe)),
-    CommandSpec::new(
-        "previous-layout",
-        Some("prevl"),
-        Command::Pane(Pane::PreviousLayout),
-    ),
-    CommandSpec::new(
-        "previous-window",
-        Some("prev"),
-        Command::Window(Window::Previous),
-    ),
-    CommandSpec::new(
-        "refresh-client",
-        Some("refresh"),
-        Command::Client(Client::Refresh),
-    ),
-    CommandSpec::new(
-        "rename-session",
-        Some("rename"),
-        Command::Session(Session::Rename),
-    ),
-    CommandSpec::new(
-        "rename-window",
-        Some("renamew"),
-        Command::Window(Window::Rename),
-    ),
-    CommandSpec::new("resize-pane", Some("resizep"), Command::Pane(Pane::Resize)),
-    CommandSpec::new(
-        "resize-window",
-        Some("resizew"),
-        Command::Pane(Pane::ResizeWindow),
-    ),
-    CommandSpec::new(
-        "respawn-pane",
-        Some("respawnp"),
-        Command::Pane(Pane::Respawn),
-    ),
-    CommandSpec::new(
-        "respawn-window",
-        Some("respawnw"),
-        Command::Window(Window::Respawn),
-    ),
-    CommandSpec::new(
-        "rotate-window",
-        Some("rotatew"),
-        Command::Pane(Pane::RotateWindow),
-    ),
-    CommandSpec::new(
-        "run-shell",
-        Some("run"),
-        Command::Execution(Execution::RunShell),
-    ),
-    CommandSpec::new("save-buffer", Some("saveb"), Command::Buffer(Buffer::Save)),
-    CommandSpec::new(
-        "select-layout",
-        Some("selectl"),
-        Command::Pane(Pane::SelectLayout),
-    ),
-    CommandSpec::new("select-pane", Some("selectp"), Command::Pane(Pane::Select)),
-    CommandSpec::new(
-        "select-window",
-        Some("selectw"),
-        Command::Window(Window::Select),
-    ),
-    CommandSpec::new("send-keys", Some("send"), Command::Keys(Keys::Send)),
-    CommandSpec::new("send-prefix", None, Command::Keys(Keys::SendPrefix)),
-    CommandSpec::new("server-access", None, Command::Server(Server::Access)),
-    CommandSpec::new("set-buffer", Some("setb"), Command::Buffer(Buffer::Set)),
-    CommandSpec::new(
-        "set-environment",
-        Some("setenv"),
-        Command::Configuration(Configuration::SetEnvironment),
-    ),
-    CommandSpec::new(
-        "set-hook",
-        None,
-        Command::Configuration(Configuration::SetHook),
-    ),
-    CommandSpec::new(
-        "set-option",
-        Some("set"),
-        Command::Configuration(Configuration::SetOption),
-    ),
-    CommandSpec::new(
-        "set-window-option",
-        Some("setw"),
-        Command::Configuration(Configuration::SetWindowOption),
-    ),
-    CommandSpec::new("show-buffer", Some("showb"), Command::Buffer(Buffer::Show)),
-    CommandSpec::new(
-        "show-environment",
-        Some("showenv"),
-        Command::Configuration(Configuration::ShowEnvironment),
-    ),
-    CommandSpec::new(
-        "show-hooks",
-        None,
-        Command::Configuration(Configuration::ShowHooks),
-    ),
-    CommandSpec::new(
-        "show-messages",
-        Some("showmsgs"),
-        Command::Server(Server::ShowMessages),
-    ),
-    CommandSpec::new(
-        "show-options",
-        Some("show"),
-        Command::Configuration(Configuration::ShowOptions),
-    ),
-    CommandSpec::new(
-        "show-prompt-history",
-        Some("showphist"),
-        Command::Client(Client::ShowPromptHistory),
-    ),
-    CommandSpec::new(
-        "show-window-options",
-        Some("showw"),
-        Command::Configuration(Configuration::ShowWindowOptions),
-    ),
-    CommandSpec::new(
-        "source-file",
-        Some("source"),
-        Command::Execution(Execution::SourceFile),
-    ),
-    CommandSpec::new("split-window", Some("splitw"), Command::Pane(Pane::Split)),
-    CommandSpec::new(
-        "start-server",
-        Some("start"),
-        Command::Server(Server::Start),
-    ),
-    CommandSpec::new(
-        "suspend-client",
-        Some("suspendc"),
-        Command::Client(Client::Suspend),
-    ),
-    CommandSpec::new("swap-pane", Some("swapp"), Command::Pane(Pane::Swap)),
-    CommandSpec::new("swap-window", Some("swapw"), Command::Window(Window::Swap)),
-    CommandSpec::new(
-        "switch-client",
-        Some("switchc"),
-        Command::Client(Client::Switch),
-    ),
-    CommandSpec::new("unbind-key", Some("unbind"), Command::Keys(Keys::Unbind)),
-    CommandSpec::new(
-        "unlink-window",
-        Some("unlinkw"),
-        Command::Window(Window::Unlink),
-    ),
-    CommandSpec::new(
-        "wait-for",
-        Some("wait"),
-        Command::Execution(Execution::WaitFor),
-    ),
+pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
+    "attach-session" ("attach") => Command::Session(Session::Attach),
+    "bind-key" ("bind") => Command::Keys(Keys::Bind),
+    "break-pane" ("breakp") => Command::Pane(Pane::Break),
+    "capture-pane" ("capturep") => Command::Pane(Pane::Capture),
+    "choose-buffer" => Command::Client(Client::ChooseBuffer),
+    "choose-client" => Command::Client(Client::ChooseClient),
+    "choose-tree" => Command::Client(Client::ChooseTree),
+    "clear-history" ("clearhist") => Command::Pane(Pane::ClearHistory),
+    "clear-prompt-history" ("clearphist") => Command::Client(Client::ClearPromptHistory),
+    "clock-mode" => Command::Client(Client::ClockMode),
+    "command-prompt" => Command::Client(Client::Prompt),
+    "confirm-before" ("confirm") => Command::Client(Client::ConfirmBefore),
+    "copy-mode" => Command::Pane(Pane::CopyMode),
+    "customize-mode" => Command::Client(Client::CustomizeMode),
+    "delete-buffer" ("deleteb") => Command::Buffer(Buffer::Delete),
+    "detach-client" ("detach") => Command::Client(Client::Detach),
+    "display-menu" ("menu") => Command::Client(Client::DisplayMenu),
+    "display-message" ("display") => Command::Client(Client::DisplayMessage),
+    "display-popup" ("popup") => Command::Client(Client::DisplayPopup),
+    "display-panes" ("displayp") => Command::Client(Client::DisplayPanes),
+    "find-window" ("findw") => Command::Window(Window::Find),
+    "has-session" ("has") => Command::Session(Session::Has),
+    "if-shell" ("if") => Command::Execution(Execution::IfShell),
+    "join-pane" ("joinp") => Command::Pane(Pane::Join),
+    "kill-pane" ("killp") => Command::Pane(Pane::Kill),
+    "kill-server" => Command::Server(Server::Kill),
+    "kill-session" => Command::Session(Session::Kill),
+    "kill-window" ("killw") => Command::Window(Window::Kill),
+    "last-pane" ("lastp") => Command::Pane(Pane::Last),
+    "last-window" ("last") => Command::Window(Window::Last),
+    "link-window" ("linkw") => Command::Window(Window::Link),
+    "list-buffers" ("lsb") => Command::Buffer(Buffer::List),
+    "list-clients" ("lsc") => Command::Client(Client::List),
+    "list-commands" ("lscm") => Command::Server(Server::ListCommands),
+    "list-keys" ("lsk") => Command::Keys(Keys::List),
+    "list-panes" ("lsp") => Command::Pane(Pane::List),
+    "list-sessions" ("ls") => Command::Session(Session::List),
+    "list-windows" ("lsw") => Command::Window(Window::List),
+    "load-buffer" ("loadb") => Command::Buffer(Buffer::Load),
+    "lock-client" ("lockc") => Command::Client(Client::Lock),
+    "lock-server" ("lock") => Command::Server(Server::Lock),
+    "lock-session" ("locks") => Command::Server(Server::LockSession),
+    "move-pane" ("movep") => Command::Pane(Pane::Move),
+    "move-window" ("movew") => Command::Window(Window::Move),
+    "new-pane" ("newp") => Command::Pane(Pane::New),
+    "new-session" ("new") => Command::Session(Session::New),
+    "new-window" ("neww") => Command::Window(Window::New),
+    "next-layout" ("nextl") => Command::Pane(Pane::NextLayout),
+    "next-window" ("next") => Command::Window(Window::Next),
+    "paste-buffer" ("pasteb") => Command::Buffer(Buffer::Paste),
+    "pipe-pane" ("pipep") => Command::Pane(Pane::Pipe),
+    "previous-layout" ("prevl") => Command::Pane(Pane::PreviousLayout),
+    "previous-window" ("prev") => Command::Window(Window::Previous),
+    "refresh-client" ("refresh") => Command::Client(Client::Refresh),
+    "rename-session" ("rename") => Command::Session(Session::Rename),
+    "rename-window" ("renamew") => Command::Window(Window::Rename),
+    "resize-pane" ("resizep") => Command::Pane(Pane::Resize),
+    "resize-window" ("resizew") => Command::Pane(Pane::ResizeWindow),
+    "respawn-pane" ("respawnp") => Command::Pane(Pane::Respawn),
+    "respawn-window" ("respawnw") => Command::Window(Window::Respawn),
+    "rotate-window" ("rotatew") => Command::Pane(Pane::RotateWindow),
+    "run-shell" ("run") => Command::Execution(Execution::RunShell),
+    "save-buffer" ("saveb") => Command::Buffer(Buffer::Save),
+    "select-layout" ("selectl") => Command::Pane(Pane::SelectLayout),
+    "select-pane" ("selectp") => Command::Pane(Pane::Select),
+    "select-window" ("selectw") => Command::Window(Window::Select),
+    "send-keys" ("send") => Command::Keys(Keys::Send),
+    "send-prefix" => Command::Keys(Keys::SendPrefix),
+    "server-access" => Command::Server(Server::Access),
+    "set-buffer" ("setb") => Command::Buffer(Buffer::Set),
+    "set-environment" ("setenv") => Command::Configuration(Configuration::SetEnvironment),
+    "set-hook" => Command::Configuration(Configuration::SetHook),
+    "set-option" ("set") => Command::Configuration(Configuration::SetOption),
+    "set-window-option" ("setw") => Command::Configuration(Configuration::SetWindowOption),
+    "show-buffer" ("showb") => Command::Buffer(Buffer::Show),
+    "show-environment" ("showenv") => Command::Configuration(Configuration::ShowEnvironment),
+    "show-hooks" => Command::Configuration(Configuration::ShowHooks),
+    "show-messages" ("showmsgs") => Command::Server(Server::ShowMessages),
+    "show-options" ("show") => Command::Configuration(Configuration::ShowOptions),
+    "show-prompt-history" ("showphist") => Command::Client(Client::ShowPromptHistory),
+    "show-window-options" ("showw") => Command::Configuration(Configuration::ShowWindowOptions),
+    "source-file" ("source") => Command::Execution(Execution::SourceFile),
+    "split-window" ("splitw") => Command::Pane(Pane::Split),
+    "start-server" ("start") => Command::Server(Server::Start),
+    "suspend-client" ("suspendc") => Command::Client(Client::Suspend),
+    "swap-pane" ("swapp") => Command::Pane(Pane::Swap),
+    "swap-window" ("swapw") => Command::Window(Window::Swap),
+    "switch-client" ("switchc") => Command::Client(Client::Switch),
+    "unbind-key" ("unbind") => Command::Keys(Keys::Unbind),
+    "unlink-window" ("unlinkw") => Command::Window(Window::Unlink),
+    "wait-for" ("wait") => Command::Execution(Execution::WaitFor),
 ];
 
 /// The outcome of resolving a typed command word.
@@ -332,7 +188,7 @@ pub enum Resolution {
     Unknown { error: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(in crate::server) enum SpecResolution {
     Spec(&'static CommandSpec),
     Ambiguous { error: String },
@@ -739,9 +595,11 @@ mod tests {
             .collect::<HashSet<_>>();
         assert_eq!(names.len(), COMMAND_SPECS.len());
 
+        // Every row's parse hook still ignores its arguments, so the empty
+        // lexed argv is enough to recover the identity each row registers.
         let commands = COMMAND_SPECS
             .iter()
-            .map(|spec| spec.command)
+            .map(|spec| (spec.parse)(&ParsedArgs::default()).expect("identity parse"))
             .collect::<HashSet<_>>();
         assert_eq!(commands.len(), COMMAND_SPECS.len());
 
