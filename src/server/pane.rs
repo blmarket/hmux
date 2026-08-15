@@ -2669,8 +2669,8 @@ impl PaneClass {
 /// what the caller sees. `parse_window_name` cuts at the first space, and it
 /// does so after resolving quotes, so both a quoted and an unquoted argument
 /// reduce to the same leading word either way.
-fn stringify_argv(argv: &[String]) -> String {
-    argv.join(" ")
+pub(crate) fn stringify_argv<S: AsRef<str>>(argv: &[S]) -> String {
+    argv.iter().map(AsRef::as_ref).collect::<Vec<_>>().join(" ")
 }
 
 /// Reduce a command line to the program name tmux displays for it, following
@@ -2683,7 +2683,7 @@ fn stringify_argv(argv: &[String]) -> String {
 /// non-printable bytes for display. That step is not reproduced: every name
 /// reaching this function is a program name, and the trailing-byte trim below
 /// already removes the control characters `clean_name` would have escaped.
-fn parse_window_name(input: &str) -> String {
+pub(crate) fn parse_window_name(input: &str) -> String {
     let mut name = input.strip_prefix('"').unwrap_or(input);
     if let Some(quote) = name.find('"') {
         name = &name[..quote];

@@ -3325,16 +3325,18 @@ fn apply_initial_window_name(
     let default_command = st
         .option_for_target(&target, "default-command")
         .unwrap_or("");
-    let current = match command {
-        [] if !default_command.is_empty() => default_command.split_whitespace().next(),
-        [] => Some(default_shell),
-        [command] => command.split_whitespace().next(),
-        command => command.first().copied(),
-    }
-    .and_then(|command| Path::new(command).file_name())
-    .and_then(|command| command.to_str())
-    .unwrap_or("")
-    .to_string();
+    // tmux's `default_window_name`: stringify the pane's whole argument vector
+    // and reduce it with `parse_window_name`, falling back to the shell the
+    // pane would run when it was given no command of its own. Reducing the
+    // stringified vector — rather than its first word — is what strips an
+    // `exec ` prefix and a login shell's leading dash, and what keeps a
+    // relative path such as `bin/sleep` whole.
+    let source = match command {
+        [] if !default_command.is_empty() => default_command.to_string(),
+        [] => default_shell.to_string(),
+        command => crate::server::pane::stringify_argv(command),
+    };
+    let current = crate::server::pane::parse_window_name(&source);
     let name = if st.option_for_target(&target, "automatic-rename") == Some("on") {
         let source = st
             .option_for_target(&target, "automatic-rename-format")
