@@ -2300,13 +2300,20 @@ pub(super) fn clock_glyph(character: char) -> Option<&'static [[u8; 5]; 5]> {
     Some(&CLOCK_GLYPHS[index])
 }
 
-/// The time the clock shows, per `clock-mode-style`: 24-hour, or the 12-hour
-/// form with the `AM`/`PM` tmux appends to it.
+/// The time the clock shows, per `clock-mode-style`: 24-hour or 12-hour, with
+/// an optional seconds field. The 12-hour forms also get the `AM`/`PM` suffix
+/// tmux appends to them.
 fn clock_text(style: &str) -> String {
     let mut buffer = [0 as libc::c_char; 32];
     let now = unsafe { libc::time(std::ptr::null_mut()) };
-    let twelve = style == "12";
-    let format = if twelve { c"%l:%M " } else { c"%H:%M" };
+    let twelve = matches!(style, "12" | "12-with-seconds");
+    let seconds = matches!(style, "12-with-seconds" | "24-with-seconds");
+    let format = match (twelve, seconds) {
+        (true, true) => c"%l:%M:%S ",
+        (true, false) => c"%l:%M ",
+        (false, true) => c"%H:%M:%S",
+        (false, false) => c"%H:%M",
+    };
     // SAFETY: localtime returns a process-owned tm pointer valid until the next
     // libc time conversion on this thread; strftime copies it immediately.
     let (length, hour) = unsafe {

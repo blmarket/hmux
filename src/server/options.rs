@@ -623,7 +623,10 @@ const OPTION_CHOICES: &[(&str, &[&str])] = &[
     ("activity-action", ALERT_ACTION_CHOICES),
     ("allow-passthrough", &["off", "on", "all"]),
     ("bell-action", ALERT_ACTION_CHOICES),
-    ("clock-mode-style", &["12", "24"]),
+    (
+        "clock-mode-style",
+        &["12", "24", "12-with-seconds", "24-with-seconds"],
+    ),
     (
         "copy-mode-line-numbers",
         &["off", "default", "absolute", "relative", "hybrid"],
