@@ -1,0 +1,29 @@
+From 7f610adb9b8358a8d52d9b3021d58830366be2c2 Mon Sep 17 00:00:00 2001
+From: "Jeong, Heon" <blmarket@gmail.com>
+Date: Fri, 14 Aug 2026 22:00:29 -0700
+Subject: [PATCH] Detach clients when processing `destroy-unattached`
+
+There can be an exiting client that is not counted as attached but still has
+c->session set. `session_destroy` can leave that clients with a dangling
+reference.
+
+Fix: call `server_destroy_session` to clear c->session of those clients.
+---
+ server-fn.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/server-fn.c b/server-fn.c
+index 8c7d0e94..1ac7c477 100644
+--- a/server-fn.c
++++ b/server-fn.c
+@@ -506,6 +506,7 @@ server_check_unattached(void)
+ 				continue;
+ 			break;
+ 		}
++		server_destroy_session(s);
+ 		session_destroy(s, 1, __func__);
+ 	}
+ }
+--
+2.54.0
+

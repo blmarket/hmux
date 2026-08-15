@@ -22,12 +22,24 @@ tmux.overrideAttrs (old: {
     ++ [ "--disable-sixel" ];
 
   # Drop the patches nixpkgs' tmux carries; the oracle must be stock 3.7b plus
-  # only the upstream crash fix below.
+  # only the crash fixes below. A crashed oracle answers nothing, so a
+  # conformance test that trips one of these tells us about tmux, not about
+  # hmux; every patch here has to stay this narrow.
   #
-  # tmux c515d8ca ("Do not crash looking for next or previous session. GitHub
-  # issue 5344.", released in 3.7c): `server_destroy_session()` passed a NULL
-  # `struct sort_criteria *` to `session_{next,previous}_session()`, which
+  # 0001, tmux c515d8ca ("Do not crash looking for next or previous session.
+  # GitHub issue 5344.", released in 3.7c): `server_destroy_session()` passed a
+  # NULL `struct sort_criteria *` to `session_{next,previous}_session()`, which
   # `sort_qsort()` dereferences. In 3.7b, `set -g detach-on-destroy next` (or
   # `previous`) followed by `kill-session` kills the whole server.
-  patches = [ ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch ];
+  #
+  # 0002, local fix, not upstream: `server_check_unattached()` called
+  # `session_destroy()` directly, so a client that is already exiting - not
+  # counted in `s->attached`, but still holding `c->session` - was left with a
+  # dangling session pointer. Calling `server_destroy_session()` first clears
+  # those references. In 3.7b, `set -g destroy-unattached on` can kill the
+  # server as a client detaches.
+  patches = [
+    ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch
+    ./tmux-3.7b-0002-detach-clients-when-processing-destroy-unattached.patch
+  ];
 })
