@@ -1646,6 +1646,9 @@ impl Expander<'_> {
         keep: fn(std::cmp::Ordering) -> bool,
     ) -> String {
         let parts = split_top_level(rest, b',');
+        if parts.len() != 2 {
+            return String::new();
+        }
         let a = self.expand(parts.first().map(String::as_str).unwrap_or(""), vars, depth);
         let b = self.expand(parts.get(1).map(String::as_str).unwrap_or(""), vars, depth);
         bool01(keep(a.cmp(&b)))
