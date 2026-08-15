@@ -35,10 +35,9 @@ use hmux_rt::Interest;
 use crate::sync::{join, Completion};
 use hmux_rt::{sleep, AsyncFd, TaskHandle};
 
-use super::execution::{self, WaitForOutcome};
+use super::execution::{self, RunShell, WaitFor, WaitForOutcome};
 use super::{
-    flag_value, has_flag, interaction_completion_result, io_error_message, job_delay, positionals,
-    shell_command, ClientContext, ClientFileWrite, CommandResult, RunShellCompletion,
+    interaction_completion_result, io_error_message, shell_command, ClientContext, ClientFileWrite, CommandResult, RunShellCompletion,
     SourceFileRead,
 };
 
@@ -102,8 +101,8 @@ impl SuspensionWait {
 /// `-S`, `-U` and an uncontended `-L` finish the moment the registry is
 /// touched; the forms that have to wait for another client report the
 /// completion the registry will signal.
-pub(crate) fn wait_for(args: &[String], registry: &WaitRegistry) -> SuspensionStart {
-    match execution::wait_for(args, registry) {
+pub(crate) fn wait_for(command: &WaitFor, registry: &WaitRegistry) -> SuspensionStart {
+    match execution::wait_for(command, registry) {
         WaitForOutcome::Done(result) => SuspensionStart::Ready(result),
         WaitForOutcome::Pending(completion) => {
             SuspensionStart::Waiting(SuspensionWait::WaitFor(completion))
@@ -291,24 +290,19 @@ async fn drain_pipe<T: Read + AsFd>(tasks: &TaskHandle, pipe: Option<T>) -> Vec<
 /// the order of the statements below.
 pub(crate) async fn run_shell(
     tasks: &TaskHandle,
-    args: Vec<String>,
+    run: RunShell,
     context: ClientContext,
 ) -> RunShellCompletion {
-    debug_assert!(!has_flag(&args, "-b"));
     let resolved = |result: CommandResult| RunShellCompletion { result, view: None };
-    let Some(command) = positionals(&args, &["-t", "-c", "-d"])
-        .into_iter()
-        .next()
-        .map(str::to_string)
-    else {
+    let Some(command) = run.command.clone() else {
         return resolved(CommandResult::ok(""));
     };
-    let delay = match job_delay(&args) {
+    let delay = match run.delay() {
         Ok(delay) => delay,
         Err(error) => return resolved(error),
     };
     let mut shell = shell_command(&command, &context);
-    if let Some(cwd) = flag_value(&args, "-c") {
+    if let Some(cwd) = run.cwd.as_deref() {
         shell.current_dir(cwd);
     }
     let running = match spawn_shell(tasks, shell, delay).await {
@@ -317,8 +311,11 @@ pub(crate) async fn run_shell(
     };
     let output = collect_shell(tasks, running).await;
 
-    let text = run_shell_report(&command, has_flag(&args, "-E"), &output);
-    let view = flag_value(&args, "-t").map(|target| (target.to_string(), text.as_bytes().to_vec()));
+    let text = run_shell_report(&command, run.stderr, &output);
+    let view = run
+        .target
+        .as_deref()
+        .map(|target| (target.to_string(), text.as_bytes().to_vec()));
     let mut result = CommandResult::ok(if view.is_some() { String::new() } else { text });
     result.exit = output.exit;
     result.continue_queue = true;
@@ -352,7 +349,7 @@ pub(crate) async fn if_shell(tasks: &TaskHandle, condition: String, context: Cli
 /// [`VIEW_FALLBACK`] stands for the pane it picks when the job named none.
 pub(crate) async fn background_shell(
     tasks: &TaskHandle,
-    args: Vec<String>,
+    run: RunShell,
     context: ClientContext,
     jobs: Rc<BackgroundJobRegistry>,
 ) -> RunShellCompletion {
@@ -360,18 +357,14 @@ pub(crate) async fn background_shell(
         result: CommandResult::ok(""),
         view: None,
     };
-    let Some(command) = positionals(&args, &["-t", "-c", "-d"])
-        .into_iter()
-        .next()
-        .map(str::to_string)
-    else {
+    let Some(command) = run.command.clone() else {
         return done;
     };
-    let Ok(delay) = job_delay(&args) else {
+    let Ok(delay) = run.delay() else {
         return done;
     };
     let mut shell = shell_command(&command, &context);
-    if let Some(cwd) = flag_value(&args, "-c") {
+    if let Some(cwd) = run.cwd.as_deref() {
         shell.current_dir(cwd);
     }
     // Identified client streams are open in the daemon as descriptors above
@@ -401,11 +394,11 @@ pub(crate) async fn background_shell(
     if let Some(id) = registered {
         jobs.remove(id);
     }
-    let text = run_shell_report(&command, has_flag(&args, "-E"), &output);
+    let text = run_shell_report(&command, run.stderr, &output);
     RunShellCompletion {
         result: CommandResult::ok(""),
         view: Some((
-            flag_value(&args, "-t").unwrap_or(VIEW_FALLBACK).to_string(),
+            run.target.as_deref().unwrap_or(VIEW_FALLBACK).to_string(),
             text.into_bytes(),
         )),
     }
@@ -638,7 +631,7 @@ fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{if_shell, load_buffer, run_shell, save_buffer, source_file, wait_for};
-    use super::{SuspensionStart, SuspensionWait};
+    use super::{execution, RunShell, SuspensionStart, SuspensionWait, WaitFor};
     use crate::server::command::CommandResult;
     use crate::event_loop::test_driver::run_task_on_loop;
     use crate::server::command::{ClientContext, ClientFileWrite};
@@ -652,11 +645,12 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    fn args(values: &[&str]) -> Vec<String> {
-        std::iter::once("run-shell")
+    fn args(values: &[&str]) -> RunShell {
+        let argv = std::iter::once("run-shell")
             .chain(values.iter().copied())
             .map(str::to_string)
-            .collect()
+            .collect::<Vec<_>>();
+        execution::run_shell_from_argv(&argv)
     }
 
     /// A client whose environment carries the test runner's `PATH`. The child
@@ -914,11 +908,12 @@ mod tests {
         let _ = fs::remove_dir_all(&directory);
     }
 
-    fn wait_for_args(values: &[&str]) -> Vec<String> {
-        std::iter::once("wait-for")
+    fn wait_for_args(values: &[&str]) -> WaitFor {
+        let argv = std::iter::once("wait-for")
             .chain(values.iter().copied())
             .map(str::to_string)
-            .collect()
+            .collect::<Vec<_>>();
+        execution::wait_for_from_argv(&argv)
     }
 
     #[test]

@@ -69,7 +69,7 @@ macro_rules! command_specs {
 use command::buffers::{self, Command as Buffer};
 use command::clients::{self, Command as Client};
 use command::configuration::{self, Command as Configuration};
-use command::execution::Command as Execution;
+use command::execution::{self, Command as Execution};
 use command::keys::{self, Command as Keys};
 use command::panes::{self, Command as Pane};
 use command::server::{self, Command as Server};
@@ -104,7 +104,7 @@ pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
     "clear-history" ("clearhist") => typed!(Pane, ClearHistory, panes::ClearHistory),
     "clear-prompt-history" ("clearphist") => typed!(Client, ClearPromptHistory, clients::ClearPromptHistory),
     "clock-mode" => typed!(Client, ClockMode, clients::ClockMode),
-    "command-prompt" => bare!(Client, Prompt),
+    "command-prompt" => typed!(Client, Prompt, clients::CommandPrompt),
     "confirm-before" ("confirm") => typed!(Client, ConfirmBefore, clients::ConfirmBefore),
     "copy-mode" => typed!(Pane, CopyMode, panes::CopyMode),
     "customize-mode" => typed!(Client, CustomizeMode, clients::CustomizeMode),
@@ -116,7 +116,7 @@ pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
     "display-panes" ("displayp") => typed!(Client, DisplayPanes, clients::DisplayPanes),
     "find-window" ("findw") => typed!(Window, Find, windows::FindWindow),
     "has-session" ("has") => typed!(Session, Has, sessions::HasSession),
-    "if-shell" ("if") => bare!(Execution, IfShell),
+    "if-shell" ("if") => typed!(Execution, IfShell, execution::IfShell),
     "join-pane" ("joinp") => typed!(Pane, Join, panes::MovePane),
     "kill-pane" ("killp") => typed!(Pane, Kill, panes::KillPane),
     "kill-server" => bare!(Server, Kill),
@@ -155,7 +155,7 @@ pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
     "respawn-pane" ("respawnp") => typed!(Pane, Respawn, panes::RespawnPane),
     "respawn-window" ("respawnw") => typed!(Window, Respawn, windows::RespawnWindow),
     "rotate-window" ("rotatew") => typed!(Pane, RotateWindow, panes::RotateWindow),
-    "run-shell" ("run") => bare!(Execution, RunShell),
+    "run-shell" ("run") => typed!(Execution, RunShell, execution::RunShell),
     "save-buffer" ("saveb") => typed!(Buffer, Save, buffers::SaveBuffer),
     "select-layout" ("selectl") => typed!(Pane, SelectLayout, panes::SelectLayout),
     "select-pane" ("selectp") => typed!(Pane, Select, panes::SelectPane),
@@ -175,7 +175,7 @@ pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
     "show-options" ("show") => typed!(Configuration, ShowOptions, configuration::ShowOptions),
     "show-prompt-history" ("showphist") => typed!(Client, ShowPromptHistory, clients::ShowPromptHistory),
     "show-window-options" ("showw") => typed!(Configuration, ShowWindowOptions, configuration::ShowOptions),
-    "source-file" ("source") => bare!(Execution, SourceFile),
+    "source-file" ("source") => typed!(Execution, SourceFile, execution::SourceFile),
     "split-window" ("splitw") => typed!(Pane, Split, panes::SplitWindow),
     "start-server" ("start") => bare!(Server, Start),
     "suspend-client" ("suspendc") => typed!(Client, Suspend, clients::SuspendClient),
@@ -184,7 +184,7 @@ pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
     "switch-client" ("switchc") => typed!(Client, Switch, clients::SwitchClient),
     "unbind-key" ("unbind") => typed!(Keys, Unbind, keys::UnbindKey),
     "unlink-window" ("unlinkw") => typed!(Window, Unlink, windows::UnlinkWindow),
-    "wait-for" ("wait") => bare!(Execution, WaitFor),
+    "wait-for" ("wait") => typed!(Execution, WaitFor, execution::WaitFor),
 ];
 
 /// The outcome of resolving a typed command word.

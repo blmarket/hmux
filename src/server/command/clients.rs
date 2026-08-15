@@ -10,7 +10,7 @@ pub(in crate::server) enum Command {
     Refresh(RefreshClient),
     Suspend(SuspendClient),
     Lock(LockClient),
-    Prompt,
+    Prompt(CommandPrompt),
     ConfirmBefore(ConfirmBefore),
     DisplayMessage(DisplayMessage),
     DisplayMenu(DisplayMenu),
@@ -26,40 +26,138 @@ pub(in crate::server) enum Command {
 }
 
 impl Command {
-    pub(super) fn execute(self, context: &mut CommandContext<'_>) -> CommandResult {
+    pub(super) async fn execute(self, context: &mut ExecContext<'_>) -> SharedCommandExecution {
         match self {
-            Self::List(command) => command.execute(context.state, context.agents),
-            Self::Detach(command) => command.execute(context.state, context.client),
-            Self::Refresh(command) => command.execute(context.state, context.client),
-            Self::Switch(command) => command.execute(context.state, context.client),
-            Self::Suspend(command) => command.execute(context.state, context.client),
-            // A prompt is answered by a client, so the command queue lifts it
-            // into a job of its own before dispatch reaches this table.
-            Self::Prompt => CommandResult::err("no current client\n"),
-            Self::ConfirmBefore(command) => command.execute(context.state, context.client),
+            // These four put something on a client's screen and wait for the
+            // answer, so the queue behind them is parked until it comes.
+            Self::Prompt(command) => command.execute(context).await,
+            Self::ConfirmBefore(command) => {
+                let waits = !command.background;
+                interactive(context, waits, |inner| {
+                    command.run(inner.state, inner.client)
+                })
+                .await
+            }
             Self::DisplayMenu(command) => {
-                command.execute(context.state, context.agents, context.client)
+                interactive(context, true, |inner| {
+                    command.run(inner.state, inner.agents, inner.client)
+                })
+                .await
             }
-            Self::DisplayPopup(command) => command.execute(context.state, context.client),
-            Self::DisplayPanes(command) => command.execute(context.state, context.client),
-            Self::Lock(command) => command.execute(context.state, context.client),
+            Self::DisplayPopup(command) => {
+                let waits = !command.close;
+                interactive(context, waits, |inner| {
+                    command.run(inner.state, inner.client)
+                })
+                .await
+            }
+            Self::DisplayPanes(command) => {
+                let waits = !command.background;
+                interactive(context, waits, |inner| {
+                    command.run(inner.state, inner.client)
+                })
+                .await
+            }
+            Self::List(command) => context.sync(|inner| command.run(inner.state, inner.agents)),
+            Self::Detach(command) => context.sync(|inner| command.run(inner.state, inner.client)),
+            Self::Refresh(command) => context.sync(|inner| command.run(inner.state, inner.client)),
+            Self::Switch(command) => context.sync(|inner| command.run(inner.state, inner.client)),
+            Self::Suspend(command) => context.sync(|inner| command.run(inner.state, inner.client)),
+            Self::Lock(command) => context.sync(|inner| command.run(inner.state, inner.client)),
             Self::DisplayMessage(command) => {
-                command.execute(context.state, context.agents, context.client)
+                context.sync(|inner| command.run(inner.state, inner.agents, inner.client))
             }
-            Self::ChooseTree(command) => command.execute(context.state, context.agents),
-            Self::ChooseClient(command) => command.execute(context.state, context.agents),
-            Self::ChooseBuffer(command) => command.execute(context.state),
-            Self::ClockMode(command) => command.execute(context.state),
-            Self::CustomizeMode(command) => command.execute(context.state),
-            Self::ShowPromptHistory(command) => command.execute(context.state),
-            Self::ClearPromptHistory(command) => command.execute(context.state),
+            Self::ChooseTree(command) => {
+                context.sync(|inner| command.run(inner.state, inner.agents))
+            }
+            Self::ChooseClient(command) => {
+                context.sync(|inner| command.run(inner.state, inner.agents))
+            }
+            Self::ChooseBuffer(command) => context.sync(|inner| command.run(inner.state)),
+            Self::ClockMode(command) => context.sync(|inner| command.run(inner.state)),
+            Self::CustomizeMode(command) => context.sync(|inner| command.run(inner.state)),
+            Self::ShowPromptHistory(command) => context.sync(|inner| command.run(inner.state)),
+            Self::ClearPromptHistory(command) => context.sync(|inner| command.run(inner.state)),
         }
+    }
+}
+
+/// Run one of the commands that puts an overlay on a client, and — when the
+/// client is one that answers — wait for what it answered.
+///
+/// tmux runs the command first either way: it is what puts the overlay up, and
+/// a failure there is reported instead of waited on.
+async fn interactive(
+    context: &mut ExecContext<'_>,
+    waits: bool,
+    run: impl FnOnce(&mut CommandContext<'_>) -> CommandResult,
+) -> SharedCommandExecution {
+    if !waits || !context.client().wait_for_interactions() {
+        return context.sync(run);
+    }
+    let (reply, completed) = match PromptReply::new() {
+        Ok(pair) => pair,
+        Err(error) => {
+            return SharedCommandExecution::completed(CommandResult::err(format!("{error}\n")))
+        }
+    };
+    let mut client = context.client().clone();
+    client.interaction_reply = Some(reply);
+    let initial = context.run_sync(&client, run);
+    if initial.exit != 0 {
+        return SharedCommandExecution::completed(initial);
+    }
+    let start = SuspensionStart::Waiting(SuspensionWait::Interaction(completed));
+    SharedCommandExecution::completed(context.wait_for_answer(true, start).await)
+}
+
+/// `command-prompt [-1CbeFiklN] [-I inputs] [-p prompts] [-t target-client]
+/// [-T prompt-type] [template]`.
+///
+/// The prompt's own words travel to the client that answers it and come back to
+/// build the template, so this command carries its argv rather than a reading
+/// of it.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct CommandPrompt {
+    args: Vec<String>,
+}
+
+impl CommandPrompt {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            args: args.argv().to_vec(),
+        })
+    }
+
+    async fn execute(self, context: &mut ExecContext<'_>) -> SharedCommandExecution {
+        if !context.client().wait_for_interactions() {
+            return SharedCommandExecution::completed(CommandResult::err("no current client\n"));
+        }
+        if let Err(error) = command_prompt_spec(&self.args) {
+            return SharedCommandExecution::completed(CommandResult::err(error));
+        }
+        let registry = {
+            let state = context.state().borrow_mut();
+            state.client_prompt_registry()
+        };
+        // The prompt has to reach its client before the next command can answer
+        // it, so the registry call happens now and only the waiting is deferred.
+        let start = suspend::client_prompt(
+            self.args.clone(),
+            &registry,
+            command_prompt_target(&self.args),
+            context.client().tty_name.clone(),
+            command_prompt_waits(&self.args),
+        );
+        SharedCommandExecution::completed(context.wait_for_answer(true, start).await)
     }
 }
 
 /// `confirm-before [-by] [-c confirm-key] [-p prompt] [-t target-client] command`.
 #[derive(Clone, Debug)]
 pub(in crate::server) struct ConfirmBefore {
+    /// `-b`: put the prompt up without waiting for its answer.
+    background: bool,
     /// `-c`: the key that confirms, `y` by default.
     confirm_key: Option<String>,
     /// `-p`: the prompt shown instead of the built one.
@@ -75,6 +173,7 @@ pub(in crate::server) struct ConfirmBefore {
 impl ConfirmBefore {
     pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
         Ok(Self {
+            background: args.has('b'),
             confirm_key: args.value('c').map(str::to_string),
             prompt: args.value('p').map(str::to_string),
             target: args.value('t').map(str::to_string),
@@ -83,7 +182,7 @@ impl ConfirmBefore {
         })
     }
 
-    fn execute(self, state: &ServerState, client: &ClientContext) -> CommandResult {
+    fn run(self, state: &ServerState, client: &ClientContext) -> CommandResult {
         if self.command.is_empty() {
             return CommandResult::err(
                 "command confirm-before: too few arguments (need at least 1)\n",
@@ -402,7 +501,7 @@ impl ChooseTree {
         })
     }
 
-    fn execute(self, state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
+    fn run(self, state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
         let order = match self.options.resolve_order() {
             Ok(order) => order,
             Err(error) => return error,
@@ -534,7 +633,7 @@ impl ChooseClient {
         })
     }
 
-    fn execute(self, state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
+    fn run(self, state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
         if let Err(error) = validate_mode_target(self.target.as_deref(), state) {
             return error;
         }
@@ -638,7 +737,7 @@ impl ChooseBuffer {
         })
     }
 
-    fn execute(self, state: &mut ServerState) -> CommandResult {
+    fn run(self, state: &mut ServerState) -> CommandResult {
         if let Err(error) = validate_mode_target(self.target.as_deref(), state) {
             return error;
         }
@@ -732,7 +831,7 @@ impl CustomizeMode {
         })
     }
 
-    fn execute(self, state: &mut ServerState) -> CommandResult {
+    fn run(self, state: &mut ServerState) -> CommandResult {
         let Some(target) = self
             .target
             .clone()
@@ -868,7 +967,7 @@ impl ClockMode {
         })
     }
 
-    fn execute(self, state: &mut ServerState) -> CommandResult {
+    fn run(self, state: &mut ServerState) -> CommandResult {
         enter_mode(self.target.as_deref(), state, ModeView::clock())
     }
 }
@@ -917,7 +1016,7 @@ impl DisplayMenu {
         })
     }
 
-    fn execute(
+    fn run(
         self,
         state: &ServerState,
         agents: &PaneAgents,
@@ -1064,7 +1163,7 @@ impl DisplayPopup {
         })
     }
 
-    fn execute(self, state: &ServerState, client: &ClientContext) -> CommandResult {
+    fn run(self, state: &ServerState, client: &ClientContext) -> CommandResult {
         let target = self.client.as_deref();
         if self.close {
             return overlay_result(
@@ -1121,6 +1220,8 @@ impl DisplayPopup {
 /// `display-panes [-bN] [-d duration] [-t target-client] [template]`.
 #[derive(Clone, Debug)]
 pub(in crate::server) struct DisplayPanes {
+    /// `-b`: put the indicators up without waiting for a choice.
+    background: bool,
     /// `-N`: show the indicators without accepting a choice.
     no_input: bool,
     /// `-d`: how long the indicators stay up.
@@ -1133,6 +1234,7 @@ pub(in crate::server) struct DisplayPanes {
 impl DisplayPanes {
     pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
         Ok(Self {
+            background: args.has('b'),
             no_input: args.has('N'),
             duration: args.value('d').map(str::to_string),
             target: args.value('t').map(str::to_string),
@@ -1140,7 +1242,7 @@ impl DisplayPanes {
         })
     }
 
-    fn execute(self, state: &ServerState, client: &ClientContext) -> CommandResult {
+    fn run(self, state: &ServerState, client: &ClientContext) -> CommandResult {
         let duration_ms = self
             .duration
             .as_deref()
@@ -1201,7 +1303,7 @@ impl ListClients {
         })
     }
 
-    fn execute(self, state: &ServerState, agents: &PaneAgents) -> CommandResult {
+    fn run(self, state: &ServerState, agents: &PaneAgents) -> CommandResult {
         const DEFAULT_FORMAT: &str = "#{client_name}: #{session_name} [#{client_width}x#{client_height} #{client_termname}] #{?client_flags,(,}#{client_flags}#{?client_flags,),}";
         let template = self.format.as_deref().unwrap_or(DEFAULT_FORMAT);
         let requested_session = self.target.as_deref();
@@ -1355,7 +1457,7 @@ impl DetachClient {
         })
     }
 
-    fn execute(self, state: &ServerState, client: &ClientContext) -> CommandResult {
+    fn run(self, state: &ServerState, client: &ClientContext) -> CommandResult {
         let target = self.target.as_deref();
         overlay_result(
             state.detach_client(target, client.tty_name.as_deref(), self.command.as_deref()),
@@ -1378,7 +1480,7 @@ impl SuspendClient {
         })
     }
 
-    fn execute(self, state: &ServerState, client: &ClientContext) -> CommandResult {
+    fn run(self, state: &ServerState, client: &ClientContext) -> CommandResult {
         let target = self.target.as_deref();
         overlay_result(
             state.suspend_client(target, client.tty_name.as_deref()),
@@ -1401,7 +1503,7 @@ impl LockClient {
         })
     }
 
-    fn execute(self, state: &ServerState, context: &ClientContext) -> CommandResult {
+    fn run(self, state: &ServerState, context: &ClientContext) -> CommandResult {
         let target = self.target.as_deref();
         match state.lock_client(target, context.tty_name.as_deref()) {
             ClientActionResult::Queued => CommandResult::ok(""),
@@ -1455,7 +1557,7 @@ impl RefreshClient {
         })
     }
 
-    fn execute(self, state: &mut ServerState, client: &ClientContext) -> CommandResult {
+    fn run(self, state: &mut ServerState, client: &ClientContext) -> CommandResult {
         let target = self.target.as_deref();
         // `-c` and the four pan directions are handled first and alone, as tmux's
         // `cmd_refresh_client_exec` returns straight after them.
@@ -1526,7 +1628,7 @@ impl SwitchClient {
         })
     }
 
-    fn execute(self, state: &mut ServerState, client: &ClientContext) -> CommandResult {
+    fn run(self, state: &mut ServerState, client: &ClientContext) -> CommandResult {
         let Some(target_session) = self.target.as_deref() else {
             return CommandResult::err("no current client\n");
         };
@@ -1619,7 +1721,7 @@ impl DisplayMessage {
         })
     }
 
-    fn execute(
+    fn run(
         self,
         st: &mut ServerState,
         agents: &PaneAgents,
@@ -1793,7 +1895,7 @@ impl ShowPromptHistory {
         })
     }
 
-    fn execute(self, st: &ServerState) -> CommandResult {
+    fn run(self, st: &ServerState) -> CommandResult {
         let prompt_type = match prompt_history_type(self.prompt_type.as_deref()) {
             Ok(prompt_type) => prompt_type,
             Err(error) => return error,
@@ -1831,7 +1933,7 @@ impl ClearPromptHistory {
         })
     }
 
-    fn execute(self, st: &mut ServerState) -> CommandResult {
+    fn run(self, st: &mut ServerState) -> CommandResult {
         let prompt_type = match prompt_history_type(self.prompt_type.as_deref()) {
             Ok(prompt_type) => prompt_type,
             Err(error) => return error,

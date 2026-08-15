@@ -15,16 +15,20 @@ pub(in crate::server) enum Command {
 }
 
 impl Command {
-    pub(super) fn execute(self, context: &mut CommandContext<'_>) -> CommandResult {
+    pub(super) async fn execute(self, context: &mut ExecContext<'_>) -> SharedCommandExecution {
         match self {
-            Self::SetEnvironment(command) => command.execute(context.state),
-            Self::ShowEnvironment(command) => command.execute(context.state),
-            Self::SetOption(command) => command.execute(context.state, false),
-            Self::ShowOptions(command) => command.execute(context.state, false),
-            Self::SetWindowOption(command) => command.execute(context.state, true),
-            Self::ShowWindowOptions(command) => command.execute(context.state, true),
-            Self::SetHook(command) => command.execute(context.state),
-            Self::ShowHooks(command) => command.execute(context.state),
+            // `set-hook -R` runs the hook's body, which the queue takes over as
+            // items of its own.
+            Self::SetHook(command) => command.execute(context),
+            Self::SetEnvironment(command) => context.sync(|inner| command.run(inner.state)),
+            Self::ShowEnvironment(command) => context.sync(|inner| command.run(inner.state)),
+            Self::SetOption(command) => context.sync(|inner| command.run(inner.state, false)),
+            Self::ShowOptions(command) => context.sync(|inner| command.run(inner.state, false)),
+            Self::SetWindowOption(command) => context.sync(|inner| command.run(inner.state, true)),
+            Self::ShowWindowOptions(command) => {
+                context.sync(|inner| command.run(inner.state, true))
+            }
+            Self::ShowHooks(command) => context.sync(|inner| command.run(inner.state)),
         }
     }
 }
@@ -410,7 +414,7 @@ impl SetOption {
     }
 
     /// Set an option in the local table selected by its catalog scope and target.
-    fn execute(self, st: &mut ServerState, window_command: bool) -> CommandResult {
+    fn run(self, st: &mut ServerState, window_command: bool) -> CommandResult {
         let argument = match self.operands.first() {
             Some(argument) => argument.as_str(),
             None => return CommandResult::err("set-option: missing option\n"),
@@ -655,7 +659,7 @@ impl ShowOptions {
         })
     }
 
-    fn execute(&self, st: &ServerState, window_command: bool) -> CommandResult {
+    fn run(&self, st: &ServerState, window_command: bool) -> CommandResult {
         let value_only = self.value_only;
         // `-q` swallows the invalid-option diagnostic, turning any name error into a
         // silent success (exit 0, no output) — matching real tmux.
@@ -857,19 +861,35 @@ impl SetHook {
         })
     }
 
-    fn execute(self, st: &mut ServerState) -> CommandResult {
-        if self.run {
-            let Some(hook) = self.set.operands.first() else {
-                return CommandResult::err("set-hook: missing hook\n");
-            };
-            if !options::is_hook(hook) {
-                return CommandResult::err(format!("invalid option: {hook}\n"));
-            }
-            // `-R` runs the hook's body, which the queue lifts into queue items
-            // of its own before dispatch reaches here.
-            return CommandResult::err("not able to wait\n");
+    fn execute(self, context: &mut ExecContext<'_>) -> SharedCommandExecution {
+        if !self.run {
+            return context.sync(|inner| self.set.run(inner.state, false));
         }
-        self.set.execute(st, false)
+        let Some(hook) = self.set.operands.first() else {
+            return SharedCommandExecution::completed(CommandResult::err(
+                "set-hook: missing hook\n",
+            ));
+        };
+        if !options::is_hook(hook) {
+            return SharedCommandExecution::completed(CommandResult::err(format!(
+                "invalid option: {hook}\n"
+            )));
+        }
+        // `-R` runs the hook's body as queue items of its own; the command's
+        // own hooks wait until they have run.
+        let mut insert_next = context.plan_hook_with_capture(
+            hook,
+            self.set.scope.target.as_deref(),
+            vec![("hook".to_string(), hook.to_string())],
+            NestedCapture::Discard,
+            HookOrigin::Command,
+        );
+        insert_next.push(context.finalize_hooks("set-hook"));
+        SharedCommandExecution {
+            result: CommandResult::ok(""),
+            insert_next,
+            defer_success_hooks: true,
+        }
     }
 }
 
@@ -896,7 +916,7 @@ impl ShowHooks {
         })
     }
 
-    fn execute(self, st: &ServerState) -> CommandResult {
+    fn run(self, st: &ServerState) -> CommandResult {
         if let Some(hook) = self.show.option.as_deref() {
             if !options::is_hook(
                 options::parse_option_name(hook)
@@ -905,7 +925,7 @@ impl ShowHooks {
             ) {
                 return CommandResult::err(format!("invalid option: {hook}\n"));
             }
-            let result = self.show.execute(st, false);
+            let result = self.show.run(st, false);
             if result.exit == 0 && result.stdout.is_empty() && !hook.contains('[') {
                 return CommandResult::ok(format!("{hook}\n"));
             }
@@ -931,7 +951,7 @@ impl ShowHooks {
         for hook in hooks {
             let mut one = self.show.clone();
             one.option = Some((*hook).to_string());
-            let shown = one.execute(st, false);
+            let shown = one.run(st, false);
             if shown.exit != 0 {
                 return shown;
             } else if !shown.stdout.is_empty() {
@@ -979,7 +999,7 @@ impl SetEnvironment {
         })
     }
 
-    fn execute(self, st: &mut ServerState) -> CommandResult {
+    fn run(self, st: &mut ServerState) -> CommandResult {
         let name = match self.operands.first() {
             Some(name) => name.as_str(),
             None => return CommandResult::err("set-environment: missing variable\n"),
@@ -1081,7 +1101,7 @@ impl ShowEnvironment {
         })
     }
 
-    fn execute(self, st: &ServerState) -> CommandResult {
+    fn run(self, st: &ServerState) -> CommandResult {
         let hidden_only = self.hidden_only;
         let shell = self.shell;
         let requested = self.variable.as_deref();

@@ -23,6 +23,10 @@ pub(in crate::server) struct ParsedArgs {
     /// a list, and its single-valued ones resolve to the last occurrence.
     flags: Vec<(char, Option<String>)>,
     positionals: Vec<String>,
+    /// The normalized argv this view was lexed from. `command-prompt` hands its
+    /// own words to the client that answers it and reads them back to build the
+    /// template, so for that command the argv *is* part of the command.
+    argv: Vec<String>,
 }
 
 impl ParsedArgs {
@@ -63,7 +67,13 @@ impl ParsedArgs {
         Self {
             flags,
             positionals: args[index.min(args.len())..].to_vec(),
+            argv: args.to_vec(),
         }
+    }
+
+    /// The normalized argv, as written.
+    pub(in crate::server) fn argv(&self) -> &[String] {
+        &self.argv
     }
 
     /// Whether a flag was given at all, value-taking or not.

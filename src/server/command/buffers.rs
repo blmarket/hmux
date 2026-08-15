@@ -14,15 +14,19 @@ pub(in crate::server) enum Command {
 }
 
 impl Command {
-    pub(super) fn execute(self, context: &mut CommandContext<'_>) -> CommandResult {
+    pub(super) async fn execute(self, context: &mut ExecContext<'_>) -> SharedCommandExecution {
         match self {
-            Self::Set(command) => command.execute(context.state, context.client),
-            Self::Load(command) => command.execute(context.state, context.client),
-            Self::Show(command) => command.execute(context.state),
-            Self::Save(command) => command.execute(context.state, context.client),
-            Self::List(command) => command.execute(context.state),
-            Self::Delete(command) => command.execute(context.state),
-            Self::Paste(command) => command.execute(context.state),
+            // `load-buffer` and `save-buffer` name a path, which may be a FIFO
+            // whose peer is another client of this very server.
+            Self::Load(command) => command.execute(context).await,
+            Self::Save(command) => command.execute(context).await,
+            Self::Set(command) => {
+                context.sync(|inner| command.run(inner.state, inner.client))
+            }
+            Self::Show(command) => context.sync(|inner| command.run(inner.state)),
+            Self::List(command) => context.sync(|inner| command.run(inner.state)),
+            Self::Delete(command) => context.sync(|inner| command.run(inner.state)),
+            Self::Paste(command) => context.sync(|inner| command.run(inner.state)),
         }
     }
 }
@@ -56,7 +60,7 @@ impl SetBuffer {
     }
 
     /// Stores or renames a paste buffer.
-    fn execute(self, st: &mut ServerState, context: &ClientContext) -> CommandResult {
+    fn run(self, st: &mut ServerState, context: &ClientContext) -> CommandResult {
         let name = self.buffer.as_deref();
         if let Some(new_name) = self.new_name.as_deref() {
             return match name {
@@ -116,7 +120,34 @@ impl LoadBuffer {
         })
     }
 
-    fn execute(self, st: &mut ServerState, context: &ClientContext) -> CommandResult {
+    async fn execute(self, context: &mut ExecContext<'_>) -> SharedCommandExecution {
+        // Without the client's own read already in hand, the file is this
+        // command's to read — which is where it waits.
+        if context.client().input_file.is_none() {
+            let path = if self.path == "-" {
+                PathBuf::from(&self.path)
+            } else {
+                client_file_path(&self.path, context.client())
+            };
+            let input_file = suspend::load_buffer(context.tasks(), path).await;
+            let deferred_error = input_file.is_err();
+            let mut client = context.client().clone();
+            client.input_file = Some(input_file);
+            let mut result = context.run_sync(&client, |inner| self.run(inner.state, inner.client));
+            result.continue_queue |= deferred_error && result.exit != 0;
+            return SharedCommandExecution::completed(result);
+        }
+        let deferred_error = context
+            .client()
+            .input_file
+            .as_ref()
+            .is_some_and(Result::is_err);
+        let mut result = context.sync(|inner| self.run(inner.state, inner.client));
+        result.result.continue_queue |= deferred_error && result.result.exit != 0;
+        result
+    }
+
+    fn run(self, st: &mut ServerState, context: &ClientContext) -> CommandResult {
         // tmux's `file_read` keeps `-` verbatim and otherwise stores the expanded
         // path, which is also what its error message reports.
         let resolved = if self.path == "-" {
@@ -170,7 +201,7 @@ impl ShowBuffer {
 
     /// Prints the buffer's contents (no trailing newline, matching tmux), or
     /// errors if there's no such buffer.
-    fn execute(self, st: &ServerState) -> CommandResult {
+    fn run(self, st: &ServerState) -> CommandResult {
         let name = self.buffer.as_deref();
         match st.buffer(name) {
             Some(data) => CommandResult::ok_bytes(data.to_vec()),
@@ -212,7 +243,61 @@ impl SaveBuffer {
     /// (exactly what `show-buffer` prints). Buffer resolution mirrors tmux's
     /// shared `cmd-save-buffer.c`: an unknown named buffer is `no buffer NAME`
     /// and no buffer at all is `no buffers`.
-    fn execute(self, st: &ServerState, context: &ClientContext) -> CommandResult {
+    async fn execute(self, context: &mut ExecContext<'_>) -> SharedCommandExecution {
+        // A path the server writes itself may be a FIFO, so the write waits
+        // where the command does; `-` is the client's own stdout and does not.
+        let request = {
+            let state = context.state().borrow_mut();
+            self.client_request(&state, context.client())
+        };
+        match request {
+            Some(Ok(request)) => {
+                let result = suspend::save_buffer(context.tasks(), request).await;
+                SharedCommandExecution::completed(result)
+            }
+            Some(Err(result)) => SharedCommandExecution::completed(result),
+            None => context.sync(|inner| self.run(inner.state, inner.client)),
+        }
+    }
+
+    /// The write the server performs off the command queue, or `None` when the
+    /// destination is the client's own stdout.
+    fn client_request(
+        &self,
+        state: &ServerState,
+        context: &ClientContext,
+    ) -> Option<Result<ClientFileWrite, CommandResult>> {
+        if self.path == "-" {
+            return None;
+        }
+        let name = self.buffer.as_deref();
+        let data = match state.buffer(name) {
+            Some(data) => data.to_vec(),
+            None => {
+                return Some(Err(match name {
+                    Some(name) => CommandResult::err(format!("no buffer {name}\n")),
+                    None => CommandResult::err("no buffers\n"),
+                }));
+            }
+        };
+        let path = client_file_path(&self.path, context);
+        let flags = libc::O_WRONLY
+            | libc::O_CREAT
+            | if self.append {
+                libc::O_APPEND
+            } else {
+                libc::O_TRUNC
+            };
+        let display_path = path.to_string_lossy().into_owned();
+        Some(Ok(ClientFileWrite {
+            path,
+            display_path,
+            flags,
+            data,
+        }))
+    }
+
+    fn run(self, st: &ServerState, context: &ClientContext) -> CommandResult {
         let name = self.buffer.as_deref();
         let data = match st.buffer(name) {
             Some(data) => data.to_vec(),
@@ -273,7 +358,7 @@ impl ListBuffers {
     }
 
     /// Lists paste buffers, newest first.
-    fn execute(self, st: &ServerState) -> CommandResult {
+    fn run(self, st: &ServerState) -> CommandResult {
         let sort_order = match list_sort_order(self.order.as_deref()) {
             Ok(order) => order,
             Err(error) => return error,
@@ -328,7 +413,7 @@ impl DeleteBuffer {
         })
     }
 
-    fn execute(self, st: &mut ServerState) -> CommandResult {
+    fn run(self, st: &mut ServerState) -> CommandResult {
         let name = self
             .buffer
             .or_else(|| st.buffers().first().map(|(name, _)| name.clone()));
@@ -372,7 +457,7 @@ impl PasteBuffer {
 
     /// Transforms buffer newlines and enqueues the result on the target pane's
     /// nonblocking PTY input path.
-    fn execute(self, st: &mut ServerState) -> CommandResult {
+    fn run(self, st: &mut ServerState) -> CommandResult {
         let target = self.target.clone().or_else(|| current_target(st));
         let Some(target) = target else {
             return CommandResult::err("can't establish current session\n");

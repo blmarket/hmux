@@ -145,10 +145,10 @@ pub(crate) mod test_driver {
                     }
                     crate::server::command::start_resumable_command(&args, state, agents, &context)
                 }
-                BackgroundCommand::RunShell { args, jobs } => {
+                BackgroundCommand::RunShell { command, jobs } => {
                     self.drive_task_future(|tasks| async move {
                         crate::server::command::suspend::background_shell(
-                            &tasks, args, context, jobs,
+                            &tasks, command, context, jobs,
                         )
                         .await
                     });
@@ -200,10 +200,8 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, Instant};
 
-    use crate::server::command::{
-        ClientContext, ClientFileWrite, CommandSuspension, CommandSuspensionResult,
-    };
-    use hmux_rt::TaskRuntime;
+    use crate::server::command::{suspend, ClientContext, ClientFileWrite};
+    use hmux_rt::{TaskHandle, TaskRuntime};
 
     const POLL_TIMEOUT: Duration = Duration::from_secs(1);
     const DISPATCH_BUDGET: usize = 64;
@@ -326,18 +324,21 @@ mod tests {
         assert!(!listener.is_alive());
     }
 
-    /// Run runtime turns until a submitted suspension reports its result.
-    fn resolve_on_loop(
-        runtime: &mut TaskRuntime,
-        suspension: CommandSuspension,
-    ) -> CommandSuspensionResult {
-        // A suspension is awaited where the command suspended, which in the
-        // daemon is the queue's own task; the test spawns one for it alone.
+    /// Run runtime turns until the work a command would have awaited reports
+    /// its result.
+    fn resolve_on_loop<T, F, Fut>(runtime: &mut TaskRuntime, work: F) -> T
+    where
+        T: 'static,
+        F: FnOnce(TaskHandle) -> Fut,
+        Fut: std::future::Future<Output = T> + 'static,
+    {
+        // A command waits where it is, which in the daemon is the queue's own
+        // task; the test spawns one for it alone.
         let (mut completion, sender) = crate::sync::completion_pair().expect("completion pair");
         let tasks = runtime.handle();
-        let handle = tasks.clone();
+        let running = work(tasks.clone());
         tasks.spawn(async move {
-            sender.complete(crate::server::command::resolve_suspension(&handle, suspension).await);
+            sender.complete(running.await);
         });
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
@@ -351,25 +352,23 @@ mod tests {
         }
     }
 
-    fn run_shell(args: &[&str]) -> CommandSuspension {
-        CommandSuspension::RunShell {
-            args: std::iter::once("run-shell")
-                .chain(args.iter().copied())
-                .map(str::to_string)
-                .collect(),
-            context: ClientContext::default(),
-        }
+    fn run_shell(argv: &[&str]) -> crate::server::command::RunShell {
+        let argv = std::iter::once("run-shell")
+            .chain(argv.iter().copied())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        crate::server::command::run_shell_from_argv(&argv)
     }
 
     #[test]
     fn executor_resolves_a_shell_suspension_without_a_thread() {
         let mut runtime = TaskRuntime::new().unwrap();
 
-        let result = resolve_on_loop(&mut runtime, run_shell(&["echo hello; exit 3"]));
+        let command = run_shell(&["echo hello; exit 3"]);
+        let completion = resolve_on_loop(&mut runtime, |tasks| async move {
+            suspend::run_shell(&tasks, command, ClientContext::default()).await
+        });
 
-        let CommandSuspensionResult::RunShell(completion) = result else {
-            panic!("run-shell suspension resolved as another variant");
-        };
         assert_eq!(completion.result().exit, 3);
         assert_eq!(
             completion.result().stdout,
@@ -382,11 +381,11 @@ mod tests {
         let mut runtime = TaskRuntime::new().unwrap();
         let started = Instant::now();
 
-        let result = resolve_on_loop(&mut runtime, run_shell(&["-d", "0.2", "echo late"]));
+        let command = run_shell(&["-d", "0.2", "echo late"]);
+        let completion = resolve_on_loop(&mut runtime, |tasks| async move {
+            suspend::run_shell(&tasks, command, ClientContext::default()).await
+        });
 
-        let CommandSuspensionResult::RunShell(completion) = result else {
-            panic!("run-shell suspension resolved as another variant");
-        };
         assert!(started.elapsed() >= Duration::from_millis(150));
         assert_eq!(completion.result().stdout, "late\n");
         assert_eq!(
@@ -432,17 +431,12 @@ mod tests {
             }
         });
 
-        let result = resolve_on_loop(
-            &mut runtime,
-            CommandSuspension::SourceFile {
-                paths: vec![path.0.display().to_string()],
-            },
-        );
+        let paths = vec![path.0.display().to_string()];
+        let reads = resolve_on_loop(&mut runtime, |tasks| async move {
+            suspend::source_file(&tasks, paths).await
+        });
 
         writer.join().unwrap();
-        let CommandSuspensionResult::SourceFile(reads) = result else {
-            panic!("source-file suspension resolved as another variant");
-        };
         assert_eq!(
             reads[0].contents().expect("FIFO contents"),
             "set-buffer -b sourced yes\n"
@@ -466,21 +460,16 @@ mod tests {
             }
         });
 
-        let result = resolve_on_loop(
-            &mut runtime,
-            CommandSuspension::SaveBuffer {
-                request: ClientFileWrite {
-                    path: path.0.clone(),
-                    display_path: path.0.display().to_string(),
-                    flags: libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
-                    data: payload.clone(),
-                },
-            },
-        );
-
-        let CommandSuspensionResult::SaveBuffer(result) = result else {
-            panic!("save-buffer suspension resolved as another variant");
+        let request = ClientFileWrite {
+            path: path.0.clone(),
+            display_path: path.0.display().to_string(),
+            flags: libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
+            data: payload.clone(),
         };
+        let result = resolve_on_loop(&mut runtime, |tasks| async move {
+            suspend::save_buffer(&tasks, request).await
+        });
+
         assert_eq!(result.exit, 0, "{}", result.stderr);
         assert_eq!(reader.join().unwrap(), payload);
     }
@@ -517,21 +506,16 @@ mod tests {
             contents
         });
 
-        let result = resolve_on_loop(
-            &mut runtime,
-            CommandSuspension::SaveBuffer {
-                request: ClientFileWrite {
-                    path: path.0.clone(),
-                    display_path: path.0.display().to_string(),
-                    flags: libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
-                    data: payload.clone(),
-                },
-            },
-        );
-
-        let CommandSuspensionResult::SaveBuffer(result) = result else {
-            panic!("save-buffer suspension resolved as another variant");
+        let request = ClientFileWrite {
+            path: path.0.clone(),
+            display_path: path.0.display().to_string(),
+            flags: libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
+            data: payload.clone(),
         };
+        let result = resolve_on_loop(&mut runtime, |tasks| async move {
+            suspend::save_buffer(&tasks, request).await
+        });
+
         assert_eq!(result.exit, 0, "{}", result.stderr);
         assert_eq!(drained.join().unwrap(), payload);
     }
@@ -540,7 +524,10 @@ mod tests {
     fn a_finished_suspension_leaves_no_registration_behind() {
         let mut runtime = TaskRuntime::new().unwrap();
 
-        resolve_on_loop(&mut runtime, run_shell(&["true"]));
+        let command = run_shell(&["true"]);
+        resolve_on_loop(&mut runtime, |tasks| async move {
+            suspend::run_shell(&tasks, command, ClientContext::default()).await
+        });
         // The descriptors go with the task's leaves, which the next sync
         // releases.
         runtime.dispatch(1).unwrap();

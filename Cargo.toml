@@ -4,8 +4,14 @@ members = ["hmux-rt", "hmux-vt"]
 # A future that parks cx.waker() instead of cx.local_waker() hangs silently on
 # this runtime (see hmux-rt/README.md), and no type can express the
 # difference — this lint is the compile-time enforcement.
+#
+# The server state is an `Rc<RefCell<_>>` and the command queue is a task, so a
+# borrow held across an await deadlocks the next command that wants the state.
+# Commands that wait borrow in tight scopes around the await instead; this lint
+# is what keeps them that way.
 [workspace.lints.clippy]
 disallowed_methods = "deny"
+await_holding_refcell_ref = "deny"
 
 [package]
 name = "hmux"

@@ -1,6 +1,6 @@
 use super::{
-    buffers, clients, configuration, execution, keys, panes, server, sessions, windows,
-    CommandContext, CommandResult,
+    buffers, clients, configuration, execution, keys, panes, server, sessions, windows, ExecContext,
+    SharedCommandExecution,
 };
 
 /// Closed identity for every tmux command understood by the native server, with
@@ -22,17 +22,23 @@ pub(in crate::server) enum Command {
 }
 
 impl Command {
-    pub(super) fn execute(self, context: &mut CommandContext<'_>) -> CommandResult {
+    /// Run the command, waiting wherever it has to.
+    ///
+    /// The categories whose commands all finish on their own take the state
+    /// borrow for exactly their own call; the four that hold a command which
+    /// waits — for a shell, a file, a channel, or a client — drive that wait
+    /// themselves.
+    pub(super) async fn execute(self, context: &mut ExecContext<'_>) -> SharedCommandExecution {
         match self {
-            Self::Session(command) => command.execute(context),
-            Self::Window(command) => command.execute(context),
-            Self::Pane(command) => command.execute(context),
-            Self::Keys(command) => command.execute(context),
-            Self::Configuration(command) => command.execute(context),
-            Self::Buffer(command) => command.execute(context),
-            Self::Execution(command) => command.execute(context),
-            Self::Client(command) => command.execute(context),
-            Self::Server(command) => command.execute(context),
+            Self::Session(command) => context.sync(|inner| command.execute(inner)),
+            Self::Window(command) => context.sync(|inner| command.execute(inner)),
+            Self::Pane(command) => context.sync(|inner| command.execute(inner)),
+            Self::Keys(command) => context.sync(|inner| command.execute(inner)),
+            Self::Server(command) => context.sync(|inner| command.execute(inner)),
+            Self::Configuration(command) => command.execute(context).await,
+            Self::Buffer(command) => command.execute(context).await,
+            Self::Execution(command) => command.execute(context).await,
+            Self::Client(command) => command.execute(context).await,
         }
     }
 }
