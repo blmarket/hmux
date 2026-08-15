@@ -126,6 +126,12 @@ pub(crate) struct KeyCode {
     pub(crate) modifiers: Modifiers,
 }
 
+const C0_KEY_NAMES: [&str; 32] = [
+    "[NUL]", "[SOH]", "[STX]", "[ETX]", "[EOT]", "[ENQ]", "[ASC]", "[BEL]", "[BS]", "Tab", "[LF]",
+    "[VT]", "[FF]", "Enter", "[SO]", "[SI]", "[DLE]", "[DC1]", "[DC2]", "[DC3]", "[DC4]", "[NAK]",
+    "[SYN]", "[ETB]", "[CAN]", "[EM]", "[SUB]", "Escape", "[FS]", "[GS]", "[RS]", "[US]",
+];
+
 impl KeyCode {
     pub(crate) fn new(base: KeyBase, modifiers: Modifiers) -> Self {
         Self { base, modifiers }
@@ -266,6 +272,12 @@ pub(crate) fn parse_key_name(input: &str) -> Option<KeyCode> {
 }
 
 fn parse_named_key(name: &str) -> Option<KeyBase> {
+    if let Some(code) = C0_KEY_NAMES
+        .iter()
+        .position(|candidate| candidate.starts_with('[') && candidate.eq_ignore_ascii_case(name))
+    {
+        return Some(KeyBase::Char(char::from_u32(code as u32)?));
+    }
     let lower = name.to_ascii_lowercase();
     let base = match lower.as_str() {
         "f1" => KeyBase::Special(SpecialKey::F(1)),
@@ -430,14 +442,22 @@ pub(crate) fn format_key_name(key: KeyCode) -> String {
 }
 
 fn format_char(ch: char, out: &mut String) {
+    if let Some(name) = c0_key_name(ch) {
+        out.push_str(name);
+        return;
+    }
     match ch {
         ' ' => out.push_str("Space"),
-        '\t' => out.push_str("Tab"),
-        '\r' => out.push_str("Enter"),
-        '\u{1b}' => out.push_str("Escape"),
         ch if ch.is_control() => out.push_str(&format!("0x{:x}", ch as u32)),
         ch => out.push(ch),
     }
+}
+
+fn c0_key_name(ch: char) -> Option<&'static str> {
+    (ch as u32)
+        .try_into()
+        .ok()
+        .and_then(|code: usize| C0_KEY_NAMES.get(code).copied())
 }
 
 fn special_name(key: SpecialKey) -> &'static str {
@@ -565,6 +585,18 @@ mod tests {
         ] {
             let key = parse_key_name(name).unwrap();
             assert_eq!(parse_key_name(&format_key_name(key)), Some(key));
+        }
+    }
+
+    #[test]
+    fn c0_key_names_match_tmux_spellings() {
+        for (code, name) in C0_KEY_NAMES.iter().enumerate() {
+            let key = KeyCode::new(
+                KeyBase::Char(char::from_u32(code as u32).unwrap()),
+                Modifiers::default(),
+            );
+            assert_eq!(format_key_name(key), *name);
+            assert_eq!(parse_key_name(name), Some(key));
         }
     }
 
