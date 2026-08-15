@@ -1806,11 +1806,13 @@ pub(super) fn glob_match(pat: &[u8], text: &[u8]) -> bool {
     while t < text.len() {
         let single = match pat.get(p) {
             Some(b'?') => Some(p + 1),
-            Some(b'[') => match_bracket(pat, p, text[t]).and_then(|(matched, next)| {
-                // An unmatched bracket is a failed single character, not a
-                // literal one, so it must fall through to the star below.
-                matched.then_some(next)
-            }),
+            Some(b'[') => match match_bracket(pat, p, text[t]) {
+                Some((matched, next)) => matched.then_some(next),
+                // fnmatch treats an unterminated bracket expression as a
+                // literal opening bracket.
+                None if text[t] == b'[' => Some(p + 1),
+                None => None,
+            },
             Some(&byte) if byte == text[t] => Some(p + 1),
             _ => None,
         };
