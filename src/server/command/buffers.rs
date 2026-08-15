@@ -262,7 +262,7 @@ impl SaveBuffer {
 
     /// The write the server performs off the command queue, or `None` when the
     /// destination is the client's own stdout.
-    fn client_request(
+    pub(super) fn client_request(
         &self,
         state: &ServerState,
         context: &ClientContext,

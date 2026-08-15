@@ -587,3 +587,254 @@ pub(super) fn wait_for_from_argv(argv: &[String]) -> WaitFor {
     let normalized = normalize_argv("wait-for", argv);
     WaitFor::parse(&ParsedArgs::lex("wait-for", &normalized)).expect("wait-for arguments")
 }
+
+// ---- reading a configuration file ------------------------------------------
+
+/// One parsed configuration file: the command lines with their file line
+/// numbers, plus the parser assignments made in active branches, which the
+/// caller publishes to the global environment as tmux does.
+struct SourcedConfig {
+    lines: Vec<(usize, Vec<LineToken>)>,
+    assignments: Vec<(String, String, bool)>,
+}
+
+/// One state of the `%if`/`%elif`/`%else` conditional stack.
+struct SourceCondition {
+    parent_active: bool,
+    /// Whether any branch of this chain has been taken yet.
+    taken: bool,
+    active: bool,
+    seen_else: bool,
+}
+
+/// Split a sourced config file into command argv lines. This preprocessing
+/// layer handles the configuration-only syntax which cannot be represented by
+/// ordinary command argv: conditional directives, parser assignments, and
+/// brace command blocks. `environment` is the server's global environment,
+/// which seeds `$NAME` expansion; an undefined name expands to nothing.
+///
+/// Like tmux, the whole file is parsed before anything runs, so a structural
+/// error — an unbalanced conditional or an invalid escape — rejects the file:
+/// the error is `(line, diagnostic)`.
+fn source_lines(
+    contents: &str,
+    environment: &BTreeMap<String, String>,
+) -> Result<SourcedConfig, (usize, String)> {
+    let mut lines = Vec::new();
+    let mut logical = String::new();
+    let mut logical_start = 1;
+    let mut assignments = environment.clone();
+    let mut published = Vec::new();
+    let mut conditions = Vec::<SourceCondition>::new();
+    let mut brace_block: Option<(usize, Vec<LineToken>, String, usize)> = None;
+    let mut line_number = 0;
+    for raw in contents.lines() {
+        line_number += 1;
+        let continued = raw.trim_end().ends_with('\\');
+        let part = if continued {
+            raw.trim_end().strip_suffix('\\').unwrap_or(raw)
+        } else {
+            raw
+        };
+        if logical.is_empty() {
+            logical_start = line_number;
+        }
+        // A backslash-newline splices the lines together at the character
+        // level, continuing the same word, so no separator is inserted.
+        logical.push_str(part);
+        if continued {
+            continue;
+        }
+        let trimmed = logical.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            logical.clear();
+            continue;
+        }
+
+        if let Some(condition) = trimmed.strip_prefix("%if ") {
+            let parent_active = conditions.iter().all(|condition| condition.active);
+            let expanded = format::expand(condition.trim(), &Vars::default());
+            let active = parent_active && format::is_true(&expanded);
+            conditions.push(SourceCondition {
+                parent_active,
+                taken: active,
+                active,
+                seen_else: false,
+            });
+            logical.clear();
+            continue;
+        }
+        if let Some(condition) = trimmed.strip_prefix("%elif ") {
+            let Some(top) = conditions.last_mut() else {
+                return Err((logical_start, "syntax error".to_string()));
+            };
+            if top.seen_else {
+                return Err((logical_start, "syntax error".to_string()));
+            }
+            let expanded = format::expand(condition.trim(), &Vars::default());
+            top.active = top.parent_active && !top.taken && format::is_true(&expanded);
+            top.taken |= top.active;
+            logical.clear();
+            continue;
+        }
+        if trimmed == "%else" {
+            let Some(top) = conditions.last_mut() else {
+                return Err((logical_start, "syntax error".to_string()));
+            };
+            if top.seen_else {
+                return Err((logical_start, "syntax error".to_string()));
+            }
+            top.seen_else = true;
+            top.active = top.parent_active && !top.taken;
+            top.taken |= top.active;
+            logical.clear();
+            continue;
+        }
+        if trimmed == "%endif" {
+            if conditions.pop().is_none() {
+                return Err((logical_start, "syntax error".to_string()));
+            }
+            logical.clear();
+            continue;
+        }
+        if !conditions.iter().all(|condition| condition.active) {
+            logical.clear();
+            continue;
+        }
+
+        if brace_block.is_none() {
+            let (assignment, hidden) = match trimmed.strip_prefix("%hidden") {
+                Some(rest) if rest.starts_with(char::is_whitespace) => (rest.trim_start(), true),
+                _ => (trimmed, false),
+            };
+            if let Some((name, value)) = parse_source_assignment(assignment) {
+                assignments.insert(name.to_string(), value.to_string());
+                published.push((name.to_string(), value.to_string(), hidden));
+                logical.clear();
+                continue;
+            }
+        }
+        let expanded = expand_source_assignments(trimmed, &assignments);
+
+        if let Some((_line, _prefix, body, depth)) = brace_block.as_mut() {
+            let opens = expanded.chars().filter(|ch| *ch == '{').count();
+            let closes = expanded.chars().filter(|ch| *ch == '}').count();
+            let new_depth = depth.saturating_add(opens).saturating_sub(closes);
+            // Only the block's own closing brace is syntax; an inner one
+            // belongs to the body verbatim.
+            if !(new_depth == 0 && expanded.trim() == "}") {
+                if !body.is_empty() {
+                    body.push_str(" ; ");
+                }
+                body.push_str(expanded.trim());
+            }
+            *depth = new_depth;
+            if *depth == 0 {
+                let (line, mut prefix, body, _) = brace_block.take().expect("active brace block");
+                prefix.push(LineToken::Word(body));
+                lines.push((line, prefix));
+            }
+            logical.clear();
+            continue;
+        }
+
+        if let Some(prefix) = expanded.trim_end().strip_suffix('{') {
+            let tokens = tokenize_line_checked(prefix.trim_end())
+                .map_err(|message| (logical_start, message))?;
+            brace_block = Some((logical_start, tokens, String::new(), 1));
+            logical.clear();
+            continue;
+        }
+
+        let argv = tokenize_line_checked(&expanded).map_err(|message| (logical_start, message))?;
+        if !argv.is_empty() {
+            lines.push((logical_start, argv));
+        }
+        logical.clear();
+    }
+    if !logical.trim().is_empty() {
+        let argv = tokenize_line_checked(logical.trim_start())
+            .map_err(|message| (logical_start, message))?;
+        if !argv.is_empty() {
+            lines.push((logical_start, argv));
+        }
+    }
+    if !conditions.is_empty() {
+        return Err((line_number + 1, "syntax error".to_string()));
+    }
+    Ok(SourcedConfig {
+        lines,
+        assignments: published,
+    })
+}
+
+fn parse_source_assignment(line: &str) -> Option<(&str, &str)> {
+    let (name, value) = line.split_once('=')?;
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+        || name.as_bytes().first().is_some_and(u8::is_ascii_digit)
+    {
+        return None;
+    }
+    Some((name, value.trim_matches('"')))
+}
+
+fn expand_source_assignments(line: &str, assignments: &BTreeMap<String, String>) -> String {
+    let mut output = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    let mut single_quoted = false;
+    while let Some(ch) = chars.next() {
+        if ch == '\'' {
+            single_quoted = !single_quoted;
+            output.push(ch);
+            continue;
+        }
+        if ch != '$' || single_quoted {
+            output.push(ch);
+            continue;
+        }
+        let braced = chars.peek() == Some(&'{');
+        if braced {
+            chars.next();
+        }
+        let mut name = String::new();
+        while chars
+            .peek()
+            .is_some_and(|next| *next == '_' || next.is_ascii_alphanumeric())
+        {
+            name.push(chars.next().expect("peeked assignment name"));
+        }
+        if braced && chars.peek() == Some(&'}') {
+            chars.next();
+        }
+        if let Some(value) = assignments.get(&name) {
+            output.push_str(value);
+        } else if name.is_empty() {
+            // A bare `$` is not a variable reference; keep it.
+            output.push('$');
+            if braced {
+                output.push('{');
+            }
+        }
+        // An undefined `$NAME` expands to nothing, as in tmux.
+    }
+    output
+}
+
+fn source_verbose_line(tokens: &[LineToken]) -> String {
+    let mut words = tokens
+        .iter()
+        .map(|token| match token {
+            LineToken::Word(word) => word.clone(),
+            LineToken::Separator => ";".to_string(),
+        })
+        .collect::<Vec<_>>();
+    if let Some(first) = words.first_mut() {
+        if let Resolution::Name(canonical) = registry::resolve(first) {
+            *first = canonical.to_string();
+        }
+    }
+    words.join(" ")
+}

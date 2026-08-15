@@ -102,6 +102,15 @@ impl ParsedArgs {
             .count()
     }
 
+    /// Every flag occurrence, in the order written, with the value a
+    /// value-taking one carries. The `hook_flag_*` format variables are this
+    /// list.
+    pub(in crate::server) fn flags(&self) -> impl Iterator<Item = (char, Option<&str>)> {
+        self.flags
+            .iter()
+            .map(|(letter, value)| (*letter, value.as_deref()))
+    }
+
     /// Every value given for a repeatable flag, in the order written.
     pub(in crate::server) fn values(&self, flag: char) -> impl Iterator<Item = &str> {
         self.flags

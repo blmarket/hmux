@@ -274,3 +274,49 @@ impl ListKeys {
         CommandResult::ok(out)
     }
 }
+
+/// The order emitted by tmux's key table catalog: plain character keys first,
+/// then named keys, followed by meta, control, and shift variants.
+fn list_key_order(key: KeyCode) -> (u8, u8, u32) {
+    let modifier_group = match (
+        key.modifiers.meta(),
+        key.modifiers.ctrl(),
+        key.modifiers.shift(),
+    ) {
+        (false, false, false) => 0,
+        (true, false, false) => 2,
+        (false, true, false) => 3,
+        (false, false, true) => 4,
+        _ => 5,
+    };
+    match key.base {
+        KeyBase::Char(value) => (modifier_group, 0, value as u32),
+        KeyBase::Special(value) => (
+            modifier_group,
+            1,
+            match value {
+                SpecialKey::Delete => 0,
+                SpecialKey::PageUp => 1,
+                SpecialKey::Up => 2,
+                SpecialKey::Down => 3,
+                SpecialKey::Left => 4,
+                SpecialKey::Right => 5,
+                SpecialKey::F(number) => 10 + u32::from(number),
+                SpecialKey::Insert => 30,
+                SpecialKey::Home => 31,
+                SpecialKey::End => 32,
+                SpecialKey::PageDown => 33,
+                SpecialKey::BackTab => 34,
+                SpecialKey::Backspace => 35,
+                SpecialKey::Keypad(value) => 40 + value as u32,
+                SpecialKey::KeypadEnter => 50,
+                SpecialKey::PasteStart => 51,
+                SpecialKey::PasteEnd => 52,
+            },
+        ),
+        KeyBase::User(value) => (modifier_group, 2, u32::from(value)),
+        KeyBase::Mouse(_) => (modifier_group, 3, 0),
+        KeyBase::Any => (modifier_group, 4, 0),
+        KeyBase::None => (modifier_group, 5, 0),
+    }
+}

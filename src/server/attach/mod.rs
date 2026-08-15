@@ -1687,7 +1687,7 @@ where
             // tmux's `cmd_attach_session` runs the `update-environment` copy-in
             // again on every attach, so a session picks up the new client's
             // `DISPLAY` and agent sockets rather than the creating client's.
-            if !command::has_bool_flag(args, 'E') {
+            if !command::command_flag("attach-session", args, 'E') {
                 st.update_session_environment(&target, &context.environment);
             }
             target

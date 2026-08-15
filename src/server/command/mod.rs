@@ -300,14 +300,20 @@ impl CommandResult {
     }
 }
 
+/// The lexed view of a `command-prompt` argv. The prompt's words travel to the
+/// client that answers it and back, so its own parser reads them wherever they
+/// arrive rather than from a typed command.
+fn command_prompt_args(args: &[String]) -> ParsedArgs {
+    ParsedArgs::lex("command-prompt", &normalize_argv("command-prompt", args))
+}
+
 pub(crate) fn command_prompt_target(args: &[String]) -> Option<String> {
-    let normalized = normalize_argv("command-prompt", args);
-    flag_value(&normalized, "-t").map(str::to_string)
+    command_prompt_args(args).value('t').map(str::to_string)
 }
 
 pub(crate) fn command_prompt_waits(args: &[String]) -> bool {
-    let normalized = normalize_argv("command-prompt", args);
-    !has_flag(&normalized, "-b") && !has_flag(&normalized, "-i")
+    let args = command_prompt_args(args);
+    !args.has('b') && !args.has('i')
 }
 
 #[derive(Clone, Debug)]
@@ -332,19 +338,17 @@ pub(crate) fn command_prompt_spec(args: &[String]) -> Result<CommandPromptSpec, 
     if let Err(error) = parse_command_groups(vec![args]) {
         return Err(error.stderr);
     }
-    let normalized = normalize_argv("command-prompt", args);
-    let prompt_type = flag_value(&normalized, "-T").unwrap_or("command");
+    let normalized = command_prompt_args(args);
+    let prompt_type = normalized.value('T').unwrap_or("command");
     if !matches!(
         prompt_type,
         "command" | "search" | "target" | "window-target"
     ) {
         return Err(format!("unknown type: {prompt_type}\n"));
     }
-    let literal = has_flag(&normalized, "-l");
-    let raw_prompt = flag_value(&normalized, "-p");
-    let template = trailing_command(&normalized, &["-I", "-p", "-t", "-T"])
-        .into_iter()
-        .next();
+    let literal = normalized.has('l');
+    let raw_prompt = normalized.value('p');
+    let template = normalized.positionals().first().map(String::as_str);
     let (prompt_text, add_space) = match raw_prompt {
         Some(prompt) => (prompt.to_string(), true),
         None => match template {
@@ -358,7 +362,7 @@ pub(crate) fn command_prompt_spec(args: &[String]) -> Result<CommandPromptSpec, 
             None => (":".to_string(), false),
         },
     };
-    let raw_inputs = flag_value(&normalized, "-I").unwrap_or("");
+    let raw_inputs = normalized.value('I').unwrap_or("");
     let labels = if literal {
         vec![prompt_text]
     } else {
@@ -385,11 +389,11 @@ pub(crate) fn command_prompt_spec(args: &[String]) -> Result<CommandPromptSpec, 
             initial,
         })
         .collect();
-    let single = has_flag(&normalized, "-1");
-    let numeric = !single && has_flag(&normalized, "-N");
-    let incremental = !single && !numeric && has_flag(&normalized, "-i");
-    let key = !single && !numeric && !incremental && has_flag(&normalized, "-k");
-    let backspace_exit = !single && !numeric && !incremental && !key && has_flag(&normalized, "-e");
+    let single = normalized.has('1');
+    let numeric = !single && normalized.has('N');
+    let incremental = !single && !numeric && normalized.has('i');
+    let key = !single && !numeric && !incremental && normalized.has('k');
+    let backspace_exit = !single && !numeric && !incremental && !key && normalized.has('e');
     Ok(CommandPromptSpec {
         pages,
         single,
@@ -397,7 +401,7 @@ pub(crate) fn command_prompt_spec(args: &[String]) -> Result<CommandPromptSpec, 
         incremental,
         key,
         backspace_exit,
-        no_freeze: has_flag(&normalized, "-C"),
+        no_freeze: normalized.has('C'),
         prompt_type: prompt_type.to_string(),
     })
 }
@@ -444,13 +448,14 @@ pub(crate) fn command_prompt_template(
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> String {
-    let normalized = normalize_argv("command-prompt", args);
-    let mut template = trailing_command(&normalized, &["-I", "-p", "-t", "-T"])
-        .into_iter()
-        .next()
+    let normalized = command_prompt_args(args);
+    let mut template = normalized
+        .positionals()
+        .first()
+        .map(String::as_str)
         .unwrap_or("%1")
         .to_string();
-    if has_flag(&normalized, "-F") {
+    if normalized.has('F') {
         template =
             expand_command_prompt_format(&template, &mut state.borrow_mut(), agents, context);
     }
@@ -528,13 +533,14 @@ pub(crate) fn uses_client_file_protocol(args: &[String]) -> bool {
     else {
         return false;
     };
+    let lexed = ParsedArgs::lex(name, &normalize_argv(name, args));
     match name {
         "load-buffer" => true,
-        "display-message" | "split-window" => has_flag(args, "-I"),
-        "save-buffer" => {
-            let normalized = normalize_argv(name, args);
-            save_buffer_path(&normalized).is_some_and(|path| path != "-")
-        }
+        "display-message" | "split-window" => lexed.has('I'),
+        "save-buffer" => lexed
+            .positionals()
+            .first()
+            .is_some_and(|path| path != "-"),
         _ => false,
     }
 }
@@ -1320,10 +1326,11 @@ impl ResumableCommandQueue {
         let stops_group = exit != 0 && !execution.result.continue_queue;
         if !self.context.suppress_after_hooks {
             if stops_group {
+                let lexed = ParsedArgs::lex(command.spec.name, &command.args);
                 execution.insert_next.extend(self.plan_hook(
                     "command-error",
-                    flag_value(&command.args, "-t"),
-                    hook_command_vars("command-error", command.spec.name, &command.args),
+                    lexed.value('t'),
+                    hook_command_vars("command-error", &command.args, &lexed),
                     state,
                 ));
             } else if !execution.defer_success_hooks {
@@ -1374,8 +1381,9 @@ impl ResumableCommandQueue {
             return Vec::new();
         }
         let after = format!("after-{command}");
-        let vars = hook_command_vars(&after, command, args);
-        self.plan_hook(&after, flag_value(args, "-t"), vars, state)
+        let lexed = ParsedArgs::lex(command, args);
+        let vars = hook_command_vars(&after, args, &lexed);
+        self.plan_hook(&after, lexed.value('t'), vars, state)
     }
 
     /// Turn every notification raised while the last command ran into hook
@@ -1617,51 +1625,18 @@ pub(crate) fn display_command(args: &[String]) -> String {
 
 /// The `hook*` format variables a command hook body sees: the hook's name and
 /// the triggering command's arguments and flags, as tmux publishes them.
-fn hook_command_vars(hook: &str, command: &str, args: &[String]) -> Vec<(String, String)> {
+fn hook_command_vars(hook: &str, args: &[String], lexed: &ParsedArgs) -> Vec<(String, String)> {
     let mut vars = vec![("hook".to_string(), hook.to_string())];
     let arguments = args.get(1..).unwrap_or_default().join(" ");
     vars.push(("hook_arguments".to_string(), arguments));
-    let spec = registry::getopt(command).unwrap_or("");
-    let mut argument_index = 0;
-    let mut in_flags = true;
-    let mut i = 1;
-    while i < args.len() {
-        let argument = args[i].as_str();
-        if in_flags && argument == "--" {
-            in_flags = false;
-            i += 1;
-            continue;
-        }
-        let flag = argument
-            .strip_prefix('-')
-            .and_then(|rest| {
-                let mut rest = rest.chars();
-                match (rest.next(), rest.next()) {
-                    (Some(letter), None) if letter.is_ascii_alphanumeric() => Some(letter),
-                    _ => None,
-                }
-            })
-            .filter(|_| in_flags);
-        match flag {
-            Some(letter) => {
-                if registry::flag_kind(spec, letter) == Some(true) && i + 1 < args.len() {
-                    vars.push((format!("hook_flag_{letter}"), args[i + 1].clone()));
-                    i += 2;
-                } else {
-                    vars.push((format!("hook_flag_{letter}"), "1".to_string()));
-                    i += 1;
-                }
-            }
-            None => {
-                in_flags = false;
-                vars.push((
-                    format!("hook_argument_{argument_index}"),
-                    argument.to_string(),
-                ));
-                argument_index += 1;
-                i += 1;
-            }
-        }
+    for (letter, value) in lexed.flags() {
+        vars.push((
+            format!("hook_flag_{letter}"),
+            value.unwrap_or("1").to_string(),
+        ));
+    }
+    for (index, argument) in lexed.positionals().iter().enumerate() {
+        vars.push((format!("hook_argument_{index}"), argument.clone()));
     }
     vars
 }
@@ -1681,12 +1656,13 @@ pub(crate) fn take_client_file_after_hooks(
         return Vec::new();
     };
     let normalized = normalize_argv(name, args);
+    let lexed = ParsedArgs::lex(name, &normalized);
     let hook = format!("after-{name}");
-    let vars = hook_command_vars(&hook, name, &normalized);
+    let vars = hook_command_vars(&hook, &normalized, &lexed);
     let mut requests = Vec::new();
     push_event_hook(
         &hook,
-        flag_value(&normalized, "-t"),
+        lexed.value('t'),
         vars,
         st,
         context,
@@ -2173,52 +2149,6 @@ fn expand_command_aliases(command: &[String], st: &ServerState) -> Vec<String> {
     expanded
 }
 
-/// The order emitted by tmux's key table catalog: plain character keys first,
-/// then named keys, followed by meta, control, and shift variants.
-fn list_key_order(key: KeyCode) -> (u8, u8, u32) {
-    let modifier_group = match (
-        key.modifiers.meta(),
-        key.modifiers.ctrl(),
-        key.modifiers.shift(),
-    ) {
-        (false, false, false) => 0,
-        (true, false, false) => 2,
-        (false, true, false) => 3,
-        (false, false, true) => 4,
-        _ => 5,
-    };
-    match key.base {
-        KeyBase::Char(value) => (modifier_group, 0, value as u32),
-        KeyBase::Special(value) => (
-            modifier_group,
-            1,
-            match value {
-                SpecialKey::Delete => 0,
-                SpecialKey::PageUp => 1,
-                SpecialKey::Up => 2,
-                SpecialKey::Down => 3,
-                SpecialKey::Left => 4,
-                SpecialKey::Right => 5,
-                SpecialKey::F(number) => 10 + u32::from(number),
-                SpecialKey::Insert => 30,
-                SpecialKey::Home => 31,
-                SpecialKey::End => 32,
-                SpecialKey::PageDown => 33,
-                SpecialKey::BackTab => 34,
-                SpecialKey::Backspace => 35,
-                SpecialKey::Keypad(value) => 40 + value as u32,
-                SpecialKey::KeypadEnter => 50,
-                SpecialKey::PasteStart => 51,
-                SpecialKey::PasteEnd => 52,
-            },
-        ),
-        KeyBase::User(value) => (modifier_group, 2, u32::from(value)),
-        KeyBase::Mouse(_) => (modifier_group, 3, 0),
-        KeyBase::Any => (modifier_group, 4, 0),
-        KeyBase::None => (modifier_group, 5, 0),
-    }
-}
-
 fn apply_initial_window_name(
     st: &mut ServerState,
     session: &str,
@@ -2347,7 +2277,7 @@ pub fn classify(args: &[String]) -> Intent {
     match canonical {
         "attach-session" => Intent::Attach,
         // `new-session -d` is a detached create → command path; otherwise attach.
-        "new-session" if !has_bool_flag(args, 'd') => Intent::NewAttach,
+        "new-session" if !command_flag("new-session", args, 'd') => Intent::NewAttach,
         _ => Intent::Command,
     }
 }
@@ -3692,14 +3622,14 @@ pub(crate) fn client_input_path(args: &[String], context: &ClientContext) -> Opt
         SpecResolution::Spec(spec) => spec,
         _ => return None,
     };
-    let normalized = normalize_argv(spec.name, args);
+    let lexed = ParsedArgs::lex(spec.name, &normalize_argv(spec.name, args));
     if matches!(spec.name, "display-message" | "split-window") {
-        return has_flag(&normalized, "-I").then(|| PathBuf::from("-"));
+        return lexed.has('I').then(|| PathBuf::from("-"));
     }
     if spec.name != "load-buffer" {
         return None;
     }
-    let path = positionals(&normalized, &["-b", "-t"]).into_iter().next()?;
+    let path = lexed.positionals().first()?;
     if path == "-" {
         return Some(PathBuf::from(path));
     }
@@ -3726,58 +3656,8 @@ pub(crate) fn save_buffer_client_request(
         _ => return None,
     };
     let normalized = normalize_argv(spec.name, args);
-    let path = save_buffer_path(&normalized)?;
-    if path == "-" {
-        return None;
-    }
-    let name = flag_value(&normalized, "-b");
-    let data = match state.buffer(name) {
-        Some(data) => data.to_vec(),
-        None => {
-            return Some(Err(match name {
-                Some(name) => CommandResult::err(format!("no buffer {name}\n")),
-                None => CommandResult::err("no buffers\n"),
-            }));
-        }
-    };
-    let path = client_file_path(path, context);
-    let flags = libc::O_WRONLY
-        | libc::O_CREAT
-        | if has_flag(&normalized, "-a") {
-            libc::O_APPEND
-        } else {
-            libc::O_TRUNC
-        };
-    let display_path = path.to_string_lossy().into_owned();
-    Some(Ok(ClientFileWrite {
-        path,
-        display_path,
-        flags,
-        data,
-    }))
-}
-
-/// The destination path for `save-buffer`: the sole positional. Unlike the generic
-/// `positionals` helper, a bare `-` (tmux's stdout sink) counts as the path rather
-/// than being skipped as a flag.
-fn save_buffer_path(args: &[String]) -> Option<&str> {
-    let mut i = 1; // skip the command name
-    while i < args.len() {
-        let a = args[i].as_str();
-        if a == "-" {
-            return Some(a);
-        }
-        if a == "-b" {
-            i += 2; // skip the flag and its value
-            continue;
-        }
-        if a.starts_with('-') && a != "-" {
-            i += 1; // a valueless flag (e.g. -a)
-            continue;
-        }
-        return Some(a);
-    }
-    None
+    let command = buffers::SaveBuffer::parse(&ParsedArgs::lex(spec.name, &normalized)).ok()?;
+    command.client_request(state, context)
 }
 
 /// Render an I/O error the way tmux does — `strerror(errno)` — by trimming Rust's
@@ -3872,16 +3752,16 @@ pub(super) fn resolve_conditional_binding(
         if !matches!(command.first().map(String::as_str), Some("if-shell" | "if")) {
             break;
         }
-        let args = normalize_argv("if-shell", &command);
-        if !has_flag(&args, "-F") || has_flag(&args, "-b") {
+        let args = ParsedArgs::lex("if-shell", &normalize_argv("if-shell", &command));
+        if !args.has('F') || args.has('b') {
             break;
         }
-        let positional = positionals(&args, &["-t"]);
+        let positional = args.positionals();
         let Some(condition) = positional.first() else {
             break;
         };
         let previous = st.replace_command_mouse(context.mouse.clone());
-        let expanded = execution::expand_if_cond(condition, flag_value(&args, "-t"), st, agents);
+        let expanded = execution::expand_if_cond(condition, args.value('t'), st, agents);
         st.replace_command_mouse(previous);
         let branch = if format::is_true_first_byte(&expanded) {
             positional.get(1)
@@ -3891,272 +3771,6 @@ pub(super) fn resolve_conditional_binding(
         command = branch.map(|line| binding_words(line)).unwrap_or_default();
     }
     command
-}
-
-/// Expand `if-shell -F`'s condition as a format, anchored at the command's
-/// target (`-t`, else the current session) so `#{...}` references resolve
-/// against the live tree. Falls back to an empty context when no target
-/// resolves — matching real tmux, which still expands the format.
-
-/// `source-file [-Fnqv] [-t target] path ...`. Reads each file of tmux commands
-/// and runs them, exactly as `.tmux.conf` is loaded. A path that can't be opened
-/// One parsed configuration file: the command lines with their file line
-/// numbers, plus the parser assignments made in active branches, which the
-/// caller publishes to the global environment as tmux does.
-struct SourcedConfig {
-    lines: Vec<(usize, Vec<LineToken>)>,
-    assignments: Vec<(String, String, bool)>,
-}
-
-/// One state of the `%if`/`%elif`/`%else` conditional stack.
-struct SourceCondition {
-    parent_active: bool,
-    /// Whether any branch of this chain has been taken yet.
-    taken: bool,
-    active: bool,
-    seen_else: bool,
-}
-
-/// Split a sourced config file into command argv lines. This preprocessing
-/// layer handles the configuration-only syntax which cannot be represented by
-/// ordinary command argv: conditional directives, parser assignments, and
-/// brace command blocks. `environment` is the server's global environment,
-/// which seeds `$NAME` expansion; an undefined name expands to nothing.
-///
-/// Like tmux, the whole file is parsed before anything runs, so a structural
-/// error — an unbalanced conditional or an invalid escape — rejects the file:
-/// the error is `(line, diagnostic)`.
-
-/// Split a sourced config file into command argv lines. This preprocessing
-/// layer handles the configuration-only syntax which cannot be represented by
-/// ordinary command argv: conditional directives, parser assignments, and
-/// brace command blocks. `environment` is the server's global environment,
-/// which seeds `$NAME` expansion; an undefined name expands to nothing.
-///
-/// Like tmux, the whole file is parsed before anything runs, so a structural
-/// error — an unbalanced conditional or an invalid escape — rejects the file:
-/// the error is `(line, diagnostic)`.
-fn source_lines(
-    contents: &str,
-    environment: &BTreeMap<String, String>,
-) -> Result<SourcedConfig, (usize, String)> {
-    let mut lines = Vec::new();
-    let mut logical = String::new();
-    let mut logical_start = 1;
-    let mut assignments = environment.clone();
-    let mut published = Vec::new();
-    let mut conditions = Vec::<SourceCondition>::new();
-    let mut brace_block: Option<(usize, Vec<LineToken>, String, usize)> = None;
-    let mut line_number = 0;
-    for raw in contents.lines() {
-        line_number += 1;
-        let continued = raw.trim_end().ends_with('\\');
-        let part = if continued {
-            raw.trim_end().strip_suffix('\\').unwrap_or(raw)
-        } else {
-            raw
-        };
-        if logical.is_empty() {
-            logical_start = line_number;
-        }
-        // A backslash-newline splices the lines together at the character
-        // level, continuing the same word, so no separator is inserted.
-        logical.push_str(part);
-        if continued {
-            continue;
-        }
-        let trimmed = logical.trim_start();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            logical.clear();
-            continue;
-        }
-
-        if let Some(condition) = trimmed.strip_prefix("%if ") {
-            let parent_active = conditions.iter().all(|condition| condition.active);
-            let expanded = format::expand(condition.trim(), &Vars::default());
-            let active = parent_active && format::is_true(&expanded);
-            conditions.push(SourceCondition {
-                parent_active,
-                taken: active,
-                active,
-                seen_else: false,
-            });
-            logical.clear();
-            continue;
-        }
-        if let Some(condition) = trimmed.strip_prefix("%elif ") {
-            let Some(top) = conditions.last_mut() else {
-                return Err((logical_start, "syntax error".to_string()));
-            };
-            if top.seen_else {
-                return Err((logical_start, "syntax error".to_string()));
-            }
-            let expanded = format::expand(condition.trim(), &Vars::default());
-            top.active = top.parent_active && !top.taken && format::is_true(&expanded);
-            top.taken |= top.active;
-            logical.clear();
-            continue;
-        }
-        if trimmed == "%else" {
-            let Some(top) = conditions.last_mut() else {
-                return Err((logical_start, "syntax error".to_string()));
-            };
-            if top.seen_else {
-                return Err((logical_start, "syntax error".to_string()));
-            }
-            top.seen_else = true;
-            top.active = top.parent_active && !top.taken;
-            top.taken |= top.active;
-            logical.clear();
-            continue;
-        }
-        if trimmed == "%endif" {
-            if conditions.pop().is_none() {
-                return Err((logical_start, "syntax error".to_string()));
-            }
-            logical.clear();
-            continue;
-        }
-        if !conditions.iter().all(|condition| condition.active) {
-            logical.clear();
-            continue;
-        }
-
-        if brace_block.is_none() {
-            let (assignment, hidden) = match trimmed.strip_prefix("%hidden") {
-                Some(rest) if rest.starts_with(char::is_whitespace) => (rest.trim_start(), true),
-                _ => (trimmed, false),
-            };
-            if let Some((name, value)) = parse_source_assignment(assignment) {
-                assignments.insert(name.to_string(), value.to_string());
-                published.push((name.to_string(), value.to_string(), hidden));
-                logical.clear();
-                continue;
-            }
-        }
-        let expanded = expand_source_assignments(trimmed, &assignments);
-
-        if let Some((_line, _prefix, body, depth)) = brace_block.as_mut() {
-            let opens = expanded.chars().filter(|ch| *ch == '{').count();
-            let closes = expanded.chars().filter(|ch| *ch == '}').count();
-            let new_depth = depth.saturating_add(opens).saturating_sub(closes);
-            // Only the block's own closing brace is syntax; an inner one
-            // belongs to the body verbatim.
-            if !(new_depth == 0 && expanded.trim() == "}") {
-                if !body.is_empty() {
-                    body.push_str(" ; ");
-                }
-                body.push_str(expanded.trim());
-            }
-            *depth = new_depth;
-            if *depth == 0 {
-                let (line, mut prefix, body, _) = brace_block.take().expect("active brace block");
-                prefix.push(LineToken::Word(body));
-                lines.push((line, prefix));
-            }
-            logical.clear();
-            continue;
-        }
-
-        if let Some(prefix) = expanded.trim_end().strip_suffix('{') {
-            let tokens = tokenize_line_checked(prefix.trim_end())
-                .map_err(|message| (logical_start, message))?;
-            brace_block = Some((logical_start, tokens, String::new(), 1));
-            logical.clear();
-            continue;
-        }
-
-        let argv = tokenize_line_checked(&expanded).map_err(|message| (logical_start, message))?;
-        if !argv.is_empty() {
-            lines.push((logical_start, argv));
-        }
-        logical.clear();
-    }
-    if !logical.trim().is_empty() {
-        let argv = tokenize_line_checked(logical.trim_start())
-            .map_err(|message| (logical_start, message))?;
-        if !argv.is_empty() {
-            lines.push((logical_start, argv));
-        }
-    }
-    if !conditions.is_empty() {
-        return Err((line_number + 1, "syntax error".to_string()));
-    }
-    Ok(SourcedConfig {
-        lines,
-        assignments: published,
-    })
-}
-
-fn parse_source_assignment(line: &str) -> Option<(&str, &str)> {
-    let (name, value) = line.split_once('=')?;
-    if name.is_empty()
-        || !name
-            .chars()
-            .all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
-        || name.as_bytes().first().is_some_and(u8::is_ascii_digit)
-    {
-        return None;
-    }
-    Some((name, value.trim_matches('"')))
-}
-
-fn expand_source_assignments(line: &str, assignments: &BTreeMap<String, String>) -> String {
-    let mut output = String::with_capacity(line.len());
-    let mut chars = line.chars().peekable();
-    let mut single_quoted = false;
-    while let Some(ch) = chars.next() {
-        if ch == '\'' {
-            single_quoted = !single_quoted;
-            output.push(ch);
-            continue;
-        }
-        if ch != '$' || single_quoted {
-            output.push(ch);
-            continue;
-        }
-        let braced = chars.peek() == Some(&'{');
-        if braced {
-            chars.next();
-        }
-        let mut name = String::new();
-        while chars
-            .peek()
-            .is_some_and(|next| *next == '_' || next.is_ascii_alphanumeric())
-        {
-            name.push(chars.next().expect("peeked assignment name"));
-        }
-        if braced && chars.peek() == Some(&'}') {
-            chars.next();
-        }
-        if let Some(value) = assignments.get(&name) {
-            output.push_str(value);
-        } else if name.is_empty() {
-            // A bare `$` is not a variable reference; keep it.
-            output.push('$');
-            if braced {
-                output.push('{');
-            }
-        }
-        // An undefined `$NAME` expands to nothing, as in tmux.
-    }
-    output
-}
-
-fn source_verbose_line(tokens: &[LineToken]) -> String {
-    let mut words = tokens
-        .iter()
-        .map(|token| match token {
-            LineToken::Word(word) => word.clone(),
-            LineToken::Separator => ";".to_string(),
-        })
-        .collect::<Vec<_>>();
-    if let Some(first) = words.first_mut() {
-        if let Resolution::Name(canonical) = registry::resolve(first) {
-            *first = canonical.to_string();
-        }
-    }
-    words.join(" ")
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4430,19 +4044,6 @@ pub(crate) fn replace_prompt_template(template: &str, value: &str, index: u8) ->
 
 // ---- argument helpers ------------------------------------------------------
 
-/// Value following `flag` in `args` (e.g. the argument to `-t`).
-fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
-    args.iter()
-        .position(|a| a == flag)
-        .and_then(|i| args.get(i + 1))
-        .map(String::as_str)
-}
-
-/// Whether a boolean flag (e.g. `-P`, `-d`) is present.
-fn has_flag(args: &[String], flag: &str) -> bool {
-    args.iter().any(|a| a == flag)
-}
-
 /// Rewrite a command's argv into a canonical form the flag helpers understand:
 /// every short flag becomes its own `-x` token and every flag value becomes a
 /// separate following token. This lets a single scanner absorb tmux's getopt
@@ -4616,72 +4217,12 @@ fn unknown_bind_key_flag(args: &[String], spec: &str) -> Option<char> {
     Some('k')
 }
 
-/// Whether a single-letter boolean flag `ch` is present, including inside a
-/// combined short-flag cluster (tmux's getopt merges `-g -a` into `-ga`). Only
-/// pure-letter clusters count, so a value like `-3` or a positional isn't
-/// mistaken for a flag group.
-pub(crate) fn has_bool_flag(args: &[String], ch: char) -> bool {
-    args.iter().any(|a| {
-        let bytes = a.as_bytes();
-        bytes.first() == Some(&b'-')
-            && a.len() >= 2
-            && bytes.get(1) != Some(&b'-')
-            && a[1..].chars().all(|c| c.is_ascii_alphabetic())
-            && a[1..].contains(ch)
-    })
-}
-
-/// Positional (non-flag) arguments, skipping the command name at index 0 and any
-/// `-flag value` pairs whose flag is listed in `value_flags`. Boolean flags like
-/// `-d` are dropped without consuming a following argument.
-fn positionals<'a>(args: &'a [String], value_flags: &[&str]) -> Vec<&'a str> {
-    let mut i = 1; // skip the command name
-                   // tmux's `args_parse` stops looking for flags at the first operand, so a
-                   // later word that starts with `-` — a menu item named `-disabled`, say —
-                   // is an operand too rather than an unknown flag.
-    while i < args.len() {
-        let arg = args[i].as_str();
-        if arg == "--" {
-            i += 1;
-            break;
-        }
-        if !arg.starts_with('-') || arg == "-" {
-            break;
-        }
-        if value_flags.contains(&arg) {
-            i += 1; // also skip this flag's value
-        }
-        i += 1;
-    }
-    args[i.min(args.len())..]
-        .iter()
-        .map(String::as_str)
-        .collect()
-}
-
-/// Return a command and all of its arguments after the tmux options. Unlike
-/// [`positionals`], option-looking words after the command name are preserved
-/// (for example `new-window /bin/sh -c script`).
-fn trailing_command<'a>(args: &'a [String], value_flags: &[&str]) -> Vec<&'a str> {
-    if args.is_empty() {
-        return Vec::new();
-    }
-    let mut i = 1;
-    while i < args.len() {
-        let arg = args[i].as_str();
-        if arg == "--" {
-            i += 1;
-            break;
-        }
-        if !arg.starts_with('-') || arg == "-" {
-            break;
-        }
-        if value_flags.contains(&arg) {
-            i += 1;
-        }
-        i += 1;
-    }
-    args[i..].iter().map(String::as_str).collect()
+/// Whether a raw client argv gives one boolean flag of the command it names.
+///
+/// The attach path reads a couple of flags before a command line has been
+/// parsed at all, so it lexes the single command it is looking at.
+pub(crate) fn command_flag(name: &str, args: &[String], flag: char) -> bool {
+    ParsedArgs::lex(name, &normalize_argv(name, args)).has(flag)
 }
 
 /// Recreate the environment a tmux server gives a newly spawned pane. Wrapping
