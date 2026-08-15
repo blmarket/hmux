@@ -2384,8 +2384,11 @@ impl format::LoopSource for TreeLoops<'_> {
         match kind {
             format::LoopKind::Session => {
                 let marked = self.st.marked_pane();
+                // tmux's unflagged `#{S:…}` sorts by `SORT_INDEX`, the session
+                // id, so the loop follows creation order; the `n` flag is what
+                // asks for name order, and the format engine applies it.
                 let mut order: Vec<&Session> = self.st.sessions().iter().collect();
-                order.sort_by(|a, b| a.name.cmp(&b.name));
+                order.sort_by_key(|session| session.id);
                 order
                     .iter()
                     .map(|s| vars_for(self.st, s, s.active, self.agents, marked))
