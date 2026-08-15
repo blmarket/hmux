@@ -666,15 +666,15 @@ impl Expander<'_> {
         if let Some(rest) = content.strip_prefix("e|") {
             return self.eval_arith(rest, vars, depth);
         }
-        // `m/FLAGS:pattern,string` — fnmatch or extended regular-expression
-        // matching. The no-argument `m:` form below remains the ordinary glob
-        // matcher.
-        if let Some(rest) = content.strip_prefix("m/") {
-            return self.eval_match_with_flags(rest, vars, depth);
-        }
         // `m:pattern,string` — fnmatch-style glob match (`*`, `?`), returns "1"/"0".
         if let Some(rest) = content.strip_prefix("m:") {
             return self.eval_match(rest, vars, depth);
+        }
+        // `m<delimiter>FLAGS:pattern,string` — fnmatch or extended
+        // regular-expression matching. tmux accepts any punctuation as the
+        // delimiter, not just the documented slash.
+        if let Some((flags, operands)) = parse_flagged_modifier(content, b'm') {
+            return self.eval_match_with_flags(flags, operands, vars, depth);
         }
         // `t:VAR` / `t/p:VAR` / `t/f/FORMAT:VAR` — render an epoch timestamp
         // using tmux's default, compact, or caller-supplied local-time format.
@@ -1769,10 +1769,13 @@ impl Expander<'_> {
         bool01(glob_match(pattern.as_bytes(), text.as_bytes()))
     }
 
-    fn eval_match_with_flags(&self, rest: &str, vars: &Vars, depth: usize) -> String {
-        let Some((flags, operands)) = rest.split_once(':') else {
-            return String::new();
-        };
+    fn eval_match_with_flags(
+        &self,
+        flags: &str,
+        operands: &str,
+        vars: &Vars,
+        depth: usize,
+    ) -> String {
         let parts = split_top_level(operands, b',');
         let pattern = self.expand(parts.first().map(String::as_str).unwrap_or(""), vars, depth);
         let text = self.expand(parts.get(1).map(String::as_str).unwrap_or(""), vars, depth);
