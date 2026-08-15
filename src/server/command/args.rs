@@ -82,6 +82,16 @@ impl ParsedArgs {
             .and_then(|(_, value)| value.as_deref())
     }
 
+    /// How many times a flag was given. `display-popup` reads its `-E` this
+    /// way: one closes the popup when the command exits, two only when it
+    /// succeeds.
+    pub(in crate::server) fn count(&self, flag: char) -> usize {
+        self.flags
+            .iter()
+            .filter(|(letter, _)| *letter == flag)
+            .count()
+    }
+
     /// Every value given for a repeatable flag, in the order written.
     pub(in crate::server) fn values(&self, flag: char) -> impl Iterator<Item = &str> {
         self.flags

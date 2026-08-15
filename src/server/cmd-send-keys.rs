@@ -11,6 +11,7 @@ use std::process::{Command, Stdio};
 
 use crate::integration::status::PaneAgents;
 
+use super::command::args::ParsedArgs;
 use super::command::{ClientContext, CommandResult};
 use super::format;
 use super::input_keys::{PaneKey, PaneKeyEncoding};
@@ -19,17 +20,79 @@ use super::options;
 use super::state::{ClientKey, KeyBinding, ServerState};
 use hmux_vt::{encode_key_default_modes, Key, KeyEvent};
 
-const VALUE_FLAGS: &[&str] = &["-c", "-N", "-t"];
+/// `send-keys [-FHKlMRX] [-c target-client] [-N repeat-count] [-t target-pane] [key ...]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct SendKeys {
+    /// `-t`: the pane the keys reach.
+    target: Option<String>,
+    /// `-c`: the client `-K` sends to, and whose read-only flag is consulted.
+    client: Option<String>,
+    /// `-N`: the repeat count, expanded as a format when the command runs.
+    repeat: Option<String>,
+    /// `-l`: send the operands as literal text rather than key names.
+    literal: bool,
+    /// `-H`: the operands are hexadecimal byte values.
+    hex: bool,
+    /// `-X`: the operands name a copy-mode command instead of keys.
+    copy_mode: bool,
+    /// `-M`: forward the triggering mouse event to its pane.
+    mouse: bool,
+    /// `-R`: reset the pane's terminal state first.
+    reset: bool,
+    /// `-K`: send to the client rather than into the pane.
+    to_client: bool,
+    /// `-F`: expand the copy-mode search argument as a format.
+    expand: bool,
+    /// The keys, or — under `-X` — the copy-mode command and its arguments.
+    operands: Vec<String>,
+}
+
+impl SendKeys {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            target: args.value('t').map(str::to_string),
+            client: args.value('c').map(str::to_string),
+            repeat: args.value('N').map(str::to_string),
+            literal: args.has('l'),
+            hex: args.has('H'),
+            copy_mode: args.has('X'),
+            mouse: args.has('M'),
+            reset: args.has('R'),
+            to_client: args.has('K'),
+            expand: args.has('F'),
+            operands: args.positionals().to_vec(),
+        })
+    }
+}
+
+/// `send-prefix [-2] [-t target-pane]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct SendPrefix {
+    /// `-2`: send the secondary prefix key.
+    secondary: bool,
+    /// `-t`: the pane the prefix key reaches.
+    target: Option<String>,
+}
+
+impl SendPrefix {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            secondary: args.has('2'),
+            target: args.value('t').map(str::to_string),
+        })
+    }
+}
 
 /// Execute `send-keys`.
-pub(crate) fn exec(
-    args: &[String],
+pub(in crate::server) fn exec(
+    command: &SendKeys,
     state: &mut ServerState,
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
-    let target = flag_value(args, "-t")
-        .map(str::to_string)
+    let target = command
+        .target
+        .clone()
         .or_else(|| current_target(state));
     let target = match target {
         Some(target) => target,
@@ -38,25 +101,27 @@ pub(crate) fn exec(
     if state.resolve(&target).is_none() {
         return CommandResult::err(format!("{}\n", state.pane_target_error(&target)));
     }
-    let target_client_read_only = flag_value(args, "-c")
+    let target_client_read_only = command
+        .client
+        .as_deref()
         .and_then(|client| state.client_read_only(Some(client), context.tty_name.as_deref()))
         .unwrap_or(false);
-    if (context.read_only || target_client_read_only) && !has_flag(args, "-X") {
+    if (context.read_only || target_client_read_only) && !command.copy_mode {
         return CommandResult::err("client is read-only\n");
     }
 
-    let repeat = match repeat_count(args, state, &target, agents) {
+    let repeat = match repeat_count(command, state, &target, agents) {
         Ok(repeat) => repeat,
         Err(error) => return CommandResult::err(error),
     };
-    let operands = positionals(args);
-    if has_flag(args, "-N") && (has_flag(args, "-X") || operands.is_empty()) {
+    let operands = &command.operands;
+    if command.repeat.is_some() && (command.copy_mode || operands.is_empty()) {
         let _ = state.set_copy_mode_prefix(&target, repeat);
     }
 
-    if has_flag(args, "-X") {
+    if command.copy_mode {
         return send_copy_mode_command(
-            args,
+            command,
             state,
             agents,
             context,
@@ -64,7 +129,7 @@ pub(crate) fn exec(
             context.read_only || target_client_read_only,
         );
     }
-    if has_flag(args, "-M") {
+    if command.mouse {
         let Some((pane_id, event)) = context
             .mouse
             .as_ref()
@@ -78,15 +143,15 @@ pub(crate) fn exec(
             Err(_) => CommandResult::err("no mouse target\n"),
         };
     }
-    if has_flag(args, "-R") {
+    if command.reset {
         let _ = state.reset_pane_terminal(&target);
     }
 
-    if has_flag(args, "-K") {
-        return send_client_keys(args, state, context, &operands, repeat);
+    if command.to_client {
+        return send_client_keys(command, state, context, repeat);
     }
     if operands.is_empty() {
-        if has_flag(args, "-N") || has_flag(args, "-R") {
+        if command.repeat.is_some() || command.reset {
             return CommandResult::ok("");
         }
         let Some(key) = context.key_event else {
@@ -104,18 +169,16 @@ pub(crate) fn exec(
         return run_mode_bindings(&target, mode_bindings);
     }
 
-    let literal = has_flag(args, "-l");
-    let hex_literal = has_flag(args, "-H");
     let mut bytes = Vec::new();
     let mut mode_bindings = Vec::new();
     for _ in 0..repeat {
-        for operand in &operands {
+        for operand in operands {
             inject_string(
                 state,
                 &target,
                 operand,
-                literal,
-                hex_literal,
+                command.literal,
+                command.hex,
                 &mut bytes,
                 &mut mode_bindings,
             );
@@ -131,18 +194,16 @@ pub(crate) fn exec(
 }
 
 fn send_client_keys(
-    args: &[String],
+    command: &SendKeys,
     state: &ServerState,
     context: &ClientContext,
-    operands: &[&str],
     repeat: u32,
 ) -> CommandResult {
-    if operands.is_empty() && (has_flag(args, "-N") || has_flag(args, "-R")) {
+    let operands = &command.operands;
+    if operands.is_empty() && (command.repeat.is_some() || command.reset) {
         return CommandResult::ok("");
     }
 
-    let literal = has_flag(args, "-l");
-    let hex_literal = has_flag(args, "-H");
     let mut keys = Vec::new();
     if operands.is_empty() {
         if let Some(key) = context.key_event {
@@ -153,26 +214,28 @@ fn send_client_keys(
     } else {
         for _ in 0..repeat {
             for operand in operands {
-                inject_client_string(operand, literal, hex_literal, &mut keys);
+                inject_client_string(operand, command.literal, command.hex, &mut keys);
             }
         }
     }
     if !keys.is_empty() {
-        let _ = state.send_client_keys(flag_value(args, "-c"), context.tty_name.as_deref(), keys);
+        let _ = state.send_client_keys(
+            command.client.as_deref(),
+            context.tty_name.as_deref(),
+            keys,
+        );
     }
     CommandResult::ok("")
 }
 
 /// Execute `send-prefix`, which shares tmux's semantic key injection path with
 /// `send-keys`.
-pub(crate) fn exec_prefix(
-    args: &[String],
+pub(in crate::server) fn exec_prefix(
+    command: &SendPrefix,
     state: &mut ServerState,
     context: &ClientContext,
 ) -> CommandResult {
-    let target = flag_value(args, "-t")
-        .map(str::to_string)
-        .or_else(|| current_target(state));
+    let target = command.target.clone().or_else(|| current_target(state));
     let target = match target {
         Some(target) => target,
         None => return CommandResult::err("can't establish current session\n"),
@@ -184,11 +247,7 @@ pub(crate) fn exec_prefix(
         return CommandResult::err(format!("{}\n", state.pane_target_error(&target)));
     }
 
-    let option = if has_flag(args, "-2") {
-        "prefix2"
-    } else {
-        "prefix"
-    };
+    let option = if command.secondary { "prefix2" } else { "prefix" };
     let key = state
         .option_for_target(&target, option)
         .or_else(|| options::option_default(option))
@@ -203,14 +262,18 @@ pub(crate) fn exec_prefix(
 }
 
 fn send_copy_mode_command(
-    args: &[String],
+    send: &SendKeys,
     state: &mut ServerState,
     agents: &PaneAgents,
     context: &ClientContext,
     target: &str,
     read_only: bool,
 ) -> CommandResult {
-    let copy_args = trailing_command(args);
+    let copy_args = send
+        .operands
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
     let command = copy_args.first().copied().unwrap_or("");
     let copy_positionals = copy_args
         .iter()
@@ -237,7 +300,7 @@ fn send_copy_mode_command(
         Some("--") => copy_args.get(2).copied(),
         argument => argument,
     };
-    let expanded_argument = if has_flag(args, "-F")
+    let expanded_argument = if send.expand
         && matches!(
             command,
             "search-forward" | "search-backward" | "search-forward-text" | "search-backward-text"
@@ -647,12 +710,12 @@ fn write_pane_input(state: &mut ServerState, target: &str, bytes: &[u8]) -> Comm
 }
 
 fn repeat_count(
-    args: &[String],
+    command: &SendKeys,
     state: &ServerState,
     target: &str,
     agents: &PaneAgents,
 ) -> Result<u32, String> {
-    let Some(value) = flag_value(args, "-N") else {
+    let Some(value) = command.repeat.as_deref() else {
         return Ok(1);
     };
     let resolved = state
@@ -822,75 +885,26 @@ fn current_target(state: &ServerState) -> Option<String> {
     current_session(state).map(|session| format!("{session}:"))
 }
 
-fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
-    args.iter()
-        .rposition(|argument| argument == flag)
-        .and_then(|index| args.get(index + 1))
-        .map(String::as_str)
-}
-
-fn has_flag(args: &[String], flag: &str) -> bool {
-    args.iter().any(|argument| argument == flag)
-}
-
-fn positionals(args: &[String]) -> Vec<&str> {
-    let mut operands = Vec::new();
-    let mut index = 1;
-    while index < args.len() {
-        let argument = args[index].as_str();
-        if argument == "--" {
-            operands.extend(args[index + 1..].iter().map(String::as_str));
-            break;
-        }
-        if argument.starts_with('-') && argument != "-" {
-            if VALUE_FLAGS.contains(&argument) {
-                index += 1;
-            }
-        } else {
-            operands.push(argument);
-        }
-        index += 1;
-    }
-    operands
-}
-
-fn trailing_command(args: &[String]) -> Vec<&str> {
-    let mut index = 1;
-    while index < args.len() {
-        let argument = args[index].as_str();
-        if argument == "--" {
-            index += 1;
-            break;
-        }
-        if !argument.starts_with('-') || argument == "-" {
-            break;
-        }
-        if VALUE_FLAGS.contains(&argument) {
-            index += 1;
-        }
-        index += 1;
-    }
-    args[index..].iter().map(String::as_str).collect()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{encode_hex_key, encode_hex_literal, inject_client_string, repeat_count};
+    use super::{encode_hex_key, encode_hex_literal, inject_client_string, repeat_count, SendKeys};
     use crate::integration::status::PaneAgents;
+    use crate::server::command::args::ParsedArgs;
     use crate::server::state::ServerState;
 
-    fn args(value: &str) -> Vec<String> {
-        ["send-keys", "-N", value, "x"]
+    fn send_keys(value: &str) -> SendKeys {
+        let argv = ["send-keys", "-N", value, "x"]
             .into_iter()
             .map(str::to_string)
-            .collect()
+            .collect::<Vec<_>>();
+        SendKeys::parse(&ParsedArgs::lex("send-keys", &argv)).expect("send-keys arguments")
     }
 
     #[test]
     fn repeat_count_matches_tmux_bounds() {
         let state = ServerState::with_test_session().expect("state");
         let agents = PaneAgents::new();
-        let repeat = |value| repeat_count(&args(value), &state, "0", &agents);
+        let repeat = |value| repeat_count(&send_keys(value), &state, "0", &agents);
         let maximum = u32::MAX.to_string();
         assert_eq!(repeat("1"), Ok(1));
         assert_eq!(repeat(&maximum), Ok(u32::MAX));

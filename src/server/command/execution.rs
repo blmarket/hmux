@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug)]
 pub(in crate::server) enum Command {
     RunShell,
     IfShell,
@@ -9,11 +9,7 @@ pub(in crate::server) enum Command {
 }
 
 impl Command {
-    pub(super) fn execute(
-        self,
-        _args: &[String],
-        _context: &mut CommandContext<'_>,
-    ) -> CommandResult {
+    pub(super) fn execute(self, _context: &mut CommandContext<'_>) -> CommandResult {
         match self {
             // Every command here waits on something the loop polls, so the
             // command queue lifts it into a job of its own before dispatch
@@ -26,13 +22,6 @@ impl Command {
     }
 }
 
-#[cfg(test)]
-pub(super) const ALL: &[Command] = &[
-    Command::RunShell,
-    Command::IfShell,
-    Command::SourceFile,
-    Command::WaitFor,
-];
 
 /// What a `wait-for` did: either it finished, or it is queued behind another
 /// client and resumes when the returned completion fires.

@@ -1,121 +1,152 @@
+//! The client commands: what a client is shown, asked, and moved to.
+
 use super::*;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug)]
 pub(in crate::server) enum Command {
-    List,
-    Detach,
-    Switch,
-    Refresh,
-    Suspend,
-    Lock,
+    List(ListClients),
+    Detach(DetachClient),
+    Switch(SwitchClient),
+    Refresh(RefreshClient),
+    Suspend(SuspendClient),
+    Lock(LockClient),
     Prompt,
-    ConfirmBefore,
-    DisplayMessage,
-    DisplayMenu,
-    DisplayPopup,
-    DisplayPanes,
-    ChooseTree,
-    ChooseClient,
-    ChooseBuffer,
-    ClockMode,
-    CustomizeMode,
-    ShowPromptHistory,
-    ClearPromptHistory,
+    ConfirmBefore(ConfirmBefore),
+    DisplayMessage(DisplayMessage),
+    DisplayMenu(DisplayMenu),
+    DisplayPopup(DisplayPopup),
+    DisplayPanes(DisplayPanes),
+    ChooseTree(ChooseTree),
+    ChooseClient(ChooseClient),
+    ChooseBuffer(ChooseBuffer),
+    ClockMode(ClockMode),
+    CustomizeMode(CustomizeMode),
+    ShowPromptHistory(ShowPromptHistory),
+    ClearPromptHistory(ClearPromptHistory),
 }
 
 impl Command {
-    pub(super) fn execute(
-        self,
-        args: &[String],
-        context: &mut CommandContext<'_>,
-    ) -> CommandResult {
+    pub(super) fn execute(self, context: &mut CommandContext<'_>) -> CommandResult {
         match self {
-            Self::List => list_clients(args, context.state, context.agents),
-            Self::Detach => detach_client(args, context.state, context.client),
-            Self::Refresh => refresh_client(args, context.state, context.client),
-            Self::Switch => switch_client(args, context.state, context.client),
-            Self::Suspend => suspend_client(args, context.state, context.client),
+            Self::List(command) => command.execute(context.state, context.agents),
+            Self::Detach(command) => command.execute(context.state, context.client),
+            Self::Refresh(command) => command.execute(context.state, context.client),
+            Self::Switch(command) => command.execute(context.state, context.client),
+            Self::Suspend(command) => command.execute(context.state, context.client),
+            // A prompt is answered by a client, so the command queue lifts it
+            // into a job of its own before dispatch reaches this table.
             Self::Prompt => CommandResult::err("no current client\n"),
-            Self::ConfirmBefore => confirm_before(args, context.state, context.client),
-            Self::DisplayMenu => display_menu(args, context.state, context.agents, context.client),
-            Self::DisplayPopup => display_popup(args, context.state, context.client),
-            Self::DisplayPanes => display_panes(args, context.state, context.client),
-            Self::Lock => lock_client(args, context.state, context.client),
-            Self::DisplayMessage => {
-                display_message(args, context.state, context.agents, context.client)
+            Self::ConfirmBefore(command) => command.execute(context.state, context.client),
+            Self::DisplayMenu(command) => {
+                command.execute(context.state, context.agents, context.client)
             }
-            Self::ChooseTree => choose_tree(args, context.state, context.agents),
-            Self::ChooseClient => choose_client(args, context.state, context.agents),
-            Self::ChooseBuffer => choose_buffer(args, context.state),
-            Self::ClockMode => clock_mode(args, context.state),
-            Self::CustomizeMode => customize_mode(args, context.state),
-            Self::ShowPromptHistory => show_prompt_history(args, context.state),
-            Self::ClearPromptHistory => clear_prompt_history(args, context.state),
+            Self::DisplayPopup(command) => command.execute(context.state, context.client),
+            Self::DisplayPanes(command) => command.execute(context.state, context.client),
+            Self::Lock(command) => command.execute(context.state, context.client),
+            Self::DisplayMessage(command) => {
+                command.execute(context.state, context.agents, context.client)
+            }
+            Self::ChooseTree(command) => command.execute(context.state, context.agents),
+            Self::ChooseClient(command) => command.execute(context.state, context.agents),
+            Self::ChooseBuffer(command) => command.execute(context.state),
+            Self::ClockMode(command) => command.execute(context.state),
+            Self::CustomizeMode(command) => command.execute(context.state),
+            Self::ShowPromptHistory(command) => command.execute(context.state),
+            Self::ClearPromptHistory(command) => command.execute(context.state),
         }
     }
 }
 
-fn confirm_before(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {
-    let raw = trailing_command(args, &["-c", "-p", "-t"]);
-    if raw.is_empty() {
-        return CommandResult::err("command confirm-before: too few arguments (need at least 1)\n");
+/// `confirm-before [-by] [-c confirm-key] [-p prompt] [-t target-client] command`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct ConfirmBefore {
+    /// `-c`: the key that confirms, `y` by default.
+    confirm_key: Option<String>,
+    /// `-p`: the prompt shown instead of the built one.
+    prompt: Option<String>,
+    /// `-t`: the client that is asked.
+    target: Option<String>,
+    /// `-y`: answer the prompt without asking.
+    yes: bool,
+    /// The command line the confirmation runs.
+    command: Vec<String>,
+}
+
+impl ConfirmBefore {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            confirm_key: args.value('c').map(str::to_string),
+            prompt: args.value('p').map(str::to_string),
+            target: args.value('t').map(str::to_string),
+            yes: args.has('y'),
+            command: args.positionals().to_vec(),
+        })
     }
-    let command = if let [line] = raw.as_slice() {
-        command_string_groups(line)
-            .ok()
-            .map(|groups| {
-                let mut command = Vec::new();
-                for group in groups {
-                    if !command.is_empty() {
-                        command.push(";".to_string());
+
+    fn execute(self, state: &ServerState, client: &ClientContext) -> CommandResult {
+        if self.command.is_empty() {
+            return CommandResult::err(
+                "command confirm-before: too few arguments (need at least 1)\n",
+            );
+        }
+        let command = if let [line] = self.command.as_slice() {
+            command_string_groups(line)
+                .ok()
+                .map(|groups| {
+                    let mut command = Vec::new();
+                    for group in groups {
+                        if !command.is_empty() {
+                            command.push(";".to_string());
+                        }
+                        command.extend(group);
                     }
-                    command.extend(group);
-                }
-                command
-            })
-            .unwrap_or_else(|| vec![(*line).to_string()])
-    } else {
-        raw.into_iter().map(str::to_string).collect()
-    };
-    let confirm_key = match flag_value(args, "-c") {
-        Some(value)
-            if value.len() == 1 && value.as_bytes()[0] > 31 && value.as_bytes()[0] < 127 =>
-        {
-            value.as_bytes()[0]
-        }
-        Some(_) => return CommandResult::err("invalid confirm key\n"),
-        None => b'y',
-    };
-    let prompt = flag_value(args, "-p").map_or_else(
-        || {
-            let name = command.first().map(String::as_str).unwrap_or_default();
-            format!("Confirm '{name}'? ({}/n) ", confirm_key as char)
-        },
-        |prompt| format!("{prompt} "),
-    );
-    let target = flag_value(args, "-t");
-    overlay_result(
-        state.confirm_client(
+                    command
+                })
+                .unwrap_or_else(|| vec![line.clone()])
+        } else {
+            self.command.clone()
+        };
+        let confirm_key = match self.confirm_key.as_deref() {
+            Some(value)
+                if value.len() == 1 && value.as_bytes()[0] > 31 && value.as_bytes()[0] < 127 =>
+            {
+                value.as_bytes()[0]
+            }
+            Some(_) => return CommandResult::err("invalid confirm key\n"),
+            None => b'y',
+        };
+        let prompt = self.prompt.as_deref().map_or_else(
+            || {
+                let name = command.first().map(String::as_str).unwrap_or_default();
+                format!("Confirm '{name}'? ({}/n) ", confirm_key as char)
+            },
+            |prompt| format!("{prompt} "),
+        );
+        let target = self.target.as_deref();
+        overlay_result(
+            state.confirm_client(
+                target,
+                client.tty_name.as_deref(),
+                prompt,
+                command,
+                confirm_key,
+                self.yes,
+                client.interaction_reply.clone(),
+            ),
             target,
-            client.tty_name.as_deref(),
-            prompt,
-            command,
-            confirm_key,
-            has_flag(args, "-y"),
-            client.interaction_reply.clone(),
-        ),
-        target,
-    )
+        )
+    }
 }
 
-fn mode_target(args: &[String], state: &ServerState) -> Option<String> {
-    flag_value(args, "-t")
+fn enter_mode(
+    target: Option<&str>,
+    state: &mut ServerState,
+    view: ModeView,
+) -> CommandResult {
+    let Some(target) = target
         .map(str::to_string)
         .or_else(|| current_target(state))
-}
-
-fn enter_mode(args: &[String], state: &mut ServerState, view: ModeView) -> CommandResult {
-    let Some(target) = mode_target(args, state) else {
+    else {
         return CommandResult::err("no current session\n");
     };
     match state.enter_mode_view(&target, view) {
@@ -124,8 +155,11 @@ fn enter_mode(args: &[String], state: &mut ServerState, view: ModeView) -> Comma
     }
 }
 
-fn validate_mode_target(args: &[String], state: &ServerState) -> Result<(), CommandResult> {
-    let Some(target) = mode_target(args, state) else {
+fn validate_mode_target(target: Option<&str>, state: &ServerState) -> Result<(), CommandResult> {
+    let Some(target) = target
+        .map(str::to_string)
+        .or_else(|| current_target(state))
+    else {
         return Err(CommandResult::err("no current session\n"));
     };
     if state.resolve(&target).is_none() {
@@ -154,65 +188,74 @@ fn template_command(template: &str, value: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The `-F`, `-f` and `-O` every `choose-*` command shares, as tmux's
+/// The `-F`, `-f`, `-O` and `-r` every `choose-*` command shares, as tmux's
 /// `mode_tree_start` takes them.
-struct ChooseOptions<'a> {
-    format: Option<&'a str>,
-    filter: Option<&'a str>,
-    /// `-O`, resolved through the same table the `list-*` commands use. `None`
-    /// means no `-O` at all, which leaves each mode on its own first order.
-    order: Option<ListSortOrder>,
+#[derive(Clone, Debug)]
+struct ChooseOptions {
+    format: Option<String>,
+    filter: Option<String>,
+    /// `-O`, resolved through the same table the `list-*` commands use when the
+    /// command runs. `None` means no `-O` at all, which leaves each mode on its
+    /// own first order.
+    order: Option<String>,
     /// `-r`: negate the comparison the sort order made.
     reversed: bool,
 }
 
-impl<'a> ChooseOptions<'a> {
-    /// tmux's `cmd_choose_tree_exec` runs `-O` through
-    /// `sort_order_from_string` before it enters any mode, so a name that
-    /// table does not know fails the command rather than picking an order.
-    fn parse(args: &'a [String]) -> Result<Self, CommandResult> {
-        let (order, reversed) = list_sort_criteria(args)?;
-        Ok(Self {
-            format: flag_value(args, "-F"),
-            filter: flag_value(args, "-f"),
-            order,
-            reversed,
-        })
+impl ChooseOptions {
+    fn parse(args: &ParsedArgs) -> Self {
+        Self {
+            format: args.value('F').map(str::to_string),
+            filter: args.value('f').map(str::to_string),
+            order: args.value('O').map(str::to_string),
+            reversed: args.has('r'),
+        }
+    }
+
+    /// tmux's `cmd_choose_tree_exec` runs `-O` through `sort_order_from_string`
+    /// before it enters any mode, so a name that table does not know fails the
+    /// command rather than picking an order.
+    fn resolve_order(&self) -> Result<Option<ListSortOrder>, CommandResult> {
+        list_sort_order(self.order.as_deref())
     }
 
     /// Whether this row survives `-f`.
     fn keep(&self, state: &ServerState, vars: &format::Vars) -> bool {
-        self.filter.is_none_or(|filter| {
+        self.filter.as_deref().is_none_or(|filter| {
             format::is_true(&super::expand_command_format(state, filter, vars, None))
         })
     }
 
     /// The row's text: `-F` when one was given, else the command's own.
     fn label(&self, state: &ServerState, vars: &format::Vars, default: String) -> String {
-        match self.format {
+        match self.format.as_deref() {
             Some(format) => super::expand_command_format(state, format, vars, None),
             None => default,
         }
     }
 
-    /// The order this mode sorts on: `-O` when it was given, and otherwise the
-    /// mode's own first order, which is what tmux's per-mode `sortcb` writes
-    /// over an unset `sort_crit->order`.
-    fn order(&self, default: ListSortOrder) -> Option<ListSortOrder> {
-        Some(self.order.unwrap_or(default))
-    }
-
     /// Sort `rows` the way tmux's `sort_qsort` sorts a flat mode: the `-O`
     /// comparison first, ties broken by the row's name, and `-r` negating the
     /// combined result rather than reversing the sorted list.
+    ///
+    /// `order` is the resolved `-O`; without one the mode's own first order
+    /// applies, which is what tmux's per-mode `sortcb` writes over an unset
+    /// `sort_crit->order`.
     fn sort<T>(
         &self,
         rows: &mut [T],
+        order: Option<ListSortOrder>,
         default: ListSortOrder,
         compare: impl Fn(ListSortOrder, &T, &T) -> std::cmp::Ordering,
         name: impl Fn(&T) -> String,
     ) {
-        apply_list_sort(rows, self.order(default), self.reversed, compare, name);
+        apply_list_sort(
+            rows,
+            Some(order.unwrap_or(default)),
+            self.reversed,
+            compare,
+            name,
+        );
     }
 
     /// [`Self::sort`] for the tree, whose rows are two levels rather than one.
@@ -221,11 +264,12 @@ impl<'a> ChooseOptions<'a> {
     /// then each session's own windows within it, so a window never leaves the
     /// session that built it however the sessions are ordered. `-r` negates
     /// both levels, which keeps a session ahead of its windows.
-    fn sort_tree(&self, groups: &mut [TreeGroup]) {
+    fn sort_tree(&self, groups: &mut [TreeGroup], order: Option<ListSortOrder>) {
         // tmux's `window_tree_sort`: without `-O` the tree takes the first of
         // its own sequence, which is by index.
         self.sort(
             groups,
+            order,
             ListSortOrder::Index,
             |order, left, right| match order {
                 ListSortOrder::Index => left.id.cmp(&right.id),
@@ -245,6 +289,7 @@ impl<'a> ChooseOptions<'a> {
         for group in groups.iter_mut() {
             self.sort(
                 &mut group.windows,
+                order,
                 ListSortOrder::Index,
                 |order, left, right| match order {
                     ListSortOrder::Index => sort_number(&left.row.vars, "window_index")
@@ -330,397 +375,502 @@ struct BufferRow {
     row: ChooseRow,
 }
 
-fn choose_tree(args: &[String], state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
-    let template = positionals(args, &["-F", "-f", "-K", "-O", "-t"])
-        .first()
-        .copied();
-    let options = match ChooseOptions::parse(args) {
-        Ok(options) => options,
-        Err(error) => return error,
-    };
-    // `-s` lists only sessions and `-w` only windows; without either, a session
-    // is followed by its own windows.
-    let sessions_only = has_flag(args, "-s");
-    let windows_only = has_flag(args, "-w");
-    let marked = state.marked_pane();
-    let mut groups = Vec::new();
-    for session in state.sessions() {
-        let session_vars = super::vars_for(state, session, session.active, agents, marked);
-        let mut group = TreeGroup {
-            session: session_vars.clone(),
-            id: session.id,
-            activity: session.activity_micros,
-            session_row: None,
-            windows: Vec::new(),
+/// `choose-tree [-GNrswZ] [-F format] [-f filter] [-K key-format]
+/// [-O sort-order] [-t target-pane] [template]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct ChooseTree {
+    /// `-N`: hide the preview pane.
+    no_preview: bool,
+    /// `-s`/`-w`: list only sessions, or only windows.
+    sessions_only: bool,
+    windows_only: bool,
+    /// `-t`: the pane the mode opens in.
+    target: Option<String>,
+    options: ChooseOptions,
+    template: Option<String>,
+}
+
+impl ChooseTree {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            no_preview: args.has('N'),
+            sessions_only: args.has('s'),
+            windows_only: args.has('w'),
+            target: args.value('t').map(str::to_string),
+            options: ChooseOptions::parse(args),
+            template: args.positionals().first().cloned(),
+        })
+    }
+
+    fn execute(self, state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
+        let order = match self.options.resolve_order() {
+            Ok(order) => order,
+            Err(error) => return error,
         };
-        if !windows_only && options.keep(state, &session_vars) {
-            group.session_row = Some(ChooseRow {
-                item: ModeItem {
-                    label: options.label(
-                        state,
-                        &session_vars,
-                        format!("{} ({} windows)", session.name, session.windows.len()),
-                    ),
-                    command: template_command(
-                        template.unwrap_or("switch-client -Zt '%%'"),
-                        &session.name,
-                    ),
-                    prompt_target: Some(format!("={}:", session.name)),
-                    edit: None,
-                    tagged: false,
-                    preview_target: Some(format!("={}:", session.name)),
-                    depth: 0,
-                    expanded: None,
-                },
-                vars: session_vars,
-            });
-        }
-        if sessions_only {
-            groups.push(group);
-            continue;
-        }
-        for (position, link) in session.windows.iter().enumerate() {
-            let window = state.session_window(session, position);
-            let target = format!("{}:{}", session.name, link.index);
-            let window_vars = super::vars_for(state, session, position, agents, marked);
-            if !options.keep(state, &window_vars) {
+        let template = self.template.as_deref();
+        let options = &self.options;
+        let marked = state.marked_pane();
+        let mut groups = Vec::new();
+        for session in state.sessions() {
+            let session_vars = super::vars_for(state, session, session.active, agents, marked);
+            let mut group = TreeGroup {
+                session: session_vars.clone(),
+                id: session.id,
+                activity: session.activity_micros,
+                session_row: None,
+                windows: Vec::new(),
+            };
+            // `-s` lists only sessions and `-w` only windows; without either, a
+            // session is followed by its own windows.
+            if !self.windows_only && options.keep(state, &session_vars) {
+                group.session_row = Some(ChooseRow {
+                    item: ModeItem {
+                        label: options.label(
+                            state,
+                            &session_vars,
+                            format!("{} ({} windows)", session.name, session.windows.len()),
+                        ),
+                        command: template_command(
+                            template.unwrap_or("switch-client -Zt '%%'"),
+                            &session.name,
+                        ),
+                        prompt_target: Some(format!("={}:", session.name)),
+                        edit: None,
+                        tagged: false,
+                        preview_target: Some(format!("={}:", session.name)),
+                        depth: 0,
+                        expanded: None,
+                    },
+                    vars: session_vars,
+                });
+            }
+            if self.sessions_only {
+                groups.push(group);
                 continue;
             }
-            group.windows.push(TreeWindow {
-                id: window.id,
-                activity: window.activity_epoch,
+            for (position, link) in session.windows.iter().enumerate() {
+                let window = state.session_window(session, position);
+                let target = format!("{}:{}", session.name, link.index);
+                let window_vars = super::vars_for(state, session, position, agents, marked);
+                if !options.keep(state, &window_vars) {
+                    continue;
+                }
+                group.windows.push(TreeWindow {
+                    id: window.id,
+                    activity: window.activity_epoch,
+                    row: ChooseRow {
+                        item: ModeItem {
+                            label: options.label(
+                                state,
+                                &window_vars,
+                                format!(
+                                    "  {}: {} ({} panes)",
+                                    link.index,
+                                    window.name,
+                                    window.panes.len()
+                                ),
+                            ),
+                            command: template.map_or_else(
+                                || {
+                                    vec![
+                                        "select-window".to_string(),
+                                        "-t".to_string(),
+                                        target.clone(),
+                                        ";".to_string(),
+                                        "switch-client".to_string(),
+                                        "-t".to_string(),
+                                        session.name.clone(),
+                                    ]
+                                },
+                                |template| template_command(template, &target),
+                            ),
+                            prompt_target: Some(format!("={}:{}.", session.name, link.index)),
+                            edit: None,
+                            tagged: false,
+                            preview_target: Some(format!("={}:{}.", session.name, link.index)),
+                            depth: 0,
+                            expanded: None,
+                        },
+                        vars: window_vars,
+                    },
+                });
+            }
+            groups.push(group);
+        }
+        options.sort_tree(&mut groups, order);
+        let items = groups
+            .into_iter()
+            .flat_map(|group| {
+                group
+                    .session_row
+                    .into_iter()
+                    .chain(group.windows.into_iter().map(|window| window.row))
+            })
+            .map(|row| row.item)
+            .collect();
+        let mut view = ModeView::list(ModeKind::Tree, "Tree", items);
+        // tmux shows the preview unless `-N` asks it not to.
+        view.preview = !self.no_preview;
+        enter_mode(self.target.as_deref(), state, view)
+    }
+}
+
+/// `choose-client [-NrZ] [-F format] [-f filter] [-K key-format]
+/// [-O sort-order] [-t target-pane] [template]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct ChooseClient {
+    /// `-t`: the pane the mode opens in.
+    target: Option<String>,
+    options: ChooseOptions,
+    template: Option<String>,
+}
+
+impl ChooseClient {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            target: args.value('t').map(str::to_string),
+            options: ChooseOptions::parse(args),
+            template: args.positionals().first().cloned(),
+        })
+    }
+
+    fn execute(self, state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
+        if let Err(error) = validate_mode_target(self.target.as_deref(), state) {
+            return error;
+        }
+        let template = self
+            .template
+            .as_deref()
+            .unwrap_or("detach-client -t '%%'");
+        let order = match self.options.resolve_order() {
+            Ok(order) => order,
+            Err(error) => return error,
+        };
+        let options = &self.options;
+        let mut rows = Vec::new();
+        for client in state.client_snapshots() {
+            let Some(vars) = client_vars(state, agents, &client) else {
+                continue;
+            };
+            if !options.keep(state, &vars) {
+                continue;
+            }
+            rows.push(ClientRow {
+                name: client.name.clone(),
+                cols: client.cols,
+                rows: client.rows,
+                created: client.created_micros,
+                activity: client.activity_micros,
                 row: ChooseRow {
                     item: ModeItem {
                         label: options.label(
                             state,
-                            &window_vars,
+                            &vars,
                             format!(
-                                "  {}: {} ({} panes)",
-                                link.index,
-                                window.name,
-                                window.panes.len()
+                                "{}: {}x{} {}",
+                                client.name, client.cols, client.rows, client.term
                             ),
                         ),
-                        command: template.map_or_else(
-                            || {
-                                vec![
-                                    "select-window".to_string(),
-                                    "-t".to_string(),
-                                    target.clone(),
-                                    ";".to_string(),
-                                    "switch-client".to_string(),
-                                    "-t".to_string(),
-                                    session.name.clone(),
-                                ]
-                            },
-                            |template| template_command(template, &target),
-                        ),
-                        prompt_target: Some(format!("={}:{}.", session.name, link.index)),
+                        command: template_command(template, &client.name),
+                        prompt_target: None,
                         edit: None,
                         tagged: false,
-                        preview_target: Some(format!("={}:{}.", session.name, link.index)),
+                        preview_target: None,
                         depth: 0,
                         expanded: None,
                     },
-                    vars: window_vars,
+                    vars,
                 },
             });
         }
-        groups.push(group);
+        // tmux's `window_client_sort`: without `-O` the mode sorts by name.
+        options.sort(
+            &mut rows,
+            order,
+            ListSortOrder::Name,
+            |order, left, right| match order {
+                // Width first and then height, as `sort_client_cmp` compares the
+                // tty's `sx` before its `sy`.
+                ListSortOrder::Size => left
+                    .cols
+                    .cmp(&right.cols)
+                    .then_with(|| left.rows.cmp(&right.rows)),
+                ListSortOrder::Creation => left.created.cmp(&right.created),
+                // Newest first, the direction `list-clients` already reads it in.
+                ListSortOrder::Activity => right.activity.cmp(&left.activity),
+                // `name` and the orders a client has no key for both fall to the
+                // name, which is every tmux comparator's tiebreak.
+                _ => std::cmp::Ordering::Equal,
+            },
+            |client| client.name.clone(),
+        );
+        let items = rows
+            .into_iter()
+            .map(|client| client.row.item)
+            .collect::<Vec<_>>();
+        if items.is_empty() {
+            return CommandResult::ok("");
+        }
+        enter_mode(
+            self.target.as_deref(),
+            state,
+            ModeView::list(ModeKind::Client, "Clients", items),
+        )
     }
-    options.sort_tree(&mut groups);
-    let items = groups
-        .into_iter()
-        .flat_map(|group| {
-            group
-                .session_row
-                .into_iter()
-                .chain(group.windows.into_iter().map(|window| window.row))
+}
+
+/// `choose-buffer [-NrZ] [-F format] [-f filter] [-K key-format]
+/// [-O sort-order] [-t target-pane] [template]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct ChooseBuffer {
+    /// `-t`: the pane the mode opens in.
+    target: Option<String>,
+    options: ChooseOptions,
+    template: Option<String>,
+}
+
+impl ChooseBuffer {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            target: args.value('t').map(str::to_string),
+            options: ChooseOptions::parse(args),
+            template: args.positionals().first().cloned(),
         })
-        .map(|row| row.item)
-        .collect();
-    let mut view = ModeView::list(ModeKind::Tree, "Tree", items);
-    // tmux shows the preview unless `-N` asks it not to.
-    view.preview = !has_flag(args, "-N");
-    enter_mode(args, state, view)
-}
-
-fn choose_client(args: &[String], state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
-    if let Err(error) = validate_mode_target(args, state) {
-        return error;
     }
-    let template = positionals(args, &["-F", "-f", "-K", "-O", "-t"])
-        .first()
-        .copied()
-        .unwrap_or("detach-client -t '%%'");
-    let options = match ChooseOptions::parse(args) {
-        Ok(options) => options,
-        Err(error) => return error,
-    };
-    let mut rows = Vec::new();
-    for client in state.client_snapshots() {
-        let Some(vars) = client_vars(state, agents, &client) else {
-            continue;
+
+    fn execute(self, state: &mut ServerState) -> CommandResult {
+        if let Err(error) = validate_mode_target(self.target.as_deref(), state) {
+            return error;
+        }
+        let template = self
+            .template
+            .as_deref()
+            .unwrap_or("paste-buffer -p -b '%%'");
+        let order = match self.options.resolve_order() {
+            Ok(order) => order,
+            Err(error) => return error,
         };
-        if !options.keep(state, &vars) {
-            continue;
-        }
-        rows.push(ClientRow {
-            name: client.name.clone(),
-            cols: client.cols,
-            rows: client.rows,
-            created: client.created_micros,
-            activity: client.activity_micros,
-            row: ChooseRow {
-                item: ModeItem {
-                    label: options.label(
-                        state,
-                        &vars,
-                        format!(
-                            "{}: {}x{} {}",
-                            client.name, client.cols, client.rows, client.term
-                        ),
-                    ),
-                    command: template_command(template, &client.name),
-                    prompt_target: None,
-                    edit: None,
-                    tagged: false,
-                    preview_target: None,
-                    depth: 0,
-                    expanded: None,
-                },
-                vars,
-            },
-        });
-    }
-    // tmux's `window_client_sort`: without `-O` the mode sorts by name.
-    options.sort(
-        &mut rows,
-        ListSortOrder::Name,
-        |order, left, right| match order {
-            // Width first and then height, as `sort_client_cmp` compares the
-            // tty's `sx` before its `sy`.
-            ListSortOrder::Size => left
-                .cols
-                .cmp(&right.cols)
-                .then_with(|| left.rows.cmp(&right.rows)),
-            ListSortOrder::Creation => left.created.cmp(&right.created),
-            // Newest first, the direction `list-clients` already reads it in.
-            ListSortOrder::Activity => right.activity.cmp(&left.activity),
-            // `name` and the orders a client has no key for both fall to the
-            // name, which is every tmux comparator's tiebreak.
-            _ => std::cmp::Ordering::Equal,
-        },
-        |client| client.name.clone(),
-    );
-    let items = rows
-        .into_iter()
-        .map(|client| client.row.item)
-        .collect::<Vec<_>>();
-    if items.is_empty() {
-        return CommandResult::ok("");
-    }
-    enter_mode(
-        args,
-        state,
-        ModeView::list(ModeKind::Client, "Clients", items),
-    )
-}
-
-fn choose_buffer(args: &[String], state: &mut ServerState) -> CommandResult {
-    if let Err(error) = validate_mode_target(args, state) {
-        return error;
-    }
-    let template = positionals(args, &["-F", "-f", "-K", "-O", "-t"])
-        .first()
-        .copied()
-        .unwrap_or("paste-buffer -p -b '%%'");
-    let options = match ChooseOptions::parse(args) {
-        Ok(options) => options,
-        Err(error) => return error,
-    };
-    let mut rows = Vec::new();
-    for (position, (name, data)) in state.buffers().iter().enumerate() {
-        let vars = super::buffer_vars(state, name, data);
-        if !options.keep(state, &vars) {
-            continue;
-        }
-        let preview = String::from_utf8_lossy(data).replace(['\n', '\r'], " ");
-        rows.push(BufferRow {
-            name: name.clone(),
-            size: data.len(),
-            position,
-            row: ChooseRow {
-                item: ModeItem {
-                    label: options.label(
-                        state,
-                        &vars,
-                        format!("{name}: {} bytes: {}", data.len(), preview),
-                    ),
-                    command: template_command(template, name),
-                    // Buffer mode's `e` key edits the buffer this row names.
-                    prompt_target: Some(name.clone()),
-                    edit: None,
-                    tagged: false,
-                    preview_target: None,
-                    depth: 0,
-                    expanded: None,
-                },
-                vars,
-            },
-        });
-    }
-    // tmux's `window_buffer_sort`: without `-O` the mode sorts by creation.
-    options.sort(
-        &mut rows,
-        ListSortOrder::Creation,
-        |order, left, right| match order {
-            // Newest first, which the built order already runs in.
-            ListSortOrder::Creation => left.position.cmp(&right.position),
-            ListSortOrder::Size => left.size.cmp(&right.size),
-            // `name` and the orders a buffer has no key for both fall to the
-            // name, which is every tmux comparator's tiebreak.
-            _ => std::cmp::Ordering::Equal,
-        },
-        |buffer| buffer.name.clone(),
-    );
-    let items = rows
-        .into_iter()
-        .map(|buffer| buffer.row.item)
-        .collect::<Vec<_>>();
-    if items.is_empty() {
-        return CommandResult::ok("");
-    }
-    enter_mode(
-        args,
-        state,
-        ModeView::list(ModeKind::Buffer, "Buffers", items),
-    )
-}
-
-fn customize_mode(args: &[String], state: &mut ServerState) -> CommandResult {
-    let Some(target) = mode_target(args, state) else {
-        return CommandResult::err("no current session\n");
-    };
-    // `customize-mode` takes no `-O`, so this only ever carries `-F` and `-f`.
-    let options = match ChooseOptions::parse(args) {
-        Ok(options) => options,
-        Err(error) => return error,
-    };
-    // tmux's `window_customize_build` groups the options by the table they
-    // belong to, each under a heading of its own, and the keys after them.
-    let mut items = Vec::new();
-    let sections = match state.customize_option_sections(&target) {
-        Ok(sections) => sections,
-        Err(_) => return CommandResult::err(format!("{}\n", state.pane_target_error(&target))),
-    };
-    for (title, entries) in sections {
-        items.push(ModeItem {
-            label: title.to_string(),
-            command: Vec::new(),
-            prompt_target: None,
-            edit: None,
-            tagged: false,
-            preview_target: None,
-            depth: 0,
-            // `M-+` expands the complete tree after the initial screen.
-            expanded: Some(false),
-        });
-        for entry in entries {
-            let mut vars = format::Vars::new();
-            vars.set("option_name", entry.name.clone())
-                .set("option_value", entry.value.clone())
-                .set("option_scope", entry.scope.clone())
-                .set("option_unit", String::new())
-                .set(
-                    "option_is_global",
-                    if entry.scope.is_empty() { "1" } else { "0" },
-                )
-                .set("option_is_array", if entry.is_array { "1" } else { "0" })
-                .set("is_option", "1")
-                .set("is_key", "0");
+        let options = &self.options;
+        let mut rows = Vec::new();
+        for (position, (name, data)) in state.buffers().iter().enumerate() {
+            let vars = super::buffer_vars(state, name, data);
             if !options.keep(state, &vars) {
                 continue;
             }
-            items.push(ModeItem {
-                label: if entry.is_array {
-                    entry.name.clone()
-                } else {
-                    options.label(state, &vars, format!("{} {}", entry.name, entry.value))
+            let preview = String::from_utf8_lossy(data).replace(['\n', '\r'], " ");
+            rows.push(BufferRow {
+                name: name.clone(),
+                size: data.len(),
+                position,
+                row: ChooseRow {
+                    item: ModeItem {
+                        label: options.label(
+                            state,
+                            &vars,
+                            format!("{name}: {} bytes: {}", data.len(), preview),
+                        ),
+                        command: template_command(template, name),
+                        // Buffer mode's `e` key edits the buffer this row names.
+                        prompt_target: Some(name.clone()),
+                        edit: None,
+                        tagged: false,
+                        preview_target: None,
+                        depth: 0,
+                        expanded: None,
+                    },
+                    vars,
                 },
+            });
+        }
+        // tmux's `window_buffer_sort`: without `-O` the mode sorts by creation.
+        options.sort(
+            &mut rows,
+            order,
+            ListSortOrder::Creation,
+            |order, left, right| match order {
+                // Newest first, which the built order already runs in.
+                ListSortOrder::Creation => left.position.cmp(&right.position),
+                ListSortOrder::Size => left.size.cmp(&right.size),
+                // `name` and the orders a buffer has no key for both fall to the
+                // name, which is every tmux comparator's tiebreak.
+                _ => std::cmp::Ordering::Equal,
+            },
+            |buffer| buffer.name.clone(),
+        );
+        let items = rows
+            .into_iter()
+            .map(|buffer| buffer.row.item)
+            .collect::<Vec<_>>();
+        if items.is_empty() {
+            return CommandResult::ok("");
+        }
+        enter_mode(
+            self.target.as_deref(),
+            state,
+            ModeView::list(ModeKind::Buffer, "Buffers", items),
+        )
+    }
+}
+
+/// `customize-mode [-NZ] [-F format] [-f filter] [-t target-pane]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct CustomizeMode {
+    /// `-N`: hide the preview pane.
+    no_preview: bool,
+    /// `-t`: the pane the mode opens in.
+    target: Option<String>,
+    /// `customize-mode` takes no `-O`, so this only ever carries `-F` and `-f`.
+    options: ChooseOptions,
+}
+
+impl CustomizeMode {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            no_preview: args.has('N'),
+            target: args.value('t').map(str::to_string),
+            options: ChooseOptions::parse(args),
+        })
+    }
+
+    fn execute(self, state: &mut ServerState) -> CommandResult {
+        let Some(target) = self
+            .target
+            .clone()
+            .or_else(|| current_target(state))
+        else {
+            return CommandResult::err("no current session\n");
+        };
+        let options = &self.options;
+        // tmux's `window_customize_build` groups the options by the table they
+        // belong to, each under a heading of its own, and the keys after them.
+        let mut items = Vec::new();
+        let sections = match state.customize_option_sections(&target) {
+            Ok(sections) => sections,
+            Err(_) => return CommandResult::err(format!("{}\n", state.pane_target_error(&target))),
+        };
+        for (title, entries) in sections {
+            items.push(ModeItem {
+                label: title.to_string(),
                 command: Vec::new(),
                 prompt_target: None,
-                edit: (!entry.is_array).then_some(ModeEdit::Option {
-                    name: entry.name,
-                    value: entry.value,
+                edit: None,
+                tagged: false,
+                preview_target: None,
+                depth: 0,
+                // `M-+` expands the complete tree after the initial screen.
+                expanded: Some(false),
+            });
+            for entry in entries {
+                let mut vars = format::Vars::new();
+                vars.set("option_name", entry.name.clone())
+                    .set("option_value", entry.value.clone())
+                    .set("option_scope", entry.scope.clone())
+                    .set("option_unit", String::new())
+                    .set(
+                        "option_is_global",
+                        if entry.scope.is_empty() { "1" } else { "0" },
+                    )
+                    .set("option_is_array", if entry.is_array { "1" } else { "0" })
+                    .set("is_option", "1")
+                    .set("is_key", "0");
+                if !options.keep(state, &vars) {
+                    continue;
+                }
+                items.push(ModeItem {
+                    label: if entry.is_array {
+                        entry.name.clone()
+                    } else {
+                        options.label(state, &vars, format!("{} {}", entry.name, entry.value))
+                    },
+                    command: Vec::new(),
+                    prompt_target: None,
+                    edit: (!entry.is_array).then_some(ModeEdit::Option {
+                        name: entry.name,
+                        value: entry.value,
+                    }),
+                    tagged: false,
+                    preview_target: None,
+                    depth: 1,
+                    expanded: entry
+                        .is_array
+                        .then_some(entry.array_has_entries)
+                        .and_then(|has_entries| has_entries.then_some(false)),
+                });
+            }
+        }
+        let bindings = state
+            .key_bindings(None)
+            .into_iter()
+            .map(|(table, key, binding)| {
+                (
+                    table.to_string(),
+                    format_key_name(key),
+                    binding.command.clone(),
+                    binding.note.clone(),
+                    binding.repeat,
+                )
+            })
+            .collect::<Vec<_>>();
+        for (table, key, command, note, repeat) in bindings {
+            let command_value = display_command(&command);
+            items.push(ModeItem {
+                label: format!("key {table} {key} command {command_value}"),
+                command: Vec::new(),
+                prompt_target: None,
+                edit: Some(ModeEdit::BindingCommand {
+                    table: table.clone(),
+                    key: key.clone(),
+                    value: command_value,
+                    note: note.clone(),
+                    repeat,
                 }),
                 tagged: false,
                 preview_target: None,
                 depth: 1,
-                expanded: entry
-                    .is_array
-                    .then_some(entry.array_has_entries)
-                    .and_then(|has_entries| has_entries.then_some(false)),
+                expanded: None,
+            });
+            let note_value = note.unwrap_or_default();
+            items.push(ModeItem {
+                label: format!("key {table} {key} note {note_value}"),
+                command: Vec::new(),
+                prompt_target: None,
+                edit: Some(ModeEdit::BindingNote {
+                    table,
+                    key,
+                    value: note_value,
+                    command,
+                    repeat,
+                }),
+                tagged: false,
+                preview_target: None,
+                depth: 1,
+                expanded: None,
             });
         }
+        // tmux's options mode has no title row above its section tree.
+        let mut view = ModeView::list(ModeKind::Customize, "", items);
+        view.preview = !self.no_preview;
+        enter_mode(self.target.as_deref(), state, view)
     }
-    let bindings = state
-        .key_bindings(None)
-        .into_iter()
-        .map(|(table, key, binding)| {
-            (
-                table.to_string(),
-                format_key_name(key),
-                binding.command.clone(),
-                binding.note.clone(),
-                binding.repeat,
-            )
-        })
-        .collect::<Vec<_>>();
-    for (table, key, command, note, repeat) in bindings {
-        let command_value = display_command(&command);
-        items.push(ModeItem {
-            label: format!("key {table} {key} command {command_value}"),
-            command: Vec::new(),
-            prompt_target: None,
-            edit: Some(ModeEdit::BindingCommand {
-                table: table.clone(),
-                key: key.clone(),
-                value: command_value,
-                note: note.clone(),
-                repeat,
-            }),
-            tagged: false,
-            preview_target: None,
-            depth: 1,
-            expanded: None,
-        });
-        let note_value = note.unwrap_or_default();
-        items.push(ModeItem {
-            label: format!("key {table} {key} note {note_value}"),
-            command: Vec::new(),
-            prompt_target: None,
-            edit: Some(ModeEdit::BindingNote {
-                table,
-                key,
-                value: note_value,
-                command,
-                repeat,
-            }),
-            tagged: false,
-            preview_target: None,
-            depth: 1,
-            expanded: None,
-        });
-    }
-    // tmux's options mode has no title row above its section tree.
-    let mut view = ModeView::list(ModeKind::Customize, "", items);
-    view.preview = !has_flag(args, "-N");
-    enter_mode(args, state, view)
 }
 
-fn clock_mode(args: &[String], state: &mut ServerState) -> CommandResult {
-    enter_mode(args, state, ModeView::clock())
+/// `clock-mode [-t target-pane]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct ClockMode {
+    /// `-t`: the pane the clock opens in.
+    target: Option<String>,
+}
+
+impl ClockMode {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            target: args.value('t').map(str::to_string),
+        })
+    }
+
+    fn execute(self, state: &mut ServerState) -> CommandResult {
+        enter_mode(self.target.as_deref(), state, ModeView::clock())
+    }
 }
 
 fn overlay_result(result: ClientActionResult, target: Option<&str>) -> CommandResult {
@@ -734,265 +884,380 @@ fn overlay_result(result: ClientActionResult, target: Option<&str>) -> CommandRe
     }
 }
 
-fn display_menu(
-    args: &[String],
-    state: &ServerState,
-    agents: &PaneAgents,
-    client: &ClientContext,
-) -> CommandResult {
-    let values = positionals(
-        args,
-        &["-b", "-c", "-C", "-H", "-s", "-S", "-t", "-T", "-x", "-y"],
-    );
-    // Both halves of an item are formats — tmux expands them when the menu is
-    // built, against the target the menu was asked for.
-    let vars = flag_value(args, "-t")
-        .map(str::to_string)
-        .or_else(|| current_target(state))
-        .as_deref()
-        .and_then(|target| state.resolve_or_residual(target))
-        .map(|resolved| {
-            vars_full(
-                state,
-                &state.sessions()[resolved.session],
-                resolved.window,
-                resolved.pane,
-                agents,
-                state.marked_pane(),
-            )
-        })
-        .unwrap_or_default();
-    let expand = |value: &str| format::expand(value, &vars);
-    // tmux walks the operands rather than chunking them: an empty name is a
-    // separator line on its own and consumes no key or command, which is how
-    // the default `MouseDown3*` menus group their entries.
-    let mut items = Vec::new();
-    let mut index = 0;
-    while index < values.len() {
-        let label = values[index];
-        index += 1;
-        if label.is_empty() {
-            items.push(MenuItem {
-                label: String::new(),
-                key: String::new(),
-                command: Vec::new(),
-            });
-            continue;
-        }
-        if values.len() - index < 2 {
-            return CommandResult::err("not enough arguments\n");
-        }
-        let key = values[index];
-        let command = values[index + 1];
-        index += 2;
-        // An item whose name expands to nothing is not an item at all, and one
-        // whose name starts with `-` is disabled: it shows neither its key nor
-        // the dash, and cannot be chosen.
-        let label = expand(label);
-        if label.is_empty() {
-            continue;
-        }
-        let disabled = label.starts_with('-');
-        items.push(MenuItem {
-            label,
-            key: if disabled {
-                String::new()
-            } else {
-                key.to_string()
-            },
-            command: if disabled {
-                Vec::new()
-            } else {
-                template_command(&expand(command), "")
-            },
-        });
-    }
-    let selected = flag_value(args, "-C")
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(0);
-    let request = OverlayRequest::Menu(MenuRequest {
-        title: flag_value(args, "-T").unwrap_or("").to_string(),
-        items,
-        selected,
-        x: flag_value(args, "-x").map(str::to_string),
-        y: flag_value(args, "-y").map(str::to_string),
-    });
-    let target = flag_value(args, "-c");
-    overlay_result(
-        state.overlay_client(
-            target,
-            client.tty_name.as_deref(),
-            request,
-            client.interaction_reply.clone(),
-        ),
-        target,
-    )
+/// `display-menu [-MO] [-b border-lines] [-c target-client] [-C starting-choice]
+/// [-H selected-style] [-s style] [-S border-style] [-t target-pane]
+/// [-T title] [-x position] [-y position] name [key] [command] ...`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct DisplayMenu {
+    /// `-c`: the client the menu is shown on.
+    client: Option<String>,
+    /// `-C`: which entry starts selected.
+    selected: Option<String>,
+    /// `-t`: the pane the item formats are expanded against.
+    target: Option<String>,
+    /// `-T`: the menu's title.
+    title: Option<String>,
+    /// `-x`/`-y`: where the menu is placed.
+    x: Option<String>,
+    y: Option<String>,
+    /// The menu's entries, as name/key/command triples.
+    items: Vec<String>,
 }
 
-fn display_popup(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {
-    let target = flag_value(args, "-c");
-    if has_flag(args, "-C") {
-        return overlay_result(
+impl DisplayMenu {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            client: args.value('c').map(str::to_string),
+            selected: args.value('C').map(str::to_string),
+            target: args.value('t').map(str::to_string),
+            title: args.value('T').map(str::to_string),
+            x: args.value('x').map(str::to_string),
+            y: args.value('y').map(str::to_string),
+            items: args.positionals().to_vec(),
+        })
+    }
+
+    fn execute(
+        self,
+        state: &ServerState,
+        agents: &PaneAgents,
+        client: &ClientContext,
+    ) -> CommandResult {
+        // Both halves of an item are formats — tmux expands them when the menu is
+        // built, against the target the menu was asked for.
+        let vars = self
+            .target
+            .clone()
+            .or_else(|| current_target(state))
+            .as_deref()
+            .and_then(|target| state.resolve_or_residual(target))
+            .map(|resolved| {
+                vars_full(
+                    state,
+                    &state.sessions()[resolved.session],
+                    resolved.window,
+                    resolved.pane,
+                    agents,
+                    state.marked_pane(),
+                )
+            })
+            .unwrap_or_default();
+        let expand = |value: &str| format::expand(value, &vars);
+        // tmux walks the operands rather than chunking them: an empty name is a
+        // separator line on its own and consumes no key or command, which is how
+        // the default `MouseDown3*` menus group their entries.
+        let values = &self.items;
+        let mut items = Vec::new();
+        let mut index = 0;
+        while index < values.len() {
+            let label = values[index].as_str();
+            index += 1;
+            if label.is_empty() {
+                items.push(MenuItem {
+                    label: String::new(),
+                    key: String::new(),
+                    command: Vec::new(),
+                });
+                continue;
+            }
+            if values.len() - index < 2 {
+                return CommandResult::err("not enough arguments\n");
+            }
+            let key = values[index].as_str();
+            let command = values[index + 1].as_str();
+            index += 2;
+            // An item whose name expands to nothing is not an item at all, and one
+            // whose name starts with `-` is disabled: it shows neither its key nor
+            // the dash, and cannot be chosen.
+            let label = expand(label);
+            if label.is_empty() {
+                continue;
+            }
+            let disabled = label.starts_with('-');
+            items.push(MenuItem {
+                label,
+                key: if disabled {
+                    String::new()
+                } else {
+                    key.to_string()
+                },
+                command: if disabled {
+                    Vec::new()
+                } else {
+                    template_command(&expand(command), "")
+                },
+            });
+        }
+        let selected = self
+            .selected
+            .as_deref()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0);
+        let request = OverlayRequest::Menu(MenuRequest {
+            title: self.title.clone().unwrap_or_default(),
+            items,
+            selected,
+            x: self.x.clone(),
+            y: self.y.clone(),
+        });
+        let target = self.client.as_deref();
+        overlay_result(
             state.overlay_client(
                 target,
                 client.tty_name.as_deref(),
-                OverlayRequest::Clear,
+                request,
                 client.interaction_reply.clone(),
             ),
             target,
-        );
+        )
     }
-    let argv = trailing_command(
-        args,
-        &[
-            "-b", "-c", "-d", "-e", "-h", "-s", "-S", "-t", "-T", "-w", "-x", "-y",
-        ],
-    )
-    .into_iter()
-    .map(str::to_string)
-    .collect();
-    let exit_flags = args.iter().filter(|word| word.as_str() == "-E").count();
-    let overrides = flag_values(args, "-e");
-    let request = OverlayRequest::Popup(PopupRequest {
-        on_close: Vec::new(),
-        on_close_remove: None,
-        title: flag_value(args, "-T").unwrap_or("").to_string(),
-        argv,
-        environment: state.spawn_environment(
-            current_target(state).as_deref(),
-            &client.environment,
-            &overrides,
-        ),
-        cwd: flag_value(args, "-d")
-            .map(PathBuf::from)
-            .or_else(|| client.cwd.clone()),
-        width: flag_value(args, "-w").map(str::to_string),
-        height: flag_value(args, "-h").map(str::to_string),
-        x: flag_value(args, "-x").map(str::to_string),
-        y: flag_value(args, "-y").map(str::to_string),
-        close_on_exit: exit_flags == 1,
-        close_on_success: exit_flags >= 2,
-        close_on_key: has_flag(args, "-k"),
-        border: !has_flag(args, "-B"),
-    });
-    overlay_result(
-        state.overlay_client(
-            target,
-            client.tty_name.as_deref(),
-            request,
-            client.interaction_reply.clone(),
-        ),
-        target,
-    )
 }
 
-fn display_panes(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {
-    let duration_ms = flag_value(args, "-d")
-        .and_then(|value| value.parse().ok())
-        .or_else(|| {
-            current_target(state).and_then(|target| {
-                state
-                    .option_for_target(&target, "display-panes-time")
-                    .and_then(|value| value.parse().ok())
-            })
+/// `display-popup [-BCEkN] [-b border-lines] [-c target-client]
+/// [-d start-directory] [-e environment] [-h height] [-s style]
+/// [-S border-style] [-t target-pane] [-T title] [-w width] [-x position]
+/// [-y position] [shell-command [argument ...]]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct DisplayPopup {
+    /// `-B`: draw the popup without a border.
+    no_border: bool,
+    /// `-C`: close the client's popup instead of opening one.
+    close: bool,
+    /// `-E`: close the popup when its command exits; twice, only on success.
+    exit_flags: usize,
+    /// `-k`: close the popup on any key.
+    close_on_key: bool,
+    /// `-c`: the client the popup is shown on.
+    client: Option<String>,
+    /// `-d`: the popup command's working directory.
+    cwd: Option<String>,
+    /// `-e`: environment assignments for the popup command, repeatable.
+    environment: Vec<String>,
+    /// `-w`/`-h`: the popup's size.
+    width: Option<String>,
+    height: Option<String>,
+    /// `-x`/`-y`: where the popup is placed.
+    x: Option<String>,
+    y: Option<String>,
+    /// `-T`: the popup's title.
+    title: Option<String>,
+    /// The popup's command line.
+    command: Vec<String>,
+}
+
+impl DisplayPopup {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            no_border: args.has('B'),
+            close: args.has('C'),
+            exit_flags: args.count('E'),
+            close_on_key: args.has('k'),
+            client: args.value('c').map(str::to_string),
+            cwd: args.value('d').map(str::to_string),
+            environment: args.values('e').map(str::to_string).collect(),
+            width: args.value('w').map(str::to_string),
+            height: args.value('h').map(str::to_string),
+            x: args.value('x').map(str::to_string),
+            y: args.value('y').map(str::to_string),
+            title: args.value('T').map(str::to_string),
+            command: args.positionals().to_vec(),
         })
-        .unwrap_or(1000);
-    let command = positionals(args, &["-d", "-t"])
-        .first()
-        .map(|template| template_command(template, "%%"))
-        .unwrap_or_default();
-    let target = flag_value(args, "-t");
-    overlay_result(
-        state.overlay_client(
+    }
+
+    fn execute(self, state: &ServerState, client: &ClientContext) -> CommandResult {
+        let target = self.client.as_deref();
+        if self.close {
+            return overlay_result(
+                state.overlay_client(
+                    target,
+                    client.tty_name.as_deref(),
+                    OverlayRequest::Clear,
+                    client.interaction_reply.clone(),
+                ),
+                target,
+            );
+        }
+        let overrides = self
+            .environment
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let request = OverlayRequest::Popup(PopupRequest {
+            on_close: Vec::new(),
+            on_close_remove: None,
+            title: self.title.clone().unwrap_or_default(),
+            argv: self.command.clone(),
+            environment: state.spawn_environment(
+                current_target(state).as_deref(),
+                &client.environment,
+                &overrides,
+            ),
+            cwd: self
+                .cwd
+                .clone()
+                .map(PathBuf::from)
+                .or_else(|| client.cwd.clone()),
+            width: self.width.clone(),
+            height: self.height.clone(),
+            x: self.x.clone(),
+            y: self.y.clone(),
+            close_on_exit: self.exit_flags == 1,
+            close_on_success: self.exit_flags >= 2,
+            close_on_key: self.close_on_key,
+            border: !self.no_border,
+        });
+        overlay_result(
+            state.overlay_client(
+                target,
+                client.tty_name.as_deref(),
+                request,
+                client.interaction_reply.clone(),
+            ),
             target,
-            client.tty_name.as_deref(),
-            OverlayRequest::DisplayPanes {
-                duration_ms,
-                command,
-                accept_input: !has_flag(args, "-N"),
-            },
-            client.interaction_reply.clone(),
-        ),
-        target,
-    )
+        )
+    }
 }
 
-#[cfg(test)]
-pub(super) const ALL: &[Command] = &[
-    Command::List,
-    Command::Detach,
-    Command::Switch,
-    Command::Refresh,
-    Command::Suspend,
-    Command::Lock,
-    Command::Prompt,
-    Command::ConfirmBefore,
-    Command::DisplayMessage,
-    Command::DisplayMenu,
-    Command::DisplayPopup,
-    Command::DisplayPanes,
-    Command::ChooseTree,
-    Command::ChooseClient,
-    Command::ChooseBuffer,
-    Command::ClockMode,
-    Command::CustomizeMode,
-    Command::ShowPromptHistory,
-    Command::ClearPromptHistory,
-];
+/// `display-panes [-bN] [-d duration] [-t target-client] [template]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct DisplayPanes {
+    /// `-N`: show the indicators without accepting a choice.
+    no_input: bool,
+    /// `-d`: how long the indicators stay up.
+    duration: Option<String>,
+    /// `-t`: the client the indicators are shown on.
+    target: Option<String>,
+    template: Option<String>,
+}
 
-fn list_clients(args: &[String], state: &ServerState, agents: &PaneAgents) -> CommandResult {
-    const DEFAULT_FORMAT: &str = "#{client_name}: #{session_name} [#{client_width}x#{client_height} #{client_termname}] #{?client_flags,(,}#{client_flags}#{?client_flags,),}";
-    let template = flag_value(args, "-F").unwrap_or(DEFAULT_FORMAT);
-    let requested_session = flag_value(args, "-t");
-    let target_session = requested_session.and_then(|target| state.resolve_session(target));
-    if requested_session.is_some() && target_session.is_none() {
-        return CommandResult::err(format!(
-            "can't find session: {}\n",
-            requested_session.unwrap_or_default()
-        ));
+impl DisplayPanes {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            no_input: args.has('N'),
+            duration: args.value('d').map(str::to_string),
+            target: args.value('t').map(str::to_string),
+            template: args.positionals().first().cloned(),
+        })
     }
-    let filter = flag_value(args, "-f");
-    let (sort_order, reversed) = match super::list_sort_criteria(args) {
-        Ok(criteria) => criteria,
-        Err(error) => return error,
-    };
-    let mut clients = state.client_snapshots();
-    super::apply_list_sort(
-        &mut clients,
-        sort_order,
-        reversed,
-        |key, a, b| match key {
-            super::ListSortOrder::Name => a.name.cmp(&b.name),
-            super::ListSortOrder::Size => a.cols.cmp(&b.cols).then(a.rows.cmp(&b.rows)),
-            super::ListSortOrder::Creation => a.created_micros.cmp(&b.created_micros),
-            // Most recent activity first, as tmux inverts this comparison.
-            super::ListSortOrder::Activity => b.activity_micros.cmp(&a.activity_micros),
-            _ => std::cmp::Ordering::Equal,
-        },
-        |client| client.name.clone(),
-    );
-    let mut output = String::new();
-    for client in clients {
-        let Some(session) = state
-            .sessions()
-            .iter()
-            .find(|session| session.id == client.session_id)
-        else {
-            continue;
-        };
-        if target_session.is_some_and(|target| target.id != session.id) {
-            continue;
-        }
-        let Some(vars) = client_vars(state, agents, &client) else {
-            continue;
-        };
-        if filter.is_some_and(|filter| !format::is_true(&format::expand(filter, &vars))) {
-            continue;
-        }
-        output.push_str(&format::expand(template, &vars));
-        output.push('\n');
+
+    fn execute(self, state: &ServerState, client: &ClientContext) -> CommandResult {
+        let duration_ms = self
+            .duration
+            .as_deref()
+            .and_then(|value| value.parse().ok())
+            .or_else(|| {
+                current_target(state).and_then(|target| {
+                    state
+                        .option_for_target(&target, "display-panes-time")
+                        .and_then(|value| value.parse().ok())
+                })
+            })
+            .unwrap_or(1000);
+        let command = self
+            .template
+            .as_deref()
+            .map(|template| template_command(template, "%%"))
+            .unwrap_or_default();
+        let target = self.target.as_deref();
+        overlay_result(
+            state.overlay_client(
+                target,
+                client.tty_name.as_deref(),
+                OverlayRequest::DisplayPanes {
+                    duration_ms,
+                    command,
+                    accept_input: !self.no_input,
+                },
+                client.interaction_reply.clone(),
+            ),
+            target,
+        )
     }
-    CommandResult::ok(output)
+}
+
+/// `list-clients [-r] [-F format] [-f filter] [-O order] [-t target-session]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct ListClients {
+    /// `-F`: the line each client expands to.
+    format: Option<String>,
+    /// `-f`: only list clients this format is true for.
+    filter: Option<String>,
+    /// `-O`: the sort key, resolved when the command runs.
+    order: Option<String>,
+    /// `-r`: reverse the sort.
+    reversed: bool,
+    /// `-t`: only list the clients attached to this session.
+    target: Option<String>,
+}
+
+impl ListClients {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            format: args.value('F').map(str::to_string),
+            filter: args.value('f').map(str::to_string),
+            order: args.value('O').map(str::to_string),
+            reversed: args.has('r'),
+            target: args.value('t').map(str::to_string),
+        })
+    }
+
+    fn execute(self, state: &ServerState, agents: &PaneAgents) -> CommandResult {
+        const DEFAULT_FORMAT: &str = "#{client_name}: #{session_name} [#{client_width}x#{client_height} #{client_termname}] #{?client_flags,(,}#{client_flags}#{?client_flags,),}";
+        let template = self.format.as_deref().unwrap_or(DEFAULT_FORMAT);
+        let requested_session = self.target.as_deref();
+        let target_session = requested_session.and_then(|target| state.resolve_session(target));
+        if requested_session.is_some() && target_session.is_none() {
+            return CommandResult::err(format!(
+                "can't find session: {}\n",
+                requested_session.unwrap_or_default()
+            ));
+        }
+        let sort_order = match super::list_sort_order(self.order.as_deref()) {
+            Ok(order) => order,
+            Err(error) => return error,
+        };
+        let mut clients = state.client_snapshots();
+        super::apply_list_sort(
+            &mut clients,
+            sort_order,
+            self.reversed,
+            |key, a, b| match key {
+                super::ListSortOrder::Name => a.name.cmp(&b.name),
+                super::ListSortOrder::Size => a.cols.cmp(&b.cols).then(a.rows.cmp(&b.rows)),
+                super::ListSortOrder::Creation => a.created_micros.cmp(&b.created_micros),
+                // Most recent activity first, as tmux inverts this comparison.
+                super::ListSortOrder::Activity => b.activity_micros.cmp(&a.activity_micros),
+                _ => std::cmp::Ordering::Equal,
+            },
+            |client| client.name.clone(),
+        );
+        let mut output = String::new();
+        for client in clients {
+            let Some(session) = state
+                .sessions()
+                .iter()
+                .find(|session| session.id == client.session_id)
+            else {
+                continue;
+            };
+            if target_session.is_some_and(|target| target.id != session.id) {
+                continue;
+            }
+            let Some(vars) = client_vars(state, agents, &client) else {
+                continue;
+            };
+            if self
+                .filter
+                .as_deref()
+                .is_some_and(|filter| !format::is_true(&format::expand(filter, &vars)))
+            {
+                continue;
+            }
+            output.push_str(&format::expand(template, &vars));
+            output.push('\n');
+        }
+        CommandResult::ok(output)
+    }
 }
 
 /// The client-entry format variables shared by the `list-clients` context and
@@ -1072,138 +1337,506 @@ fn client_vars(
     Some(vars)
 }
 
-fn detach_client(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {
-    let target = flag_value(args, "-t");
-    overlay_result(
-        state.detach_client(target, client.tty_name.as_deref(), flag_value(args, "-E")),
-        target,
-    )
+/// `detach-client [-aP] [-E shell-command] [-s target-session]
+/// [-t target-client]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct DetachClient {
+    /// `-E`: the command the detached client runs in place of exiting.
+    command: Option<String>,
+    /// `-t`: the client to detach.
+    target: Option<String>,
 }
 
-fn suspend_client(args: &[String], state: &ServerState, client: &ClientContext) -> CommandResult {
-    let target = flag_value(args, "-t");
-    overlay_result(
-        state.suspend_client(target, client.tty_name.as_deref()),
-        target,
-    )
-}
+impl DetachClient {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            command: args.value('E').map(str::to_string),
+            target: args.value('t').map(str::to_string),
+        })
+    }
 
-fn refresh_client(
-    args: &[String],
-    state: &mut ServerState,
-    client: &ClientContext,
-) -> CommandResult {
-    let target = flag_value(args, "-t");
-    // `-c` and the four pan directions are handled first and alone, as tmux's
-    // `cmd_refresh_client_exec` returns straight after them.
-    let pan = if has_flag(args, "-L") {
-        Some(Some(WindowResizeAdjust::Left))
-    } else if has_flag(args, "-R") {
-        Some(Some(WindowResizeAdjust::Right))
-    } else if has_flag(args, "-U") {
-        Some(Some(WindowResizeAdjust::Up))
-    } else if has_flag(args, "-D") {
-        Some(Some(WindowResizeAdjust::Down))
-    } else if has_flag(args, "-c") {
-        Some(None)
-    } else {
-        None
-    };
-    if let Some(adjust) = pan {
-        let adjustment = match positionals(args, &["-t", "-A", "-B", "-C", "-f", "-F", "-r"])
-            .first()
-            .copied()
-            .unwrap_or("1")
-            .parse::<u16>()
-        {
-            Ok(0) => return CommandResult::err("adjustment too small\n"),
-            Ok(value) => value,
-            Err(_) => return CommandResult::err("adjustment invalid\n"),
-        };
-        return overlay_result(
-            state.pan_client(target, client.tty_name.as_deref(), adjust, adjustment),
+    fn execute(self, state: &ServerState, client: &ClientContext) -> CommandResult {
+        let target = self.target.as_deref();
+        overlay_result(
+            state.detach_client(target, client.tty_name.as_deref(), self.command.as_deref()),
             target,
-        );
+        )
     }
-    // `-F` is the historical spelling of `-f`.
-    let flags = flag_values(args, "-f")
-        .into_iter()
-        .chain(flag_values(args, "-F"))
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    if !flags.is_empty() {
-        let result = state.refresh_client_flags(target, client.tty_name.as_deref(), &flags);
-        if result != ClientActionResult::Queued {
-            return overlay_result(result, target);
-        }
-    }
-    // `-l` asks the client's terminal for its selection. tmux keeps one
-    // outstanding query per terminal, so a repeat inside the timeout is
-    // dropped rather than queued.
-    if has_flag(args, "-l") && state.begin_clipboard_query(target, client.tty_name.as_deref()) {
-        let result = state.set_client_selection(target, client.tty_name.as_deref(), None);
-        if result != ClientActionResult::Queued {
-            return overlay_result(result, target);
-        }
-    }
-    overlay_result(
-        state.refresh_client(target, client.tty_name.as_deref()),
-        target,
-    )
 }
 
-fn switch_client(
-    args: &[String],
-    state: &mut ServerState,
-    client: &ClientContext,
-) -> CommandResult {
-    let Some(target_session) = flag_value(args, "-t") else {
-        return CommandResult::err("no current client\n");
-    };
-    // tmux resolves a target naming a window or pane — including `=`, the
-    // mouse's — as a pane target and makes that window current before moving
-    // the client, which is what the default `MouseDown1Status` binding relies
-    // on to turn the status line into a window switcher.
-    let resolved_pane_target = (target_session == "=" || target_session.contains([':', '.', '%']))
+/// `suspend-client [-t target-client]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct SuspendClient {
+    /// `-t`: the client to suspend.
+    target: Option<String>,
+}
+
+impl SuspendClient {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            target: args.value('t').map(str::to_string),
+        })
+    }
+
+    fn execute(self, state: &ServerState, client: &ClientContext) -> CommandResult {
+        let target = self.target.as_deref();
+        overlay_result(
+            state.suspend_client(target, client.tty_name.as_deref()),
+            target,
+        )
+    }
+}
+
+/// `lock-client [-t target-client]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct LockClient {
+    /// `-t`: the client to lock.
+    target: Option<String>,
+}
+
+impl LockClient {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            target: args.value('t').map(str::to_string),
+        })
+    }
+
+    fn execute(self, state: &ServerState, context: &ClientContext) -> CommandResult {
+        let target = self.target.as_deref();
+        match state.lock_client(target, context.tty_name.as_deref()) {
+            ClientActionResult::Queued => CommandResult::ok(""),
+            ClientActionResult::NoCurrentClient => CommandResult::err("no current client\n"),
+            ClientActionResult::TargetNotFound => CommandResult::err(format!(
+                "can't find client: {}\n",
+                target.unwrap_or_default()
+            )),
+        }
+    }
+}
+
+/// `refresh-client [-cDlLRSU] [-A pane:state] [-B name:what:format] [-C XxY]
+/// [-f flags] [-r pane:report] [-t target-client] [adjustment]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct RefreshClient {
+    /// `-L`/`-R`/`-U`/`-D`: pan the client's view by `adjustment` cells.
+    left: bool,
+    right: bool,
+    up: bool,
+    down: bool,
+    /// `-c`: re-centre the client's view.
+    centre: bool,
+    /// `-l`: ask the client's terminal for its selection.
+    clipboard: bool,
+    /// `-f` (and its historical `-F` spelling): the client flags to set.
+    flags: Vec<String>,
+    /// `-t`: the client to refresh.
+    target: Option<String>,
+    adjustment: Option<String>,
+}
+
+impl RefreshClient {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        // `-F` is the historical spelling of `-f`.
+        let flags = args
+            .values('f')
+            .chain(args.values('F'))
+            .map(str::to_string)
+            .collect();
+        Ok(Self {
+            left: args.has('L'),
+            right: args.has('R'),
+            up: args.has('U'),
+            down: args.has('D'),
+            centre: args.has('c'),
+            clipboard: args.has('l'),
+            flags,
+            target: args.value('t').map(str::to_string),
+            adjustment: args.positionals().first().cloned(),
+        })
+    }
+
+    fn execute(self, state: &mut ServerState, client: &ClientContext) -> CommandResult {
+        let target = self.target.as_deref();
+        // `-c` and the four pan directions are handled first and alone, as tmux's
+        // `cmd_refresh_client_exec` returns straight after them.
+        let pan = if self.left {
+            Some(Some(WindowResizeAdjust::Left))
+        } else if self.right {
+            Some(Some(WindowResizeAdjust::Right))
+        } else if self.up {
+            Some(Some(WindowResizeAdjust::Up))
+        } else if self.down {
+            Some(Some(WindowResizeAdjust::Down))
+        } else if self.centre {
+            Some(None)
+        } else {
+            None
+        };
+        if let Some(adjust) = pan {
+            let adjustment = match self.adjustment.as_deref().unwrap_or("1").parse::<u16>() {
+                Ok(0) => return CommandResult::err("adjustment too small\n"),
+                Ok(value) => value,
+                Err(_) => return CommandResult::err("adjustment invalid\n"),
+            };
+            return overlay_result(
+                state.pan_client(target, client.tty_name.as_deref(), adjust, adjustment),
+                target,
+            );
+        }
+        if !self.flags.is_empty() {
+            let result = state.refresh_client_flags(target, client.tty_name.as_deref(), &self.flags);
+            if result != ClientActionResult::Queued {
+                return overlay_result(result, target);
+            }
+        }
+        // `-l` asks the client's terminal for its selection. tmux keeps one
+        // outstanding query per terminal, so a repeat inside the timeout is
+        // dropped rather than queued.
+        if self.clipboard && state.begin_clipboard_query(target, client.tty_name.as_deref()) {
+            let result = state.set_client_selection(target, client.tty_name.as_deref(), None);
+            if result != ClientActionResult::Queued {
+                return overlay_result(result, target);
+            }
+        }
+        overlay_result(
+            state.refresh_client(target, client.tty_name.as_deref()),
+            target,
+        )
+    }
+}
+
+/// `switch-client [-ElnprZ] [-c target-client] [-t target-session]
+/// [-T key-table] [-O order]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct SwitchClient {
+    /// `-c`: the client to move.
+    client: Option<String>,
+    /// `-r`: toggle the target client's read-only state first.
+    toggle_read_only: bool,
+    /// `-t`: the session (or window, or pane) to move it to.
+    target: Option<String>,
+}
+
+impl SwitchClient {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            client: args.value('c').map(str::to_string),
+            toggle_read_only: args.has('r'),
+            target: args.value('t').map(str::to_string),
+        })
+    }
+
+    fn execute(self, state: &mut ServerState, client: &ClientContext) -> CommandResult {
+        let Some(target_session) = self.target.as_deref() else {
+            return CommandResult::err("no current client\n");
+        };
+        // tmux resolves a target naming a window or pane — including `=`, the
+        // mouse's — as a pane target and makes that window current before moving
+        // the client, which is what the default `MouseDown1Status` binding relies
+        // on to turn the status line into a window switcher.
+        let resolved_pane_target = (target_session == "="
+            || target_session.contains([':', '.', '%']))
         .then(|| state.resolve(target_session))
         .flatten();
-    let session_id = if let Some(resolved) = resolved_pane_target {
-        let session = &state.sessions()[resolved.session];
-        let session_id = session.id;
-        let window_target = format!(
-            "{}:{}",
-            session.name, session.windows[resolved.window].index
-        );
-        let pane_id = state.window(resolved.session, resolved.window).panes[resolved.pane].id;
-        let _ = state.select_pane(&format!("%{pane_id}"));
-        let _ = state.select_window(&window_target);
-        session_id
-    } else {
-        let Some(session_id) = state.session_id(target_session) else {
-            return CommandResult::err(format!("can't find session: {target_session}\n"));
+        let session_id = if let Some(resolved) = resolved_pane_target {
+            let session = &state.sessions()[resolved.session];
+            let session_id = session.id;
+            let window_target = format!(
+                "{}:{}",
+                session.name, session.windows[resolved.window].index
+            );
+            let pane_id = state.window(resolved.session, resolved.window).panes[resolved.pane].id;
+            let _ = state.select_pane(&format!("%{pane_id}"));
+            let _ = state.select_window(&window_target);
+            session_id
+        } else {
+            let Some(session_id) = state.session_id(target_session) else {
+                return CommandResult::err(format!("can't find session: {target_session}\n"));
+            };
+            session_id
         };
-        session_id
-    };
-    // tmux toggles the target client's read-only state — and `ignore-size`
-    // with it — once the target has resolved, then moves that same client.
-    let toggled = if has_flag(args, "-r") {
-        match state.toggle_client_read_only(flag_value(args, "-c"), client.tty_name.as_deref()) {
-            Ok(name) => Some(name),
-            Err(ClientActionResult::NoCurrentClient) => {
-                return CommandResult::err("no current client\n");
+        // tmux toggles the target client's read-only state — and `ignore-size`
+        // with it — once the target has resolved, then moves that same client.
+        let toggled = if self.toggle_read_only {
+            match state.toggle_client_read_only(self.client.as_deref(), client.tty_name.as_deref())
+            {
+                Ok(name) => Some(name),
+                Err(ClientActionResult::NoCurrentClient) => {
+                    return CommandResult::err("no current client\n");
+                }
+                Err(_) => return CommandResult::err("can't find client\n"),
             }
-            Err(_) => return CommandResult::err("can't find client\n"),
+        } else {
+            None
+        };
+        match state.switch_client(
+            self.client.as_deref().or(toggled.as_deref()),
+            client.tty_name.as_deref(),
+            session_id,
+        ) {
+            ClientActionResult::Queued => CommandResult::ok(""),
+            ClientActionResult::NoCurrentClient => CommandResult::err("no current client\n"),
+            ClientActionResult::TargetNotFound => CommandResult::err("can't find client\n"),
         }
-    } else {
-        None
-    };
-    match state.switch_client(
-        flag_value(args, "-c").or(toggled.as_deref()),
-        client.tty_name.as_deref(),
-        session_id,
-    ) {
-        ClientActionResult::Queued => CommandResult::ok(""),
-        ClientActionResult::NoCurrentClient => CommandResult::err("no current client\n"),
-        ClientActionResult::TargetNotFound => CommandResult::err("can't find client\n"),
+    }
+}
+
+/// `display-message [-aCIlNpv] [-c target-client] [-d delay] [-F format]
+/// [-t target-pane] [message]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct DisplayMessage {
+    /// `-I`: feed the client's standard input into the target pane.
+    feed_input: bool,
+    /// `-l`: print the message literally, without expanding it.
+    literal: bool,
+    /// `-p`: print the message instead of showing it on a client.
+    print: bool,
+    /// `-v`: write the format engine's expansion trace to the command client.
+    verbose: bool,
+    /// `-c`: the client the message is shown on.
+    client: Option<String>,
+    /// `-d`: how long the message stays up.
+    delay: Option<String>,
+    /// `-F`: the message, when it is not given as an operand.
+    format: Option<String>,
+    /// `-t`: the pane the message is expanded against.
+    target: Option<String>,
+    message: Option<String>,
+}
+
+impl DisplayMessage {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            feed_input: args.has('I'),
+            literal: args.has('l'),
+            print: args.has('p'),
+            verbose: args.has('v'),
+            client: args.value('c').map(str::to_string),
+            delay: args.value('d').map(str::to_string),
+            format: args.value('F').map(str::to_string),
+            target: args.value('t').map(str::to_string),
+            message: args.positionals().first().cloned(),
+        })
+    }
+
+    fn execute(
+        self,
+        st: &mut ServerState,
+        agents: &PaneAgents,
+        context: &ClientContext,
+    ) -> CommandResult {
+        let target = self.target.clone().or_else(|| current_target(st));
+        if target.is_none() && (!self.print || self.feed_input) {
+            return CommandResult::err("can't establish current session\n");
+        }
+        // display-message uses tmux's can-fail target lookup: an unresolvable target
+        // does not fail the command, it formats against however far the lookup got
+        // (the named session's current window, say) or against nothing at all.
+        let resolved = target
+            .as_deref()
+            .and_then(|target| st.resolve_or_residual(target));
+        if self.feed_input {
+            let resolved = match resolved {
+                Some(resolved) => resolved,
+                None => {
+                    let target = target.as_deref().unwrap_or_default();
+                    return CommandResult::err(format!("can't find session: {target}\n"));
+                }
+            };
+            let pane =
+                &mut st.window_mut(resolved.session, resolved.window).panes[resolved.pane].pane;
+            if !pane.is_empty() {
+                return CommandResult::err("pane is not empty\n");
+            }
+            return match context.input_file.as_ref() {
+                Some(Ok(data)) => {
+                    pane.feed(data);
+                    CommandResult::ok("")
+                }
+                Some(Err(error)) => CommandResult::err(format!(
+                    "{}: -\n",
+                    io_error_message(&io::Error::from_raw_os_error(*error))
+                )),
+                None => CommandResult::ok(""),
+            };
+        }
+        if self.message.is_some() && self.format.is_some() {
+            return CommandResult::err("only one of -F or argument must be given\n");
+        }
+        let message = self
+            .message
+            .as_deref()
+            .or(self.format.as_deref())
+            .unwrap_or(DISPLAY_MESSAGE_TEMPLATE);
+        // Honor the *resolved* pane (e.g. `-t sess:win.{top}`), not just the window's
+        // active pane, so pane-scoped variables reflect the target.
+        let mut vars = match resolved {
+            Some(resolved) => vars_full(
+                st,
+                &st.sessions()[resolved.session],
+                resolved.window,
+                resolved.pane,
+                agents,
+                st.marked_pane(),
+            ),
+            None => Vars::new(),
+        };
+        set_current_client_vars(
+            st,
+            context,
+            resolved.map(|resolved| st.sessions()[resolved.session].id),
+            self.client.as_deref(),
+            &mut vars,
+        );
+        for (name, value) in st.env_iter() {
+            vars.set(name, value);
+        }
+        if let Some(target) = target.as_deref() {
+            if let Ok(entries) = st.format_option_entries(target) {
+                for (name, value) in entries {
+                    vars.set(name, value);
+                }
+            }
+        }
+        let loops = resolved.map(|resolved| TreeLoops {
+            st,
+            session: resolved.session,
+            window: resolved.window,
+            agents,
+        });
+        let expanded = if self.literal {
+            message.to_string()
+        } else {
+            format::expand_time_with_jobs(
+                message,
+                &vars,
+                loops.as_ref().map(|loops| loops as &dyn format::LoopSource),
+                command_jobs(st),
+                Some(&ServerFormatTree(st)),
+            )
+        };
+        let mut out = String::new();
+        // `-v` asks tmux's format engine to write its expansion trace to the
+        // command client. Literal mode bypasses the format engine, so `-l -v`
+        // produces no trace (and only prints the literal when `-p` is present).
+        if self.verbose && !self.literal {
+            out.push_str(&format!("# expanding format: {message}\n"));
+            out.push_str(&format!("# result is: {expanded}\n"));
+        }
+        if self.print {
+            out.push_str(&expanded);
+            out.push('\n');
+        } else {
+            let duration_ms = match self.delay.as_deref() {
+                Some(value) => match value.parse::<u32>() {
+                    Ok(value) => u64::from(value),
+                    Err(_) => return CommandResult::err(format!("delay {value}: invalid number\n")),
+                },
+                None => st
+                    .option_for_target(target.as_deref().unwrap_or_default(), "display-time")
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(750),
+            };
+            let Some(resolved) = resolved else {
+                return CommandResult::ok(out);
+            };
+            let session_id = st.sessions()[resolved.session].id;
+            match st.send_client_message(
+                self.client.as_deref(),
+                context.tty_name.as_deref(),
+                session_id,
+                ClientMessage {
+                    text: expanded.clone(),
+                    duration_ms,
+                    bell: false,
+                },
+            ) {
+                ClientMessageResult::CurrentControl => {
+                    out.push_str(&format!("%message {expanded}\n"));
+                }
+                ClientMessageResult::Queued | ClientMessageResult::NoClient => {}
+                ClientMessageResult::TargetNotFound => {
+                    let target = self.client.as_deref().unwrap_or_default();
+                    return CommandResult::err(format!("can't find client: {target}\n"));
+                }
+            }
+        }
+        CommandResult::ok(out)
+    }
+}
+
+/// The `-T` shared by `show-prompt-history` and `clear-prompt-history`: one of
+/// tmux's four prompt types, or every one of them when it is absent.
+fn prompt_history_type(prompt_type: Option<&str>) -> Result<Option<&str>, CommandResult> {
+    if prompt_type
+        .is_some_and(|value| !matches!(value, "command" | "search" | "target" | "window-target"))
+    {
+        return Err(CommandResult::err(format!(
+            "invalid type: {}\n",
+            prompt_type.unwrap_or_default()
+        )));
+    }
+    Ok(prompt_type)
+}
+
+/// `show-prompt-history [-T prompt-type]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct ShowPromptHistory {
+    /// `-T`: the prompt type to show; all of them otherwise.
+    prompt_type: Option<String>,
+}
+
+impl ShowPromptHistory {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            prompt_type: args.value('T').map(str::to_string),
+        })
+    }
+
+    fn execute(self, st: &ServerState) -> CommandResult {
+        let prompt_type = match prompt_history_type(self.prompt_type.as_deref()) {
+            Ok(prompt_type) => prompt_type,
+            Err(error) => return error,
+        };
+        let types: Vec<&str> = prompt_type
+            .map(|prompt_type| vec![prompt_type])
+            .unwrap_or_else(|| vec!["command", "search", "target", "window-target"]);
+        let mut output = String::new();
+        for prompt_type in types {
+            output.push_str(&format!("History for {prompt_type}:\n"));
+            output.push('\n');
+            let history = st.prompt_history(prompt_type);
+            if !history.is_empty() {
+                for (index, value) in history.iter().enumerate() {
+                    output.push_str(&format!("{}: {value}\n", index + 1));
+                }
+            }
+            output.push('\n');
+        }
+        CommandResult::ok(output)
+    }
+}
+
+/// `clear-prompt-history [-T prompt-type]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct ClearPromptHistory {
+    /// `-T`: the prompt type to clear; all of them otherwise.
+    prompt_type: Option<String>,
+}
+
+impl ClearPromptHistory {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            prompt_type: args.value('T').map(str::to_string),
+        })
+    }
+
+    fn execute(self, st: &mut ServerState) -> CommandResult {
+        let prompt_type = match prompt_history_type(self.prompt_type.as_deref()) {
+            Ok(prompt_type) => prompt_type,
+            Err(error) => return error,
+        };
+        st.clear_prompt_history(prompt_type);
+        CommandResult::ok("")
     }
 }

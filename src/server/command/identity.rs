@@ -3,11 +3,12 @@ use super::{
     CommandContext, CommandResult,
 };
 
-/// Closed identity for every tmux command understood by the native server.
+/// Closed identity for every tmux command understood by the native server, with
+/// the arguments that command parsed out of its argv.
 ///
 /// The outer variant records the feature owner. Each feature module owns the
-/// smaller enum that identifies its commands.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+/// smaller enum that identifies its commands and the argument types they carry.
+#[derive(Clone, Debug)]
 pub(in crate::server) enum Command {
     Session(sessions::Command),
     Window(windows::Command),
@@ -21,43 +22,17 @@ pub(in crate::server) enum Command {
 }
 
 impl Command {
-    pub(super) fn execute(
-        self,
-        args: &[String],
-        context: &mut CommandContext<'_>,
-    ) -> CommandResult {
+    pub(super) fn execute(self, context: &mut CommandContext<'_>) -> CommandResult {
         match self {
-            Self::Session(command) => command.execute(args, context),
-            Self::Window(command) => command.execute(args, context),
-            Self::Pane(command) => command.execute(args, context),
-            Self::Keys(command) => command.execute(args, context),
-            Self::Configuration(command) => command.execute(args, context),
-            Self::Buffer(command) => command.execute(args, context),
-            Self::Execution(command) => command.execute(args, context),
-            Self::Client(command) => command.execute(args, context),
-            Self::Server(command) => command.execute(args, context),
+            Self::Session(command) => command.execute(context),
+            Self::Window(command) => command.execute(context),
+            Self::Pane(command) => command.execute(context),
+            Self::Keys(command) => command.execute(context),
+            Self::Configuration(command) => command.execute(context),
+            Self::Buffer(command) => command.execute(context),
+            Self::Execution(command) => command.execute(context),
+            Self::Client(command) => command.execute(context),
+            Self::Server(command) => command.execute(context),
         }
     }
-}
-
-#[cfg(test)]
-pub(in crate::server) fn all() -> Vec<Command> {
-    sessions::ALL
-        .iter()
-        .copied()
-        .map(Command::Session)
-        .chain(windows::ALL.iter().copied().map(Command::Window))
-        .chain(panes::ALL.iter().copied().map(Command::Pane))
-        .chain(keys::ALL.iter().copied().map(Command::Keys))
-        .chain(
-            configuration::ALL
-                .iter()
-                .copied()
-                .map(Command::Configuration),
-        )
-        .chain(buffers::ALL.iter().copied().map(Command::Buffer))
-        .chain(execution::ALL.iter().copied().map(Command::Execution))
-        .chain(clients::ALL.iter().copied().map(Command::Client))
-        .chain(server::ALL.iter().copied().map(Command::Server))
-        .collect()
 }
