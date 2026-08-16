@@ -126,7 +126,7 @@ impl ServerState {
     pub(crate) fn format_option_entries<'a>(
         &'a self,
         target: &str,
-    ) -> io::Result<impl Iterator<Item = (&'a str, &'a str)>> {
+    ) -> io::Result<impl Iterator<Item = (&'a str, &'a str)> + use<'a>> {
         let target = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let session = &self.sessions[target.session];
         let window = self.window(target.session, target.window);

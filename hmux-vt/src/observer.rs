@@ -27,7 +27,7 @@
 
 use std::collections::VecDeque;
 
-use super::parser::{Param, Parser, StringEnd, Token, TokenKind, INPUT_BUFFER_DEFAULT_SIZE};
+use super::parser::{INPUT_BUFFER_DEFAULT_SIZE, Param, Parser, StringEnd, Token, TokenKind};
 use super::vis;
 use super::x11_colour;
 
@@ -1112,10 +1112,12 @@ mod tests {
             b"\x1b[?1000h",
             "the 1049 goes, the mouse mode stays"
         );
-        assert!(observed
-            .events
-            .iter()
-            .all(|(_, event)| !matches!(event, Event::AlternateScreen(_))));
+        assert!(
+            observed
+                .events
+                .iter()
+                .all(|(_, event)| !matches!(event, Event::AlternateScreen(_)))
+        );
     }
 
     #[test]

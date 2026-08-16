@@ -10,8 +10,8 @@ use std::io::{self, Read};
 use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
 
-use signal_hook::low_level::{pipe, unregister};
 use signal_hook::SigId;
+use signal_hook::low_level::{pipe, unregister};
 
 use crate::reactor::Interest;
 use crate::tasks::{AsyncFd, TaskHandle};

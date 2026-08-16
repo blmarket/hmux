@@ -14,7 +14,7 @@
 
 use std::fmt::Write as _;
 
-use super::cell::{attr, colour, flag, Cell};
+use super::cell::{Cell, attr, colour, flag};
 use super::grid::Grid as EngineGrid;
 use super::screen::Screen;
 use crate::screen::mode;

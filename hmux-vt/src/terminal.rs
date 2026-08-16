@@ -15,11 +15,11 @@
 //! the application loop. The only ordering the caller owes the events is the
 //! `Vec`'s own.
 
-use crate::observer::{decrqss_reply, CursorShape, Event, Observer, OscState, OutputPolicy};
-use crate::parser::{tokenize, StringEnd, Token};
-use crate::screen::{mode, PaneScreen, ScreenOptions};
-use crate::scroll::ScrollRedraw;
 use crate::ClipboardEvent;
+use crate::observer::{CursorShape, Event, Observer, OscState, OutputPolicy, decrqss_reply};
+use crate::parser::{StringEnd, Token, tokenize};
+use crate::screen::{PaneScreen, ScreenOptions, mode};
+use crate::scroll::ScrollRedraw;
 
 /// Something in the processed byte stream the server has to act on.
 #[derive(Clone, Debug, Eq, PartialEq)]

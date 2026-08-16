@@ -16,8 +16,8 @@
 mod defaults;
 mod table;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// tmux's `variation-selector-always-wide`, whose default is on.
 ///
@@ -231,8 +231,10 @@ mod tests {
 
     #[test]
     fn the_built_in_cache_is_sorted_for_binary_search() {
-        assert!(defaults::DEFAULT_OVERRIDES
-            .windows(2)
-            .all(|pair| pair[0].0 < pair[1].0));
+        assert!(
+            defaults::DEFAULT_OVERRIDES
+                .windows(2)
+                .all(|pair| pair[0].0 < pair[1].0)
+        );
     }
 }

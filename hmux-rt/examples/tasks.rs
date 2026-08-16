@@ -14,7 +14,7 @@ use std::os::fd::{AsFd as _, AsRawFd as _, BorrowedFd};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use hmux_rt::{sleep, AsyncFd, Interest, TaskHandle, TaskRuntime};
+use hmux_rt::{AsyncFd, Interest, TaskHandle, TaskRuntime, sleep};
 
 fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
     let raw = fd.as_raw_fd();

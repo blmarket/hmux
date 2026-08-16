@@ -532,7 +532,7 @@ mod tests {
         unsafe fn read_stdin_forever() -> ! {
             let mut byte = 0u8;
             loop {
-                libc::read(0, (&mut byte as *mut u8).cast(), 1);
+                unsafe { libc::read(0, (&mut byte as *mut u8).cast(), 1) };
             }
         }
 
@@ -555,7 +555,7 @@ mod tests {
 
         unsafe fn sleep_forever() -> ! {
             loop {
-                libc::sleep(30);
+                unsafe { libc::sleep(30) };
             }
         }
 

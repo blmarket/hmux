@@ -14,4 +14,4 @@ mod timer;
 pub use reactor::{Interest, Readiness};
 pub use runtime::TaskRuntime;
 pub use signals::Signals;
-pub use tasks::{sleep, sleep_until, AsyncFd, JoinError, JoinHandle, TaskHandle, TaskId};
+pub use tasks::{AsyncFd, JoinError, JoinHandle, TaskHandle, TaskId, sleep, sleep_until};

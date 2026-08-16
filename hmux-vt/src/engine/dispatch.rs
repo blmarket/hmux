@@ -10,10 +10,10 @@
 //! [`crate::observer`] already handled them before the token got here. What
 //! remains is everything that lands on screen state, the title included.
 
-use super::cell::{attr, colour, Cell, CellData};
+use super::cell::{Cell, CellData, attr, colour};
 use super::grid::line_flag;
 use super::hyperlinks;
-use super::screen::{erase_background, Screen};
+use super::screen::{Screen, erase_background};
 use crate::parser::{Param, TokenKind};
 use crate::screen::mode;
 use crate::vis;
@@ -1143,11 +1143,13 @@ mod tests {
         feed(&mut engine, "\u{1f1ec}\u{1f1e7}".as_bytes());
         assert_eq!(engine.screen.cx, 2, "the pair is forced to two columns");
         assert_eq!(cell(&engine, 0), "\u{1f1ec}\u{1f1e7}");
-        assert!(engine
-            .screen
-            .grid
-            .get(1, engine.screen.grid.hsize)
-            .is_padding());
+        assert!(
+            engine
+                .screen
+                .grid
+                .get(1, engine.screen.grid.hsize)
+                .is_padding()
+        );
     }
 
     #[test]
@@ -1178,11 +1180,13 @@ mod tests {
         feed(&mut engine, "\u{2764}\u{fe0f}".as_bytes());
         assert_eq!(engine.screen.cx, 2);
         assert_eq!(cell(&engine, 0), "\u{2764}\u{fe0f}");
-        assert!(engine
-            .screen
-            .grid
-            .get(1, engine.screen.grid.hsize)
-            .is_padding());
+        assert!(
+            engine
+                .screen
+                .grid
+                .get(1, engine.screen.grid.hsize)
+                .is_padding()
+        );
     }
 
     #[test]

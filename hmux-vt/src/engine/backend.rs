@@ -299,9 +299,11 @@ mod tests {
         screen.resize(4, 2);
         let dims = screen.grid_dims();
         assert_eq!((dims.cols, dims.viewport_rows), (4, 2));
-        assert!(screen
-            .dump_plain_rows(0, dims.total_rows, false)
-            .contains("abcd\nefgh"));
+        assert!(
+            screen
+                .dump_plain_rows(0, dims.total_rows, false)
+                .contains("abcd\nefgh")
+        );
         // Four is the pending-wrap column of a four-column screen, which is
         // where tmux parks a cursor that has just filled the last one.
         assert_eq!(screen.cursor_position(), (4, 0));
@@ -311,9 +313,11 @@ mod tests {
     fn joining_wraps_puts_a_soft_wrapped_line_back_together() {
         let screen = screen(4, 3, b"abcdefgh");
         let total = all_rows(&screen);
-        assert!(screen
-            .dump_plain_rows(0, total, false)
-            .contains("abcd\nefgh"));
+        assert!(
+            screen
+                .dump_plain_rows(0, total, false)
+                .contains("abcd\nefgh")
+        );
         assert!(screen.dump_plain_rows(0, total, true).contains("abcdefgh"));
     }
 }

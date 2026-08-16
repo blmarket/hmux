@@ -21,11 +21,11 @@
 
 use std::collections::BTreeSet;
 
-use super::cell::{attr, colour, flag, Cell, CellData, UTF8_SIZE};
+use super::cell::{Cell, CellData, UTF8_SIZE, attr, colour, flag};
 use super::combine;
-use super::grid::{colour_is_default, line_flag, needs_extended, Grid, Line};
+use super::grid::{Grid, Line, colour_is_default, line_flag, needs_extended};
 use super::hyperlinks::Hyperlinks;
-use crate::screen::{mode, ScreenOptions};
+use crate::screen::{ScreenOptions, mode};
 use crate::width;
 
 /// What [`Screen::combine`] decided about a character, which is tmux's return

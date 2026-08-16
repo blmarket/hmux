@@ -157,7 +157,7 @@ impl<'a> OptionsView<'a> {
             .collect()
     }
 
-    pub(crate) fn iter_effective(&self) -> impl Iterator<Item = (&'a str, &'a str)> {
+    pub(crate) fn iter_effective(&self) -> impl Iterator<Item = (&'a str, &'a str)> + use<'a> {
         let mut entries: BTreeMap<&'a str, &'a str> = BTreeMap::new();
         for layer in self.layers.into_iter().rev().flatten() {
             // A layer holding any entry of an array replaces that array whole,

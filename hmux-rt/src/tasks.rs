@@ -10,7 +10,7 @@ use std::rc::Rc;
 use std::task::{Context, ContextBuilder, LocalWake, LocalWaker, Poll, Waker};
 use std::time::{Duration, Instant};
 
-use crate::handoff::{handoff, Handoff};
+use crate::handoff::{Handoff, handoff};
 use crate::reactor::{Interest, Readiness, Token};
 use crate::timer::{TimerId, TimerQueue};
 
@@ -370,7 +370,7 @@ impl Future for ReadinessFuture<'_> {
 ///
 /// The returned future owns its deadline outright: dropping it — losing a
 /// select is the usual way — cancels the timer it armed and no other.
-pub fn sleep_until(handle: &TaskHandle, deadline: Instant) -> impl Future<Output = ()> {
+pub fn sleep_until(handle: &TaskHandle, deadline: Instant) -> impl Future<Output = ()> + use<> {
     Sleep {
         shared: Rc::clone(&handle.shared),
         deadline,
@@ -378,7 +378,7 @@ pub fn sleep_until(handle: &TaskHandle, deadline: Instant) -> impl Future<Output
     }
 }
 
-pub fn sleep(handle: &TaskHandle, duration: Duration) -> impl Future<Output = ()> {
+pub fn sleep(handle: &TaskHandle, duration: Duration) -> impl Future<Output = ()> + use<> {
     sleep_until(handle, Instant::now() + duration)
 }
 

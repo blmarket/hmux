@@ -65,19 +65,19 @@ pub use terminal::{Terminal, TerminalEvent};
 // The vocabulary the events carry, the option values pushed in, and the
 // OSC-set pane state read back out.
 pub use observer::{
-    parse_packed_colour, ClipboardEvent, CursorShape, OscState, OutputPolicy, PassthroughPolicy,
-    BACKGROUND_COLOR_QUERY,
+    BACKGROUND_COLOR_QUERY, ClipboardEvent, CursorShape, OscState, OutputPolicy, PassthroughPolicy,
+    parse_packed_colour,
 };
 pub use parser::StringEnd;
 
 // The screen: the grid itself and the values reading it produces.
 pub use screen::{
-    mode, CaptureExtent, CellSemantic, CellWidth, Grid, GridCell, GridDims, GridRow, PaneScreen,
-    RowExtent, RowFlags, ScreenOptions, ScreenSnapshot,
+    CaptureExtent, CellSemantic, CellWidth, Grid, GridCell, GridDims, GridRow, PaneScreen,
+    RowExtent, RowFlags, ScreenOptions, ScreenSnapshot, mode,
 };
 
 // The key and mouse identities an encode takes.
-pub use input::{encode_key_default_modes, Key, KeyEvent, MouseAction, MouseButton, MouseEvent};
+pub use input::{Key, KeyEvent, MouseAction, MouseButton, MouseEvent, encode_key_default_modes};
 
 // The client tty path: the outer terminal's answers, picked out of its input.
 pub use answer::{AnswerScanner, TerminalAnswer};

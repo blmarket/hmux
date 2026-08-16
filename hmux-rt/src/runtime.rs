@@ -348,7 +348,7 @@ mod tests {
     use std::process::{Command, Stdio};
 
     use crate::reactor::Interest;
-    use crate::tasks::{sleep, AsyncFd, JoinError};
+    use crate::tasks::{AsyncFd, JoinError, sleep};
 
     use super::*;
 

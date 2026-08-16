@@ -10,7 +10,7 @@
 //! how far a program has actually written, which is what `capture-pane -N`
 //! reports. tmux keeps both (`cellsize` and `cellused`) and so does this.
 
-use super::cell::{colour, flag, Cell, CellData};
+use super::cell::{Cell, CellData, colour, flag};
 
 /// tmux's `GRID_LINE_*`.
 pub mod line_flag {

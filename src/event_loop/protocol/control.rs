@@ -111,7 +111,10 @@ impl Sources {
 
     /// The read side of the client's input, armed only while it still has input
     /// to give: a descriptor at end of file is ready forever.
-    fn input(&self, control: &EventControlClient) -> impl std::future::Future<Output = ()> + '_ {
+    fn input<'a>(
+        &'a self,
+        control: &EventControlClient,
+    ) -> impl std::future::Future<Output = ()> + use<'a> {
         let armed = control.stdin_open();
         let input = self.input.as_ref();
         async move {
@@ -126,7 +129,10 @@ impl Sources {
 
     /// The write side of the client's output, armed only while bytes are queued
     /// for it.
-    fn output(&self, control: &EventControlClient) -> impl std::future::Future<Output = ()> + '_ {
+    fn output<'a>(
+        &'a self,
+        control: &EventControlClient,
+    ) -> impl std::future::Future<Output = ()> + use<'a> {
         let armed = control.output_pending();
         let output = &self.output;
         async move {
