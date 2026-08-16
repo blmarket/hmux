@@ -124,7 +124,7 @@ impl Engine {
     /// the character came from.
     fn print(&mut self, character: char, records_last: bool) {
         let width = codepoint_width(character as u32);
-        let mut cell = self.screen.cell.clone();
+        let mut cell = self.screen.cell;
         if self.charsets.acs_selected() && character.is_ascii() {
             cell.attr |= attr::CHARSET;
         } else {
@@ -518,7 +518,7 @@ impl Engine {
         if !self.last_valid {
             return;
         }
-        let Some(data) = self.last.clone() else {
+        let Some(data) = self.last else {
             return;
         };
         let n = n.min(self.screen.sx() - self.screen.cx);
@@ -533,7 +533,7 @@ impl Engine {
             self.screen.cell.attr &= !attr::CHARSET;
         }
         self.screen.cell.data = data;
-        let cell = self.screen.cell.clone();
+        let cell = self.screen.cell;
         for _ in 0..n {
             self.screen.put_cell(&cell);
         }

@@ -719,8 +719,8 @@ impl Screen {
             && cell.fg == existing.fg
             && cell.bg == existing.bg
             && cell.data.width == 1
-            && cell.data.bytes.len() == 1
-            && existing.data.bytes == cell.data.bytes
+            && cell.data.len() == 1
+            && existing.data.bytes() == cell.data.bytes()
     }
 
     /// Whether this character joins a run, tmux's test at the top of
@@ -732,8 +732,8 @@ impl Screen {
     /// screen, and never reaches this path.
     fn collects(&self, cell: &Cell) -> bool {
         cell.data.width == 1
-            && cell.data.bytes.len() == 1
-            && cell.data.bytes[0] < 0x7f
+            && cell.data.len() == 1
+            && cell.data.bytes()[0] < 0x7f
             && cell.flags & flag::TAB == 0
             && cell.attr & attr::CHARSET == 0
             && self.mode & mode::WRAP != 0
@@ -773,7 +773,7 @@ impl Screen {
 
         // Nothing to combine a single-byte character with, and nothing to the
         // left of column zero.
-        if cell.data.bytes.len() < 2 || self.cx == 0 {
+        if cell.data.len() < 2 || self.cx == 0 {
             return alone;
         }
 
@@ -810,10 +810,10 @@ impl Screen {
         }
 
         // A cluster that would outgrow the cell is left to start its own.
-        if last.data.bytes.len() + cell.data.bytes.len() > UTF8_SIZE {
+        if last.data.len() + cell.data.len() > UTF8_SIZE {
             return Combined::NotCombined;
         }
-        last.data.bytes.extend_from_slice(&cell.data.bytes);
+        last.data.extend(cell.data.bytes());
 
         // A modifier or variation selector widens the cell it joined, which
         // costs the column to the right of it and moves the cursor on.
@@ -908,11 +908,8 @@ impl Screen {
                     // tmux turns each column it still covers into a tab cell
                     // of its own, so what is left of the run is still captured
                     // as tabs rather than as blanks.
-                    let mut cell = now.clone();
-                    cell.data = CellData {
-                        bytes: b" ".to_vec(),
-                        width: 1,
-                    };
+                    let mut cell = now;
+                    cell.data = CellData::SPACE;
                     self.grid.set(xx, row, &cell);
                 } else {
                     self.grid.clear(xx, row, 1, 1, colour::DEFAULT);
@@ -998,7 +995,7 @@ impl Screen {
         self.saved_cursor = Some(SavedState {
             cx: self.cx,
             cy: self.cy,
-            cell: self.cell.clone(),
+            cell: self.cell,
             mode: self.mode,
         });
     }
@@ -1042,7 +1039,7 @@ impl Screen {
             self.saved_state = Some(SavedState {
                 cx: self.cx,
                 cy: self.cy,
-                cell: self.cell.clone(),
+                cell: self.cell,
                 mode: self.mode,
             });
         }

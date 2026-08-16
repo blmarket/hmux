@@ -70,7 +70,7 @@ fn lay_out(out: &mut Vec<Line>, cells: Vec<Cell>, sx: usize, flags: u8) {
 /// line flag it sets is sticky and `capture-pane -F` prints it.
 pub fn needs_extended(cell: &Cell) -> bool {
     cell.attr > 0xff
-        || cell.data.bytes.len() > 1
+        || cell.data.len() > 1
         || cell.data.width > 1
         || cell.fg & colour::FLAG_RGB != 0
         || cell.bg & colour::FLAG_RGB != 0
@@ -213,7 +213,7 @@ impl Grid {
                 line.extd += 1;
             }
         }
-        line.cells[px] = cell.clone();
+        line.cells[px] = *cell;
     }
 
     /// tmux's `grid_set_padding`: the blank right half of a wide character.
@@ -701,12 +701,9 @@ impl Grid {
     /// horizontal tab created, rather than for spaces someone wrote.
     pub fn tab_cell(template: &Cell, width: usize) -> Cell {
         Cell {
-            data: CellData {
-                bytes: vec![b' '; width],
-                width: u8::try_from(width).unwrap_or(u8::MAX),
-            },
+            data: CellData::blanks(width),
             flags: (template.flags | flag::TAB) & !flag::PADDING,
-            ..template.clone()
+            ..*template
         }
     }
 }

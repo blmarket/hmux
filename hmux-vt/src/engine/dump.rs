@@ -268,7 +268,7 @@ fn vt_row(
         code.clear();
         if !cell.looks_equal(&pen) {
             code.push_str(&sgr(&pen, &cell));
-            pen = cell.clone();
+            pen = cell;
         }
         let wants_charset = cell.attr & attr::CHARSET != 0;
         if wants_charset != charset {
@@ -328,7 +328,7 @@ fn sgr(from: &Cell, to: &Cell) -> String {
     // and the underline colour alone and writes the link separately, so a cell
     // that only leaves a link must not emit an SGR reset between the linked
     // text and the sequence that closes the link.
-    let mut unlinked = from.clone();
+    let mut unlinked = *from;
     unlinked.link = 0;
     if !unlinked.looks_equal(&Cell::default()) {
         out.push_str("\x1b[0m");

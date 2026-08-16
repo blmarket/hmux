@@ -100,46 +100,115 @@ pub const UTF8_SIZE: usize = 32;
 
 /// The character content of a cell: a grapheme cluster and the number of
 /// columns it occupies.
-#[derive(Clone, Debug, Eq, PartialEq)]
+///
+/// The cluster is stored inline, as tmux stores it in `struct utf8_data`. A
+/// cell is written and read far more often than it is wide, and the cluster
+/// can never outgrow [`UTF8_SIZE`] anyway, so the tail this wastes on the
+/// common one-byte cell costs less than a heap allocation per cell would.
+#[derive(Clone, Copy, Debug)]
 pub struct CellData {
-    /// The cluster's UTF-8 bytes, at most [`UTF8_SIZE`] of them.
-    pub bytes: Vec<u8>,
+    /// The cluster's UTF-8 bytes. Only the first `len` are content; the rest
+    /// are zero and never read, which is why equality goes through
+    /// [`CellData::bytes`] rather than the array.
+    bytes: [u8; UTF8_SIZE],
+    /// How much of `bytes` is content.
+    len: u8,
     /// Display width in columns: 0, 1 or 2.
     pub width: u8,
 }
 
+impl PartialEq for CellData {
+    fn eq(&self, other: &CellData) -> bool {
+        self.width == other.width && self.bytes() == other.bytes()
+    }
+}
+
+impl Eq for CellData {}
+
 impl CellData {
+    /// The cell content of a space, which is what a clear leaves behind.
+    pub const SPACE: CellData = {
+        let mut bytes = [0u8; UTF8_SIZE];
+        bytes[0] = b' ';
+        CellData {
+            bytes,
+            len: 1,
+            width: 1,
+        }
+    };
+
+    /// The empty cluster: no content at all, which is what a padding cell
+    /// holds.
+    pub const EMPTY: CellData = CellData {
+        bytes: [0u8; UTF8_SIZE],
+        len: 0,
+        width: 1,
+    };
+
     /// One ASCII or single-codepoint character.
     pub fn from_char(character: char, width: u8) -> CellData {
-        let mut bytes = [0u8; 4];
+        let mut encoded = [0u8; 4];
+        let encoded = character.encode_utf8(&mut encoded).as_bytes();
+        let mut bytes = [0u8; UTF8_SIZE];
+        bytes[..encoded.len()].copy_from_slice(encoded);
         CellData {
-            bytes: character.encode_utf8(&mut bytes).as_bytes().to_vec(),
+            bytes,
+            len: encoded.len() as u8,
             width,
         }
     }
 
-    /// The cell content of a space, which is what a clear leaves behind.
-    pub fn space() -> CellData {
+    /// A run of `width` blanks in one cell, which is how a horizontal tab is
+    /// stored. `width` is capped at [`UTF8_SIZE`]; the caller that produces a
+    /// wider run writes no cell at all.
+    pub fn blanks(width: usize) -> CellData {
+        let width = width.min(UTF8_SIZE);
+        let mut bytes = [0u8; UTF8_SIZE];
+        bytes[..width].fill(b' ');
         CellData {
-            bytes: vec![b' '],
-            width: 1,
+            bytes,
+            len: width as u8,
+            width: u8::try_from(width).unwrap_or(u8::MAX),
         }
+    }
+
+    /// The cluster's bytes.
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes[..usize::from(self.len)]
+    }
+
+    /// How many bytes the cluster holds.
+    pub fn len(&self) -> usize {
+        usize::from(self.len)
+    }
+
+    /// Append to the cluster, as combining a character into it does. The caller
+    /// checks the room first: a cluster that would outgrow the cell starts its
+    /// own instead, which is observable, so silently truncating here would be
+    /// the wrong answer.
+    pub fn extend(&mut self, extra: &[u8]) {
+        let start = usize::from(self.len);
+        let end = (start + extra.len()).min(UTF8_SIZE);
+        self.bytes[start..end].copy_from_slice(&extra[..end - start]);
+        self.len = end as u8;
     }
 
     /// Whether the cell holds exactly one space.
     pub fn is_space(&self) -> bool {
-        self.bytes == b" "
+        self.bytes() == b" "
     }
 
     /// The cluster as text. Cell bytes are always valid UTF-8, because they
     /// only ever arrive as an encoded `char`.
     pub fn text(&self) -> &str {
-        std::str::from_utf8(&self.bytes).unwrap_or("")
+        std::str::from_utf8(self.bytes()).unwrap_or("")
     }
 }
 
 /// One grid cell: tmux's `struct grid_cell`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+///
+/// Every field is inline, so a cell copies with a `memcpy` and owns nothing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Cell {
     pub data: CellData,
     pub attr: u16,
@@ -156,19 +225,23 @@ pub struct Cell {
 impl Default for Cell {
     /// tmux's `grid_default_cell`: a space in the default colours.
     fn default() -> Cell {
-        Cell {
-            data: CellData::space(),
-            attr: 0,
-            flags: 0,
-            fg: colour::DEFAULT,
-            bg: colour::DEFAULT,
-            us: colour::DEFAULT,
-            link: 0,
-        }
+        Cell::DEFAULT
     }
 }
 
 impl Cell {
+    /// tmux's `grid_default_cell`, as a constant so that a read past a row's
+    /// extent can borrow it rather than build one.
+    pub const DEFAULT: Cell = Cell {
+        data: CellData::SPACE,
+        attr: 0,
+        flags: 0,
+        fg: colour::DEFAULT,
+        bg: colour::DEFAULT,
+        us: colour::DEFAULT,
+        link: 0,
+    };
+
     /// tmux's `grid_default_cell` with the cleared flag set: a cell an erase
     /// produced rather than one a program wrote a space into.
     pub fn cleared(background: i32) -> Cell {
@@ -187,12 +260,9 @@ impl Cell {
     /// what is left behind is a default cell rather than a coloured one.
     pub fn padding() -> Cell {
         Cell {
-            data: CellData {
-                bytes: Vec::new(),
-                width: 1,
-            },
+            data: CellData::EMPTY,
             flags: flag::PADDING,
-            ..Cell::default()
+            ..Cell::DEFAULT
         }
     }
 
@@ -225,8 +295,7 @@ impl Cell {
             && self.attr == other.attr
             && self.link == other.link
             && (self.flags & !flag::CLEARED) == (other.flags & !flag::CLEARED)
-            && self.data.width == other.data.width
-            && self.data.bytes == other.data.bytes
+            && self.data == other.data
     }
 }
 
