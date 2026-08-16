@@ -7,6 +7,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::rc::Rc;
 
 use super::{
@@ -135,10 +137,18 @@ impl ServerState {
     /// which is both the program a command-less pane execs and the `SHELL` its
     /// process is given.
     pub(crate) fn default_shell(&self, target: Option<&str>) -> &str {
-        target
+        let shell = target
             .and_then(|target| self.option_for_target(target, "default-shell"))
             .or_else(|| self.global_options().session().get("default-shell"))
-            .unwrap_or("/bin/sh")
+            .unwrap_or("/bin/sh");
+        if Path::new(shell)
+            .metadata()
+            .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        {
+            shell
+        } else {
+            "/bin/sh"
+        }
     }
 
     fn session_environment(
