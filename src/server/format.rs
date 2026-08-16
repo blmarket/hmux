@@ -804,10 +804,17 @@ impl Expander<'_> {
                 QuoteStyle::Arguments => quote_argument(&value),
             };
         }
-        // `=N:BODY` / `=-N:BODY` — truncate the resolved body to N display columns
-        // from the start (N>0) or the end (N<0).
-        if let Some((n, body)) = parse_count_mod(content, b'=') {
-            return truncate(&self.resolve_body(body, vars, depth), n);
+        // `=N:BODY` / `=-N:BODY` / `=/N/marker:BODY` — truncate the resolved body
+        // to N display columns from the start (N>0) or the end (N<0), optionally
+        // appending or prepending a marker if truncation occurred.
+        if let Some(tmod) = parse_truncate_mod(content) {
+            let limit = self
+                .expand(tmod.limit_str, vars, depth)
+                .parse::<isize>()
+                .unwrap_or(0);
+            let marker = tmod.marker.map(|m| self.expand(m, vars, depth));
+            let value = self.resolve_body(tmod.body, vars, depth);
+            return truncate(&value, limit, marker.as_deref());
         }
         // `pN:BODY` / `p-N:BODY` — pad the resolved body to width N with spaces on
         // the right (N>0, left-justified) or the left (N<0, right-justified).
@@ -1148,15 +1155,28 @@ fn dirname(s: &str) -> String {
 }
 
 /// Take the first `n` display columns (n>0) or last `-n` columns (n<0) of
-/// `s`; `n==0` yields the whole string.
-fn truncate(s: &str, n: isize) -> String {
+/// `s`, appending or prepending `marker` if truncation occurred; `n==0` yields
+/// the whole string.
+fn truncate(s: &str, n: isize, marker: Option<&str>) -> String {
     if n == 0 {
         return s.to_string();
     }
     if n > 0 {
-        trim_left(s, n.unsigned_abs())
+        let trimmed = trim_left(s, n.unsigned_abs());
+        if let Some(marker) = marker {
+            if trimmed != s {
+                return format!("{trimmed}{marker}");
+            }
+        }
+        trimmed
     } else {
-        trim_right(s, n.unsigned_abs())
+        let trimmed = trim_right(s, n.unsigned_abs());
+        if let Some(marker) = marker {
+            if trimmed != s {
+                return format!("{marker}{trimmed}");
+            }
+        }
+        trimmed
     }
 }
 
@@ -1353,12 +1373,95 @@ fn parse_flagged_modifier(content: &str, prefix: u8) -> Option<(&str, &str)> {
     Some((&content[2..colon], &content[colon + 1..]))
 }
 
+struct TruncateMod<'a> {
+    limit_str: &'a str,
+    marker: Option<&'a str>,
+    body: &'a str,
+}
+
+fn parse_truncate_mod(content: &str) -> Option<TruncateMod<'_>> {
+    let bytes = content.as_bytes();
+    if bytes.first() != Some(&b'=') || bytes.len() < 2 {
+        return None;
+    }
+    let second = bytes[1];
+    if second == b'-' || second.is_ascii_digit() {
+        let neg = second == b'-';
+        let digits_start = if neg { 2 } else { 1 };
+        let mut i = digits_start;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i == digits_start || bytes.get(i) != Some(&b':') {
+            return None;
+        }
+        return Some(TruncateMod {
+            limit_str: &content[1..i],
+            marker: None,
+            body: &content[i + 1..],
+        });
+    }
+
+    if !second.is_ascii_punctuation() || second == b':' || second == b';' {
+        return None;
+    }
+
+    let delim = second;
+    let mut args = Vec::new();
+    let mut cp = 1;
+    while cp < bytes.len() && bytes[cp] != b':' && bytes[cp] != b';' {
+        if bytes[cp] == delim && bytes.get(cp + 1).is_some_and(|&b| b == b':' || b == b';') {
+            cp += 1;
+            break;
+        }
+        if bytes[cp] == delim {
+            cp += 1;
+        }
+        let start = cp;
+        let mut depth = 0usize;
+        let mut end = start;
+        while end < bytes.len() {
+            if bytes[end] == b'#' && bytes.get(end + 1) == Some(&b'{') {
+                depth += 1;
+                end += 2;
+                continue;
+            }
+            if bytes[end] == b'}' && depth > 0 {
+                depth -= 1;
+                end += 1;
+                continue;
+            }
+            if depth == 0 && (bytes[end] == delim || bytes[end] == b':' || bytes[end] == b';') {
+                break;
+            }
+            end += 1;
+        }
+        args.push(&content[start..end]);
+        cp = end;
+    }
+
+    if bytes.get(cp) != Some(&b':') {
+        return None;
+    }
+
+    let limit_str = args.first().copied()?;
+    let marker = args.get(1).copied();
+    let body = &content[cp + 1..];
+
+    Some(TruncateMod {
+        limit_str,
+        marker,
+        body,
+    })
+}
+
 fn parse_count_mod(content: &str, prefix: u8) -> Option<(isize, &str)> {
     let bytes = content.as_bytes();
     if bytes.first() != Some(&prefix) {
         return None;
     }
     let mut i = 1;
+    let mut delim = None;
     // tmux's `format_build_modifiers` lets a modifier's arguments follow a
     // separator of their own — any punctuation, which is what spells the
     // documented `=/N` beside the bare `=N`.
@@ -1366,6 +1469,7 @@ fn parse_count_mod(content: &str, prefix: u8) -> Option<(isize, &str)> {
         .get(i)
         .is_some_and(|byte| byte.is_ascii_punctuation() && !matches!(byte, b'-' | b':'))
     {
+        delim = bytes.get(i).copied();
         i += 1;
     }
     let negative = bytes.get(i) == Some(&b'-');
@@ -1376,11 +1480,19 @@ fn parse_count_mod(content: &str, prefix: u8) -> Option<(isize, &str)> {
     while i < bytes.len() && bytes[i].is_ascii_digit() {
         i += 1;
     }
-    if i == digits_start || bytes.get(i) != Some(&b':') {
-        return None; // no digits, or not terminated by ':'
+    if i == digits_start {
+        return None; // no digits
     }
     let n: isize = content[digits_start..i].parse().ok()?;
     let n = if negative { -n } else { n };
+    if let Some(d) = delim {
+        if bytes.get(i) == Some(&d) {
+            i += 1;
+        }
+    }
+    if bytes.get(i) != Some(&b':') {
+        return None;
+    }
     Some((n, &content[i + 1..]))
 }
 
@@ -2418,6 +2530,15 @@ mod tests {
         assert_eq!(expand("#{=-3:session_name}", &v), "def");
         // Wider than the value → unchanged.
         assert_eq!(expand("#{=10:session_name}", &v), "abcdef");
+
+        // Truncation markers.
+        assert_eq!(expand("#{=/3/...:session_name}", &v), "abc...");
+        assert_eq!(expand("#{=/3/.../:session_name}", &v), "abc...");
+        assert_eq!(expand("#{=/-3/.../:session_name}", &v), "...def");
+        assert_eq!(expand("#{=|-3|...|:session_name}", &v), "...def");
+        // When value fits within limit, no marker is added.
+        assert_eq!(expand("#{=/10/...:session_name}", &v), "abcdef");
+        assert_eq!(expand("#{=/-10/...:session_name}", &v), "abcdef");
     }
 
     #[test]
