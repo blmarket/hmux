@@ -60,6 +60,24 @@ impl std::fmt::Debug for Slot {
 /// way to that count, and every rehash re-hashes every key already in it.
 const TYPICAL_VARS: usize = 448;
 
+/// Whether expanding `template` can read the variable table at all.
+///
+/// The expander substitutes only at `#`, and the time pass that runs before it
+/// only at `%`; a template with neither is copied through byte for byte, so
+/// the table it would have been expanded against is never looked at. tmux
+/// gets this for free — `format_find` runs a callback for the name a template
+/// actually mentions, so a template naming nothing costs nothing — while hmux
+/// builds its table up front. Callers that hold the template ask this first
+/// and skip the build.
+///
+/// `%` is included because the time pass runs first and its output is what the
+/// `#` pass then sees. Nothing a `strftime` conversion produces is expected to
+/// contain a `#`, but the check costs one byte scan and does not depend on the
+/// locale being that well behaved.
+pub(crate) fn reads_vars(template: &str) -> bool {
+    template.contains(['#', '%'])
+}
+
 /// A resolved format context: the variable → value map for one target
 /// (session, and optionally a specific window/pane within it).
 #[derive(Debug, Clone)]
@@ -71,6 +89,17 @@ pub struct Vars {
 }
 
 impl Vars {
+    /// The table a template that cannot read one is expanded against.
+    ///
+    /// [`Vars::new`] reserves for a full context and resolves the
+    /// server-global names; this reserves nothing and resolves nothing,
+    /// because [`reads_vars`] already said no lookup will reach it.
+    pub(crate) fn empty() -> Vars {
+        Vars {
+            map: HashMap::new(),
+        }
+    }
+
     pub fn new() -> Vars {
         let mut vars = Vars {
             map: HashMap::with_capacity(TYPICAL_VARS),
@@ -1043,6 +1072,14 @@ fn now_epoch() -> i64 {
 }
 
 fn expand_time_string(value: &str) -> String {
+    // `strftime` copies a string with no conversion in it verbatim, at the
+    // cost of a `localtime` call and three allocations. Skipping it where
+    // there is nothing to convert is not observable — the interior NUL that
+    // `CString` rejects is the one input whose result is not the input, so it
+    // stays on the slow path rather than being special-cased here.
+    if !value.contains(['%', '\0']) {
+        return value.to_string();
+    }
     let Ok(format) = CString::new(value) else {
         return String::new();
     };
@@ -2296,6 +2333,33 @@ mod tests {
             .set("pane_index", "0")
             .set("pane_id", "%3");
         v
+    }
+
+    /// [`reads_vars`] is what callers trust when they skip building a table,
+    /// so it must never answer `false` for a template the expander would have
+    /// substituted into. Answering `true` needlessly only costs a build.
+    #[test]
+    fn reads_vars_covers_every_template_the_expander_substitutes_into() {
+        for template in ["", "bench", "no vars here", "a{b}c", "}", "{session_name}"] {
+            assert!(!reads_vars(template), "{template:?} named no variable");
+            assert_eq!(
+                expand(template, &vars()),
+                template,
+                "{template:?} expanded to something other than itself"
+            );
+        }
+
+        for template in [
+            "#{session_name}",
+            "#S",
+            "##",
+            "#",
+            "%H",
+            "50%",
+            "prefix #{session_name} suffix",
+        ] {
+            assert!(reads_vars(template), "{template:?} reaches a substitution");
+        }
     }
 
     #[test]

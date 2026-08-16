@@ -1881,9 +1881,13 @@ impl DisplayMessage {
             .as_deref()
             .or(self.format.as_deref())
             .unwrap_or(DISPLAY_MESSAGE_TEMPLATE);
+        // `-l` prints the message as it stands and a message that names no
+        // variable reads nothing, so in both cases the table below is built
+        // for a lookup that never comes.
+        let reads_vars = !self.literal && format::reads_vars(message);
         // Honor the *resolved* pane (e.g. `-t sess:win.{top}`), not just the window's
         // active pane, so pane-scoped variables reflect the target.
-        let mut vars = match resolved {
+        let mut vars = match resolved.filter(|_| reads_vars) {
             Some(resolved) => vars_full(
                 st,
                 &st.sessions()[resolved.session],
@@ -1892,22 +1896,25 @@ impl DisplayMessage {
                 agents,
                 st.marked_pane(),
             ),
-            None => Vars::new(),
+            None if reads_vars => Vars::new(),
+            None => Vars::empty(),
         };
-        set_current_client_vars(
-            st,
-            context,
-            resolved.map(|resolved| st.sessions()[resolved.session].id),
-            self.client.as_deref(),
-            &mut vars,
-        );
-        for (name, value) in st.env_iter() {
-            vars.set(name.to_string(), value);
-        }
-        if let Some(target) = target.as_deref() {
-            if let Ok(entries) = st.format_option_entries(target) {
-                for (name, value) in entries {
-                    vars.set(name.to_string(), value);
+        if reads_vars {
+            set_current_client_vars(
+                st,
+                context,
+                resolved.map(|resolved| st.sessions()[resolved.session].id),
+                self.client.as_deref(),
+                &mut vars,
+            );
+            for (name, value) in st.env_iter() {
+                vars.set(name.to_string(), value);
+            }
+            if let Some(target) = target.as_deref() {
+                if let Ok(entries) = st.format_option_entries(target) {
+                    for (name, value) in entries {
+                        vars.set(name.to_string(), value);
+                    }
                 }
             }
         }

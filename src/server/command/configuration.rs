@@ -269,7 +269,7 @@ fn expand_option_name_argument(
     st: &ServerState,
     argument: &str,
 ) -> String {
-    if !argument.contains('#') {
+    if !format::reads_vars(argument) {
         return argument.to_string();
     }
     let target = scope.target.clone().or_else(|| current_target(st));

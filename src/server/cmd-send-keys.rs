@@ -300,6 +300,12 @@ fn send_copy_mode_command(
             "search-forward" | "search-backward" | "search-forward-text" | "search-backward-text"
         ) {
         argument.map(|argument| {
+            // A search term that names no variable is its own expansion, and
+            // the table below costs more to build than the search costs to
+            // run.
+            if !format::reads_vars(argument) {
+                return argument.to_string();
+            }
             let resolved = state
                 .resolve(target)
                 .expect("send-keys target was resolved before format expansion");
@@ -712,18 +718,24 @@ fn repeat_count(
     let Some(value) = command.repeat.as_deref() else {
         return Ok(1);
     };
-    let resolved = state
-        .resolve(target)
-        .expect("send-keys target was resolved before repeat expansion");
-    let vars = super::command::vars_full(
-        state,
-        &state.sessions()[resolved.session],
-        resolved.window,
-        resolved.pane,
-        agents,
-        state.marked_pane(),
-    );
-    let value = format::expand(value, &vars);
+    // `-N` is a count, so the template is almost always the digits themselves;
+    // only build the table when it is really a format.
+    let value = if format::reads_vars(value) {
+        let resolved = state
+            .resolve(target)
+            .expect("send-keys target was resolved before repeat expansion");
+        let vars = super::command::vars_full(
+            state,
+            &state.sessions()[resolved.session],
+            resolved.window,
+            resolved.pane,
+            agents,
+            state.marked_pane(),
+        );
+        format::expand(value, &vars)
+    } else {
+        value.to_string()
+    };
     // tmux's strtonum path accepts leading C whitespace and a leading plus,
     // rejects trailing whitespace, and classifies numeric under/overflow
     // separately from malformed input.

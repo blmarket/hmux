@@ -412,6 +412,9 @@ pub(crate) fn expand_command_prompt_format(
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> String {
+    if !format::reads_vars(source) {
+        return source.to_string();
+    }
     let previous_session = st.replace_command_session_id(context.current_session_id);
     let target = current_session(&st);
     let expanded = target
@@ -4326,6 +4329,29 @@ mod tests {
             status,
             sender,
         )
+    }
+
+    /// A template naming no variable skips the variable table entirely, so
+    /// what it prints comes from a path the expander never walks. The skip is
+    /// only sound if it is invisible: these are the shapes that reach it, and
+    /// each must read exactly as it would have after a full expansion.
+    #[test]
+    fn a_template_that_names_no_variable_expands_to_itself() {
+        let st = state();
+
+        for literal in ["bench", " ", "no vars here", "trailing-brace}", "a{b}c"] {
+            let out = run_str(&st, &["display-message", "-p", literal]);
+            assert_eq!(
+                out.stdout,
+                format!("{literal}\n"),
+                "literal {literal:?} did not print itself"
+            );
+        }
+
+        // The neighbouring path still expands, so the skip cannot be masking a
+        // table that stopped being built at all.
+        let named = run_str(&st, &["display-message", "-p", "#{session_name}"]);
+        assert_eq!(named.stdout, format!("{}\n", st.borrow().sessions()[0].name));
     }
 
     /// A wake that counts how many times it fired.

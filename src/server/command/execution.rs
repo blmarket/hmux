@@ -337,6 +337,12 @@ fn expand_target_format(
     agents: &PaneAgents,
     extra: &[(String, String)],
 ) -> String {
+    // Nothing here reads the table when the source names no variable, and the
+    // positional operands are the only entries a caller can observe missing —
+    // `#{1}` is itself a `#`.
+    if !format::reads_vars(source) {
+        return source.to_string();
+    }
     let target = requested_target
         .map(str::to_string)
         .or_else(|| current_target(st));
