@@ -781,10 +781,12 @@ impl Screen {
         // the wide character it belongs to.
         let row = self.view_y(self.cy);
         let mut n = 1;
-        let mut last = self.grid.get(self.cx - n, row);
+        // Taken by value: the cluster grows in hand and goes back through
+        // `set`, which needs the grid.
+        let mut last = *self.grid.get(self.cx - n, row);
         if self.cx != 1 && last.is_padding() {
             n = 2;
-            last = self.grid.get(self.cx - n, row);
+            last = *self.grid.get(self.cx - n, row);
         }
         if usize::from(last.data.width) != n || last.is_padding() {
             return alone;
@@ -847,9 +849,9 @@ impl Screen {
         }
         let row = self.view_y(self.cy);
         let mut xx = self.cx;
-        let mut cell = self.grid.get(xx, row);
+        let mut cell = *self.grid.get(xx, row);
         while xx > 0 {
-            cell = self.grid.get(xx, row);
+            cell = *self.grid.get(xx, row);
             if !cell.is_padding() {
                 break;
             }
@@ -862,7 +864,7 @@ impl Screen {
         // tmux re-reads the cell when the walk ran off the left of the row,
         // because the loop left `gc` holding column one.
         if xx == 0 {
-            cell = self.grid.get(0, row);
+            cell = *self.grid.get(0, row);
         }
         if usize::from(cell.data.width) > 1 || cell.is_padding() {
             self.grid.clear(xx, row, 1, 1, colour::DEFAULT);
@@ -883,7 +885,7 @@ impl Screen {
         let sx = self.sx();
         // The cell as it was found. Both decisions below are made about it, so
         // it is read once, before the first of them writes over it.
-        let now = self.grid.get(self.cx, row);
+        let now = *self.grid.get(self.cx, row);
         let mut erased = false;
 
         // Landing on the right half of a wide character: erase the padding
@@ -943,7 +945,7 @@ impl Screen {
         loop {
             if !has_content {
                 let cell = self.grid.get(cx, row);
-                if !cell.data.is_space() || !cell.looks_equal(&first) {
+                if !cell.data.is_space() || !cell.looks_equal(first) {
                     has_content = true;
                 }
             }
@@ -958,7 +960,7 @@ impl Screen {
             return;
         }
         let template = self.grid.get(self.cx, row);
-        let cell = Grid::tab_cell(&template, width);
+        let cell = Grid::tab_cell(template, width);
         self.put_cell(&cell);
     }
 

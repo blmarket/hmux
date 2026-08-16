@@ -177,11 +177,8 @@ impl Grid {
     /// tmux's `grid_get_cell`: a read past the allocated extent of a row is
     /// the *default* cell, not a cleared one — a distinction `capture-pane -e`
     /// can see, because a cleared cell may carry a background colour.
-    pub fn get(&self, px: usize, py: usize) -> Cell {
-        match self.lines.get(py) {
-            Some(line) => line.cells.get(px).cloned().unwrap_or_default(),
-            None => Cell::default(),
-        }
+    pub fn get(&self, px: usize, py: usize) -> &Cell {
+        self.peek(px, py).unwrap_or(&Cell::DEFAULT)
     }
 
     /// The cell as it is actually stored, or `None` past the row's allocated

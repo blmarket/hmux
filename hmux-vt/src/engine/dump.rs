@@ -47,7 +47,7 @@ pub fn snapshot_grid(screen: &Screen, grid: &EngineGrid, start: usize, count: us
         // whatever the cell store happens to hold.
         let used = line.map_or(0, super::grid::Line::used);
         let cells = (0..grid.sx)
-            .map(|px| snapshot_cell(screen, &grid.get(px, py), semantic, px < used))
+            .map(|px| snapshot_cell(screen, grid.get(px, py), semantic, px < used))
             .collect();
         rows.push(GridRow {
             cells,
@@ -267,8 +267,8 @@ fn vt_row(
         let last_link = pen.link;
         code.clear();
         if !cell.looks_equal(&pen) {
-            code.push_str(&sgr(&pen, &cell));
-            pen = cell;
+            code.push_str(&sgr(&pen, cell));
+            pen = *cell;
         }
         let wants_charset = cell.attr & attr::CHARSET != 0;
         if wants_charset != charset {
