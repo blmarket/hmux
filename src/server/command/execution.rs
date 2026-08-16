@@ -489,7 +489,9 @@ impl SourceFile {
                         }
                     }
                     for (line_number, line) in parsed.lines {
-                        if self.verbose {
+                        if self.verbose
+                            && !matches!(context.client().kind, ClientKind::Control { .. })
+                        {
                             out.stdout.push_str(&format!(
                                 "{path}:{line_number}: {}\n",
                                 source_verbose_line(&line)
