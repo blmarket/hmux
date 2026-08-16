@@ -89,17 +89,9 @@ pub(crate) fn spawn(tasks: &TaskHandle, mut io: PaneIo) -> PaneHandle {
     }
 }
 
-async fn run(
-    tasks: &TaskHandle,
-    io: &mut PaneIo,
-    poke: &Notify,
-    poke_armed: &Cell<bool>,
-) {
-    let Ok(readiness) = AsyncFd::new(
-        tasks,
-        io.as_fd(),
-        Interest::READABLE | Interest::WRITABLE,
-    ) else {
+async fn run(tasks: &TaskHandle, io: &mut PaneIo, poke: &Notify, poke_armed: &Cell<bool>) {
+    let Ok(readiness) = AsyncFd::new(tasks, io.as_fd(), Interest::READABLE | Interest::WRITABLE)
+    else {
         return;
     };
     // Whether the parser was inside a string sequence at the end of the last

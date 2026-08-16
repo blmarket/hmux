@@ -4,8 +4,7 @@
 //! module owns only cell presentation and transitions between presentations.
 
 use super::term::{
-    expand_capability, number_capability, string_capability, Capability,
-    CapabilityParameter,
+    expand_capability, number_capability, string_capability, Capability, CapabilityParameter,
     TerminalCapabilities,
 };
 
@@ -751,7 +750,11 @@ impl<'a> TerminalStyleWriter<'a> {
             append_capability(
                 out,
                 self.terminal,
-                if next.acs { Capability::smacs } else { Capability::rmacs },
+                if next.acs {
+                    Capability::smacs
+                } else {
+                    Capability::rmacs
+                },
                 &[],
             );
         }
@@ -848,13 +851,21 @@ impl<'a> TerminalStyleWriter<'a> {
             Colour::Palette(index) | Colour::Indexed(index) => append_capability(
                 out,
                 self.terminal,
-                if background { Capability::setab } else { Capability::setaf },
+                if background {
+                    Capability::setab
+                } else {
+                    Capability::setaf
+                },
                 &[CapabilityParameter::Number(index.into())],
             ),
             Colour::Rgb(red, green, blue) => append_capability(
                 out,
                 self.terminal,
-                if background { Capability::setrgbb } else { Capability::setrgbf },
+                if background {
+                    Capability::setrgbb
+                } else {
+                    Capability::setrgbf
+                },
                 &[
                     CapabilityParameter::Number(red.into()),
                     CapabilityParameter::Number(green.into()),
@@ -937,7 +948,9 @@ fn append_capability(
 }
 
 fn terminal_colour(terminal: &dyn TerminalCapabilities, colour: Colour) -> Colour {
-    let colours = number_capability(terminal, Capability::colors).unwrap_or(8).max(0) as u16;
+    let colours = number_capability(terminal, Capability::colors)
+        .unwrap_or(8)
+        .max(0) as u16;
     match colour {
         Colour::Rgb(red, green, blue)
             if string_capability(terminal, Capability::setrgbf).is_some()

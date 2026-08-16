@@ -953,7 +953,6 @@ impl EventControlClient {
             &mut self.control_writer,
         )
     }
-
 }
 
 fn set_nonblocking_fd(fd: i32) -> io::Result<()> {

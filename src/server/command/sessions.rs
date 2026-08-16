@@ -179,10 +179,7 @@ impl NewSession {
     /// session via `-F` (or the default `NEW_SESSION_TEMPLATE`) and a trailing
     /// newline, like real tmux.
     fn execute(self, st: &mut ServerState, context: &ClientContext) -> CommandResult {
-        let name = self
-            .name
-            .clone()
-            .unwrap_or_else(|| st.next_session_name());
+        let name = self.name.clone().unwrap_or_else(|| st.next_session_name());
         // `-A` (attach-or-create): if the named session already exists, tmux
         // attaches to it instead of failing with "duplicate session". Over the
         // command path with no real tty that attach fails the same way
@@ -242,10 +239,7 @@ impl NewSession {
                 }
             }
         }
-        let name = self
-            .name
-            .clone()
-            .unwrap_or_else(|| st.next_session_name());
+        let name = self.name.clone().unwrap_or_else(|| st.next_session_name());
         self.reject_target_with_command()?;
         let dimensions = self.dimensions()?;
         self.create(&name, st, context, dimensions)?;

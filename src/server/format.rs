@@ -536,7 +536,8 @@ impl Expander<'_> {
         }
         if depth == 0 {
             if let Some(t) = self.trace {
-                t.borrow_mut().push(format!("# expanding format: {template}"));
+                t.borrow_mut()
+                    .push(format!("# expanding format: {template}"));
             }
         }
         let mut out = String::with_capacity(template.len());
@@ -849,9 +850,11 @@ impl Expander<'_> {
         let val = self.lookup(vars, content);
         if let Some(t) = self.trace {
             if let Some(ref v) = val {
-                t.borrow_mut().push(format!("# format '{content}' found: {v}"));
+                t.borrow_mut()
+                    .push(format!("# format '{content}' found: {v}"));
             } else {
-                t.borrow_mut().push(format!("# format '{content}' not found"));
+                t.borrow_mut()
+                    .push(format!("# format '{content}' not found"));
             }
         }
         val.unwrap_or_default()

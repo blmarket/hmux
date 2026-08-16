@@ -21,8 +21,8 @@ use super::{
 };
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
 use crate::server::pane::NativePaneObservation;
-use crate::sync::{completion_pair, Completion, CompletionSender};
 use crate::server::term::ResolvedTerm;
+use crate::sync::{completion_pair, Completion, CompletionSender};
 
 /// Client-scoped `command-prompt -k` routing. This is an internal server
 /// capability, deliberately kept out of the public server trait.

@@ -292,7 +292,9 @@ impl ListKeys {
                 if prefix_str.is_empty() {
                     out.push_str(&format!("{key_name:<key_string_width$} {note}\n"));
                 } else {
-                    out.push_str(&format!("{prefix_str} {key_name:<key_string_width$} {note}\n"));
+                    out.push_str(&format!(
+                        "{prefix_str} {key_name:<key_string_width$} {note}\n"
+                    ));
                 }
             } else {
                 out.push_str("bind-key");

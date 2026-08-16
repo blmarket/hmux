@@ -58,8 +58,7 @@ impl BackgroundRunner {
                 context,
             } => {
                 let job_context = self.job_context(&context);
-                let matched =
-                    command::suspend::if_shell(&self.tasks, condition, job_context).await;
+                let matched = command::suspend::if_shell(&self.tasks, condition, job_context).await;
                 let command = if matched { then_command } else { else_command };
                 self.start_command(BackgroundCommand::Line(command), context);
             }
@@ -94,7 +93,8 @@ impl BackgroundRunner {
                 let state = Rc::clone(&self.state);
                 self.tasks.spawn(async move {
                     let output =
-                        command::suspend::background_shell(&tasks, command, job_context, jobs).await;
+                        command::suspend::background_shell(&tasks, command, job_context, jobs)
+                            .await;
                     // The child's output goes to a pane's view mode, which
                     // needs the state handle the job itself does not hold.
                     let mut state = state.borrow_mut();

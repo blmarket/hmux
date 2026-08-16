@@ -110,7 +110,11 @@ impl RunShell {
     /// target may name a different pane — or none. tmux resolves it up front,
     /// so pin it to the pane id here.
     fn pin_view_target(&mut self, state: &ServerState) {
-        let Some(resolved) = self.target.as_deref().and_then(|target| state.resolve(target)) else {
+        let Some(resolved) = self
+            .target
+            .as_deref()
+            .and_then(|target| state.resolve(target))
+        else {
             return;
         };
         let pane_id = state.window(resolved.session, resolved.window).panes[resolved.pane].id;
@@ -275,12 +279,8 @@ impl IfShell {
         let condition = {
             let mut state = context.state().borrow_mut();
             let previous = install_command_target_context(&mut state, context.client());
-            let expanded = expand_if_cond(
-                condition,
-                self.target.as_deref(),
-                &state,
-                context.agents(),
-            );
+            let expanded =
+                expand_if_cond(condition, self.target.as_deref(), &state, context.agents());
             restore_command_target_context(&mut state, previous);
             expanded
         };
@@ -420,12 +420,8 @@ impl SourceFile {
             .map(|raw_path| {
                 let mut state = context.state().borrow_mut();
                 let previous = install_command_target_context(&mut state, context.client());
-                let path = expand_if_cond(
-                    raw_path,
-                    self.target.as_deref(),
-                    &state,
-                    context.agents(),
-                );
+                let path =
+                    expand_if_cond(raw_path, self.target.as_deref(), &state, context.agents());
                 restore_command_target_context(&mut state, previous);
                 path
             })

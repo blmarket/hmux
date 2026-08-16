@@ -16,8 +16,8 @@ use std::time::{Duration, Instant};
 use crate::integration::status::StatusHub;
 use crate::server::attach::FrameSink;
 use crate::server::attach::{
-    self, AttachCommandContinuation, AttachDrive, AttachFinishReason, AttachPrepared, AttachSession,
-    AttachStartFailure, AttachWaitReady, AttachWaitSources, ClientTty,
+    self, AttachCommandContinuation, AttachDrive, AttachFinishReason, AttachPrepared,
+    AttachSession, AttachStartFailure, AttachWaitReady, AttachWaitSources, ClientTty,
 };
 use crate::server::command::{self, ClientContext};
 use crate::server::state::SharedState;
@@ -554,7 +554,9 @@ async fn run_session(
                 }
             }
             Wake::Command(result) => {
-                let started = command.take().expect("a command reported with none running");
+                let started = command
+                    .take()
+                    .expect("a command reported with none running");
                 if let Some(reason) = attach.finish_command(started, result).map_err(fault)? {
                     return Ok(reason);
                 }

@@ -537,10 +537,7 @@ pub(crate) fn uses_client_file_protocol(args: &[String]) -> bool {
     match name {
         "load-buffer" => true,
         "display-message" | "split-window" => lexed.has('I'),
-        "save-buffer" => lexed
-            .positionals()
-            .first()
-            .is_some_and(|path| path != "-"),
+        "save-buffer" => lexed.positionals().first().is_some_and(|path| path != "-"),
         _ => false,
     }
 }
@@ -1188,12 +1185,7 @@ impl ResumableCommandQueue {
                     source_depth: inflight.source_depth,
                     args: &inflight.command.args,
                 };
-                inflight
-                    .command
-                    .command
-                    .clone()
-                    .execute(&mut context)
-                    .await
+                inflight.command.command.clone().execute(&mut context).await
             };
             if !execution.result.deferred_commands.is_empty() {
                 let commands = std::mem::take(&mut execution.result.deferred_commands);
@@ -1660,14 +1652,7 @@ pub(crate) fn take_client_file_after_hooks(
     let hook = format!("after-{name}");
     let vars = hook_command_vars(&hook, &normalized, &lexed);
     let mut requests = Vec::new();
-    push_event_hook(
-        &hook,
-        lexed.value('t'),
-        vars,
-        st,
-        context,
-        &mut requests,
-    );
+    push_event_hook(&hook, lexed.value('t'), vars, st, context, &mut requests);
     if !context.suppress_notifications {
         for notification in st.take_notifications() {
             push_event_hook(
@@ -3574,8 +3559,6 @@ fn anchor_window_index(session: &str, explicit: Option<u32>, st: &ServerState) -
     }
 }
 
-
-
 /// The layout names tmux accepts by name for `select-layout` / `next-layout`.
 pub(crate) const LAYOUT_NAMES: &[&str] = &[
     "even-horizontal",
@@ -3771,9 +3754,7 @@ impl RunShellCompletion {
         let Some((target, output)) = self.view else {
             return;
         };
-        if state.append_view_output(&target, &output).is_err()
-            && target != suspend::VIEW_FALLBACK
-        {
+        if state.append_view_output(&target, &output).is_err() && target != suspend::VIEW_FALLBACK {
             let _ = state.append_view_output(suspend::VIEW_FALLBACK, &output);
         }
     }

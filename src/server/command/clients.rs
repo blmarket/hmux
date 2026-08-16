@@ -257,10 +257,7 @@ fn enter_mode(
     view: ModeView,
     zoom: bool,
 ) -> CommandResult {
-    let Some(target) = target
-        .map(str::to_string)
-        .or_else(|| current_target(state))
-    else {
+    let Some(target) = target.map(str::to_string).or_else(|| current_target(state)) else {
         return CommandResult::err("no current session\n");
     };
     if zoom {
@@ -281,10 +278,7 @@ fn enter_mode(
 }
 
 fn validate_mode_target(target: Option<&str>, state: &ServerState) -> Result<(), CommandResult> {
-    let Some(target) = target
-        .map(str::to_string)
-        .or_else(|| current_target(state))
-    else {
+    let Some(target) = target.map(str::to_string).or_else(|| current_target(state)) else {
         return Err(CommandResult::err("no current session\n"));
     };
     if state.resolve(&target).is_none() {
@@ -605,11 +599,7 @@ impl ChooseTree {
                         activity: window.activity_epoch,
                         row: ChooseRow {
                             item: ModeItem {
-                                label: opts.label(
-                                    state,
-                                    &window_vars,
-                                    default_label,
-                                ),
+                                label: opts.label(state, &window_vars, default_label),
                                 command: template.map_or_else(
                                     || {
                                         vec![
@@ -690,10 +680,7 @@ impl ChooseClient {
         if let Err(error) = validate_mode_target(self.target.as_deref(), state) {
             return error;
         }
-        let template = self
-            .template
-            .as_deref()
-            .unwrap_or("detach-client -t '%%'");
+        let template = self.template.as_deref().unwrap_or("detach-client -t '%%'");
         let order = match self.options.resolve_order() {
             Ok(order) => order,
             Err(error) => return error,
@@ -887,11 +874,7 @@ impl CustomizeMode {
     }
 
     fn run(self, state: &mut ServerState) -> CommandResult {
-        let Some(target) = self
-            .target
-            .clone()
-            .or_else(|| current_target(state))
-        else {
+        let Some(target) = self.target.clone().or_else(|| current_target(state)) else {
             return CommandResult::err("no current session\n");
         };
         let options = &self.options;
@@ -1705,7 +1688,8 @@ impl RefreshClient {
             );
         }
         if !self.flags.is_empty() {
-            let result = state.refresh_client_flags(target, client.tty_name.as_deref(), &self.flags);
+            let result =
+                state.refresh_client_flags(target, client.tty_name.as_deref(), &self.flags);
             if result != ClientActionResult::Queued {
                 return overlay_result(result, target);
             }
@@ -1969,7 +1953,9 @@ impl DisplayMessage {
             let duration_ms = match self.delay.as_deref() {
                 Some(value) => match value.parse::<u32>() {
                     Ok(value) => u64::from(value),
-                    Err(_) => return CommandResult::err(format!("delay {value}: invalid number\n")),
+                    Err(_) => {
+                        return CommandResult::err(format!("delay {value}: invalid number\n"))
+                    }
                 },
                 None => st
                     .option_for_target(target.as_deref().unwrap_or_default(), "display-time")

@@ -88,7 +88,11 @@ macro_rules! bare {
 /// argv to that command's own `parse`.
 macro_rules! typed {
     ($category:ident, $variant:ident, $arguments:ty) => {
-        |args| Ok(Command::$category($category::$variant(<$arguments>::parse(args)?)))
+        |args| {
+            Ok(Command::$category($category::$variant(
+                <$arguments>::parse(args)?,
+            )))
+        }
     };
 }
 

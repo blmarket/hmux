@@ -20,9 +20,7 @@ impl Command {
             // whose peer is another client of this very server.
             Self::Load(command) => command.execute(context).await,
             Self::Save(command) => command.execute(context).await,
-            Self::Set(command) => {
-                context.sync(|inner| command.run(inner.state, inner.client))
-            }
+            Self::Set(command) => context.sync(|inner| command.run(inner.state, inner.client)),
             Self::Show(command) => context.sync(|inner| command.run(inner.state)),
             Self::List(command) => context.sync(|inner| command.run(inner.state)),
             Self::Delete(command) => context.sync(|inner| command.run(inner.state)),
@@ -491,10 +489,10 @@ impl PasteBuffer {
                 None => CommandResult::ok(""),
             };
         };
-        let separator = self
-            .separator
-            .as_deref()
-            .unwrap_or(if self.raw_newlines { "\n" } else { "\r" });
+        let separator =
+            self.separator
+                .as_deref()
+                .unwrap_or(if self.raw_newlines { "\n" } else { "\r" });
         let mut bytes = Vec::with_capacity(data.len());
         for byte in data {
             if byte == b'\n' {

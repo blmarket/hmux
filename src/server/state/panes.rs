@@ -778,7 +778,9 @@ impl ServerState {
             Some(cwd) => PaneSpec::CommandIn(argv.to_vec(), cwd.to_path_buf()),
             None => PaneSpec::Command(argv.to_vec()),
         };
-        self.split_window_direction_with_spec(target, select, before, full, direction, spec, new_size)
+        self.split_window_direction_with_spec(
+            target, select, before, full, direction, spec, new_size,
+        )
     }
 
     pub(crate) fn split_window_direction_with_spec(

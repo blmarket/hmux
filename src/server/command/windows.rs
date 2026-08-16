@@ -110,7 +110,9 @@ impl FindWindow {
 
     fn execute(self, state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
         let Some(pattern) = self.pattern.as_deref() else {
-            return CommandResult::err("command find-window: too few arguments (need at least 1)\n");
+            return CommandResult::err(
+                "command find-window: too few arguments (need at least 1)\n",
+            );
         };
         let mut c = self.content;
         let mut n = self.name;
@@ -270,8 +272,14 @@ impl NewWindow {
         );
         let result = if relative {
             match anchor_window_index(&session, explicit, st) {
-                Some(anchor) => st
-                    .new_window_relative_with_spawn(&session, anchor, !self.before, select, &argv, cwd),
+                Some(anchor) => st.new_window_relative_with_spawn(
+                    &session,
+                    anchor,
+                    !self.before,
+                    select,
+                    &argv,
+                    cwd,
+                ),
                 None if self.kill => {
                     st.new_window_replacing_with_spawn(&session, explicit, select, &argv, cwd)
                 }
@@ -545,18 +553,14 @@ impl SelectWindow {
             return session_command(target, st, ServerState::last_window);
         }
         if self.toggle {
-            let target = target
-                .map(str::to_string)
-                .or_else(|| current_target(st));
+            let target = target.map(str::to_string).or_else(|| current_target(st));
             let Some(target) = target else {
                 return CommandResult::err("can't establish current session\n");
             };
-            let is_current = st
-                .resolve(&target)
-                .is_some_and(|resolved| {
-                    let session = &st.sessions()[resolved.session];
-                    session.active == resolved.window
-                });
+            let is_current = st.resolve(&target).is_some_and(|resolved| {
+                let session = &st.sessions()[resolved.session];
+                session.active == resolved.window
+            });
             if is_current {
                 let session = target.split(':').next().unwrap_or(&target);
                 return match st.last_window(session) {
@@ -674,7 +678,10 @@ impl SwapWindow {
             .or_else(|| {
                 st.marked_pane().and_then(|id| {
                     let target = st.resolve(&format!("%{id}"))?;
-                    Some(format!("@{}", st.sessions()[target.session].windows[target.window].id))
+                    Some(format!(
+                        "@{}",
+                        st.sessions()[target.session].windows[target.window].id
+                    ))
                 })
             })
             .or_else(|| current_target(st));
@@ -682,9 +689,10 @@ impl SwapWindow {
         match (source, target) {
             (Some(source), Some(target)) => match st.swap_window(&source, &target, self.select) {
                 Ok(()) => CommandResult::ok(""),
-                Err(error) => {
-                    command_target_error_candidates(error, &[(&source, "window"), (&target, "window")])
-                }
+                Err(error) => command_target_error_candidates(
+                    error,
+                    &[(&source, "window"), (&target, "window")],
+                ),
             },
             _ => CommandResult::err("can't establish current session\n"),
         }
@@ -767,9 +775,10 @@ impl MoveWindow {
                 st.move_window(&source, &target, select)
             } {
                 Ok(()) => CommandResult::ok(""),
-                Err(error) => {
-                    command_target_error_candidates(error, &[(&source, "window"), (&target, "window")])
-                }
+                Err(error) => command_target_error_candidates(
+                    error,
+                    &[(&source, "window"), (&target, "window")],
+                ),
             },
             (None, _) => CommandResult::err("can't establish current session\n"),
             (_, None) => CommandResult::err("move-window: missing destination\n"),
@@ -820,9 +829,10 @@ impl LinkWindow {
                 st.link_window(&source, &target, self.kill, select)
             } {
                 Ok(()) => CommandResult::ok(""),
-                Err(error) => {
-                    command_target_error_candidates(error, &[(&source, "window"), (&target, "window")])
-                }
+                Err(error) => command_target_error_candidates(
+                    error,
+                    &[(&source, "window"), (&target, "window")],
+                ),
             },
             (None, _) => CommandResult::err("can't establish current session\n"),
             (_, None) => CommandResult::err("link-window: missing destination\n"),

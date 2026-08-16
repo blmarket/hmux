@@ -90,10 +90,7 @@ pub(in crate::server) fn exec(
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
-    let target = command
-        .target
-        .clone()
-        .or_else(|| current_target(state));
+    let target = command.target.clone().or_else(|| current_target(state));
     let target = match target {
         Some(target) => target,
         None => return CommandResult::err("no current target\n"),
@@ -219,11 +216,8 @@ fn send_client_keys(
         }
     }
     if !keys.is_empty() {
-        let _ = state.send_client_keys(
-            command.client.as_deref(),
-            context.tty_name.as_deref(),
-            keys,
-        );
+        let _ =
+            state.send_client_keys(command.client.as_deref(), context.tty_name.as_deref(), keys);
     }
     CommandResult::ok("")
 }
@@ -247,7 +241,11 @@ pub(in crate::server) fn exec_prefix(
         return CommandResult::err(format!("{}\n", state.pane_target_error(&target)));
     }
 
-    let option = if command.secondary { "prefix2" } else { "prefix" };
+    let option = if command.secondary {
+        "prefix2"
+    } else {
+        "prefix"
+    };
     let key = state
         .option_for_target(&target, option)
         .or_else(|| options::option_default(option))
@@ -269,11 +267,7 @@ fn send_copy_mode_command(
     target: &str,
     read_only: bool,
 ) -> CommandResult {
-    let copy_args = send
-        .operands
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>();
+    let copy_args = send.operands.iter().map(String::as_str).collect::<Vec<_>>();
     let command = copy_args.first().copied().unwrap_or("");
     let copy_positionals = copy_args
         .iter()

@@ -69,9 +69,9 @@ const ASCII_PRINTABLE: std::ops::RangeInclusive<u32> = 0x20..=0x7E;
 /// parse are dropped, as tmux drops them.
 pub fn set_codepoint_widths<'a>(entries: impl IntoIterator<Item = &'a str>) {
     let parsed: Vec<Override> = entries.into_iter().filter_map(parse_override).collect();
-    let ascii = parsed
-        .iter()
-        .any(|entry| entry.start <= *ASCII_PRINTABLE.end() && entry.end >= *ASCII_PRINTABLE.start());
+    let ascii = parsed.iter().any(|entry| {
+        entry.start <= *ASCII_PRINTABLE.end() && entry.end >= *ASCII_PRINTABLE.start()
+    });
     if let Ok(mut overrides) = OVERRIDES.write() {
         // Under the write lock, so no reader sees the flag and the list
         // disagree about whether ASCII is spoken for.

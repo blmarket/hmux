@@ -1318,8 +1318,14 @@ mod tests {
             ),
             [],
         );
-        assert_eq!(term.capability(Capability::Sxl), Some(&CapabilityValue::Flag(false)));
-        assert_eq!(term.capability(Capability::U8), Some(&CapabilityValue::Number(1)));
+        assert_eq!(
+            term.capability(Capability::Sxl),
+            Some(&CapabilityValue::Flag(false))
+        );
+        assert_eq!(
+            term.capability(Capability::U8),
+            Some(&CapabilityValue::Number(1))
+        );
         assert_eq!(
             term.capability(Capability::kf63),
             Some(&CapabilityValue::String(b"last-key".to_vec()))
@@ -1571,7 +1577,11 @@ mod tests {
             (16, b"\x1b[38;5;16m".as_slice()),
         ] {
             assert_eq!(
-                expand_capability(&term, Capability::setaf, &[CapabilityParameter::Number(colour)]),
+                expand_capability(
+                    &term,
+                    Capability::setaf,
+                    &[CapabilityParameter::Number(colour)]
+                ),
                 Some(expected.to_vec())
             );
         }

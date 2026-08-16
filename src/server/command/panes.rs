@@ -154,14 +154,14 @@ impl SplitWindow {
                         SplitDirection::TopBottom => win.rows,
                     }
                 } else {
-                    let rect =
-                        win.pane_rect(win.panes[resolved.pane].id)
-                            .unwrap_or(super::super::state::PaneRect {
-                                top: 0,
-                                left: 0,
-                                height: win.rows,
-                                width: win.cols,
-                            });
+                    let rect = win.pane_rect(win.panes[resolved.pane].id).unwrap_or(
+                        super::super::state::PaneRect {
+                            top: 0,
+                            left: 0,
+                            height: win.rows,
+                            width: win.cols,
+                        },
+                    );
                     match direction {
                         SplitDirection::LeftRight => rect.width,
                         SplitDirection::TopBottom => rect.height,
@@ -183,7 +183,9 @@ impl SplitWindow {
                 self.percentage.as_deref().map(percentage_of)
             };
             match parsed {
-                Some(None) => return CommandResult::err("size or position invalid tiled geometry\n"),
+                Some(None) => {
+                    return CommandResult::err("size or position invalid tiled geometry\n")
+                }
                 Some(size) => size,
                 None => None,
             }
@@ -758,8 +760,7 @@ impl SwapPane {
                         }
                     };
                     st.push_zoom_at(resolved.session, resolved.window);
-                    let result =
-                        st.swap_pane_neighbour(&target, self.down, !self.detached);
+                    let result = st.swap_pane_neighbour(&target, self.down, !self.detached);
                     st.pop_zoom_at(resolved.session, resolved.window, self.zoom);
                     match result {
                         Ok(()) => CommandResult::ok(""),
@@ -776,19 +777,13 @@ impl SwapPane {
                 let src = match st.resolve(&source) {
                     Some(resolved) => resolved,
                     None => {
-                        return CommandResult::err(format!(
-                            "{}\n",
-                            st.pane_target_error(&source)
-                        ))
+                        return CommandResult::err(format!("{}\n", st.pane_target_error(&source)))
                     }
                 };
                 let dst = match st.resolve(&target) {
                     Some(resolved) => resolved,
                     None => {
-                        return CommandResult::err(format!(
-                            "{}\n",
-                            st.pane_target_error(&target)
-                        ))
+                        return CommandResult::err(format!("{}\n", st.pane_target_error(&target)))
                     }
                 };
                 st.push_zoom_at(src.session, src.window);
@@ -866,14 +861,14 @@ impl MovePane {
             let axis_total = {
                 let sess = &st.sessions()[target_resolved.session];
                 let win = st.window_for_link(&sess.windows[target_resolved.window]);
-                let rect =
-                    win.pane_rect(win.panes[target_resolved.pane].id)
-                        .unwrap_or(super::super::state::PaneRect {
-                            top: 0,
-                            left: 0,
-                            height: win.rows,
-                            width: win.cols,
-                        });
+                let rect = win.pane_rect(win.panes[target_resolved.pane].id).unwrap_or(
+                    super::super::state::PaneRect {
+                        top: 0,
+                        left: 0,
+                        height: win.rows,
+                        width: win.cols,
+                    },
+                );
                 match direction {
                     SplitDirection::LeftRight => rect.width,
                     SplitDirection::TopBottom => rect.height,
@@ -1586,12 +1581,7 @@ impl SelectLayout {
         result
     }
 
-    fn act(
-        &self,
-        st: &mut ServerState,
-        target: &str,
-        previous_old: Option<&str>,
-    ) -> CommandResult {
+    fn act(&self, st: &mut ServerState, target: &str, previous_old: Option<&str>) -> CommandResult {
         if self.next || self.previous {
             return match st.cycle_layout(target, self.next) {
                 Ok(()) => CommandResult::ok(""),
@@ -2179,10 +2169,10 @@ impl CapturePane {
             .saturating_add(viewport_rows.saturating_sub(1) as usize)
             .min(last);
 
-        let mut top = capture_endpoint(self.start.as_deref(), default_top, history, last, vars)
-            .max(floor);
-        let mut bottom = capture_endpoint(self.end.as_deref(), default_bottom, history, last, vars)
-            .max(floor);
+        let mut top =
+            capture_endpoint(self.start.as_deref(), default_top, history, last, vars).max(floor);
+        let mut bottom =
+            capture_endpoint(self.end.as_deref(), default_bottom, history, last, vars).max(floor);
         if bottom < top {
             std::mem::swap(&mut top, &mut bottom);
         }

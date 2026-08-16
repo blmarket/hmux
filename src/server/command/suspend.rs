@@ -31,14 +31,14 @@ use crate::server::state::{
     BackgroundJobRegistry, ClientPromptRegistry, CommandPromptRequestResult, PromptCompletion,
     WaitRegistry,
 };
-use hmux_rt::Interest;
 use crate::sync::{join, Completion};
+use hmux_rt::Interest;
 use hmux_rt::{sleep, AsyncFd, TaskHandle};
 
 use super::execution::{self, RunShell, WaitFor, WaitForOutcome};
 use super::{
-    interaction_completion_result, io_error_message, shell_command, ClientContext, ClientFileWrite, CommandResult, RunShellCompletion,
-    SourceFileRead,
+    interaction_completion_result, io_error_message, shell_command, ClientContext, ClientFileWrite,
+    CommandResult, RunShellCompletion, SourceFileRead,
 };
 
 /// What a `wait-for` or an interactive prompt did before anything waits.
@@ -118,7 +118,8 @@ pub(crate) fn client_prompt(
     tty_name: Option<String>,
     wait: bool,
 ) -> SuspensionStart {
-    let result = match registry.request_command(target.as_deref(), tty_name.as_deref(), args, wait) {
+    let result = match registry.request_command(target.as_deref(), tty_name.as_deref(), args, wait)
+    {
         CommandPromptRequestResult::Waiting(completion) => {
             return SuspensionStart::Waiting(SuspensionWait::Prompt(completion))
         }
@@ -223,11 +224,7 @@ async fn collect_shell(tasks: &TaskHandle, running: RunningShell) -> ShellOutput
     } = running;
     // Both at once: draining one to end of file first deadlocks as soon as the
     // other fills its pipe buffer.
-    let (stdout, stderr) = join(
-        drain_pipe(tasks, stdout),
-        drain_pipe(tasks, stderr),
-    )
-    .await;
+    let (stdout, stderr) = join(drain_pipe(tasks, stdout), drain_pipe(tasks, stderr)).await;
     // A child may close both pipes and keep running. Nothing portable makes
     // that observable, so ask again on a backing-off deadline rather than
     // blocking the loop in `wait(2)`.
@@ -325,7 +322,11 @@ pub(crate) async fn run_shell(
 /// `if-shell cond`, without `-b` or `-F`: run the condition and report whether
 /// it succeeded. Unlike `run-shell` the output is discarded, but the pipes are
 /// still what makes the child's progress observable.
-pub(crate) async fn if_shell(tasks: &TaskHandle, condition: String, context: ClientContext) -> bool {
+pub(crate) async fn if_shell(
+    tasks: &TaskHandle,
+    condition: String,
+    context: ClientContext,
+) -> bool {
     if condition
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -383,13 +384,10 @@ pub(crate) async fn background_shell(
         return done;
     };
     // `list-jobs` has to see the child for as long as it runs.
-    let registered = running.stdout.as_ref().map(|stdout| {
-        jobs.register(
-            command.clone(),
-            stdout.as_raw_fd(),
-            running.child.id(),
-        )
-    });
+    let registered = running
+        .stdout
+        .as_ref()
+        .map(|stdout| jobs.register(command.clone(), stdout.as_raw_fd(), running.child.id()));
     let output = collect_shell(tasks, running).await;
     if let Some(id) = registered {
         jobs.remove(id);
@@ -494,11 +492,8 @@ pub(crate) async fn save_buffer(tasks: &TaskHandle, request: ClientFileWrite) ->
     match wrote {
         Ok(()) => CommandResult::ok(""),
         Err(error) => {
-            let mut result = CommandResult::err(format!(
-                "{}: {}\n",
-                io_error_message(&error),
-                display_path
-            ));
+            let mut result =
+                CommandResult::err(format!("{}: {}\n", io_error_message(&error), display_path));
             result.continue_queue = true;
             result
         }
@@ -663,10 +658,10 @@ fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{if_shell, load_buffer, run_shell, save_buffer, source_file, wait_for};
     use super::{execution, RunShell, SuspensionStart, SuspensionWait, WaitFor};
-    use crate::server::command::CommandResult;
+    use super::{if_shell, load_buffer, run_shell, save_buffer, source_file, wait_for};
     use crate::event_loop::test_driver::run_task_on_loop;
+    use crate::server::command::CommandResult;
     use crate::server::command::{ClientContext, ClientFileWrite};
     use crate::server::state::WaitRegistry;
 
@@ -674,9 +669,9 @@ mod tests {
     use std::io;
     use std::path::{Path, PathBuf};
     use std::process;
-    use std::time::Instant;
     use std::thread;
     use std::time::Duration;
+    use std::time::Instant;
 
     fn args(values: &[&str]) -> RunShell {
         let argv = std::iter::once("run-shell")
@@ -910,7 +905,11 @@ mod tests {
             }
         });
 
-        let request = file_write(&fifo, libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC, &payload);
+        let request = file_write(
+            &fifo,
+            libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
+            &payload,
+        );
         let result = run_task_on_loop(|tasks| async move { save_buffer(&tasks, request).await });
 
         assert_eq!(result.exit, 0, "{}", result.stderr);

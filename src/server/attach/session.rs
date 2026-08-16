@@ -843,9 +843,9 @@ impl AttachSession {
                             };
                             self.pending_exec = Some((command, shell));
                         }
-                        return Ok(AttachNotificationOutcome::Return(
-                            AttachDrive::Finish(AttachFinishReason::Detached),
-                        ));
+                        return Ok(AttachNotificationOutcome::Return(AttachDrive::Finish(
+                            AttachFinishReason::Detached,
+                        )));
                     }
                     ClientAction::Switch { session_id, .. } => {
                         self.compositor.transition =
@@ -937,9 +937,9 @@ impl AttachSession {
             }
         }
         if render_invalidation.contains(super::super::state::RenderInvalidation::SESSION_GONE) {
-            return Ok(AttachNotificationOutcome::Return(
-                AttachDrive::Finish(AttachFinishReason::SessionEnded),
-            ));
+            return Ok(AttachNotificationOutcome::Return(AttachDrive::Finish(
+                AttachFinishReason::SessionEnded,
+            )));
         }
         if !render_invalidation.is_empty() {
             self.status.status_cache.invalidate();
@@ -1022,9 +1022,9 @@ impl AttachSession {
                     self.compositor.transition = Some(AttachTransition::SwitchSession(session_id));
                     return Ok(AttachNotificationOutcome::Return(AttachDrive::Continue));
                 }
-                return Ok(AttachNotificationOutcome::Return(
-                    AttachDrive::Finish(AttachFinishReason::SessionEnded),
-                ));
+                return Ok(AttachNotificationOutcome::Return(AttachDrive::Finish(
+                    AttachFinishReason::SessionEnded,
+                )));
             }
             Err(error) => return Err(error),
         }
@@ -1069,9 +1069,9 @@ impl AttachSession {
             Ok(frame) => {
                 if frame.version != PROTOCOL_VERSION {
                     let _ = writer.send(Frame::new(Message::Version));
-                    return Ok(Some(
-                        AttachDrive::Finish(AttachFinishReason::ConnectionClosed),
-                    ));
+                    return Ok(Some(AttachDrive::Finish(
+                        AttachFinishReason::ConnectionClosed,
+                    )));
                 }
                 match frame.msg {
                     Message::Resize => {
@@ -1179,9 +1179,9 @@ impl AttachSession {
                         return Ok(Some(AttachDrive::Finish(AttachFinishReason::Detached)));
                     }
                     Message::Exit(_) | Message::Shutdown => {
-                        return Ok(Some(
-                            AttachDrive::Finish(AttachFinishReason::ConnectionClosed),
-                        ));
+                        return Ok(Some(AttachDrive::Finish(
+                            AttachFinishReason::ConnectionClosed,
+                        )));
                     }
                     _ => {
                         // Ignore other control frames while attached.
@@ -1190,15 +1190,15 @@ impl AttachSession {
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                return Ok(Some(
-                    AttachDrive::Finish(AttachFinishReason::ConnectionClosed),
-                ));
+                return Ok(Some(AttachDrive::Finish(
+                    AttachFinishReason::ConnectionClosed,
+                )));
             }
             Err(_) => {
                 // Treat as detach on error.
-                return Ok(Some(
-                    AttachDrive::Finish(AttachFinishReason::ConnectionClosed),
-                ));
+                return Ok(Some(AttachDrive::Finish(
+                    AttachFinishReason::ConnectionClosed,
+                )));
             }
         }
         Ok(None)

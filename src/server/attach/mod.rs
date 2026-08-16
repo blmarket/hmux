@@ -1459,7 +1459,12 @@ fn get_winsize(fd: RawFd) -> io::Result<ClientWinsize> {
 
 fn tty_start_sequence(terminal: &ResolvedTerm, focus_events: bool) -> Vec<u8> {
     let mut output = Vec::new();
-    for capability in [Capability::smcup, Capability::smkx, Capability::clear, Capability::cnorm] {
+    for capability in [
+        Capability::smcup,
+        Capability::smkx,
+        Capability::clear,
+        Capability::cnorm,
+    ] {
         if let Some(value) = term::string_capability(terminal, capability) {
             output.extend_from_slice(value);
         }
@@ -1495,7 +1500,12 @@ fn tty_stop_sequence(terminal: &ResolvedTerm, rows: u16) -> Vec<u8> {
         ],
     )
     .unwrap_or_default();
-    for capability in [Capability::sgr0, Capability::rmkx, Capability::clear, Capability::cnorm] {
+    for capability in [
+        Capability::sgr0,
+        Capability::rmkx,
+        Capability::clear,
+        Capability::cnorm,
+    ] {
         if let Some(value) = term::string_capability(terminal, capability) {
             output.extend_from_slice(value);
         }

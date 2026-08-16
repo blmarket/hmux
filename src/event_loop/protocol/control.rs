@@ -175,7 +175,9 @@ async fn serve(
             }
         }
 
-        let serving = control.finish_turn(state_ready, pane_ready).map_err(fault)?;
+        let serving = control
+            .finish_turn(state_ready, pane_ready)
+            .map_err(fault)?;
         publish(wire, runtime, control)?;
         if serving == ControlServing::Stop {
             break;
