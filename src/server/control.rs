@@ -104,6 +104,11 @@ impl EventControlClient {
                 if state.find(&target).is_none() {
                     return Err(io::Error::other(format!("can't find session: {target}")));
                 }
+                if let Some(cwd) = command::command_value("attach-session", args, 'c') {
+                    if let Some(session_id) = state.session_id(&target) {
+                        state.set_session_cwd(session_id, Some(std::path::PathBuf::from(cwd)));
+                    }
+                }
                 target
             }
             command::Intent::Command => "0".to_string(),

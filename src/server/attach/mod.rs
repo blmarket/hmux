@@ -1409,32 +1409,8 @@ impl ClientTty {
 /// Return only a target supplied by the client. An omitted target must be
 /// resolved with server state, not confused with an explicit `-t 0`.
 fn explicit_target_session(args: &[String]) -> Option<String> {
-    // Look for `-t` flag.
-    if let Some(idx) = args.iter().position(|a| a == "-t") {
-        if let Some(name) = args.get(idx + 1) {
-            return Some(name.clone());
-        }
-    }
-    // Positional after command name, skipping flags that take values.
-    // For attach, only `-t` takes a value; other flags like `-d`, `-r` are
-    // boolean and should be skipped without consuming next arg.
-    let value_flags = ["-t"];
-    let mut i = 1; // skip command name
-    while i < args.len() {
-        let a = &args[i];
-        if a.starts_with('-') {
-            if value_flags.contains(&a.as_str()) {
-                i += 2;
-                continue;
-            } else {
-                i += 1;
-                continue;
-            }
-        } else {
-            return Some(a.clone());
-        }
-    }
-    None
+    command::command_value("attach-session", args, 't')
+        .or_else(|| command::command_positional("attach-session", args, 0))
 }
 
 fn is_tty(fd: RawFd) -> bool {
@@ -1686,6 +1662,11 @@ where
                 return Err(AttachStartFailure::Client(format!(
                     "can't find session: {target}\n"
                 )));
+            }
+            if let Some(cwd) = command::command_value("attach-session", args, 'c') {
+                if let Some(session_id) = st.session_id(&target) {
+                    st.set_session_cwd(session_id, Some(std::path::PathBuf::from(cwd)));
+                }
             }
             // tmux's `cmd_attach_session` runs the `update-environment` copy-in
             // again on every attach, so a session picks up the new client's

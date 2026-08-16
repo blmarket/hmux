@@ -506,6 +506,10 @@ impl ClientFlagState {
             }
             index += 1;
         }
+        if crate::server::command::command_flag("attach-session", args, 'r') {
+            flags.read_only = true;
+            flags.ignore_size = true;
+        }
         flags
     }
 

@@ -4097,7 +4097,7 @@ pub(crate) fn replace_prompt_template(template: &str, value: &str, index: u8) ->
 /// command with no modeled `spec` pass through unchanged. Assumes flags already
 /// validated by [`unknown_flag`], so an unrecognized letter is passed through
 /// rather than erroring again.
-fn normalize_argv(name: &str, args: &[String]) -> Vec<String> {
+pub(crate) fn normalize_argv(name: &str, args: &[String]) -> Vec<String> {
     let spec = match registry::getopt(name) {
         Some(s) => s,
         None => return args.to_vec(),
@@ -4267,6 +4267,19 @@ fn unknown_bind_key_flag(args: &[String], spec: &str) -> Option<char> {
 /// parsed at all, so it lexes the single command it is looking at.
 pub(crate) fn command_flag(name: &str, args: &[String], flag: char) -> bool {
     ParsedArgs::lex(name, &normalize_argv(name, args)).has(flag)
+}
+
+pub(crate) fn command_value(name: &str, args: &[String], flag: char) -> Option<String> {
+    ParsedArgs::lex(name, &normalize_argv(name, args))
+        .value(flag)
+        .map(str::to_string)
+}
+
+pub(crate) fn command_positional(name: &str, args: &[String], index: usize) -> Option<String> {
+    ParsedArgs::lex(name, &normalize_argv(name, args))
+        .positionals()
+        .get(index)
+        .cloned()
 }
 
 /// Recreate the environment a tmux server gives a newly spawned pane. Wrapping
