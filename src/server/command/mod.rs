@@ -3070,9 +3070,12 @@ pub(super) fn vars_full(
                 .set("pane_title", pane_title);
             // The pane's working directory is read live from its child (as
             // real tmux does via osdep_get_cwd), so it follows a shell that
-            // `cd`s. A childless (inert) pane has no live cwd and falls back
-            // to the server process's cwd, matching stock tmux. The `/proc`
-            // reads behind both variables run only if a format names them.
+            // `cd`s. A pane with no cwd to read — one with no child, one whose
+            // child has exited, one whose child has not taken the pty yet —
+            // reports nothing, as stock tmux does: its callback returns NULL
+            // when `osdep_get_cwd` fails, which leaves the variable unset
+            // rather than substituting the server's own cwd. The `/proc` reads
+            // behind both variables run only if a format names them.
             let probe = p.pane.process_probe();
             {
                 let probe = probe.clone();
@@ -3080,7 +3083,7 @@ pub(super) fn vars_full(
                     probe
                         .as_ref()
                         .and_then(|probe| probe.current_path())
-                        .unwrap_or_else(current_dir)
+                        .unwrap_or_default()
                 });
             }
             {
@@ -3410,11 +3413,10 @@ fn pane_cursor_character(pane: &super::pane::Pane) -> String {
         .map_or_else(|| " ".to_string(), |character| character.to_string())
 }
 
-/// The server process's working directory. This backs `#{session_path}` and is
-/// the fallback for `#{pane_current_path}` when a pane has no live child cwd to
-/// read (an inert pane). It is the directory hmux was started in — the same cwd
-/// stock tmux inherits, so both targets report the same path.
-/// Empty on failure.
+/// The server process's working directory. This backs `#{session_path}` and the
+/// `#{pane_start_path}` of a pane spawned without an explicit `-c`. It is the
+/// directory hmux was started in — the same cwd stock tmux inherits, so both
+/// targets report the same path. Empty on failure.
 fn current_dir() -> String {
     std::env::current_dir()
         .map(|p| p.to_string_lossy().into_owned())

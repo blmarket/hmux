@@ -35,6 +35,12 @@ const DEFAULT_STATUS_RIGHT: &str =
 /// pane's own, which distinguishes two windows on the same project better than
 /// the window name would.
 ///
+/// `#{pane_current_path}` is read from the pane's foreground process group and
+/// is empty whenever there is no such group to ask — a pane whose child has
+/// exited, or one whose child has not taken the pty yet. A window that loses
+/// its label the moment its command exits reads as a glitch, so the empty case
+/// falls back to `#{session_path}`, the directory the session was started in.
+///
 /// An agent pane additionally carries its model on the emoji's background: a
 /// fable model reads red, a luna model bright blue, and every other model — as
 /// well as every non-agent pane, whose `#{pane_agent_model}` is empty — keeps
@@ -42,7 +48,7 @@ const DEFAULT_STATUS_RIGHT: &str =
 /// `bg=default` would punch a terminal-background hole in the status bar
 /// instead of leaving it whatever `status-style` painted.
 const DEFAULT_WINDOW_FORMAT: &str =
-    "#I:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default] #{b:pane_current_path}#{?window_flags,#{window_flags}, }";
+    "#I:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default] #{?pane_current_path,#{b:pane_current_path},#{b:session_path}}#{?window_flags,#{window_flags}, }";
 const DEFAULT_PANE_FORMAT: &str = "#P:[#T]#{?pane_flags,#{pane_flags}, }";
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
