@@ -107,8 +107,8 @@ async fn run_group(
     context: &ClientContext,
 ) -> Result<CommandResult, ProtocolCloseReason> {
     let file_write = {
-        let state = runtime.state.borrow_mut();
-        command::save_buffer_client_request(args, &state, context)
+        let mut state = runtime.state.borrow_mut();
+        command::save_buffer_client_request(args, &mut state, context)
     };
     if let Some(request) = file_write {
         return match request {

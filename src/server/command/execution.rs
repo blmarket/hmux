@@ -280,7 +280,7 @@ pub(super) fn expand_if_cond(
         .or_else(|| current_target(st));
     if let Some(target) = target {
         if let Some(resolved) = st.resolve(&target) {
-            let vars = vars_full(
+            let mut vars = vars_full(
                 st,
                 &st.sessions()[resolved.session],
                 resolved.window,
@@ -288,6 +288,14 @@ pub(super) fn expand_if_cond(
                 agents,
                 st.marked_pane(),
             );
+            for (name, value) in st.env_iter() {
+                vars.set(name, value);
+            }
+            if let Ok(entries) = st.format_option_entries(&target) {
+                for (name, value) in entries {
+                    vars.set(name, value);
+                }
+            }
             let loops = TreeLoops {
                 st,
                 session: resolved.session,

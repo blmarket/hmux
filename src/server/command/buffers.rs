@@ -267,7 +267,8 @@ impl SaveBuffer {
         state: &ServerState,
         context: &ClientContext,
     ) -> Option<Result<ClientFileWrite, CommandResult>> {
-        if self.path == "-" {
+        let expanded_path = execution::expand_if_cond(&self.path, None, state, &PaneAgents::new());
+        if expanded_path == "-" {
             return None;
         }
         let name = self.buffer.as_deref();
@@ -280,7 +281,7 @@ impl SaveBuffer {
                 }));
             }
         };
-        let path = client_file_path(&self.path, context);
+        let path = client_file_path(&expanded_path, context);
         let flags = libc::O_WRONLY
             | libc::O_CREAT
             | if self.append {
@@ -308,12 +309,13 @@ impl SaveBuffer {
                 };
             }
         };
-        if self.path == "-" {
+        let expanded_path = execution::expand_if_cond(&self.path, None, st, &PaneAgents::new());
+        if expanded_path == "-" {
             // stdout sink: emit the raw bytes with no trailing newline, like tmux.
             return CommandResult::ok_bytes(data);
         }
         // tmux's `file_write` stores the expanded path and reports it on failure.
-        let resolved = client_file_path(&self.path, context);
+        let resolved = client_file_path(&expanded_path, context);
         let result = if self.append {
             std::fs::OpenOptions::new()
                 .create(true)

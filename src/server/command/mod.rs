@@ -3648,7 +3648,7 @@ pub(crate) struct ClientFileWrite {
 
 pub(crate) fn save_buffer_client_request(
     args: &[String],
-    state: &ServerState,
+    state: &mut ServerState,
     context: &ClientContext,
 ) -> Option<Result<ClientFileWrite, CommandResult>> {
     if args.iter().any(|arg| arg == ";") {
@@ -3660,7 +3660,10 @@ pub(crate) fn save_buffer_client_request(
     };
     let normalized = normalize_argv(spec.name, args);
     let command = buffers::SaveBuffer::parse(&ParsedArgs::lex(spec.name, &normalized)).ok()?;
-    command.client_request(state, context)
+    let previous = install_command_target_context(state, context);
+    let result = command.client_request(state, context);
+    restore_command_target_context(state, previous);
+    result
 }
 
 /// Render an I/O error the way tmux does — `strerror(errno)` — by trimming Rust's
@@ -7403,6 +7406,21 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "hiworld");
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn save_buffer_expands_format_path() {
+        let st = state();
+        run_str(&st, &["new-session", "-d", "-s", "s1"]);
+        run_str(&st, &["set-option", "-g", "@save_name", "my_expanded.txt"]);
+        run_str(&st, &["set-buffer", "-b", "x", "payload"]);
+        let dir = std::env::temp_dir();
+        let path_template = format!("{}/#{{@save_name}}", dir.display());
+        let expected_path = dir.join("my_expanded.txt");
+        let r = run_str(&st, &["save-buffer", "-b", "x", &path_template]);
+        assert_eq!(r.exit, 0);
+        assert_eq!(std::fs::read_to_string(&expected_path).unwrap(), "payload");
+        let _ = std::fs::remove_file(&expected_path);
     }
 
     #[test]
