@@ -14,7 +14,7 @@ use hmux_rt::TaskHandle;
 use super::attach::{self, ClientTty};
 use super::command;
 use super::command::queue::{CommandQueue, QueueCompletion};
-use super::pane::{NativePaneObservation, OutputSubscription};
+use super::pane::{ControlOutputReader, OutputSubscription};
 use super::registry::{self, Resolution};
 use super::state::{
     ClientAction, ClientFlagState as ControlClientOptions, ClientRenderAttachment,
@@ -23,6 +23,18 @@ use super::state::{
 use super::status;
 
 const CONTROL_BUFFER_HIGH: usize = 8192;
+
+/// How long a client that did not ask for `pause-after` may leave a pane's
+/// output unread before the server stops serving it.
+///
+/// tmux's `CONTROL_MAXIMUM_AGE`. Holding the pane back for a client that has
+/// stopped reading altogether would hold it back forever; tmux sends such a
+/// client away instead, and so does this. What it measures is not quite tmux's:
+/// tmux times the oldest block it has queued, which for a client that is being
+/// held back at the journal's backlog can be old while the client is still
+/// making progress. This times the last delivery instead, so only a stream that
+/// has handed the client nothing at all for the whole window counts.
+const CONTROL_MAXIMUM_AGE: Duration = Duration::from_secs(300);
 const CLIENT_CONTROLCONTROL: i64 = 0x4000;
 
 /// Whether the client keeps serving, or has reached the end of what it has to
@@ -320,10 +332,14 @@ impl EventControlClient {
             .borrow_mut()
             .alert_poll_timeout()
             .and_then(|duration| now.checked_add(duration));
-        match (subscription, alert) {
-            (Some(left), Some(right)) => Some(left.min(right)),
-            (left, right) => left.or(right),
-        }
+        // A client that stopped reading has nothing else to wake it: without
+        // this the backlog it holds would never be looked at again.
+        let overrun = self
+            .backlogged_streams()
+            .filter_map(|stream| stream.delivered_at.checked_add(CONTROL_MAXIMUM_AGE))
+            .min()
+            .filter(|_| self.options.pause_after.is_none());
+        [subscription, alert, overrun].into_iter().flatten().min()
     }
 
     pub(crate) fn pop_frame(&mut self) -> Option<Frame> {
@@ -349,6 +365,12 @@ impl EventControlClient {
     /// notifies on *new* output, and a fully flushed writer never reports
     /// writable. When the socket does fill, the writer keeps its pending block
     /// and the `Output` wait source resumes the pump on the next turn.
+    ///
+    /// This is what has to run last in a turn, since the two states it can end
+    /// in are the only two a client may wait in: a socket that owes it a
+    /// writable edge, or nothing left to send. A turn that ends anywhere else —
+    /// a flush that empties the writer while the journal still holds output —
+    /// parks a client with a backlog and nothing armed to wake it for.
     fn pump_output(&mut self) -> io::Result<()> {
         loop {
             write_control_output(&mut self.control_writer, &mut self.streams, &self.options)?;
@@ -362,12 +384,37 @@ impl EventControlClient {
     /// Whether any deliverable stream still has journal bytes the client has
     /// not been sent.
     fn streams_have_backlog(&self) -> bool {
-        !self.options.no_output
-            && self.streams.values().any(|stream| {
-                stream.enabled
-                    && !stream.paused
-                    && stream.offset != stream.observation.control_output_end()
+        self.backlogged_streams().next().is_some()
+    }
+
+    /// The streams holding output this client has not been given yet. Each is
+    /// keeping its pane's journal — and, past the journal's backlog, the pane
+    /// itself — waiting for this client.
+    fn backlogged_streams(&self) -> impl Iterator<Item = &ControlPaneStream> {
+        let deliverable = !self.options.no_output;
+        self.streams.values().filter(move |stream| {
+            deliverable && stream.enabled && !stream.paused && !stream.reader.caught_up()
+        })
+    }
+
+    /// Whether a stream has held a backlog for this client without delivering
+    /// any of it for as long as tmux keeps a client that is too far behind.
+    ///
+    /// The client is done: it stopped reading, and the panes it holds cannot
+    /// wait on it forever.
+    fn too_far_behind(&self, now: Instant) -> bool {
+        self.options.pause_after.is_none()
+            && self.backlogged_streams().any(|stream| {
+                now.saturating_duration_since(stream.delivered_at) >= CONTROL_MAXIMUM_AGE
             })
+    }
+
+    /// Give every pane back the output this client was holding, which is what
+    /// its streams do when it goes away.
+    fn release_streams(&mut self) {
+        for stream in self.streams.values_mut() {
+            stream.reader.detach();
+        }
     }
 
     /// The housekeeping every turn starts with: what another client aimed at
@@ -401,6 +448,10 @@ impl EventControlClient {
             self.advance_snapshot()?;
         }
         self.pump_output()?;
+        if self.too_far_behind(Instant::now()) {
+            self.release_streams();
+            return Ok(ControlServing::Stop);
+        }
         if pane_ready {
             {
                 let mut state = self.state.borrow_mut();
@@ -428,11 +479,14 @@ impl EventControlClient {
             );
             self.subscriptions.reschedule(Instant::now());
         }
-        self.control_writer.flush()?;
+        // Last, and a pump rather than a flush: the notifications above went
+        // into the same writer, and emptying it here without refilling it from
+        // the journal is what would leave the client parked on a socket it has
+        // nothing queued for while a pane's output waits behind it.
+        self.pump_output()?;
         // A queue with a current item is one this client is still running, so
         // an empty queue is the only point where closed input means the end.
         if !self.stdin_open && self.command_queue.is_empty() {
-            self.pump_output()?;
             return Ok(ControlServing::Stop);
         }
         Ok(ControlServing::Continue)
@@ -729,8 +783,12 @@ impl EventControlClient {
             self.context.read_only = self.options.read_only;
             self.sync_active_pane_tracking();
             if reset_output_offsets {
+                // `no-output` was turned on or off. Either way the client
+                // starts again at what the pane has written by now, and a
+                // stream detached while the flag was on takes its place in the
+                // journal back.
                 for stream in self.streams.values_mut() {
-                    stream.offset = stream.observation.control_output_end();
+                    stream.reader.resume_at_end();
                     stream.pending_since = None;
                 }
             }
@@ -1082,12 +1140,18 @@ impl ControlCommandId {
 
 struct ControlPaneStream {
     runtime_id: u64,
-    offset: u64,
-    observation: Rc<NativePaneObservation>,
+    /// This client's place in the pane's output journal. The registration is
+    /// what keeps the pane from discarding output the client has not been
+    /// given yet, so a stream that stops delivering gives it back.
+    reader: ControlOutputReader,
     subscription: OutputSubscription,
     enabled: bool,
     paused: bool,
     pending_since: Option<Instant>,
+    /// When this stream last handed the client any of the pane's output. A
+    /// stream with a backlog that has not moved for [`CONTROL_MAXIMUM_AGE`] is
+    /// one whose client stopped reading.
+    delivered_at: Instant,
 }
 
 #[derive(Clone, Copy)]
@@ -1247,18 +1311,17 @@ fn control_pane_streams(
 ) -> io::Result<BTreeMap<u32, ControlPaneStream>> {
     let mut streams = BTreeMap::new();
     for pane in snapshot.windows.values().flat_map(|window| &window.panes) {
-        let offset = pane.observation.control_output_end();
         let subscription = pane.observation.subscribe_output()?;
         streams.insert(
             pane.id,
             ControlPaneStream {
                 runtime_id: pane.runtime_id,
-                offset,
-                observation: Rc::clone(&pane.observation),
+                reader: ControlOutputReader::at_end(Rc::clone(&pane.observation)),
                 subscription,
                 enabled: true,
                 paused: false,
                 pending_since: None,
+                delivered_at: Instant::now(),
             },
         );
     }
@@ -1288,12 +1351,15 @@ fn sync_control_pane_streams(
             pane_id,
             ControlPaneStream {
                 runtime_id: pane.runtime_id,
-                offset: 0,
-                observation: Rc::clone(&pane.observation),
+                // A pane the client is only now learning about may already
+                // have written: it starts at the pane's recent history rather
+                // than at whatever it happens to have reached now.
+                reader: ControlOutputReader::at_history(Rc::clone(&pane.observation)),
                 subscription: pane.observation.subscribe_output()?,
                 enabled: true,
                 paused: false,
                 pending_since: Some(Instant::now()),
+                delivered_at: Instant::now(),
             },
         );
     }
@@ -1338,8 +1404,10 @@ fn write_control_output(
     options: &ControlClientOptions,
 ) -> io::Result<()> {
     if options.no_output {
+        // A client that asked for no output holds nothing back: tmux leaves it
+        // out of the offsets a pane's buffer is kept for.
         for stream in streams.values_mut() {
-            stream.offset = stream.observation.control_output_end();
+            stream.reader.detach();
             stream.pending_since = None;
         }
         return Ok(());
@@ -1353,9 +1421,7 @@ fn write_control_output(
             break;
         }
         let raw_limit = (available - 64) / 4;
-        let (next_offset, end, bytes) = stream
-            .observation
-            .control_output_chunk(stream.offset, raw_limit.max(1));
+        let (next_offset, end, bytes) = stream.reader.chunk(raw_limit.max(1));
         if bytes.is_empty() {
             if next_offset == end {
                 stream.pending_since = None;
@@ -1370,6 +1436,10 @@ fn write_control_output(
         {
             stream.paused = true;
             stream.pending_since = None;
+            // A paused pane keeps producing; the client resumes at whatever
+            // the pane has written by the time it says `continue`, so its
+            // place in the journal is given back rather than held here.
+            stream.reader.detach();
             writer.enqueue_line(format!("%pause %{pane_id}"));
             continue;
         }
@@ -1377,21 +1447,42 @@ fn write_control_output(
             Some(_) => format!("%extended-output %{pane_id} {age} : ").into_bytes(),
             None => format!("%output %{pane_id} ").into_bytes(),
         };
-        for byte in bytes {
-            if byte < b' ' || byte == b'\\' {
-                line.extend_from_slice(format!("\\{byte:03o}").as_bytes());
-            } else {
-                line.push(byte);
-            }
-        }
+        escape_control_output(&mut line, &bytes);
         line.push(b'\n');
         writer.enqueue(&line);
-        stream.offset = next_offset;
+        stream.reader.advance(next_offset);
+        stream.delivered_at = Instant::now();
         if next_offset == end {
             stream.pending_since = None;
         }
     }
     Ok(())
+}
+
+/// Append a pane's bytes to an `%output` line the way tmux's `control_write`
+/// does: everything below a space, and the backslash itself, as a three-digit
+/// octal escape.
+///
+/// The runs between escapes are copied whole. A flood is almost all printable,
+/// and appending it a byte at a time is what made a large `%output` cost more
+/// in the server than it did in the client reading it.
+fn escape_control_output(line: &mut Vec<u8>, bytes: &[u8]) {
+    line.reserve(bytes.len());
+    let mut start = 0;
+    for (index, byte) in bytes.iter().enumerate() {
+        if *byte >= b' ' && *byte != b'\\' {
+            continue;
+        }
+        line.extend_from_slice(&bytes[start..index]);
+        line.extend_from_slice(&[
+            b'\\',
+            b'0' + (byte >> 6),
+            b'0' + ((byte >> 3) & 0o7),
+            b'0' + (byte & 0o7),
+        ]);
+        start = index + 1;
+    }
+    line.extend_from_slice(&bytes[start..]);
 }
 
 fn write_control_notifications(
@@ -1596,21 +1687,23 @@ fn apply_control_offset_actions(
         match action {
             "off" => {
                 stream.enabled = false;
-                stream.offset = stream.observation.control_output_end();
+                stream.reader.detach();
                 stream.pending_since = None;
             }
             "on" if !stream.enabled => {
                 stream.enabled = true;
+                stream.reader.resume();
                 stream.pending_since = Some(Instant::now());
             }
             "pause" if !stream.paused => {
                 stream.paused = true;
+                stream.reader.detach();
                 stream.pending_since = None;
                 writer.enqueue_line(format!("%pause %{pane_id}"));
             }
             "continue" if stream.paused => {
                 stream.paused = false;
-                stream.offset = stream.observation.control_output_end();
+                stream.reader.resume_at_end();
                 stream.pending_since = None;
                 writer.enqueue_line(format!("%continue %{pane_id}"));
             }
@@ -1913,6 +2006,16 @@ mod tests {
 
     use super::super::state::PaneSpec;
     use super::*;
+
+    /// The escaping `%output` applies, byte for byte as tmux's
+    /// `control_write` spells it: a three-digit octal escape below a space and
+    /// for the backslash itself, everything else through untouched.
+    #[test]
+    fn control_output_escapes_only_what_tmux_escapes() {
+        let mut line = Vec::new();
+        escape_control_output(&mut line, b"plain\r\n\\ \x7f\xc3\xa9\0end");
+        assert_eq!(line, b"plain\\015\\012\\134 \x7f\xc3\xa9\\000end".to_vec());
+    }
 
     fn drain(stream: &mut UnixStream) -> io::Result<String> {
         let mut output = Vec::new();

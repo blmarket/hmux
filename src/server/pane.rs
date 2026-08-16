@@ -11,7 +11,7 @@
 //! is the next milestone (see the module docs).
 
 use std::cell::{Cell, RefCell};
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::ffi::{CStr, CString};
 use std::io::{self, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
@@ -378,6 +378,9 @@ pub(crate) struct NativePaneObservation {
     /// This is monotonic so each attached client can observe it independently.
     large_scroll_revision: Cell<u64>,
     control_output: RefCell<ControlOutputJournal>,
+    /// Signalled when the journal's slowest reader catches up, which is what
+    /// the pane's PTY reader parks on while it is held back.
+    control_output_resume: Notify,
     /// The pane's reportable VT modes, republished as one snapshot read back
     /// from the screen's mode word at the end of each output batch.
     modes: Cell<PaneModeSnapshot>,
@@ -497,44 +500,256 @@ struct OutputEvent {
     wakeup: <CurrentPlatform as Platform>::OutputWakeup,
 }
 
-const CONTROL_OUTPUT_LIMIT: usize = 1024 * 1024;
+/// How much of a pane's output the journal keeps for a reader that has not
+/// asked for any of it yet.
+///
+/// tmux has no equivalent: a control client's blocks start at the pane's
+/// current parse position, so there is nothing to replay. This is the history
+/// a stream that discovers a pane after it has already written gets, and it is
+/// the only part of the journal that is ever dropped without being read.
+const CONTROL_OUTPUT_HISTORY: usize = 1024 * 1024;
 
+/// How far the slowest registered reader may fall behind before the pane stops
+/// reading its PTY.
+///
+/// tmux stops reading a pane whose attached clients are all control clients
+/// that cannot take more (`server_client_check_pane_buffer`), which is what
+/// keeps a lagging client's output from being lost or from growing the server
+/// without bound. hmux's journal is per pane rather than per client, so the
+/// same hold-back is expressed as how far behind the slowest reader is.
+const CONTROL_OUTPUT_BACKLOG: u64 = 1024 * 1024;
+
+/// A pane's output as control clients read it: one buffer, and where each
+/// reader of it has got to.
+///
+/// Nothing a registered reader has not taken is discarded. Output past
+/// [`CONTROL_OUTPUT_BACKLOG`] instead stops the pane from reading its PTY,
+/// which the writing program feels as its own blocked write, until the reader
+/// catches up.
 #[derive(Default)]
 struct ControlOutputJournal {
     bytes: VecDeque<u8>,
     end: u64,
+    /// Where each registered reader has read to, keyed by registration.
+    readers: BTreeMap<u64, u64>,
+    next_reader: u64,
 }
 
 impl ControlOutputJournal {
+    /// The oldest offset the journal still holds.
+    fn start(&self) -> u64 {
+        self.end.saturating_sub(self.bytes.len() as u64)
+    }
+
+    /// The oldest offset a reader that asks for history is given. What the
+    /// journal holds beyond it is there for a reader that is behind, and is
+    /// not another reader's to replay.
+    fn history_start(&self) -> u64 {
+        self.start()
+            .max(self.end.saturating_sub(CONTROL_OUTPUT_HISTORY as u64))
+    }
+
+    /// How far behind the slowest registered reader is. Zero when no reader
+    /// holds the journal, which is what makes the history below a cap rather
+    /// than a backlog.
+    fn backlog(&self) -> u64 {
+        self.readers
+            .values()
+            .copied()
+            .min()
+            .map_or(0, |offset| self.end.saturating_sub(offset))
+    }
+
+    fn backpressured(&self) -> bool {
+        self.backlog() > CONTROL_OUTPUT_BACKLOG
+    }
+
     fn append(&mut self, bytes: &[u8]) {
         self.bytes.extend(bytes);
         self.end = self.end.saturating_add(bytes.len() as u64);
-        if self.bytes.len() > CONTROL_OUTPUT_LIMIT {
-            self.bytes
-                .drain(..self.bytes.len().saturating_sub(CONTROL_OUTPUT_LIMIT));
+        self.trim();
+    }
+
+    /// Drop what neither a reader nor the history needs.
+    fn trim(&mut self) {
+        let history = self.end.saturating_sub(CONTROL_OUTPUT_HISTORY as u64);
+        let keep = self
+            .readers
+            .values()
+            .copied()
+            .min()
+            .map_or(history, |slowest| slowest.min(history));
+        let start = self.start();
+        if keep > start {
+            self.bytes.drain(..(keep - start) as usize);
         }
+    }
+
+    /// Register a reader at `offset`, clamped to what the journal holds.
+    fn register(&mut self, offset: u64) -> u64 {
+        let id = self.next_reader;
+        self.next_reader = self.next_reader.saturating_add(1);
+        self.readers
+            .insert(id, offset.clamp(self.start(), self.end));
+        id
+    }
+
+    /// Give up a reader's hold on the journal, which is what a stream that
+    /// stopped taking output — and a client that went away — leaves behind.
+    fn release(&mut self, id: u64) {
+        self.readers.remove(&id);
+        self.trim();
+    }
+
+    fn seek(&mut self, id: u64, offset: u64) {
+        let offset = offset.clamp(self.start(), self.end);
+        if let Some(slot) = self.readers.get_mut(&id) {
+            *slot = offset;
+        }
+        self.trim();
     }
 
     #[cfg(test)]
     fn since(&self, offset: u64) -> (u64, Vec<u8>) {
-        let start = self.end.saturating_sub(self.bytes.len() as u64);
-        let offset = offset.clamp(start, self.end);
-        let skip = (offset - start) as usize;
-        (self.end, self.bytes.iter().skip(skip).copied().collect())
+        let (_, end, bytes) = self.chunk(offset, usize::MAX);
+        (end, bytes)
     }
 
     fn chunk(&self, offset: u64, limit: usize) -> (u64, u64, Vec<u8>) {
-        let start = self.end.saturating_sub(self.bytes.len() as u64);
+        let start = self.start();
         let offset = offset.clamp(start, self.end);
         let skip = (offset - start) as usize;
-        let bytes = self
-            .bytes
-            .iter()
-            .skip(skip)
-            .take(limit)
-            .copied()
-            .collect::<Vec<_>>();
+        let take = limit.min(self.bytes.len() - skip);
+        // Copied off the deque's own slices: a reader near the end of a full
+        // journal would otherwise pay for stepping over everything before it,
+        // once per chunk, for as long as the pane keeps writing.
+        let (front, back) = self.bytes.as_slices();
+        let mut bytes = Vec::with_capacity(take);
+        let from_front = front.len().saturating_sub(skip).min(take);
+        if from_front != 0 {
+            bytes.extend_from_slice(&front[skip..skip + from_front]);
+        }
+        if from_front < take {
+            let skip = skip.saturating_sub(front.len());
+            bytes.extend_from_slice(&back[skip..skip + (take - from_front)]);
+        }
         (offset.saturating_add(bytes.len() as u64), self.end, bytes)
+    }
+}
+
+/// One control client's place in a pane's output journal.
+///
+/// The handle is the registration: while it is attached the journal keeps
+/// everything the reader has not taken, and dropping it — or detaching the
+/// stream of a client that stopped taking this pane's output — gives that hold
+/// back. A detached reader reads as caught up, so it neither holds the pane
+/// nor reports a backlog.
+pub(crate) struct ControlOutputReader {
+    observation: Rc<NativePaneObservation>,
+    id: Option<u64>,
+    offset: u64,
+}
+
+impl ControlOutputReader {
+    /// A reader of everything the pane writes from now on.
+    pub(crate) fn at_end(observation: Rc<NativePaneObservation>) -> Self {
+        let offset = observation.control_output_end();
+        Self::register(observation, offset)
+    }
+
+    /// A reader of the pane's recent history: what a stream that discovers a
+    /// pane already running replays before it catches up.
+    pub(crate) fn at_history(observation: Rc<NativePaneObservation>) -> Self {
+        let offset = observation.control_output_history_start();
+        Self::register(observation, offset)
+    }
+
+    fn register(observation: Rc<NativePaneObservation>, offset: u64) -> Self {
+        let (id, offset) = observation.register_control_reader(offset);
+        Self {
+            observation,
+            id: Some(id),
+            offset,
+        }
+    }
+
+    pub(crate) fn offset(&self) -> u64 {
+        match self.id {
+            Some(_) => self.offset,
+            None => self.end(),
+        }
+    }
+
+    pub(crate) fn end(&self) -> u64 {
+        self.observation.control_output_end()
+    }
+
+    /// Whether the reader has been given everything the pane has written.
+    pub(crate) fn caught_up(&self) -> bool {
+        self.offset() == self.end()
+    }
+
+    /// The next `limit` bytes, as `(offset after them, journal end, bytes)`.
+    /// Reading does not advance the reader: the caller advances once the bytes
+    /// are queued for its client.
+    pub(crate) fn chunk(&self, limit: usize) -> (u64, u64, Vec<u8>) {
+        if self.id.is_none() {
+            let end = self.end();
+            return (end, end, Vec::new());
+        }
+        self.observation.control_output_chunk(self.offset, limit)
+    }
+
+    pub(crate) fn advance(&mut self, offset: u64) {
+        let Some(id) = self.id else {
+            return;
+        };
+        self.offset = self.observation.advance_control_reader(id, offset);
+    }
+
+    /// Stop delivering, and stop holding the pane's journal: the stream is
+    /// off, paused, or its client asked for no output at all. tmux leaves such
+    /// a client out of the minimum that decides what a pane keeps, and out of
+    /// the decision to stop reading the pane.
+    ///
+    /// The reader keeps its place at what the pane has written by now, which is
+    /// where an `off` stream picks up again: what the pane writes while the
+    /// stream is off is the client's as soon as it is back on, for as long as
+    /// the journal's history holds it.
+    pub(crate) fn detach(&mut self) {
+        self.offset = self.end();
+        self.release();
+    }
+
+    fn release(&mut self) {
+        if let Some(id) = self.id.take() {
+            self.observation.release_control_reader(id);
+        }
+    }
+
+    /// Deliver again from where the stream left off, as far back as the
+    /// journal still reaches — tmux's `refresh-client -A %pane:on`.
+    pub(crate) fn resume(&mut self) {
+        if self.id.is_some() {
+            return;
+        }
+        let (id, offset) = self.observation.register_control_reader(self.offset);
+        self.id = Some(id);
+        self.offset = offset;
+    }
+
+    /// Deliver again from what the pane has written by now, which is where
+    /// tmux resumes a paused pane and a client that turned `no-output` off.
+    pub(crate) fn resume_at_end(&mut self) {
+        self.release();
+        self.offset = self.end();
+        self.resume();
+    }
+}
+
+impl Drop for ControlOutputReader {
+    fn drop(&mut self) {
+        self.release();
     }
 }
 
@@ -688,6 +903,7 @@ impl NativePaneObservation {
             revision: Cell::new(0),
             large_scroll_revision: Cell::new(0),
             control_output: RefCell::new(ControlOutputJournal::default()),
+            control_output_resume: Notify::new(),
             modes: Cell::new(PaneModeSnapshot::default()),
             theme_query: Cell::new(false),
             alternate_on: Cell::new(false),
@@ -1039,6 +1255,63 @@ impl NativePaneObservation {
 
     pub(crate) fn control_output_chunk(&self, offset: u64, limit: usize) -> (u64, u64, Vec<u8>) {
         self.control_output.borrow().chunk(offset, limit)
+    }
+
+    /// The oldest output a reader joining this pane now is given.
+    fn control_output_history_start(&self) -> u64 {
+        self.control_output.borrow().history_start()
+    }
+
+    /// Take a place in the journal, returning the registration and the offset
+    /// it actually starts at.
+    fn register_control_reader(&self, offset: u64) -> (u64, u64) {
+        let mut journal = self.control_output.borrow_mut();
+        let id = journal.register(offset);
+        (id, journal.readers[&id])
+    }
+
+    /// Move a reader on, returning where it now stands, and let the pane read
+    /// again if that was what it was waiting for.
+    fn advance_control_reader(&self, id: u64, offset: u64) -> u64 {
+        let (offset, released) = {
+            let mut journal = self.control_output.borrow_mut();
+            let held = journal.backpressured();
+            journal.seek(id, offset);
+            (
+                journal.readers.get(&id).copied().unwrap_or(offset),
+                held && !journal.backpressured(),
+            )
+        };
+        // Only the edge: the pane is parked on this notification whenever it is
+        // held back, and waking it for every chunk a client takes would cost a
+        // read that finds nothing.
+        if released {
+            self.control_output_resume.notify();
+        }
+        offset
+    }
+
+    fn release_control_reader(&self, id: u64) {
+        let released = {
+            let mut journal = self.control_output.borrow_mut();
+            let held = journal.backpressured();
+            journal.release(id);
+            held && !journal.backpressured()
+        };
+        if released {
+            self.control_output_resume.notify();
+        }
+    }
+
+    /// Whether a reader is far enough behind that the pane should stop reading
+    /// its PTY until the reader catches up.
+    pub(crate) fn control_output_backpressured(&self) -> bool {
+        self.control_output.borrow().backpressured()
+    }
+
+    /// What the pane's reader parks on while it is held back.
+    pub(crate) fn control_output_resume(&self) -> Notify {
+        self.control_output_resume.clone()
     }
 
     #[allow(dead_code)]
@@ -2008,6 +2281,18 @@ impl PaneIo {
     /// when tmux arms its five-second ground timer.
     pub(crate) fn awaiting_terminator(&self) -> bool {
         self.observation.awaiting_terminator()
+    }
+
+    /// Whether a control client is far enough behind this pane's output that
+    /// reading more of it would mean dropping what the client has not been
+    /// given yet. The read resumes on [`PaneIo::output_resume`].
+    pub(crate) fn output_backpressured(&self) -> bool {
+        self.observation.control_output_backpressured()
+    }
+
+    /// Signalled when the reader that held this pane back catches up.
+    pub(crate) fn output_resume(&self) -> Notify {
+        self.observation.control_output_resume()
     }
 
     /// The ground timer fired: abandon the sequence whose terminator never came
@@ -3053,10 +3338,10 @@ mod tests {
         assert_eq!(output.since(0), (3, b"abc".to_vec()));
         assert_eq!(output.since(2), (3, b"c".to_vec()));
 
-        output.append(&vec![b'x'; CONTROL_OUTPUT_LIMIT + 5]);
+        output.append(&vec![b'x'; CONTROL_OUTPUT_HISTORY + 5]);
         let (end, retained) = output.since(0);
-        assert_eq!(end, CONTROL_OUTPUT_LIMIT as u64 + 8);
-        assert_eq!(retained.len(), CONTROL_OUTPUT_LIMIT);
+        assert_eq!(end, CONTROL_OUTPUT_HISTORY as u64 + 8);
+        assert_eq!(retained.len(), CONTROL_OUTPUT_HISTORY);
         assert!(retained.iter().all(|byte| *byte == b'x'));
     }
 
@@ -3067,6 +3352,58 @@ mod tests {
         assert_eq!(output.chunk(0, 2), (2, 6, b"ab".to_vec()));
         assert_eq!(output.chunk(2, 3), (5, 6, b"cde".to_vec()));
         assert_eq!(output.chunk(5, 3), (6, 6, b"f".to_vec()));
+        // A chunk spanning both halves of a wrapped ring reads as one run.
+        let mut wrapped = ControlOutputJournal {
+            bytes: VecDeque::with_capacity(8),
+            end: 6,
+            ..ControlOutputJournal::default()
+        };
+        wrapped.bytes.extend(b"def");
+        for byte in b"abc".iter().rev() {
+            wrapped.bytes.push_front(*byte);
+        }
+        assert!(!wrapped.bytes.as_slices().1.is_empty(), "a wrapped ring");
+        assert_eq!(wrapped.chunk(1, 4), (5, 6, b"bcde".to_vec()));
+    }
+
+    /// The history bound is only for output nobody asked for: a registered
+    /// reader keeps everything past its offset, however far behind it is.
+    #[test]
+    fn control_output_journal_keeps_what_a_reader_has_not_taken() {
+        let mut output = ControlOutputJournal::default();
+        let reader = output.register(0);
+        output.append(b"abc");
+        output.append(&vec![b'x'; CONTROL_OUTPUT_HISTORY + 5]);
+
+        let (end, retained) = output.since(0);
+        assert_eq!(end, CONTROL_OUTPUT_HISTORY as u64 + 8);
+        assert_eq!(retained.len(), CONTROL_OUTPUT_HISTORY + 8);
+        assert_eq!(&retained[..3], b"abc");
+        assert!(output.backpressured(), "the reader has taken nothing");
+        // What is kept for the reader that is behind is not history for a
+        // reader joining now.
+        assert_eq!(
+            output.history_start(),
+            output.end - CONTROL_OUTPUT_HISTORY as u64
+        );
+
+        output.seek(reader, end);
+        assert!(!output.backpressured());
+        assert_eq!(output.since(0).1.len(), CONTROL_OUTPUT_HISTORY);
+    }
+
+    /// A reader that gives up its place stops holding the pane back, which is
+    /// what an `off`, paused, or `no-output` stream does.
+    #[test]
+    fn control_output_journal_releases_a_detached_reader() {
+        let mut output = ControlOutputJournal::default();
+        let reader = output.register(0);
+        output.append(&vec![b'x'; CONTROL_OUTPUT_HISTORY * 2]);
+        assert!(output.backpressured());
+
+        output.release(reader);
+        assert!(!output.backpressured());
+        assert_eq!(output.since(0).1.len(), CONTROL_OUTPUT_HISTORY);
     }
 
     /// A BEL that terminates an OSC string is a terminator, not a bell.

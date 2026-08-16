@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use crate::server::pane::PaneIo;
 
-use crate::sync::{select, yield_now, Either, Notify};
+use crate::sync::{maybe, select, yield_now, Either, Notify};
 use hmux_rt::{sleep_until, AsyncFd, Interest, JoinHandle, Readiness, TaskHandle};
 
 /// tmux's ground timer: how long `input.c` waits for the terminator of a
@@ -68,6 +68,9 @@ enum Wakeup {
     Io(Readiness),
     Poke,
     Ground,
+    /// A control client that had fallen behind this pane's output caught up,
+    /// so the reads held back for it can go on.
+    Resume,
 }
 
 /// Drive one pane's PTY on the loop.
@@ -100,23 +103,19 @@ async fn run(tasks: &TaskHandle, io: &mut PaneIo, poke: &Notify, poke_armed: &Ce
     // an observable difference.
     let mut awaiting = false;
     let mut ground_deadline: Option<Instant> = None;
+    let resume = io.output_resume();
     loop {
-        let wakeup = if let Some(deadline) = ground_deadline {
-            match select(
-                select(readiness.readiness(), poke.notified()),
-                sleep_until(tasks, deadline),
-            )
-            .await
-            {
-                Either::First(Either::First(ready)) => Wakeup::Io(ready),
-                Either::First(Either::Second(())) => Wakeup::Poke,
-                Either::Second(()) => Wakeup::Ground,
-            }
-        } else {
-            match select(readiness.readiness(), poke.notified()).await {
-                Either::First(ready) => Wakeup::Io(ready),
-                Either::Second(()) => Wakeup::Poke,
-            }
+        let ground = maybe(ground_deadline.map(|deadline| sleep_until(tasks, deadline)));
+        let wakeup = match select(
+            select(readiness.readiness(), poke.notified()),
+            select(ground, resume.notified()),
+        )
+        .await
+        {
+            Either::First(Either::First(ready)) => Wakeup::Io(ready),
+            Either::First(Either::Second(())) => Wakeup::Poke,
+            Either::Second(Either::First(())) => Wakeup::Ground,
+            Either::Second(Either::Second(())) => Wakeup::Resume,
         };
         match wakeup {
             Wakeup::Ground => {
@@ -129,39 +128,72 @@ async fn run(tasks: &TaskHandle, io: &mut PaneIo, poke: &Notify, poke_armed: &Ce
                 io.drive_writable();
                 poke_armed.set(io.wants_write());
             }
+            // A read held back for a lagging control client resumes here
+            // rather than on readiness: the descriptor stayed readable while
+            // it waited, so its edge is long past.
+            Wakeup::Resume => {
+                if drain_reads(io, &mut awaiting, &mut ground_deadline).await == Draining::Ended {
+                    return;
+                }
+            }
             Wakeup::Io(ready) => {
                 if ready.is_writable() {
                     io.drive_writable();
                     poke_armed.set(io.wants_write());
                 }
-                if ready.intersects(DRAINABLE) {
-                    // Edge-style: read until `WouldBlock` before waiting
-                    // again, yielding after every coalesced chunk so a pane
-                    // flood cannot starve the rest of the loop.
-                    loop {
-                        let result = match io.drive_readable() {
-                            Ok(result) => result,
-                            Err(_) => return,
-                        };
-                        if result.closed {
-                            return;
-                        }
-                        sync_ground_timer(io, &mut awaiting, &mut ground_deadline);
-                        // The timer keeps its place inside a burst: the actor
-                        // dispatched its expiry between read continuations,
-                        // and a task checks the deadline in the same seams.
-                        if expire_if_due(io, &mut awaiting, &mut ground_deadline) {
-                            continue;
-                        }
-                        if !result.continuation {
-                            break;
-                        }
-                        yield_now().await;
-                    }
+                if ready.intersects(DRAINABLE)
+                    && drain_reads(io, &mut awaiting, &mut ground_deadline).await == Draining::Ended
+                {
+                    return;
                 }
             }
         }
         sync_ground_timer(io, &mut awaiting, &mut ground_deadline);
+    }
+}
+
+/// Whether the pane still has a PTY to read.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Draining {
+    Continues,
+    Ended,
+}
+
+/// Read until the PTY has nothing more, or until a control client's backlog
+/// says the rest has to wait.
+///
+/// Edge-style: read until `WouldBlock` before waiting again, yielding after
+/// every coalesced chunk so a pane flood cannot starve the rest of the loop.
+async fn drain_reads(
+    io: &mut PaneIo,
+    awaiting: &mut bool,
+    ground_deadline: &mut Option<Instant>,
+) -> Draining {
+    loop {
+        // Checked before the read, not after: what has been read is already in
+        // the journal, and reading more of a flood a control client has not
+        // taken yet is what used to discard it.
+        if io.output_backpressured() {
+            return Draining::Continues;
+        }
+        let result = match io.drive_readable() {
+            Ok(result) => result,
+            Err(_) => return Draining::Ended,
+        };
+        if result.closed {
+            return Draining::Ended;
+        }
+        sync_ground_timer(io, awaiting, ground_deadline);
+        // The timer keeps its place inside a burst: the actor dispatched its
+        // expiry between read continuations, and a task checks the deadline in
+        // the same seams.
+        if expire_if_due(io, awaiting, ground_deadline) {
+            continue;
+        }
+        if !result.continuation {
+            return Draining::Continues;
+        }
+        yield_now().await;
     }
 }
 
