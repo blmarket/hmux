@@ -791,12 +791,7 @@ impl ServerState {
         name: &str,
         disable_automatic_rename: bool,
     ) -> io::Result<()> {
-        let t = self.resolve(target).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("can't find window: {target}"),
-            )
-        })?;
+        let t = self.resolve_window_target(target)?;
         let session_id = self.sessions[t.session].id;
         let window = self.window_mut(t.session, t.window);
         let window_id = window.id;

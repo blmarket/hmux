@@ -241,6 +241,7 @@ fn enter_mode(
     target: Option<&str>,
     state: &mut ServerState,
     view: ModeView,
+    zoom: bool,
 ) -> CommandResult {
     let Some(target) = target
         .map(str::to_string)
@@ -248,10 +249,21 @@ fn enter_mode(
     else {
         return CommandResult::err("no current session\n");
     };
-    match state.enter_mode_view(&target, view) {
+    if zoom {
+        if let Err(error) = state.push_zoom(&target) {
+            return CommandResult::err(format!("{error}\n"));
+        }
+    }
+    let result = match state.enter_mode_view(&target, view) {
         Ok(()) => CommandResult::ok(""),
         Err(_) => CommandResult::err(format!("{}\n", state.pane_target_error(&target))),
+    };
+    if zoom {
+        if let Err(error) = state.pop_zoom(&target, true) {
+            return CommandResult::err(format!("{error}\n"));
+        }
     }
+    result
 }
 
 fn validate_mode_target(target: Option<&str>, state: &ServerState) -> Result<(), CommandResult> {
@@ -299,6 +311,7 @@ struct ChooseOptions {
     order: Option<String>,
     /// `-r`: negate the comparison the sort order made.
     reversed: bool,
+    zoom: bool,
 }
 
 impl ChooseOptions {
@@ -308,6 +321,7 @@ impl ChooseOptions {
             filter: args.value('f').map(str::to_string),
             order: args.value('O').map(str::to_string),
             reversed: args.has('r'),
+            zoom: args.has('Z'),
         }
     }
 
@@ -610,7 +624,7 @@ impl ChooseTree {
         let mut view = ModeView::list(ModeKind::Tree, "Tree", items);
         // tmux shows the preview unless `-N` asks it not to.
         view.preview = !self.no_preview;
-        enter_mode(self.target.as_deref(), state, view)
+        enter_mode(self.target.as_deref(), state, view, self.options.zoom)
     }
 }
 
@@ -714,6 +728,7 @@ impl ChooseClient {
             self.target.as_deref(),
             state,
             ModeView::list(ModeKind::Client, "Clients", items),
+            self.options.zoom,
         )
     }
 }
@@ -807,6 +822,7 @@ impl ChooseBuffer {
             self.target.as_deref(),
             state,
             ModeView::list(ModeKind::Buffer, "Buffers", items),
+            self.options.zoom,
         )
     }
 }
@@ -949,7 +965,7 @@ impl CustomizeMode {
         // tmux's options mode has no title row above its section tree.
         let mut view = ModeView::list(ModeKind::Customize, "", items);
         view.preview = !self.no_preview;
-        enter_mode(self.target.as_deref(), state, view)
+        enter_mode(self.target.as_deref(), state, view, self.options.zoom)
     }
 }
 
@@ -968,7 +984,7 @@ impl ClockMode {
     }
 
     fn run(self, state: &mut ServerState) -> CommandResult {
-        enter_mode(self.target.as_deref(), state, ModeView::clock())
+        enter_mode(self.target.as_deref(), state, ModeView::clock(), false)
     }
 }
 
@@ -1305,6 +1321,9 @@ impl ListClients {
 
     fn run(self, state: &ServerState, agents: &PaneAgents) -> CommandResult {
         const DEFAULT_FORMAT: &str = "#{client_name}: #{session_name} [#{client_width}x#{client_height} #{client_termname}] #{?client_flags,(,}#{client_flags}#{?client_flags,),}";
+        if self.target.is_none() && state.sessions().is_empty() {
+            return CommandResult::err("no current target\n");
+        }
         let template = self.format.as_deref().unwrap_or(DEFAULT_FORMAT);
         let requested_session = self.target.as_deref();
         let target_session = requested_session.and_then(|target| state.resolve_session(target));
@@ -1666,7 +1685,12 @@ impl SwitchClient {
                 Err(ClientActionResult::NoCurrentClient) => {
                     return CommandResult::err("no current client\n");
                 }
-                Err(_) => return CommandResult::err("can't find client\n"),
+                Err(_) => {
+                    return CommandResult::err(format!(
+                        "can't find client: {}\n",
+                        self.client.as_deref().unwrap_or_default()
+                    ))
+                }
             }
         } else {
             None
@@ -1678,7 +1702,10 @@ impl SwitchClient {
         ) {
             ClientActionResult::Queued => CommandResult::ok(""),
             ClientActionResult::NoCurrentClient => CommandResult::err("no current client\n"),
-            ClientActionResult::TargetNotFound => CommandResult::err("can't find client\n"),
+            ClientActionResult::TargetNotFound => CommandResult::err(format!(
+                "can't find client: {}\n",
+                self.client.as_deref().unwrap_or_default()
+            )),
         }
     }
 }

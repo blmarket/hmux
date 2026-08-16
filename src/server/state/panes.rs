@@ -1410,9 +1410,17 @@ impl ServerState {
             .windows
             .remove(&second_window_id)
             .expect("window present");
+        let first_active = first.active == a.pane;
+        let second_active = second.active == b.pane;
         std::mem::swap(&mut first.panes[a.pane], &mut second.panes[b.pane]);
         first.layout.replace_pane(first_id, second_id);
         second.layout.replace_pane(second_id, first_id);
+        if first_active {
+            second.active = b.pane;
+        }
+        if second_active {
+            first.active = a.pane;
+        }
         resize_panes_to_layout(&mut first)?;
         resize_panes_to_layout(&mut second)?;
         self.windows.insert(first_window_id, first);
@@ -1432,6 +1440,7 @@ impl ServerState {
         &mut self,
         target: &str,
         down: bool,
+        select: bool,
     ) -> io::Result<()> {
         let t = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let session_id = self.sessions[t.session].id;
@@ -1448,7 +1457,9 @@ impl ServerState {
             win.panes.swap(t.pane, neighbour);
             win.layout.swap_panes(first_id, second_id);
             resize_panes_to_layout(win)?;
-            win.active = neighbour;
+            if select {
+                win.active = neighbour;
+            }
             self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
         }
         Ok(())
@@ -1681,6 +1692,28 @@ impl ServerState {
         let zoomed = win.zoomed;
         self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
         Ok(zoomed)
+    }
+
+    pub(crate) fn push_zoom(&mut self, target: &str) -> io::Result<()> {
+        let t = self.resolve_window(target)?;
+        let session_id = self.sessions[t.session].id;
+        let win = self.window_mut(t.session, t.window);
+        if win.zoomed {
+            win.zoomed = false;
+            self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn pop_zoom(&mut self, target: &str, keep: bool) -> io::Result<()> {
+        let t = self.resolve_window(target)?;
+        let session_id = self.sessions[t.session].id;
+        let win = self.window_mut(t.session, t.window);
+        if win.zoomed != keep {
+            win.zoomed = keep;
+            self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
+        }
+        Ok(())
     }
 
     pub(crate) fn resize_pane(

@@ -357,11 +357,10 @@ impl ServerState {
 
     /// `kill-server`: tear down all sessions. A command client sees exit 0.
     pub fn kill_server(&mut self) {
-        let had_sessions = !self.sessions.is_empty();
         self.sessions.clear();
         self.windows.clear();
         self.session_groups.clear();
-        self.request_shutdown_if_became_empty(had_sessions);
+        self.shutdown_requested = true;
         self.invalidate_all_clients(RenderInvalidation::SESSION_GONE);
     }
 

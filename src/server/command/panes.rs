@@ -75,6 +75,7 @@ pub(in crate::server) struct SplitWindow {
     keep: bool,
     /// `-P`: print the new pane.
     print: bool,
+    zoom: bool,
     /// `-c`: the new pane's working directory.
     cwd: Option<String>,
     /// `-e`: environment assignments for the new pane, repeatable.
@@ -103,6 +104,7 @@ impl SplitWindow {
             feed_input: args.has('I'),
             keep: args.has('k'),
             print: args.has('P'),
+            zoom: args.has('Z'),
             cwd: args.value('c').map(str::to_string),
             environment: args.values('e').map(str::to_string).collect(),
             format: args.value('F').map(str::to_string),
@@ -128,6 +130,9 @@ impl SplitWindow {
             Some(target) => target,
             None => return CommandResult::err(format!("{}\n", st.pane_target_error(&target))),
         };
+        if let Err(error) = st.push_zoom(&target) {
+            return CommandResult::err(format!("{error}\n"));
+        }
         // `-d` splits in the background: the new pane is created but the original
         // pane stays active (tmux's default is to follow to the new pane).
         let select = !self.detached;
@@ -213,6 +218,9 @@ impl SplitWindow {
                 new_size,
             )
         };
+        if let Err(error) = st.pop_zoom(&target, self.zoom) {
+            return CommandResult::err(format!("{error}\n"));
+        }
         // `-k` (and `-m format`) keep the pane in place when its command exits:
         // tmux sets the pane's remain-on-exit to `key` plus the format under `-m`.
         if let Ok(pane) = &created {
@@ -702,6 +710,9 @@ pub(in crate::server) struct SwapPane {
     /// `-D`/`-U`: swap with the next/previous neighbour. `-D` wins.
     down: bool,
     up: bool,
+    /// `-d`: do not select the pane after an adjacent swap.
+    detached: bool,
+    zoom: bool,
     /// `-s`/`-t`: the panes to exchange.
     source: Option<String>,
     target: Option<String>,
@@ -712,6 +723,8 @@ impl SwapPane {
         Ok(Self {
             down: args.has('D'),
             up: args.has('U'),
+            detached: args.has('d'),
+            zoom: args.has('Z'),
             source: args.value('s').map(str::to_string),
             target: args.value('t').map(str::to_string),
         })
@@ -725,20 +738,46 @@ impl SwapPane {
         if self.down || self.up {
             let target = self.target.or_else(|| current.clone());
             return match target {
-                Some(target) => match st.swap_pane_neighbour(&target, self.down) {
-                    Ok(()) => CommandResult::ok(""),
-                    Err(error) => CommandResult::err(format!("{error}\n")),
-                },
+                Some(target) => {
+                    if let Err(error) = st.push_zoom(&target) {
+                        return CommandResult::err(format!("{error}\n"));
+                    }
+                    let result =
+                        st.swap_pane_neighbour(&target, self.down, !self.detached);
+                    let zoom_result = st.pop_zoom(&target, self.zoom);
+                    match (result, zoom_result) {
+                        (Ok(()), Ok(())) => CommandResult::ok(""),
+                        (Err(error), _) | (Ok(()), Err(error)) => {
+                            CommandResult::err(format!("{error}\n"))
+                        }
+                    }
+                }
                 None => CommandResult::err("can't establish current session\n"),
             };
         }
         let source = self.source.or_else(|| current.clone());
         let target = self.target.or(current);
         match (source, target) {
-            (Some(source), Some(target)) => match st.swap_pane(&source, &target) {
-                Ok(()) => CommandResult::ok(""),
-                Err(error) => CommandResult::err(format!("{error}\n")),
-            },
+            (Some(source), Some(target)) => {
+                if let Err(error) = st.push_zoom(&source) {
+                    return CommandResult::err(format!("{error}\n"));
+                }
+                if let Err(error) = st.push_zoom(&target) {
+                    let _ = st.pop_zoom(&source, self.zoom);
+                    return CommandResult::err(format!("{error}\n"));
+                }
+                let result = st.swap_pane(&source, &target);
+                let source_zoom = st.pop_zoom(&source, self.zoom);
+                let target_zoom = st.pop_zoom(&target, self.zoom);
+                match (result, source_zoom, target_zoom) {
+                    (Ok(()), Ok(()), Ok(())) => CommandResult::ok(""),
+                    (Err(error), _, _)
+                    | (Ok(()), Err(error), _)
+                    | (Ok(()), Ok(()), Err(error)) => {
+                        CommandResult::err(format!("{error}\n"))
+                    }
+                }
+            }
             _ => CommandResult::err("can't establish current session\n"),
         }
     }
@@ -1354,6 +1393,7 @@ fn parse_size_flag(value: Option<&str>, label: &str) -> Result<Option<u16>, Stri
 pub(in crate::server) struct RotateWindow {
     /// `-D`: rotate the other way.
     down: bool,
+    zoom: bool,
     /// `-t`: the window to rotate.
     target: Option<String>,
 }
@@ -1362,6 +1402,7 @@ impl RotateWindow {
     pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
         Ok(Self {
             down: args.has('D'),
+            zoom: args.has('Z'),
             target: args.value('t').map(str::to_string),
         })
     }
@@ -1371,13 +1412,20 @@ impl RotateWindow {
         let Some(target) = self.target.or_else(|| current_target(st)) else {
             return CommandResult::err("can't establish current session\n");
         };
-        match if self.down {
+        if let Err(error) = st.push_zoom(&target) {
+            return CommandResult::err(format!("{error}\n"));
+        }
+        let result = if self.down {
             st.rotate_window_down(&target)
         } else {
             st.rotate_window(&target)
-        } {
-            Ok(()) => CommandResult::ok(""),
-            Err(error) => command_target_error(error, &target, "window"),
+        };
+        let zoom_result = st.pop_zoom(&target, self.zoom);
+        match (result, zoom_result) {
+            (Ok(()), Ok(())) => CommandResult::ok(""),
+            (Err(error), _) | (Ok(()), Err(error)) => {
+                command_target_error(error, &target, "window")
+            }
         }
     }
 }
@@ -1416,10 +1464,16 @@ impl SelectLayout {
         let Some(target) = self.target.clone().or_else(|| current_target(st)) else {
             return CommandResult::err("can't establish current session\n");
         };
+        if let Err(error) = st.push_zoom(&target) {
+            return CommandResult::err(format!("{error}\n"));
+        }
         let previous_old = st.snapshot_window_layout(&target).ok().flatten();
         let result = self.act(st, &target, previous_old.as_deref());
         if result.exit != 0 {
             st.restore_window_old_layout(&target, previous_old);
+        }
+        if let Err(error) = st.pop_zoom(&target, false) {
+            return CommandResult::err(format!("{error}\n"));
         }
         result
     }

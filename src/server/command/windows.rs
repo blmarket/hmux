@@ -344,11 +344,31 @@ impl RenameWindow {
             .target
             .or_else(|| current_session(st).map(|session| format!("{session}:")));
         match (target, self.new_name) {
-            (Some(target), Some(name)) => match st.rename_window(&target, &name) {
-                Ok(()) => CommandResult::ok(""),
-                Err(error) => CommandResult::err(format!("{error}\n")),
-            },
-            (None, _) => CommandResult::err("can't establish current session\n"),
+            (Some(target), Some(name)) => {
+                let resolved = match st.resolve_window_target(&target) {
+                    Ok(resolved) => resolved,
+                    Err(error) => return CommandResult::err(format!("{error}\n")),
+                };
+                let session = &st.sessions()[resolved.session];
+                let expanded = expand_command_format(
+                    st,
+                    &name,
+                    &vars_full(
+                        st,
+                        session,
+                        resolved.window,
+                        resolved.pane,
+                        &PaneAgents::new(),
+                        st.marked_pane(),
+                    ),
+                    None,
+                );
+                match st.rename_window(&target, &expanded) {
+                    Ok(()) => CommandResult::ok(""),
+                    Err(error) => CommandResult::err(format!("{error}\n")),
+                }
+            }
+            (None, _) => CommandResult::err("no current target\n"),
             (_, None) => {
                 CommandResult::err("command rename-window: too few arguments (need at least 1)\n")
             }
@@ -405,7 +425,7 @@ impl ListWindows {
                 .map(str::to_string)
                 .or_else(|| current_session(st));
             let Some(session) = session else {
-                return CommandResult::err("can't establish current session\n");
+                return CommandResult::err("no current target\n");
             };
             match st.resolve_session(&session) {
                 Some(session) => vec![session],
@@ -477,6 +497,8 @@ pub(in crate::server) struct SelectWindow {
     last: bool,
     next: bool,
     previous: bool,
+    /// `-T`: toggle to the last window when the target is already current.
+    toggle: bool,
     /// `-t`: the window to select.
     target: Option<String>,
 }
@@ -487,6 +509,7 @@ impl SelectWindow {
             last: args.has('l'),
             next: args.has('n'),
             previous: args.has('p'),
+            toggle: args.has('T'),
             target: args.value('t').map(str::to_string),
         })
     }
@@ -501,6 +524,31 @@ impl SelectWindow {
         }
         if self.last {
             return session_command(target, st, ServerState::last_window);
+        }
+        if self.toggle {
+            let target = target
+                .map(str::to_string)
+                .or_else(|| current_target(st));
+            let Some(target) = target else {
+                return CommandResult::err("can't establish current session\n");
+            };
+            let is_current = st
+                .resolve(&target)
+                .is_some_and(|resolved| {
+                    let session = &st.sessions()[resolved.session];
+                    session.active == resolved.window
+                });
+            if is_current {
+                let session = target.split(':').next().unwrap_or(&target);
+                return match st.last_window(session) {
+                    Ok(()) => CommandResult::ok(""),
+                    Err(error) => CommandResult::err(format!("{error}\n")),
+                };
+            }
+            return match st.select_window(&target) {
+                Ok(()) => CommandResult::ok(""),
+                Err(error) => CommandResult::err(format!("{error}\n")),
+            };
         }
         window_command(target, st, ServerState::select_window)
     }
@@ -671,7 +719,19 @@ impl MoveWindow {
         // `-a` (after) / `-b` (before) relocate the window *relative* to the `-t`
         // anchor index rather than onto it. `-b` takes precedence over `-a`.
         let relative = self.after || self.before;
-        match (source, self.target) {
+        let target = self.target.or_else(|| {
+            if !relative {
+                return None;
+            }
+            let session = current_session(st)?;
+            let window = st
+                .sessions()
+                .iter()
+                .find(|candidate| candidate.name == session)
+                .and_then(|candidate| candidate.windows.get(candidate.active))?;
+            Some(format!("{session}:{}", window.index))
+        });
+        match (source, target) {
             (Some(source), Some(target)) => match if relative {
                 st.move_window_relative(&source, &target, !self.before, select)
             } else if self.kill {

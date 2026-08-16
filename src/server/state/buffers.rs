@@ -139,6 +139,13 @@ impl ServerState {
         &self.buffers
     }
 
+    pub(crate) fn automatic_buffer_name(&self) -> Option<&str> {
+        self.buffers
+            .iter()
+            .find(|(name, _)| self.automatic_buffers.contains(name))
+            .map(|(name, _)| name.as_str())
+    }
+
     pub(crate) fn buffer_created(&self, name: &str) -> Option<i64> {
         self.buffer_created.get(name).copied()
     }

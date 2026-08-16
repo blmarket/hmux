@@ -61,19 +61,27 @@ impl SetBuffer {
 
     /// Stores or renames a paste buffer.
     fn run(self, st: &mut ServerState, context: &ClientContext) -> CommandResult {
-        let name = self.buffer.as_deref();
         if let Some(new_name) = self.new_name.as_deref() {
-            return match name {
+            let name = self
+                .buffer
+                .clone()
+                .or_else(|| st.automatic_buffer_name().map(str::to_string));
+            return match name.as_deref() {
                 Some(name) if st.rename_buffer(name, new_name) => CommandResult::ok(""),
                 Some(name) => CommandResult::err(format!("unknown buffer: {name}\n")),
                 None => CommandResult::err("no buffer\n"),
             };
         }
+        let name = self.buffer.as_deref();
         match self.data.as_deref() {
             Some("") => CommandResult::ok(""),
             Some(data) => {
                 if self.append {
-                    st.append_buffer(name, data.as_bytes());
+                    if name.is_some() {
+                        st.append_buffer(name, data.as_bytes());
+                    } else {
+                        st.set_buffer(None, data.as_bytes());
+                    }
                 } else {
                     st.set_buffer(name, data.as_bytes());
                 }
@@ -416,11 +424,12 @@ impl DeleteBuffer {
     fn run(self, st: &mut ServerState) -> CommandResult {
         let name = self
             .buffer
-            .or_else(|| st.buffers().first().map(|(name, _)| name.clone()));
+            .or_else(|| st.automatic_buffer_name().map(str::to_string));
         match name {
             Some(name) if st.delete_buffer(&name) => CommandResult::ok(""),
             Some(name) => CommandResult::err(format!("unknown buffer: {name}\n")),
-            None => CommandResult::err("no buffers\n"),
+            None if st.buffers().is_empty() => CommandResult::err("no buffers\n"),
+            None => CommandResult::err("no buffer\n"),
         }
     }
 }
