@@ -228,7 +228,10 @@ impl TaskRuntime {
     /// Wait for readiness or the nearest deadline, queueing what arrives.
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         // Work in hand caps the wait at zero; so does the nearest deadline.
-        let timeout = if self.shared.woken.borrow().is_empty() {
+        // A spawn that has not been adopted yet is work too: its task has never
+        // run, so it is on no run queue and holds no registration, and blocking
+        // here would strand it until something unrelated wakes the loop.
+        let timeout = if self.pending() == 0 {
             timeout
         } else {
             Some(Duration::ZERO)
@@ -605,6 +608,26 @@ mod tests {
         });
         assert_eq!(output, b"after\n");
         assert_eq!(probe.registered_io(), 0);
+    }
+
+    /// A spawn the loop has not adopted yet is work in hand. The task has
+    /// never been polled, so it holds no registration and no deadline, and
+    /// nothing in the reactor can wake the loop on its behalf: blocking for the
+    /// requested timeout would strand it for that whole interval. The daemon
+    /// spawns a client's actor exactly this way, after its own dispatch.
+    #[test]
+    fn a_spawn_awaiting_adoption_caps_the_wait_at_zero() {
+        let mut runtime = TaskRuntime::new().expect("runtime");
+        runtime.handle().spawn(async {});
+        assert_eq!(runtime.pending(), 1);
+
+        let start = Instant::now();
+        runtime.poll(Some(Duration::from_secs(5))).expect("poll");
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "poll blocked on a pending spawn for {:?}",
+            start.elapsed()
+        );
     }
 
     #[test]
