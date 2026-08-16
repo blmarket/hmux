@@ -50,10 +50,14 @@ pub(crate) struct RunShell {
     pub(super) target: Option<String>,
     /// The command line the child runs.
     pub(super) command: Option<String>,
+    /// Arguments exposed to the command's format expansion as `#{1}`, `#{2}`,
+    /// and so on.
+    operands: Vec<String>,
 }
 
 impl RunShell {
     pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        let positionals = args.positionals();
         Ok(Self {
             background: args.has('b'),
             as_commands: args.has('C'),
@@ -61,8 +65,30 @@ impl RunShell {
             cwd: args.value('c').map(str::to_string),
             delay: args.value('d').map(str::to_string),
             target: args.value('t').map(str::to_string),
-            command: args.positionals().first().cloned(),
+            command: positionals.first().cloned(),
+            operands: positionals.iter().skip(1).cloned().collect(),
         })
+    }
+
+    fn expand_command(&mut self, context: &ExecContext<'_>) {
+        if self.as_commands {
+            return;
+        }
+        let Some(command) = self.command.clone() else {
+            return;
+        };
+        let target = self.target.clone();
+        let operands = self.operands.clone();
+        let mut state = context.state().borrow_mut();
+        let previous = install_command_target_context(&mut state, context.client());
+        self.command = Some(expand_run_shell_command(
+            &command,
+            target.as_deref(),
+            &state,
+            context.agents(),
+            &operands,
+        ));
+        restore_command_target_context(&mut state, previous);
     }
 
     /// How long the job waits before it starts, from `-d`.
@@ -91,7 +117,8 @@ impl RunShell {
         self.target = Some(format!("%{pane_id}"));
     }
 
-    async fn execute(self, context: &mut ExecContext<'_>) -> SharedCommandExecution {
+    async fn execute(mut self, context: &mut ExecContext<'_>) -> SharedCommandExecution {
+        self.expand_command(context);
         if self.background {
             let (command, jobs) = {
                 let state = context.state().borrow_mut();
@@ -275,12 +302,37 @@ pub(super) fn expand_if_cond(
     st: &ServerState,
     agents: &PaneAgents,
 ) -> String {
+    expand_target_format(cond, requested_target, st, agents, &[])
+}
+
+pub(super) fn expand_run_shell_command(
+    command: &str,
+    requested_target: Option<&str>,
+    st: &ServerState,
+    agents: &PaneAgents,
+    operands: &[String],
+) -> String {
+    let positional = operands
+        .iter()
+        .enumerate()
+        .map(|(index, value)| ((index + 1).to_string(), value.clone()))
+        .collect::<Vec<_>>();
+    expand_target_format(command, requested_target, st, agents, &positional)
+}
+
+fn expand_target_format(
+    source: &str,
+    requested_target: Option<&str>,
+    st: &ServerState,
+    agents: &PaneAgents,
+    extra: &[(String, String)],
+) -> String {
     let target = requested_target
         .map(str::to_string)
         .or_else(|| current_target(st));
     if let Some(target) = target {
         if let Some(resolved) = st.resolve(&target) {
-            let vars = vars_full(
+            let mut vars = vars_full(
                 st,
                 &st.sessions()[resolved.session],
                 resolved.window,
@@ -288,16 +340,31 @@ pub(super) fn expand_if_cond(
                 agents,
                 st.marked_pane(),
             );
+            for (name, value) in st.env_iter() {
+                vars.set(name, value);
+            }
+            if let Ok(entries) = st.format_option_entries(&target) {
+                for (name, value) in entries {
+                    vars.set(name, value);
+                }
+            }
+            for (name, value) in extra {
+                vars.set(name.clone(), value.clone());
+            }
             let loops = TreeLoops {
                 st,
                 session: resolved.session,
                 window: resolved.window,
                 agents,
             };
-            return expand_command_format(st, cond, &vars, Some(&loops));
+            return expand_command_format(st, source, &vars, Some(&loops));
         }
     }
-    expand_command_format(st, cond, &Vars::default(), None)
+    let mut vars = Vars::default();
+    for (name, value) in extra {
+        vars.set(name.clone(), value.clone());
+    }
+    expand_command_format(st, source, &vars, None)
 }
 
 // ---- source-file -----------------------------------------------------------
