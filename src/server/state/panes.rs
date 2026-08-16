@@ -755,6 +755,7 @@ impl ServerState {
             target,
             select,
             before,
+            false,
             direction,
             &[shell],
             None,
@@ -767,6 +768,7 @@ impl ServerState {
         target: &str,
         select: bool,
         before: bool,
+        full: bool,
         direction: SplitDirection,
         argv: &[String],
         cwd: Option<&Path>,
@@ -776,7 +778,7 @@ impl ServerState {
             Some(cwd) => PaneSpec::CommandIn(argv.to_vec(), cwd.to_path_buf()),
             None => PaneSpec::Command(argv.to_vec()),
         };
-        self.split_window_direction_with_spec(target, select, before, direction, spec, new_size)
+        self.split_window_direction_with_spec(target, select, before, full, direction, spec, new_size)
     }
 
     pub(crate) fn split_window_direction_with_spec(
@@ -784,6 +786,7 @@ impl ServerState {
         target: &str,
         select: bool,
         before: bool,
+        full: bool,
         direction: SplitDirection,
         spec: PaneSpec,
         new_size: Option<u16>,
@@ -814,9 +817,15 @@ impl ServerState {
         self.next_pane_id += 1;
         let win = self.window_mut(t.session, t.window);
         // With `-b` the new pane lands at the target pane's index, pushing it (and
-        // everything after) up; otherwise it follows the target. The target
-        // pane is the `-t` pane part, or the active pane when none is given.
-        let insert_at = if before {
+        // everything after) up; otherwise it follows the target. For `-f` (fullsize),
+        // tmux inserts at the head (with `-b`) or tail (without `-b`) of the window's panes.
+        let insert_at = if full {
+            if before {
+                0
+            } else {
+                win.panes.len()
+            }
+        } else if before {
             match pane_part {
                 Some(_) => t.pane,
                 None => win.active,
@@ -827,10 +836,13 @@ impl ServerState {
         let old_active = win.active;
         let target_index = t.pane;
         let target_id = win.panes[target_index].id;
-        if !win
-            .layout
-            .split_sized(target_id, pane_id, direction, before, new_size)
-        {
+        let split_ok = if full {
+            win.layout.split_full(pane_id, direction, before, new_size)
+        } else {
+            win.layout
+                .split_sized(target_id, pane_id, direction, before, new_size)
+        };
+        if !split_ok {
             return Err(io::Error::other("target pane is absent from layout"));
         }
         win.panes.insert(
@@ -1286,7 +1298,15 @@ impl ServerState {
     /// 3.7b, `-b` changes layout geometry but not this observable list order.
     /// Emptying the source window destroys it. Reports `can't find pane` on a
     /// miss.
-    pub fn move_pane(&mut self, src: &str, dst: &str, before: bool) -> io::Result<()> {
+    pub(crate) fn move_pane(
+        &mut self,
+        src: &str,
+        dst: &str,
+        before: bool,
+        select: bool,
+        direction: SplitDirection,
+        new_size: Option<u16>,
+    ) -> io::Result<()> {
         let s = self.resolve(src).ok_or_else(|| pane_not_found(src))?;
         let (dst_window_target, _) = split_pane_target(dst);
         // Validate the destination window exists before mutating the source.
@@ -1323,6 +1343,9 @@ impl ServerState {
             }
             (node, empty)
         };
+        if self.marked_pane_id == Some(node.id) {
+            self.marked_pane_id = None;
+        }
         if source_empty {
             self.destroy_window_id(source_window_id);
         }
@@ -1335,7 +1358,6 @@ impl ServerState {
         let layout_target_id =
             target_id.unwrap_or_else(|| win.panes.get(win.active).map_or(node.id, |pane| pane.id));
         // tmux 3.7b inserts after the target in its pane queue even for `-b`.
-        // The relocated pane becomes active either way.
         let insert_at = match target_id {
             Some(id) => win
                 .panes
@@ -1345,11 +1367,28 @@ impl ServerState {
                 .unwrap_or(win.panes.len()),
             None => win.panes.len(),
         };
-        win.last_pane = Some(win.active);
-        win.layout
-            .split(layout_target_id, node.id, SplitDirection::TopBottom, before);
+        let old_active = win.active;
+        if !win
+            .layout
+            .split_sized(layout_target_id, node.id, direction, before, new_size)
+        {
+            return Err(io::Error::other("target pane is absent from layout"));
+        }
         win.panes.insert(insert_at, node);
-        win.active = insert_at;
+        let shifted_old = if insert_at <= old_active {
+            old_active + 1
+        } else {
+            old_active
+        };
+        let window_id = win.id;
+        let active_changed = if select {
+            win.last_pane = Some(shifted_old);
+            win.set_active_pane(insert_at);
+            true
+        } else {
+            win.active = shifted_old;
+            false
+        };
         resize_panes_to_layout(win)?;
         self.remove_unlinked_windows();
         if self
@@ -1370,6 +1409,10 @@ impl ServerState {
                 RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
             );
         }
+        if active_changed {
+            self.notify_window("window-pane-changed", window_id);
+        }
+        self.notify_window("window-layout-changed", window_id);
         Ok(())
     }
 
@@ -1694,25 +1737,33 @@ impl ServerState {
         Ok(zoomed)
     }
 
-    pub(crate) fn push_zoom(&mut self, target: &str) -> io::Result<()> {
-        let t = self.resolve_window(target)?;
-        let session_id = self.sessions[t.session].id;
-        let win = self.window_mut(t.session, t.window);
+    pub(crate) fn push_zoom_at(&mut self, session: usize, window: usize) {
+        let session_id = self.sessions[session].id;
+        let win = self.window_mut(session, window);
         if win.zoomed {
             win.zoomed = false;
             self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
         }
-        Ok(())
     }
 
-    pub(crate) fn pop_zoom(&mut self, target: &str, keep: bool) -> io::Result<()> {
-        let t = self.resolve_window(target)?;
-        let session_id = self.sessions[t.session].id;
-        let win = self.window_mut(t.session, t.window);
+    pub(crate) fn pop_zoom_at(&mut self, session: usize, window: usize, keep: bool) {
+        let session_id = self.sessions[session].id;
+        let win = self.window_mut(session, window);
         if win.zoomed != keep {
             win.zoomed = keep;
             self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
         }
+    }
+
+    pub(crate) fn push_zoom(&mut self, target: &str) -> io::Result<()> {
+        let t = self.resolve_window_target(target)?;
+        self.push_zoom_at(t.session, t.window);
+        Ok(())
+    }
+
+    pub(crate) fn pop_zoom(&mut self, target: &str, keep: bool) -> io::Result<()> {
+        let t = self.resolve_window_target(target)?;
+        self.pop_zoom_at(t.session, t.window, keep);
         Ok(())
     }
 

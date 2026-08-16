@@ -455,12 +455,42 @@ pub(super) fn expand_time_with_jobs(
     )
 }
 
+pub(super) fn expand_time_with_jobs_verbose(
+    template: &str,
+    vars: &Vars,
+    ls: Option<&dyn LoopSource>,
+    jobs: Option<&dyn FormatJobs>,
+    tree: Option<&dyn FormatTree>,
+) -> (String, String) {
+    let trace = std::cell::RefCell::new(Vec::new());
+    let context = BasicContext {
+        loops: ls,
+        jobs,
+        tree,
+    };
+    let time_expanded = expand_time_string(template);
+    let expander = Expander {
+        context: &context,
+        trace: Some(&trace),
+    };
+    let result = expander.expand(&time_expanded, vars, 0);
+    let mut trace_out = trace.into_inner().join("\n");
+    if !trace_out.is_empty() {
+        trace_out.push('\n');
+    }
+    (result, trace_out)
+}
+
 pub(super) fn expand_with_context(
     template: &str,
     vars: &Vars,
     context: &dyn FormatContext,
 ) -> String {
-    Expander { context }.expand(template, vars, 0)
+    Expander {
+        context,
+        trace: None,
+    }
+    .expand(template, vars, 0)
 }
 
 pub(super) fn expand_time_with_context(
@@ -468,11 +498,16 @@ pub(super) fn expand_time_with_context(
     vars: &Vars,
     context: &dyn FormatContext,
 ) -> String {
-    Expander { context }.expand(&expand_time_string(template), vars, 0)
+    Expander {
+        context,
+        trace: None,
+    }
+    .expand(&expand_time_string(template), vars, 0)
 }
 
 struct Expander<'a> {
     context: &'a dyn FormatContext,
+    trace: Option<&'a std::cell::RefCell<Vec<String>>>,
 }
 
 impl Expander<'_> {
@@ -483,6 +518,11 @@ impl Expander<'_> {
     fn expand(&self, template: &str, vars: &Vars, depth: usize) -> String {
         if depth >= 100 {
             return String::new();
+        }
+        if depth == 0 {
+            if let Some(t) = self.trace {
+                t.borrow_mut().push(format!("# expanding format: {template}"));
+            }
         }
         let mut out = String::with_capacity(template.len());
         let bytes = template.as_bytes();
@@ -516,7 +556,15 @@ impl Expander<'_> {
                     // `#{…}` inside conditionals/comparisons are captured whole.
                     if let Some(end) = find_close(bytes, i + 2) {
                         let content = &template[i + 2..end];
-                        out.push_str(&self.eval_directive(content, vars, depth + 1));
+                        if let Some(t) = self.trace {
+                            t.borrow_mut().push(format!("# found #{{}}: {content}"));
+                        }
+                        let evaluated = self.eval_directive(content, vars, depth + 1);
+                        if let Some(t) = self.trace {
+                            t.borrow_mut()
+                                .push(format!("# replaced '{content}' with '{evaluated}'"));
+                        }
+                        out.push_str(&evaluated);
                         i = end + 1;
                     } else {
                         // Unterminated `#{` — emit the rest verbatim.
@@ -549,6 +597,11 @@ impl Expander<'_> {
                     out.push('#');
                     i += 1;
                 }
+            }
+        }
+        if depth == 0 {
+            if let Some(t) = self.trace {
+                t.borrow_mut().push(format!("# result is: {out}"));
             }
         }
         out
@@ -771,7 +824,15 @@ impl Expander<'_> {
             return value;
         }
         // Plain variable lookup (unknown → empty).
-        self.lookup(vars, content).unwrap_or_default()
+        let val = self.lookup(vars, content);
+        if let Some(t) = self.trace {
+            if let Some(ref v) = val {
+                t.borrow_mut().push(format!("# format '{content}' found: {v}"));
+            } else {
+                t.borrow_mut().push(format!("# format '{content}' not found"));
+            }
+        }
+        val.unwrap_or_default()
     }
 }
 

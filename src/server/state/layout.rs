@@ -338,6 +338,7 @@ impl LayoutCell {
         }
     }
 
+    #[allow(dead_code)]
     pub(super) fn split(
         &mut self,
         target_id: u32,
@@ -426,6 +427,67 @@ impl LayoutCell {
                 self.fix_offsets();
             }
             changed
+        }
+    }
+
+    /// Full-window split: split the entire layout tree along `direction`
+    /// rather than a single pane leaf (`split-window -f`).
+    pub(super) fn split_full(
+        &mut self,
+        new_id: u32,
+        direction: SplitDirection,
+        before: bool,
+        new_size: Option<u16>,
+    ) -> bool {
+        let total = self.rect();
+        let (first, second) = split_axis_sized(total.axis(direction), new_size, before);
+        let old_size = if before { second } else { first };
+        let new_pane_size = if before { first } else { second };
+
+        match self {
+            Self::Split {
+                direction: dir,
+                children,
+                rect,
+            } if *dir == direction => {
+                let mut new_rect = *rect;
+                new_rect.set_axis(direction, new_pane_size);
+                let new_leaf = Self::Pane {
+                    pane_id: new_id,
+                    rect: new_rect,
+                };
+                let insert_at = if before { 0 } else { children.len() };
+                children.insert(insert_at, new_leaf);
+                let target_width = total.width;
+                let target_height = total.height;
+                self.fix_offsets();
+                self.resize(target_width, target_height);
+                true
+            }
+            _ => {
+                let mut old = self.clone();
+                let mut old_target_rect = total;
+                old_target_rect.set_axis(direction, old_size);
+                old.resize(old_target_rect.width, old_target_rect.height);
+
+                let mut new_rect = total;
+                new_rect.set_axis(direction, new_pane_size);
+                let new_leaf = Self::Pane {
+                    pane_id: new_id,
+                    rect: new_rect,
+                };
+                *self = Self::Split {
+                    direction,
+                    rect: total,
+                    children: if before {
+                        vec![new_leaf, old]
+                    } else {
+                        vec![old, new_leaf]
+                    },
+                };
+                self.fix_offsets();
+                true
+            }
         }
     }
 

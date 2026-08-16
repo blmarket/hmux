@@ -7,7 +7,7 @@ pub(in crate::server) enum Command {
     ListCommands(ListCommands),
     Start,
     Kill,
-    Access,
+    Access(ServerAccess),
     ShowMessages(ShowMessages),
     Lock,
     LockSession(LockSession),
@@ -22,7 +22,7 @@ impl Command {
                 context.state.kill_server();
                 CommandResult::ok("")
             }
-            Self::Access => CommandResult::err("server-access is not supported\n"),
+            Self::Access(command) => command.execute(context.state),
             Self::ShowMessages(command) => command.execute(context.state),
             Self::Lock => {
                 context.state.lock_all_clients();
@@ -222,5 +222,54 @@ impl LockSession {
             Ok(()) => CommandResult::ok(""),
             Err(error) => CommandResult::err(format!("{error}\n")),
         }
+    }
+}
+
+/// `server-access [-adglrw] [-t target-pane] [user|group]`.
+#[derive(Clone, Debug)]
+pub(in crate::server) struct ServerAccess {
+    list: bool,
+    user: Option<String>,
+}
+
+impl ServerAccess {
+    pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
+        Ok(Self {
+            list: args.has('l'),
+            user: args.positionals().first().cloned(),
+        })
+    }
+
+    fn execute(self, _st: &mut ServerState) -> CommandResult {
+        if self.list {
+            let uid = unsafe { libc::getuid() };
+            let user_name = unsafe {
+                let pw = libc::getpwuid(uid);
+                if pw.is_null() {
+                    "unknown".to_string()
+                } else {
+                    std::ffi::CStr::from_ptr((*pw).pw_name)
+                        .to_str()
+                        .unwrap_or("unknown")
+                        .to_string()
+                }
+            };
+            return CommandResult::ok(format!("{user_name} (W)\n"));
+        }
+        let Some(user) = self.user.as_deref() else {
+            return CommandResult::err("missing user argument\n");
+        };
+        let c_user = match std::ffi::CString::new(user) {
+            Ok(c_user) => c_user,
+            Err(_) => return CommandResult::err(format!("unknown user: {user}\n")),
+        };
+        let exists = unsafe {
+            let pw = libc::getpwnam(c_user.as_ptr());
+            !pw.is_null()
+        };
+        if !exists {
+            return CommandResult::err(format!("unknown user: {user}\n"));
+        }
+        CommandResult::ok("")
     }
 }

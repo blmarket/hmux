@@ -61,7 +61,11 @@ impl RunShell {
             cwd: args.value('c').map(str::to_string),
             delay: args.value('d').map(str::to_string),
             target: args.value('t').map(str::to_string),
-            command: args.positionals().first().cloned(),
+            command: if args.positionals().is_empty() {
+                None
+            } else {
+                Some(args.positionals().join(" "))
+            },
         })
     }
 
@@ -94,9 +98,19 @@ impl RunShell {
     async fn execute(self, context: &mut ExecContext<'_>) -> SharedCommandExecution {
         if self.background {
             let (command, jobs) = {
-                let state = context.state().borrow_mut();
+                let mut state = context.state().borrow_mut();
+                let previous = install_command_target_context(&mut state, context.client());
                 let mut command = self;
+                if let Some(cmd) = command.command.take() {
+                    command.command = Some(expand_if_cond(
+                        &cmd,
+                        command.target.as_deref(),
+                        &state,
+                        context.agents(),
+                    ));
+                }
                 command.pin_view_target(&state);
+                restore_command_target_context(&mut state, previous);
                 let jobs = state.background_job_registry();
                 (command, jobs)
             };
@@ -133,10 +147,20 @@ impl RunShell {
             };
         }
         let (command, job_context) = {
-            let state = context.state().borrow_mut();
+            let mut state = context.state().borrow_mut();
+            let previous = install_command_target_context(&mut state, context.client());
             let mut command = self;
+            if let Some(cmd) = command.command.take() {
+                command.command = Some(expand_if_cond(
+                    &cmd,
+                    command.target.as_deref(),
+                    &state,
+                    context.agents(),
+                ));
+            }
             command.pin_view_target(&state);
             let job_context = context.client().with_job_environment(&state);
+            restore_command_target_context(&mut state, previous);
             (command, job_context)
         };
         let completion = suspend::run_shell(context.tasks(), command, job_context).await;
@@ -232,32 +256,42 @@ impl IfShell {
                 "if-shell: too few arguments\n",
             ));
         };
-        if self.background {
-            // The branch is a command line for the loop to run detached; a `-F`
-            // condition is known now, a shell one only once its child exits.
-            let request = if self.format {
-                let matched = self.matches_format(condition, context);
-                BackgroundCommandRequest::Ready {
+        if self.format {
+            let matched = self.matches_format(condition, context);
+            if self.background {
+                let request = BackgroundCommandRequest::Ready {
                     command: self.branch(matched).map(str::to_string),
                     context: context.client().clone(),
-                }
-            } else {
-                BackgroundCommandRequest::IfShell {
-                    condition: condition.to_string(),
-                    then_command: self.branch(true).map(str::to_string),
-                    else_command: self.branch(false).map(str::to_string),
-                    context: context.client().clone(),
-                }
+                };
+                let mut result = CommandResult::ok("");
+                result.background_commands.push(request);
+                return SharedCommandExecution::completed(result);
+            }
+            return self.plan_branch(matched, context);
+        }
+        let condition = {
+            let mut state = context.state().borrow_mut();
+            let previous = install_command_target_context(&mut state, context.client());
+            let expanded = expand_if_cond(
+                condition,
+                self.target.as_deref(),
+                &state,
+                context.agents(),
+            );
+            restore_command_target_context(&mut state, previous);
+            expanded
+        };
+        if self.background {
+            let request = BackgroundCommandRequest::IfShell {
+                condition,
+                then_command: self.branch(true).map(str::to_string),
+                else_command: self.branch(false).map(str::to_string),
+                context: context.client().clone(),
             };
             let mut result = CommandResult::ok("");
             result.background_commands.push(request);
             return SharedCommandExecution::completed(result);
         }
-        if self.format {
-            let matched = self.matches_format(condition, context);
-            return self.plan_branch(matched, context);
-        }
-        let condition = condition.to_string();
         let job_context = {
             let state = context.state().borrow_mut();
             context.client().with_job_environment(&state)
@@ -460,16 +494,11 @@ impl SourceFile {
                                 } else {
                                     format!("{location}: {diagnostic}")
                                 };
-                                if self.parse_only {
-                                    out.stdout.push_str(&diagnostic);
-                                    out.stdout.push('\n');
-                                    out.exit = 1;
-                                    out.continue_queue = true;
-                                } else {
-                                    out.append_stdout(&result);
-                                    out.stderr.push_str(&result.stderr);
-                                    out.exit = 1;
-                                    out.continue_queue = true;
+                                out.stdout.push_str(&diagnostic);
+                                out.stdout.push('\n');
+                                out.exit = 1;
+                                out.continue_queue = true;
+                                if !self.parse_only {
                                     let mut state = state.borrow_mut();
                                     state.push_config_error(diagnostic);
                                 }

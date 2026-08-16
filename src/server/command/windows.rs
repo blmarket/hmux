@@ -24,7 +24,7 @@ impl Command {
     pub(super) fn execute(self, context: &mut CommandContext<'_>) -> CommandResult {
         let st = &mut *context.state;
         match self {
-            Self::Find(command) => command.execute(st),
+            Self::Find(command) => command.execute(st, context.agents),
             Self::New(command) => command.execute(st, context.client),
             Self::Kill(command) => command.execute(st),
             Self::Rename(command) => command.execute(st),
@@ -83,6 +83,12 @@ fn session_command(
 /// `find-window [-CiNrTZ] [-t target-pane] match-string`.
 #[derive(Clone, Debug)]
 pub(in crate::server) struct FindWindow {
+    content: bool,
+    ignore_case: bool,
+    name: bool,
+    regex: bool,
+    title: bool,
+    zoom: bool,
     /// `-t`: the pane the results are shown in.
     target: Option<String>,
     pattern: Option<String>,
@@ -91,55 +97,68 @@ pub(in crate::server) struct FindWindow {
 impl FindWindow {
     pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
         Ok(Self {
+            content: args.has('C'),
+            ignore_case: args.has('i'),
+            name: args.has('N'),
+            regex: args.has('r'),
+            title: args.has('T'),
+            zoom: args.has('Z'),
             target: args.value('t').map(str::to_string),
             pattern: args.positionals().first().cloned(),
         })
     }
 
-    fn execute(self, state: &mut ServerState) -> CommandResult {
+    fn execute(self, state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
         let Some(pattern) = self.pattern.as_deref() else {
             return CommandResult::err("command find-window: too few arguments (need at least 1)\n");
         };
-        let folded = pattern.to_lowercase();
-        let Some(target) = self.target.clone().or_else(|| current_target(state)) else {
-            return CommandResult::err("no current session\n");
+        let mut c = self.content;
+        let mut n = self.name;
+        let mut t = self.title;
+        if !c && !n && !t {
+            c = true;
+            n = true;
+            t = true;
+        }
+        let star = if self.regex { "" } else { "*" };
+        let suffix = match (self.regex, self.ignore_case) {
+            (true, true) => "/ri",
+            (true, false) => "/r",
+            (false, true) => "/i",
+            (false, false) => "",
         };
-        if state.resolve(&target).is_none() {
-            return CommandResult::err(format!("{}\n", state.pane_target_error(&target)));
-        }
-        let mut items = Vec::new();
-        for session in state.sessions() {
-            for (position, link) in session.windows.iter().enumerate() {
-                let window = state.session_window(session, position);
-                if !window.name.to_lowercase().contains(&folded) {
-                    continue;
-                }
-                items.push(ModeItem {
-                    tagged: false,
-                    preview_target: None,
-                    depth: 0,
-                    expanded: None,
-                    label: format!("{}:{} {}", session.name, link.index, window.name),
-                    command: vec![
-                        "select-window".to_string(),
-                        "-t".to_string(),
-                        format!("{}:{}", session.name, link.index),
-                    ],
-                    prompt_target: None,
-                    edit: None,
-                });
-            }
-        }
-        if items.is_empty() {
-            return CommandResult::ok("");
-        }
-        match state.enter_mode_view(
-            &target,
-            ModeView::list(ModeKind::Tree, format!("Find: {pattern}"), items),
-        ) {
-            Ok(()) => CommandResult::ok(""),
-            Err(_) => CommandResult::err(format!("{}\n", state.pane_target_error(&target))),
-        }
+        let s = pattern;
+        let filter = if c && n && t {
+            format!("#{{||:#{{C{suffix}:{s}}},#{{||:#{{m{suffix}:{star}{s}{star},#{{window_name}}}},#{{m{suffix}:{star}{s}{star},#{{pane_title}}}}}}}}")
+        } else if c && n {
+            format!("#{{||:#{{C{suffix}:{s}}},#{{m{suffix}:{star}{s}{star},#{{window_name}}}}}}")
+        } else if c && t {
+            format!("#{{||:#{{C{suffix}:{s}}},#{{m{suffix}:{star}{s}{star},#{{pane_title}}}}}}")
+        } else if n && t {
+            format!("#{{||:#{{m{suffix}:{star}{s}{star},#{{window_name}}}},#{{m{suffix}:{star}{s}{star},#{{pane_title}}}}}}")
+        } else if c {
+            format!("#{{C{suffix}:{s}}}")
+        } else if n {
+            format!("#{{m{suffix}:{star}{s}{star},#{{window_name}}}}")
+        } else {
+            format!("#{{m{suffix}:{star}{s}{star},#{{pane_title}}}}")
+        };
+
+        let choose_tree = clients::ChooseTree {
+            no_preview: false,
+            sessions_only: false,
+            windows_only: false,
+            target: self.target,
+            options: clients::ChooseOptions {
+                reversed: false,
+                zoom: self.zoom,
+                format: None,
+                filter: Some(filter),
+                order: None,
+            },
+            template: None,
+        };
+        choose_tree.run(state, agents)
     }
 }
 
@@ -650,7 +669,15 @@ impl SwapWindow {
     /// Exchanges two windows' contents (keeping their indices). Missing
     /// `-s`/`-t` default to the current session's active window.
     fn execute(self, st: &mut ServerState) -> CommandResult {
-        let source = self.source.or_else(|| current_target(st));
+        let source = self
+            .source
+            .or_else(|| {
+                st.marked_pane().and_then(|id| {
+                    let target = st.resolve(&format!("%{id}"))?;
+                    Some(format!("@{}", st.sessions()[target.session].windows[target.window].id))
+                })
+            })
+            .or_else(|| current_target(st));
         let target = self.target.or_else(|| current_target(st));
         match (source, target) {
             (Some(source), Some(target)) => match st.swap_window(&source, &target, self.select) {

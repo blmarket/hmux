@@ -902,6 +902,7 @@ mod tests {
                 "0",
                 true,
                 false,
+                false,
                 SplitDirection::LeftRight,
                 PaneSpec::Inert,
                 None,

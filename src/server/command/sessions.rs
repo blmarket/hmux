@@ -517,6 +517,9 @@ impl AttachSession {
     /// Over the command path there is no tty to attach, so a resolvable target
     /// still fails the way real tmux does.
     fn execute(self, st: &ServerState) -> CommandResult {
+        if st.sessions().is_empty() {
+            return CommandResult::err("no sessions\n");
+        }
         let target = self.target.as_deref().unwrap_or("0");
         if st.find(target).is_none() {
             CommandResult::err(format!("can't find session: {target}\n"))

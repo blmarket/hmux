@@ -726,6 +726,7 @@ impl PopupOverlay {
                     target,
                     true,
                     false,
+                    false,
                     direction,
                     super::super::state::PaneSpec::Existing(Box::new(pane)),
                     None,
