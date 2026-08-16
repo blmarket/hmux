@@ -55,11 +55,27 @@ struct Override {
 /// costs to store.
 static OVERRIDES: RwLock<Vec<Override>> = RwLock::new(Vec::new());
 
+/// Whether any override reaches into printable ASCII, which is the only thing
+/// that can disagree with the fast path in [`codepoint_width`]. Reading the
+/// override list costs an atomic read-modify-write on the `RwLock` plus a scan,
+/// per character; this is what lets the common case skip both.
+static ASCII_OVERRIDDEN: AtomicBool = AtomicBool::new(false);
+
+/// The printable ASCII range, which the tables below give width one throughout
+/// and the built-in overrides do not mention at all.
+const ASCII_PRINTABLE: std::ops::RangeInclusive<u32> = 0x20..=0x7E;
+
 /// Rebuild the overrides from the `codepoint-widths` array. Entries that do not
 /// parse are dropped, as tmux drops them.
 pub fn set_codepoint_widths<'a>(entries: impl IntoIterator<Item = &'a str>) {
-    let parsed = entries.into_iter().filter_map(parse_override).collect();
+    let parsed: Vec<Override> = entries.into_iter().filter_map(parse_override).collect();
+    let ascii = parsed
+        .iter()
+        .any(|entry| entry.start <= *ASCII_PRINTABLE.end() && entry.end >= *ASCII_PRINTABLE.start());
     if let Ok(mut overrides) = OVERRIDES.write() {
+        // Under the write lock, so no reader sees the flag and the list
+        // disagree about whether ASCII is spoken for.
+        ASCII_OVERRIDDEN.store(ascii, Ordering::Relaxed);
         *overrides = parsed;
     }
 }
@@ -108,6 +124,13 @@ fn override_width(codepoint: u32) -> Option<u8> {
 /// UTF-8 decoder would never hand to the width lookup in the first place.
 #[must_use]
 pub fn codepoint_width(codepoint: u32) -> u8 {
+    // Pane output is overwhelmingly printable ASCII, and every lookup below
+    // agrees it is one cell wide: the built-in overrides start at U+261D, and
+    // the generated table has a single `0x20..=0x7E` run. So answer it here
+    // unless `codepoint-widths` has claimed some of that range.
+    if ASCII_PRINTABLE.contains(&codepoint) && !ASCII_OVERRIDDEN.load(Ordering::Relaxed) {
+        return 1;
+    }
     // `codepoint-widths` goes into the same cache tmux consults first, on top
     // of the built-in entries, so an override beats both of the steps below.
     if let Some(width) = override_width(codepoint) {
@@ -134,8 +157,13 @@ pub fn codepoint_width(codepoint: u32) -> u8 {
 mod tests {
     use super::*;
 
+    /// `codepoint-widths` is process-wide, so the tests that set it and the
+    /// tests that read the range it can cover take turns.
+    static ASCII: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn codepoint_width_matches_the_tmux_oracle() {
+        let _guard = ASCII.lock();
         assert_eq!(codepoint_width('a' as u32), 1);
         assert_eq!(codepoint_width('界' as u32), 2);
         assert_eq!(codepoint_width(0x0301), 0); // combining acute accent
@@ -180,6 +208,25 @@ mod tests {
         // And it widens emoji that utf8proc leaves narrow.
         assert_eq!(codepoint_width(0x261D), 2); // white up pointing index
         assert_eq!(codepoint_width(0x270A), 2); // raised fist
+    }
+
+    /// The ASCII fast path is a shortcut through the tables, not through
+    /// `codepoint-widths`: an entry that names printable ASCII still wins, and
+    /// the shortcut comes back once the option no longer covers it.
+    #[test]
+    fn a_codepoint_widths_entry_still_beats_the_ascii_fast_path() {
+        let _guard = ASCII.lock();
+        set_codepoint_widths(["U+0061=2"]);
+        assert_eq!(codepoint_width('a' as u32), 2);
+        // A range that merely straddles ASCII counts too, so the flag is not
+        // fooled by an entry that starts below the printable range.
+        set_codepoint_widths(["U+0001-U+FFFF=0"]);
+        assert_eq!(codepoint_width('a' as u32), 0);
+        // An override elsewhere leaves ASCII to the fast path.
+        set_codepoint_widths(["U+4E00=1"]);
+        assert_eq!(codepoint_width('a' as u32), 1);
+        set_codepoint_widths(std::iter::empty());
+        assert_eq!(codepoint_width('a' as u32), 1);
     }
 
     #[test]
