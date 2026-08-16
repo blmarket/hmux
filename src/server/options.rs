@@ -19,7 +19,7 @@
 //! global unsets reproduce the tmux catalog. Regenerate from a running tmux if
 //! the pinned version changes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One table of option values. Local object tables are sparse; global tables
 /// contain the modeled defaults for their scope.
@@ -160,18 +160,27 @@ impl<'a> OptionsView<'a> {
     pub(crate) fn iter_effective(&self) -> impl Iterator<Item = (&'a str, &'a str)> {
         let mut entries: BTreeMap<&'a str, &'a str> = BTreeMap::new();
         for layer in self.layers.into_iter().rev().flatten() {
-            let array_bases = layer
-                .iter()
-                .filter_map(|(name, _)| {
-                    let (base, _) = parse_option_name(name)?;
-                    (option_kind(base) == Some(OptionKind::Array)).then_some(base)
-                })
-                .collect::<Vec<_>>();
-            entries.retain(|name, _| {
-                parse_option_name(name)
-                    .map(|(base, _)| !array_bases.contains(&base))
-                    .unwrap_or(true)
-            });
+            // A layer holding any entry of an array replaces that array whole,
+            // so the bases it names have to go from what the layers behind it
+            // contributed. There is nothing to drop while nothing has been
+            // contributed — which is the first layer, every time, and the one
+            // carrying the whole default catalog.
+            if !entries.is_empty() {
+                let array_bases: BTreeSet<&str> = layer
+                    .iter()
+                    .filter_map(|(name, _)| {
+                        let (base, _) = parse_option_name(name)?;
+                        (option_kind(base) == Some(OptionKind::Array)).then_some(base)
+                    })
+                    .collect();
+                if !array_bases.is_empty() {
+                    entries.retain(|name, _| {
+                        parse_option_name(name)
+                            .map(|(base, _)| !array_bases.contains(base))
+                            .unwrap_or(true)
+                    });
+                }
+            }
             for (name, value) in layer.iter() {
                 entries.insert(name, value);
             }
