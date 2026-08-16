@@ -295,12 +295,27 @@ fn expand_option_name_argument(
     expand_command_format(st, argument, &vars, None)
 }
 
-fn resolve_option_argument(argument: &str) -> Option<(&str, Option<u32>)> {
-    let (name, index) = options::parse_option_name(argument)?;
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum OptionArgumentResult<'a> {
+    Resolved(&'a str, Option<u32>),
+    Ambiguous,
+    Invalid,
+}
+
+fn resolve_option_argument(argument: &str) -> OptionArgumentResult<'_> {
+    let Some((name, index)) = options::parse_option_name(argument) else {
+        return OptionArgumentResult::Invalid;
+    };
     if name.starts_with('@') {
-        Some((name, index))
+        OptionArgumentResult::Resolved(name, index)
     } else {
-        options::resolve_option_name(argument).map(|(resolved, index)| (resolved as &str, index))
+        match options::resolve_option_name(argument) {
+            options::OptionResolveResult::Found(resolved, index) => {
+                OptionArgumentResult::Resolved(resolved, index)
+            }
+            options::OptionResolveResult::Ambiguous => OptionArgumentResult::Ambiguous,
+            options::OptionResolveResult::Invalid => OptionArgumentResult::Invalid,
+        }
     }
 }
 
@@ -352,15 +367,12 @@ fn tmux_escape_argument(value: &str) -> String {
             '\u{1b}' => escaped.push_str("\\e"),
             '\\' => escaped.push_str("\\\\"),
             '"' if quote == Some('"') => escaped.push_str("\\\""),
-            character if character.is_control() => {
-                escaped.push_str(&format!("\\{:03o}", character as u32));
-            }
-            character => escaped.push(character),
+            '\'' if quote == Some('\'') => escaped.push_str("\\'"),
+            other => escaped.push(other),
         }
     }
     match quote {
         Some(quote) => format!("{quote}{escaped}{quote}"),
-        None if escaped.starts_with('~') => format!("\\{escaped}"),
         None => escaped,
     }
 }
@@ -403,12 +415,12 @@ impl SetOption {
     pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
         Ok(Self {
             append: args.has('a'),
+            scope: OptionScopeFlags::parse(args),
             expand: args.has('F'),
             only_if_unset: args.has('o'),
             quiet: args.has('q'),
             unset: args.has('u'),
             unset_panes: args.has('U'),
-            scope: OptionScopeFlags::parse(args),
             operands: args.positionals().to_vec(),
         })
     }
@@ -419,14 +431,22 @@ impl SetOption {
             Some(argument) => argument.as_str(),
             None => return CommandResult::err("set-option: missing option\n"),
         };
-        let Some((name, index)) = resolve_option_argument(argument) else {
-            // `-q` suppresses the diagnostic, turning the failure into a silent
-            // success (exit 0, no output) — matching real tmux.
-            return if self.quiet {
-                CommandResult::ok("")
-            } else {
-                CommandResult::err(format!("invalid option: {argument}\n"))
-            };
+        let (name, index) = match resolve_option_argument(argument) {
+            OptionArgumentResult::Resolved(name, index) => (name, index),
+            OptionArgumentResult::Ambiguous => {
+                return if self.quiet {
+                    CommandResult::ok("")
+                } else {
+                    CommandResult::err(format!("ambiguous option: {argument}\n"))
+                };
+            }
+            OptionArgumentResult::Invalid => {
+                return if self.quiet {
+                    CommandResult::ok("")
+                } else {
+                    CommandResult::err(format!("invalid option: {argument}\n"))
+                };
+            }
         };
         let user_option = name.starts_with('@');
         let kind = (!user_option).then(|| options::option_kind(name)).flatten();
@@ -618,6 +638,13 @@ impl SetOption {
                     table.set(&storage_name, default);
                 }
             }
+            if options::is_style_option(name) {
+                if let Some(existing) = table.get(&storage_name) {
+                    if !existing.is_empty() && !value.is_empty() {
+                        table.append(&storage_name, ",");
+                    }
+                }
+            }
             table.append(&storage_name, &value);
         } else {
             target.local_mut(st).set(&storage_name, &value);
@@ -686,41 +713,109 @@ impl ShowOptions {
                     local.iter().collect()
                 };
                 let mut output = String::new();
-                for (name, value) in entries {
+                let mut user_options = entries
+                    .iter()
+                    .filter(|(name, _)| name.starts_with('@'))
+                    .collect::<Vec<_>>();
+                user_options.sort_by_key(|(name, _)| *name);
+                for (name, value) in user_options {
+                    let parent = inherited && !local.contains(name);
+                    if value_only {
+                        output.push_str(value);
+                    } else if parent {
+                        output.push_str(&format!("{name}* {}\n", show_option_value(name, value)));
+                    } else {
+                        output.push_str(&format!("{name} {}\n", show_option_value(name, value)));
+                    }
+                }
+
+                for &name in options::OPTIONS_CATALOG_ORDER {
                     if !option_in_listing_scope(name, target.scope()) {
                         continue;
                     }
-                    let parent = inherited && !local.contains(name);
-                    let empty_array =
-                        options::parse_option_name(name).is_some_and(|(base, index)| {
-                            index.is_none()
-                                && options::option_kind(base) == Some(options::OptionKind::Array)
-                                && value.is_empty()
-                        });
-                    if value_only {
-                        if empty_array {
-                            continue;
+                    if options::is_array_option(name) {
+                        let view = target.view(st);
+                        let array_entries: Vec<_> = if inherited {
+                            view.iter_effective().collect()
+                        } else {
+                            local.iter().collect()
+                        };
+                        let mut array_entries = array_entries
+                            .into_iter()
+                            .filter_map(|(entry, val)| {
+                                let (base, index) = options::parse_option_name(entry)?;
+                                (base == name).then_some((index?, val))
+                            })
+                            .collect::<Vec<_>>();
+                        array_entries.sort_by_key(|(idx, _)| *idx);
+                        if array_entries.is_empty() {
+                            if !value_only
+                                && (local.contains_array(name)
+                                    || (inherited && target.view(st).contains_array(name)))
+                            {
+                                output.push_str(name);
+                                output.push('\n');
+                            }
+                        } else {
+                            let parent = inherited && !local.contains_array(name);
+                            for (index, val) in array_entries {
+                                if value_only {
+                                    output.push_str(val);
+                                } else if parent {
+                                    output.push_str(&format!(
+                                        "{name}[{index}]* {}\n",
+                                        show_option_value(name, val)
+                                    ));
+                                } else {
+                                    output.push_str(&format!(
+                                        "{name}[{index}] {}\n",
+                                        show_option_value(name, val)
+                                    ));
+                                }
+                            }
                         }
-                        output.push_str(value);
-                    } else if empty_array {
-                        output.push_str(name);
-                    } else if parent {
-                        output.push_str(&format!("{name}* {}", show_option_value(name, value)));
                     } else {
-                        output.push_str(&format!("{name} {}", show_option_value(name, value)));
+                        let local_val = local.get(name);
+                        let parent = inherited && local_val.is_none();
+                        let val = local_val
+                            .or_else(|| inherited.then(|| target.view(st).get(name)).flatten());
+                        if let Some(val) = val {
+                            if value_only {
+                                output.push_str(val);
+                            } else if parent {
+                                output.push_str(&format!(
+                                    "{name}* {}\n",
+                                    show_option_value(name, val)
+                                ));
+                            } else {
+                                output.push_str(&format!(
+                                    "{name} {}\n",
+                                    show_option_value(name, val)
+                                ));
+                            }
+                        }
                     }
-                    output.push('\n');
                 }
                 return CommandResult::ok(output);
             }
         };
 
-        let Some((name, index)) = resolve_option_argument(argument) else {
-            return if quiet {
-                CommandResult::ok("")
-            } else {
-                CommandResult::err(format!("invalid option: {argument}\n"))
-            };
+        let (name, index) = match resolve_option_argument(argument) {
+            OptionArgumentResult::Resolved(name, index) => (name, index),
+            OptionArgumentResult::Ambiguous => {
+                return if quiet {
+                    CommandResult::ok("")
+                } else {
+                    CommandResult::err(format!("ambiguous option: {argument}\n"))
+                };
+            }
+            OptionArgumentResult::Invalid => {
+                return if quiet {
+                    CommandResult::ok("")
+                } else {
+                    CommandResult::err(format!("invalid option: {argument}\n"))
+                };
+            }
         };
         let display_name = match index {
             Some(index) => format!("{name}[{index}]"),
@@ -926,7 +1021,7 @@ impl ShowHooks {
                 return CommandResult::err(format!("invalid option: {hook}\n"));
             }
             let result = self.show.run(st, false);
-            if result.exit == 0 && result.stdout.is_empty() && !hook.contains('[') {
+            if self.global && result.exit == 0 && result.stdout.is_empty() && !hook.contains('[') {
                 return CommandResult::ok(format!("{hook}\n"));
             }
             return result;

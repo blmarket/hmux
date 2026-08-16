@@ -414,9 +414,42 @@ pub(crate) const VIEW_FALLBACK: &str = "";
 
 /// `source-file paths`: read every path in order, reporting what each one held
 /// so the caller can queue the commands it parsed.
+fn expand_glob(pattern: &str) -> Vec<String> {
+    use std::ffi::{CStr, CString};
+    let c_pattern = match CString::new(pattern) {
+        Ok(s) => s,
+        Err(_) => return vec![pattern.to_string()],
+    };
+    let mut globbuf: libc::glob_t = unsafe { std::mem::zeroed() };
+    let res = unsafe { libc::glob(c_pattern.as_ptr(), libc::GLOB_NOCHECK, None, &mut globbuf) };
+    if res != 0 {
+        return vec![pattern.to_string()];
+    }
+    let mut results = Vec::new();
+    for i in 0..globbuf.gl_pathc {
+        let p = unsafe { *globbuf.gl_pathv.add(i as usize) };
+        if !p.is_null() {
+            let s = unsafe { CStr::from_ptr(p) };
+            if let Ok(utf8) = s.to_str() {
+                results.push(utf8.to_string());
+            }
+        }
+    }
+    unsafe { libc::globfree(&mut globbuf) };
+    if results.is_empty() {
+        vec![pattern.to_string()]
+    } else {
+        results
+    }
+}
+
 pub(crate) async fn source_file(tasks: &TaskHandle, paths: Vec<String>) -> Vec<SourceFileRead> {
-    let mut reads = Vec::new();
+    let mut expanded_paths = Vec::new();
     for path in paths {
+        expanded_paths.extend(expand_glob(&path));
+    }
+    let mut reads = Vec::new();
+    for path in expanded_paths {
         let contents = match open_path(Path::new(&path)) {
             PathOpen::Inline(contents) => contents,
             PathOpen::Fifo(file) => fifo_read(tasks, file).await,

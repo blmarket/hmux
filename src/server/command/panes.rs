@@ -65,6 +65,8 @@ pub(in crate::server) struct SplitWindow {
     before: bool,
     /// `-d`: leave the original pane active.
     detached: bool,
+    /// `-f`: creates new pane spanning full window width or height.
+    full: bool,
     /// `-h`: split left/right instead of top/bottom.
     horizontal: bool,
     /// `-E`/`-I`: create the pane with no command of its own.
@@ -75,6 +77,7 @@ pub(in crate::server) struct SplitWindow {
     keep: bool,
     /// `-P`: print the new pane.
     print: bool,
+    zoom: bool,
     /// `-c`: the new pane's working directory.
     cwd: Option<String>,
     /// `-e`: environment assignments for the new pane, repeatable.
@@ -98,11 +101,13 @@ impl SplitWindow {
         Ok(Self {
             before: args.has('b'),
             detached: args.has('d'),
+            full: args.has('f'),
             horizontal: args.has('h'),
             empty: args.has('E') || args.has('I'),
             feed_input: args.has('I'),
             keep: args.has('k'),
             print: args.has('P'),
+            zoom: args.has('Z'),
             cwd: args.value('c').map(str::to_string),
             environment: args.values('e').map(str::to_string).collect(),
             format: args.value('F').map(str::to_string),
@@ -128,6 +133,7 @@ impl SplitWindow {
             Some(target) => target,
             None => return CommandResult::err(format!("{}\n", st.pane_target_error(&target))),
         };
+        st.push_zoom_at(resolved.session, resolved.window);
         // `-d` splits in the background: the new pane is created but the original
         // pane stays active (tmux's default is to follow to the new pane).
         let select = !self.detached;
@@ -142,17 +148,24 @@ impl SplitWindow {
             let axis_total = {
                 let sess = &st.sessions()[resolved.session];
                 let win = st.window_for_link(&sess.windows[resolved.window]);
-                let rect =
-                    win.pane_rect(win.panes[resolved.pane].id)
-                        .unwrap_or(super::super::state::PaneRect {
-                            top: 0,
-                            left: 0,
-                            height: win.rows,
-                            width: win.cols,
-                        });
-                match direction {
-                    SplitDirection::LeftRight => rect.width,
-                    SplitDirection::TopBottom => rect.height,
+                if self.full {
+                    match direction {
+                        SplitDirection::LeftRight => win.cols,
+                        SplitDirection::TopBottom => win.rows,
+                    }
+                } else {
+                    let rect =
+                        win.pane_rect(win.panes[resolved.pane].id)
+                            .unwrap_or(super::super::state::PaneRect {
+                                top: 0,
+                                left: 0,
+                                height: win.rows,
+                                width: win.cols,
+                            });
+                    match direction {
+                        SplitDirection::LeftRight => rect.width,
+                        SplitDirection::TopBottom => rect.height,
+                    }
                 }
             };
             let percentage_of = |value: &str| {
@@ -170,7 +183,7 @@ impl SplitWindow {
                 self.percentage.as_deref().map(percentage_of)
             };
             match parsed {
-                Some(None) => return CommandResult::err("create pane failed: size invalid\n"),
+                Some(None) => return CommandResult::err("size or position invalid tiled geometry\n"),
                 Some(size) => size,
                 None => None,
             }
@@ -198,6 +211,7 @@ impl SplitWindow {
                 &target,
                 select,
                 self.before,
+                self.full,
                 direction,
                 PaneSpec::Inert,
                 new_size,
@@ -207,12 +221,14 @@ impl SplitWindow {
                 &target,
                 select,
                 self.before,
+                self.full,
                 direction,
                 &argv,
                 cwd,
                 new_size,
             )
         };
+        st.pop_zoom_at(resolved.session, resolved.window, self.zoom);
         // `-k` (and `-m format`) keep the pane in place when its command exits:
         // tmux sets the pane's remain-on-exit to `key` plus the format under `-m`.
         if let Ok(pane) = &created {
@@ -418,6 +434,7 @@ impl NewPane {
                 &target,
                 select,
                 self.before,
+                false,
                 direction,
                 &argv,
                 cwd,
@@ -702,6 +719,9 @@ pub(in crate::server) struct SwapPane {
     /// `-D`/`-U`: swap with the next/previous neighbour. `-D` wins.
     down: bool,
     up: bool,
+    /// `-d`: do not select the pane after an adjacent swap.
+    detached: bool,
+    zoom: bool,
     /// `-s`/`-t`: the panes to exchange.
     source: Option<String>,
     target: Option<String>,
@@ -712,6 +732,8 @@ impl SwapPane {
         Ok(Self {
             down: args.has('D'),
             up: args.has('U'),
+            detached: args.has('d'),
+            zoom: args.has('Z'),
             source: args.value('s').map(str::to_string),
             target: args.value('t').map(str::to_string),
         })
@@ -725,20 +747,60 @@ impl SwapPane {
         if self.down || self.up {
             let target = self.target.or_else(|| current.clone());
             return match target {
-                Some(target) => match st.swap_pane_neighbour(&target, self.down) {
-                    Ok(()) => CommandResult::ok(""),
-                    Err(error) => CommandResult::err(format!("{error}\n")),
-                },
+                Some(target) => {
+                    let resolved = match st.resolve(&target) {
+                        Some(resolved) => resolved,
+                        None => {
+                            return CommandResult::err(format!(
+                                "{}\n",
+                                st.pane_target_error(&target)
+                            ))
+                        }
+                    };
+                    st.push_zoom_at(resolved.session, resolved.window);
+                    let result =
+                        st.swap_pane_neighbour(&target, self.down, !self.detached);
+                    st.pop_zoom_at(resolved.session, resolved.window, self.zoom);
+                    match result {
+                        Ok(()) => CommandResult::ok(""),
+                        Err(error) => CommandResult::err(format!("{error}\n")),
+                    }
+                }
                 None => CommandResult::err("can't establish current session\n"),
             };
         }
         let source = self.source.or_else(|| current.clone());
         let target = self.target.or(current);
         match (source, target) {
-            (Some(source), Some(target)) => match st.swap_pane(&source, &target) {
-                Ok(()) => CommandResult::ok(""),
-                Err(error) => CommandResult::err(format!("{error}\n")),
-            },
+            (Some(source), Some(target)) => {
+                let src = match st.resolve(&source) {
+                    Some(resolved) => resolved,
+                    None => {
+                        return CommandResult::err(format!(
+                            "{}\n",
+                            st.pane_target_error(&source)
+                        ))
+                    }
+                };
+                let dst = match st.resolve(&target) {
+                    Some(resolved) => resolved,
+                    None => {
+                        return CommandResult::err(format!(
+                            "{}\n",
+                            st.pane_target_error(&target)
+                        ))
+                    }
+                };
+                st.push_zoom_at(src.session, src.window);
+                st.push_zoom_at(dst.session, dst.window);
+                let result = st.swap_pane(&source, &target);
+                st.pop_zoom_at(src.session, src.window, self.zoom);
+                st.pop_zoom_at(dst.session, dst.window, self.zoom);
+                match result {
+                    Ok(()) => CommandResult::ok(""),
+                    Err(error) => CommandResult::err(format!("{error}\n")),
+                }
+            }
             _ => CommandResult::err("can't establish current session\n"),
         }
     }
@@ -749,6 +811,18 @@ impl SwapPane {
 pub(in crate::server) struct MovePane {
     /// `-b`: place the moved pane before the destination rather than after it.
     before: bool,
+    /// `-d`: do not make the moved pane active.
+    detached: bool,
+    /// `-f`: creates new pane spanning full window width or height.
+    _full: bool,
+    /// `-h`: horizontal split.
+    horizontal: bool,
+    /// `-v`: vertical split.
+    _vertical: bool,
+    /// `-l`: size of the new pane (lines/cells or percentage).
+    size: Option<String>,
+    /// `-p`: percentage.
+    percentage: Option<String>,
     /// `-s`/`-t`: the pane to move, and where it goes.
     source: Option<String>,
     target: Option<String>,
@@ -758,6 +832,12 @@ impl MovePane {
     pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
         Ok(Self {
             before: args.has('b'),
+            detached: args.has('d'),
+            _full: args.has('f'),
+            horizontal: args.has('h'),
+            _vertical: args.has('v'),
+            size: args.value('l').map(str::to_string),
+            percentage: args.value('p').map(str::to_string),
             source: args.value('s').map(str::to_string),
             target: args.value('t').map(str::to_string),
         })
@@ -765,15 +845,66 @@ impl MovePane {
 
     /// Moves a pane into another window.
     fn execute(self, st: &mut ServerState) -> CommandResult {
-        let source = self.source.or_else(|| current_target(st));
+        let source = self
+            .source
+            .or_else(|| st.marked_pane().map(|id| format!("%{id}")))
+            .or_else(|| current_target(st));
         let target = self.target.or_else(|| current_target(st));
-        match (source, target) {
-            (Some(source), Some(target)) => match st.move_pane(&source, &target, self.before) {
-                Ok(()) => CommandResult::ok(""),
-                Err(error) => CommandResult::err(format!("{error}\n")),
-            },
-            (None, _) => CommandResult::err("can't establish current session\n"),
-            (_, None) => CommandResult::err("move-pane: missing destination\n"),
+        let (Some(source), Some(target)) = (source, target) else {
+            return CommandResult::err("can't establish current session\n");
+        };
+        let target_resolved = match st.resolve(&target) {
+            Some(t) => t,
+            None => return CommandResult::err(format!("{}\n", st.pane_target_error(&target))),
+        };
+        let direction = if self.horizontal {
+            SplitDirection::LeftRight
+        } else {
+            SplitDirection::TopBottom
+        };
+        let new_size = {
+            let axis_total = {
+                let sess = &st.sessions()[target_resolved.session];
+                let win = st.window_for_link(&sess.windows[target_resolved.window]);
+                let rect =
+                    win.pane_rect(win.panes[target_resolved.pane].id)
+                        .unwrap_or(super::super::state::PaneRect {
+                            top: 0,
+                            left: 0,
+                            height: win.rows,
+                            width: win.cols,
+                        });
+                match direction {
+                    SplitDirection::LeftRight => rect.width,
+                    SplitDirection::TopBottom => rect.height,
+                }
+            };
+            let percentage_of = |value: &str| {
+                value
+                    .parse::<u32>()
+                    .ok()
+                    .map(|percentage| (u32::from(axis_total) * percentage / 100) as u16)
+            };
+            let parsed = if let Some(value) = self.size.as_deref() {
+                Some(match value.strip_suffix('%') {
+                    Some(percentage) => percentage_of(percentage),
+                    None => value.parse::<u16>().ok(),
+                })
+            } else {
+                self.percentage.as_deref().map(percentage_of)
+            };
+            match parsed {
+                Some(None) => return CommandResult::err("create pane failed: size invalid\n"),
+                Some(size) => size,
+                None => None,
+            }
+        };
+        let select = !self.detached;
+        match st.move_pane(&source, &target, self.before, select, direction, new_size) {
+            Ok(()) => CommandResult::ok(""),
+            Err(error) => {
+                command_target_error_candidates(error, &[(&source, "pane"), (&target, "pane")])
+            }
         }
     }
 }
@@ -1115,14 +1246,30 @@ impl ResizePane {
         if self.mouse {
             return resize_pane_to_mouse(st);
         }
+        let resolved = st.resolve(&target).expect("validated target");
+        let (window_cols, window_rows) = {
+            let win = st.window(resolved.session, resolved.window);
+            (win.cols, win.rows)
+        };
         for (value, direction, label) in [
             (self.width.as_deref(), SplitDirection::LeftRight, "width"),
             (self.height.as_deref(), SplitDirection::TopBottom, "height"),
         ] {
             if let Some(value) = value {
-                let size = match value.parse::<u16>() {
-                    Ok(size) => size,
-                    Err(_) => return CommandResult::err(format!("{label} invalid\n")),
+                let total = match direction {
+                    SplitDirection::LeftRight => window_cols,
+                    SplitDirection::TopBottom => window_rows,
+                };
+                let size = if let Some(pct_str) = value.strip_suffix('%') {
+                    match pct_str.parse::<u32>() {
+                        Ok(pct) => (u32::from(total) * pct / 100) as u16,
+                        Err(_) => return CommandResult::err(format!("{label} invalid\n")),
+                    }
+                } else {
+                    match value.parse::<u16>() {
+                        Ok(size) => size,
+                        Err(_) => return CommandResult::err(format!("{label} invalid\n")),
+                    }
                 };
                 if let Err(error) = st.resize_pane_to(&target, direction, size) {
                     return CommandResult::err(format!("{error}\n"));
@@ -1354,6 +1501,7 @@ fn parse_size_flag(value: Option<&str>, label: &str) -> Result<Option<u16>, Stri
 pub(in crate::server) struct RotateWindow {
     /// `-D`: rotate the other way.
     down: bool,
+    zoom: bool,
     /// `-t`: the window to rotate.
     target: Option<String>,
 }
@@ -1362,6 +1510,7 @@ impl RotateWindow {
     pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
         Ok(Self {
             down: args.has('D'),
+            zoom: args.has('Z'),
             target: args.value('t').map(str::to_string),
         })
     }
@@ -1371,13 +1520,20 @@ impl RotateWindow {
         let Some(target) = self.target.or_else(|| current_target(st)) else {
             return CommandResult::err("can't establish current session\n");
         };
-        match if self.down {
+        if let Err(error) = st.push_zoom(&target) {
+            return command_target_error(error, &target, "window");
+        }
+        let result = if self.down {
             st.rotate_window_down(&target)
         } else {
             st.rotate_window(&target)
-        } {
-            Ok(()) => CommandResult::ok(""),
-            Err(error) => command_target_error(error, &target, "window"),
+        };
+        let zoom_result = st.pop_zoom(&target, self.zoom);
+        match (result, zoom_result) {
+            (Ok(()), Ok(())) => CommandResult::ok(""),
+            (Err(error), _) | (Ok(()), Err(error)) => {
+                command_target_error(error, &target, "window")
+            }
         }
     }
 }
@@ -1416,11 +1572,17 @@ impl SelectLayout {
         let Some(target) = self.target.clone().or_else(|| current_target(st)) else {
             return CommandResult::err("can't establish current session\n");
         };
+        let resolved = match st.resolve(&target) {
+            Some(resolved) => resolved,
+            None => return CommandResult::err(format!("{}\n", st.pane_target_error(&target))),
+        };
+        st.push_zoom_at(resolved.session, resolved.window);
         let previous_old = st.snapshot_window_layout(&target).ok().flatten();
         let result = self.act(st, &target, previous_old.as_deref());
         if result.exit != 0 {
             st.restore_window_old_layout(&target, previous_old);
         }
+        st.pop_zoom_at(resolved.session, resolved.window, false);
         result
     }
 
@@ -1456,9 +1618,17 @@ impl SelectLayout {
                     Err(error) => command_target_error(error, target, "pane"),
                 };
             }
-            return match st.select_custom_layout(target, layout) {
-                Ok(()) => CommandResult::ok(""),
-                Err(error) => CommandResult::err(format!("can't set layout: {error}\n")),
+            // Real tmux: `layout_parse` failure reports `can't set layout: ...`
+            // on stderr and returns 1. If the custom layout was from another
+            // window's `old_layout` and doesn't match this window's pane count,
+            // that is the failure it produces. If there is no previous layout
+            // history it is a no-op, as in tmux.
+            return match previous_old {
+                Some(old) => match st.select_custom_layout(target, old) {
+                    Ok(()) => CommandResult::ok(""),
+                    Err(error) => CommandResult::err(format!("can't set layout: {error}\n")),
+                },
+                None => CommandResult::ok(""),
             };
         }
         if self.restore {
@@ -1502,16 +1672,21 @@ impl CycleLayout {
         let Some(target) = self.target.or_else(|| current_target(st)) else {
             return CommandResult::err("can't establish current session\n");
         };
-        // next-layout/previous-layout share select-layout's exec in tmux, so they
-        // snapshot `w->old_layout` the same way.
+        let resolved = match st.resolve_window_target(&target) {
+            Ok(resolved) => resolved,
+            Err(error) => return command_target_error(error, &target, "window"),
+        };
+        st.push_zoom_at(resolved.session, resolved.window);
         let previous_old = st.snapshot_window_layout(&target).ok().flatten();
-        match st.cycle_layout(&target, forward) {
+        let result = match st.cycle_layout(&target, forward) {
             Ok(()) => CommandResult::ok(""),
             Err(error) => {
                 st.restore_window_old_layout(&target, previous_old);
                 command_target_error(error, &target, "window")
             }
-        }
+        };
+        st.pop_zoom_at(resolved.session, resolved.window, false);
+        result
     }
 }
 

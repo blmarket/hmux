@@ -188,6 +188,21 @@ impl ConfirmBefore {
                 "command confirm-before: too few arguments (need at least 1)\n",
             );
         }
+        let target = self.target.as_deref();
+        let snapshots = state.client_snapshots();
+        if let Some(target) = target {
+            if !snapshots.iter().any(|c| c.name == target) {
+                return CommandResult::err(format!("can't find client: {target}\n"));
+            }
+        } else {
+            let found_current = client
+                .tty_name
+                .as_deref()
+                .is_some_and(|tty| snapshots.iter().any(|c| c.name == tty));
+            if !found_current {
+                return CommandResult::err("no current client\n");
+            }
+        }
         let command = if let [line] = self.command.as_slice() {
             command_string_groups(line)
                 .ok()
@@ -221,7 +236,6 @@ impl ConfirmBefore {
             },
             |prompt| format!("{prompt} "),
         );
-        let target = self.target.as_deref();
         overlay_result(
             state.confirm_client(
                 target,
@@ -241,6 +255,7 @@ fn enter_mode(
     target: Option<&str>,
     state: &mut ServerState,
     view: ModeView,
+    zoom: bool,
 ) -> CommandResult {
     let Some(target) = target
         .map(str::to_string)
@@ -248,10 +263,21 @@ fn enter_mode(
     else {
         return CommandResult::err("no current session\n");
     };
-    match state.enter_mode_view(&target, view) {
+    if zoom {
+        if let Err(error) = state.push_zoom(&target) {
+            return CommandResult::err(format!("{error}\n"));
+        }
+    }
+    let result = match state.enter_mode_view(&target, view) {
         Ok(()) => CommandResult::ok(""),
         Err(_) => CommandResult::err(format!("{}\n", state.pane_target_error(&target))),
+    };
+    if zoom {
+        if let Err(error) = state.pop_zoom(&target, true) {
+            return CommandResult::err(format!("{error}\n"));
+        }
     }
+    result
 }
 
 fn validate_mode_target(target: Option<&str>, state: &ServerState) -> Result<(), CommandResult> {
@@ -290,15 +316,16 @@ fn template_command(template: &str, value: &str) -> Vec<String> {
 /// The `-F`, `-f`, `-O` and `-r` every `choose-*` command shares, as tmux's
 /// `mode_tree_start` takes them.
 #[derive(Clone, Debug)]
-struct ChooseOptions {
-    format: Option<String>,
-    filter: Option<String>,
+pub(super) struct ChooseOptions {
+    pub(super) format: Option<String>,
+    pub(super) filter: Option<String>,
     /// `-O`, resolved through the same table the `list-*` commands use when the
     /// command runs. `None` means no `-O` at all, which leaves each mode on its
     /// own first order.
-    order: Option<String>,
+    pub(super) order: Option<String>,
     /// `-r`: negate the comparison the sort order made.
-    reversed: bool,
+    pub(super) reversed: bool,
+    pub(super) zoom: bool,
 }
 
 impl ChooseOptions {
@@ -308,6 +335,7 @@ impl ChooseOptions {
             filter: args.value('f').map(str::to_string),
             order: args.value('O').map(str::to_string),
             reversed: args.has('r'),
+            zoom: args.has('Z'),
         }
     }
 
@@ -479,14 +507,14 @@ struct BufferRow {
 #[derive(Clone, Debug)]
 pub(in crate::server) struct ChooseTree {
     /// `-N`: hide the preview pane.
-    no_preview: bool,
+    pub(super) no_preview: bool,
     /// `-s`/`-w`: list only sessions, or only windows.
-    sessions_only: bool,
-    windows_only: bool,
+    pub(super) sessions_only: bool,
+    pub(super) windows_only: bool,
     /// `-t`: the pane the mode opens in.
-    target: Option<String>,
-    options: ChooseOptions,
-    template: Option<String>,
+    pub(super) target: Option<String>,
+    pub(super) options: ChooseOptions,
+    pub(super) template: Option<String>,
 }
 
 impl ChooseTree {
@@ -501,7 +529,7 @@ impl ChooseTree {
         })
     }
 
-    fn run(self, state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
+    pub(super) fn run(self, state: &mut ServerState, agents: &PaneAgents) -> CommandResult {
         let order = match self.options.resolve_order() {
             Ok(order) => order,
             Err(error) => return error,
@@ -509,92 +537,117 @@ impl ChooseTree {
         let template = self.template.as_deref();
         let options = &self.options;
         let marked = state.marked_pane();
-        let mut groups = Vec::new();
-        for session in state.sessions() {
-            let session_vars = super::vars_for(state, session, session.active, agents, marked);
-            let mut group = TreeGroup {
-                session: session_vars.clone(),
-                id: session.id,
-                activity: session.activity_micros,
-                session_row: None,
-                windows: Vec::new(),
-            };
-            // `-s` lists only sessions and `-w` only windows; without either, a
-            // session is followed by its own windows.
-            if !self.windows_only && options.keep(state, &session_vars) {
-                group.session_row = Some(ChooseRow {
-                    item: ModeItem {
-                        label: options.label(
-                            state,
-                            &session_vars,
-                            format!("{} ({} windows)", session.name, session.windows.len()),
-                        ),
-                        command: template_command(
-                            template.unwrap_or("switch-client -Zt '%%'"),
-                            &session.name,
-                        ),
-                        prompt_target: Some(format!("={}:", session.name)),
-                        edit: None,
-                        tagged: false,
-                        preview_target: Some(format!("={}:", session.name)),
-                        depth: 0,
-                        expanded: None,
-                    },
-                    vars: session_vars,
-                });
-            }
-            if self.sessions_only {
-                groups.push(group);
-                continue;
-            }
-            for (position, link) in session.windows.iter().enumerate() {
-                let window = state.session_window(session, position);
-                let target = format!("{}:{}", session.name, link.index);
-                let window_vars = super::vars_for(state, session, position, agents, marked);
-                if !options.keep(state, &window_vars) {
-                    continue;
-                }
-                group.windows.push(TreeWindow {
-                    id: window.id,
-                    activity: window.activity_epoch,
-                    row: ChooseRow {
+        let build_groups = |opts: &ChooseOptions| {
+            let mut groups = Vec::new();
+            for session in state.sessions() {
+                let session_vars = super::vars_for(state, session, session.active, agents, marked);
+                let mut group = TreeGroup {
+                    session: session_vars.clone(),
+                    id: session.id,
+                    activity: session.activity_micros,
+                    session_row: None,
+                    windows: Vec::new(),
+                };
+                // `-s` lists only sessions and `-w` only windows; without either, a
+                // session is followed by its own windows.
+                if !self.windows_only && opts.keep(state, &session_vars) {
+                    group.session_row = Some(ChooseRow {
                         item: ModeItem {
-                            label: options.label(
+                            label: opts.label(
                                 state,
-                                &window_vars,
-                                format!(
-                                    "  {}: {} ({} panes)",
-                                    link.index,
-                                    window.name,
-                                    window.panes.len()
-                                ),
+                                &session_vars,
+                                format!("{} ({} windows)", session.name, session.windows.len()),
                             ),
-                            command: template.map_or_else(
-                                || {
-                                    vec![
-                                        "select-window".to_string(),
-                                        "-t".to_string(),
-                                        target.clone(),
-                                        ";".to_string(),
-                                        "switch-client".to_string(),
-                                        "-t".to_string(),
-                                        session.name.clone(),
-                                    ]
-                                },
-                                |template| template_command(template, &target),
+                            command: template_command(
+                                template.unwrap_or("switch-client -Zt '%%'"),
+                                &session.name,
                             ),
-                            prompt_target: Some(format!("={}:{}.", session.name, link.index)),
+                            prompt_target: Some(format!("={}:", session.name)),
                             edit: None,
                             tagged: false,
-                            preview_target: Some(format!("={}:{}.", session.name, link.index)),
+                            preview_target: Some(format!("={}:", session.name)),
                             depth: 0,
                             expanded: None,
                         },
-                        vars: window_vars,
-                    },
-                });
+                        vars: session_vars,
+                    });
+                }
+                if self.sessions_only {
+                    groups.push(group);
+                    continue;
+                }
+                for (position, link) in session.windows.iter().enumerate() {
+                    let window = state.session_window(session, position);
+                    let target = format!("{}:{}", session.name, link.index);
+                    let window_vars = super::vars_for(state, session, position, agents, marked);
+                    if !opts.keep(state, &window_vars) {
+                        continue;
+                    }
+                    let title = window_vars.lookup("pane_title").unwrap_or("");
+                    let default_label = if window.panes.len() == 1 && !title.is_empty() {
+                        format!(
+                            "  {}: {}: \"{}\" ({} panes)",
+                            link.index,
+                            window.name,
+                            title,
+                            window.panes.len()
+                        )
+                    } else {
+                        format!(
+                            "  {}: {} ({} panes)",
+                            link.index,
+                            window.name,
+                            window.panes.len()
+                        )
+                    };
+                    group.windows.push(TreeWindow {
+                        id: window.id,
+                        activity: window.activity_epoch,
+                        row: ChooseRow {
+                            item: ModeItem {
+                                label: opts.label(
+                                    state,
+                                    &window_vars,
+                                    default_label,
+                                ),
+                                command: template.map_or_else(
+                                    || {
+                                        vec![
+                                            "select-window".to_string(),
+                                            "-t".to_string(),
+                                            target.clone(),
+                                            ";".to_string(),
+                                            "switch-client".to_string(),
+                                            "-t".to_string(),
+                                            session.name.clone(),
+                                        ]
+                                    },
+                                    |template| template_command(template, &target),
+                                ),
+                                prompt_target: Some(format!("={}:{}.", session.name, link.index)),
+                                edit: None,
+                                tagged: false,
+                                preview_target: Some(format!("={}:{}.", session.name, link.index)),
+                                depth: 0,
+                                expanded: None,
+                            },
+                            vars: window_vars,
+                        },
+                    });
+                }
+                groups.push(group);
             }
-            groups.push(group);
+            groups
+        };
+        let mut groups = build_groups(options);
+        if options.filter.is_some()
+            && groups
+                .iter()
+                .all(|g| g.windows.is_empty() && g.session_row.is_none())
+        {
+            let mut unfiltered = options.clone();
+            unfiltered.filter = None;
+            groups = build_groups(&unfiltered);
         }
         options.sort_tree(&mut groups, order);
         let items = groups
@@ -610,7 +663,7 @@ impl ChooseTree {
         let mut view = ModeView::list(ModeKind::Tree, "Tree", items);
         // tmux shows the preview unless `-N` asks it not to.
         view.preview = !self.no_preview;
-        enter_mode(self.target.as_deref(), state, view)
+        enter_mode(self.target.as_deref(), state, view, self.options.zoom)
     }
 }
 
@@ -714,6 +767,7 @@ impl ChooseClient {
             self.target.as_deref(),
             state,
             ModeView::list(ModeKind::Client, "Clients", items),
+            self.options.zoom,
         )
     }
 }
@@ -807,6 +861,7 @@ impl ChooseBuffer {
             self.target.as_deref(),
             state,
             ModeView::list(ModeKind::Buffer, "Buffers", items),
+            self.options.zoom,
         )
     }
 }
@@ -949,7 +1004,7 @@ impl CustomizeMode {
         // tmux's options mode has no title row above its section tree.
         let mut view = ModeView::list(ModeKind::Customize, "", items);
         view.preview = !self.no_preview;
-        enter_mode(self.target.as_deref(), state, view)
+        enter_mode(self.target.as_deref(), state, view, self.options.zoom)
     }
 }
 
@@ -968,7 +1023,7 @@ impl ClockMode {
     }
 
     fn run(self, state: &mut ServerState) -> CommandResult {
-        enter_mode(self.target.as_deref(), state, ModeView::clock())
+        enter_mode(self.target.as_deref(), state, ModeView::clock(), false)
     }
 }
 
@@ -1022,6 +1077,21 @@ impl DisplayMenu {
         agents: &PaneAgents,
         client: &ClientContext,
     ) -> CommandResult {
+        let target = self.client.as_deref();
+        let snapshots = state.client_snapshots();
+        if let Some(target) = target {
+            if !snapshots.iter().any(|c| c.name == target) {
+                return CommandResult::err(format!("can't find client: {target}\n"));
+            }
+        } else {
+            let found_current = client
+                .tty_name
+                .as_deref()
+                .is_some_and(|tty| snapshots.iter().any(|c| c.name == tty));
+            if !found_current {
+                return CommandResult::err("no current client\n");
+            }
+        }
         // Both halves of an item are formats — tmux expands them when the menu is
         // built, against the target the menu was asked for.
         let vars = self
@@ -1305,6 +1375,9 @@ impl ListClients {
 
     fn run(self, state: &ServerState, agents: &PaneAgents) -> CommandResult {
         const DEFAULT_FORMAT: &str = "#{client_name}: #{session_name} [#{client_width}x#{client_height} #{client_termname}] #{?client_flags,(,}#{client_flags}#{?client_flags,),}";
+        if self.target.is_none() && state.sessions().is_empty() {
+            return CommandResult::err("no current target\n");
+        }
         let template = self.format.as_deref().unwrap_or(DEFAULT_FORMAT);
         let requested_session = self.target.as_deref();
         let target_session = requested_session.and_then(|target| state.resolve_session(target));
@@ -1443,8 +1516,12 @@ fn client_vars(
 /// [-t target-client]`.
 #[derive(Clone, Debug)]
 pub(in crate::server) struct DetachClient {
+    /// `-a`: detach all other clients except the target.
+    all_others: bool,
     /// `-E`: the command the detached client runs in place of exiting.
     command: Option<String>,
+    /// `-s`: detach all clients attached to the specified session.
+    session: Option<String>,
     /// `-t`: the client to detach.
     target: Option<String>,
 }
@@ -1452,13 +1529,33 @@ pub(in crate::server) struct DetachClient {
 impl DetachClient {
     pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
         Ok(Self {
+            all_others: args.has('a'),
             command: args.value('E').map(str::to_string),
+            session: args.value('s').map(str::to_string),
             target: args.value('t').map(str::to_string),
         })
     }
 
     fn run(self, state: &ServerState, client: &ClientContext) -> CommandResult {
+        if let Some(session_target) = self.session.as_deref() {
+            let Some(session) = state.find(session_target) else {
+                return CommandResult::err(format!("can't find session: {session_target}\n"));
+            };
+            let session_id = session.id;
+            state.detach_session_clients(session_id, self.command.as_deref());
+            return CommandResult::ok("");
+        }
         let target = self.target.as_deref();
+        if self.all_others {
+            return overlay_result(
+                state.detach_all_other_clients(
+                    target,
+                    client.tty_name.as_deref(),
+                    self.command.as_deref(),
+                ),
+                target,
+            );
+        }
         overlay_result(
             state.detach_client(target, client.tty_name.as_deref(), self.command.as_deref()),
             target,
@@ -1529,6 +1626,7 @@ pub(in crate::server) struct RefreshClient {
     centre: bool,
     /// `-l`: ask the client's terminal for its selection.
     clipboard: bool,
+    has_control_flag: bool,
     /// `-f` (and its historical `-F` spelling): the client flags to set.
     flags: Vec<String>,
     /// `-t`: the client to refresh.
@@ -1544,6 +1642,7 @@ impl RefreshClient {
             .chain(args.values('F'))
             .map(str::to_string)
             .collect();
+        let has_control_flag = args.has('A') || args.has('B') || args.has('C');
         Ok(Self {
             left: args.has('L'),
             right: args.has('R'),
@@ -1551,6 +1650,7 @@ impl RefreshClient {
             down: args.has('D'),
             centre: args.has('c'),
             clipboard: args.has('l'),
+            has_control_flag,
             flags,
             target: args.value('t').map(str::to_string),
             adjustment: args.positionals().first().cloned(),
@@ -1559,6 +1659,25 @@ impl RefreshClient {
 
     fn run(self, state: &mut ServerState, client: &ClientContext) -> CommandResult {
         let target = self.target.as_deref();
+        let snapshots = state.client_snapshots();
+        let target_client = if let Some(target) = target {
+            match snapshots.into_iter().find(|c| c.name == target) {
+                Some(c) => c,
+                None => return CommandResult::err(format!("can't find client: {target}\n")),
+            }
+        } else if let Some(tty) = client.tty_name.as_deref() {
+            match snapshots.into_iter().find(|c| c.name == tty) {
+                Some(c) => c,
+                None => return CommandResult::err("no current client\n"),
+            }
+        } else {
+            return CommandResult::err("no current client\n");
+        };
+
+        if self.has_control_flag && !target_client.control_mode {
+            return CommandResult::err("not a control client\n");
+        }
+
         // `-c` and the four pan directions are handled first and alone, as tmux's
         // `cmd_refresh_client_exec` returns straight after them.
         let pan = if self.left {
@@ -1666,7 +1785,12 @@ impl SwitchClient {
                 Err(ClientActionResult::NoCurrentClient) => {
                     return CommandResult::err("no current client\n");
                 }
-                Err(_) => return CommandResult::err("can't find client\n"),
+                Err(_) => {
+                    return CommandResult::err(format!(
+                        "can't find client: {}\n",
+                        self.client.as_deref().unwrap_or_default()
+                    ))
+                }
             }
         } else {
             None
@@ -1678,7 +1802,10 @@ impl SwitchClient {
         ) {
             ClientActionResult::Queued => CommandResult::ok(""),
             ClientActionResult::NoCurrentClient => CommandResult::err("no current client\n"),
-            ClientActionResult::TargetNotFound => CommandResult::err("can't find client\n"),
+            ClientActionResult::TargetNotFound => CommandResult::err(format!(
+                "can't find client: {}\n",
+                self.client.as_deref().unwrap_or_default()
+            )),
         }
     }
 }
@@ -1806,15 +1933,26 @@ impl DisplayMessage {
             window: resolved.window,
             agents,
         });
-        let expanded = if self.literal {
-            message.to_string()
-        } else {
-            format::expand_time_with_jobs(
+        let (expanded, trace) = if self.literal {
+            (message.to_string(), String::new())
+        } else if self.verbose {
+            format::expand_time_with_jobs_verbose(
                 message,
                 &vars,
                 loops.as_ref().map(|loops| loops as &dyn format::LoopSource),
                 command_jobs(st),
                 Some(&ServerFormatTree(st)),
+            )
+        } else {
+            (
+                format::expand_time_with_jobs(
+                    message,
+                    &vars,
+                    loops.as_ref().map(|loops| loops as &dyn format::LoopSource),
+                    command_jobs(st),
+                    Some(&ServerFormatTree(st)),
+                ),
+                String::new(),
             )
         };
         let mut out = String::new();
@@ -1822,8 +1960,7 @@ impl DisplayMessage {
         // command client. Literal mode bypasses the format engine, so `-l -v`
         // produces no trace (and only prints the literal when `-p` is present).
         if self.verbose && !self.literal {
-            out.push_str(&format!("# expanding format: {message}\n"));
-            out.push_str(&format!("# result is: {expanded}\n"));
+            out.push_str(&trace);
         }
         if self.print {
             out.push_str(&expanded);

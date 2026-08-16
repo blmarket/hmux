@@ -243,7 +243,7 @@ async fn write_client_file(
         // failure, not the line's.
         let mut result = CommandResult::err(format!(
             "{}: {}\n",
-            io::Error::from_raw_os_error(error),
+            command::io_error_message(&io::Error::from_raw_os_error(error)),
             request.display_path
         ));
         result.continue_queue = true;

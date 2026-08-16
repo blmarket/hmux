@@ -96,7 +96,7 @@ pub(in crate::server) fn exec(
         .or_else(|| current_target(state));
     let target = match target {
         Some(target) => target,
-        None => return CommandResult::err("can't establish current session\n"),
+        None => return CommandResult::err("no current target\n"),
     };
     if state.resolve(&target).is_none() {
         return CommandResult::err(format!("{}\n", state.pane_target_error(&target)));
@@ -238,7 +238,7 @@ pub(in crate::server) fn exec_prefix(
     let target = command.target.clone().or_else(|| current_target(state));
     let target = match target {
         Some(target) => target,
-        None => return CommandResult::err("can't establish current session\n"),
+        None => return CommandResult::err("no current target\n"),
     };
     if context.read_only {
         return CommandResult::err("client is read-only\n");

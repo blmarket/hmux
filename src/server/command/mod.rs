@@ -2274,6 +2274,12 @@ pub fn classify(args: &[String]) -> Intent {
         // Unknown/ambiguous: let the command path produce tmux's diagnostic.
         _ => return Intent::Command,
     };
+    // Interactive attach classification happens before the command-client
+    // parser sees the argv. Validate the single command here as well, so an
+    // unknown flag or an extra operand cannot be swallowed by the attach path.
+    if parse_command_groups(vec![args]).is_err() {
+        return Intent::Command;
+    }
     match canonical {
         "attach-session" => Intent::Attach,
         // `new-session -d` is a detached create → command path; otherwise attach.
@@ -2653,8 +2659,6 @@ pub(super) fn vars_full(
         .set("session_alert", st.session_alert(sess))
         .set("session_alerts", st.session_alerts(sess))
         // 1 when this session holds the server's marked pane (`select-pane -m`).
-        // The session working directory is the server process's cwd (same as the
-        // stock tmux reference).
         .set(
             "session_marked",
             if marked.is_some_and(|m| {
@@ -2667,7 +2671,12 @@ pub(super) fn vars_full(
                 "0"
             },
         )
-        .set("session_path", current_dir())
+        .set(
+            "session_path",
+            sess.cwd()
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_else(current_dir),
+        )
         // MRU window-index stack (current window first). tmux keys `#{session_stack}`
         // on recency; the current window sits at the top.
         .set("session_stack", session_stack(sess));
@@ -3668,9 +3677,9 @@ pub(crate) fn save_buffer_client_request(
 
 /// Render an I/O error the way tmux does — `strerror(errno)` — by trimming Rust's
 /// trailing ` (os error N)` from the [`std::io::Error`] display.
-fn io_error_message(e: &std::io::Error) -> String {
+pub(crate) fn io_error_message(e: &std::io::Error) -> String {
     let s = e.to_string();
-    match s.rfind(" (os error ") {
+    match s.find(" (os error") {
         Some(idx) => s[..idx].to_string(),
         None => s,
     }
@@ -3682,7 +3691,7 @@ pub(super) fn buffer_vars(st: &ServerState, name: &str, data: &[u8]) -> Vars {
     let mut vars = Vars::new();
     vars.set("buffer_name", name.to_owned())
         .set("buffer_size", data.len().to_string())
-        .set("buffer_sample", String::from_utf8_lossy(data).into_owned())
+        .set("buffer_sample", buffer_sample(data))
         // `buffer_sample` is the shortened, printable form a listing shows;
         // `buffer_full` is the buffer's whole contents.
         .set("buffer_full", String::from_utf8_lossy(data).into_owned())
@@ -3693,6 +3702,35 @@ pub(super) fn buffer_vars(st: &ServerState, name: &str, data: &[u8]) -> Vars {
                 .unwrap_or_default(),
         );
     vars
+}
+
+fn buffer_sample(data: &[u8]) -> String {
+    let sample = &data[..data.len().min(200)];
+    let mut escaped = String::new();
+    for character in String::from_utf8_lossy(sample).chars() {
+        match character {
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            '\u{08}' => escaped.push_str("\\b"),
+            '\u{07}' => escaped.push_str("\\a"),
+            '\u{0b}' => escaped.push_str("\\v"),
+            '\u{0c}' => escaped.push_str("\\f"),
+            character if character.is_ascii_control() => {
+                escaped.push_str(&format!("\\{:03o}", character as u32));
+            }
+            character => escaped.push(character),
+        }
+    }
+    if data.len() > 200 || escaped.len() > 200 {
+        while !escaped.is_char_boundary(200.min(escaped.len())) {
+            escaped.pop();
+        }
+        escaped.truncate(200.min(escaped.len()));
+        escaped.push_str("...");
+    }
+    escaped
 }
 
 fn shell_command(command: &str, context: &ClientContext) -> std::process::Command {

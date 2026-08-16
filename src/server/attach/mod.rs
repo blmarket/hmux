@@ -1677,6 +1677,9 @@ where
         command::Intent::Attach => {
             let supplied_target = explicit_target_session(args);
             let mut st = state.borrow_mut();
+            if st.sessions().is_empty() {
+                return Err(AttachStartFailure::Client("no sessions\n".to_string()));
+            }
             let target = attach_target(supplied_target, &mut st, context)
                 .map_err(AttachStartFailure::Client)?;
             if st.find(&target).is_none() {
@@ -4291,6 +4294,7 @@ mod tests {
             .borrow_mut()
             .split_window_direction_with_spec(
                 "0",
+                false,
                 false,
                 false,
                 super::super::state::SplitDirection::TopBottom,

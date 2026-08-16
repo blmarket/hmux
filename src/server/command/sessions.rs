@@ -117,10 +117,11 @@ impl HasSession {
     fn execute(self, st: &ServerState) -> CommandResult {
         match self.target.as_deref() {
             Some(name) if st.resolve_session(name).is_some() => CommandResult::ok(""),
+            Some(_) if st.sessions().is_empty() => CommandResult::err("no current target\n"),
             Some(name) => CommandResult::err(format!("can't find session: {name}\n")),
             None => match current_session(st) {
                 Some(_) => CommandResult::ok(""),
-                None => CommandResult::err("can't establish current session\n"),
+                None => CommandResult::err("no current target\n"),
             },
         }
     }
@@ -438,7 +439,7 @@ impl KillSession {
                     Ok(()) => CommandResult::ok(""),
                     Err(_) => CommandResult::err(format!("can't find session: {name}\n")),
                 },
-                None => CommandResult::err("can't establish current session\n"),
+                None => CommandResult::err("no current target\n"),
             };
         }
         if self.all_but {
@@ -447,14 +448,14 @@ impl KillSession {
                     Ok(()) => CommandResult::ok(""),
                     Err(error) => CommandResult::err(format!("{error}\n")),
                 },
-                None => CommandResult::err("can't establish current session\n"),
+                None => CommandResult::err("no current target\n"),
             };
         }
         if self.group {
             return match session() {
                 Some(name) if st.kill_session_group(&name) => CommandResult::ok(""),
                 Some(name) => CommandResult::err(format!("can't find session: {name}\n")),
-                None => CommandResult::err("can't establish current session\n"),
+                None => CommandResult::err("no current target\n"),
             };
         }
         match self.target.as_deref() {
@@ -462,7 +463,7 @@ impl KillSession {
             Some(name) => CommandResult::err(format!("can't find session: {name}\n")),
             None => match current_session(st) {
                 Some(name) if st.kill_session(&name) => CommandResult::ok(""),
-                _ => CommandResult::err("can't establish current session\n"),
+                _ => CommandResult::err("no current target\n"),
             },
         }
     }
@@ -491,7 +492,7 @@ impl RenameSession {
                 Ok(()) => CommandResult::ok(""),
                 Err(error) => CommandResult::err(format!("{error}\n")),
             },
-            (None, _) => CommandResult::err("can't establish current session\n"),
+            (None, _) => CommandResult::err("no current target\n"),
             (_, None) => {
                 CommandResult::err("command rename-session: too few arguments (need at least 1)\n")
             }
@@ -516,6 +517,9 @@ impl AttachSession {
     /// Over the command path there is no tty to attach, so a resolvable target
     /// still fails the way real tmux does.
     fn execute(self, st: &ServerState) -> CommandResult {
+        if st.sessions().is_empty() {
+            return CommandResult::err("no sessions\n");
+        }
         let target = self.target.as_deref().unwrap_or("0");
         if st.find(target).is_none() {
             CommandResult::err(format!("can't find session: {target}\n"))

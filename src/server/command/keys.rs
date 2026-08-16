@@ -153,6 +153,7 @@ impl UnbindKey {
 /// `list-keys [-1aNr] [-F format] [-O order] [-P prefix-string] [-T key-table] [key]`.
 #[derive(Clone, Debug)]
 pub(in crate::server) struct ListKeys {
+    single: bool,
     /// `-a`: with `-N`, list bindings that have no note too.
     all: bool,
     /// `-N`: restrict the listing to bindings that carry a note.
@@ -163,17 +164,20 @@ pub(in crate::server) struct ListKeys {
     table: Option<String>,
     /// `-F`: the line each binding expands to.
     format: Option<String>,
+    prefix: Option<String>,
     key: Option<String>,
 }
 
 impl ListKeys {
     pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
         Ok(Self {
+            single: args.has('1'),
             all: args.has('a'),
             notes: args.has('N'),
             repeat_only: args.has('r'),
             table: args.value('T').map(str::to_string),
             format: args.value('F').map(str::to_string),
+            prefix: args.value('P').map(str::to_string),
             key: args.positionals().first().cloned(),
         })
     }
@@ -193,34 +197,71 @@ impl ListKeys {
             },
             None => None,
         };
-        let bindings = st.key_bindings(table);
-        // `-F` expands a template per binding with tmux's `key_*` variables;
-        // `-N` selects only bindings with notes unless `-a` is also given. `-r`
-        // selects only repeatable bindings.
-        if let Some(template) = self.format.as_deref() {
-            let notes_filter = self.notes && !self.all;
-            let mut filtered: Vec<_> = bindings
-                .iter()
-                .filter(|(_, key, binding)| {
-                    !requested.is_some_and(|wanted| wanted != *key)
-                        && (!notes_filter || binding.note.is_some())
-                        && (!self.repeat_only || binding.repeat)
-                })
-                .collect();
-            filtered.sort_by_key(|(_, key, _)| list_key_order(*key));
-            let key_has_repeat = filtered.iter().any(|(_, _, binding)| binding.repeat);
-            let key_string_width = filtered
-                .iter()
-                .map(|(_, key, _)| format_key_name(*key).chars().count())
-                .max()
-                .unwrap_or(0);
-            let key_table_width = filtered
-                .iter()
-                .map(|(table_name, _, _)| table_name.chars().count())
-                .max()
-                .unwrap_or(0);
-            let mut out = String::new();
-            for (table_name, key, binding) in &filtered {
+        let bindings = if let Some(table) = table {
+            st.key_bindings(Some(table))
+        } else if self.notes {
+            let mut b = st.key_bindings(Some("prefix"));
+            b.extend(st.key_bindings(Some("root")));
+            b
+        } else {
+            st.key_bindings(None)
+        };
+        let notes_filter = self.notes && !self.all;
+        let mut filtered: Vec<_> = bindings
+            .into_iter()
+            .filter(|(_, key, binding)| {
+                !requested.is_some_and(|wanted| wanted != *key)
+                    && (!notes_filter || binding.note.is_some())
+                    && (!self.repeat_only || binding.repeat)
+            })
+            .collect();
+        if requested.is_some() && filtered.is_empty() {
+            return CommandResult::err(format!(
+                "unknown key: {}\n",
+                self.key.as_deref().unwrap_or_default()
+            ));
+        }
+        filtered.sort_by_key(|(_, key, _)| list_key_order(*key));
+
+        if self.single && filtered.len() > 1 {
+            filtered.truncate(1);
+        }
+        // A sole match (or -1 match) goes through the target client's status message, which
+        // a detached command client sees as a successful empty result.
+        if (self.single || filtered.len() <= 1) && requested.is_some() {
+            return CommandResult::ok("");
+        }
+        if self.single || filtered.len() <= 1 {
+            return CommandResult::ok("");
+        }
+
+        let key_has_repeat = filtered.iter().any(|(_, _, binding)| binding.repeat);
+        let key_string_width = filtered
+            .iter()
+            .map(|(_, key, _)| format_key_name(*key).chars().count())
+            .max()
+            .unwrap_or(0);
+        let key_table_width = filtered
+            .iter()
+            .map(|(table_name, _, _)| table_name.chars().count())
+            .max()
+            .unwrap_or(0);
+
+        let default_prefix = self.prefix.clone().unwrap_or_else(|| {
+            st.server_options()
+                .get("prefix")
+                .unwrap_or("C-b")
+                .to_string()
+        });
+
+        let mut out = String::new();
+        for (table_name, key, binding) in &filtered {
+            if let Some(template) = self.format.as_deref() {
+                let prefix_str = if *table_name == "root" {
+                    ""
+                } else {
+                    &default_prefix
+                };
                 let mut vars = format::Vars::new();
                 vars.set("notes_only", if self.notes { "1" } else { "0" })
                     .set("key_has_repeat", if key_has_repeat { "1" } else { "0" })
@@ -228,6 +269,7 @@ impl ListKeys {
                     .set("key_table_width", key_table_width.to_string())
                     .set("key_repeat", if binding.repeat { "1" } else { "0" })
                     .set("key_note", binding.note.clone().unwrap_or_default())
+                    .set("key_prefix", prefix_str)
                     .set("key_table", *table_name)
                     .set("key_string", format_key_name(*key))
                     .set("key_command", binding.command.join(" "));
@@ -236,40 +278,37 @@ impl ListKeys {
                     out.push_str(&line);
                     out.push('\n');
                 }
-            }
-            // A sole match goes through the target client's status message, which
-            // a detached command client sees as a successful empty result.
-            if filtered.len() <= 1 {
-                return CommandResult::ok("");
-            }
-            return CommandResult::ok(out);
-        }
-        let mut out = String::new();
-        let mut matched = 0;
-        for (table_name, key, binding) in bindings {
-            if requested.is_some_and(|wanted| wanted != key) {
-                continue;
-            }
-            out.push_str("bind-key");
-            if binding.repeat {
-                out.push_str(" -r");
-            }
-            out.push_str(" -T ");
-            out.push_str(table_name);
-            out.push(' ');
-            out.push_str(&format_key_name(key));
-            for word in &binding.command {
+            } else if self.notes {
+                let prefix_str = if *table_name == "root" {
+                    ""
+                } else {
+                    &default_prefix
+                };
+                let key_name = format_key_name(*key);
+                let note = binding
+                    .note
+                    .as_deref()
+                    .unwrap_or_else(|| binding.command.first().map(String::as_str).unwrap_or(""));
+                if prefix_str.is_empty() {
+                    out.push_str(&format!("{key_name:<key_string_width$} {note}\n"));
+                } else {
+                    out.push_str(&format!("{prefix_str} {key_name:<key_string_width$} {note}\n"));
+                }
+            } else {
+                out.push_str("bind-key");
+                if binding.repeat {
+                    out.push_str(" -r");
+                }
+                out.push_str(" -T ");
+                out.push_str(table_name);
                 out.push(' ');
-                out.push_str(word);
+                out.push_str(&format_key_name(*key));
+                for word in &binding.command {
+                    out.push(' ');
+                    out.push_str(word);
+                }
+                out.push('\n');
             }
-            out.push('\n');
-            matched += 1;
-        }
-        // tmux 3.7b routes a sole match through the target client's status message
-        // instead of command stdout. A detached command client therefore sees a
-        // successful empty result for either zero or one matching binding.
-        if matched <= 1 {
-            return CommandResult::ok("");
         }
         CommandResult::ok(out)
     }

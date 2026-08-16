@@ -472,6 +472,160 @@ const OPTION_VALID_ONLY: &[&str] = &[
     "user-keys",
 ];
 
+pub(crate) const OPTIONS_CATALOG_ORDER: &[&str] = &[
+    "backspace",
+    "buffer-limit",
+    "command-alias",
+    "codepoint-widths",
+    "copy-command",
+    "cursor-colour",
+    "cursor-style",
+    "default-client-command",
+    "default-terminal",
+    "editor",
+    "escape-time",
+    "exit-empty",
+    "exit-unattached",
+    "extended-keys",
+    "extended-keys-format",
+    "focus-events",
+    "get-clipboard",
+    "history-file",
+    "input-buffer-size",
+    "menu-style",
+    "menu-selected-style",
+    "menu-border-style",
+    "menu-border-lines",
+    "message-limit",
+    "prefix-timeout",
+    "prompt-history-limit",
+    "set-clipboard",
+    "terminal-overrides",
+    "terminal-features",
+    "user-keys",
+    "activity-action",
+    "assume-paste-time",
+    "base-index",
+    "bell-action",
+    "default-command",
+    "default-shell",
+    "default-size",
+    "destroy-unattached",
+    "detach-on-destroy",
+    "display-panes-active-colour",
+    "display-panes-colour",
+    "display-panes-time",
+    "display-time",
+    "history-limit",
+    "key-table",
+    "lock-after-time",
+    "lock-command",
+    "message-command-style",
+    "message-format",
+    "message-line",
+    "message-style",
+    "mouse",
+    "prefix",
+    "prefix2",
+    "prompt-cursor-colour",
+    "prompt-cursor-style",
+    "prompt-command-cursor-colour",
+    "prompt-command-cursor-style",
+    "renumber-windows",
+    "repeat-time",
+    "set-titles",
+    "set-titles-string",
+    "silence-action",
+    "status",
+    "status-bg",
+    "status-fg",
+    "status-format",
+    "status-interval",
+    "status-justify",
+    "status-keys",
+    "status-left",
+    "status-left-length",
+    "status-left-style",
+    "status-position",
+    "status-right",
+    "status-right-length",
+    "status-right-style",
+    "status-style",
+    "update-environment",
+    "visual-activity",
+    "visual-bell",
+    "visual-silence",
+    "word-separators",
+    "pane-status-current-style",
+    "pane-status-style",
+    "session-status-current-style",
+    "session-status-style",
+    "aggressive-resize",
+    "allow-passthrough",
+    "allow-rename",
+    "allow-set-title",
+    "alternate-screen",
+    "automatic-rename",
+    "automatic-rename-format",
+    "clock-mode-colour",
+    "clock-mode-style",
+    "copy-mode-match-style",
+    "copy-mode-current-match-style",
+    "copy-mode-mark-style",
+    "copy-mode-position-format",
+    "copy-mode-position-style",
+    "copy-mode-selection-style",
+    "copy-mode-current-line-number-style",
+    "copy-mode-line-number-style",
+    "copy-mode-line-numbers",
+    "fill-character",
+    "main-pane-height",
+    "main-pane-width",
+    "mode-keys",
+    "mode-style",
+    "monitor-activity",
+    "monitor-bell",
+    "monitor-silence",
+    "other-pane-height",
+    "other-pane-width",
+    "pane-active-border-style",
+    "pane-base-index",
+    "pane-border-format",
+    "pane-border-indicators",
+    "pane-border-lines",
+    "pane-border-status",
+    "pane-border-style",
+    "pane-colours",
+    "pane-scrollbars",
+    "pane-scrollbars-style",
+    "pane-scrollbars-position",
+    "popup-style",
+    "popup-border-style",
+    "popup-border-lines",
+    "remain-on-exit",
+    "remain-on-exit-format",
+    "scroll-on-clear",
+    "synchronize-panes",
+    "tiled-layout-max-columns",
+    "tree-mode-preview-format",
+    "tree-mode-preview-style",
+    "window-active-style",
+    "window-pane-current-status-format",
+    "window-pane-status-format",
+    "window-size",
+    "window-style",
+    "window-status-activity-style",
+    "window-status-bell-style",
+    "window-status-current-format",
+    "window-status-current-style",
+    "window-status-format",
+    "window-status-last-style",
+    "window-status-separator",
+    "window-status-style",
+    "wrap-search",
+    "xterm-keys",
+];
+
 pub(crate) fn option_names() -> impl Iterator<Item = &'static str> {
     OPTION_DEFAULTS
         .iter()
@@ -1103,10 +1257,23 @@ pub(crate) fn option_is_flag(name: &str) -> bool {
     OPTION_FLAGS.contains(&name)
 }
 
+pub(crate) fn is_style_option(name: &str) -> bool {
+    name.ends_with("-style") && option_choices(name).is_none()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OptionResolveResult {
+    Found(&'static str, Option<u32>),
+    Ambiguous,
+    Invalid,
+}
+
 /// Resolve an exact option name or an unambiguous prefix, preserving an array
 /// index. tmux accepts prefixes such as `status-int` for `status-interval`.
-pub(crate) fn resolve_option_name(name: &str) -> Option<(&'static str, Option<u32>)> {
-    let (base, index) = parse_option_name(name)?;
+pub(crate) fn resolve_option_name(name: &str) -> OptionResolveResult {
+    let Some((base, index)) = parse_option_name(name) else {
+        return OptionResolveResult::Invalid;
+    };
     let mut candidates = OPTION_DEFAULTS
         .iter()
         .map(|(name, _)| *name)
@@ -1123,9 +1290,13 @@ pub(crate) fn resolve_option_name(name: &str) -> Option<(&'static str, Option<u3
         .copied()
         .find(|candidate| *candidate == base)
     {
-        return Some((exact, index));
+        return OptionResolveResult::Found(exact, index);
     }
-    (candidates.len() == 1).then(|| (candidates[0], index))
+    match candidates.len() {
+        0 => OptionResolveResult::Invalid,
+        1 => OptionResolveResult::Found(candidates[0], index),
+        _ => OptionResolveResult::Ambiguous,
+    }
 }
 
 /// Whether `name` resolves to a real built-in tmux option (in either table).

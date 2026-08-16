@@ -1035,6 +1035,7 @@ impl ServerState {
         Ok(attachment)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn initial_attach_pending(&self) -> bool {
         self.initial_attach_pending
     }

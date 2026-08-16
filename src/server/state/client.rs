@@ -1199,6 +1199,39 @@ impl ClientRenderRegistry {
         ClientActionResult::Queued
     }
 
+    pub(super) fn detach_all_other_clients(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+        exec: Option<&str>,
+    ) -> ClientActionResult {
+        let inner = self.inner.borrow();
+        let target_entry = match Self::client_entry(&inner, target, invoking_tty) {
+            Ok(entry) => entry,
+            Err(result) => return result,
+        };
+        let target_name = target_entry.name.clone();
+        for entry in inner.clients.values() {
+            if entry.name != target_name {
+                let mut action = entry.slot.action.borrow_mut();
+                *action = Some(ClientAction::Detach(exec.map(str::to_owned)));
+                let _ = entry.slot.wakeup.wake();
+            }
+        }
+        ClientActionResult::Queued
+    }
+
+    pub(super) fn detach_session_clients(&self, session_id: u32, exec: Option<&str>) {
+        let inner = self.inner.borrow();
+        for entry in inner.clients.values() {
+            if entry.session_id == session_id {
+                let mut action = entry.slot.action.borrow_mut();
+                *action = Some(ClientAction::Detach(exec.map(str::to_owned)));
+                let _ = entry.slot.wakeup.wake();
+            }
+        }
+    }
+
     pub(super) fn suspend_client(
         &self,
         target: Option<&str>,
@@ -2135,6 +2168,20 @@ impl ServerState {
     ) -> ClientActionResult {
         self.client_renders
             .detach_client(target, invoking_tty, exec)
+    }
+
+    pub(crate) fn detach_all_other_clients(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+        exec: Option<&str>,
+    ) -> ClientActionResult {
+        self.client_renders
+            .detach_all_other_clients(target, invoking_tty, exec)
+    }
+
+    pub(crate) fn detach_session_clients(&self, session_id: u32, exec: Option<&str>) {
+        self.client_renders.detach_session_clients(session_id, exec);
     }
 
     pub(crate) fn suspend_client(
