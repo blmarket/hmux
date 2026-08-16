@@ -948,8 +948,38 @@ pub(crate) const WINDOW_HOOKS: &[&str] = &[
     "window-resized",
 ];
 
+/// A name index over the tables above, sorted once and searched thereafter.
+///
+/// The tables are written to be read: grouped by meaning, in the order tmux's
+/// `options-table.c` lists them. That is the right shape for a human and the
+/// wrong one for `option_kind`, which the effective-options view calls once per
+/// option per layer — a linear scan of 150 names, per name. Sorting a copy on
+/// first use keeps both.
+struct NameIndex(std::sync::OnceLock<Vec<&'static str>>);
+
+impl NameIndex {
+    const fn new() -> NameIndex {
+        NameIndex(std::sync::OnceLock::new())
+    }
+
+    fn contains(&self, name: &str, tables: &[&[&'static str]]) -> bool {
+        self.0
+            .get_or_init(|| {
+                let mut names: Vec<&'static str> = tables
+                    .iter()
+                    .flat_map(|table| table.iter().copied())
+                    .collect();
+                names.sort_unstable();
+                names
+            })
+            .binary_search_by(|probe| (*probe).cmp(name))
+            .is_ok()
+    }
+}
+
 pub(crate) fn is_hook(name: &str) -> bool {
-    SESSION_HOOKS.contains(&name) || WINDOW_HOOKS.contains(&name) || PANE_HOOKS.contains(&name)
+    static HOOKS: NameIndex = NameIndex::new();
+    HOOKS.contains(name, &[SESSION_HOOKS, WINDOW_HOOKS, PANE_HOOKS])
 }
 
 const SERVER_OPTIONS: &[&str] = &[
@@ -1233,13 +1263,24 @@ pub(crate) fn parse_option_name(name: &str) -> Option<(&str, Option<u32>)> {
 
 /// Look up the scalar-versus-array metadata for an exact built-in option name.
 pub(crate) fn option_kind(name: &str) -> Option<OptionKind> {
-    if OPTION_ARRAYS.contains(&name) || is_hook(name) {
-        Some(OptionKind::Array)
-    } else if OPTION_DEFAULTS.iter().any(|(n, _)| *n == name) || OPTION_VALID_ONLY.contains(&name) {
-        Some(OptionKind::Scalar)
-    } else {
-        None
+    static ARRAYS: NameIndex = NameIndex::new();
+    static SCALARS: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    if ARRAYS.contains(name, &[OPTION_ARRAYS]) || is_hook(name) {
+        return Some(OptionKind::Array);
     }
+    let scalars = SCALARS.get_or_init(|| {
+        let mut names: Vec<&'static str> = OPTION_DEFAULTS
+            .iter()
+            .map(|(name, _)| *name)
+            .chain(OPTION_VALID_ONLY.iter().copied())
+            .collect();
+        names.sort_unstable();
+        names
+    });
+    scalars
+        .binary_search_by(|probe| (*probe).cmp(name))
+        .is_ok()
+        .then_some(OptionKind::Scalar)
 }
 
 pub(crate) fn option_number_range(name: &str) -> Option<(i64, i64)> {
@@ -1257,7 +1298,10 @@ pub(crate) fn option_choices(name: &str) -> Option<&'static [&'static str]> {
 }
 
 pub(crate) fn option_is_flag(name: &str) -> bool {
-    OPTION_FLAGS.contains(&name)
+    // Every format variable goes through this on its way into the table, so it
+    // is asked a few hundred times per command.
+    static FLAGS: NameIndex = NameIndex::new();
+    FLAGS.contains(name, &[OPTION_FLAGS])
 }
 
 pub(crate) fn is_style_option(name: &str) -> bool {
