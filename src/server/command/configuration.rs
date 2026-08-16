@@ -285,11 +285,11 @@ fn expand_option_name_argument(
         st.marked_pane(),
     );
     for (name, value) in st.env_iter() {
-        vars.set(name, value);
+        vars.set(name.to_string(), value);
     }
     if let Ok(entries) = st.format_option_entries(target.as_deref().unwrap_or_default()) {
         for (name, value) in entries {
-            vars.set(name, value);
+            vars.set(name.to_string(), value);
         }
     }
     expand_command_format(st, argument, &vars, None)

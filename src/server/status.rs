@@ -1495,13 +1495,13 @@ impl<'a> StatusContext<'a> {
             let option_target = format!("${}:{}", session.id, link.index);
             if let Ok(entries) = self.state.format_option_entries(&option_target) {
                 for (name, value) in entries {
-                    vars.set(name, value);
+                    vars.set(name.to_string(), value);
                 }
             }
         }
         for (name, value) in self.state.env_iter() {
             if vars.lookup(name).is_none() {
-                vars.set(name, value);
+                vars.set(name.to_string(), value);
             }
         }
         vars

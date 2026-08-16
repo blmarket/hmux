@@ -318,11 +318,11 @@ fn send_copy_mode_command(
                 state.marked_pane(),
             );
             for (name, value) in state.env_iter() {
-                vars.set(name, value);
+                vars.set(name.to_string(), value);
             }
             if let Ok(entries) = state.format_option_entries(target) {
                 for (name, value) in entries {
-                    vars.set(name, value);
+                    vars.set(name.to_string(), value);
                 }
             }
             format::expand(argument, &vars)

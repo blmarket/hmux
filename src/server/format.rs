@@ -53,17 +53,27 @@ impl std::fmt::Debug for Slot {
     }
 }
 
+/// About how many variables a fully-populated context ends up holding: the
+/// ~150 `vars_full` sets, the exported environment, and the effective options
+/// on top of it. Reserving the table up front is what keeps a command off the
+/// growth ladder — a `HashMap` that starts empty rehashes eight times on the
+/// way to that count, and every rehash re-hashes every key already in it.
+const TYPICAL_VARS: usize = 448;
+
 /// A resolved format context: the variable → value map for one target
 /// (session, and optionally a specific window/pane within it).
 #[derive(Debug, Clone)]
 pub struct Vars {
-    map: HashMap<String, Slot>,
+    /// Keys are tmux's fixed names, so the common ones are `&'static str` and
+    /// cost nothing to store. The borrowed names an option or environment
+    /// walk produces are copied, as they must be.
+    map: HashMap<std::borrow::Cow<'static, str>, Slot>,
 }
 
 impl Vars {
     pub fn new() -> Vars {
         let mut vars = Vars {
-            map: HashMap::new(),
+            map: HashMap::with_capacity(TYPICAL_VARS),
         };
         // The daemon's uid cannot change, and resolving the name walks NSS
         // (sockets to nscd, /etc/passwd) — worth doing exactly once.
@@ -85,8 +95,13 @@ impl Vars {
         vars
     }
 
-    /// Set a variable. Keys are the fixed `&'static str` names tmux uses.
-    pub fn set(&mut self, key: impl Into<String>, value: impl Into<String>) -> &mut Vars {
+    /// Set a variable. Keys are the fixed `&'static str` names tmux uses; a
+    /// caller with a borrowed name of its own hands in an owned `String`.
+    pub fn set(
+        &mut self,
+        key: impl Into<std::borrow::Cow<'static, str>>,
+        value: impl Into<String>,
+    ) -> &mut Vars {
         let key = key.into();
         let mut value = value.into();
         if super::options::option_is_flag(&key) {
@@ -104,7 +119,7 @@ impl Vars {
     /// normalization is applied: deferred variables are never option flags.
     pub fn set_lazy(
         &mut self,
-        key: impl Into<String>,
+        key: impl Into<std::borrow::Cow<'static, str>>,
         compute: impl Fn() -> String + 'static,
     ) -> &mut Vars {
         self.map.insert(

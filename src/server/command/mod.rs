@@ -427,11 +427,11 @@ pub(crate) fn expand_command_prompt_format(
                 st.marked_pane(),
             );
             for (name, value) in st.env_iter() {
-                vars.set(name, value);
+                vars.set(name.to_string(), value);
             }
             if let Ok(entries) = st.format_option_entries(target.as_deref().unwrap_or_default()) {
                 for (name, value) in entries {
-                    vars.set(name, value);
+                    vars.set(name.to_string(), value);
                 }
             }
             format::expand(source, &vars)

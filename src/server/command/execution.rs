@@ -351,11 +351,11 @@ fn expand_target_format(
                 st.marked_pane(),
             );
             for (name, value) in st.env_iter() {
-                vars.set(name, value);
+                vars.set(name.to_string(), value);
             }
             if let Ok(entries) = st.format_option_entries(&target) {
                 for (name, value) in entries {
-                    vars.set(name, value);
+                    vars.set(name.to_string(), value);
                 }
             }
             for (name, value) in extra {
