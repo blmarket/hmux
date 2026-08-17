@@ -47,7 +47,7 @@ impl Command {
             Self::NextLayout(command) => command.execute(st, true),
             Self::PreviousLayout(command) => command.execute(st, false),
             Self::ClearHistory(command) => command.execute(st),
-            Self::Pipe(command) => command.execute(st),
+            Self::Pipe(command) => command.execute(st, context.agents),
             Self::Capture(command) => command.execute(st, context.agents),
             Self::List(command) => command.execute(st, context.agents),
             Self::CopyMode(command) => command.execute(st),
@@ -1152,7 +1152,7 @@ impl PipePane {
     /// By default pane output is written to the command. `-I` additionally
     /// connects command output to pane input; specifying only `-I` suppresses
     /// the default output direction.
-    fn execute(self, st: &mut ServerState) -> CommandResult {
+    fn execute(self, st: &mut ServerState, agents: &PaneAgents) -> CommandResult {
         let Some(target) = self.target.or_else(|| current_target(st)) else {
             return CommandResult::err("can't establish current session\n");
         };
@@ -1166,11 +1166,47 @@ impl PipePane {
         {
             return CommandResult::err(format!("can't find pane: {target}\n"));
         }
-        let command = self.command.join(" ");
+        let raw_command = self.command.join(" ");
+        let command = if raw_command.is_empty() {
+            None
+        } else {
+            let Some(resolved) = st.resolve(&target) else {
+                return CommandResult::err(format!("{}\n", st.pane_target_error(&target)));
+            };
+            let mut vars = vars_full(
+                st,
+                &st.sessions()[resolved.session],
+                resolved.window,
+                resolved.pane,
+                agents,
+                st.marked_pane(),
+            );
+            for (name, value) in st.env_iter() {
+                vars.set(name.to_string(), value);
+            }
+            if let Ok(entries) = st.format_option_entries(&target) {
+                for (name, value) in entries {
+                    vars.set(name.to_string(), value);
+                }
+            }
+            let loops = TreeLoops {
+                st,
+                session: resolved.session,
+                window: resolved.window,
+                agents,
+            };
+            Some(format::expand_time_with_jobs(
+                &raw_command,
+                &vars,
+                Some(&loops),
+                command_jobs(st),
+                Some(&ServerFormatTree(st)),
+            ))
+        };
         let output = self.output || !self.input;
         match st.pipe_pane(
             &target,
-            (!command.is_empty()).then_some(command.as_str()),
+            command.as_deref(),
             self.toggle,
             self.input,
             output,

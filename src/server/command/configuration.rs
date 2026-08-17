@@ -621,9 +621,13 @@ impl SetOption {
                         .filter(|value| !value.is_empty())
                         .collect::<Vec<_>>()
                 };
-                for value in values {
-                    let index = table.next_array_index(name);
-                    table.set(format!("{name}[{index}]"), value);
+                if values.is_empty() && !self.append {
+                    table.set(name, "");
+                } else {
+                    for value in values {
+                        let index = table.next_array_index(name);
+                        table.set(format!("{name}[{index}]"), value);
+                    }
                 }
             }
             st.option_changed(name);
@@ -651,9 +655,16 @@ impl SetOption {
                     }
                 }
             }
+            if index.is_some() && kind == Some(options::OptionKind::Array) {
+                table.remove(name);
+            }
             table.append(&storage_name, &value);
         } else {
-            target.local_mut(st).set(&storage_name, &value);
+            let table = target.local_mut(st);
+            if index.is_some() && kind == Some(options::OptionKind::Array) {
+                table.remove(name);
+            }
+            table.set(&storage_name, value);
         }
         st.option_changed(name);
         if name == "history-file" {
