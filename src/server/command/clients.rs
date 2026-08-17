@@ -1718,6 +1718,8 @@ pub(in crate::server) struct SwitchClient {
     client: Option<String>,
     /// `-r`: toggle the target client's read-only state first.
     toggle_read_only: bool,
+    /// `-Z`: keep target window zoomed.
+    zoom: bool,
     /// `-t`: the session (or window, or pane) to move it to.
     target: Option<String>,
 }
@@ -1727,6 +1729,7 @@ impl SwitchClient {
         Ok(Self {
             client: args.value('c').map(str::to_string),
             toggle_read_only: args.has('r'),
+            zoom: args.has('Z'),
             target: args.value('t').map(str::to_string),
         })
     }
@@ -1752,6 +1755,10 @@ impl SwitchClient {
             );
             let pane_id = state.window(resolved.session, resolved.window).panes[resolved.pane].id;
             let _ = state.select_pane(&format!("%{pane_id}"));
+            if !self.zoom {
+                let win = state.window_mut(resolved.session, resolved.window);
+                win.zoomed = false;
+            }
             let _ = state.select_window(&window_target);
             session_id
         } else {

@@ -6276,6 +6276,60 @@ mod tests {
     }
 
     #[test]
+    fn switch_client_pane_target_unzooms_without_z() {
+        let st = state();
+        let _attached = {
+            let guard = st.borrow_mut();
+            let registry = guard.client_render_registry();
+            let session_id = guard.session_id("0").unwrap();
+            registry.attach(session_id, "test-client".into()).unwrap()
+        };
+        run_str(&st, &["split-window", "-t", "0"]);
+        run_str(&st, &["resize-pane", "-Z", "-t", "0.0"]);
+        let dm = run_str(
+            &st,
+            &["display-message", "-p", "-t", "0.0", "#{window_zoomed_flag}"],
+        );
+        assert_eq!(dm.stdout, "1\n");
+        assert_eq!(
+            run_str(&st, &["switch-client", "-c", "test-client", "-t", "0.1"]).exit,
+            0
+        );
+        let dm_after = run_str(
+            &st,
+            &["display-message", "-p", "-t", "0.0", "#{window_zoomed_flag}"],
+        );
+        assert_eq!(dm_after.stdout, "0\n");
+    }
+
+    #[test]
+    fn switch_client_pane_target_preserves_zoom_with_z() {
+        let st = state();
+        let _attached = {
+            let guard = st.borrow_mut();
+            let registry = guard.client_render_registry();
+            let session_id = guard.session_id("0").unwrap();
+            registry.attach(session_id, "test-client".into()).unwrap()
+        };
+        run_str(&st, &["split-window", "-t", "0"]);
+        run_str(&st, &["resize-pane", "-Z", "-t", "0.0"]);
+        let dm = run_str(
+            &st,
+            &["display-message", "-p", "-t", "0.0", "#{window_zoomed_flag}"],
+        );
+        assert_eq!(dm.stdout, "1\n");
+        assert_eq!(
+            run_str(&st, &["switch-client", "-Z", "-c", "test-client", "-t", "0.1"]).exit,
+            0
+        );
+        let dm_after = run_str(
+            &st,
+            &["display-message", "-p", "-t", "0.0", "#{window_zoomed_flag}"],
+        );
+        assert_eq!(dm_after.stdout, "1\n");
+    }
+
+    #[test]
     fn respawn_pane_refuses_live_pane_without_k() {
         let st = state();
         // The bootstrap pane has not exited → tmux treats it as still active.
