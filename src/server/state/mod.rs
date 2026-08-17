@@ -1323,7 +1323,7 @@ mod tests {
     use super::copy::*;
     use super::*;
 
-    use hmux_vt::{CellSemantic, CellWidth, Grid, GridCell, GridRow, RowFlags};
+    use hmux_vt::{CellSemantic, CellText, CellWidth, Grid, GridCell, GridRow, RowFlags};
 
     #[test]
     fn copy_vt_rows_exclude_crlf_and_trailing_cursor() {
@@ -1355,7 +1355,7 @@ mod tests {
         let mut cells = text
             .chars()
             .map(|ch| GridCell {
-                text: ch.to_string(),
+                text: ch.into(),
                 width: CellWidth::Narrow,
                 semantic: CellSemantic::Output,
                 hyperlink: None,
@@ -1366,7 +1366,7 @@ mod tests {
         cells.resize(
             20,
             GridCell {
-                text: String::new(),
+                text: CellText::EMPTY,
                 width: CellWidth::Narrow,
                 semantic: CellSemantic::Output,
                 hyperlink: None,

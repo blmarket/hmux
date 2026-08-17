@@ -14,6 +14,7 @@
 //! mentions of the same address are not one hyperlink.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::vis;
 
@@ -25,7 +26,9 @@ const MAX_HYPERLINKS: usize = 5000;
 /// One entry in the table.
 #[derive(Clone, Debug)]
 struct Entry {
-    uri: String,
+    /// Shared rather than owned outright, so a reader that puts the URI in
+    /// every cell of a link takes a reference count instead of a copy.
+    uri: Arc<str>,
     /// The `id=` the sequence carried, empty when it was anonymous.
     internal_id: String,
 }
@@ -78,7 +81,13 @@ impl Hyperlinks {
 
         let inner = self.next_inner;
         self.next_inner += 1;
-        self.entries.insert(inner, Entry { uri, internal_id });
+        self.entries.insert(
+            inner,
+            Entry {
+                uri: Arc::from(uri),
+                internal_id,
+            },
+        );
         if named {
             self.by_id.insert(key, inner);
         }
@@ -86,7 +95,8 @@ impl Hyperlinks {
         if self.order.len() > MAX_HYPERLINKS {
             let oldest = self.order.remove(0);
             if let Some(entry) = self.entries.remove(&oldest) {
-                self.by_id.remove(&(entry.internal_id, entry.uri));
+                self.by_id
+                    .remove(&(entry.internal_id, entry.uri.to_string()));
             }
         }
         inner
@@ -103,7 +113,20 @@ impl Hyperlinks {
         } else {
             Some(entry.internal_id.as_str())
         };
-        Some((entry.uri.as_str(), internal_id))
+        Some((&entry.uri, internal_id))
+    }
+
+    /// The URI for an inner id as a shared handle, for a reader that puts it in
+    /// every cell of the link rather than reading it once.
+    ///
+    /// Zero is answered without touching the table. It is the id of a cell in
+    /// no link at all, which on a screen that has never seen an OSC 8 is every
+    /// cell a capture walks.
+    pub fn uri(&self, inner: u32) -> Option<Arc<str>> {
+        if inner == 0 {
+            return None;
+        }
+        self.entries.get(&inner).map(|entry| Arc::clone(&entry.uri))
     }
 
     // `clear-history -H` is what calls this, once that flag is plumbed through.

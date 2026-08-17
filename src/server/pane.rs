@@ -921,11 +921,8 @@ impl NativePaneObservation {
         const GRID_CELL_ENTRY_BYTES: usize = 5;
         const GRID_EXTD_ENTRY_BYTES: usize = 23;
         let term = self.term.borrow();
-        let dims = term.screen().grid_dims();
-        let grid = term.screen().grid_snapshot_range(0, dims.total_rows);
-        let lines = dims.total_rows;
-        let cells: usize = grid.rows.iter().map(|row| row.size).sum();
-        let extended: usize = grid.rows.iter().map(|row| row.extd).sum();
+        let lines = term.screen().grid_dims().total_rows;
+        let (cells, extended) = term.screen().grid_extents();
         let total = lines * GRID_LINE_BYTES
             + cells * GRID_CELL_ENTRY_BYTES
             + extended * GRID_EXTD_ENTRY_BYTES;

@@ -390,8 +390,9 @@ pub(crate) fn grid_hyperlink(pane: &super::pane::Pane, position: MousePosition) 
     grid.rows
         .first()
         .and_then(|row| row.cells.get(usize::from(position.x)))
-        .and_then(|cell| cell.hyperlink.clone())
+        .and_then(|cell| cell.hyperlink.as_deref())
         .unwrap_or_default()
+        .to_string()
 }
 
 /// tmux's `KEYC_CLICK_TIMEOUT`.

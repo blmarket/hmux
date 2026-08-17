@@ -1985,6 +1985,17 @@ struct CaptureRange {
     bottom: usize,
 }
 
+/// A capture being built up.
+///
+/// The two fields outlive any one span of rows: `-H` caps the links it lists
+/// over the whole capture rather than per row, so both the text and the links
+/// already listed carry across the windows a deep capture is read in.
+#[derive(Default)]
+struct CaptureWriter {
+    seen_links: std::collections::HashSet<u32>,
+    out: String,
+}
+
 /// `capture-pane [-aCeFHJLMNpPqT] [-b buffer-name] [-E end-line]
 /// [-S start-line] [-t target-pane]`.
 ///
@@ -2162,12 +2173,11 @@ impl CapturePane {
                         history_limit,
                     );
                     let rows = range.bottom - range.top + 1;
-                    let grid = node.pane.grid_snapshot_range(range.top, rows);
                     let styled_rows = styled.then(|| {
                         let bytes = node.pane.dump_rows_vt(range.top, rows, self.extent());
                         capture_vt_normalize_rows(&bytes, rows)
                     });
-                    self.serialize(&grid, range.top, range, styled_rows.as_deref())
+                    self.serialize_windowed(&node.pane, range, styled_rows.as_deref())
                 }
             }
         };
@@ -2221,9 +2231,10 @@ impl CapturePane {
         CaptureRange { top, bottom }
     }
 
-    /// Serialize the rows of `range`. `grid.rows[0]` is physical row `start_row`,
-    /// so a range-limited snapshot indexes relative to it while `-L` numbering and
-    /// the range itself stay in physical-row terms.
+    /// Serialize the rows of `range` from an already materialized grid.
+    /// `grid.rows[0]` is physical row `start_row`, so a range-limited snapshot
+    /// indexes relative to it while `-L` numbering and the range itself stay in
+    /// physical-row terms.
     fn serialize(
         &self,
         grid: &Grid,
@@ -2231,10 +2242,66 @@ impl CapturePane {
         range: CaptureRange,
         styled_rows: Option<&[String]>,
     ) -> String {
-        let mut seen_links = std::collections::HashSet::new();
-        let mut out = String::new();
+        let mut state = CaptureWriter::default();
+        self.serialize_into(grid, start_row, range, 0, styled_rows, &mut state);
+        state.out
+    }
 
-        for (relative, row_index) in (range.top..=range.bottom).enumerate() {
+    /// Serialize the rows of `range` a window at a time, so a capture of a deep
+    /// history never holds more than one window of cells at once.
+    ///
+    /// tmux reads its grid in place and needs no equivalent. Here the rows are
+    /// materialized to read them, and doing that for the whole range at once
+    /// costs both the peak footprint and a cache miss on every cell, since
+    /// nothing written during the walk is still resident when the serializer
+    /// reaches it.
+    fn serialize_windowed(
+        &self,
+        pane: &super::super::pane::Pane,
+        range: CaptureRange,
+        styled_rows: Option<&[String]>,
+    ) -> String {
+        /// Rows per window: enough that the snapshot of one stays in cache
+        /// while the serializer reads it.
+        const WINDOW_ROWS: usize = 256;
+
+        let mut state = CaptureWriter::default();
+        let mut top = range.top;
+        let mut relative = 0;
+        while top <= range.bottom {
+            let bottom = top.saturating_add(WINDOW_ROWS - 1).min(range.bottom);
+            let rows = bottom - top + 1;
+            let grid = pane.grid_snapshot_range(top, rows);
+            self.serialize_into(
+                &grid,
+                top,
+                CaptureRange { top, bottom },
+                relative,
+                styled_rows,
+                &mut state,
+            );
+            relative += rows;
+            top = bottom + 1;
+        }
+        state.out
+    }
+
+    /// Serialize one span of rows into a capture in progress. `relative_base`
+    /// is how many rows of the capture precede this span, which is what indexes
+    /// the pre-serialized `-e` rows.
+    fn serialize_into(
+        &self,
+        grid: &Grid,
+        start_row: usize,
+        range: CaptureRange,
+        relative_base: usize,
+        styled_rows: Option<&[String]>,
+        state: &mut CaptureWriter,
+    ) {
+        let CaptureWriter { seen_links, out } = state;
+
+        for (offset, row_index) in (range.top..=range.bottom).enumerate() {
+            let relative = relative_base + offset;
             let row = &grid.rows[row_index - start_row];
             let mut line = if self.hyperlinks {
                 // tmux checks the row's flag before walking it and stops at the
@@ -2287,7 +2354,6 @@ impl CapturePane {
                 out.push('\n');
             }
         }
-        out
     }
 
     /// How far along each row this capture reads, tmux's

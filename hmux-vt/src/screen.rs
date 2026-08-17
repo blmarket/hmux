@@ -86,17 +86,171 @@ pub enum CellSemantic {
     Prompt,
 }
 
+/// The grapheme cluster in one snapshot cell, held inline.
+///
+/// The engine caps a cluster at `UTF8_SIZE` bytes — a longer one starts a new
+/// cell rather than growing this one — so a snapshot never needs a heap string
+/// to hold what a cell can contain. Keeping the bytes inline is what stops a
+/// deep read from allocating per cell: `capture-pane -S -` over a full history
+/// walks millions of them, and copy mode freezes that many at once.
+///
+/// It derefs to `str`, so a reader treats it as the text it holds.
+#[derive(Clone, Copy, Eq)]
+pub struct CellText {
+    bytes: [u8; crate::engine::cell::UTF8_SIZE],
+    len: u8,
+}
+
+impl CellText {
+    /// The cluster a cell nothing has been written into holds.
+    pub const EMPTY: CellText = CellText {
+        bytes: [0; crate::engine::cell::UTF8_SIZE],
+        len: 0,
+    };
+
+    /// The cluster as text.
+    ///
+    /// Every writer takes whole characters and the one truncation point drops a
+    /// character rather than splitting it, so the bytes are always valid UTF-8.
+    pub fn as_str(&self) -> &str {
+        std::str::from_utf8(&self.bytes[..usize::from(self.len)]).unwrap_or_default()
+    }
+
+    /// Append a character, ignoring one that would outgrow the inline cluster —
+    /// which is the engine's own rule for a cluster that runs past its cap.
+    pub fn push(&mut self, character: char) {
+        let mut buffer = [0u8; 4];
+        let encoded = character.encode_utf8(&mut buffer).as_bytes();
+        let start = usize::from(self.len);
+        let Some(end) = start
+            .checked_add(encoded.len())
+            .filter(|end| *end <= self.bytes.len())
+        else {
+            return;
+        };
+        self.bytes[start..end].copy_from_slice(encoded);
+        self.len = u8::try_from(end).unwrap_or(u8::MAX);
+    }
+}
+
+impl Default for CellText {
+    fn default() -> CellText {
+        CellText::EMPTY
+    }
+}
+
+impl std::ops::Deref for CellText {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl std::fmt::Debug for CellText {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self.as_str(), formatter)
+    }
+}
+
+impl std::fmt::Display for CellText {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl From<&str> for CellText {
+    /// Text longer than the inline cluster is kept up to the last character
+    /// that fits, as the engine keeps the cluster it can hold.
+    ///
+    /// A cluster the engine produced always fits, so the whole-slice copy is
+    /// the path every cell of a capture takes; the character walk is only for
+    /// a caller passing text from somewhere else.
+    fn from(text: &str) -> CellText {
+        let mut cluster = CellText::EMPTY;
+        let bytes = text.as_bytes();
+        if bytes.len() <= cluster.bytes.len() {
+            cluster.bytes[..bytes.len()].copy_from_slice(bytes);
+            cluster.len = u8::try_from(bytes.len()).unwrap_or(u8::MAX);
+            return cluster;
+        }
+        for character in text.chars() {
+            cluster.push(character);
+        }
+        cluster
+    }
+}
+
+impl From<char> for CellText {
+    fn from(character: char) -> CellText {
+        let mut cluster = CellText::EMPTY;
+        cluster.push(character);
+        cluster
+    }
+}
+
+impl PartialEq for CellText {
+    fn eq(&self, other: &CellText) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl PartialEq<str> for CellText {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<&str> for CellText {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<String> for CellText {
+    fn eq(&self, other: &String) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl PartialEq<CellText> for str {
+    fn eq(&self, other: &CellText) -> bool {
+        self == other.as_str()
+    }
+}
+
+impl PartialEq<CellText> for &str {
+    fn eq(&self, other: &CellText) -> bool {
+        *self == other.as_str()
+    }
+}
+
+impl PartialEq<CellText> for String {
+    fn eq(&self, other: &CellText) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl std::hash::Hash for CellText {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state);
+    }
+}
+
 /// An immutable copy of one terminal cell.
 ///
 /// `text` holds the complete grapheme cluster in the cell. An empty cell has an
-/// empty string; that intentionally distinguishes it from a literal U+0020 cell
+/// empty cluster; that intentionally distinguishes it from a literal U+0020 cell
 /// without claiming how the empty cell was produced.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GridCell {
-    pub text: String,
+    pub text: CellText,
     pub width: CellWidth,
     pub semantic: CellSemantic,
-    pub hyperlink: Option<String>,
+    /// The cell's OSC 8 URI, shared with the screen's hyperlink table rather
+    /// than copied: a link covers a run of cells, and a snapshot of one would
+    /// otherwise hold the same string once per column it spans.
+    pub hyperlink: Option<std::sync::Arc<str>>,
     /// Which link this cell belongs to, as the screen's own identity for it —
     /// tmux's *inner* id, the number a `grid_cell` carries in `link`. Zero
     /// means the cell is not in a link.
