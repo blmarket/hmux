@@ -15,6 +15,8 @@ use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use bytes::Bytes;
+
 use super::{
     now_epoch, now_micros, ClientAction, ClientActionResult, ClientKey, ClientMessage,
     ClientMessageResult, MessageLogEntry, OverlayRequest, ServerState, DEFAULT_KEY_TABLE,
@@ -626,7 +628,7 @@ struct ClientRenderSlot {
     /// Bytes an application asked to have written to this client's terminal
     /// verbatim. Kept out of `action` for the same reason as `flag_updates`,
     /// and ordered because a payload is meaningless out of sequence.
-    client_output: RefCell<VecDeque<Vec<u8>>>,
+    client_output: RefCell<VecDeque<Bytes>>,
     /// `refresh-client -f` values aimed at this client by *another* client.
     /// Kept out of `action` because flag updates must not displace a queued
     /// switch or detach, and several may arrive before the client next runs.
@@ -889,7 +891,7 @@ impl ClientRenderRegistry {
     /// terminal of its own, which is what leaves control clients out.
     /// Write straight to one named client's terminal, for the questions a pane
     /// asks that only that client can answer.
-    pub(super) fn write_client_output_named(&self, client: &str, bytes: &[u8]) {
+    pub(super) fn write_client_output_named(&self, client: &str, bytes: Bytes) {
         let inner = self.inner.borrow();
         let Some(entry) = inner
             .clients
@@ -900,7 +902,7 @@ impl ClientRenderRegistry {
         };
         {
             let mut queued = entry.slot.client_output.borrow_mut();
-            queued.push_back(bytes.to_vec());
+            queued.push_back(bytes);
         }
         let _ = entry.slot.wakeup.wake();
     }
@@ -926,7 +928,7 @@ impl ClientRenderRegistry {
             .is_some_and(|entry| entry.clipboard_query_at.take().is_some())
     }
 
-    pub(super) fn write_client_output(&self, sessions: &BTreeSet<u32>, bytes: &[u8]) {
+    pub(super) fn write_client_output(&self, sessions: &BTreeSet<u32>, bytes: Bytes) {
         let inner = self.inner.borrow();
         for entry in inner
             .clients
@@ -934,7 +936,7 @@ impl ClientRenderRegistry {
             .filter(|entry| sessions.contains(&entry.session_id) && !entry.control_mode)
         {
             let mut queued = entry.slot.client_output.borrow_mut();
-            queued.push_back(bytes.to_vec());
+            queued.push_back(bytes.clone());
             let _ = entry.slot.wakeup.wake();
         }
     }
@@ -1744,7 +1746,7 @@ impl ClientRenderAttachment {
     }
 
     /// Bytes an application asked to have written to this client's terminal.
-    pub(crate) fn take_client_output(&self) -> Vec<Vec<u8>> {
+    pub(crate) fn take_client_output(&self) -> Vec<Bytes> {
         self.slot.client_output.borrow_mut().drain(..).collect()
     }
 

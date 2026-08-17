@@ -42,6 +42,8 @@ use std::io::Write as _;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::time::{Duration, Instant};
 
+use bytes::{Buf, Bytes, BytesMut};
+
 use crate::integration::status::StatusHub;
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 use crate::tmux::traits::NonblockingFrameReader;
@@ -179,7 +181,7 @@ struct AttachTargetState {
 }
 
 struct AttachRenderState {
-    last_render: Vec<u8>,
+    last_render: Bytes,
     seen_large_scroll: BTreeMap<u32, u64>,
     output_cursor_visible: Option<bool>,
     tty_mouse_mode: TtyMouseMode,
@@ -469,16 +471,18 @@ impl From<io::Error> for AttachStartFailure {
 }
 
 struct TtyOutput {
-    bytes: Vec<u8>,
-    written: usize,
+    /// What is queued but not yet written. A short write advances the buffer's
+    /// own start rather than moving the unwritten tail down, so a client whose
+    /// terminal keeps accepting a little at a time is not re-copying the rest
+    /// of the frame every time it does.
+    bytes: BytesMut,
     total: u64,
 }
 
 impl TtyOutput {
     fn new() -> TtyOutput {
         TtyOutput {
-            bytes: Vec::new(),
-            written: 0,
+            bytes: BytesMut::new(),
             total: 0,
         }
     }
@@ -488,16 +492,12 @@ impl TtyOutput {
     }
 
     fn has_pending(&self) -> bool {
-        self.written < self.bytes.len()
+        !self.bytes.is_empty()
     }
 
     fn queue(&mut self, fd: RawFd, bytes: &[u8]) -> io::Result<()> {
-        if bytes.len() > TTY_OUTPUT_LIMIT.saturating_sub(self.bytes.len() - self.written) {
+        if bytes.len() > TTY_OUTPUT_LIMIT.saturating_sub(self.bytes.len()) {
             return Err(io::Error::other("attach tty output limit exceeded"));
-        }
-        if self.written != 0 {
-            self.bytes.drain(..self.written);
-            self.written = 0;
         }
         self.bytes.extend_from_slice(bytes);
         self.flush(fd)
@@ -505,7 +505,7 @@ impl TtyOutput {
 
     fn flush(&mut self, fd: RawFd) -> io::Result<()> {
         while self.has_pending() {
-            let remaining = &self.bytes[self.written..];
+            let remaining = &self.bytes[..];
             let written = unsafe {
                 libc::write(
                     fd,
@@ -514,7 +514,7 @@ impl TtyOutput {
                 )
             };
             if written > 0 {
-                self.written += written as usize;
+                self.bytes.advance(written as usize);
                 self.total += written as u64;
                 continue;
             }
@@ -533,8 +533,10 @@ impl TtyOutput {
             }
             return Err(error);
         }
+        // Drained: the buffer goes back to the start of its allocation rather
+        // than keeping the whole frame's worth of consumed capacity ahead of
+        // the next one.
         self.bytes.clear();
-        self.written = 0;
         Ok(())
     }
 }
@@ -552,7 +554,7 @@ impl AttachCompositorState {
                 context,
             },
             render: AttachRenderState {
-                last_render: Vec::new(),
+                last_render: Bytes::new(),
                 seen_large_scroll: BTreeMap::new(),
                 output_cursor_visible: None,
                 // The tty start sequence has just cleared every mouse mode.

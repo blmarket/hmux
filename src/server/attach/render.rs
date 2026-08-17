@@ -1,4 +1,6 @@
 use super::*;
+use bytes::Bytes;
+
 use crate::server::state::SharedState;
 
 impl AttachSession {
@@ -57,7 +59,7 @@ impl AttachSession {
                 .ui
                 .command_prompt
                 .as_ref()
-                .and_then(|prompt| prompt.frozen_frame().map(<[u8]>::to_vec))
+                .and_then(|prompt| prompt.frozen_frame().map(|frozen| frozen.to_vec()))
                 .map(Ok)
                 .unwrap_or_else(|| {
                     let client = self.attachments.render_attachment.client_name();
@@ -340,7 +342,7 @@ impl AttachSession {
                             .output
                             .queue(self.tty.render_fd.as_raw_fd(), &output);
                     }
-                    self.compositor.render.last_render = frame;
+                    self.compositor.render.last_render = Bytes::from(frame);
                     self.compositor.render.force_clear = false;
                     wrote_frame = true;
                 }

@@ -7,6 +7,8 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use bytes::{Buf, Bytes, BytesMut};
+
 use crate::integration::status::StatusHub;
 use crate::tmux::message::{Frame, Message};
 use hmux_rt::TaskHandle;
@@ -70,7 +72,10 @@ pub(crate) struct EventControlClient {
     checkpoint: u64,
     streams: BTreeMap<u32, ControlPaneStream>,
     sequence: u64,
-    pending: Vec<u8>,
+    /// Client input not yet split into whole lines. Split at the newline
+    /// rather than drained through it, so a partial line at the end of a read
+    /// is not moved to the front of the buffer once per line before it.
+    pending: BytesMut,
     client_size: Option<(u16, u16)>,
     client_window_sizes: BTreeMap<u32, (u16, u16)>,
     command_queue: CommandQueue<ControlQueueItem>,
@@ -192,7 +197,7 @@ impl EventControlClient {
         let streams = control_pane_streams(&snapshot)?;
         let mut sequence = 0;
         if control_control_mode {
-            control_writer.enqueue(b"\x1bP1000p");
+            control_writer.enqueue(Bytes::from_static(b"\x1bP1000p"));
         }
         let initial = ControlCommandId::next(&mut sequence);
         write_control_marker(&mut control_writer, "%begin", initial, 0);
@@ -250,7 +255,7 @@ impl EventControlClient {
             checkpoint,
             streams,
             sequence,
-            pending: Vec::new(),
+            pending: BytesMut::new(),
             client_size: None,
             client_window_sizes: BTreeMap::new(),
             command_queue: CommandQueue::new(),
@@ -687,8 +692,8 @@ impl EventControlClient {
     /// Turn whole lines the client sent into queued commands.
     pub(crate) fn parse_input(&mut self) -> io::Result<()> {
         while let Some(newline) = self.pending.iter().position(|byte| *byte == b'\n') {
-            let raw_line = String::from_utf8_lossy(&self.pending[..newline]).to_string();
-            self.pending.drain(..=newline);
+            let line = self.pending.split_to(newline + 1);
+            let raw_line = String::from_utf8_lossy(&line[..newline]).to_string();
             if raw_line.is_empty() {
                 self.stdin_open = false;
                 self.pending.clear();
@@ -738,8 +743,10 @@ impl EventControlClient {
                 ControlQueueItem::ParseError(result) => {
                     let id = ControlCommandId::next(&mut self.sequence);
                     write_control_marker(&mut self.control_writer, "%begin", id, 1);
-                    self.control_writer.enqueue(b"parse error: ");
-                    self.control_writer.enqueue(result.stderr.as_bytes());
+                    self.control_writer
+                        .enqueue(Bytes::from_static(b"parse error: "));
+                    self.control_writer
+                        .enqueue(Bytes::copy_from_slice(result.stderr.as_bytes()));
                     write_control_marker(&mut self.control_writer, "%error", id, 1);
                     self.command_queue.complete(QueueCompletion::failed());
                     continue;
@@ -978,10 +985,12 @@ impl EventControlClient {
         flags: u8,
     ) {
         if !result.stdout_data().is_empty() {
-            self.control_writer.enqueue(result.stdout_data());
+            self.control_writer
+                .enqueue(Bytes::copy_from_slice(result.stdout_data()));
         }
         if !result.stderr.is_empty() {
-            self.control_writer.enqueue(result.stderr.as_bytes());
+            self.control_writer
+                .enqueue(Bytes::copy_from_slice(result.stderr.as_bytes()));
         }
         if result.exit == 0 {
             write_control_marker(&mut self.control_writer, "%end", id, flags);
@@ -1023,8 +1032,10 @@ fn set_nonblocking_fd(fd: i32) -> io::Result<()> {
 
 struct ControlWriter {
     fd: i32,
-    blocks: VecDeque<Vec<u8>>,
-    front_offset: usize,
+    /// Queued blocks, each owned by whoever built it: a `%output` line is
+    /// handed over rather than copied here, and a short write advances the
+    /// block at the front instead of moving what is left of it.
+    blocks: VecDeque<Bytes>,
     queued: usize,
 }
 
@@ -1037,22 +1048,26 @@ impl ControlWriter {
         Ok(Self {
             fd,
             blocks: VecDeque::new(),
-            front_offset: 0,
             queued: 0,
         })
     }
 
-    fn enqueue(&mut self, bytes: &[u8]) {
+    fn enqueue(&mut self, bytes: Bytes) {
         if bytes.is_empty() {
             return;
         }
         self.queued = self.queued.saturating_add(bytes.len());
-        self.blocks.push_back(bytes.to_vec());
+        self.blocks.push_back(bytes);
     }
 
+    /// The newline goes in the block the line already needs, rather than
+    /// becoming a one-byte block and a second write of its own.
     fn enqueue_line(&mut self, line: impl AsRef<[u8]>) {
-        self.enqueue(line.as_ref());
-        self.enqueue(b"\n");
+        let line = line.as_ref();
+        let mut block = BytesMut::with_capacity(line.len() + 1);
+        block.extend_from_slice(line);
+        block.extend_from_slice(b"\n");
+        self.enqueue(block.freeze());
     }
 
     fn available(&self) -> usize {
@@ -1064,9 +1079,8 @@ impl ControlWriter {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        while let Some(front) = self.blocks.front() {
-            let bytes = &front[self.front_offset..];
-            let written = unsafe { libc::write(self.fd, bytes.as_ptr().cast(), bytes.len()) };
+        while let Some(front) = self.blocks.front_mut() {
+            let written = unsafe { libc::write(self.fd, front.as_ptr().cast(), front.len()) };
             if written < 0 {
                 let error = io::Error::last_os_error();
                 if error.kind() == io::ErrorKind::Interrupted {
@@ -1084,11 +1098,10 @@ impl ControlWriter {
                 ));
             }
             let written = written as usize;
-            self.front_offset += written;
             self.queued = self.queued.saturating_sub(written);
-            if self.front_offset == front.len() {
+            front.advance(written);
+            if front.is_empty() {
                 self.blocks.pop_front();
-                self.front_offset = 0;
             }
         }
         Ok(())
@@ -1449,7 +1462,7 @@ fn write_control_output(
         };
         escape_control_output(&mut line, &bytes);
         line.push(b'\n');
-        writer.enqueue(&line);
+        writer.enqueue(Bytes::from(line));
         stream.reader.advance(next_offset);
         stream.delivered_at = Instant::now();
         if next_offset == end {

@@ -1,5 +1,7 @@
 use std::collections::{BTreeSet, VecDeque};
 
+use bytes::Bytes;
+
 use crate::integration::status::StatusHub;
 
 use super::super::key::parse_key_name;
@@ -59,7 +61,7 @@ enum PromptInputMode {
 }
 
 struct PromptPresentation {
-    frozen_frame: Option<Vec<u8>>,
+    frozen_frame: Option<Bytes>,
 }
 
 struct PromptExecution {
@@ -167,12 +169,12 @@ impl CommandPrompt {
         self.request.spec.key
     }
 
-    pub(super) fn freeze(&mut self, frame: Vec<u8>) {
+    pub(super) fn freeze(&mut self, frame: Bytes) {
         self.presentation.frozen_frame = Some(frame);
     }
 
-    pub(super) fn frozen_frame(&self) -> Option<&[u8]> {
-        self.presentation.frozen_frame.as_deref()
+    pub(super) fn frozen_frame(&self) -> Option<&Bytes> {
+        self.presentation.frozen_frame.as_ref()
     }
 
     pub(super) fn has_completion(&self) -> bool {

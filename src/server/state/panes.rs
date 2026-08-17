@@ -19,6 +19,8 @@ use super::{
     ClientActionResult, ExitEmpty, PaneNode, PaneSpec, RenderInvalidation, ServerState,
     TerminalReply, TerminalRequest, TerminalRequestKind, Window, Winlink, ALERT_ACTIVITY,
 };
+use bytes::Bytes;
+
 use crate::server::input_keys::{
     self, ExtendedKeys, ExtendedKeysFormat, PaneKey, PaneKeyEncoding, PaneKeyModes, PaneKeyOptions,
 };
@@ -415,7 +417,8 @@ impl ServerState {
                         })
                         .map(|session| session.id)
                         .collect::<BTreeSet<_>>();
-                    self.client_renders.write_client_output(&sessions, &data);
+                    self.client_renders
+                        .write_client_output(&sessions, Bytes::from(data));
                 }
             }
         }
@@ -524,7 +527,7 @@ impl ServerState {
                 // only the answer it writes back mirrors the pane's own.
                 self.client_renders.write_client_output_named(
                     &client,
-                    format!("\x1b]4;{index};?\x1b\\").as_bytes(),
+                    Bytes::from(format!("\x1b]4;{index};?\x1b\\")),
                 );
                 self.add_terminal_request(
                     client,
