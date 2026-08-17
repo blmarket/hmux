@@ -38,6 +38,7 @@ mod session;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
+use std::io::Write as _;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::time::{Duration, Instant};
 
@@ -2571,7 +2572,8 @@ fn compose_frame_cached(
     // a window smaller than its client is framed rather than left blank.
     let fill = st.window_fill(target);
     for i in 0..pane_height as usize {
-        out.extend_from_slice(format!("\x1b[{};1H", usize::from(pane_top) + i + 1).as_bytes());
+        let physical_row = usize::from(pane_top) + i + 1;
+        let _ = write!(out, "\x1b[{physical_row};1H");
         if let Some(((window_cols, window_rows), fill)) = fill.as_ref() {
             let filled = if i < usize::from(*window_rows) {
                 usize::from(cols.saturating_sub(*window_cols))
@@ -2579,18 +2581,14 @@ fn compose_frame_cached(
                 usize::from(cols)
             };
             if filled != 0 {
-                out.extend_from_slice(
-                    format!(
-                        "\x1b[{};{}H{}",
-                        usize::from(pane_top) + i + 1,
-                        usize::from(cols) - filled + 1,
-                        fill.repeat(filled)
-                    )
-                    .as_bytes(),
+                let _ = write!(
+                    out,
+                    "\x1b[{};{}H{}",
+                    physical_row,
+                    usize::from(cols) - filled + 1,
+                    fill.repeat(filled)
                 );
-                out.extend_from_slice(
-                    format!("\x1b[{};1H", usize::from(pane_top) + i + 1).as_bytes(),
-                );
+                let _ = write!(out, "\x1b[{physical_row};1H");
             }
         } else {
             out.extend_from_slice(b"\x1b[K");
@@ -2674,20 +2672,26 @@ const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
 fn strip_cursor_visibility(frame: &[u8]) -> (Vec<u8>, Option<bool>) {
     let mut content = Vec::with_capacity(frame.len());
     let mut requested = None;
-    let mut i = 0;
-    while i < frame.len() {
-        let rest = &frame[i..];
-        if rest.starts_with(HIDE_CURSOR) {
+    let mut rest = frame;
+    // Only an escape can begin either sequence, so the bytes between escapes
+    // are copied as runs. A frame is thousands of bytes and a repaint diffs two
+    // of them, which is what makes the difference between this and a copy that
+    // steps a byte at a time.
+    while let Some(escape) = rest.iter().position(|byte| *byte == 0x1b) {
+        let (run, tail) = rest.split_at(escape);
+        content.extend_from_slice(run);
+        if let Some(tail) = tail.strip_prefix(HIDE_CURSOR) {
             requested = Some(false);
-            i += HIDE_CURSOR.len();
-        } else if rest.starts_with(SHOW_CURSOR) {
+            rest = tail;
+        } else if let Some(tail) = tail.strip_prefix(SHOW_CURSOR) {
             requested = Some(true);
-            i += SHOW_CURSOR.len();
+            rest = tail;
         } else {
-            content.push(frame[i]);
-            i += 1;
+            content.push(0x1b);
+            rest = &tail[1..];
         }
     }
+    content.extend_from_slice(rest);
     (content, requested)
 }
 
@@ -2813,14 +2817,35 @@ fn parse_positioned_frame(frame: &[u8]) -> Option<ParsedFrame<'_>> {
     })
 }
 
-fn row_payloads(frame: &ParsedFrame<'_>) -> BTreeMap<u16, Vec<u8>> {
-    let mut rows = BTreeMap::<u16, Vec<u8>>::new();
+/// Each row's paint sections, borrowed from the frame rather than copied out of
+/// it: the diff only ever compares them.
+fn row_sections<'frame>(frame: &ParsedFrame<'frame>) -> BTreeMap<u16, Vec<&'frame [u8]>> {
+    let mut rows = BTreeMap::<u16, Vec<&'frame [u8]>>::new();
     for section in &frame.paint {
-        rows.entry(section.row)
-            .or_default()
-            .extend_from_slice(section.bytes);
+        rows.entry(section.row).or_default().push(section.bytes);
     }
     rows
+}
+
+/// Whether two rows' sections spell the same bytes.
+///
+/// A row can be painted by more than one positioned section and two frames need
+/// not split it the same way, so what is compared is the payload the sections
+/// spell, not the sections themselves. One section is the ordinary case and
+/// compares as one run.
+fn same_row(previous: &[&[u8]], current: &[&[u8]]) -> bool {
+    match (previous, current) {
+        ([previous], [current]) => previous == current,
+        _ => {
+            let length = |sections: &[&[u8]]| sections.iter().map(|bytes| bytes.len()).sum::<usize>();
+            length(previous) == length(current)
+                && previous
+                    .iter()
+                    .copied()
+                    .flatten()
+                    .eq(current.iter().copied().flatten())
+        }
+    }
 }
 
 /// The frame with every paint section on `row` removed.
@@ -2863,13 +2888,17 @@ fn diff_rendered_frame(previous: &[u8], current: &[u8]) -> FrameDelta {
         };
     };
 
-    let previous_rows = row_payloads(&previous_frame);
-    let current_rows = row_payloads(&current_frame);
+    let previous_rows = row_sections(&previous_frame);
+    let current_rows = row_sections(&current_frame);
     let mut paint_rows = previous_rows
         .keys()
         .chain(current_rows.keys())
         .copied()
-        .filter(|row| previous_rows.get(row) != current_rows.get(row))
+        .filter(|row| match (previous_rows.get(row), current_rows.get(row)) {
+            (Some(previous), Some(current)) => !same_row(previous, current),
+            // A row only one of the frames paints at all has changed.
+            _ => true,
+        })
         .collect::<BTreeSet<_>>();
 
     if previous_frame.prefix != current_frame.prefix {
