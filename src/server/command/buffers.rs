@@ -1,5 +1,7 @@
 //! The paste-buffer commands.
 
+use bytes::Bytes;
+
 use super::*;
 
 #[derive(Clone, Debug)]
@@ -371,7 +373,7 @@ impl ListBuffers {
             Ok(order) => order,
             Err(error) => return error,
         };
-        let mut buffers: Vec<(usize, &(String, Vec<u8>))> =
+        let mut buffers: Vec<(usize, &(String, Bytes))> =
             st.buffers().iter().enumerate().collect();
         apply_list_sort(
             &mut buffers,
@@ -493,17 +495,30 @@ impl PasteBuffer {
             self.separator
                 .as_deref()
                 .unwrap_or(if self.raw_newlines { "\n" } else { "\r" });
-        let mut bytes = Vec::with_capacity(data.len());
-        for byte in data {
-            if byte == b'\n' {
-                bytes.extend_from_slice(separator.as_bytes());
-            } else {
-                bytes.push(byte);
+        // Decided before the body is built so the wrapper's opening bytes are
+        // written at the front rather than spliced in ahead of the whole paste.
+        let bracketed = self.bracketed && st.pane_bracketed_paste(&target).unwrap_or(false);
+        const PASTE_START: &[u8] = b"\x1b[200~";
+        const PASTE_END: &[u8] = b"\x1b[201~";
+        let mut bytes = Vec::with_capacity(
+            data.len() + if bracketed { PASTE_START.len() + PASTE_END.len() } else { 0 },
+        );
+        if bracketed {
+            bytes.extend_from_slice(PASTE_START);
+        }
+        // The runs between newlines are copied whole; only a newline is
+        // rewritten, and a paste is mostly not newlines.
+        for run in data.split_inclusive(|byte| *byte == b'\n') {
+            match run.split_last() {
+                Some((b'\n', head)) => {
+                    bytes.extend_from_slice(head);
+                    bytes.extend_from_slice(separator.as_bytes());
+                }
+                _ => bytes.extend_from_slice(run),
             }
         }
-        if self.bracketed && st.pane_bracketed_paste(&target).unwrap_or(false) {
-            bytes.splice(0..0, b"\x1b[200~".iter().copied());
-            bytes.extend_from_slice(b"\x1b[201~");
+        if bracketed {
+            bytes.extend_from_slice(PASTE_END);
         }
         if let Err(error) = st.input_to_pane(&target, &bytes) {
             return CommandResult::err(format!("{error}\n"));

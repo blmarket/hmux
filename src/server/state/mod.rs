@@ -60,6 +60,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use bytes::Bytes;
+
 use super::key::KeyCode;
 use super::options::{GlobalOptions, OptionSet, OptionsView};
 use super::pane::Pane;
@@ -874,7 +876,7 @@ pub struct ServerState {
     global_options: GlobalOptions,
     /// The paste-buffer stack, newest first (tmux's `#{buffer_name}` order in
     /// `list-buffers`). Each entry is `(name, data)`.
-    buffers: Vec<(String, Vec<u8>)>,
+    buffers: Vec<(String, Bytes)>,
     /// Creation/replacement time for each paste buffer, as an epoch value for
     /// `#{buffer_created}`.
     buffer_created: BTreeMap<String, i64>,

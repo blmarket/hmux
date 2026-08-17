@@ -3,6 +3,8 @@
 //! Buffers are named (`buffer0`, `buffer1`, ... unless `set-buffer -b` names
 //! one) and capped by `buffer-limit`, oldest automatic buffer evicted first.
 
+use bytes::{BufMut, Bytes, BytesMut};
+
 use super::ServerState;
 
 impl ServerState {
@@ -16,9 +18,10 @@ impl ServerState {
                 self.automatic_buffers.remove(n);
                 self.buffer_created.insert(n.to_string(), created);
                 if let Some(entry) = self.buffers.iter_mut().find(|(bn, _)| bn == n) {
-                    entry.1 = data.to_vec();
+                    entry.1 = Bytes::copy_from_slice(data);
                 } else {
-                    self.buffers.insert(0, (n.to_string(), data.to_vec()));
+                    self.buffers
+                        .insert(0, (n.to_string(), Bytes::copy_from_slice(data)));
                 }
             }
             None => {
@@ -26,7 +29,7 @@ impl ServerState {
                 self.next_buffer_id += 1;
                 self.automatic_buffers.insert(n.clone());
                 self.buffer_created.insert(n.clone(), created);
-                self.buffers.insert(0, (n, data.to_vec()));
+                self.buffers.insert(0, (n, Bytes::copy_from_slice(data)));
                 self.enforce_buffer_limit();
             }
         }
@@ -81,7 +84,10 @@ impl ServerState {
             None => self.buffers.first_mut(),
         };
         if let Some((_, existing)) = entry {
-            existing.extend_from_slice(data);
+            let mut appended = BytesMut::with_capacity(existing.len() + data.len());
+            appended.put_slice(existing);
+            appended.put_slice(data);
+            *existing = appended.freeze();
         } else {
             self.set_buffer(name, data);
         }
@@ -125,17 +131,17 @@ impl ServerState {
                 .buffers
                 .iter()
                 .find(|(bn, _)| bn == n)
-                .map(|(_, d)| d.as_slice()),
+                .map(|(_, d)| &d[..]),
             None => self
                 .buffers
                 .iter()
                 .find(|(bn, _)| self.automatic_buffers.contains(bn))
-                .map(|(_, d)| d.as_slice()),
+                .map(|(_, d)| &d[..]),
         }
     }
 
     /// Iterate paste buffers, newest first (tmux's `list-buffers` order).
-    pub fn buffers(&self) -> &[(String, Vec<u8>)] {
+    pub fn buffers(&self) -> &[(String, Bytes)] {
         &self.buffers
     }
 
