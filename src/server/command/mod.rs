@@ -6258,6 +6258,24 @@ mod tests {
     }
 
     #[test]
+    fn kill_pane_all_unzooms_window() {
+        let st = state();
+        run_str(&st, &["split-window", "-t", "0"]);
+        run_str(&st, &["resize-pane", "-Z", "-t", "0.0"]);
+        let dm = run_str(
+            &st,
+            &["display-message", "-p", "-t", "0.0", "#{window_zoomed_flag}"],
+        );
+        assert_eq!(dm.stdout, "1\n");
+        assert_eq!(run_str(&st, &["kill-pane", "-a", "-t", "0.0"]).exit, 0);
+        let dm_after = run_str(
+            &st,
+            &["display-message", "-p", "-t", "0.0", "#{window_zoomed_flag}"],
+        );
+        assert_eq!(dm_after.stdout, "0\n");
+    }
+
+    #[test]
     fn respawn_pane_refuses_live_pane_without_k() {
         let st = state();
         // The bootstrap pane has not exited → tmux treats it as still active.

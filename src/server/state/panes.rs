@@ -1244,6 +1244,7 @@ impl ServerState {
         })?;
         let session_id = self.sessions[t.session].id;
         let win = self.window_mut(t.session, t.window);
+        win.zoomed = false;
         let survivor = win.panes.remove(t.pane);
         let survivor_id = survivor.id;
         win.panes.clear();
