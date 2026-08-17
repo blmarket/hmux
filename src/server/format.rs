@@ -2175,6 +2175,9 @@ impl Expander<'_> {
         } else {
             self.lookup(vars, cond).unwrap_or_default()
         };
+        if cond.contains('#') && value == cond {
+            return false;
+        }
         is_true(&value)
     }
 }
