@@ -137,30 +137,18 @@ pub(crate) struct HookScope {
     pub(crate) target: Option<Rc<str>>,
 }
 
-/// Per-command-client process context collected from tmux identify frames.
+/// What one queue frame runs under: tmux's `cmdq_state` flags, plus the hook
+/// scope they go with.
 ///
-/// Besides the process facts, this carries two kinds of execution state: who
-/// is asking ([`ClientKind`], fixed per connection) and how the command came
-/// to run — the [`HookScope`] plus the `suppress_*`/`nested_granularity`
-/// latches, stamped onto the clone a hook-body or nested queue runs with and
-/// inherited by everything queued beneath it.
+/// This is the whole answer to "what does a nested invocation inherit". A child
+/// queue — a hook body, an inserted command line — starts from a clone of its
+/// parent's frame state and stamps its own latches on that clone; everything
+/// queued beneath it inherits the result. Unlike the rest of
+/// [`ClientContext`], none of this belongs to the client: two commands from the
+/// same client run under different frame states when one of them is a hook
+/// body.
 #[derive(Clone, Default)]
-pub struct ClientContext {
-    pub cwd: Option<PathBuf>,
-    pub environment: Vec<String>,
-    pub tty_name: Option<String>,
-    pub client_pid: Option<i32>,
-    /// The uid the kernel reports for the far end of this client's socket —
-    /// what tmux's `#{client_uid}` and `#{client_user}` answer from. `None`
-    /// when the platform did not report one.
-    pub peer_uid: Option<u32>,
-    pub(crate) input_file: Option<Result<Vec<u8>, i32>>,
-    pub(crate) current_session_id: Option<u32>,
-    pub(crate) read_only: bool,
-    pub(crate) key_event: Option<super::key::KeyCode>,
-    pub(crate) mouse: Option<MouseEvent>,
-    pub(crate) interaction_reply: Option<PromptReply>,
-    pub(crate) kind: ClientKind,
+pub(crate) struct FrameState {
     /// Set on child queues (hook bodies and inserted nested command lines) so
     /// they hand each inserted item's result to the parent queue intact; the
     /// top-level queue decides whether to flatten them.
@@ -181,6 +169,34 @@ pub struct ClientContext {
     pub(crate) hook: Option<HookScope>,
 }
 
+/// Per-command-client process context collected from tmux identify frames.
+///
+/// Besides the process facts, this carries two kinds of execution state: who is
+/// asking ([`ClientKind`], fixed per connection) and how the command came to
+/// run ([`FrameState`], stamped onto the clone a hook-body or nested queue runs
+/// with).
+#[derive(Clone, Default)]
+pub struct ClientContext {
+    pub cwd: Option<PathBuf>,
+    pub environment: Vec<String>,
+    pub tty_name: Option<String>,
+    pub client_pid: Option<i32>,
+    /// The uid the kernel reports for the far end of this client's socket —
+    /// what tmux's `#{client_uid}` and `#{client_user}` answer from. `None`
+    /// when the platform did not report one.
+    pub peer_uid: Option<u32>,
+    pub(crate) input_file: Option<Result<Vec<u8>, i32>>,
+    pub(crate) current_session_id: Option<u32>,
+    pub(crate) read_only: bool,
+    pub(crate) key_event: Option<super::key::KeyCode>,
+    pub(crate) mouse: Option<MouseEvent>,
+    pub(crate) interaction_reply: Option<PromptReply>,
+    pub(crate) kind: ClientKind,
+    /// The queue frame this command runs in. A child queue inherits it as a
+    /// unit and stamps its own latches on the clone.
+    pub(crate) frame: FrameState,
+}
+
 impl ClientContext {
     /// Whether an interactive command (`command-prompt`, `display-menu`, ...)
     /// should keep this client blocked until the user responds. tmux blocks
@@ -196,7 +212,7 @@ impl ClientContext {
     /// to give every queue item its own `%begin`/`%end` block; child queues
     /// need it so the parent queue gets to make that choice.
     pub(crate) fn preserve_queue_insertions(&self) -> bool {
-        matches!(self.kind, ClientKind::Control { .. }) || self.nested_granularity
+        matches!(self.kind, ClientKind::Control { .. }) || self.frame.nested_granularity
     }
 
     /// A copy whose environment is what a process this client starts should
@@ -540,6 +556,19 @@ pub fn run_with_context(
         .run_queue(queue, state)
 }
 
+/// Start a queue on an already compiled command line.
+///
+/// This is the queue boundary: the client paths that compile once — control
+/// mode, the command client's file-protocol split — hand the compiled value
+/// straight over instead of passing an argv back through the parser.
+pub(crate) fn start_compiled_command(
+    command: ExecutableCommand,
+    agents: &PaneAgents,
+    context: &ClientContext,
+) -> ResumableCommandQueue {
+    ResumableCommandQueue::new(command, agents, context)
+}
+
 pub(crate) fn start_resumable_command(
     args: &[String],
     state: &SharedState,
@@ -550,10 +579,8 @@ pub(crate) fn start_resumable_command(
         let state = state.borrow_mut();
         state.command_aliases()
     };
-    let parsed = ExecutableCommand::compile_argv(args, &aliases)
-        .map_err(CommandResult::err)?
-        .into_commands();
-    Ok(ResumableCommandQueue::new(parsed, agents, context))
+    let compiled = ExecutableCommand::compile_argv(args, &aliases).map_err(CommandResult::err)?;
+    Ok(ResumableCommandQueue::new(compiled, agents, context))
 }
 
 pub(crate) fn start_resumable_command_string(
@@ -566,10 +593,8 @@ pub(crate) fn start_resumable_command_string(
         let state = state.borrow_mut();
         state.command_aliases()
     };
-    let parsed = ExecutableCommand::compile(line, &aliases)
-        .map_err(CommandResult::err)?
-        .into_commands();
-    Ok(ResumableCommandQueue::new(parsed, agents, context))
+    let compiled = ExecutableCommand::compile(line, &aliases).map_err(CommandResult::err)?;
+    Ok(ResumableCommandQueue::new(compiled, agents, context))
 }
 
 pub(crate) fn start_resumable_command_string_with_tail(
@@ -583,17 +608,11 @@ pub(crate) fn start_resumable_command_string_with_tail(
         let state = state.borrow_mut();
         state.command_aliases()
     };
-    let mut parsed = ExecutableCommand::compile(line, &aliases)
-        .map_err(CommandResult::err)?
-        .into_commands();
+    let mut compiled = ExecutableCommand::compile(line, &aliases).map_err(CommandResult::err)?;
     if !tail.is_empty() {
-        parsed.extend(
-            ExecutableCommand::compile_argv(tail, &aliases)
-                .map_err(CommandResult::err)?
-                .into_commands(),
-        );
+        compiled.extend(ExecutableCommand::compile_argv(tail, &aliases).map_err(CommandResult::err)?);
     }
-    Ok(ResumableCommandQueue::new(parsed, agents, context))
+    Ok(ResumableCommandQueue::new(compiled, agents, context))
 }
 
 struct PreviousCommandTargetContext {
@@ -621,6 +640,7 @@ fn install_command_target_context(
         .and_then(|mouse| mouse.target.as_ref())
         .map(|_| "=");
     let default_target = context
+        .frame
         .hook
         .as_ref()
         .and_then(|hook| hook.target.as_deref())
@@ -644,6 +664,7 @@ fn install_command_target_context(
         pane_id: state.replace_command_pane_id(pane_id),
         active_panes: state.replace_command_active_panes(context.active_panes()),
         hook_vars: context
+            .frame
             .hook
             .as_ref()
             .map(|hook| state.replace_hook_format_vars(hook.vars.as_ref().clone())),
@@ -1035,9 +1056,12 @@ async fn wait_for_answer(
 }
 
 impl ResumableCommandQueue {
-    fn new(parsed: Vec<ParsedCommand>, agents: &PaneAgents, context: &ClientContext) -> Self {
+    /// Start a queue on one compiled command line. The compiled value is the
+    /// only thing that becomes queue work: nothing above this boundary hands
+    /// the queue text or an argv.
+    fn new(command: ExecutableCommand, agents: &PaneAgents, context: &ClientContext) -> Self {
         let mut queue = queue::CommandQueue::new();
-        queue.push_back_group(parsed.into_iter().map(|command| SharedQueueItem::Command {
+        queue.push_back_group(command.into_commands().into_iter().map(|command| SharedQueueItem::Command {
             command,
             source: None,
             source_depth: 0,
@@ -1202,25 +1226,24 @@ impl ResumableCommandQueue {
             let state = state.borrow_mut();
             state.command_aliases()
         };
-        let parsed = ExecutableCommand::compile(line, &aliases)
-            .map_err(|error| {
-                let mut result = CommandResult::err(error);
-                result.continue_queue = true;
-                result
-            })?
-            .into_commands();
+        let compiled = ExecutableCommand::compile(line, &aliases).map_err(|error| {
+            let mut result = CommandResult::err(error);
+            result.continue_queue = true;
+            result
+        })?;
         let mut nested_context = self.context.clone();
         if matches!(capture, NestedCapture::Inserted | NestedCapture::Hook) {
-            nested_context.nested_granularity = true;
+            nested_context.frame.nested_granularity = true;
         }
         if matches!(capture, NestedCapture::Hook) {
-            nested_context.suppress_after_hooks = true;
+            nested_context.frame.suppress_after_hooks = true;
         }
-        Ok(parsed
+        Ok(compiled
+            .split()
             .into_iter()
             .map(|command| SharedQueueItem::NestedCommand {
                 queue: Box::new(ResumableCommandQueue::new(
-                    vec![command],
+                    command,
                     &self.agents,
                     &nested_context,
                 )),
@@ -1240,25 +1263,23 @@ impl ResumableCommandQueue {
         };
         let mut planned = Vec::new();
         for command in commands {
-            let parsed = match command {
-                DeferredCommand::Args(args) => ExecutableCommand::compile_argv(&args, &aliases)
-                    .map_err(CommandResult::err)?
-                    .into_commands(),
+            let compiled = match command {
+                DeferredCommand::Args(args) => {
+                    ExecutableCommand::compile_argv(&args, &aliases).map_err(CommandResult::err)?
+                }
                 DeferredCommand::Line { line, tail } => {
-                    let mut parsed = ExecutableCommand::compile(&line, &aliases)
-                        .map_err(CommandResult::err)?
-                        .into_commands();
+                    let mut compiled =
+                        ExecutableCommand::compile(&line, &aliases).map_err(CommandResult::err)?;
                     if !tail.is_empty() {
-                        parsed.extend(
+                        compiled.extend(
                             ExecutableCommand::compile_argv(&tail, &aliases)
-                                .map_err(CommandResult::err)?
-                                .into_commands(),
+                                .map_err(CommandResult::err)?,
                         );
                     }
-                    parsed
+                    compiled
                 }
             };
-            planned.extend(parsed.into_iter().map(|command| SharedQueueItem::Command {
+            planned.extend(compiled.into_commands().into_iter().map(|command| SharedQueueItem::Command {
                 command,
                 source: None,
                 source_depth: 0,
@@ -1297,7 +1318,7 @@ impl ResumableCommandQueue {
             .background_commands
             .append(&mut execution.result.background_commands);
         let stops_group = exit != 0 && !execution.result.continue_queue;
-        if !self.context.suppress_after_hooks {
+        if !self.context.frame.suppress_after_hooks {
             if stops_group {
                 let lexed = ParsedArgs::lex(command.spec.name, &command.args);
                 execution.insert_next.extend(self.plan_hook(
@@ -1352,7 +1373,7 @@ impl ResumableCommandQueue {
         settled_target: Option<&str>,
         state: &SharedState,
     ) -> Vec<Vec<SharedQueueItem>> {
-        if self.context.suppress_after_hooks {
+        if self.context.frame.suppress_after_hooks {
             return Vec::new();
         }
         let after = format!("after-{command}");
@@ -1374,7 +1395,7 @@ impl ResumableCommandQueue {
         // The latch is tmux's `notify_add` dropping a notification raised under
         // `CMDQ_STATE_NOHOOKS`, so it has to be *dropped* here rather than left
         // pending: an outer frame without the latch would otherwise fire it.
-        if self.context.suppress_notifications {
+        if self.context.frame.suppress_notifications {
             return Vec::new();
         }
         notifications
@@ -1436,10 +1457,11 @@ impl ResumableCommandQueue {
         // A hook body resolves an untargeted command against the hook's own
         // target, not the server's current one; a hook without a target of its
         // own stays in the enclosing hook's scope.
-        hook_context.hook = Some(HookScope {
+        hook_context.frame.hook = Some(HookScope {
             vars: Rc::new(vars),
             target: requested_target.map(Rc::from).or_else(|| {
                 self.context
+                    .frame
                     .hook
                     .as_ref()
                     .and_then(|hook| hook.target.clone())
@@ -1449,11 +1471,11 @@ impl ResumableCommandQueue {
             // tmux runs an event hook's body on the global queue with
             // `CMDQ_STATE_NOHOOKS`, which is exactly what makes `notify_add`
             // drop anything the body itself raises.
-            hook_context.suppress_notifications = true;
+            hook_context.frame.suppress_notifications = true;
         }
         if matches!(capture, NestedCapture::Hook) {
-            hook_context.suppress_after_hooks = true;
-            hook_context.nested_granularity = true;
+            hook_context.frame.suppress_after_hooks = true;
+            hook_context.frame.nested_granularity = true;
         }
         let mut groups = Vec::new();
         for line in commands {
@@ -1461,11 +1483,11 @@ impl ResumableCommandQueue {
                 Ok(compiled) if !compiled.is_empty() => {
                     groups.push(
                         compiled
-                            .into_commands()
+                            .split()
                             .into_iter()
                             .map(|command| SharedQueueItem::NestedCommand {
                                 queue: Box::new(ResumableCommandQueue::new(
-                                    vec![command],
+                                    command,
                                     &self.agents,
                                     &hook_context,
                                 )),
@@ -1635,7 +1657,7 @@ pub(crate) fn take_client_file_after_hooks(
     // dropped where it was raised, as tmux's `notify_add` does, rather than
     // left for a frame that does not carry the latch.
     let notifications = st.take_notifications();
-    if !context.suppress_notifications {
+    if !context.frame.suppress_notifications {
         for notification in notifications {
             push_event_hook(
                 &notification.name,
@@ -1684,12 +1706,12 @@ fn push_event_hook(
         return;
     };
     let mut context = context.clone();
-    context.hook = Some(HookScope {
+    context.frame.hook = Some(HookScope {
         vars: Rc::new(vars),
         target: requested_target.map(Rc::from),
     });
-    context.suppress_after_hooks = true;
-    context.suppress_notifications = true;
+    context.frame.suppress_after_hooks = true;
+    context.frame.suppress_notifications = true;
     for command in commands {
         if command.trim().is_empty() {
             continue;

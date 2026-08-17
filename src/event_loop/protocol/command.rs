@@ -61,26 +61,27 @@ async fn run_command_line(
     context: ClientContext,
 ) -> Result<CommandResult, ProtocolCloseReason> {
     let aliases = runtime.state.borrow_mut().command_aliases();
-    let groups = match command::ExecutableCommand::compile_argv(&args, &aliases) {
-        Ok(compiled) => compiled.into_argv_groups(),
+    let compiled = match command::ExecutableCommand::compile_argv(&args, &aliases) {
+        Ok(compiled) => compiled,
         Err(error) => return Ok(command::CommandResult::err(error)),
     };
     // Splitting costs the client a round trip per group, so it is only worth it
     // when a group actually needs the client's filesystem; everything else runs
     // as the one line it was written as.
-    let mut groups: VecDeque<Vec<String>> = if groups.len() > 1
-        && groups
+    let members = compiled.clone().split();
+    let mut groups: VecDeque<command::ExecutableCommand> = if members.len() > 1
+        && members
             .iter()
-            .any(|group| command::uses_client_file_protocol(group))
+            .any(|member| command::uses_client_file_protocol(&member.argv()))
     {
-        groups.into()
+        members.into()
     } else {
-        VecDeque::from(vec![args])
+        VecDeque::from(vec![compiled])
     };
 
     let mut output = CommandResult::ok("");
     while let Some(group) = groups.pop_front() {
-        let result = run_group(wire, runtime, &group, &context).await?;
+        let result = run_group(wire, runtime, group, &context).await?;
         if merge(&mut output, &result) {
             groups.clear();
         }
@@ -103,39 +104,39 @@ fn merge(output: &mut CommandResult, result: &CommandResult) -> bool {
 async fn run_group(
     wire: &mut Wire,
     runtime: &ClientRuntime,
-    args: &[String],
+    group: command::ExecutableCommand,
     context: &ClientContext,
 ) -> Result<CommandResult, ProtocolCloseReason> {
+    // The file protocol is a property of what the group *is*, so it is read off
+    // the compiled line rather than by parsing the argv again.
+    let args = group.argv();
     let file_write = {
         let mut state = runtime.state.borrow_mut();
-        command::save_buffer_client_request(args, &mut state, context)
+        command::save_buffer_client_request(&args, &mut state, context)
     };
     if let Some(request) = file_write {
         return match request {
             Err(result) => Ok(result),
-            Ok(request) => write_client_file(wire, runtime, args, context, request).await,
+            Ok(request) => write_client_file(wire, runtime, &args, context, request).await,
         };
     }
 
     let mut context = context.clone();
-    if let Some(path) = command::client_input_path(args, &context) {
+    if let Some(path) = command::client_input_path(&args, &context) {
         context.input_file = Some(read_client_file(wire, &path).await?);
     }
-    run_queue(wire, runtime, args, &context).await
+    run_queue(wire, runtime, group, &context).await
 }
 
 /// Run one group on a command queue of its own and wait for its result.
 async fn run_queue(
     wire: &mut Wire,
     runtime: &ClientRuntime,
-    args: &[String],
+    group: command::ExecutableCommand,
     context: &ClientContext,
 ) -> Result<CommandResult, ProtocolCloseReason> {
     let agents = runtime.hub.snapshot().panes;
-    let queue = match command::start_resumable_command(args, &runtime.state, &agents, context) {
-        Ok(queue) => queue,
-        Err(result) => return Ok(result),
-    };
+    let queue = command::start_compiled_command(group, &agents, context);
     let queued = match command::spawn_queue(
         &runtime.tasks,
         queue,

@@ -707,7 +707,7 @@ impl EventControlClient {
             match command::ExecutableCommand::compile(&line, &aliases) {
                 Ok(compiled) if !compiled.is_empty() => self.command_queue.push_back_group(
                     compiled
-                        .into_argv_groups()
+                        .split()
                         .into_iter()
                         .map(ControlQueueItem::Command)
                         .collect::<Vec<_>>(),
@@ -732,7 +732,7 @@ impl EventControlClient {
             let Some(item) = self.command_queue.start_next() else {
                 return Ok(None);
             };
-            let argv = match item {
+            let command = match item {
                 ControlQueueItem::Completed(result) => {
                     let id = ControlCommandId::next(&mut self.sequence);
                     let flags = result.control_flags;
@@ -752,9 +752,9 @@ impl EventControlClient {
                     self.command_queue.complete(QueueCompletion::failed());
                     continue;
                 }
-                ControlQueueItem::Command(argv) => argv,
+                ControlQueueItem::Command(command) => command,
             };
-            if let Some(started) = self.run_control_command(argv)? {
+            if let Some(started) = self.run_control_command(command)? {
                 return Ok(Some(started));
             }
         }
@@ -762,8 +762,12 @@ impl EventControlClient {
 
     fn run_control_command(
         &mut self,
-        argv: Vec<String>,
+        command: command::ExecutableCommand,
     ) -> io::Result<Option<StartedControlCommand>> {
+        // The control client answers a handful of commands itself — the client
+        // flags, offsets, subscriptions, and sizes it keeps — and decides from
+        // the words; the rest is handed to the queue already compiled.
+        let argv = command.argv();
         let id = ControlCommandId::next(&mut self.sequence);
         write_control_marker(&mut self.control_writer, "%begin", id, 1);
         let refresh_flags = control_refresh_flag_values(&argv);
@@ -889,18 +893,16 @@ impl EventControlClient {
             return Ok(None);
         }
         let agents = self.hub.snapshot().panes;
-        let queued =
-            match command::start_resumable_command(&argv, &self.state, &agents, &self.context)
-                .and_then(|queue| {
-                    command::spawn_queue(&self.tasks, queue, Rc::clone(&self.state), 64)
-                        .map_err(|error| command::CommandResult::err(format!("{error}\n")))
-                }) {
-                Ok(queued) => queued,
-                Err(result) => {
-                    self.finish_control_command(id, argv, result)?;
-                    return Ok(None);
-                }
-            };
+        let queue = command::start_compiled_command(command, &agents, &self.context);
+        let queued = match command::spawn_queue(&self.tasks, queue, Rc::clone(&self.state), 64)
+            .map_err(|error| command::CommandResult::err(format!("{error}\n")))
+        {
+            Ok(queued) => queued,
+            Err(result) => {
+                self.finish_control_command(id, argv, result)?;
+                return Ok(None);
+            }
+        };
         Ok(Some(StartedControlCommand {
             id,
             argv,
@@ -1110,7 +1112,7 @@ impl ControlWriter {
 }
 
 enum ControlQueueItem {
-    Command(Vec<String>),
+    Command(command::ExecutableCommand),
     ParseError(command::CommandResult),
     Completed(command::CommandResult),
 }

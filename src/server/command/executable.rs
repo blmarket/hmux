@@ -169,12 +169,25 @@ impl ExecutableCommand {
         self.commands
     }
 
-    /// Each command's normalized argv, for the call sites that still pass argv
-    /// groups around rather than the compiled value.
-    pub(crate) fn into_argv_groups(self) -> Vec<Vec<String>> {
+    /// Append another compiled line's commands to this one.
+    ///
+    /// A prompt's answer and the words the client typed after it are compiled
+    /// separately — they arrive as text and as argv — but run as one line.
+    pub(super) fn extend(&mut self, other: ExecutableCommand) {
+        self.commands.extend(other.commands);
+    }
+
+    /// One compiled value per command of the line.
+    ///
+    /// The sites that run each member as a queue item of its own — control-mode
+    /// granularity, hook bodies — need the members separately, and still hand
+    /// the queue nothing but compiled values.
+    pub(crate) fn split(self) -> Vec<ExecutableCommand> {
         self.commands
             .into_iter()
-            .map(|command| command.args)
+            .map(|command| ExecutableCommand {
+                commands: vec![command],
+            })
             .collect()
     }
 }
@@ -452,6 +465,21 @@ mod tests {
         );
         // The table is a snapshot: without it the same line is unknown.
         assert_eq!(compile("two -t 0").unwrap_err(), "unknown command: two\n");
+    }
+
+    #[test]
+    fn split_and_extend_keep_the_line_in_order() {
+        let compiled = compile("neww -d ; lsw ; kill-pane").expect("compiles");
+        let members = compiled.clone().split();
+        assert_eq!(
+            members.iter().map(ExecutableCommand::print).collect::<Vec<_>>(),
+            ["new-window -d", "list-windows", "kill-pane"]
+        );
+        let mut rejoined = ExecutableCommand::compile("", &[]).expect("empty compiles");
+        for member in members {
+            rejoined.extend(member);
+        }
+        assert_eq!(rejoined.print(), compiled.print());
     }
 
     #[test]
