@@ -1252,6 +1252,7 @@ impl ResizePane {
             return resize_pane_to_mouse(st);
         }
         let resolved = st.resolve(&target).expect("validated target");
+        st.window_mut(resolved.session, resolved.window).zoomed = false;
         let (window_cols, window_rows) = {
             let win = st.window(resolved.session, resolved.window);
             (win.cols, win.rows)
