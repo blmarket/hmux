@@ -170,6 +170,35 @@ impl CellData {
         }
     }
 
+    /// The one-byte cluster a compact grid entry holds.
+    ///
+    /// Kept apart from [`CellData::from_bytes`] because this is the read every
+    /// cell of an ordinary screen takes: a fixed-size store, with none of the
+    /// variable-length copy a slice of unknown length compiles into.
+    pub fn from_byte(byte: u8) -> CellData {
+        let mut bytes = [0u8; UTF8_SIZE];
+        bytes[0] = byte;
+        CellData {
+            bytes,
+            len: 1,
+            width: 1,
+        }
+    }
+
+    /// A cluster from bytes the grid handed back, which are the bytes some
+    /// earlier [`CellData`] held and are therefore already whole UTF-8 and
+    /// already within [`UTF8_SIZE`].
+    pub fn from_bytes(source: &[u8], width: u8) -> CellData {
+        let mut bytes = [0u8; UTF8_SIZE];
+        let len = source.len().min(UTF8_SIZE);
+        bytes[..len].copy_from_slice(&source[..len]);
+        CellData {
+            bytes,
+            len: len as u8,
+            width,
+        }
+    }
+
     /// The cluster's bytes.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes[..usize::from(self.len)]

@@ -23,7 +23,7 @@ use std::collections::BTreeSet;
 
 use super::cell::{Cell, CellData, UTF8_SIZE, attr, colour, flag};
 use super::combine;
-use super::grid::{Grid, Line, colour_is_default, line_flag, needs_extended};
+use super::grid::{Grid, Line, colour_is_default, line_flag};
 use super::hyperlinks::Hyperlinks;
 use crate::screen::{ScreenOptions, mode};
 use crate::width;
@@ -691,7 +691,7 @@ impl Screen {
         if collected {
             let row = self.view_y(self.cy);
             let mut xx = self.cx;
-            while xx < sx && self.grid.get(xx, row).is_padding() {
+            while xx < sx && self.grid.is_padding(xx, row) {
                 self.grid.clear(xx, row, 1, 1, colour::DEFAULT);
                 xx += 1;
             }
@@ -710,17 +710,10 @@ impl Screen {
     /// part of the comparison, which makes a space written over a cell an
     /// erase produced a change even though the two look identical.
     fn writing_changes_nothing(&self, row: usize, cell: &Cell) -> bool {
-        let Some(existing) = self.grid.peek(self.cx, row) else {
+        let Some(matches) = self.grid.matches(self.cx, row, cell) else {
             return cell.equals(&Cell::default());
         };
-        !needs_extended(existing)
-            && cell.flags == existing.flags
-            && cell.attr == existing.attr
-            && cell.fg == existing.fg
-            && cell.bg == existing.bg
-            && cell.data.width == 1
-            && cell.data.len() == 1
-            && existing.data.bytes() == cell.data.bytes()
+        matches
     }
 
     /// Whether this character joins a run, tmux's test at the top of
@@ -783,10 +776,10 @@ impl Screen {
         let mut n = 1;
         // Taken by value: the cluster grows in hand and goes back through
         // `set`, which needs the grid.
-        let mut last = *self.grid.get(self.cx - n, row);
+        let mut last = self.grid.get(self.cx - n, row);
         if self.cx != 1 && last.is_padding() {
             n = 2;
-            last = *self.grid.get(self.cx - n, row);
+            last = self.grid.get(self.cx - n, row);
         }
         if usize::from(last.data.width) != n || last.is_padding() {
             return alone;
@@ -849,10 +842,11 @@ impl Screen {
         }
         let row = self.view_y(self.cy);
         let mut xx = self.cx;
-        let mut cell = *self.grid.get(xx, row);
+        // The cells are read in place rather than rebuilt: this runs for every
+        // character of a collected run, and all it asks of a cell is whether it
+        // is padding and how wide it is.
         while xx > 0 {
-            cell = *self.grid.get(xx, row);
-            if !cell.is_padding() {
+            if !self.grid.is_padding(xx, row) {
                 break;
             }
             self.grid.clear(xx, row, 1, 1, colour::DEFAULT);
@@ -861,12 +855,10 @@ impl Screen {
         if xx == self.cx {
             return;
         }
-        // tmux re-reads the cell when the walk ran off the left of the row,
-        // because the loop left `gc` holding column one.
-        if xx == 0 {
-            cell = *self.grid.get(0, row);
-        }
-        if usize::from(cell.data.width) > 1 || cell.is_padding() {
+        // The cell the walk stopped on, which is column zero when it ran off
+        // the left of the row — where tmux re-reads it, because its loop left
+        // `gc` holding column one.
+        if self.grid.cell_width(xx, row) > 1 || self.grid.is_padding(xx, row) {
             self.grid.clear(xx, row, 1, 1, colour::DEFAULT);
         }
     }
@@ -885,14 +877,21 @@ impl Screen {
         let sx = self.sx();
         // The cell as it was found. Both decisions below are made about it, so
         // it is read once, before the first of them writes over it.
-        let now = *self.grid.get(self.cx, row);
+        let now_padding = self.grid.is_padding(self.cx, row);
+        let now_width = self.grid.cell_width(self.cx, row);
+        // The whole cell is wanted only to carry a tab's own styling onto the
+        // columns it still covers, so it is rebuilt only when there is a tab
+        // here to carry. It has to be taken now, before the erases below reach
+        // this column.
+        let now_tab = (self.grid.cell_flags(self.cx, row) & flag::TAB != 0)
+            .then(|| self.grid.get(self.cx, row));
         let mut erased = false;
 
         // Landing on the right half of a wide character: erase the padding
         // back to the character it belongs to, and that character with it.
-        if now.is_padding() {
+        if now_padding {
             let mut xx = self.cx;
-            while xx > 0 && self.grid.get(xx, row).is_padding() {
+            while xx > 0 && self.grid.is_padding(xx, row) {
                 self.grid.clear(xx, row, 1, 1, colour::DEFAULT);
                 xx -= 1;
             }
@@ -902,10 +901,10 @@ impl Screen {
 
         // Covering the left half of a wide character: erase the padding that
         // followed it.
-        if width != 1 || usize::from(now.data.width) != 1 || now.is_padding() {
+        if width != 1 || usize::from(now_width) != 1 || now_padding {
             let mut xx = self.cx + width;
-            while xx < sx && self.grid.get(xx, row).is_padding() {
-                if now.flags & flag::TAB != 0 {
+            while xx < sx && self.grid.is_padding(xx, row) {
+                if let Some(now) = now_tab {
                     // A tab is not erased by writing over its first column:
                     // tmux turns each column it still covers into a tab cell
                     // of its own, so what is left of the run is still captured
@@ -945,7 +944,7 @@ impl Screen {
         loop {
             if !has_content {
                 let cell = self.grid.get(cx, row);
-                if !cell.data.is_space() || !cell.looks_equal(first) {
+                if !cell.data.is_space() || !cell.looks_equal(&first) {
                     has_content = true;
                 }
             }
@@ -960,7 +959,7 @@ impl Screen {
             return;
         }
         let template = self.grid.get(self.cx, row);
-        let cell = Grid::tab_cell(template, width);
+        let cell = Grid::tab_cell(&template, width);
         self.put_cell(&cell);
     }
 

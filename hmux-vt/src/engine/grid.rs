@@ -53,11 +53,7 @@ fn lay_out(out: &mut Vec<Line>, cells: Vec<Cell>, sx: usize, flags: u8) {
             width = 0;
         }
         width += cell_width;
-        if needs_extended(&cell) {
-            row.extd += 1;
-        }
-        row.cells.push(cell);
-        row.used = row.cells.len();
+        row.push_cell(&cell);
     }
     out.push(row);
 }
@@ -65,13 +61,18 @@ fn lay_out(out: &mut Vec<Line>, cells: Vec<Cell>, sx: usize, flags: u8) {
 /// tmux's `grid_need_extended_cell`: whether a cell is too rich for the compact
 /// entry and has to be stored in the line's extended array.
 ///
-/// This engine stores every cell the same way, so the answer changes no storage
-/// here. It is still worth computing, because tmux lets the answer show: the
-/// line flag it sets is sticky and `capture-pane -F` prints it.
+/// This decides storage, and it is also what tmux lets show: the line flag it
+/// sets is sticky and `capture-pane -F` prints it, and the entries it allocates
+/// are what `#{history_all_bytes}` prices.
+///
+/// Everything a cell that answers `false` carries fits the compact entry
+/// exactly — one byte of text one column wide, an attribute byte, two palette
+/// colours, the default underline colour and no link — so a compact round trip
+/// gives the cell back unchanged.
 pub fn needs_extended(cell: &Cell) -> bool {
     cell.attr > 0xff
-        || cell.data.len() > 1
-        || cell.data.width > 1
+        || cell.data.len() != 1
+        || cell.data.width != 1
         || cell.fg & colour::FLAG_RGB != 0
         || cell.bg & colour::FLAG_RGB != 0
         || cell.us != colour::DEFAULT
@@ -79,22 +80,155 @@ pub fn needs_extended(cell: &Cell) -> bool {
         || cell.flags & flag::TAB != 0
 }
 
+/// tmux's `GRID_FLAG_*` bits that exist only in a stored entry. They say how
+/// the entry is encoded, so they are set on the way in and stripped on the way
+/// out; a [`Cell`] never carries one.
+mod entry_flag {
+    /// tmux's `GRID_FLAG_FG256`: the stored foreground byte is a palette index.
+    pub const FG256: u8 = 0x1;
+    /// tmux's `GRID_FLAG_BG256`.
+    pub const BG256: u8 = 0x2;
+    /// tmux's `GRID_FLAG_EXTENDED`: the payload is an index into the line's
+    /// extended entries rather than the cell itself.
+    pub const EXTENDED: u8 = 0x8;
+
+    pub const ALL: u8 = FG256 | BG256 | EXTENDED;
+}
+
+/// tmux's `grid_cell_entry`: the five bytes a cell needing nothing special
+/// occupies.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Entry {
+    /// tmux's union. With [`entry_flag::EXTENDED`] set these bytes are the
+    /// index of the line's extended entry; otherwise they are the attribute
+    /// byte, the foreground, the background and the cell's one byte of text.
+    payload: [u8; 4],
+    flags: u8,
+}
+
+impl Entry {
+    /// tmux's `grid_cleared_entry`: what an erase leaves behind before the
+    /// background is painted back over it.
+    const CLEARED: Entry = Entry {
+        payload: [0, 8, 8, b' '],
+        flags: flag::CLEARED,
+    };
+
+    fn is_extended(self) -> bool {
+        self.flags & entry_flag::EXTENDED != 0
+    }
+
+    fn index(self) -> usize {
+        u32::from_ne_bytes(self.payload) as usize
+    }
+
+    /// tmux's `grid_store_cell`, for a cell [`needs_extended`] has cleared.
+    fn store(cell: &Cell) -> Entry {
+        let mut flags = cell.flags;
+        if cell.fg & colour::FLAG_256 != 0 {
+            flags |= entry_flag::FG256;
+        }
+        if cell.bg & colour::FLAG_256 != 0 {
+            flags |= entry_flag::BG256;
+        }
+        Entry {
+            payload: [
+                cell.attr as u8,
+                (cell.fg & 0xff) as u8,
+                (cell.bg & 0xff) as u8,
+                cell.data.bytes().first().copied().unwrap_or(b' '),
+            ],
+            flags,
+        }
+    }
+
+    /// The compact half of tmux's `grid_get_cell1`.
+    fn read(self) -> Cell {
+        let mut fg = i32::from(self.payload[1]);
+        if self.flags & entry_flag::FG256 != 0 {
+            fg |= colour::FLAG_256;
+        }
+        let mut bg = i32::from(self.payload[2]);
+        if self.flags & entry_flag::BG256 != 0 {
+            bg |= colour::FLAG_256;
+        }
+        Cell {
+            data: CellData::from_byte(self.payload[3]),
+            attr: u16::from(self.payload[0]),
+            flags: self.flags & !entry_flag::ALL,
+            fg,
+            bg,
+            us: colour::DEFAULT,
+            link: 0,
+        }
+    }
+}
+
+/// tmux's `grid_extd_entry`: a cell the compact entry cannot hold. The cluster
+/// itself lives in the line's byte arena, which is what keeps this small.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Extended {
+    cluster: u32,
+    len: u8,
+    width: u8,
+    flags: u8,
+    attr: u16,
+    fg: i32,
+    bg: i32,
+    us: i32,
+    link: u32,
+}
+
 /// tmux's `COLOUR_DEFAULT`: neither of the two spellings of "unset".
 pub fn colour_is_default(value: i32) -> bool {
     value == 8 || value == 9
 }
 
-/// One row.
+/// One cell as it sits in a row, for a reader that wants what is in it rather
+/// than how it is drawn.
+///
+/// The text borrows the row's storage — the compact entry's own byte, or the
+/// cluster arena — so reading a cell this way copies nothing.
+pub struct CellView<'a> {
+    pub text: &'a [u8],
+    pub width: u8,
+    pub flags: u8,
+    pub link: u32,
+}
+
+impl CellView<'_> {
+    pub fn is_padding(&self) -> bool {
+        self.flags & flag::PADDING != 0
+    }
+
+    /// The cluster as text. Stored cluster bytes are always valid UTF-8,
+    /// because they only ever arrive as an encoded `char`.
+    pub fn text(&self) -> &str {
+        std::str::from_utf8(self.text).unwrap_or("")
+    }
+}
+
+/// One row, stored as tmux stores it: a compact entry per column, with the
+/// cells too rich for one spilled into a second array.
+///
+/// The split is the whole reason this type owns its storage rather than holding
+/// a `Vec<Cell>`. A [`Cell`] is 56 bytes because it carries an inline cluster
+/// and full-width colours; an [`Entry`] is five. A screen of ordinary text is
+/// the case that matters, and there every cell takes the compact form.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Line {
     /// The allocated cells. tmux's `cellsize` is this length.
-    cells: Vec<Cell>,
+    cells: Vec<Entry>,
+    /// tmux's `extddata`. Monotonic while the line lives — tmux never reclaims
+    /// an entry when a rich cell is overwritten with a simple one — and reset
+    /// with the line.
+    extd: Vec<Extended>,
+    /// The cluster bytes the extended entries index. Written in place when a
+    /// cell's new cluster fits where its old one was, and appended otherwise,
+    /// so rewriting a cell repeatedly does not grow this without bound.
+    clusters: Vec<u8>,
     /// tmux's `cellused`: how far a program has written into the row.
     used: usize,
-    /// tmux's `extdsize`: how many extended entries the line has allocated.
-    /// Monotonic while the line lives — tmux never reclaims an entry when a
-    /// rich cell is overwritten with a simple one — and reset with the line.
-    extd: usize,
     pub flags: u8,
 }
 
@@ -112,11 +246,233 @@ impl Line {
 
     /// The allocated extended entries, tmux's `extdsize`.
     pub fn extd(&self) -> usize {
-        self.extd
+        self.extd.len()
     }
 
     pub fn is_wrapped(&self) -> bool {
         self.flags & line_flag::WRAPPED != 0
+    }
+
+    /// The cell at `px` read in place, or `None` past the allocated extent.
+    ///
+    /// This is what a reader that wants the text and how the cell is classified
+    /// takes, rather than [`Line::cell`]: a snapshot of a deep history is
+    /// millions of cells, and rebuilding a whole [`Cell`] for each one — with
+    /// its inline cluster — costs more than reading the entry does.
+    pub fn view(&self, px: usize) -> Option<CellView<'_>> {
+        let entry = self.cells.get(px)?;
+        if !entry.is_extended() {
+            return Some(CellView {
+                text: &entry.payload[3..4],
+                width: 1,
+                flags: entry.flags & !entry_flag::ALL,
+                link: 0,
+            });
+        }
+        let Some(extended) = self.extd.get(entry.index()) else {
+            return Some(CellView {
+                text: b" ",
+                width: 1,
+                flags: 0,
+                link: 0,
+            });
+        };
+        let start = extended.cluster as usize;
+        let end = start + usize::from(extended.len);
+        Some(CellView {
+            text: self.clusters.get(start..end).unwrap_or_default(),
+            width: extended.width,
+            flags: extended.flags,
+            link: extended.link,
+        })
+    }
+
+    /// How the cell at `px` is shaped — its column width and its flags — or
+    /// `None` past the allocated extent.
+    ///
+    /// This is the smallest read there is, and the one the write path makes:
+    /// the padding scans around a collected run ask nothing else of a cell,
+    /// once per character.
+    fn shape(&self, px: usize) -> Option<(u8, u8)> {
+        let entry = *self.cells.get(px)?;
+        if !entry.is_extended() {
+            return Some((1, entry.flags & !entry_flag::ALL));
+        }
+        Some(
+            self.extd
+                .get(entry.index())
+                .map_or((1, 0), |extended| (extended.width, extended.flags)),
+        )
+    }
+
+    /// The cell stored at `px`, or `None` past the allocated extent.
+    ///
+    /// A reader walking a row takes this directly, so that the row is looked up
+    /// once rather than once per column.
+    pub fn cell(&self, px: usize) -> Option<Cell> {
+        let entry = *self.cells.get(px)?;
+        if !entry.is_extended() {
+            return Some(entry.read());
+        }
+        // tmux answers an index past the array with a default cell rather than
+        // trusting it, and so does this.
+        let Some(extended) = self.extd.get(entry.index()) else {
+            return Some(Cell::DEFAULT);
+        };
+        let start = extended.cluster as usize;
+        let end = start + usize::from(extended.len);
+        let bytes = self.clusters.get(start..end).unwrap_or_default();
+        Some(Cell {
+            data: CellData::from_bytes(bytes, extended.width),
+            attr: extended.attr,
+            flags: extended.flags,
+            fg: extended.fg,
+            bg: extended.bg,
+            us: extended.us,
+            link: extended.link,
+        })
+    }
+
+    /// Whether storing `cell` at `px` would leave the row exactly as it is, or
+    /// `None` past the allocated extent.
+    ///
+    /// The comparison is between stored entries, which is both what tmux
+    /// compares and the cheap way to ask: this runs once per printed
+    /// character, and rebuilding the stored cell to compare fields would cost
+    /// more than the write it is trying to avoid. An entry already extended
+    /// never matches, as in tmux, because the flag is sticky.
+    fn matches(&self, px: usize, cell: &Cell) -> Option<bool> {
+        let entry = *self.cells.get(px)?;
+        if entry.is_extended() || needs_extended(cell) {
+            return Some(false);
+        }
+        Some(entry == Entry::store(cell))
+    }
+
+    /// tmux's `grid_set_cell` past its expansion: store `cell` at `px`, which
+    /// must already be inside the allocated extent.
+    ///
+    /// `extended` is [`needs_extended`] for this cell, computed by the caller
+    /// because it needs the answer too. It runs once per printed character, so
+    /// asking twice is worth avoiding.
+    fn set_cell(&mut self, px: usize, cell: &Cell, extended: bool) {
+        let Some(slot) = self.cells.get_mut(px) else {
+            return;
+        };
+        if px + 1 > self.used {
+            self.used = px + 1;
+        }
+        if !extended && !slot.is_extended() {
+            *slot = Entry::store(cell);
+            return;
+        }
+        self.set_extended(px, cell);
+    }
+
+    /// tmux's `grid_extended_cell`: put `cell` in the line's extended array,
+    /// reusing the entry this column already owns rather than allocating a
+    /// second one.
+    fn set_extended(&mut self, px: usize, cell: &Cell) {
+        let entry = self.cells[px];
+        let index = if entry.is_extended() {
+            entry.index()
+        } else {
+            self.extd.push(Extended::default());
+            self.extd.len() - 1
+        };
+        self.cells[px] = Entry {
+            payload: (index as u32).to_ne_bytes(),
+            flags: cell.flags | entry_flag::EXTENDED,
+        };
+        let (cluster, len) = self.store_cluster(index, cell.data.bytes());
+        self.extd[index] = Extended {
+            cluster,
+            len,
+            width: cell.data.width,
+            flags: cell.flags,
+            attr: cell.attr,
+            fg: cell.fg,
+            bg: cell.bg,
+            us: cell.us,
+            link: cell.link,
+        };
+    }
+
+    /// Put a cluster in the arena, over the bytes the entry already holds when
+    /// they are room enough.
+    fn store_cluster(&mut self, index: usize, bytes: &[u8]) -> (u32, u8) {
+        let existing = self.extd[index];
+        let len = u8::try_from(bytes.len()).unwrap_or(u8::MAX);
+        if bytes.len() <= usize::from(existing.len) {
+            let start = existing.cluster as usize;
+            self.clusters[start..start + bytes.len()].copy_from_slice(bytes);
+            return (existing.cluster, len);
+        }
+        let start = u32::try_from(self.clusters.len()).unwrap_or(u32::MAX);
+        self.clusters.extend_from_slice(bytes);
+        (start, len)
+    }
+
+    /// tmux's `grid_clear_cell`: the cleared entry, with `bg` painted back into
+    /// it. A direct-colour background does not fit the compact entry, which is
+    /// why an erase to one allocates.
+    fn clear_cell(&mut self, px: usize, bg: i32) {
+        if px >= self.cells.len() {
+            return;
+        }
+        self.cells[px] = Entry::CLEARED;
+        if bg == colour::DEFAULT {
+            return;
+        }
+        if bg & colour::FLAG_RGB != 0 {
+            self.set_extended(px, &Cell::cleared(bg));
+            return;
+        }
+        if bg & colour::FLAG_256 != 0 {
+            self.cells[px].flags |= entry_flag::BG256;
+        }
+        self.cells[px].payload[2] = (bg & 0xff) as u8;
+    }
+
+    /// Grow the allocated extent, clearing what that brings into existence.
+    fn grow(&mut self, sx: usize, bg: i32) {
+        let from = self.cells.len();
+        self.cells.resize(sx, Entry::CLEARED);
+        if bg == colour::DEFAULT {
+            return;
+        }
+        for px in from..sx {
+            self.clear_cell(px, bg);
+        }
+    }
+
+    /// The entry half of tmux's `grid_move_cells`: shift stored entries within
+    /// the row.
+    ///
+    /// The entries move as they stand, extended ones included. An extended
+    /// entry indexes this same line, so the index it carries stays right where
+    /// it lands — which is why a shift allocates nothing, as tmux's `memmove`
+    /// allocates nothing.
+    fn move_cells(&mut self, dx: usize, px: usize, nx: usize) {
+        if px + nx > self.cells.len() || dx + nx > self.cells.len() {
+            return;
+        }
+        self.cells.copy_within(px..px + nx, dx);
+        if dx + nx > self.used {
+            self.used = dx + nx;
+        }
+    }
+
+    /// Append a cell, as a reflow laying a logical line out again does.
+    fn push_cell(&mut self, cell: &Cell) {
+        self.cells.push(Entry::CLEARED);
+        let px = self.cells.len() - 1;
+        self.set_cell(px, cell, needs_extended(cell));
+    }
+
+    /// The cells the row holds, in column order.
+    fn iter(&self) -> impl Iterator<Item = Cell> + '_ {
+        (0..self.cells.len()).filter_map(|px| self.cell(px))
     }
 }
 
@@ -177,15 +533,49 @@ impl Grid {
     /// tmux's `grid_get_cell`: a read past the allocated extent of a row is
     /// the *default* cell, not a cleared one — a distinction `capture-pane -e`
     /// can see, because a cleared cell may carry a background colour.
-    pub fn get(&self, px: usize, py: usize) -> &Cell {
-        self.peek(px, py).unwrap_or(&Cell::DEFAULT)
+    /// The cell is rebuilt from the row's storage rather than borrowed from it,
+    /// because a compact entry is not a whole cell.
+    pub fn get(&self, px: usize, py: usize) -> Cell {
+        self.peek(px, py).unwrap_or(Cell::DEFAULT)
     }
 
     /// The cell as it is actually stored, or `None` past the row's allocated
     /// extent. Unlike [`Grid::get`] this tells "a cell holding a default" apart
     /// from "no cell at all", which is a distinction `screen_write_cell` makes.
-    pub fn peek(&self, px: usize, py: usize) -> Option<&Cell> {
-        self.lines.get(py).and_then(|line| line.cells.get(px))
+    pub fn peek(&self, px: usize, py: usize) -> Option<Cell> {
+        self.lines.get(py).and_then(|line| line.cell(px))
+    }
+
+    /// Whether writing `cell` at `px`/`py` would change nothing, or `None`
+    /// past the row's allocated extent; see [`Line::matches`].
+    pub fn matches(&self, px: usize, py: usize, cell: &Cell) -> Option<bool> {
+        self.lines.get(py).and_then(|line| line.matches(px, cell))
+    }
+
+    /// Whether the stored cell is the blank right half of a wide character.
+    /// Read in place, since the scans that ask walk a row a column at a time.
+    pub fn is_padding(&self, px: usize, py: usize) -> bool {
+        self.lines
+            .get(py)
+            .and_then(|line| line.shape(px))
+            .is_some_and(|(_, flags)| flags & flag::PADDING != 0)
+    }
+
+    /// How many columns the stored cell occupies, read in place. A read past
+    /// the allocated extent answers one, as the default cell is one column.
+    pub fn cell_width(&self, px: usize, py: usize) -> u8 {
+        self.lines
+            .get(py)
+            .and_then(|line| line.shape(px))
+            .map_or(1, |(width, _)| width)
+    }
+
+    /// The stored cell's flags, read in place.
+    pub fn cell_flags(&self, px: usize, py: usize) -> u8 {
+        self.lines
+            .get(py)
+            .and_then(|line| line.shape(px))
+            .map_or(0, |(_, flags)| flags)
     }
 
     /// tmux's `grid_set_cell`.
@@ -194,23 +584,15 @@ impl Grid {
             return;
         }
         self.expand_line(py, px + 1, colour::DEFAULT);
+        let extended = needs_extended(cell);
         let line = &mut self.lines[py];
-        if px + 1 > line.used {
-            line.used = px + 1;
-        }
         if cell.link != 0 {
             line.flags |= line_flag::HYPERLINK;
         }
-        if needs_extended(cell) {
+        if extended {
             line.flags |= line_flag::EXTENDED;
-            // tmux allocates a new extended entry only when the cell was not
-            // already extended; overwriting extended with simple leaks the
-            // entry, which is why the count never goes down.
-            if !needs_extended(&line.cells[px]) {
-                line.extd += 1;
-            }
         }
-        line.cells[px] = *cell;
+        line.set_cell(px, cell, extended);
     }
 
     /// tmux's `grid_set_padding`: the blank right half of a wide character.
@@ -227,7 +609,7 @@ impl Grid {
         let Some(line) = self.lines.get(py) else {
             return;
         };
-        if sx <= line.cells.len() {
+        if sx <= line.size() {
             return;
         }
         self.grow_line(py, self.rounded_extent(sx), bg);
@@ -259,16 +641,10 @@ impl Grid {
         let Some(line) = self.lines.get_mut(py) else {
             return;
         };
-        if sx <= line.cells.len() {
+        if sx <= line.size() {
             return;
         }
-        // An RGB background makes the fill cell itself extended, and tmux's
-        // `grid_clear_cell` allocates an entry for each one it writes.
-        let grown = sx - line.cells.len();
-        if needs_extended(&Cell::cleared(bg)) {
-            line.extd += grown;
-        }
-        line.cells.resize(sx, Cell::cleared(bg));
+        line.grow(sx, bg);
     }
 
     /// tmux's `grid_empty_line`: forget the row entirely. A non-default
@@ -310,7 +686,7 @@ impl Grid {
             return;
         }
         for yy in py..py + ny {
-            let sx = self.sx.min(self.lines[yy].cells.len());
+            let sx = self.sx.min(self.lines[yy].size());
             let mut ox = nx;
             if colour_is_default(bg) {
                 // With the default background there is nothing to paint past
@@ -332,9 +708,7 @@ impl Grid {
     /// tmux's `grid_clear_cell`: put a cleared cell in place, keeping `bg`.
     pub fn clear_cell(&mut self, px: usize, py: usize, bg: i32) {
         if let Some(line) = self.lines.get_mut(py) {
-            if let Some(cell) = line.cells.get_mut(px) {
-                *cell = Cell::cleared(bg);
-            }
+            line.clear_cell(px, bg);
         }
     }
 
@@ -370,11 +744,7 @@ impl Grid {
         }
         self.expand_line(py, px + nx, colour::DEFAULT);
         self.expand_line(py, dx + nx, colour::DEFAULT);
-        let moved: Vec<Cell> = self.lines[py].cells[px..px + nx].to_vec();
-        self.lines[py].cells[dx..dx + nx].clone_from_slice(&moved);
-        if dx + nx > self.lines[py].used {
-            self.lines[py].used = dx + nx;
-        }
+        self.lines[py].move_cells(dx, px, nx);
         for xx in px..px + nx {
             if xx < dx || xx >= dx + nx {
                 self.clear_cell(xx, py, bg);
@@ -507,9 +877,9 @@ impl Grid {
         let Some(line) = self.lines.get(py) else {
             return 0;
         };
-        let mut px = line.cells.len().min(self.sx);
+        let mut px = line.size().min(self.sx);
         while px > 0 {
-            let cell = &line.cells[px - 1];
+            let Some(cell) = line.cell(px - 1) else { break };
             if cell.is_padding() || !cell.data.is_space() {
                 break;
             }
@@ -610,7 +980,7 @@ impl Grid {
             // The flags that belong to the logical line, not to the row the
             // old width happened to split it into.
             carried_flags |= line.flags & !line_flag::WRAPPED;
-            logical.extend(line.cells.into_iter().take(line.used));
+            logical.extend(line.iter().take(line.used()));
             if line.flags & line_flag::WRAPPED != 0 {
                 continue;
             }

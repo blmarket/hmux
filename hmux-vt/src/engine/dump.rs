@@ -22,6 +22,17 @@ use crate::screen::{
     CaptureExtent, CellSemantic, CellText, CellWidth, Grid, GridCell, GridRow, RowExtent, RowFlags,
 };
 
+use super::grid::CellView;
+
+/// What a read past a row's allocated extent sees: tmux's default cell, which
+/// is a space in the default colours.
+const DEFAULT_VIEW: CellView<'static> = CellView {
+    text: b" ",
+    width: 1,
+    flags: 0,
+    link: 0,
+};
+
 use super::grid::line_flag;
 
 /// Snapshot physical rows `[start, start + count)`, clamped to the grid.
@@ -46,8 +57,14 @@ pub fn snapshot_grid(screen: &Screen, grid: &EngineGrid, start: usize, count: us
         // Past the row's written extent nothing has been put there at all,
         // whatever the cell store happens to hold.
         let used = line.map_or(0, super::grid::Line::used);
+        // The row is looked up once and then read column by column: a snapshot
+        // of a deep history is the hottest cell walk there is, and going back
+        // through the grid per column re-resolves the same row every time.
         let cells = (0..grid.sx)
-            .map(|px| snapshot_cell(screen, grid.get(px, py), semantic, px < used))
+            .map(|px| {
+                let cell = line.and_then(|line| line.view(px)).unwrap_or(DEFAULT_VIEW);
+                snapshot_cell(screen, &cell, semantic, px < used)
+            })
             .collect();
         rows.push(GridRow {
             cells,
@@ -93,10 +110,15 @@ fn row_semantic(grid: &EngineGrid, py: usize) -> CellSemantic {
     }
 }
 
-fn snapshot_cell(screen: &Screen, cell: &Cell, semantic: CellSemantic, written: bool) -> GridCell {
+fn snapshot_cell(
+    screen: &Screen,
+    cell: &CellView<'_>,
+    semantic: CellSemantic,
+    written: bool,
+) -> GridCell {
     let width = if cell.is_padding() {
         CellWidth::SpacerTail
-    } else if cell.data.width > 1 {
+    } else if cell.width > 1 {
         CellWidth::Wide
     } else {
         CellWidth::Narrow
@@ -108,7 +130,7 @@ fn snapshot_cell(screen: &Screen, cell: &Cell, semantic: CellSemantic, written: 
     let text = if empty {
         CellText::EMPTY
     } else {
-        CellText::from(cell.data.text())
+        CellText::from(cell.text())
     };
     // A cell's `link` indexes the screen's hyperlink table. The `id=` a
     // sequence carried stays in that table: `capture-pane -e` re-emits it from
@@ -155,12 +177,15 @@ pub fn plain(screen: &Screen, start: usize, count: usize, unwrap: bool) -> Strin
         } else {
             grid.line_length(py)
         };
+        let row = grid.line(py);
         for px in 0..width {
-            let cell = grid.get(px, py);
+            let Some(cell) = row.and_then(|row| row.view(px)) else {
+                continue;
+            };
             if cell.is_padding() {
                 continue;
             }
-            line.push_str(cell.data.text());
+            line.push_str(cell.text());
         }
         joining = wrapped;
     }
@@ -256,16 +281,17 @@ fn vt_row(
             .map_or(0, super::grid::Line::used)
             .min(grid.sx),
     };
+    let row = grid.line(py);
     for px in 0..width {
-        let cell = grid.get(px, py);
+        let cell = row.and_then(|row| row.cell(px)).unwrap_or(Cell::DEFAULT);
         if cell.is_padding() {
             continue;
         }
         let last_link = pen.link;
         code.clear();
         if !cell.looks_equal(&pen) {
-            code.push_str(&sgr(&pen, cell));
-            pen = *cell;
+            code.push_str(&sgr(&pen, &cell));
+            pen = cell;
         }
         let wants_charset = cell.attr & attr::CHARSET != 0;
         if wants_charset != charset {
