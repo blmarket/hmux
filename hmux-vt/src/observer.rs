@@ -296,53 +296,24 @@ impl Observer {
     }
 
     fn token(&mut self, token: Token, policy: &OutputPolicy, out: &mut Observed) {
-        match token.kind.clone() {
-            // The decoded character, not the bytes it came from: a malformed
-            // sequence has already been resolved to one replacement here, and
-            // handing the original bytes on would let a second reader of those
-            // bytes resolve it again, differently.
-            TokenKind::Print(character) => {
-                let mut buffer = [0u8; 4];
-                let bytes = character.encode_utf8(&mut buffer).as_bytes().to_vec();
-                out.rewrite(TokenKind::Print(character), bytes);
-            }
-            // An unfinished UTF-8 character contributes no bytes: the ones it
-            // has collected travel with the token it eventually resolves into.
-            TokenKind::Utf8Started => {
-                out.rewrite(TokenKind::Utf8Started, Vec::new());
-            }
-            // Likewise for the replacement a malformed sequence resolved to:
-            // the bytes handed on are the replacement's, not the bad ones.
-            TokenKind::Replacement => {
-                out.rewrite(TokenKind::Replacement, "\u{fffd}".as_bytes().to_vec());
+        match &token.kind {
+            TokenKind::Print(_) | TokenKind::Utf8Started | TokenKind::Replacement => {
+                out.keep(token);
             }
             TokenKind::Control(byte) => {
-                if byte == 0x07 {
+                if *byte == 0x07 {
                     out.event(Event::Bell);
                 }
                 out.keep(token);
             }
             TokenKind::Esc { .. } => out.keep(token),
-            TokenKind::Csi {
-                private,
-                params,
-                intermediates,
-                final_byte,
-            } => self.csi(
-                token,
-                private,
-                &params,
-                &intermediates,
-                final_byte,
-                policy,
-                out,
-            ),
-            TokenKind::Osc { data, end } => self.osc(token, &data, end, policy, out),
+            TokenKind::Csi { .. } => self.csi(token, policy, out),
+            TokenKind::Osc { .. } => self.osc(token, policy, out),
             TokenKind::Dcs {
                 intermediates,
                 final_byte,
                 data,
-            } => self.dcs(&intermediates, final_byte, &data, policy, out),
+            } => self.dcs(intermediates, *final_byte, data, policy, out),
             TokenKind::Apc { data } => {
                 // tmux hands an APC title to the same `screen_set_title` as OSC
                 // 0/2, and an emulator that does not recognize APC would print
@@ -350,43 +321,37 @@ impl Observer {
                 // stream order, so the last one to arrive still wins.
                 if policy.allow_set_title {
                     let mut body = b"2;".to_vec();
-                    body.extend_from_slice(&data);
-                    let mut raw = b"\x1b]".to_vec();
-                    raw.extend_from_slice(&body);
-                    raw.extend_from_slice(b"\x1b\\");
-                    out.rewrite(
-                        TokenKind::Osc {
-                            data: body,
-                            end: StringEnd::StringTerminator,
-                        },
-                        raw,
-                    );
+                    body.extend_from_slice(data);
+                    out.rewrite(TokenKind::Osc {
+                        data: body,
+                        end: StringEnd::StringTerminator,
+                    });
                 }
             }
             TokenKind::Rename { data } => {
                 // The screen/tmux rename control. Nothing downstream recognizes
                 // it, so it is reported here and dropped from the stream rather
                 // than printed as literal text.
-                out.event(Event::Rename(String::from_utf8_lossy(&data).into_owned()));
+                out.event(Event::Rename(String::from_utf8_lossy(data).into_owned()));
             }
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn csi(
-        &mut self,
-        token: Token,
-        private: Option<u8>,
-        params: &[Param],
-        intermediates: &[u8],
-        final_byte: u8,
-        policy: &OutputPolicy,
-        out: &mut Observed,
-    ) {
-        match (private, intermediates, final_byte) {
+    fn csi(&mut self, token: Token, policy: &OutputPolicy, out: &mut Observed) {
+        let TokenKind::Csi {
+            private,
+            params,
+            intermediates,
+            final_byte,
+        } = &token.kind
+        else {
+            return;
+        };
+        let (private, final_byte) = (*private, *final_byte);
+        match (private, intermediates.as_slice(), final_byte) {
             // DECSET / DECRST.
             (Some(b'?'), [], b'h' | b'l') => {
-                return self.dec_mode(token, params, final_byte == b'h', policy, out);
+                return self.dec_mode(token, final_byte == b'h', policy, out);
             }
             // DECRQM for a private mode. The answer is a mode word read, so
             // it is ordered into the stream like the cursor report: what the
@@ -450,14 +415,10 @@ impl Observer {
 
     /// DECSET/DECRST: apply each parameter in turn, as `input.c` does, and drop
     /// the screen switches the `alternate-screen` option refuses.
-    fn dec_mode(
-        &mut self,
-        token: Token,
-        params: &[Param],
-        set: bool,
-        policy: &OutputPolicy,
-        out: &mut Observed,
-    ) {
+    fn dec_mode(&mut self, token: Token, set: bool, policy: &OutputPolicy, out: &mut Observed) {
+        let TokenKind::Csi { params, .. } = &token.kind else {
+            return;
+        };
         let mut forwarded: Vec<u32> = Vec::with_capacity(params.len());
         for param in params {
             let Some(mode) = param.value else { continue };
@@ -489,35 +450,25 @@ impl Observer {
         }
         // Some parameters were refused: re-emit the sequence with the rest, so
         // an unrelated mode in the same sequence still applies.
-        let list: Vec<String> = forwarded.iter().map(u32::to_string).collect();
-        let mut raw = b"\x1b[?".to_vec();
-        raw.extend_from_slice(list.join(";").as_bytes());
-        raw.push(if set { b'h' } else { b'l' });
-        out.rewrite(
-            TokenKind::Csi {
-                private: Some(b'?'),
-                params: forwarded
-                    .into_iter()
-                    .map(|mode| Param {
-                        value: Some(mode),
-                        subs: Vec::new(),
-                    })
-                    .collect(),
-                intermediates: Vec::new(),
-                final_byte: if set { b'h' } else { b'l' },
-            },
-            raw,
-        );
+        out.rewrite(TokenKind::Csi {
+            private: Some(b'?'),
+            params: forwarded
+                .into_iter()
+                .map(|mode| Param {
+                    value: Some(mode),
+                    subs: Vec::new(),
+                })
+                .collect(),
+            intermediates: Vec::new(),
+            final_byte: if set { b'h' } else { b'l' },
+        });
     }
 
-    fn osc(
-        &mut self,
-        token: Token,
-        data: &[u8],
-        end: StringEnd,
-        policy: &OutputPolicy,
-        out: &mut Observed,
-    ) {
+    fn osc(&mut self, token: Token, policy: &OutputPolicy, out: &mut Observed) {
+        let TokenKind::Osc { data, end } = &token.kind else {
+            return;
+        };
+        let end = *end;
         // tmux's `input_exit_osc`: a body that does not open with digits names
         // no command at all.
         let digits = data.iter().take_while(|byte| byte.is_ascii_digit()).count();
@@ -721,10 +672,11 @@ impl Observed {
         self.screen.push(token);
     }
 
-    /// Hand the screen a token the observer built, with the bytes an emulator
-    /// that parses for itself would need to see.
-    fn rewrite(&mut self, kind: TokenKind, raw: Vec<u8>) {
-        self.screen.push(Token { kind, raw });
+    /// Hand the screen a token the observer built rather than one the pane
+    /// wrote, which is how an option that refuses part of a sequence still lets
+    /// the rest of it apply.
+    fn rewrite(&mut self, kind: TokenKind) {
+        self.screen.push(Token { kind });
     }
 }
 
@@ -994,14 +946,90 @@ mod tests {
         OutputPolicy::default()
     }
 
-    /// Every screen token's own bytes, in order — the byte stream the tokens
-    /// stand for.
+    /// The byte stream the screen tokens stand for, serialized back from what
+    /// each token says rather than from bytes carried alongside it: what an
+    /// emulator that parses for itself would have to be handed.
     fn screen_bytes(observed: &Observed) -> Vec<u8> {
-        observed
-            .screen
-            .iter()
-            .flat_map(|token| token.raw.iter().copied())
-            .collect()
+        let mut out = Vec::new();
+        for token in &observed.screen {
+            match &token.kind {
+                TokenKind::Print(character) => {
+                    let mut buffer = [0u8; 4];
+                    out.extend_from_slice(character.encode_utf8(&mut buffer).as_bytes());
+                }
+                // The bytes it has collected travel with the token it resolves
+                // into, so an unfinished character contributes none of its own.
+                TokenKind::Utf8Started => {}
+                TokenKind::Replacement => out.extend_from_slice("\u{fffd}".as_bytes()),
+                TokenKind::Control(byte) => out.push(*byte),
+                TokenKind::Esc {
+                    intermediates,
+                    final_byte,
+                } => {
+                    out.push(0x1b);
+                    out.extend_from_slice(intermediates);
+                    out.push(*final_byte);
+                }
+                TokenKind::Csi {
+                    private,
+                    params,
+                    intermediates,
+                    final_byte,
+                } => {
+                    out.extend_from_slice(b"\x1b[");
+                    out.extend(private);
+                    let positions: Vec<String> = params
+                        .iter()
+                        .map(|param| {
+                            let mut position = match param.value {
+                                Some(value) => value.to_string(),
+                                None => String::new(),
+                            };
+                            for sub in &param.subs {
+                                position.push(':');
+                                if let Some(sub) = sub {
+                                    position.push_str(&sub.to_string());
+                                }
+                            }
+                            position
+                        })
+                        .collect();
+                    out.extend_from_slice(positions.join(";").as_bytes());
+                    out.extend_from_slice(intermediates);
+                    out.push(*final_byte);
+                }
+                TokenKind::Dcs {
+                    intermediates,
+                    final_byte,
+                    data,
+                } => {
+                    out.extend_from_slice(b"\x1bP");
+                    out.extend_from_slice(intermediates);
+                    out.push(*final_byte);
+                    out.extend_from_slice(data);
+                    out.extend_from_slice(b"\x1b\\");
+                }
+                TokenKind::Osc { data, end } => {
+                    out.extend_from_slice(b"\x1b]");
+                    out.extend_from_slice(data);
+                    match end {
+                        StringEnd::StringTerminator => out.extend_from_slice(b"\x1b\\"),
+                        StringEnd::Bell => out.push(0x07),
+                    }
+                }
+                TokenKind::Apc { data } => {
+                    out.extend_from_slice(b"\x1b_");
+                    out.extend_from_slice(data);
+                    out.extend_from_slice(b"\x1b\\");
+                }
+                TokenKind::Rename { data } => {
+                    out.extend_from_slice(b"\x1bk");
+                    out.extend_from_slice(data);
+                    out.extend_from_slice(b"\x1b\\");
+                }
+            }
+        }
+        out
     }
 
     fn observe(input: &[u8]) -> (Observer, Observed) {

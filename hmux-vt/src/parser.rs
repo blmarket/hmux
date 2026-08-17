@@ -12,11 +12,12 @@
 //! of the tokenizer: every consumer that used to recover escape-sequence framing
 //! on its own now shares this one framing.
 //!
-//! Each token carries the exact input bytes it was built from ([`Token::raw`]),
-//! accumulated across reads the way tmux accumulates `since_ground`. That is
-//! what lets a sequence be forwarded verbatim — to the client's own terminal,
-//! or to a `capture-pane -P` reader — rather than re-serialized from parameters
-//! that may not round-trip.
+//! A sequence the parser is part-way through keeps its input bytes, accumulated
+//! across reads the way tmux accumulates `since_ground`, and [`Parser::pending`]
+//! hands them over verbatim — that is what a `capture-pane -P` reader gets.
+//! A token that has been dispatched carries no bytes of its own: what it means
+//! is the whole of it, and every consumer either applies it to a screen or
+//! re-serializes it from the parameters here.
 //!
 //! The public surface here is the token model, [`tokenize`] and [`Parser`], for
 //! the daemon's out-of-process terminal model. Capacity, pending-sequence,
@@ -142,14 +143,11 @@ pub enum TokenKind {
     Rename { data: Vec<u8> },
 }
 
-/// A token plus the input bytes it was assembled from. Outside this crate it
-/// is opaque: a value that travels from the tokenizer to the screen.
+/// One dispatched token. Outside this crate it is opaque: a value that travels
+/// from the tokenizer to the screen.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Token {
     pub(crate) kind: TokenKind,
-    /// Every byte the parser consumed for this token, introducer and terminator
-    /// included, in stream order.
-    pub(crate) raw: Vec<u8>,
 }
 
 /// tmux's `INPUT_BUF_START`: the string buffer starts here and doubles.
@@ -195,7 +193,11 @@ const INTERMEDIATE_BUFFER_LIMIT: usize = 4;
 /// The DEC ANSI state machine over one pane's output.
 pub struct Parser {
     state: State,
-    /// Input bytes belonging to the token being assembled.
+    /// Input bytes of the sequence in progress, tmux's `since_ground`. Ground
+    /// state accumulates nothing: a character is its own token and is dispatched
+    /// where it stands, so only a sequence outstanding across reads has bytes to
+    /// keep. The buffer is cleared, never handed over, so it holds its capacity
+    /// for the next sequence.
     raw: Vec<u8>,
     param: Vec<u8>,
     intermediate: Vec<u8>,
@@ -324,7 +326,6 @@ impl Parser {
                     // collection before the transition takes the parser home.
                     self.stop_utf8(emit);
                     self.leave_state(emit);
-                    self.raw.push(byte);
                     self.dispatch(TokenKind::Control(byte), emit);
                     return;
                 }
@@ -405,10 +406,8 @@ impl Parser {
     /// the replacement it decodes to.
     fn stop_utf8(&mut self, emit: &mut impl FnMut(Token)) {
         if self.utf8.flush() {
-            let raw = std::mem::take(&mut self.raw);
             emit(Token {
                 kind: TokenKind::Replacement,
-                raw,
             });
         }
     }
@@ -427,37 +426,33 @@ impl Parser {
         if self.utf8.flush() {
             emit(Token {
                 kind: TokenKind::Replacement,
-                raw: Vec::new(),
             });
         }
         emit(Token {
             kind: TokenKind::Control(byte),
-            raw: vec![byte],
         });
     }
 
     /// Emit a token and start the next one.
     fn dispatch(&mut self, kind: TokenKind, emit: &mut impl FnMut(Token)) {
-        let raw = std::mem::take(&mut self.raw);
+        self.raw.clear();
         self.param.clear();
         self.intermediate.clear();
         self.string.clear();
         self.string_overflow = false;
         self.state = State::Ground;
-        emit(Token { kind, raw });
+        emit(Token { kind });
     }
 
     fn ground(&mut self, byte: u8, emit: &mut impl FnMut(Token)) {
         // A high byte continues or opens a UTF-8 character; anything else ends
         // one that was still open.
         if byte >= 0x80 {
-            self.raw.push(byte);
             let opening = self.utf8.is_idle();
             let step = self.utf8.push(byte);
             if opening && matches!(step, Utf8Step::More) {
                 emit(Token {
                     kind: TokenKind::Utf8Started,
-                    raw: Vec::new(),
                 });
             }
             match step {
@@ -474,7 +469,6 @@ impl Parser {
         if byte != 0x7f {
             self.stop_utf8(emit);
         }
-        self.raw.push(byte);
         match byte {
             0x00..=0x17 | 0x19 | 0x1c..=0x1f => self.dispatch(TokenKind::Control(byte), emit),
             0x20..=0x7e => {
@@ -482,9 +476,7 @@ impl Parser {
                 self.dispatch(kind, emit);
             }
             // DEL is a control in tmux, printed by nothing.
-            _ => {
-                self.raw.clear();
-            }
+            _ => {}
         }
     }
 
@@ -995,11 +987,10 @@ mod tests {
         out
     }
 
-    fn raws(input: &[u8]) -> Vec<Vec<u8>> {
+    fn pending(input: &[u8]) -> Vec<u8> {
         let mut parser = Parser::default();
-        let mut out = Vec::new();
-        parser.parse(input, |token| out.push(token.raw));
-        out
+        parser.parse(input, |_| {});
+        parser.pending().to_vec()
     }
 
     #[test]
@@ -1160,15 +1151,12 @@ mod tests {
     }
 
     #[test]
-    fn raw_bytes_reproduce_the_whole_sequence() {
-        assert_eq!(
-            raws(b"a\x1b[1;2H\x1b]0;t\x07"),
-            vec![
-                b"a".to_vec(),
-                b"\x1b[1;2H".to_vec(),
-                b"\x1b]0;t\x07".to_vec()
-            ]
-        );
+    fn pending_input_is_the_sequence_still_outstanding() {
+        // Ground state accumulates nothing: a character is dispatched where it
+        // stands, so a stream that ends in ground has no pending input at all.
+        assert_eq!(pending(b"a\x1b[1;2H"), b"");
+        assert_eq!(pending(b"a\x1b[1;2"), b"\x1b[1;2");
+        assert_eq!(pending(b"\x1b]0;t"), b"\x1b]0;t");
     }
 
     #[test]
@@ -1177,9 +1165,22 @@ mod tests {
         let mut out = Vec::new();
         parser.parse(b"\x1b[?10", |token| out.push(token));
         assert!(out.is_empty());
+        assert_eq!(parser.pending(), b"\x1b[?10");
         parser.parse(b"49h", |token| out.push(token));
         assert_eq!(out.len(), 1);
-        assert_eq!(out[0].raw, b"\x1b[?1049h");
+        assert_eq!(
+            out[0].kind,
+            TokenKind::Csi {
+                private: Some(b'?'),
+                params: vec![Param {
+                    value: Some(1049),
+                    subs: Vec::new(),
+                }],
+                intermediates: Vec::new(),
+                final_byte: b'h',
+            }
+        );
+        assert_eq!(parser.pending(), b"");
     }
 
     #[test]
