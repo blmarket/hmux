@@ -147,13 +147,11 @@ impl CellData {
 
     /// One ASCII or single-codepoint character.
     pub fn from_char(character: char, width: u8) -> CellData {
-        let mut encoded = [0u8; 4];
-        let encoded = character.encode_utf8(&mut encoded).as_bytes();
         let mut bytes = [0u8; UTF8_SIZE];
-        bytes[..encoded.len()].copy_from_slice(encoded);
+        let len = character.encode_utf8(&mut bytes[..4]).len();
         CellData {
             bytes,
-            len: encoded.len() as u8,
+            len: len as u8,
             width,
         }
     }
