@@ -24,6 +24,7 @@ use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
+use bytes::{Buf, Bytes, BytesMut};
 use libc::pid_t;
 
 use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, ScreenTail};
@@ -528,7 +529,11 @@ const CONTROL_OUTPUT_BACKLOG: u64 = 1024 * 1024;
 /// catches up.
 #[derive(Default)]
 struct ControlOutputJournal {
-    bytes: VecDeque<u8>,
+    /// The pane's reads, in stream order, each paired with the offset it starts
+    /// at. A read is frozen once and shared: appending it here costs a refcount
+    /// rather than a copy of the pane's output, which is what a pane with no
+    /// control client at all pays.
+    segments: VecDeque<(u64, Bytes)>,
     end: u64,
     /// Where each registered reader has read to, keyed by registration.
     readers: BTreeMap<u64, u64>,
@@ -538,7 +543,9 @@ struct ControlOutputJournal {
 impl ControlOutputJournal {
     /// The oldest offset the journal still holds.
     fn start(&self) -> u64 {
-        self.end.saturating_sub(self.bytes.len() as u64)
+        self.segments
+            .front()
+            .map_or(self.end, |(start, _)| *start)
     }
 
     /// The oldest offset a reader that asks for history is given. What the
@@ -564,13 +571,20 @@ impl ControlOutputJournal {
         self.backlog() > CONTROL_OUTPUT_BACKLOG
     }
 
-    fn append(&mut self, bytes: &[u8]) {
-        self.bytes.extend(bytes);
+    fn append(&mut self, bytes: Bytes) {
+        if bytes.is_empty() {
+            return;
+        }
+        let start = self.end;
         self.end = self.end.saturating_add(bytes.len() as u64);
+        self.segments.push_back((start, bytes));
         self.trim();
     }
 
     /// Drop what neither a reader nor the history needs.
+    ///
+    /// A segment the cut lands inside is advanced rather than re-copied, so the
+    /// bytes still held are still the ones the pane read.
     fn trim(&mut self) {
         let history = self.end.saturating_sub(CONTROL_OUTPUT_HISTORY as u64);
         let keep = self
@@ -579,9 +593,18 @@ impl ControlOutputJournal {
             .copied()
             .min()
             .map_or(history, |slowest| slowest.min(history));
-        let start = self.start();
-        if keep > start {
-            self.bytes.drain(..(keep - start) as usize);
+        while let Some((start, bytes)) = self.segments.front_mut() {
+            if keep <= *start {
+                break;
+            }
+            let drop = (keep - *start) as usize;
+            if drop >= bytes.len() {
+                self.segments.pop_front();
+                continue;
+            }
+            bytes.advance(drop);
+            *start = keep;
+            break;
         }
     }
 
@@ -610,30 +633,54 @@ impl ControlOutputJournal {
     }
 
     #[cfg(test)]
-    fn since(&self, offset: u64) -> (u64, Vec<u8>) {
+    fn since(&self, offset: u64) -> (u64, Bytes) {
         let (_, end, bytes) = self.chunk(offset, usize::MAX);
         (end, bytes)
     }
 
-    fn chunk(&self, offset: u64, limit: usize) -> (u64, u64, Vec<u8>) {
-        let start = self.start();
-        let offset = offset.clamp(start, self.end);
+    /// The next `limit` bytes from `offset`, as `(offset after them, journal
+    /// end, bytes)`.
+    ///
+    /// A request the segment holding `offset` can satisfy on its own is a slice
+    /// of the pane's read, so N control clients reading the same output share
+    /// it. Only a request that spans reads is assembled, and then it costs what
+    /// it delivers rather than what the journal holds.
+    fn chunk(&self, offset: u64, limit: usize) -> (u64, u64, Bytes) {
+        let offset = offset.clamp(self.start(), self.end);
+        let available = (self.end - offset) as usize;
+        let take = limit.min(available);
+        if take == 0 {
+            return (offset, self.end, Bytes::new());
+        }
+        let mut segments = self
+            .segments
+            .iter()
+            .skip_while(|(start, bytes)| start.saturating_add(bytes.len() as u64) <= offset);
+        let Some((start, first)) = segments.next() else {
+            return (offset, self.end, Bytes::new());
+        };
         let skip = (offset - start) as usize;
-        let take = limit.min(self.bytes.len() - skip);
-        // Copied off the deque's own slices: a reader near the end of a full
-        // journal would otherwise pay for stepping over everything before it,
-        // once per chunk, for as long as the pane keeps writing.
-        let (front, back) = self.bytes.as_slices();
-        let mut bytes = Vec::with_capacity(take);
-        let from_front = front.len().saturating_sub(skip).min(take);
-        if from_front != 0 {
-            bytes.extend_from_slice(&front[skip..skip + from_front]);
+        if take <= first.len() - skip {
+            return (
+                offset.saturating_add(take as u64),
+                self.end,
+                first.slice(skip..skip + take),
+            );
         }
-        if from_front < take {
-            let skip = skip.saturating_sub(front.len());
-            bytes.extend_from_slice(&back[skip..skip + (take - from_front)]);
+        let mut bytes = BytesMut::with_capacity(take);
+        bytes.extend_from_slice(&first[skip..]);
+        for (_, segment) in segments {
+            let want = take - bytes.len();
+            if want == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&segment[..want.min(segment.len())]);
         }
-        (offset.saturating_add(bytes.len() as u64), self.end, bytes)
+        (
+            offset.saturating_add(bytes.len() as u64),
+            self.end,
+            bytes.freeze(),
+        )
     }
 }
 
@@ -692,10 +739,10 @@ impl ControlOutputReader {
     /// The next `limit` bytes, as `(offset after them, journal end, bytes)`.
     /// Reading does not advance the reader: the caller advances once the bytes
     /// are queued for its client.
-    pub(crate) fn chunk(&self, limit: usize) -> (u64, u64, Vec<u8>) {
+    pub(crate) fn chunk(&self, limit: usize) -> (u64, u64, Bytes) {
         if self.id.is_none() {
             let end = self.end();
-            return (end, end, Vec::new());
+            return (end, end, Bytes::new());
         }
         self.observation.control_output_chunk(self.offset, limit)
     }
@@ -1072,10 +1119,10 @@ impl NativePaneObservation {
     /// The events arrive after the whole chunk has reached the screen, but
     /// each is self-contained: screen state one reports — a cursor position, a
     /// mode word — was captured at that event's point in the byte stream.
-    fn observe_output(&self, pending: &[u8]) -> (Vec<Vec<u8>>, Vec<&'static [u8]>) {
-        self.append_control_output(pending);
+    fn observe_output(&self, pending: Bytes) -> (Vec<Vec<u8>>, Vec<&'static [u8]>) {
+        self.append_control_output(pending.clone());
         let policy = self.output_policy();
-        let events = self.term.borrow_mut().process(pending, &policy);
+        let events = self.term.borrow_mut().process(&pending, &policy);
 
         let mut replies: Vec<Vec<u8>> = Vec::new();
         let mut queries: Vec<&'static [u8]> = Vec::new();
@@ -1168,7 +1215,7 @@ impl NativePaneObservation {
         }
     }
 
-    fn append_control_output(&self, bytes: &[u8]) {
+    fn append_control_output(&self, bytes: Bytes) {
         if !bytes.is_empty() {
             {
                 let mut output = self.control_output.borrow_mut();
@@ -1253,7 +1300,7 @@ impl NativePaneObservation {
         self.control_output.borrow().end
     }
 
-    pub(crate) fn control_output_chunk(&self, offset: u64, limit: usize) -> (u64, u64, Vec<u8>) {
+    pub(crate) fn control_output_chunk(&self, offset: u64, limit: usize) -> (u64, u64, Bytes) {
         self.control_output.borrow().chunk(offset, limit)
     }
 
@@ -1689,7 +1736,9 @@ impl Pane {
         }
         // An inert pane has no child to answer, so the replies and forwarded
         // questions the parse produces have nowhere to go.
-        let _ = self.observation.observe_output(bytes);
+        let _ = self
+            .observation
+            .observe_output(Bytes::copy_from_slice(bytes));
     }
 
     /// Return the stable read-only handle associated with this pane.
@@ -2253,7 +2302,16 @@ pub(crate) struct PaneIo {
     pipe_output_active: Rc<Cell<bool>>,
     alive: Rc<Cell<bool>>,
     closed: bool,
+    /// Where the PTY is read, and the allocation every consumer of a read then
+    /// shares. Split off per read and refilled: while nothing outlives the
+    /// chunk the split leaves the allocation to be written over again, so the
+    /// steady state is one buffer, as a stack array was — and a consumer that
+    /// does keep a chunk keeps it without anyone copying it for them.
+    read_buffer: BytesMut,
 }
+
+/// What one PTY read asks for, tmux's `PANE_READSIZE`.
+const PANE_READ_SIZE: usize = 4096;
 
 impl PaneIo {
     pub(crate) fn new(
@@ -2274,6 +2332,7 @@ impl PaneIo {
             pipe_output_active,
             alive,
             closed: false,
+            read_buffer: BytesMut::with_capacity(PANE_READ_SIZE),
         })
     }
 
@@ -2334,23 +2393,29 @@ impl PaneIo {
             });
         }
 
-        let mut buffer = [0u8; 4096];
         let mut consumed = 0usize;
         let mut reached_eof = false;
         while consumed < OUTPUT_COALESCE_MAX_BYTES {
+            self.read_buffer.reserve(PANE_READ_SIZE);
+            let spare = self.read_buffer.spare_capacity_mut();
+            let want = spare.len().min(PANE_READ_SIZE);
             let read = unsafe {
-                libc::read(
-                    self.fd.as_raw_fd(),
-                    buffer.as_mut_ptr() as *mut c_void,
-                    buffer.len(),
-                )
+                libc::read(self.fd.as_raw_fd(), spare.as_mut_ptr() as *mut c_void, want)
             };
             if read > 0 {
-                consumed += read as usize;
+                let read = read as usize;
+                consumed += read;
+                // SAFETY: the read reported these bytes written, and `want` is
+                // within the spare capacity the reserve above guaranteed.
+                unsafe {
+                    let filled = self.read_buffer.len() + read;
+                    self.read_buffer.set_len(filled);
+                }
                 // Parsed chunk by chunk, not batched for the turn: a reply this
                 // chunk provokes must reach the pane before the pane can stop
                 // repainting over its own echo of it.
-                self.process_output(&buffer[..read as usize]);
+                let chunk = self.read_buffer.split().freeze();
+                self.process_output(chunk);
                 continue;
             }
             if read == 0 {
@@ -2378,14 +2443,14 @@ impl PaneIo {
         })
     }
 
-    fn process_output(&mut self, pending: &[u8]) {
+    fn process_output(&mut self, pending: Bytes) {
         if self.pipe_output_active.get() {
             let mut outbound = self.pipe_output.borrow_mut();
             if outbound.closed {
                 drop(outbound);
                 self.pipe_output_active.set(false);
             } else {
-                outbound.push(pending);
+                outbound.push(&pending);
             }
         }
 
@@ -3306,7 +3371,7 @@ mod tests {
         // Codex reports its live status in the window title via OSC 2. The
         // title is recorded where the child's output is filtered, since that
         // is what holds it to `input-buffer-size`.
-        test_pane_io(&pane).process_output(b"\x1b]2;Working (5s)\x07");
+        test_pane_io(&pane).process_output(Bytes::from_static(b"\x1b]2;Working (5s)\x07"));
         assert_eq!(
             observation.title().expect("title").as_deref(),
             Some("Working (5s)")
@@ -3334,36 +3399,50 @@ mod tests {
     #[test]
     fn control_output_journal_tracks_offsets_and_bounds_history() {
         let mut output = ControlOutputJournal::default();
-        output.append(b"abc");
-        assert_eq!(output.since(0), (3, b"abc".to_vec()));
-        assert_eq!(output.since(2), (3, b"c".to_vec()));
+        output.append(Bytes::from_static(b"abc"));
+        assert_eq!(output.since(0), (3, Bytes::from_static(b"abc")));
+        assert_eq!(output.since(2), (3, Bytes::from_static(b"c")));
 
-        output.append(&vec![b'x'; CONTROL_OUTPUT_HISTORY + 5]);
+        output.append(Bytes::from(vec![b'x'; CONTROL_OUTPUT_HISTORY + 5]));
         let (end, retained) = output.since(0);
         assert_eq!(end, CONTROL_OUTPUT_HISTORY as u64 + 8);
         assert_eq!(retained.len(), CONTROL_OUTPUT_HISTORY);
         assert!(retained.iter().all(|byte| *byte == b'x'));
     }
 
+    /// The cut that bounds the history can land inside one of the pane's reads.
+    /// What is left of that read stays readable, at the offset it really sits
+    /// at — the segment is advanced, not dropped whole.
+    #[test]
+    fn control_output_journal_trims_inside_a_read() {
+        let mut output = ControlOutputJournal {
+            end: 0,
+            ..ControlOutputJournal::default()
+        };
+        output.append(Bytes::from(vec![b'x'; CONTROL_OUTPUT_HISTORY - 2]));
+        output.append(Bytes::from_static(b"abcd"));
+        assert_eq!(output.start(), 2);
+        assert_eq!(output.end, CONTROL_OUTPUT_HISTORY as u64 + 2);
+        let (_, _, bytes) = output.chunk(CONTROL_OUTPUT_HISTORY as u64 - 2, 4);
+        assert_eq!(bytes, Bytes::from_static(b"abcd"));
+    }
+
     #[test]
     fn control_output_journal_chunks_advance_only_by_returned_bytes() {
         let mut output = ControlOutputJournal::default();
-        output.append(b"abcdef");
-        assert_eq!(output.chunk(0, 2), (2, 6, b"ab".to_vec()));
-        assert_eq!(output.chunk(2, 3), (5, 6, b"cde".to_vec()));
-        assert_eq!(output.chunk(5, 3), (6, 6, b"f".to_vec()));
-        // A chunk spanning both halves of a wrapped ring reads as one run.
-        let mut wrapped = ControlOutputJournal {
-            bytes: VecDeque::with_capacity(8),
-            end: 6,
-            ..ControlOutputJournal::default()
-        };
-        wrapped.bytes.extend(b"def");
-        for byte in b"abc".iter().rev() {
-            wrapped.bytes.push_front(*byte);
-        }
-        assert!(!wrapped.bytes.as_slices().1.is_empty(), "a wrapped ring");
-        assert_eq!(wrapped.chunk(1, 4), (5, 6, b"bcde".to_vec()));
+        output.append(Bytes::from_static(b"abcdef"));
+        assert_eq!(output.chunk(0, 2), (2, 6, Bytes::from_static(b"ab")));
+        assert_eq!(output.chunk(2, 3), (5, 6, Bytes::from_static(b"cde")));
+        assert_eq!(output.chunk(5, 3), (6, 6, Bytes::from_static(b"f")));
+        // A chunk spanning two of the pane's reads reads as one run.
+        let mut spanning = ControlOutputJournal::default();
+        spanning.append(Bytes::from_static(b"abc"));
+        spanning.append(Bytes::from_static(b"def"));
+        assert_eq!(spanning.segments.len(), 2, "two reads, unmerged");
+        assert_eq!(spanning.chunk(1, 4), (5, 6, Bytes::from_static(b"bcde")));
+        // One that a single read satisfies is that read, not a copy of it.
+        let (_, _, inside) = spanning.chunk(3, 3);
+        assert_eq!(inside, Bytes::from_static(b"def"));
     }
 
     /// The history bound is only for output nobody asked for: a registered
@@ -3372,8 +3451,8 @@ mod tests {
     fn control_output_journal_keeps_what_a_reader_has_not_taken() {
         let mut output = ControlOutputJournal::default();
         let reader = output.register(0);
-        output.append(b"abc");
-        output.append(&vec![b'x'; CONTROL_OUTPUT_HISTORY + 5]);
+        output.append(Bytes::from_static(b"abc"));
+        output.append(Bytes::from(vec![b'x'; CONTROL_OUTPUT_HISTORY + 5]));
 
         let (end, retained) = output.since(0);
         assert_eq!(end, CONTROL_OUTPUT_HISTORY as u64 + 8);
@@ -3398,7 +3477,7 @@ mod tests {
     fn control_output_journal_releases_a_detached_reader() {
         let mut output = ControlOutputJournal::default();
         let reader = output.register(0);
-        output.append(&vec![b'x'; CONTROL_OUTPUT_HISTORY * 2]);
+        output.append(Bytes::from(vec![b'x'; CONTROL_OUTPUT_HISTORY * 2]));
         assert!(output.backpressured());
 
         output.release(reader);
@@ -3430,7 +3509,10 @@ mod tests {
             b"\x1b[5",
             b"n",
         ] {
-            forwarded += observation.observe_output(chunk).1.len();
+            forwarded += observation
+                .observe_output(Bytes::copy_from_slice(chunk))
+                .1
+                .len();
         }
         assert_eq!(forwarded, 3, "two OSC 11 questions and one DSR");
     }
@@ -3440,16 +3522,16 @@ mod tests {
     #[test]
     fn the_private_cursor_report_is_not_answered() {
         let observation = inert_observation();
-        let (replies, _) = observation.observe_output(b"before\x1b[?6n");
+        let (replies, _) = observation.observe_output(Bytes::from_static(b"before\x1b[?6n"));
         assert!(replies.is_empty(), "got {replies:?}");
-        let (replies, _) = observation.observe_output(b"\x1b[6n");
+        let (replies, _) = observation.observe_output(Bytes::from_static(b"\x1b[6n"));
         assert_eq!(replies, vec![b"\x1b[1;7R".to_vec()]);
     }
 
     #[test]
     fn pane_cursor_colour_query_uses_the_stored_colour_and_terminator() {
         let observation = inert_observation();
-        let (replies, queries) = observation.observe_output(b"\x1b]12;#00ff00\x07\x1b]12;?\x07");
+        let (replies, queries) = observation.observe_output(Bytes::from_static(b"\x1b]12;#00ff00\x07\x1b]12;?\x07"));
         assert!(queries.is_empty(), "got forwarded queries: {queries:?}");
         assert_eq!(replies, vec![b"\x1b]12;rgb:0000/ffff/0000\x07".to_vec()]);
     }
@@ -3458,7 +3540,9 @@ mod tests {
     fn pane_colour_queries_answer_from_the_stored_foreground_and_background() {
         let observation = inert_observation();
         let (replies, queries) = observation
-            .observe_output(b"\x1b]10;#ff0000\x07\x1b]11;#104e8b\x07\x1b]10;?\x07\x1b]11;?\x1b\\");
+            .observe_output(Bytes::from_static(
+                b"\x1b]10;#ff0000\x07\x1b]11;#104e8b\x07\x1b]10;?\x07\x1b]11;?\x1b\\",
+            ));
         assert!(queries.is_empty(), "got forwarded queries: {queries:?}");
         assert_eq!(
             replies,
@@ -3472,7 +3556,7 @@ mod tests {
     #[test]
     fn an_unset_background_question_still_goes_out_to_the_terminal() {
         let observation = inert_observation();
-        let (replies, queries) = observation.observe_output(b"\x1b]10;?\x07\x1b]11;?\x07");
+        let (replies, queries) = observation.observe_output(Bytes::from_static(b"\x1b]10;?\x07\x1b]11;?\x07"));
         assert!(replies.is_empty(), "got pane replies: {replies:?}");
         assert_eq!(queries, vec![hmux_vt::BACKGROUND_COLOR_QUERY]);
     }

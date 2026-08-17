@@ -34,6 +34,7 @@ workspace = true
 [dependencies]
 hmux-rt = { path = "hmux-rt" }
 hmux-vt = { path = "hmux-vt" }
+bytes = "1"
 libc = "0.2"
 regex = "1"
 terminfo = "0.9"
