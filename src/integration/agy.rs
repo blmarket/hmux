@@ -30,8 +30,10 @@ use super::{is_braille, is_uuid, AgentDetector, AgentState, Detection, SessionId
 /// live one.
 const LIVE_ROWS: usize = 16;
 
-/// Status verbs accepted without the leading spinner cell.
-const SPINNER_STATUSES: [&str; 2] = ["generating...", "loading..."];
+/// Status verbs accepted without the leading spinner cell. A model-written
+/// progress title is not among them on purpose: it is indistinguishable from
+/// transcript prose once the spinner cell that introduced it is gone.
+const SPINNER_STATUSES: [&str; 4] = ["generating...", "loading...", "running...", "working..."];
 
 /// Recognizes Antigravity CLI panes.
 pub(crate) struct AgyDetector;
@@ -128,20 +130,21 @@ fn is_slash_menu(text: &str) -> bool {
     text.contains("enter select") && text.contains("tab complete")
 }
 
-/// agy's status line is one verb followed by an ellipsis — `Generating...`
-/// while the model streams, `Loading...` while it takes a tool result back —
-/// normally behind a braille spinner cell, which the first frame can be drawn
-/// without. Requiring a single word keeps prose ending in an ellipsis out.
+/// agy's status line is a label followed by an ellipsis behind a braille
+/// spinner cell — a fixed verb such as `Generating...` while the model streams
+/// or `Loading...` while it takes a tool result back, and a model-written
+/// progress title such as `Analyzing Pane Mappings...` in between. The first
+/// frame of a fixed verb can be drawn without the spinner cell.
 fn has_spinner_status(lines: &[&str]) -> bool {
     lines.iter().any(|line| {
         let trimmed = line.trim_start();
         match trimmed.chars().next() {
-            // Behind the spinner, take any single-word ellipsis status, so a
-            // verb not seen yet still reports work in progress.
+            // Behind the spinner, take any ellipsis status: the label is
+            // whatever the model is narrating, so neither its wording nor its
+            // word count says whether the turn is still running.
             Some(first) if is_braille(first) => {
                 let status = trimmed[first.len_utf8()..].trim();
-                status.ends_with("...")
-                    && !status.trim_end_matches('.').contains(char::is_whitespace)
+                status.ends_with("...") && !status.trim_end_matches('.').is_empty()
             }
             // Without it, only the known verbs: transcript prose ending in an
             // ellipsis would otherwise pin the pane to working forever.
@@ -254,6 +257,10 @@ mod tests {
             "   Generating...",
             "⣽  Loading...",
             "   Loading...",
+            "⣟  Working...",
+            "   Working...",
+            "⣾  Running...",
+            "   Running...",
         ] {
             let text = screen(&format!(
                 "● Bash(git status) (ctrl+o to expand)\n{status}\n{RULE}\n>\n{RULE}\n\
@@ -272,6 +279,24 @@ mod tests {
              ? for shortcuts                Gemini 3.6 Flash · high · 1 task(s) · /tasks"
         ));
         assert_eq!(detect(&text), Detection::State(AgentState::Working));
+    }
+
+    #[test]
+    fn a_model_written_progress_title_reports_working() {
+        // Between the fixed verbs agy narrates the turn in the same status
+        // line, and those labels run to several words. Reading only one-word
+        // labels flipped the pane to idle mid-turn, on and off with the
+        // spinner's own wording.
+        for status in [
+            "⣷  Analyzing Pane Mappings...",
+            "⢿  Refining The Approach...",
+        ] {
+            let text = screen(&format!(
+                "● Bash(cargo nextest run) (ctrl+o to expand)\n{status}\n{RULE}\n>\n{RULE}\n\
+                 esc to cancel                      Gemini 3.7 Flash · high"
+            ));
+            assert_eq!(detect(&text), Detection::State(AgentState::Working));
+        }
     }
 
     #[test]
