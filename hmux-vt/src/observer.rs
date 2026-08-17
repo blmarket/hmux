@@ -25,8 +25,6 @@
 //! sequences this module handles, even when a caller reuses one from another
 //! direction.
 
-use std::collections::VecDeque;
-
 use super::parser::{INPUT_BUFFER_DEFAULT_SIZE, Param, Parser, StringEnd, Token, TokenKind};
 use super::vis;
 use super::x11_colour;
@@ -238,6 +236,14 @@ pub struct Observed {
 /// One pane's tokenizer plus the state the tokens change.
 pub struct Observer {
     parser: Parser,
+    /// What a token changes, held apart from the tokenizer so a token can be
+    /// observed while the tokenizer is still reading the chunk it came from.
+    state: ObserverState,
+}
+
+/// The pane state the tokens change, which is everything the observer holds
+/// except the tokenizer itself.
+struct ObserverState {
     /// The pane's `OSC 4` palette, as packed `0xrrggbb`. tmux keeps one per
     /// pane so a query is answered from what that pane set, not the client's.
     palette: Box<[Option<u32>; 256]>,
@@ -251,8 +257,10 @@ impl Default for Observer {
     fn default() -> Self {
         Self {
             parser: Parser::default(),
-            palette: Box::new([None; 256]),
-            osc_state: OscState::default(),
+            state: ObserverState {
+                palette: Box::new([None; 256]),
+                osc_state: OscState::default(),
+            },
         }
     }
 }
@@ -273,7 +281,7 @@ impl Observer {
 
     /// The pane state OSC sequences have set, as the formats report it.
     pub fn osc_state(&self) -> OscState {
-        self.osc_state.clone()
+        self.state.osc_state.clone()
     }
 
     /// Abandon a sequence whose terminator never arrived. Nothing is observed,
@@ -286,15 +294,17 @@ impl Observer {
     /// Tokenize one chunk of pane output against the current options.
     pub fn feed(&mut self, input: &[u8], policy: &OutputPolicy) -> Observed {
         self.parser.set_string_capacity(policy.input_buffer_size);
-        let mut tokens = VecDeque::new();
-        self.parser.parse(input, |token| tokens.push_back(token));
+        // Observed where it is dispatched rather than after the chunk: the
+        // tokenizer holds nothing a token's own handling reads, so staging the
+        // chunk's tokens first would only move every one of them twice.
+        let Self { parser, state } = self;
         let mut observed = Observed::default();
-        while let Some(token) = tokens.pop_front() {
-            self.token(token, policy, &mut observed);
-        }
+        parser.parse(input, |token| state.token(token, policy, &mut observed));
         observed
     }
+}
 
+impl ObserverState {
     fn token(&mut self, token: Token, policy: &OutputPolicy, out: &mut Observed) {
         match &token.kind {
             TokenKind::Print(_) | TokenKind::Utf8Started | TokenKind::Replacement => {
