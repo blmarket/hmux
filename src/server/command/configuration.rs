@@ -229,35 +229,19 @@ fn option_target_from_name(
     }
 }
 
-/// Re-print a command list with each command's canonical name, the way tmux's
-/// `cmd_list_print` does for a stored command option. A body that does not
-/// parse is kept verbatim so a not-yet-valid hook still round-trips.
-fn canonical_command_list(value: &str, st: &ServerState) -> String {
-    let tokens = tokenize_line(value);
-    let groups = tokenized_command_groups(&tokens);
-    if groups.is_empty() {
-        return value.to_string();
+/// Re-print a command list the way tmux's `cmd_list_print` does for a stored
+/// command option: every command by its canonical name, its value-less flags as
+/// one cluster, then its valued flags and its operands. A body that does not
+/// compile is kept verbatim so a not-yet-valid hook still round-trips.
+///
+/// Compiling without the alias table is deliberate: an alias expands to a whole
+/// command line, and rewriting the stored body into that expansion would report
+/// back something the user never wrote.
+fn canonical_command_list(value: &str, _st: &ServerState) -> String {
+    match ExecutableCommand::compile(value, &[]) {
+        Ok(compiled) if !compiled.is_empty() => compiled.print(),
+        _ => value.to_string(),
     }
-    let aliases = st.command_aliases();
-    let mut printed = Vec::with_capacity(groups.len());
-    for group in &groups {
-        let Some(first) = group.first() else {
-            return value.to_string();
-        };
-        let canonical = match registry::resolve(first) {
-            Resolution::Name(name) => name.to_string(),
-            _ => match aliases.iter().find(|(alias, _)| alias == first) {
-                // An alias expands to a whole command line; leave it alone
-                // rather than half-rewriting it.
-                Some(_) => return value.to_string(),
-                None => return value.to_string(),
-            },
-        };
-        let mut rewritten = group.clone();
-        rewritten[0] = canonical;
-        printed.push(display_command(&rewritten));
-    }
-    printed.join(" ; ")
 }
 
 /// Expand an option-name operand the way tmux's `format_single_from_target`

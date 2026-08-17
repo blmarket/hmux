@@ -15,6 +15,7 @@ pub(in crate::server) mod args;
 pub(in crate::server) mod buffers;
 pub(in crate::server) mod clients;
 pub(in crate::server) mod configuration;
+mod executable;
 pub(in crate::server) mod execution;
 mod identity;
 pub(in crate::server) mod keys;
@@ -26,6 +27,9 @@ pub(crate) mod suspend;
 pub(in crate::server) mod windows;
 
 pub(in crate::server) use identity::Command;
+
+pub(crate) use executable::ExecutableCommand;
+use executable::{expand_attached_separators, split_commands, ParsedCommand};
 
 /// The tests that drive a job the way a command would need to build one.
 #[cfg(test)]
@@ -51,7 +55,7 @@ use super::key::{format_key_name, parse_key_name, KeyBase, KeyCode, SpecialKey};
 use super::mouse::MouseEvent;
 use super::options::{self, OptionScope, OptionSet, OptionsView};
 use super::pane::PaneClass;
-use super::registry::{self, CommandSpec, Resolution, SpecResolution};
+use super::registry::{self, Resolution, SpecResolution};
 use super::state::{
     BackgroundJobRegistry, ClientActionResult, ClientMessage, ClientMessageResult, MenuItem,
     MenuRequest, ModeEdit, ModeItem, ModeKind, ModeView, OverlayRequest, PaneSpec, PopupRequest,
@@ -503,34 +507,28 @@ pub(crate) fn command_line_groups(
     args: &[String],
     aliases: &[(String, String)],
 ) -> Result<Vec<Vec<String>>, CommandResult> {
-    let expanded = expand_attached_separators(args);
-    parse_command_groups_with_aliases(split_commands(&expanded), aliases)
-        .map(|commands| commands.into_iter().map(|command| command.args).collect())
+    ExecutableCommand::compile_argv(args, aliases)
+        .map(ExecutableCommand::into_argv_groups)
+        .map_err(CommandResult::err)
 }
 
 /// Parse one tmux command string into normalized command argv groups.
 ///
 /// Control mode and configuration files receive command strings rather than an
-/// already split argv. Keep string tokenization and command validation in this
-/// module so every caller gets the same quoting, separator, alias, getopt, and
-/// arity behavior. The complete line is validated before any group is returned.
+/// already split argv. Both go through [`ExecutableCommand`], so every caller
+/// gets the same quoting, separator, alias, getopt, and arity behavior. The
+/// complete line is validated before any group is returned.
 pub(crate) fn command_string_groups(line: &str) -> Result<Vec<Vec<String>>, CommandResult> {
-    let tokens = tokenize_line(line);
-    let owned_groups = tokenized_command_groups(&tokens);
-    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    parse_command_groups(groups)
-        .map(|commands| commands.into_iter().map(|command| command.args).collect())
+    command_string_groups_with_aliases(line, &[])
 }
 
 pub(crate) fn command_string_groups_with_aliases(
     line: &str,
     aliases: &[(String, String)],
 ) -> Result<Vec<Vec<String>>, CommandResult> {
-    let tokens = tokenize_line(line);
-    let owned_groups = tokenized_command_groups(&tokens);
-    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    parse_command_groups_with_aliases(groups, aliases)
-        .map(|commands| commands.into_iter().map(|command| command.args).collect())
+    ExecutableCommand::compile(line, aliases)
+        .map(ExecutableCommand::into_argv_groups)
+        .map_err(CommandResult::err)
 }
 
 /// Whether a command needs the stock client's read/write file handshake.
@@ -577,13 +575,13 @@ pub(crate) fn start_resumable_command(
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> Result<ResumableCommandQueue, CommandResult> {
-    let expanded_args = expand_attached_separators(args);
-    let groups = split_commands(&expanded_args);
     let aliases = {
         let state = state.borrow_mut();
         state.command_aliases()
     };
-    let parsed = parse_command_groups_with_aliases(groups, &aliases)?;
+    let parsed = ExecutableCommand::compile_argv(args, &aliases)
+        .map_err(CommandResult::err)?
+        .into_commands();
     Ok(ResumableCommandQueue::new(parsed, agents, context))
 }
 
@@ -593,14 +591,13 @@ pub(crate) fn start_resumable_command_string(
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> Result<ResumableCommandQueue, CommandResult> {
-    let tokens = tokenize_line(line);
-    let owned_groups = tokenized_command_groups(&tokens);
-    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
     let aliases = {
         let state = state.borrow_mut();
         state.command_aliases()
     };
-    let parsed = parse_command_groups_with_aliases(groups, &aliases)?;
+    let parsed = ExecutableCommand::compile(line, &aliases)
+        .map_err(CommandResult::err)?
+        .into_commands();
     Ok(ResumableCommandQueue::new(parsed, agents, context))
 }
 
@@ -611,20 +608,19 @@ pub(crate) fn start_resumable_command_string_with_tail(
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> Result<ResumableCommandQueue, CommandResult> {
-    let tokens = tokenize_line(line);
-    let owned_groups = tokenized_command_groups(&tokens);
-    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
     let aliases = {
         let state = state.borrow_mut();
         state.command_aliases()
     };
-    let mut parsed = parse_command_groups_with_aliases(groups, &aliases)?;
+    let mut parsed = ExecutableCommand::compile(line, &aliases)
+        .map_err(CommandResult::err)?
+        .into_commands();
     if !tail.is_empty() {
-        let expanded_tail = expand_attached_separators(tail);
-        parsed.extend(parse_command_groups_with_aliases(
-            split_commands(&expanded_tail),
-            &aliases,
-        )?);
+        parsed.extend(
+            ExecutableCommand::compile_argv(tail, &aliases)
+                .map_err(CommandResult::err)?
+                .into_commands(),
+        );
     }
     Ok(ResumableCommandQueue::new(parsed, agents, context))
 }
@@ -1609,17 +1605,6 @@ fn tokenized_command_groups(tokens: &[LineToken]) -> Vec<Vec<String>> {
     owned_groups
 }
 
-/// One command of a command line, ready to run.
-///
-/// The raw (normalized) argv is retained beside the typed command: the queue
-/// logs it, the `hook_*` format variables are built from it, and the name-keyed
-/// hook planning needs it.
-struct ParsedCommand {
-    spec: &'static CommandSpec,
-    command: Command,
-    args: Vec<String>,
-}
-
 pub(crate) fn display_command(args: &[String]) -> String {
     args.iter()
         .map(|argument| {
@@ -1786,153 +1771,18 @@ fn hook_commands(
     Some(commands)
 }
 
+/// The compile pipeline as a [`CommandResult`], for the sites that still hold
+/// pre-split groups instead of a command line. They report a parse error to a
+/// client, so the error text is wrapped here rather than in the pipeline.
 fn parse_command_groups(groups: Vec<&[String]>) -> Result<Vec<ParsedCommand>, CommandResult> {
-    // Parse phase: resolve every command's name up front. A bad name aborts the
-    // whole line with no output, exactly like tmux's cmd_parse.
-    let mut resolved: Vec<(&'static CommandSpec, &[String])> = Vec::with_capacity(groups.len());
-    for group in &groups {
-        let word = match group.first() {
-            Some(w) => w.as_str(),
-            None => continue, // empty group (e.g. trailing ';'): tmux ignores it
-        };
-        match registry::resolve_spec(word) {
-            SpecResolution::Spec(spec) => resolved.push((spec, group)),
-            SpecResolution::Ambiguous { error } | SpecResolution::Unknown { error } => {
-                return Err(CommandResult::err(error));
-            }
-        }
-    }
-
-    // Still in the parse phase: validate each command's flags against tmux's
-    // getopt spec. An unknown flag is a *parse* error too, so (like a bad command
-    // name) it aborts the entire line with no output before anything runs.
-    for (command, group) in &resolved {
-        let getopt = command.getopt;
-        let bad = if command.name == "bind-key" {
-            unknown_bind_key_flag(group, getopt)
-        } else {
-            unknown_flag(group, getopt)
-        };
-        if let Some(bad) = bad {
-            return Err(CommandResult::err(format!(
-                "command {}: unknown flag -{bad}\n",
-                command.name
-            )));
-        }
-        if let Some(flag) = missing_flag_value(group, getopt) {
-            return Err(CommandResult::err(format!(
-                "command {}: -{flag} expects an argument\n",
-                command.name
-            )));
-        }
-    }
-
-    let mut parsed = Vec::with_capacity(resolved.len());
-    for (spec, group) in resolved {
-        let args = normalize_argv(spec.name, group);
-        // Lex the validated argv once: the arity check and the command's own
-        // parse hook both read the same operands.
-        let lexed = ParsedArgs::lex(spec.name, &args);
-        let (minimum, maximum) = spec.arity;
-        let count = lexed.positionals().len();
-        if count < minimum {
-            return Err(CommandResult::err(format!(
-                "command {}: too few arguments (need at least {minimum})\n",
-                spec.name
-            )));
-        }
-        if let Some(maximum) = maximum.filter(|maximum| count > *maximum) {
-            return Err(CommandResult::err(format!(
-                "command {}: too many arguments (need at most {maximum})\n",
-                spec.name
-            )));
-        }
-        // Last parse step: let the command shape itself from its arguments. A
-        // rejection here is a parse error like any other, so it aborts the whole
-        // line before anything runs.
-        let command = match (spec.parse)(&lexed) {
-            Ok(command) => command,
-            Err(error) => return Err(CommandResult::err(error)),
-        };
-        parsed.push(ParsedCommand {
-            spec,
-            command,
-            args,
-        });
-    }
-    Ok(parsed)
+    executable::parse_groups(groups).map_err(CommandResult::err)
 }
 
 fn parse_command_groups_with_aliases(
     groups: Vec<&[String]>,
     aliases: &[(String, String)],
 ) -> Result<Vec<ParsedCommand>, CommandResult> {
-    let mut expanded = Vec::new();
-    for group in groups {
-        let Some(name) = group.first() else {
-            continue;
-        };
-        let Some((_, replacement)) = aliases.iter().find(|(alias, _)| alias == name) else {
-            expanded.push(group.to_vec());
-            continue;
-        };
-        let tokens = tokenize_line(replacement);
-        let mut replacements = tokenized_command_groups(&tokens);
-        if replacements.is_empty() {
-            // A matched alias whose value holds no commands expands to an empty
-            // command list, so the invocation succeeds and drops its arguments.
-            // Falling back to the alias name would report it as unknown.
-            continue;
-        }
-        replacements
-            .last_mut()
-            .expect("nonempty replacement")
-            .extend(group.iter().skip(1).cloned());
-        expanded.extend(replacements);
-    }
-    let groups = expanded.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    parse_command_groups(groups)
-}
-
-/// Expand tmux's legacy trailing-semicolon argv form into the standalone token
-/// consumed by [`split_commands`].
-fn expand_attached_separators(args: &[String]) -> Vec<String> {
-    let mut expanded = Vec::with_capacity(args.len());
-    for arg in args {
-        if arg.ends_with(r"\;") {
-            expanded.push(arg.clone());
-            continue;
-        }
-        if arg != ";" {
-            if let Some(word) = arg.strip_suffix(';') {
-                if !word.is_empty() {
-                    expanded.push(word.to_string());
-                }
-                expanded.push(";".to_string());
-                continue;
-            }
-        }
-        expanded.push(arg.clone());
-    }
-    expanded
-}
-
-/// Split an argv into `;`-separated command groups.
-fn split_commands(args: &[String]) -> Vec<&[String]> {
-    let mut groups = Vec::new();
-    let mut start = 0;
-    for (i, a) in args.iter().enumerate() {
-        if a == ";" {
-            if start < i {
-                groups.push(&args[start..i]);
-            }
-            start = i + 1;
-        }
-    }
-    if start < args.len() {
-        groups.push(&args[start..]);
-    }
-    groups
+    executable::compile_groups(groups, aliases).map_err(CommandResult::err)
 }
 
 /// What one already-parsed command executes against. Its arguments are its
