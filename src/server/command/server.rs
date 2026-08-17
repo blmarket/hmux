@@ -62,17 +62,11 @@ impl ListCommands {
     fn execute(self) -> CommandResult {
         let render = |name: &'static str| {
             if let Some(template) = self.format.as_deref() {
-                let spec = registry::COMMAND_SPECS
-                    .iter()
-                    .find(|spec| spec.name == name)
-                    .expect("resolved command is in the table");
+                let spec = registry::spec(name).expect("resolved command is in the table");
                 let mut vars = Vars::new();
                 vars.set("command_list_name", name)
                     .set("command_list_alias", spec.alias.unwrap_or(""))
-                    .set(
-                        "command_list_usage",
-                        registry::usage(name).expect("table command has a usage line"),
-                    );
+                    .set("command_list_usage", spec.usage);
                 format::expand(template, &vars)
             } else {
                 registry::command_line(name).expect("table command has a usage line")

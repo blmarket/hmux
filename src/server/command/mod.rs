@@ -1807,24 +1807,23 @@ fn parse_command_groups(groups: Vec<&[String]>) -> Result<Vec<ParsedCommand>, Co
     // getopt spec. An unknown flag is a *parse* error too, so (like a bad command
     // name) it aborts the entire line with no output before anything runs.
     for (command, group) in &resolved {
-        if let Some(getopt) = registry::getopt(command.name) {
-            let bad = if command.name == "bind-key" {
-                unknown_bind_key_flag(group, getopt)
-            } else {
-                unknown_flag(group, getopt)
-            };
-            if let Some(bad) = bad {
-                return Err(CommandResult::err(format!(
-                    "command {}: unknown flag -{bad}\n",
-                    command.name
-                )));
-            }
-            if let Some(flag) = missing_flag_value(group, getopt) {
-                return Err(CommandResult::err(format!(
-                    "command {}: -{flag} expects an argument\n",
-                    command.name
-                )));
-            }
+        let getopt = command.getopt;
+        let bad = if command.name == "bind-key" {
+            unknown_bind_key_flag(group, getopt)
+        } else {
+            unknown_flag(group, getopt)
+        };
+        if let Some(bad) = bad {
+            return Err(CommandResult::err(format!(
+                "command {}: unknown flag -{bad}\n",
+                command.name
+            )));
+        }
+        if let Some(flag) = missing_flag_value(group, getopt) {
+            return Err(CommandResult::err(format!(
+                "command {}: -{flag} expects an argument\n",
+                command.name
+            )));
         }
     }
 
@@ -1834,20 +1833,19 @@ fn parse_command_groups(groups: Vec<&[String]>) -> Result<Vec<ParsedCommand>, Co
         // Lex the validated argv once: the arity check and the command's own
         // parse hook both read the same operands.
         let lexed = ParsedArgs::lex(spec.name, &args);
-        if let Some((minimum, maximum)) = registry::argument_limits(spec.name) {
-            let count = lexed.positionals().len();
-            if count < minimum {
-                return Err(CommandResult::err(format!(
-                    "command {}: too few arguments (need at least {minimum})\n",
-                    spec.name
-                )));
-            }
-            if let Some(maximum) = maximum.filter(|maximum| count > *maximum) {
-                return Err(CommandResult::err(format!(
-                    "command {}: too many arguments (need at most {maximum})\n",
-                    spec.name
-                )));
-            }
+        let (minimum, maximum) = spec.arity;
+        let count = lexed.positionals().len();
+        if count < minimum {
+            return Err(CommandResult::err(format!(
+                "command {}: too few arguments (need at least {minimum})\n",
+                spec.name
+            )));
+        }
+        if let Some(maximum) = maximum.filter(|maximum| count > *maximum) {
+            return Err(CommandResult::err(format!(
+                "command {}: too many arguments (need at most {maximum})\n",
+                spec.name
+            )));
         }
         // Last parse step: let the command shape itself from its arguments. A
         // rejection here is a parse error like any other, so it aborts the whole

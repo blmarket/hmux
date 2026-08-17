@@ -28,7 +28,8 @@ use super::command::{self, Command};
 /// before anything runs.
 pub(in crate::server) type ParseFn = fn(&ParsedArgs) -> Result<Command, String>;
 
-/// Static identity, CLI name, and argument parser for one tmux command.
+/// Static identity, CLI name, argument contract, and parser for one tmux
+/// command: everything the parse phase needs about a command is this one row.
 ///
 /// Rows are compared by identity of the catalog entry, never structurally: a
 /// parse hook is a function pointer, whose address says nothing useful.
@@ -37,11 +38,49 @@ pub(in crate::server) struct CommandSpec {
     pub(in crate::server) name: &'static str,
     pub(in crate::server) alias: Option<&'static str>,
     pub(in crate::server) parse: ParseFn,
+    /// Every valid flag letter, with a `:` after each letter that takes a
+    /// value. Transcribed verbatim from tmux's own `list-commands` usage
+    /// strings (tmux 3.7b), so a flag the native engine accepts is exactly a
+    /// flag real tmux accepts.
+    ///
+    /// This is what lets the native engine reproduce tmux's parse-time
+    /// `command <name>: unknown flag -X` diagnostic. Like the command table it
+    /// is version-specific; the differential suite pins it against the running
+    /// tmux.
+    pub(in crate::server) getopt: &'static str,
+    /// Minimum and maximum positional argument counts from tmux 3.7b's command
+    /// entries. `None` as the maximum means unbounded.
+    ///
+    /// Keeping arity beside the getopt spec lets parse-only config loading use
+    /// the same parser as ordinary command execution without invoking handlers
+    /// for their side effects.
+    pub(in crate::server) arity: (usize, Option<usize>),
+    /// The `[-flags] args` portion that `list-commands` prints after the
+    /// command's `name (alias)` prefix. Transcribed verbatim from tmux's own
+    /// `list-commands` output (tmux 3.7b), so the listing matches real tmux
+    /// line for line. Empty for argument-less commands (`kill-server`,
+    /// `lock-server`, `start-server`), which tmux still prints with a trailing
+    /// space after the name.
+    pub(in crate::server) usage: &'static str,
 }
 
 impl CommandSpec {
-    const fn new(name: &'static str, alias: Option<&'static str>, parse: ParseFn) -> Self {
-        Self { name, alias, parse }
+    const fn new(
+        name: &'static str,
+        alias: Option<&'static str>,
+        parse: ParseFn,
+        getopt: &'static str,
+        arity: (usize, Option<usize>),
+        usage: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            alias,
+            parse,
+            getopt,
+            arity,
+            usage,
+        }
     }
 }
 
@@ -55,14 +94,27 @@ macro_rules! spec_alias {
     };
 }
 
-/// Build the command catalog: `"name" ("alias") => <parse hook>`, with the alias
-/// omitted for a command that has none.
+/// Build the command catalog. One row is
+///
+/// ```text
+/// "name" ("alias") => <parse hook>,
+///     getopt: "<flags>", arity: (<min>, <max>),
+///     usage: "<usage>";
+/// ```
+///
+/// with the alias omitted for a command that has none. Rows are separated by
+/// `;`, so every field of the per-command contract is written in one place and
+/// a new command cannot be half-registered.
 ///
 /// The hook is written inline as a closure over the command's lexed arguments;
 /// a non-capturing one is just a function pointer, so the table stays a static.
 macro_rules! command_specs {
-    ($($name:literal $(($alias:literal))? => $parse:expr),* $(,)?) => {
-        &[$( CommandSpec::new($name, spec_alias!($($alias)?), $parse) ),*]
+    ($($name:literal $(($alias:literal))? => $parse:expr,
+        getopt: $getopt:literal, arity: $arity:expr,
+        usage: $usage:literal);* $(;)?) => {
+        &[$( CommandSpec::new(
+            $name, spec_alias!($($alias)?), $parse, $getopt, $arity, $usage,
+        ) ),*]
     };
 }
 
@@ -99,96 +151,278 @@ macro_rules! typed {
 /// The tmux command catalog, kept in alphabetical order for ambiguity messages.
 pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
     "attach-session" ("attach") => typed!(Session, Attach, sessions::AttachSession),
+        getopt: "dErxc:f:t:", arity: (0, Some(0)),
+        usage: "[-dErx] [-c working-directory] [-f flags] [-t target-session]";
     "bind-key" ("bind") => typed!(Keys, Bind, keys::BindKey),
+        getopt: "nrT:N:", arity: (1, None),
+        usage: "[-nr] [-T key-table] [-N note] key [command [argument ...]]";
     "break-pane" ("breakp") => typed!(Pane, Break, panes::BreakPane),
+        getopt: "abdPF:n:s:t:", arity: (0, Some(0)),
+        usage: "[-abdP] [-F format] [-n window-name] [-s src-pane] [-t dst-window]";
     "capture-pane" ("capturep") => typed!(Pane, Capture, panes::CapturePane),
+        getopt: "ab:CeE:FHJLMNpPqS:Tt:", arity: (0, Some(0)),
+        usage: "[-aCeFHJLMNpPqT] [-b buffer-name] [-E end-line] [-S start-line] [-t target-pane]";
     "choose-buffer" => typed!(Client, ChooseBuffer, clients::ChooseBuffer),
+        getopt: "NrZF:f:K:O:t:", arity: (0, Some(1)),
+        usage: "[-NrZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]";
     "choose-client" => typed!(Client, ChooseClient, clients::ChooseClient),
+        getopt: "NrZF:f:K:O:t:", arity: (0, Some(1)),
+        usage: "[-NrZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]";
     "choose-tree" => typed!(Client, ChooseTree, clients::ChooseTree),
+        getopt: "GNrswZF:f:K:O:t:", arity: (0, Some(1)),
+        usage: "[-GNrswZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]";
     "clear-history" ("clearhist") => typed!(Pane, ClearHistory, panes::ClearHistory),
+        getopt: "Ht:", arity: (0, Some(0)),
+        usage: "[-H] [-t target-pane]";
     "clear-prompt-history" ("clearphist") => typed!(Client, ClearPromptHistory, clients::ClearPromptHistory),
+        getopt: "T:", arity: (0, Some(0)),
+        usage: "[-T prompt-type]";
     "clock-mode" => typed!(Client, ClockMode, clients::ClockMode),
+        getopt: "t:", arity: (0, Some(0)),
+        usage: "[-t target-pane]";
     "command-prompt" => typed!(Client, Prompt, clients::CommandPrompt),
+        getopt: "1CbeFiklI:Np:t:T:", arity: (0, Some(1)),
+        usage: "[-1CbeFiklN] [-I inputs] [-p prompts] [-t target-client] [-T prompt-type] [template]";
     "confirm-before" ("confirm") => typed!(Client, ConfirmBefore, clients::ConfirmBefore),
+        getopt: "byc:p:t:", arity: (1, Some(1)),
+        usage: "[-by] [-c confirm-key] [-p prompt] [-t target-client] command";
     "copy-mode" => typed!(Pane, CopyMode, panes::CopyMode),
+        getopt: "deHMqSus:t:", arity: (0, Some(0)),
+        usage: "[-deHMqSu] [-s src-pane] [-t target-pane]";
     "customize-mode" => typed!(Client, CustomizeMode, clients::CustomizeMode),
+        getopt: "NZF:f:t:", arity: (0, Some(0)),
+        usage: "[-NZ] [-F format] [-f filter] [-t target-pane]";
     "delete-buffer" ("deleteb") => typed!(Buffer, Delete, buffers::DeleteBuffer),
+        getopt: "b:", arity: (0, Some(0)),
+        usage: "[-b buffer-name]";
     "detach-client" ("detach") => typed!(Client, Detach, clients::DetachClient),
+        getopt: "aPE:s:t:", arity: (0, Some(0)),
+        usage: "[-aP] [-E shell-command] [-s target-session] [-t target-client]";
     "display-menu" ("menu") => typed!(Client, DisplayMenu, clients::DisplayMenu),
+        getopt: "MOb:c:C:H:s:S:t:T:x:y:", arity: (1, None),
+        usage: "[-MO] [-b border-lines] [-c target-client] [-C starting-choice] [-H selected-style] [-s style] [-S border-style] [-t target-pane] [-T title] [-x position] [-y position] name [key] [command] ...";
     "display-message" ("display") => typed!(Client, DisplayMessage, clients::DisplayMessage),
+        getopt: "aCIlNpvc:d:F:t:", arity: (0, Some(1)),
+        usage: "[-aCIlNpv] [-c target-client] [-d delay] [-F format] [-t target-pane] [message]";
     "display-popup" ("popup") => typed!(Client, DisplayPopup, clients::DisplayPopup),
+        getopt: "BCEkNb:c:d:e:h:s:S:t:T:w:x:y:", arity: (0, None),
+        usage: "[-BCEkN] [-b border-lines] [-c target-client] [-d start-directory] [-e environment] [-h height] [-s style] [-S border-style] [-t target-pane] [-T title] [-w width] [-x position] [-y position] [shell-command [argument ...]]";
     "display-panes" ("displayp") => typed!(Client, DisplayPanes, clients::DisplayPanes),
+        getopt: "bNd:t:", arity: (0, Some(1)),
+        usage: "[-bN] [-d duration] [-t target-client] [template]";
     "find-window" ("findw") => typed!(Window, Find, windows::FindWindow),
+        getopt: "CiNrTZt:", arity: (1, Some(1)),
+        usage: "[-CiNrTZ] [-t target-pane] match-string";
     "has-session" ("has") => typed!(Session, Has, sessions::HasSession),
+        getopt: "t:", arity: (0, Some(0)),
+        usage: "[-t target-session]";
     "if-shell" ("if") => typed!(Execution, IfShell, execution::IfShell),
+        getopt: "bFt:", arity: (2, Some(3)),
+        usage: "[-bF] [-t target-pane] shell-command command [command]";
     "join-pane" ("joinp") => typed!(Pane, Join, panes::MovePane),
+        getopt: "bdfhvl:s:t:", arity: (0, Some(0)),
+        usage: "[-bdfhv] [-l size] [-s src-pane] [-t dst-pane]";
     "kill-pane" ("killp") => typed!(Pane, Kill, panes::KillPane),
+        getopt: "at:", arity: (0, Some(0)),
+        usage: "[-a] [-t target-pane]";
     "kill-server" => bare!(Server, Kill),
+        getopt: "", arity: (0, Some(0)),
+        usage: "";
     "kill-session" => typed!(Session, Kill, sessions::KillSession),
+        getopt: "aCgt:", arity: (0, Some(0)),
+        usage: "[-aCg] [-t target-session]";
     "kill-window" ("killw") => typed!(Window, Kill, windows::KillWindow),
+        getopt: "at:", arity: (0, Some(0)),
+        usage: "[-a] [-t target-window]";
     "last-pane" ("lastp") => typed!(Pane, Last, panes::LastPane),
+        getopt: "deZt:", arity: (0, Some(0)),
+        usage: "[-deZ] [-t target-window]";
     "last-window" ("last") => typed!(Window, Last, windows::LastWindow),
+        getopt: "t:", arity: (0, Some(0)),
+        usage: "[-t target-session]";
     "link-window" ("linkw") => typed!(Window, Link, windows::LinkWindow),
+        getopt: "abdks:t:", arity: (0, Some(0)),
+        usage: "[-abdk] [-s src-window] [-t dst-window]";
     "list-buffers" ("lsb") => typed!(Buffer, List, buffers::ListBuffers),
+        getopt: "F:f:O:r", arity: (0, Some(0)),
+        usage: "[-F format] [-f filter] [-O order]";
     "list-clients" ("lsc") => typed!(Client, List, clients::ListClients),
+        getopt: "F:f:O:rt:", arity: (0, Some(0)),
+        usage: "[-F format] [-f filter] [-O order][-t target-session]";
     "list-commands" ("lscm") => typed!(Server, ListCommands, server::ListCommands),
+        getopt: "F:", arity: (0, Some(1)),
+        usage: "[-F format] [command]";
     "list-keys" ("lsk") => typed!(Keys, List, keys::ListKeys),
+        getopt: "1aF:NO:P:rT:", arity: (0, Some(1)),
+        usage: "[-1aNr] [-F format] [-O order] [-P prefix-string][-T key-table] [key]";
     "list-panes" ("lsp") => typed!(Pane, List, panes::ListPanes),
+        getopt: "aF:f:O:rst:", arity: (0, Some(0)),
+        usage: "[-asr] [-F format] [-f filter] [-O order][-t target-window]";
     "list-sessions" ("ls") => typed!(Session, List, sessions::ListSessions),
+        getopt: "F:f:O:r", arity: (0, Some(0)),
+        usage: "[-r] [-F format] [-f filter] [-O order]";
     "list-windows" ("lsw") => typed!(Window, List, windows::ListWindows),
+        getopt: "aF:f:O:rt:", arity: (0, Some(0)),
+        usage: "[-ar] [-F format] [-f filter] [-O order][-t target-session]";
     "load-buffer" ("loadb") => typed!(Buffer, Load, buffers::LoadBuffer),
+        getopt: "b:t:w", arity: (1, Some(1)),
+        usage: "[-b buffer-name] [-t target-client] path";
     "lock-client" ("lockc") => typed!(Client, Lock, clients::LockClient),
+        getopt: "t:", arity: (0, Some(0)),
+        usage: "[-t target-client]";
     "lock-server" ("lock") => bare!(Server, Lock),
+        getopt: "", arity: (0, Some(0)),
+        usage: "";
     "lock-session" ("locks") => typed!(Server, LockSession, server::LockSession),
+        getopt: "t:", arity: (0, Some(0)),
+        usage: "[-t target-session]";
     "move-pane" ("movep") => typed!(Pane, Move, panes::MovePane),
+        getopt: "bdfhvl:s:t:", arity: (0, Some(0)),
+        usage: "[-bdfhv] [-l size] [-s src-pane] [-t dst-pane]";
     "move-window" ("movew") => typed!(Window, Move, windows::MoveWindow),
+        getopt: "abdkrs:t:", arity: (0, Some(0)),
+        usage: "[-abdkr] [-s src-window] [-t dst-window]";
     "new-pane" ("newp") => typed!(Pane, New, panes::NewPane),
+        getopt: "bc:de:EfF:hIkl:Lm:p:PR:s:S:t:vx:X:y:Y:Z", arity: (0, None),
+        usage: "[-bdefhIklPvZ] [-c start-directory] [-e environment] [-F format] [-l size] [-m message] [-p percentage] [-s style] [-S active-border-style] [-R inactive-border-style] [-x width] [-y height] [-X x-position] [-Y y-position] [-t target-pane] [shell-command [argument ...]]";
     "new-session" ("new") => typed!(Session, New, sessions::NewSession),
+        getopt: "AdDEPXc:e:F:f:n:s:t:x:y:", arity: (0, None),
+        usage: "[-AdDEPX] [-c start-directory] [-e environment] [-F format] [-f flags] [-n window-name] [-s session-name] [-t target-session] [-x width] [-y height] [shell-command [argument ...]]";
     "new-window" ("neww") => typed!(Window, New, windows::NewWindow),
+        getopt: "abdkPSc:e:F:n:t:", arity: (0, None),
+        usage: "[-abdkPS] [-c start-directory] [-e environment] [-F format] [-n window-name] [-t target-window] [shell-command [argument ...]]";
     "next-layout" ("nextl") => typed!(Pane, NextLayout, panes::CycleLayout),
+        getopt: "t:", arity: (0, Some(0)),
+        usage: "[-t target-window]";
     "next-window" ("next") => typed!(Window, Next, windows::NextWindow),
+        getopt: "at:", arity: (0, Some(0)),
+        usage: "[-a] [-t target-session]";
     "paste-buffer" ("pasteb") => typed!(Buffer, Paste, buffers::PasteBuffer),
+        getopt: "db:prSs:t:", arity: (0, Some(0)),
+        usage: "[-dprS] [-s separator] [-b buffer-name] [-t target-pane]";
     "pipe-pane" ("pipep") => typed!(Pane, Pipe, panes::PipePane),
+        getopt: "IOot:", arity: (0, Some(1)),
+        usage: "[-IOo] [-t target-pane] [shell-command]";
     "previous-layout" ("prevl") => typed!(Pane, PreviousLayout, panes::CycleLayout),
+        getopt: "t:", arity: (0, Some(0)),
+        usage: "[-t target-window]";
     "previous-window" ("prev") => typed!(Window, Previous, windows::PreviousWindow),
+        getopt: "at:", arity: (0, Some(0)),
+        usage: "[-a] [-t target-session]";
     "refresh-client" ("refresh") => typed!(Client, Refresh, clients::RefreshClient),
+        getopt: "cDlLRSUA:B:C:f:F:r:t:", arity: (0, Some(1)),
+        usage: "[-cDlLRSU] [-A pane:state] [-B name:what:format] [-C XxY] [-f flags] [-r pane:report] [-t target-client] [adjustment]";
     "rename-session" ("rename") => typed!(Session, Rename, sessions::RenameSession),
+        getopt: "t:", arity: (1, Some(1)),
+        usage: "[-t target-session] new-name";
     "rename-window" ("renamew") => typed!(Window, Rename, windows::RenameWindow),
+        getopt: "t:", arity: (1, Some(1)),
+        usage: "[-t target-window] new-name";
     "resize-pane" ("resizep") => typed!(Pane, Resize, panes::ResizePane),
+        getopt: "DLMRTUZx:y:t:", arity: (0, Some(1)),
+        usage: "[-DLMRTUZ] [-x width] [-y height] [-t target-pane] [adjustment]";
     "resize-window" ("resizew") => typed!(Pane, ResizeWindow, panes::ResizeWindow),
+        getopt: "aADLRUx:y:t:", arity: (0, Some(1)),
+        usage: "[-aADLRU] [-x width] [-y height] [-t target-window] [adjustment]";
     "respawn-pane" ("respawnp") => typed!(Pane, Respawn, panes::RespawnPane),
+        getopt: "kc:e:t:", arity: (0, None),
+        usage: "[-k] [-c start-directory] [-e environment] [-t target-pane] [shell-command [argument ...]]";
     "respawn-window" ("respawnw") => typed!(Window, Respawn, windows::RespawnWindow),
+        getopt: "kc:e:t:", arity: (0, None),
+        usage: "[-k] [-c start-directory] [-e environment] [-t target-window] [shell-command [argument ...]]";
     "rotate-window" ("rotatew") => typed!(Pane, RotateWindow, panes::RotateWindow),
+        getopt: "DUZt:", arity: (0, Some(0)),
+        usage: "[-DUZ] [-t target-window]";
     "run-shell" ("run") => typed!(Execution, RunShell, execution::RunShell),
+        getopt: "bd:Ct:Es:c:", arity: (0, None),
+        usage: "[-bCE] [-c start-directory] [-d delay] [-t target-pane] [shell-command [argument ...]]";
     "save-buffer" ("saveb") => typed!(Buffer, Save, buffers::SaveBuffer),
+        getopt: "ab:", arity: (1, Some(1)),
+        usage: "[-a] [-b buffer-name] path";
     "select-layout" ("selectl") => typed!(Pane, SelectLayout, panes::SelectLayout),
+        getopt: "Enopt:", arity: (0, Some(1)),
+        usage: "[-Enop] [-t target-pane] [layout-name]";
     "select-pane" ("selectp") => typed!(Pane, Select, panes::SelectPane),
+        getopt: "DdeLlMmRUZT:t:", arity: (0, Some(0)),
+        usage: "[-DdeLlMmRUZ] [-T title] [-t target-pane]";
     "select-window" ("selectw") => typed!(Window, Select, windows::SelectWindow),
+        getopt: "lnpTt:", arity: (0, Some(0)),
+        usage: "[-lnpT] [-t target-window]";
     "send-keys" ("send") => typed!(Keys, Send, keys::SendKeys),
+        getopt: "FHKlMRXc:N:t:", arity: (0, None),
+        usage: "[-FHKlMRX] [-c target-client] [-N repeat-count] [-t target-pane] [key ...]";
     "send-prefix" => typed!(Keys, SendPrefix, keys::SendPrefix),
+        getopt: "2t:", arity: (0, Some(0)),
+        usage: "[-2] [-t target-pane]";
     "server-access" => typed!(Server, Access, server::ServerAccess),
+        getopt: "adlrwt:", arity: (0, Some(1)),
+        usage: "[-adlrw] [-t target-pane] [user]";
     "set-buffer" ("setb") => typed!(Buffer, Set, buffers::SetBuffer),
+        getopt: "awb:n:t:", arity: (0, Some(1)),
+        usage: "[-aw] [-b buffer-name] [-n new-buffer-name] [-t target-client] [data]";
     "set-environment" ("setenv") => typed!(Configuration, SetEnvironment, configuration::SetEnvironment),
+        getopt: "Fhgrut:", arity: (1, Some(2)),
+        usage: "[-Fhgru] [-t target-session] variable [value]";
     "set-hook" => typed!(Configuration, SetHook, configuration::SetHook),
+        getopt: "agpRuwt:", arity: (1, Some(2)),
+        usage: "[-agpRuw] [-t target-pane] hook [command]";
     "set-option" ("set") => typed!(Configuration, SetOption, configuration::SetOption),
+        getopt: "aFgopqsuUwt:", arity: (1, Some(2)),
+        usage: "[-aFgopqsuUw] [-t target-pane] option [value]";
     "set-window-option" ("setw") => typed!(Configuration, SetWindowOption, configuration::SetOption),
+        getopt: "aFgoqut:", arity: (1, Some(2)),
+        usage: "[-aFgoqu] [-t target-window] option [value]";
     "show-buffer" ("showb") => typed!(Buffer, Show, buffers::ShowBuffer),
+        getopt: "b:", arity: (0, Some(0)),
+        usage: "[-b buffer-name]";
     "show-environment" ("showenv") => typed!(Configuration, ShowEnvironment, configuration::ShowEnvironment),
+        getopt: "hgst:", arity: (0, Some(1)),
+        usage: "[-hgs] [-t target-session] [variable]";
     "show-hooks" => typed!(Configuration, ShowHooks, configuration::ShowHooks),
+        getopt: "gpwt:", arity: (0, Some(1)),
+        usage: "[-gpw] [-t target-pane] [hook]";
     "show-messages" ("showmsgs") => typed!(Server, ShowMessages, server::ShowMessages),
+        getopt: "JTt:", arity: (0, Some(0)),
+        usage: "[-JT] [-t target-client]";
     "show-options" ("show") => typed!(Configuration, ShowOptions, configuration::ShowOptions),
+        getopt: "AgHpqsvwt:", arity: (0, Some(1)),
+        usage: "[-AgHpqsvw] [-t target-pane] [option]";
     "show-prompt-history" ("showphist") => typed!(Client, ShowPromptHistory, clients::ShowPromptHistory),
+        getopt: "T:", arity: (0, Some(0)),
+        usage: "[-T prompt-type]";
     "show-window-options" ("showw") => typed!(Configuration, ShowWindowOptions, configuration::ShowOptions),
+        getopt: "gvt:", arity: (0, Some(1)),
+        usage: "[-gv] [-t target-window] [option]";
     "source-file" ("source") => typed!(Execution, SourceFile, execution::SourceFile),
+        getopt: "Fnqvt:", arity: (1, None),
+        usage: "[-Fnqv] [-t target-pane] path ...";
     "split-window" ("splitw") => typed!(Pane, Split, panes::SplitWindow),
+        getopt: "bc:de:EfF:hIkl:m:p:PR:s:S:t:vZ", arity: (0, None),
+        usage: "[-bdefhIklPvZ] [-c start-directory] [-e environment] [-F format] [-l size] [-m message] [-p percentage] [-s style] [-S active-border-style] [-R inactive-border-style] [-t target-pane] [shell-command [argument ...]]";
     "start-server" ("start") => bare!(Server, Start),
+        getopt: "", arity: (0, Some(0)),
+        usage: "";
     "suspend-client" ("suspendc") => typed!(Client, Suspend, clients::SuspendClient),
+        getopt: "t:", arity: (0, Some(0)),
+        usage: "[-t target-client]";
     "swap-pane" ("swapp") => typed!(Pane, Swap, panes::SwapPane),
+        getopt: "dDUZs:t:", arity: (0, Some(0)),
+        usage: "[-dDUZ] [-s src-pane] [-t dst-pane]";
     "swap-window" ("swapw") => typed!(Window, Swap, windows::SwapWindow),
+        getopt: "ds:t:", arity: (0, Some(0)),
+        usage: "[-d] [-s src-window] [-t dst-window]";
     "switch-client" ("switchc") => typed!(Client, Switch, clients::SwitchClient),
+        getopt: "c:EFlnO:pt:rT:Z", arity: (0, Some(0)),
+        usage: "[-ElnprZ] [-c target-client] [-t target-session] [-T key-table] [-O order]";
     "unbind-key" ("unbind") => typed!(Keys, Unbind, keys::UnbindKey),
+        getopt: "anqT:", arity: (0, Some(1)),
+        usage: "[-anq] [-T key-table] key";
     "unlink-window" ("unlinkw") => typed!(Window, Unlink, windows::UnlinkWindow),
+        getopt: "kt:", arity: (0, Some(0)),
+        usage: "[-k] [-t target-window]";
     "wait-for" ("wait") => typed!(Execution, WaitFor, execution::WaitFor),
+        getopt: "LSU", arity: (1, Some(1)),
+        usage: "[-L|-S|-U] channel";
 ];
 
 /// The outcome of resolving a typed command word.
@@ -264,317 +498,30 @@ pub(in crate::server) fn resolve_spec(word: &str) -> SpecResolution {
     }
 }
 
-/// The getopt spec for a canonical command name: every valid flag letter, with a
-/// `:` after each letter that takes a value. Transcribed verbatim from tmux's own
-/// `list-commands` usage strings (tmux 3.x), so a flag the native engine accepts
-/// is exactly a flag real tmux accepts. `None` means the command's flag set isn't
-/// modeled, so flag validation is skipped for it (permissive).
+/// The catalog row for a canonical command name, or `None` for a name that is
+/// not in the command table.
 ///
-/// This is what lets the native engine reproduce tmux's parse-time
-/// `command <name>: unknown flag -X` diagnostic. Like the command table, it is
-/// version-specific; the differential suite pins it against the running tmux.
+/// The resolver hands most callers a `&CommandSpec` directly; this is for the
+/// few that hold only a name. Every per-command contract — [`CommandSpec::getopt`],
+/// [`CommandSpec::arity`], [`CommandSpec::usage`] — is read off the returned row,
+/// so a name outside the table stays permissive rather than half-validated.
+pub(in crate::server) fn spec(name: &str) -> Option<&'static CommandSpec> {
+    COMMAND_SPECS.iter().find(|spec| spec.name == name)
+}
+
+/// The getopt spec for a canonical command name; `None` means the name isn't in
+/// the command table, so flag validation is skipped for it (permissive).
 pub fn getopt(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "attach-session" => "dErxc:f:t:",
-        "bind-key" => "nrT:N:",
-        "break-pane" => "abdPF:n:s:t:",
-        "capture-pane" => "ab:CeE:FHJLMNpPqS:Tt:",
-        "choose-buffer" => "NrZF:f:K:O:t:",
-        "choose-client" => "NrZF:f:K:O:t:",
-        "choose-tree" => "GNrswZF:f:K:O:t:",
-        "clear-history" => "Ht:",
-        "clear-prompt-history" => "T:",
-        "clock-mode" => "t:",
-        "command-prompt" => "1CbeFiklI:Np:t:T:",
-        "confirm-before" => "byc:p:t:",
-        "copy-mode" => "deHMqSus:t:",
-        "customize-mode" => "NZF:f:t:",
-        "delete-buffer" => "b:",
-        "detach-client" => "aPE:s:t:",
-        "display-menu" => "MOb:c:C:H:s:S:t:T:x:y:",
-        "display-message" => "aCIlNpvc:d:F:t:",
-        "display-popup" => "BCEkNb:c:d:e:h:s:S:t:T:w:x:y:",
-        "display-panes" => "bNd:t:",
-        "find-window" => "CiNrTZt:",
-        "has-session" => "t:",
-        "if-shell" => "bFt:",
-        "join-pane" => "bdfhvl:s:t:",
-        "kill-pane" => "at:",
-        "kill-server" => "",
-        "kill-session" => "aCgt:",
-        "kill-window" => "at:",
-        "last-pane" => "deZt:",
-        "last-window" => "t:",
-        "link-window" => "abdks:t:",
-        "list-buffers" => "F:f:O:r",
-        "list-clients" => "F:f:O:rt:",
-        "list-commands" => "F:",
-        "list-keys" => "1aF:NO:P:rT:",
-        "list-panes" => "aF:f:O:rst:",
-        "list-sessions" => "F:f:O:r",
-        "list-windows" => "aF:f:O:rt:",
-        "load-buffer" => "b:t:w",
-        "lock-client" => "t:",
-        "lock-server" => "",
-        "lock-session" => "t:",
-        "move-pane" => "bdfhvl:s:t:",
-        "move-window" => "abdkrs:t:",
-        "new-pane" => "bc:de:EfF:hIkl:Lm:p:PR:s:S:t:vx:X:y:Y:Z",
-        "new-session" => "AdDEPXc:e:F:f:n:s:t:x:y:",
-        "new-window" => "abdkPSc:e:F:n:t:",
-        "next-layout" => "t:",
-        "next-window" => "at:",
-        "paste-buffer" => "db:prSs:t:",
-        "pipe-pane" => "IOot:",
-        "previous-layout" => "t:",
-        "previous-window" => "at:",
-        "refresh-client" => "cDlLRSUA:B:C:f:F:r:t:",
-        "rename-session" => "t:",
-        "rename-window" => "t:",
-        "resize-pane" => "DLMRTUZx:y:t:",
-        "resize-window" => "aADLRUx:y:t:",
-        "respawn-pane" => "kc:e:t:",
-        "respawn-window" => "kc:e:t:",
-        "rotate-window" => "DUZt:",
-        "run-shell" => "bd:Ct:Es:c:",
-        "save-buffer" => "ab:",
-        "select-layout" => "Enopt:",
-        "select-pane" => "DdeLlMmRUZT:t:",
-        "select-window" => "lnpTt:",
-        "send-keys" => "FHKlMRXc:N:t:",
-        "send-prefix" => "2t:",
-        "server-access" => "adlrwt:",
-        "set-buffer" => "awb:n:t:",
-        "set-environment" => "Fhgrut:",
-        "set-hook" => "agpRuwt:",
-        "set-option" => "aFgopqsuUwt:",
-        "set-window-option" => "aFgoqut:",
-        "show-buffer" => "b:",
-        "show-environment" => "hgst:",
-        "show-hooks" => "gpwt:",
-        "show-messages" => "JTt:",
-        "show-options" => "AgHpqsvwt:",
-        "show-prompt-history" => "T:",
-        "show-window-options" => "gvt:",
-        "source-file" => "Fnqvt:",
-        "split-window" => "bc:de:EfF:hIkl:m:p:PR:s:S:t:vZ",
-        "start-server" => "",
-        "suspend-client" => "t:",
-        "swap-pane" => "dDUZs:t:",
-        "swap-window" => "ds:t:",
-        "switch-client" => "c:EFlnO:pt:rT:Z",
-        "unbind-key" => "anqT:",
-        "unlink-window" => "kt:",
-        "wait-for" => "LSU",
-        _ => return None,
-    })
-}
-
-/// Minimum and maximum positional argument counts from tmux 3.7b's command
-/// entries. `None` as the maximum means unbounded.
-///
-/// Keeping arity beside the getopt metadata lets parse-only config loading use
-/// the same parser as ordinary command execution without invoking handlers for
-/// their side effects.
-pub fn argument_limits(name: &str) -> Option<(usize, Option<usize>)> {
-    Some(match name {
-        "display-popup" | "new-session" | "new-window" | "respawn-pane" | "respawn-window"
-        | "run-shell" | "send-keys" | "new-pane" | "split-window" => (0, None),
-
-        "attach-session"
-        | "break-pane"
-        | "capture-pane"
-        | "clear-history"
-        | "customize-mode"
-        | "copy-mode"
-        | "clock-mode"
-        | "detach-client"
-        | "suspend-client"
-        | "join-pane"
-        | "move-pane"
-        | "kill-pane"
-        | "kill-server"
-        | "start-server"
-        | "kill-session"
-        | "kill-window"
-        | "unlink-window"
-        | "list-buffers"
-        | "list-clients"
-        | "list-panes"
-        | "list-sessions"
-        | "list-windows"
-        | "lock-server"
-        | "lock-session"
-        | "lock-client"
-        | "move-window"
-        | "link-window"
-        | "has-session"
-        | "paste-buffer"
-        | "rotate-window"
-        | "show-buffer"
-        | "next-layout"
-        | "previous-layout"
-        | "select-pane"
-        | "last-pane"
-        | "select-window"
-        | "next-window"
-        | "previous-window"
-        | "last-window"
-        | "send-prefix"
-        | "delete-buffer"
-        | "show-messages"
-        | "show-prompt-history"
-        | "clear-prompt-history"
-        | "swap-pane"
-        | "swap-window"
-        | "switch-client" => (0, Some(0)),
-
-        "choose-tree"
-        | "choose-client"
-        | "choose-buffer"
-        | "command-prompt"
-        | "display-message"
-        | "display-panes"
-        | "list-commands"
-        | "list-keys"
-        | "pipe-pane"
-        | "refresh-client"
-        | "resize-pane"
-        | "resize-window"
-        | "select-layout"
-        | "server-access"
-        | "set-buffer"
-        | "show-environment"
-        | "show-options"
-        | "show-window-options"
-        | "show-hooks"
-        | "unbind-key" => (0, Some(1)),
-
-        "bind-key" | "display-menu" | "source-file" => (1, None),
-
-        "confirm-before" | "find-window" | "load-buffer" | "rename-session" | "rename-window"
-        | "save-buffer" | "wait-for" => (1, Some(1)),
-
-        "set-environment" | "set-option" | "set-window-option" | "set-hook" => (1, Some(2)),
-
-        "if-shell" => (2, Some(3)),
-        _ => return None,
-    })
-}
-
-/// The usage string for a canonical command name: the `[-flags] args` portion
-/// that `list-commands` prints after the command's `name (alias)` prefix.
-/// Transcribed verbatim from tmux's own `list-commands` output (tmux 3.7b), so
-/// the listing matches real tmux line for line. Empty for argument-less commands
-/// (`kill-server`, `lock-server`, `start-server`), which tmux still prints with a
-/// trailing space after the name. `None` for a name not in the command table.
-///
-/// Like the getopt catalog this is version-specific; the differential suite pins
-/// it against the running tmux.
-pub fn usage(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "attach-session" => "[-dErx] [-c working-directory] [-f flags] [-t target-session]",
-        "bind-key" => "[-nr] [-T key-table] [-N note] key [command [argument ...]]",
-        "break-pane" => "[-abdP] [-F format] [-n window-name] [-s src-pane] [-t dst-window]",
-        "capture-pane" => "[-aCeFHJLMNpPqT] [-b buffer-name] [-E end-line] [-S start-line] [-t target-pane]",
-        "choose-buffer" => "[-NrZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]",
-        "choose-client" => "[-NrZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]",
-        "choose-tree" => "[-GNrswZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]",
-        "clear-history" => "[-H] [-t target-pane]",
-        "clear-prompt-history" => "[-T prompt-type]",
-        "clock-mode" => "[-t target-pane]",
-        "command-prompt" => "[-1CbeFiklN] [-I inputs] [-p prompts] [-t target-client] [-T prompt-type] [template]",
-        "confirm-before" => "[-by] [-c confirm-key] [-p prompt] [-t target-client] command",
-        "copy-mode" => "[-deHMqSu] [-s src-pane] [-t target-pane]",
-        "customize-mode" => "[-NZ] [-F format] [-f filter] [-t target-pane]",
-        "delete-buffer" => "[-b buffer-name]",
-        "detach-client" => "[-aP] [-E shell-command] [-s target-session] [-t target-client]",
-        "display-menu" => "[-MO] [-b border-lines] [-c target-client] [-C starting-choice] [-H selected-style] [-s style] [-S border-style] [-t target-pane] [-T title] [-x position] [-y position] name [key] [command] ...",
-        "display-message" => "[-aCIlNpv] [-c target-client] [-d delay] [-F format] [-t target-pane] [message]",
-        "display-popup" => "[-BCEkN] [-b border-lines] [-c target-client] [-d start-directory] [-e environment] [-h height] [-s style] [-S border-style] [-t target-pane] [-T title] [-w width] [-x position] [-y position] [shell-command [argument ...]]",
-        "display-panes" => "[-bN] [-d duration] [-t target-client] [template]",
-        "find-window" => "[-CiNrTZ] [-t target-pane] match-string",
-        "has-session" => "[-t target-session]",
-        "if-shell" => "[-bF] [-t target-pane] shell-command command [command]",
-        "join-pane" => "[-bdfhv] [-l size] [-s src-pane] [-t dst-pane]",
-        "kill-pane" => "[-a] [-t target-pane]",
-        "kill-server" => "",
-        "kill-session" => "[-aCg] [-t target-session]",
-        "kill-window" => "[-a] [-t target-window]",
-        "last-pane" => "[-deZ] [-t target-window]",
-        "last-window" => "[-t target-session]",
-        "link-window" => "[-abdk] [-s src-window] [-t dst-window]",
-        "list-buffers" => "[-F format] [-f filter] [-O order]",
-        "list-clients" => "[-F format] [-f filter] [-O order][-t target-session]",
-        "list-commands" => "[-F format] [command]",
-        "list-keys" => "[-1aNr] [-F format] [-O order] [-P prefix-string][-T key-table] [key]",
-        "list-panes" => "[-asr] [-F format] [-f filter] [-O order][-t target-window]",
-        "list-sessions" => "[-r] [-F format] [-f filter] [-O order]",
-        "list-windows" => "[-ar] [-F format] [-f filter] [-O order][-t target-session]",
-        "load-buffer" => "[-b buffer-name] [-t target-client] path",
-        "lock-client" => "[-t target-client]",
-        "lock-server" => "",
-        "lock-session" => "[-t target-session]",
-        "move-pane" => "[-bdfhv] [-l size] [-s src-pane] [-t dst-pane]",
-        "move-window" => "[-abdkr] [-s src-window] [-t dst-window]",
-        "new-pane" => "[-bdefhIklPvZ] [-c start-directory] [-e environment] [-F format] [-l size] [-m message] [-p percentage] [-s style] [-S active-border-style] [-R inactive-border-style] [-x width] [-y height] [-X x-position] [-Y y-position] [-t target-pane] [shell-command [argument ...]]",
-        "new-session" => "[-AdDEPX] [-c start-directory] [-e environment] [-F format] [-f flags] [-n window-name] [-s session-name] [-t target-session] [-x width] [-y height] [shell-command [argument ...]]",
-        "new-window" => "[-abdkPS] [-c start-directory] [-e environment] [-F format] [-n window-name] [-t target-window] [shell-command [argument ...]]",
-        "next-layout" => "[-t target-window]",
-        "next-window" => "[-a] [-t target-session]",
-        "paste-buffer" => "[-dprS] [-s separator] [-b buffer-name] [-t target-pane]",
-        "pipe-pane" => "[-IOo] [-t target-pane] [shell-command]",
-        "previous-layout" => "[-t target-window]",
-        "previous-window" => "[-a] [-t target-session]",
-        "refresh-client" => "[-cDlLRSU] [-A pane:state] [-B name:what:format] [-C XxY] [-f flags] [-r pane:report] [-t target-client] [adjustment]",
-        "rename-session" => "[-t target-session] new-name",
-        "rename-window" => "[-t target-window] new-name",
-        "resize-pane" => "[-DLMRTUZ] [-x width] [-y height] [-t target-pane] [adjustment]",
-        "resize-window" => "[-aADLRU] [-x width] [-y height] [-t target-window] [adjustment]",
-        "respawn-pane" => "[-k] [-c start-directory] [-e environment] [-t target-pane] [shell-command [argument ...]]",
-        "respawn-window" => "[-k] [-c start-directory] [-e environment] [-t target-window] [shell-command [argument ...]]",
-        "rotate-window" => "[-DUZ] [-t target-window]",
-        "run-shell" => "[-bCE] [-c start-directory] [-d delay] [-t target-pane] [shell-command [argument ...]]",
-        "save-buffer" => "[-a] [-b buffer-name] path",
-        "select-layout" => "[-Enop] [-t target-pane] [layout-name]",
-        "select-pane" => "[-DdeLlMmRUZ] [-T title] [-t target-pane]",
-        "select-window" => "[-lnpT] [-t target-window]",
-        "send-keys" => "[-FHKlMRX] [-c target-client] [-N repeat-count] [-t target-pane] [key ...]",
-        "send-prefix" => "[-2] [-t target-pane]",
-        "server-access" => "[-adlrw] [-t target-pane] [user]",
-        "set-buffer" => "[-aw] [-b buffer-name] [-n new-buffer-name] [-t target-client] [data]",
-        "set-environment" => "[-Fhgru] [-t target-session] variable [value]",
-        "set-hook" => "[-agpRuw] [-t target-pane] hook [command]",
-        "set-option" => "[-aFgopqsuUw] [-t target-pane] option [value]",
-        "set-window-option" => "[-aFgoqu] [-t target-window] option [value]",
-        "show-buffer" => "[-b buffer-name]",
-        "show-environment" => "[-hgs] [-t target-session] [variable]",
-        "show-hooks" => "[-gpw] [-t target-pane] [hook]",
-        "show-messages" => "[-JT] [-t target-client]",
-        "show-options" => "[-AgHpqsvw] [-t target-pane] [option]",
-        "show-prompt-history" => "[-T prompt-type]",
-        "show-window-options" => "[-gv] [-t target-window] [option]",
-        "source-file" => "[-Fnqv] [-t target-pane] path ...",
-        "split-window" => "[-bdefhIklPvZ] [-c start-directory] [-e environment] [-F format] [-l size] [-m message] [-p percentage] [-s style] [-S active-border-style] [-R inactive-border-style] [-t target-pane] [shell-command [argument ...]]",
-        "start-server" => "",
-        "suspend-client" => "[-t target-client]",
-        "swap-pane" => "[-dDUZ] [-s src-pane] [-t dst-pane]",
-        "swap-window" => "[-d] [-s src-window] [-t dst-window]",
-        "switch-client" => "[-ElnprZ] [-c target-client] [-t target-session] [-T key-table] [-O order]",
-        "unbind-key" => "[-anq] [-T key-table] key",
-        "unlink-window" => "[-k] [-t target-window]",
-        "wait-for" => "[-L|-S|-U] channel",
-        _ => return None,
-    })
+    spec(name).map(|spec| spec.getopt)
 }
 
 /// Format one command's `list-commands` line: `name`, optionally ` (alias)`, then
-/// a single space and the [`usage`] string. tmux always emits that space, so an
-/// argument-less command (empty usage) yields a trailing space (`kill-server `).
-/// `None` for a name not in the command table.
+/// a single space and the row's [`CommandSpec::usage`] string. tmux always emits
+/// that space, so an argument-less command (empty usage) yields a trailing space
+/// (`kill-server `). `None` for a name not in the command table.
 pub fn command_line(name: &str) -> Option<String> {
-    let spec = COMMAND_SPECS.iter().find(|spec| spec.name == name)?;
-    let usage = usage(spec.name)?;
+    let spec = spec(name)?;
+    let usage = spec.usage;
     Some(match spec.alias {
         Some(alias) => format!("{} ({alias}) {usage}", spec.name),
         None => format!("{} {usage}", spec.name),
@@ -617,7 +564,7 @@ mod tests {
         // table admits has to parse for every row in the catalog — a row whose
         // hook rejects it would reject the command outright.
         for spec in COMMAND_SPECS {
-            let (minimum, _) = argument_limits(spec.name).expect("modeled argument limits");
+            let (minimum, _) = spec.arity;
             let mut argv = vec![spec.name.to_string()];
             argv.extend((0..minimum).map(|index| format!("operand{index}")));
             let lexed = ParsedArgs::lex(spec.name, &argv);
@@ -684,42 +631,14 @@ mod tests {
     }
 
     #[test]
-    fn getopt_covers_every_command() {
-        // Every canonical command has a modeled flag spec (validation is only
-        // skipped for names not in the table, and the table is the command table).
-        for spec in COMMAND_SPECS {
-            assert!(
-                getopt(spec.name).is_some(),
-                "missing getopt spec for {}",
-                spec.name
-            );
-        }
-    }
-
-    #[test]
-    fn usage_covers_every_command() {
-        // Every canonical command has a usage string, so `list-commands` can print
-        // a line for each entry in the table.
-        for spec in COMMAND_SPECS {
-            assert!(
-                usage(spec.name).is_some(),
-                "missing usage string for {}",
-                spec.name
-            );
-        }
-        assert_eq!(usage("frobnicate"), None);
-    }
-
-    #[test]
-    fn argument_limits_cover_every_command() {
-        for spec in COMMAND_SPECS {
-            assert!(
-                argument_limits(spec.name).is_some(),
-                "missing argument limits for {}",
-                spec.name
-            );
-        }
-        assert_eq!(argument_limits("frobnicate"), None);
+    fn spec_lookup_is_permissive_outside_the_table() {
+        // Every canonical command carries its own getopt, arity, and usage by
+        // construction; only a name outside the table has none, which is what
+        // keeps flag and arity validation permissive for it.
+        assert_eq!(spec("kill-server").map(|spec| spec.usage), Some(""));
+        assert_eq!(getopt("list-sessions"), Some("F:f:O:r"));
+        assert!(spec("frobnicate").is_none());
+        assert_eq!(getopt("frobnicate"), None);
     }
 
     #[test]
