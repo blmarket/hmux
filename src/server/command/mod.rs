@@ -1976,34 +1976,6 @@ fn apply_list_sort<T>(
     });
 }
 
-/// One command line with its leading `command-alias` resolved, as tmux's
-/// `cmd_parse` does before anything stores it. Only the first word can be an
-/// alias, and its replacement keeps the arguments that followed.
-fn expand_command_aliases(command: &[String], st: &ServerState) -> Vec<String> {
-    let Some(name) = command.first() else {
-        return command.to_vec();
-    };
-    let aliases = st.command_aliases();
-    let Some((_, replacement)) = aliases.iter().find(|(alias, _)| alias == name) else {
-        return command.to_vec();
-    };
-    // Only the first of the alias's own commands can take the arguments; a
-    // multi-command alias in a binding is out of reach of this shape, so the
-    // groups are flattened back with their separators.
-    let mut expanded = Vec::new();
-    for (index, group) in tokenized_command_groups(&tokenize_line(replacement))
-        .into_iter()
-        .enumerate()
-    {
-        if index != 0 {
-            expanded.push(";".to_string());
-        }
-        expanded.extend(group);
-    }
-    expanded.extend(command.iter().skip(1).cloned());
-    expanded
-}
-
 /// tmux's `default_window_name`: stringify the pane's whole argument vector and
 /// reduce it with `parse_window_name`, falling back to the shell the pane would
 /// run when it was given no command of its own. Reducing the stringified vector

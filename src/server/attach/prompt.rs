@@ -1246,17 +1246,10 @@ fn run_mode_edit(
                 let state = state.borrow_mut();
                 state.command_aliases()
             };
-            let groups = match command::command_string_groups_with_aliases(value, &aliases) {
-                Ok(groups) => groups,
-                Err(error) => return error,
+            let compiled = match command::ExecutableCommand::compile(value, &aliases) {
+                Ok(compiled) => compiled,
+                Err(error) => return command::CommandResult::err(error),
             };
-            let mut commands = Vec::new();
-            for group in groups {
-                if !commands.is_empty() {
-                    commands.push(";".to_string());
-                }
-                commands.extend(group);
-            }
             let Some(key_code) = parse_key_name(key) else {
                 return command::CommandResult::err(format!("unknown key: {key}\n"));
             };
@@ -1264,8 +1257,9 @@ fn run_mode_edit(
                 let state = state.borrow_mut();
                 state
             };
-            state.bind_key(table, key_code, commands.clone(), *repeat, note.clone());
+            let commands = compiled.argv();
             let display = command::display_command(&commands);
+            state.bind_key(table, key_code, compiled, *repeat, note.clone());
             let _ = state.mode_view_update_binding(
                 target,
                 ModeBindingUpdate {
@@ -1292,17 +1286,15 @@ fn run_mode_edit(
             let Some(key_code) = parse_key_name(key) else {
                 return command::CommandResult::err(format!("unknown key: {key}\n"));
             };
+            let compiled = match command::ExecutableCommand::compile_argv(commands, &[]) {
+                Ok(compiled) => compiled,
+                Err(error) => return command::CommandResult::err(error),
+            };
             let mut state = {
                 let state = state.borrow_mut();
                 state
             };
-            state.bind_key(
-                table,
-                key_code,
-                commands.clone(),
-                *repeat,
-                Some(value.to_string()),
-            );
+            state.bind_key(table, key_code, compiled, *repeat, Some(value.to_string()));
             let display = command::display_command(commands);
             let _ = state.mode_view_update_binding(
                 target,

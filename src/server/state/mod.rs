@@ -62,6 +62,7 @@ use std::rc::Rc;
 
 use bytes::Bytes;
 
+use super::command::ExecutableCommand;
 use super::key::KeyCode;
 use super::options::{GlobalOptions, OptionSet, OptionsView};
 use super::pane::Pane;
@@ -520,11 +521,16 @@ pub(crate) struct Notification {
 }
 
 /// A key-table entry installed by `bind-key`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+///
+/// The body is compiled when the binding is made, so a bad command line is
+/// rejected by `bind-key` itself and a `command-alias` is resolved once, at
+/// bind time — pressing the key later runs what the binding was made from,
+/// whatever the alias table says by then.
+#[derive(Clone, Debug)]
 pub struct KeyBinding {
     pub repeat: bool,
     pub note: Option<String>,
-    pub command: Vec<String>,
+    pub(crate) command: ExecutableCommand,
 }
 
 /// The key table a client is in until a session's `key-table` option or the

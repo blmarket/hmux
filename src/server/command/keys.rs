@@ -74,10 +74,29 @@ impl BindKey {
         let Some(key) = parse_key_name(key_name).filter(|key| key.is_bindable()) else {
             return CommandResult::err(format!("unknown key: {key_name}\n"));
         };
-        // tmux parses the binding's command when the binding is made, so a
-        // `command-alias` is resolved here and the binding keeps what it expanded
-        // to — redefining the alias afterwards leaves it alone.
-        let command = expand_command_aliases(&self.operands[1..], st);
+        // tmux compiles the binding's command when the binding is made
+        // (`cmd_bind_key_exec`), so a bad body is reported here rather than on
+        // the key press, and a `command-alias` is resolved once, against the
+        // table as it stands now — redefining the alias afterwards leaves the
+        // binding alone.
+        //
+        // A single command operand is a command *line* and is compiled as text
+        // (`cmd_parse_from_string`); two or more are already the command's own
+        // words (`cmd_parse_from_arguments`).
+        let body = &self.operands[1..];
+        if body.is_empty() {
+            st.annotate_key_binding(table, key, self.note, self.repeat);
+            return CommandResult::ok("");
+        }
+        let aliases = st.command_aliases();
+        let compiled = match body {
+            [line] => ExecutableCommand::compile(line, &aliases),
+            words => ExecutableCommand::compile_argv(words, &aliases),
+        };
+        let command = match compiled {
+            Ok(command) => command,
+            Err(error) => return CommandResult::err(error),
+        };
         st.bind_key(table, key, command, self.repeat, self.note);
         CommandResult::ok("")
     }
@@ -272,7 +291,7 @@ impl ListKeys {
                     .set("key_prefix", prefix_str)
                     .set("key_table", *table_name)
                     .set("key_string", format_key_name(*key))
-                    .set("key_command", binding.command.join(" "));
+                    .set("key_command", binding.command.print());
                 let line = format::expand(template, &vars);
                 if !line.is_empty() {
                     out.push_str(&line);
@@ -285,10 +304,10 @@ impl ListKeys {
                     &default_prefix
                 };
                 let key_name = format_key_name(*key);
-                let note = binding
-                    .note
-                    .as_deref()
-                    .unwrap_or_else(|| binding.command.first().map(String::as_str).unwrap_or(""));
+                // tmux falls back to the binding's own command line when it
+                // carries no note (`cmd_list_print` in `cmd-list-keys.c`).
+                let printed = binding.command.print();
+                let note = binding.note.as_deref().unwrap_or(&printed);
                 if prefix_str.is_empty() {
                     out.push_str(&format!("{key_name:<key_string_width$} {note}\n"));
                 } else {
@@ -305,10 +324,8 @@ impl ListKeys {
                 out.push_str(table_name);
                 out.push(' ');
                 out.push_str(&format_key_name(*key));
-                for word in &binding.command {
-                    out.push(' ');
-                    out.push_str(word);
-                }
+                out.push(' ');
+                out.push_str(&binding.command.print());
                 out.push('\n');
             }
         }

@@ -684,7 +684,7 @@ fn route_mode_key(
 fn run_mode_bindings(target: &str, bindings: Vec<KeyBinding>) -> CommandResult {
     let mut output = CommandResult::ok("");
     for binding in bindings {
-        let mut command = binding.command;
+        let mut command = binding.command.argv();
         if command
             .first()
             .is_some_and(|name| matches!(name.as_str(), "send-keys" | "send"))

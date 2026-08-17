@@ -942,7 +942,7 @@ impl CustomizeMode {
                 (
                     table.to_string(),
                     format_key_name(key),
-                    binding.command.clone(),
+                    binding.command.argv(),
                     binding.note.clone(),
                     binding.repeat,
                 )

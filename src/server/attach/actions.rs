@@ -142,38 +142,34 @@ pub(super) fn dispatch_key_binding(
         let st = state.borrow_mut();
         st.key_binding(table, key).cloned()
     };
-    let Some(mut binding) = binding else {
+    let Some(binding) = binding else {
         return PrefixOutcome::Handled { changed: false };
     };
+    // The attached client answers a few bindings itself rather than queueing
+    // them, and decides from the words; the compiled body prints back as the
+    // argv the command path would have re-parsed.
+    let mut words = binding.command.argv();
     // The default mouse bindings guard their real command behind `if-shell -F`,
     // so resolve that here: the branch may be a client-local outcome the
     // command interpreter has no way to express.
-    if matches!(
-        binding.command.first().map(String::as_str),
-        Some("if-shell" | "if")
-    ) {
+    if matches!(words.first().map(String::as_str), Some("if-shell" | "if")) {
         let mut binding_context = context.clone();
         binding_context.key_event = Some(key);
         binding_context.mouse = mouse.clone();
         let agents = hub.snapshot().panes;
         {
             let mut st = state.borrow_mut();
-            binding.command = command::resolve_conditional_binding(
-                binding.command,
-                &mut st,
-                &agents,
-                &binding_context,
-            );
+            words = command::resolve_conditional_binding(words, &mut st, &agents, &binding_context);
         }
     }
-    let Some(command_name) = binding.command.first().map(String::as_str) else {
+    let Some(command_name) = words.first().map(String::as_str) else {
         return PrefixOutcome::Handled { changed: false };
     };
 
     match command_name {
         "detach-client" | "detach" => return PrefixOutcome::Detach,
         "send-prefix" => {
-            let option = if binding.command.iter().any(|word| word == "-2") {
+            let option = if words.iter().any(|word| word == "-2") {
                 "prefix2"
             } else {
                 "prefix"
@@ -188,29 +184,28 @@ pub(super) fn dispatch_key_binding(
             .unwrap_or_default();
             return PrefixOutcome::SendPrefix(bytes);
         }
-        "copy-mode" if !binding.command.iter().any(|word| word == ";") => {
+        "copy-mode" if !words.iter().any(|word| word == ";") => {
             return PrefixOutcome::CopyMode(CopyModeAction::new(
-                binding.command.iter().any(|word| word == "-u"),
-                binding.command.iter().any(|word| word == "-d"),
-                binding.command.iter().any(|word| word == "-S"),
+                words.iter().any(|word| word == "-u"),
+                words.iter().any(|word| word == "-d"),
+                words.iter().any(|word| word == "-S"),
                 mouse,
-                binding.command.iter().any(|word| word == "-M"),
-                binding.command.iter().any(|word| word == "-e"),
+                words.iter().any(|word| word == "-M"),
+                words.iter().any(|word| word == "-e"),
             ));
         }
         "command-prompt" => {
             return PrefixOutcome::Prompt {
-                args: binding.command.clone(),
+                args: words.clone(),
             };
         }
         "display-message"
-            if !binding.command.iter().any(|word| word == ";")
-                && !binding.command.iter().any(|word| word == "-p") =>
+            if !words.iter().any(|word| word == ";")
+                && !words.iter().any(|word| word == "-p") =>
         {
-            let mut command = binding.command.clone();
+            let mut command = words.clone();
             command.insert(1, "-p".to_string());
-            let explicit_duration = binding
-                .command
+            let explicit_duration = words
                 .windows(2)
                 .find(|words| words[0] == "-d")
                 .and_then(|words| words[1].parse::<u64>().ok());
@@ -221,13 +216,12 @@ pub(super) fn dispatch_key_binding(
                 args: command,
                 context: binding_context,
                 target: target.to_string(),
-                escape_hashes: binding.command.iter().any(|word| word == "-N"),
+                escape_hashes: words.iter().any(|word| word == "-N"),
                 explicit_duration,
             };
         }
         "confirm-before" | "confirm"
-            if binding
-                .command
+            if words
                 .last()
                 .is_some_and(|word| word == "kill-window") =>
         {
@@ -241,8 +235,7 @@ pub(super) fn dispatch_key_binding(
             };
         }
         "confirm-before" | "confirm"
-            if binding
-                .command
+            if words
                 .last()
                 .is_some_and(|word| word == "kill-pane") =>
         {
@@ -259,7 +252,7 @@ pub(super) fn dispatch_key_binding(
     binding_context.key_event = Some(key);
     binding_context.mouse = mouse;
     PrefixOutcome::DeferredCommand {
-        args: binding.command,
+        args: words,
         context: binding_context,
     }
 }

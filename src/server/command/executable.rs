@@ -125,8 +125,27 @@ impl ExecutableCommand {
 
     /// Whether the line holds no commands at all — empty text, or an alias
     /// whose replacement was empty.
-    pub(super) fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.commands.is_empty()
+    }
+
+    /// The whole line back as one flat argv, each command by its canonical name
+    /// and normalized arguments, with a standalone `;` between commands.
+    ///
+    /// The attached-client key path reads a binding this way: it answers a few
+    /// keys itself (`detach-client`, `send-prefix`, `copy-mode`) instead of
+    /// queueing them, and decides from the words. Recompiling this argv yields
+    /// the same commands.
+    pub(crate) fn argv(&self) -> Vec<String> {
+        let mut argv = Vec::new();
+        for command in &self.commands {
+            if !argv.is_empty() {
+                argv.push(";".to_string());
+            }
+            argv.push(command.spec.name.to_string());
+            argv.extend(command.args.iter().skip(1).cloned());
+        }
+        argv
     }
 
     /// The compiled commands, in order, for the queue to run.

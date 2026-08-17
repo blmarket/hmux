@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use super::target::pane_not_found;
 use super::{KeyBinding, ServerState, DEFAULT_KEY_TABLE};
+use crate::server::command::ExecutableCommand;
 use crate::server::key::{parse_key_name, KeyCode};
 use crate::server::options::OptionsView;
 
@@ -142,15 +143,6 @@ impl ServerState {
                 "MouseDrag1ScrollbarSlider",
                 "if-shell -F -t = '#{pane_in_mode}' \
                  'send-keys -X scroll-to-mouse' 'copy-mode -S'",
-            ),
-            (
-                "MouseDown3Pane",
-                "if-shell -F -t = \
-                 '#{||:#{mouse_any_flag},#{&&:#{pane_in_mode},\
-                 #{?#{m/r:(copy|view)-mode,#{pane_mode}},0,1}}}' \
-                 'select-pane -t = ; send-keys -M' \
-                 'display-menu -t = -x M -y M \
-                 -T \"#[align=centre]#{pane_index} (#{pane_id})\" {PANE_MENU}'",
             ),
             (
                 "M-MouseDown3Pane",
@@ -736,13 +728,34 @@ impl ServerState {
         for &(table, name, command) in DEFAULTS {
             let key =
                 parse_key_name(name).unwrap_or_else(|| panic!("invalid default key name: {name}"));
-            self.bind_key(
-                table,
-                key,
-                command.iter().map(|word| (*word).to_string()).collect(),
-                false,
-                None,
+            let command = command.iter().map(|word| (*word).to_string()).collect::<Vec<_>>();
+            self.bind_key(table, key, default_binding(&command), false, None);
+        }
+        // `MouseDown3Pane` is the one mouse default whose branch is itself a
+        // whole `display-menu` line, and the menu text carries quotes of its
+        // own, so it cannot be written as a quoted word inside the `if-shell`
+        // line the way the others are. tmux writes it as a `{ }` command block;
+        // this builds the operand directly instead, so `if-shell` gets exactly
+        // its condition and two branches.
+        {
+            let key = parse_key_name("MouseDown3Pane").expect("mouse key");
+            let mut menu = String::from(
+                "display-menu -t = -x M -y M \
+                 -T \"#[align=centre]#{pane_index} (#{pane_id})\"",
             );
+            menu.push_str(DEFAULT_PANE_MENU);
+            let command = vec![
+                "if-shell".to_string(),
+                "-F".to_string(),
+                "-t".to_string(),
+                "=".to_string(),
+                "#{||:#{mouse_any_flag},#{&&:#{pane_in_mode},\
+                 #{?#{m/r:(copy|view)-mode,#{pane_mode}},0,1}}}"
+                    .to_string(),
+                "select-pane -t = ; send-keys -M".to_string(),
+                menu,
+            ];
+            self.bind_key(DEFAULT_KEY_TABLE, key, default_binding(&command), false, None);
         }
         for &(name, command) in ROOT_MOUSE_DEFAULTS {
             let key = parse_key_name(name)
@@ -751,27 +764,17 @@ impl ServerState {
                 .replace("{PANE_MENU}", DEFAULT_PANE_MENU)
                 .replace("{WINDOW_MENU}", DEFAULT_WINDOW_MENU)
                 .replace("{SESSION_MENU}", DEFAULT_SESSION_MENU);
-            self.bind_key(
-                DEFAULT_KEY_TABLE,
-                key,
-                crate::server::command::binding_words(&command),
-                false,
-                None,
-            );
+            let command = crate::server::command::binding_words(&command);
+            self.bind_key(DEFAULT_KEY_TABLE, key, default_binding(&command), false, None);
         }
         for index in 0..=9 {
             let key = parse_key_name(&index.to_string()).expect("digit key");
-            self.bind_key(
-                "prefix",
-                key,
-                vec![
-                    "select-window".to_string(),
-                    "-t".to_string(),
-                    format!(":{index}"),
-                ],
-                false,
-                None,
-            );
+            let select = vec![
+                "select-window".to_string(),
+                "-t".to_string(),
+                format!(":{index}"),
+            ];
+            self.bind_key("prefix", key, default_binding(&select), false, None);
             if index != 0 {
                 let repeat = vec![
                     "command-prompt".to_string(),
@@ -782,6 +785,7 @@ impl ServerState {
                     index.to_string(),
                     "send-keys -N '%%'".to_string(),
                 ];
+                let repeat = default_binding(&repeat);
                 self.bind_key("copy-mode-vi", key, repeat.clone(), false, None);
                 let meta =
                     parse_key_name(&format!("M-{index}")).expect("copy-mode emacs repeat key");
@@ -798,7 +802,12 @@ impl ServerState {
             ("!", false, "Break pane to a new window", "break-pane"),
             ("\"", false, "Split window vertically", "split-window"),
             ("#", false, "List all paste buffers", "list-buffers"),
-            ("$", false, "Rename current session", "rename-session"),
+            (
+                "$",
+                false,
+                "Rename current session",
+                "command-prompt -I '#S' \"rename-session -- '%%'\"",
+            ),
             ("%", false, "Split window horizontally", "split-window -h"),
             ("&", false, "Kill current window", "kill-window"),
             (
@@ -810,7 +819,12 @@ impl ServerState {
             ("(", false, "Switch to previous client", "switch-client -p"),
             (")", false, "Switch to next client", "switch-client -n"),
             ("*", false, "New floating pane", "new-window"),
-            (",", false, "Rename current window", "rename-window"),
+            (
+                ",",
+                false,
+                "Rename current window",
+                "command-prompt -I '#W' \"rename-window -- '%%'\"",
+            ),
             (
                 "-",
                 false,
@@ -836,14 +850,26 @@ impl ServerState {
                 "Move to the previously active pane",
                 "last-pane",
             ),
-            ("<", false, "Display window menu", "display-menu"),
+            (
+                "<",
+                false,
+                "Display window menu",
+                "display-menu -x W -y W \
+                 -T '#[align=centre]#{window_index}:#{window_name}' {WINDOW_MENU}",
+            ),
             (
                 "=",
                 false,
                 "Choose a paste buffer from a list",
                 "choose-buffer -Z",
             ),
-            (">", false, "Display pane menu", "display-menu"),
+            (
+                ">",
+                false,
+                "Display pane menu",
+                "display-menu -x P -y P \
+                 -T '#[align=centre]#{pane_index} (#{pane_id})' {PANE_MENU}",
+            ),
             ("?", false, "List key bindings", "list-keys -N"),
             ("C", false, "Customize options", "customize-mode -Z"),
             (
@@ -864,7 +890,12 @@ impl ServerState {
             ),
             ("c", false, "Create a new window", "new-window"),
             ("d", false, "Detach the current client", "detach-client"),
-            ("f", false, "Search for a pane", "find-window"),
+            (
+                "f",
+                false,
+                "Search for a pane",
+                "command-prompt \"find-window -Z -- '%%'\"",
+            ),
             ("i", false, "Display window information", "display-message"),
             (
                 "l",
@@ -1059,10 +1090,14 @@ impl ServerState {
                 binding.repeat = repeat;
                 binding.note = Some(note.to_string());
             } else {
+                let command = command
+                    .replace("{PANE_MENU}", DEFAULT_PANE_MENU)
+                    .replace("{WINDOW_MENU}", DEFAULT_WINDOW_MENU);
+                let command = crate::server::command::binding_words(&command);
                 self.bind_key(
                     "prefix",
                     key,
-                    crate::server::command::binding_words(command),
+                    default_binding(&command),
                     repeat,
                     Some(note.to_string()),
                 );
@@ -1192,7 +1227,7 @@ impl ServerState {
         &mut self,
         table: &str,
         key: KeyCode,
-        command: Vec<String>,
+        command: ExecutableCommand,
         repeat: bool,
         note: Option<String>,
     ) {
@@ -1207,6 +1242,31 @@ impl ServerState {
                     command,
                 },
             );
+    }
+
+    /// tmux's `key_bindings_add` with a NULL command list: `bind-key key` given
+    /// no command only annotates a binding that already exists — `-N` replaces
+    /// its note and `-r` makes it repeat — and does nothing at all when there
+    /// is none.
+    pub(crate) fn annotate_key_binding(
+        &mut self,
+        table: &str,
+        key: KeyCode,
+        note: Option<String>,
+        repeat: bool,
+    ) {
+        // tmux's `key_bindings_get_table(name, 1)` creates the table either way,
+        // so naming an unknown one here is how an empty table comes into being.
+        let bindings = self.key_tables.entry(table.to_string()).or_default();
+        let Some(binding) = bindings.get_mut(&key) else {
+            return;
+        };
+        if note.is_some() {
+            binding.note = note;
+        }
+        if repeat {
+            binding.repeat = true;
+        }
     }
 
     /// Remove one binding, or all bindings in a table when `all` is set.
@@ -1286,4 +1346,11 @@ impl ServerState {
         .map(str::to_owned)
         .collect()
     }
+}
+
+/// Compile one of the built-in bindings. The default table is source code, so
+/// a body that does not compile is a bug in this file rather than user input.
+fn default_binding(command: &[String]) -> ExecutableCommand {
+    ExecutableCommand::compile_argv(command, &[])
+        .unwrap_or_else(|error| panic!("invalid default key binding {command:?}: {error}"))
 }
