@@ -415,9 +415,17 @@ impl MenuOverlay {
     }
 
     fn handle_key(&mut self, key: &str) -> OverlayInputOutcome {
+        if let Some(item) = self.request.items.iter().find(|item| {
+            !item.key.is_empty()
+                && item.key == key
+                && !item.label.is_empty()
+                && !item.label.starts_with('-')
+        }) {
+            return OverlayInputOutcome::close(0, Some(item.command.clone()));
+        }
         match key {
-            "q" | "Escape" | "C-c" => OverlayInputOutcome::close(0, None),
-            "Up" | "k" => {
+            "q" | "Escape" | "C-c" | "C-g" | "C-[" => OverlayInputOutcome::close(0, None),
+            "Up" | "k" | "BTab" => {
                 self.step(-1);
                 OverlayInputOutcome::stay()
             }
@@ -425,20 +433,85 @@ impl MenuOverlay {
                 self.step(1);
                 OverlayInputOutcome::stay()
             }
-            "Enter" => OverlayInputOutcome::close(
-                0,
-                self.request
+            "PageUp" | "C-b" => {
+                let mut count = 5;
+                let mut index = self.selected;
+                while count > 0 && index > 0 {
+                    index -= 1;
+                    let item = &self.request.items[index];
+                    if !item.label.is_empty() && !item.label.starts_with('-') {
+                        count -= 1;
+                    }
+                }
+                while index < self.request.items.len() {
+                    let item = &self.request.items[index];
+                    if !item.label.is_empty() && !item.label.starts_with('-') {
+                        self.selected = index;
+                        break;
+                    }
+                    index += 1;
+                }
+                OverlayInputOutcome::stay()
+            }
+            "PageDown" => {
+                let total = self.request.items.len();
+                if total > 0 {
+                    let mut count = 5;
+                    let mut index = self.selected;
+                    while count > 0 && index + 1 < total {
+                        index += 1;
+                        let item = &self.request.items[index];
+                        if !item.label.is_empty() && !item.label.starts_with('-') {
+                            count -= 1;
+                        }
+                    }
+                    while index < total {
+                        let item = &self.request.items[index];
+                        if !item.label.is_empty() && !item.label.starts_with('-') {
+                            self.selected = index;
+                            break;
+                        }
+                        if index == 0 {
+                            break;
+                        }
+                        index -= 1;
+                    }
+                }
+                OverlayInputOutcome::stay()
+            }
+            "g" | "Home" => {
+                if let Some(pos) = self
+                    .request
                     .items
-                    .get(self.selected)
-                    .map(|item| item.command.clone()),
-            ),
-            key => self
-                .request
-                .items
-                .iter()
-                .find(|item| item.key == key)
-                .map(|item| OverlayInputOutcome::close(0, Some(item.command.clone())))
-                .unwrap_or_else(OverlayInputOutcome::stay),
+                    .iter()
+                    .position(|item| !item.label.is_empty() && !item.label.starts_with('-'))
+                {
+                    self.selected = pos;
+                }
+                OverlayInputOutcome::stay()
+            }
+            "G" | "End" => {
+                if let Some(pos) = self
+                    .request
+                    .items
+                    .iter()
+                    .rposition(|item| !item.label.is_empty() && !item.label.starts_with('-'))
+                {
+                    self.selected = pos;
+                }
+                OverlayInputOutcome::stay()
+            }
+            "Enter" | "C-m" => {
+                let cmd = self.request.items.get(self.selected).and_then(|item| {
+                    if !item.label.is_empty() && !item.label.starts_with('-') {
+                        Some(item.command.clone())
+                    } else {
+                        None
+                    }
+                });
+                OverlayInputOutcome::close(0, cmd)
+            }
+            _ => OverlayInputOutcome::stay(),
         }
     }
 
