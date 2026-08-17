@@ -11,6 +11,8 @@
 //! recognisably the terminal's while the server is owed one, so the scanner
 //! should be fed only inside that window.
 
+use std::borrow::Cow;
+
 use crate::observer::{base64_decode_strict, parse_packed_colour};
 
 /// The most an unfinished answer may hold before it is given back as ordinary
@@ -66,27 +68,39 @@ impl AnswerScanner {
     /// answers found. An answer the read cut off is held for the next call,
     /// up to a limit past which it turns back into ordinary input.
     pub fn feed(&mut self, data: &[u8]) -> (Vec<u8>, Vec<TerminalAnswer>) {
-        let mut buffered = std::mem::take(&mut self.pending);
-        buffered.extend_from_slice(data);
+        // Holding an unfinished answer is the rare case; with nothing held the
+        // read is scanned where it lies rather than copied to be joined to an
+        // empty buffer first.
+        let buffered = if self.pending.is_empty() {
+            Cow::Borrowed(data)
+        } else {
+            let mut joined = std::mem::take(&mut self.pending);
+            joined.extend_from_slice(data);
+            Cow::Owned(joined)
+        };
         let mut passthrough = Vec::with_capacity(buffered.len());
         let mut answers = Vec::new();
         let mut index = 0;
+        // Everything since the last answer, copied out in one run when an
+        // answer ends it rather than a byte at a time as it is walked.
+        let mut run = 0;
         while index < buffered.len() {
             match parse_answer(&buffered[index..]) {
                 Progress::Complete(answer, consumed) => {
+                    passthrough.extend_from_slice(&buffered[run..index]);
                     index += consumed;
+                    run = index;
                     answers.push(answer);
                 }
                 Progress::Partial if buffered.len() - index < ANSWER_LIMIT => {
+                    passthrough.extend_from_slice(&buffered[run..index]);
                     self.pending = buffered[index..].to_vec();
                     return (passthrough, answers);
                 }
-                Progress::None | Progress::Partial => {
-                    passthrough.push(buffered[index]);
-                    index += 1;
-                }
+                Progress::None | Progress::Partial => index += 1,
             }
         }
+        passthrough.extend_from_slice(&buffered[run..]);
         (passthrough, answers)
     }
 }
