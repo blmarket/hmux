@@ -36,6 +36,7 @@ mod prompt;
 mod render;
 mod session;
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io;
 use std::io::Write as _;
@@ -2461,8 +2462,16 @@ fn compose_frame_cached(
         .then(|| st.active_copy_state(target))
         .flatten();
     let copy_view = active_copy.map(|copy| CopyModeView::new(st, target, copy, cols, terminal));
-    let (all_rows, cursor, cursor_visible, restore_cursor, frame_capacity) =
-        if let Some(view) = active_mode {
+    // The pane's dump outlives the rows taken from it: a row the client's
+    // viewport does not clip is a slice of the dump, not a copy of it.
+    let pane_vt: Vec<u8>;
+    let (all_rows, cursor, cursor_visible, restore_cursor, frame_capacity): (
+        Vec<Cow<'_, [u8]>>,
+        _,
+        _,
+        _,
+        _,
+    ) = if let Some(view) = active_mode {
             let selected_style = status::option_style_escape_for(
                 st,
                 target,
@@ -2479,7 +2488,10 @@ fn compose_frame_cached(
                     &selected_style,
                     &preview,
                     || clock_rows(st, target, cols as usize, pane_height as usize, terminal),
-                ),
+                )
+                .into_iter()
+                .map(Cow::Owned)
+                .collect(),
                 Vec::new(),
                 false,
                 false,
@@ -2487,7 +2499,11 @@ fn compose_frame_cached(
             )
         } else if let Some(copy_view) = copy_view.as_ref() {
             (
-                copy_view.rows(pane_height),
+                copy_view
+                    .rows(pane_height)
+                    .into_iter()
+                    .map(Cow::Owned)
+                    .collect(),
                 copy_view.cursor(pane_height, cols),
                 true,
                 true,
@@ -2504,28 +2520,31 @@ fn compose_frame_cached(
             let dump_rows = view.map_or(pane_height, |view| view.oy.saturating_add(view.sy));
             let (vt, scroll) =
                 st.dump_active_pane_viewport_vt(target, scroll_offset, dump_rows as usize)?;
-            let (pane_rows, cursor) = split_pane_vt(&vt);
-            let pane_rows = pane_rows
-                .into_iter()
-                .map(<[u8]>::to_vec)
-                .collect::<Vec<_>>();
+            let capacity = vt.len() + 256;
+            pane_vt = vt;
+            let (pane_rows, cursor) = split_pane_vt(&pane_vt);
             let (pane_rows, cursor) = match view {
                 Some(view) => (
                     pane_rows
                         .into_iter()
                         .skip(usize::from(view.oy))
-                        .map(|row| clip_vt_row(&row, usize::from(view.ox), usize::from(view.sx)))
+                        .map(|row| {
+                            Cow::Owned(clip_vt_row(row, usize::from(view.ox), usize::from(view.sx)))
+                        })
                         .collect(),
                     shift_cup(cursor, view.ox, view.oy),
                 ),
-                None => (pane_rows, cursor.to_vec()),
+                None => (
+                    pane_rows.into_iter().map(Cow::Borrowed).collect(),
+                    cursor.to_vec(),
+                ),
             };
             (
                 pane_rows,
                 cursor,
                 scroll == 0 && st.active_pane_cursor_visible(target).unwrap_or(true),
                 scroll == 0,
-                vt.len() + 256,
+                capacity,
             )
         };
     // The pane's DECTCEM state. The VT dump carries the cursor *position* but not
@@ -2563,8 +2582,8 @@ fn compose_frame_cached(
     let mut all_rows = all_rows;
     if let Some((side, row)) = border_status {
         match side {
-            super::state::PaneBorderStatus::Top => all_rows.insert(0, row),
-            super::state::PaneBorderStatus::Bottom => all_rows.push(row),
+            super::state::PaneBorderStatus::Top => all_rows.insert(0, Cow::Owned(row)),
+            super::state::PaneBorderStatus::Bottom => all_rows.push(Cow::Owned(row)),
         }
     }
     let pane_rows = &all_rows[..];
