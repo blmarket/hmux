@@ -1180,6 +1180,9 @@ impl ServerState {
         };
         let win = self.window_mut(t.session, t.window);
         let node = &mut win.panes[idx];
+        if node.pane.death().is_some() || node.pane.has_exited() {
+            return Err(io::Error::other("target pane has exited"));
+        }
         let had_pipe = node.pane.pipe_active();
         node.pane.close_pipe();
         if let Some(command) = command.filter(|command| !command.is_empty()) {
