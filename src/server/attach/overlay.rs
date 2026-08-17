@@ -944,25 +944,30 @@ impl PopupOverlay {
 
 impl DisplayPanesOverlay {
     fn handle_key(&self, key: &str, state: &SharedState, target: &str) -> OverlayInputOutcome {
-        if !self.accept_input || matches!(key, "Escape" | "q" | "C-c") {
+        if !self.accept_input || matches!(key, "Escape" | "C-c") {
             return OverlayInputOutcome::close(0, None);
         }
-        let Some(index) = key
-            .chars()
-            .next()
-            .filter(|_| key.chars().count() == 1)
-            .and_then(|value| value.to_digit(10))
-        else {
-            return OverlayInputOutcome::stay();
+        let index = if key.len() == 1 {
+            let b = key.as_bytes()[0];
+            match b {
+                b'0'..=b'9' => Some((b - b'0') as usize),
+                b'a'..=b'z' => Some((10 + b - b'a') as usize),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let Some(index) = index else {
+            return OverlayInputOutcome::close(0, None);
         };
         let pane_id = state
             .borrow_mut()
             .active_window_panes(target)
             .ok()
-            .and_then(|(window, _)| window.panes.get(index as usize))
+            .and_then(|(window, _)| window.panes.get(index))
             .map(|pane| pane.id);
         let Some(pane_id) = pane_id else {
-            return OverlayInputOutcome::stay();
+            return OverlayInputOutcome::close(0, None);
         };
         let command = if self.command.is_empty() {
             vec![
