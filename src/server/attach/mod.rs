@@ -134,19 +134,8 @@ fn status_deadline(now: Instant, interval: Duration) -> Instant {
         .unwrap_or_else(|| now + Duration::from_secs(i32::MAX as u64))
 }
 
-/// How often pane output alone may force a status recomposition. Output only
-/// reaches the status through slow-moving derived content — automatic-rename
-/// names, pane titles, live pane variables — and tmux refreshes those on its
-/// 500ms name-check cadence rather than per output burst. Alerts and explicit
-/// changes still invalidate immediately through `RenderInvalidation::STATUS`.
 const OUTPUT_STATUS_REFRESH: Duration = Duration::from_millis(500);
 
-/// Throttle for output-driven status invalidation.
-///
-/// A burst inside the throttle window arms a deferred deadline instead of
-/// invalidating, so a lone burst (a shell starting `vim`, then silence) still
-/// refreshes the status once the window elapses rather than waiting for the
-/// much slower `status-interval` tick.
 #[derive(Debug, Default)]
 struct OutputStatusRefresh {
     last: Option<Instant>,
@@ -154,8 +143,6 @@ struct OutputStatusRefresh {
 }
 
 impl OutputStatusRefresh {
-    /// Note pane output at `now`: `true` to invalidate immediately, `false`
-    /// when the refresh was deferred to the armed deadline instead.
     fn request(&mut self, now: Instant) -> bool {
         match self.last {
             Some(last) if now.saturating_duration_since(last) < OUTPUT_STATUS_REFRESH => {
@@ -170,7 +157,6 @@ impl OutputStatusRefresh {
         }
     }
 
-    /// Whether an armed deferred refresh has come due.
     fn take_expired(&mut self, now: Instant) -> bool {
         if self.due.is_none_or(|due| now < due) {
             return false;
@@ -180,15 +166,11 @@ impl OutputStatusRefresh {
         true
     }
 
-    /// When an armed deferred refresh comes due. `None` when nothing is armed.
     fn due(&self) -> Option<Instant> {
         self.due
     }
 }
 
-/// Client-local compositor data that must survive from one readiness turn to
-/// the next. Keeping it explicit lets the event-loop adapter eventually own
-/// this state without an executor task or a second attach implementation.
 struct AttachTargetState {
     session_id: u32,
     stable_target: String,
@@ -199,9 +181,6 @@ struct AttachRenderState {
     last_render: Vec<u8>,
     seen_large_scroll: BTreeMap<u32, u64>,
     output_cursor_visible: Option<bool>,
-    /// The mouse mode this client's terminal was last put in — tmux's
-    /// `tty->mode` restricted to its mouse bits. Holding it is what lets the
-    /// mode be recomputed every pass and written only when it moved.
     tty_mouse_mode: TtyMouseMode,
     last_title: Option<String>,
     force_clear: bool,
@@ -236,16 +215,10 @@ struct PendingTerminalReply {
 
 struct AttachInputState {
     keys: ClientKeyState,
-    /// The key table last published to the server, so `#{client_key_table}`
-    /// and the status line only churn when it actually changes.
     published_key_table: String,
     mouse: MouseInputState,
     key_prompt: KeyPromptState,
     terminal_reply: Option<PendingTerminalReply>,
-    /// Picks out the answers to questions the server put to this terminal on a
-    /// pane's behalf, holding an unfinished one over a read boundary. They are
-    /// the server's answers, not the pane's input, so they are kept apart from
-    /// `terminal_reply`.
     terminal_answer: hmux_vt::AnswerScanner,
     injected: VecDeque<ClientKey>,
 }
@@ -339,8 +312,6 @@ struct AttachCompositorState {
     transition: Option<AttachTransition>,
 }
 
-/// All native attach state that must remain alive while readiness is owned by
-/// either the compatibility poller or the server event loop.
 pub(crate) struct AttachSession {
     tty: AttachTty,
     attachments: AttachAttachments,
@@ -349,16 +320,10 @@ pub(crate) struct AttachSession {
     pane_io: AttachPaneIo,
     commands: AttachCommands,
     compositor: AttachCompositorState,
-    /// `detach-client -E`: the command and shell to hand the client instead of
-    /// detaching it. tmux's client keeps only the *last* exit message it was
-    /// sent, so a `MSG_DETACH` after `MSG_EXEC` would discard the exec; the
-    /// finish path sends one or the other, never both.
     pending_exec: Option<(String, String)>,
 }
 
 struct AttachTty {
-    // Restore the tty before the owned descriptors below are closed if a turn
-    // exits early. The normal finish path disarms this guard explicitly.
     termios_guard: TermiosGuard,
     input_fd: OwnedFd,
     render_fd: OwnedFd,
@@ -471,14 +436,8 @@ pub(crate) enum AttachPrepared {
     Ready(AttachWaitReady),
     Wait {
         sources: AttachWaitSources,
-        /// Earliest deadline of the session's timed concerns; the event
-        /// loop's timer queue turns it into the wakeup. `None` waits on the
-        /// sources alone.
         deadline: Option<Instant>,
     },
-    /// The session has nothing left to serve. Its owner takes the terminal
-    /// back and reports the end to the client; nothing else is stepped after
-    /// this.
     Finish(AttachFinishReason),
 }
 
@@ -511,8 +470,6 @@ impl From<io::Error> for AttachStartFailure {
 struct TtyOutput {
     bytes: Vec<u8>,
     written: usize,
-    /// Lifetime total of bytes written to the terminal — tmux's `c->written`,
-    /// which `#{client_written}` reports.
     total: u64,
 }
 
@@ -665,12 +622,8 @@ fn handle_command_prompt_key(
     None
 }
 
-/// A logical key parsed from the client's tty input, limited to what the attach
-/// loop's prefix table and copy-mode navigation need to recognize. Every other
-/// key stays an opaque byte ([`Key::Byte`]) and is forwarded to the pane.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Key {
-    /// A single literal byte (a command key like `c`, or plain input).
     Byte(u8),
     PageUp,
     PageDown,
@@ -678,23 +631,10 @@ enum Key {
     Down,
     Left,
     Right,
-    /// A bare `Escape` (ESC with no CSI introducer following it this chunk).
     Escape,
     Enter,
 }
 
-/// Parse one logical [`Key`] from the front of `bytes` (non-empty), returning the
-/// key and how many bytes it consumed.
-///
-/// Recognizes just the escape sequences copy-mode navigation needs — `PgUp`/
-/// `PgDn` (`CSI 5~` / `CSI 6~`) and the up/down arrows (`CSI A` / `CSI B`) — plus
-/// the single bytes the prefix table and copy mode use. A lone `ESC`, or any
-/// other/partial CSI, resolves to a single-byte key so the caller can fall back
-/// to a bell (in a key table) or verbatim forwarding (in passthrough).
-///
-/// This is only invoked while interpreting keys (after the prefix, or in copy
-/// mode); ordinary passthrough forwards bytes untouched, so an app's own arrow
-/// keys and UTF-8 are never reinterpreted.
 fn read_key(bytes: &[u8]) -> (Key, usize) {
     let Some((decoded, consumed)) = decode_tty_key(bytes) else {
         return (Key::Byte(bytes[0]), 1);
@@ -920,15 +860,9 @@ struct DecodedTtyKey {
     name: String,
     code: Option<KeyCode>,
     mouse: Option<MouseEvent>,
-    /// How the client spelled this key, which the pane encoder needs on top of
-    /// the semantic identity. tmux keeps the same distinctions in its
-    /// `tty_keys` table.
     flags: TtyKeyFlags,
 }
 
-/// The terminal-shaped part of a decoded key: which application-mode form it
-/// arrived as, and whether its meta modifier was spelled inside the sequence
-/// rather than as a leading `ESC`.
 #[derive(Clone, Copy, Debug, Default)]
 struct TtyKeyFlags {
     cursor: bool,
@@ -947,8 +881,6 @@ impl TtyKeyFlags {
     }
 }
 
-/// The flags an `SS3` sequence carries: both keypad and cursor keys have an
-/// application form, and tmux tracks which one the client actually sent.
 fn ss3_flags(final_byte: u8) -> TtyKeyFlags {
     TtyKeyFlags {
         cursor: matches!(final_byte, b'A' | b'B' | b'C' | b'D'),
@@ -960,12 +892,6 @@ fn ss3_flags(final_byte: u8) -> TtyKeyFlags {
     }
 }
 
-/// Decode one terminal key for every attached-client consumer.
-///
-/// The display name remains available for `command-prompt -k`; table dispatch
-/// uses the semantic code. A few internal terminal events (focus and bracketed
-/// paste boundaries) have display names but are not accepted by tmux's
-/// control-plane key-name parser, so their code is intentionally `None`.
 fn decode_tty_key(bytes: &[u8]) -> Option<(DecodedTtyKey, usize)> {
     let first = *bytes.first()?;
     if first != 0x1b {
@@ -1114,9 +1040,6 @@ fn decode_tty_key(bytes: &[u8]) -> Option<(DecodedTtyKey, usize)> {
         byte => (meta_prompt_key(byte), start + 1, TtyKeyFlags::default()),
     };
     let name = if meta {
-        // A leading `ESC` is meta the pane has to be told about the same way,
-        // so it stays a prefix — except for Home and End, which tmux lists with
-        // the modifier already implied.
         flags.implied_meta = matches!(name.as_str(), "Home" | "End");
         format!("M-{name}")
     } else {
@@ -1145,11 +1068,6 @@ fn resolve_mouse_key(
     let Some(event) = decoded.mouse.as_mut() else {
         return;
     };
-    // The opening report of a drag resolves where the button went down, not
-    // where the pointer has already moved to — that is how a press on a border
-    // followed by motion is a border drag rather than a drag inside a pane.
-    // Only the *location* comes from there: what the pane is told, and what
-    // `#{mouse_x}`/`#{mouse_y}` report, is still where the pointer is now.
     let reported_position = event.position;
     if let Some(position) = input.drag_start_position(event) {
         event.position = position;
@@ -1181,7 +1099,6 @@ fn resolve_mouse_key(
     }
 }
 
-/// Move a pane-local coordinate by the same amount its screen coordinate moved.
 fn shift_coordinate(local: u16, from: u16, to: u16) -> u16 {
     if to >= from {
         local.saturating_add(to - from)
@@ -1190,10 +1107,6 @@ fn shift_coordinate(local: u16, from: u16, to: u16) -> u16 {
     }
 }
 
-/// `focus-follows-mouse`: bare motion over an inactive pane selects it.
-///
-/// tmux does this inside `server_client_check_mouse` rather than through a
-/// binding, so it happens even though `MouseMovePane` cannot be bound at all.
 fn apply_focus_follows_mouse(state: &mut ServerState, target: &str, event: &MouseEvent) {
     if event.kind != MouseEventKind::Move {
         return;
@@ -1213,17 +1126,10 @@ fn apply_focus_follows_mouse(state: &mut ServerState, target: &str, event: &Mous
     let _ = st.select_pane(&format!("%{pane_id}"));
 }
 
-/// Decode the key syntax accepted by tmux's `command-prompt -k`.
 fn decode_prompt_key(bytes: &[u8]) -> Option<(String, usize)> {
     decode_tty_key(bytes).map(|(key, consumed)| (key.name, consumed))
 }
 
-/// The ambiguity delay tmux applies to an incomplete terminal key.
-///
-/// `escape-time=0` still gets a one millisecond timer in tmux
-/// (`tty_keys_next`), so preserve that lower bound here. Invalid stored values
-/// fall back to the modeled tmux default rather than turning into an unbounded
-/// poll.
 fn prompt_escape_delay(state: &ServerState) -> Duration {
     let milliseconds = state
         .server_options()
@@ -1242,9 +1148,6 @@ fn append_view_output(state: &SharedState, target: &str, output: &[u8]) {
     }
 }
 
-/// Wait until either side of an attached client, its active pane, or its agent
-/// status subscription has work.
-/// Tty readiness needs no flag because the non-blocking input drain runs next.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct AttachWaitSources {
     pub(crate) input: RawFd,
@@ -1278,8 +1181,6 @@ struct ActiveWindowOutputKey {
     active: usize,
 }
 
-/// Return the active window's stable pane set and one notification subscription
-/// shared by all panes the compositor displays.
 fn active_window_output_subscription(
     state: &ServerState,
     session: &str,
@@ -1296,9 +1197,6 @@ fn active_window_output_subscription(
     Ok((ActiveWindowOutputKey { panes, active }, subscription))
 }
 
-/// Replace `subscription` when another command client or pane reaping changed
-/// the active window's pane set or selection. Returns true when the caller must
-/// redraw and ignore readiness reported for the old platform wakeup.
 fn refresh_active_window_output_subscription(
     st: &ServerState,
     session: &str,
@@ -1626,11 +1524,6 @@ fn set_blocking(fd: RawFd) -> io::Result<()> {
     Ok(())
 }
 
-/// Send an error result back via the file protocol, matching how tmux reports
-/// command errors to a command client. This is used when attach fails early
-/// (e.g. "can't find session", "not a terminal") so the conformance harness
-/// sees a recognized command that failed for a tty reason, not an "unknown
-/// command" rejection.
 pub(crate) fn attach_target(
     supplied_target: Option<String>,
     state: &mut ServerState,
@@ -1663,7 +1556,7 @@ where
         command::Intent::Attach => {
             let supplied_target = explicit_target_session(args);
             let mut st = state.borrow_mut();
-            if st.sessions().is_empty() {
+            if st.sessions().is_empty() && !st.initial_attach_pending() {
                 return Err(AttachStartFailure::Client("no sessions\n".to_string()));
             }
             let target = attach_target(supplied_target, &mut st, context)
@@ -1678,9 +1571,6 @@ where
                     st.set_session_cwd(session_id, Some(std::path::PathBuf::from(cwd)));
                 }
             }
-            // tmux's `cmd_attach_session` runs the `update-environment` copy-in
-            // again on every attach, so a session picks up the new client's
-            // `DISPLAY` and agent sockets rather than the creating client's.
             if !command::command_flag("attach-session", args, 'E') {
                 st.update_session_environment(&target, &context.environment);
             }
