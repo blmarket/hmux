@@ -1618,17 +1618,12 @@ impl SelectLayout {
                     Err(error) => command_target_error(error, target, "pane"),
                 };
             }
-            // Real tmux: `layout_parse` failure reports `can't set layout: ...`
-            // on stderr and returns 1. If the custom layout was from another
-            // window's `old_layout` and doesn't match this window's pane count,
-            // that is the failure it produces. If there is no previous layout
-            // history it is a no-op, as in tmux.
-            return match previous_old {
-                Some(old) => match st.select_custom_layout(target, old) {
-                    Ok(()) => CommandResult::ok(""),
-                    Err(error) => CommandResult::err(format!("can't set layout: {error}\n")),
-                },
-                None => CommandResult::ok(""),
+            return match st.select_custom_layout(target, layout) {
+                Ok(()) => CommandResult::ok(""),
+                Err(error) if error.to_string() == "invalid layout" => {
+                    CommandResult::err(format!("invalid layout: {layout}\n"))
+                }
+                Err(error) => CommandResult::err(format!("can't set layout: {error}\n")),
             };
         }
         if self.restore {
