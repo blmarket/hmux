@@ -704,17 +704,18 @@ impl EventControlClient {
                 continue;
             }
             let aliases = self.state.borrow_mut().command_aliases();
-            match command::command_string_groups_with_aliases(&line, &aliases) {
-                Ok(groups) if !groups.is_empty() => self.command_queue.push_back_group(
-                    groups
+            match command::ExecutableCommand::compile(&line, &aliases) {
+                Ok(compiled) if !compiled.is_empty() => self.command_queue.push_back_group(
+                    compiled
+                        .into_argv_groups()
                         .into_iter()
                         .map(ControlQueueItem::Command)
                         .collect::<Vec<_>>(),
                 ),
                 Ok(_) => {}
-                Err(result) => self
-                    .command_queue
-                    .push_back_group([ControlQueueItem::ParseError(result)]),
+                Err(error) => self.command_queue.push_back_group([
+                    ControlQueueItem::ParseError(command::CommandResult::err(error)),
+                ]),
             }
         }
         Ok(())

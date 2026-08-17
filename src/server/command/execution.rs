@@ -517,16 +517,19 @@ impl SourceFile {
                         }
                         let owned_groups = tokenized_command_groups(&line);
                         let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-                        let parsed = if self.parse_only {
-                            parse_command_groups(groups)
+                        // `-n` only checks the file, so it compiles without the
+                        // alias table: an alias is a runtime replacement, not
+                        // part of the file's own syntax.
+                        let aliases = if self.parse_only {
+                            Vec::new()
                         } else {
-                            let aliases = {
-                                let state = state.borrow_mut();
-                                state.command_aliases()
-                            };
-                            parse_command_groups_with_aliases(groups, &aliases)
+                            let state = state.borrow_mut();
+                            state.command_aliases()
                         };
-                        match parsed {
+                        match ExecutableCommand::compile_groups(groups, &aliases)
+                            .map(ExecutableCommand::into_commands)
+                            .map_err(CommandResult::err)
+                        {
                             Ok(parsed) if !self.parse_only && !parsed.is_empty() => {
                                 let source_line = line_number;
                                 file_insertions.push(

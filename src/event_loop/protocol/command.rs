@@ -61,9 +61,9 @@ async fn run_command_line(
     context: ClientContext,
 ) -> Result<CommandResult, ProtocolCloseReason> {
     let aliases = runtime.state.borrow_mut().command_aliases();
-    let groups = match command::command_line_groups(&args, &aliases) {
-        Ok(groups) => groups,
-        Err(result) => return Ok(result),
+    let groups = match command::ExecutableCommand::compile_argv(&args, &aliases) {
+        Ok(compiled) => compiled.into_argv_groups(),
+        Err(error) => return Ok(command::CommandResult::err(error)),
     };
     // Splitting costs the client a round trip per group, so it is only worth it
     // when a group actually needs the client's filesystem; everything else runs

@@ -203,20 +203,13 @@ impl ConfirmBefore {
                 return CommandResult::err("no current client\n");
             }
         }
+        // A single operand is a command *line*, so it is compiled here and the
+        // words handed on; a line that does not compile is passed through
+        // verbatim so the failure is reported when the prompt is answered.
         let command = if let [line] = self.command.as_slice() {
-            command_string_groups(line)
-                .ok()
-                .map(|groups| {
-                    let mut command = Vec::new();
-                    for group in groups {
-                        if !command.is_empty() {
-                            command.push(";".to_string());
-                        }
-                        command.extend(group);
-                    }
-                    command
-                })
-                .unwrap_or_else(|| vec![line.clone()])
+            ExecutableCommand::compile(line, &[])
+                .map(|compiled| compiled.argv())
+                .unwrap_or_else(|_| vec![line.clone()])
         } else {
             self.command.clone()
         };
@@ -290,20 +283,14 @@ fn validate_mode_target(target: Option<&str>, state: &ServerState) -> Result<(),
     Ok(())
 }
 
+/// Substitute `%%` and compile what comes out.
+///
+/// The two are distinct steps at distinct times: the template is text until
+/// there is a value for it, and only the substituted line is a command.
 fn template_command(template: &str, value: &str) -> Vec<String> {
     let expanded = template.replace("%%", value);
-    command_string_groups(&expanded)
-        .ok()
-        .map(|groups| {
-            let mut command = Vec::new();
-            for group in groups {
-                if !command.is_empty() {
-                    command.push(";".to_string());
-                }
-                command.extend(group);
-            }
-            command
-        })
+    ExecutableCommand::compile(&expanded, &[])
+        .map(|compiled| compiled.argv())
         .unwrap_or_default()
 }
 

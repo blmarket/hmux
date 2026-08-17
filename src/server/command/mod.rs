@@ -29,7 +29,7 @@ pub(in crate::server) mod windows;
 pub(in crate::server) use identity::Command;
 
 pub(crate) use executable::ExecutableCommand;
-use executable::{expand_attached_separators, split_commands, ParsedCommand};
+use executable::ParsedCommand;
 
 /// The tests that drive a job the way a command would need to build one.
 #[cfg(test)]
@@ -347,8 +347,8 @@ pub(crate) struct CommandPromptSpec {
 }
 
 pub(crate) fn command_prompt_spec(args: &[String]) -> Result<CommandPromptSpec, String> {
-    if let Err(error) = parse_command_groups(vec![args]) {
-        return Err(error.stderr);
+    if let Err(error) = ExecutableCommand::compile_groups(vec![args], &[]) {
+        return Err(error);
     }
     let normalized = command_prompt_args(args);
     let prompt_type = normalized.value('T').unwrap_or("command");
@@ -500,35 +500,6 @@ pub fn run(args: &[String], state: &SharedState, agents: &PaneAgents) -> Command
         driver.run_background(request, state, agents);
     }
     result
-}
-
-/// Parse and normalize every command before client-side file operations begin.
-pub(crate) fn command_line_groups(
-    args: &[String],
-    aliases: &[(String, String)],
-) -> Result<Vec<Vec<String>>, CommandResult> {
-    ExecutableCommand::compile_argv(args, aliases)
-        .map(ExecutableCommand::into_argv_groups)
-        .map_err(CommandResult::err)
-}
-
-/// Parse one tmux command string into normalized command argv groups.
-///
-/// Control mode and configuration files receive command strings rather than an
-/// already split argv. Both go through [`ExecutableCommand`], so every caller
-/// gets the same quoting, separator, alias, getopt, and arity behavior. The
-/// complete line is validated before any group is returned.
-pub(crate) fn command_string_groups(line: &str) -> Result<Vec<Vec<String>>, CommandResult> {
-    command_string_groups_with_aliases(line, &[])
-}
-
-pub(crate) fn command_string_groups_with_aliases(
-    line: &str,
-    aliases: &[(String, String)],
-) -> Result<Vec<Vec<String>>, CommandResult> {
-    ExecutableCommand::compile(line, aliases)
-        .map(ExecutableCommand::into_argv_groups)
-        .map_err(CommandResult::err)
 }
 
 /// Whether a command needs the stock client's read/write file handshake.
@@ -1227,18 +1198,17 @@ impl ResumableCommandQueue {
         state: &SharedState,
         capture: NestedCapture,
     ) -> Result<Vec<SharedQueueItem>, CommandResult> {
-        let tokens = tokenize_line(line);
-        let owned_groups = tokenized_command_groups(&tokens);
-        let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
         let aliases = {
             let state = state.borrow_mut();
             state.command_aliases()
         };
-        let parsed =
-            parse_command_groups_with_aliases(groups, &aliases).map_err(|mut result| {
+        let parsed = ExecutableCommand::compile(line, &aliases)
+            .map_err(|error| {
+                let mut result = CommandResult::err(error);
                 result.continue_queue = true;
                 result
-            })?;
+            })?
+            .into_commands();
         let mut nested_context = self.context.clone();
         if matches!(capture, NestedCapture::Inserted | NestedCapture::Hook) {
             nested_context.nested_granularity = true;
@@ -1271,20 +1241,19 @@ impl ResumableCommandQueue {
         let mut planned = Vec::new();
         for command in commands {
             let parsed = match command {
-                DeferredCommand::Args(args) => {
-                    parse_command_groups_with_aliases(vec![args.as_slice()], &aliases)?
-                }
+                DeferredCommand::Args(args) => ExecutableCommand::compile_argv(&args, &aliases)
+                    .map_err(CommandResult::err)?
+                    .into_commands(),
                 DeferredCommand::Line { line, tail } => {
-                    let tokens = tokenize_line(&line);
-                    let owned_groups = tokenized_command_groups(&tokens);
-                    let groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-                    let mut parsed = parse_command_groups_with_aliases(groups, &aliases)?;
+                    let mut parsed = ExecutableCommand::compile(&line, &aliases)
+                        .map_err(CommandResult::err)?
+                        .into_commands();
                     if !tail.is_empty() {
-                        let expanded_tail = expand_attached_separators(&tail);
-                        parsed.extend(parse_command_groups_with_aliases(
-                            split_commands(&expanded_tail),
-                            &aliases,
-                        )?);
+                        parsed.extend(
+                            ExecutableCommand::compile_argv(&tail, &aliases)
+                                .map_err(CommandResult::err)?
+                                .into_commands(),
+                        );
                     }
                     parsed
                 }
@@ -1488,13 +1457,11 @@ impl ResumableCommandQueue {
         }
         let mut groups = Vec::new();
         for line in commands {
-            let tokens = tokenize_line(&line);
-            let owned_groups = tokenized_command_groups(&tokens);
-            let command_groups = owned_groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
-            match parse_command_groups_with_aliases(command_groups, &aliases) {
-                Ok(parsed) if !parsed.is_empty() => {
+            match ExecutableCommand::compile(&line, &aliases) {
+                Ok(compiled) if !compiled.is_empty() => {
                     groups.push(
-                        parsed
+                        compiled
+                            .into_commands()
                             .into_iter()
                             .map(|command| SharedQueueItem::NestedCommand {
                                 queue: Box::new(ResumableCommandQueue::new(
@@ -1508,7 +1475,8 @@ impl ResumableCommandQueue {
                     );
                 }
                 Ok(_) => {}
-                Err(mut result) => {
+                Err(error) => {
+                    let mut result = CommandResult::err(error);
                     result.continue_queue = true;
                     groups.push(vec![SharedQueueItem::CapturedResult(result)]);
                 }
@@ -1776,20 +1744,6 @@ fn hook_commands(
         .map(|(_, value)| value.to_string())
         .collect::<Vec<_>>();
     Some(commands)
-}
-
-/// The compile pipeline as a [`CommandResult`], for the sites that still hold
-/// pre-split groups instead of a command line. They report a parse error to a
-/// client, so the error text is wrapped here rather than in the pipeline.
-fn parse_command_groups(groups: Vec<&[String]>) -> Result<Vec<ParsedCommand>, CommandResult> {
-    executable::parse_groups(groups).map_err(CommandResult::err)
-}
-
-fn parse_command_groups_with_aliases(
-    groups: Vec<&[String]>,
-    aliases: &[(String, String)],
-) -> Result<Vec<ParsedCommand>, CommandResult> {
-    executable::compile_groups(groups, aliases).map_err(CommandResult::err)
 }
 
 /// What one already-parsed command executes against. Its arguments are its
@@ -2118,7 +2072,7 @@ pub fn classify(args: &[String]) -> Intent {
     // Interactive attach classification happens before the command-client
     // parser sees the argv. Validate the single command here as well, so an
     // unknown flag or an extra operand cannot be swallowed by the attach path.
-    if parse_command_groups(vec![args]).is_err() {
+    if ExecutableCommand::compile_groups(vec![args], &[]).is_err() {
         return Intent::Command;
     }
     match canonical {

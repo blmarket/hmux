@@ -92,7 +92,7 @@ impl ExecutableCommand {
         let groups = tokenized_command_groups(&tokens);
         let groups = groups.iter().map(Vec::as_slice).collect::<Vec<_>>();
         Ok(ExecutableCommand {
-            commands: compile_groups(groups, aliases)?,
+            commands: expand_aliases_and_parse(groups, aliases)?,
         })
     }
 
@@ -108,7 +108,23 @@ impl ExecutableCommand {
     ) -> Result<ExecutableCommand, String> {
         let expanded = expand_attached_separators(args);
         Ok(ExecutableCommand {
-            commands: compile_groups(split_commands(&expanded), aliases)?,
+            commands: expand_aliases_and_parse(split_commands(&expanded), aliases)?,
+        })
+    }
+
+    /// Compile a line that a *different* lexer produced.
+    ///
+    /// Configuration files have a lexical layer of their own — `%if`, `%hidden`,
+    /// assignments, `{ }` blocks, and stricter escapes — so `source-file` settles
+    /// on the words itself and hands them over already split into commands.
+    /// Everything from alias expansion on is the same pipeline the other two
+    /// entry points use.
+    pub(super) fn compile_groups(
+        groups: Vec<&[String]>,
+        aliases: &[(String, String)],
+    ) -> Result<ExecutableCommand, String> {
+        Ok(ExecutableCommand {
+            commands: expand_aliases_and_parse(groups, aliases)?,
         })
     }
 
@@ -155,7 +171,7 @@ impl ExecutableCommand {
 
     /// Each command's normalized argv, for the call sites that still pass argv
     /// groups around rather than the compiled value.
-    pub(super) fn into_argv_groups(self) -> Vec<Vec<String>> {
+    pub(crate) fn into_argv_groups(self) -> Vec<Vec<String>> {
         self.commands
             .into_iter()
             .map(|command| command.args)
@@ -168,7 +184,7 @@ impl ExecutableCommand {
 /// An alias replaces the whole command word with a command *line*, so its own
 /// `;`-separated members are spliced in and the invocation's remaining
 /// arguments are appended to the last of them.
-pub(super) fn compile_groups(
+fn expand_aliases_and_parse(
     groups: Vec<&[String]>,
     aliases: &[(String, String)],
 ) -> Result<Vec<ParsedCommand>, String> {
@@ -201,7 +217,7 @@ pub(super) fn compile_groups(
 
 /// The parse phase proper: resolve, validate, and shape every command of the
 /// line before any of them runs.
-pub(super) fn parse_groups(groups: Vec<&[String]>) -> Result<Vec<ParsedCommand>, String> {
+fn parse_groups(groups: Vec<&[String]>) -> Result<Vec<ParsedCommand>, String> {
     // Resolve every command's name up front. A bad name aborts the whole line
     // with no output, exactly like tmux's cmd_parse.
     let mut resolved: Vec<(&'static CommandSpec, &[String])> = Vec::with_capacity(groups.len());
@@ -274,7 +290,7 @@ pub(super) fn parse_groups(groups: Vec<&[String]>) -> Result<Vec<ParsedCommand>,
 
 /// Expand tmux's legacy trailing-semicolon argv form into the standalone token
 /// consumed by [`split_commands`].
-pub(super) fn expand_attached_separators(args: &[String]) -> Vec<String> {
+fn expand_attached_separators(args: &[String]) -> Vec<String> {
     let mut expanded = Vec::with_capacity(args.len());
     for arg in args {
         if arg.ends_with(r"\;") {
@@ -296,7 +312,7 @@ pub(super) fn expand_attached_separators(args: &[String]) -> Vec<String> {
 }
 
 /// Split an argv into `;`-separated command groups.
-pub(super) fn split_commands(args: &[String]) -> Vec<&[String]> {
+fn split_commands(args: &[String]) -> Vec<&[String]> {
     let mut groups = Vec::new();
     let mut start = 0;
     for (i, a) in args.iter().enumerate() {
