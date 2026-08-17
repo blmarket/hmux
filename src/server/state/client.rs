@@ -1355,6 +1355,10 @@ impl ClientRenderRegistry {
         true
     }
 
+    /// Store the focus state a terminal reported, reporting whether the client
+    /// is still known. tmux's `tty-keys` focus branch stores the flag for every
+    /// report rather than only for a transition, so the caller can notify on
+    /// each one.
     pub(super) fn set_client_focused(&self, client: &str, focused: bool) -> bool {
         let mut inner = self.inner.borrow_mut();
         let Some(entry) = inner
@@ -1364,11 +1368,40 @@ impl ClientRenderRegistry {
         else {
             return false;
         };
-        if entry.focused == focused {
-            return false;
-        }
         entry.focused = focused;
         true
+    }
+
+    /// The recency stamp a client currently holds, which is how a window names
+    /// its latest client.
+    pub(super) fn client_size_seq(&self, client: &str) -> Option<u64> {
+        let inner = self.inner.borrow();
+        inner
+            .clients
+            .values()
+            .find(|entry| entry.name == client)
+            .map(|entry| entry.size_seq)
+    }
+
+    /// Stamp a client as the most recent one, returning its new stamp.
+    pub(super) fn promote_latest_client(&self, client: &str) -> Option<u64> {
+        let stamped = {
+            let mut inner = self.inner.borrow_mut();
+            inner.next_size_seq = inner.next_size_seq.wrapping_add(1);
+            let size_seq = inner.next_size_seq;
+            inner
+                .clients
+                .values_mut()
+                .find(|entry| entry.name == client)
+                .map(|entry| {
+                    entry.size_seq = size_seq;
+                    size_seq
+                })
+        };
+        if stamped.is_some() {
+            self.bump_generation();
+        }
+        stamped
     }
 
     /// Record the theme a client's terminal reported, reporting whether it
@@ -1471,12 +1504,14 @@ impl ClientRenderRegistry {
         ClientActionResult::Queued
     }
 
+    /// Move a client to another session, reporting the client's name so the
+    /// caller can raise `client-session-changed` for it.
     pub(super) fn switch_client(
         &self,
         target: Option<&str>,
         invoking_tty: Option<&str>,
         session_id: u32,
-    ) -> ClientActionResult {
+    ) -> Result<String, ClientActionResult> {
         let mut inner = self.inner.borrow_mut();
         let explicit = target.map(|target| target.strip_suffix(':').unwrap_or(target));
         let id = if let Some(target) = explicit {
@@ -1497,16 +1532,17 @@ impl ClientRenderRegistry {
             })
         };
         let Some(id) = id else {
-            return if explicit.is_some() {
+            return Err(if explicit.is_some() {
                 ClientActionResult::TargetNotFound
             } else {
                 ClientActionResult::NoCurrentClient
-            };
+            });
         };
         let entry = inner
             .clients
             .get_mut(&id)
             .expect("selected client disappeared");
+        let name = entry.name.clone();
         // tmux's `server_client_set_session`: a switch that lands on a
         // different session remembers the one it left; anything else clears it.
         entry.last_session_id = (entry.session_id != session_id).then_some(entry.session_id);
@@ -1521,7 +1557,7 @@ impl ClientRenderRegistry {
         }
         drop(inner);
         self.bump_generation();
-        ClientActionResult::Queued
+        Ok(name)
     }
 
     /// tmux's `server_destroy_session` client fan-out: every client on
@@ -1642,17 +1678,20 @@ impl ClientRenderAttachment {
         self.slot.messages.borrow_mut().drain(..).collect()
     }
 
+    /// Publish the client terminal's new cell count.
+    ///
+    /// Which client is *latest* is not settled here: tmux promotes the resizing
+    /// client from `MSG_RESIZE` through `server_client_update_latest`, which
+    /// also raises `client-active` and skips control clients entirely. The
+    /// attached client's resize path calls
+    /// [`ServerState::update_latest_client`] for that.
     pub(crate) fn update_size(&self, cols: u16, rows: u16) {
         {
             let mut inner = self.registry.inner.borrow_mut();
-            inner.next_size_seq = inner.next_size_seq.wrapping_add(1);
-            let size_seq = inner.next_size_seq;
             if let Some(entry) = inner.clients.get_mut(&self.id) {
                 entry.cols = cols;
                 entry.rows = rows;
                 entry.size_changed = true;
-                // Resizing makes this the latest client, as attaching does.
-                entry.size_seq = size_seq;
             }
         }
         self.registry.bump_generation();
@@ -2026,6 +2065,10 @@ impl ServerState {
     /// whatever `focus-events` says — the option only decides whether tmux asks
     /// the terminal for reports at all — and the active pane's focus moves with
     /// the client's.
+    ///
+    /// The hook is raised per *report*, not per transition: tmux notifies from
+    /// the key decoder without comparing against the flag it already holds, so
+    /// a terminal that repeats a focus report raises the hook again.
     pub(crate) fn set_client_focus(
         &mut self,
         client: &str,
@@ -2235,13 +2278,75 @@ impl ServerState {
     }
 
     pub(crate) fn switch_client(
-        &self,
+        &mut self,
         target: Option<&str>,
         invoking_tty: Option<&str>,
         session_id: u32,
     ) -> ClientActionResult {
-        self.client_renders
+        match self
+            .client_renders
             .switch_client(target, invoking_tty, session_id)
+        {
+            Ok(name) => {
+                self.announce_client_session(&name, session_id);
+                ClientActionResult::Queued
+            }
+            Err(result) => result,
+        }
+    }
+
+    /// tmux's `server_client_update_latest`: a key from a client — or its
+    /// terminal resizing — makes it the latest client of the window its session
+    /// is showing, and `client-active` announces the move.
+    ///
+    /// A window sized `latest` follows its latest client, so promoting one is
+    /// also a resize trigger.
+    pub(crate) fn update_latest_client(&mut self, client: &str, session_id: u32) {
+        let Some(window_id) = self.current_window_of_session(session_id) else {
+            return;
+        };
+        let Some(seq) = self.client_renders.client_size_seq(client) else {
+            return;
+        };
+        if self
+            .windows
+            .get(&window_id)
+            .is_some_and(|window| window.latest_client == Some(seq))
+        {
+            return;
+        }
+        let Some(seq) = self.client_renders.promote_latest_client(client) else {
+            return;
+        };
+        if let Some(window) = self.windows.get_mut(&window_id) {
+            window.latest_client = Some(seq);
+        }
+        let follows_latest = self.windows.get(&window_id).is_some_and(|window| {
+            window.options(&self.global_options).get("window-size") == Some("latest")
+        });
+        if follows_latest {
+            let _ = self.recalculate_sizes();
+        }
+        let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
+        self.notify_client("client-active", client, Some(session_id));
+        self.notifications_are_deferred = was_deferred;
+    }
+
+    /// Raise `client-session-changed` for a client that has just been given a
+    /// session.
+    ///
+    /// tmux notifies from `server_client_set_session` for every switch, so a
+    /// client sent to the session it is already on is announced again. The
+    /// client-layer snapshot is moved along with it, because that diff is what
+    /// reports the session moves nothing calls this for.
+    fn announce_client_session(&mut self, client: &str, session_id: u32) {
+        let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
+        self.notify_client("client-session-changed", client, Some(session_id));
+        self.notifications_are_deferred = was_deferred;
+        self.take_session_for_client(session_id);
+        if let Some(known) = self.known_clients.get_mut(client) {
+            known.0 = session_id;
+        }
     }
 
     /// Toggle `switch-client -r` on the target client, reporting its name.

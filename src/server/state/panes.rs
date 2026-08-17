@@ -1025,17 +1025,20 @@ impl ServerState {
     }
 
     /// `select-pane -T title`: pin a pane's title, overriding whatever its
-    /// terminal reported. Raises `pane-title-changed` when the title moves.
+    /// terminal reported. Raises `pane-title-changed` for every store, matching
+    /// tmux, whose `screen_set_title` reports only whether the title was valid
+    /// rather than whether it moved — so re-pinning the same title notifies
+    /// again.
     pub(crate) fn set_pane_title(&mut self, target: &str, title: &str) -> io::Result<()> {
         let t = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let session_id = self.sessions[t.session].id;
         let node = &mut self.window_mut(t.session, t.window).panes[t.pane];
         let pane_id = node.id;
-        if node.title.as_deref() == Some(title) {
-            return Ok(());
-        }
+        let changed = node.title.as_deref() != Some(title);
         node.title = Some(title.to_string());
-        self.invalidate_session(session_id, RenderInvalidation::STATUS);
+        if changed {
+            self.invalidate_session(session_id, RenderInvalidation::STATUS);
+        }
         self.notify_pane("pane-title-changed", pane_id);
         Ok(())
     }

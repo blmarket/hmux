@@ -446,8 +446,9 @@ impl ServerState {
         select: bool,
         argv: &[String],
         cwd: Option<&Path>,
+        name: &str,
     ) -> io::Result<usize> {
-        self.new_window_spawn_impl(session, explicit, false, select, argv, cwd)
+        self.new_window_spawn_impl(session, explicit, false, select, argv, cwd, name)
     }
 
     /// Open a new window, replacing an existing explicit target for
@@ -459,8 +460,9 @@ impl ServerState {
         select: bool,
         argv: &[String],
         cwd: Option<&Path>,
+        name: &str,
     ) -> io::Result<usize> {
-        self.new_window_spawn_impl(session, explicit, true, select, argv, cwd)
+        self.new_window_spawn_impl(session, explicit, true, select, argv, cwd, name)
     }
 
     fn new_window_impl(
@@ -471,7 +473,8 @@ impl ServerState {
         select: bool,
     ) -> io::Result<usize> {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-        self.new_window_spawn_impl(session, explicit, replace, select, &[shell], None)
+        let name = super::default_window_name(std::slice::from_ref(&shell));
+        self.new_window_spawn_impl(session, explicit, replace, select, &[shell], None, &name)
     }
 
     fn new_window_spawn_impl(
@@ -482,6 +485,7 @@ impl ServerState {
         select: bool,
         argv: &[String],
         cwd: Option<&Path>,
+        name: &str,
     ) -> io::Result<usize> {
         let session_pos = self.session_index(session);
         let s = match session_pos.and_then(|pos| self.sessions.get(pos)) {
@@ -561,7 +565,9 @@ impl ServerState {
             window_id,
             Window {
                 id: window_id,
-                name: String::new(),
+                // tmux names a window before it announces the link, so
+                // `window-linked` already carries `hook_window_name`.
+                name: name.to_string(),
                 panes: vec![PaneNode {
                     id: pane_id,
                     pane,
@@ -647,7 +653,16 @@ impl ServerState {
         select: bool,
     ) -> io::Result<usize> {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-        self.new_window_relative_with_spawn(session, anchor_index, after, select, &[shell], None)
+        let name = super::default_window_name(std::slice::from_ref(&shell));
+        self.new_window_relative_with_spawn(
+            session,
+            anchor_index,
+            after,
+            select,
+            &[shell],
+            None,
+            &name,
+        )
     }
 
     pub(crate) fn new_window_relative_with_spawn(
@@ -658,6 +673,7 @@ impl ServerState {
         select: bool,
         argv: &[String],
         cwd: Option<&Path>,
+        name: &str,
     ) -> io::Result<usize> {
         let session_pos = self.session_index(session).ok_or_else(|| {
             io::Error::new(
@@ -718,7 +734,9 @@ impl ServerState {
             window_id,
             Window {
                 id: window_id,
-                name: String::new(),
+                // tmux names a window before it announces the link, so
+                // `window-linked` already carries `hook_window_name`.
+                name: name.to_string(),
                 panes: vec![PaneNode {
                     id: pane_id,
                     pane,
@@ -807,9 +825,11 @@ impl ServerState {
         if name_changed || rename_changed {
             self.invalidate_session(session_id, RenderInvalidation::STATUS);
         }
-        if name_changed {
-            self.notify_window("window-renamed", window_id);
-        }
+        // tmux's `window_set_name` notifies for every store, so renaming a
+        // window to the name it already has raises the hook again. The
+        // automatic-rename pass compares before it gets here, which is where
+        // tmux's own unchanged-name filter lives too.
+        self.notify_window("window-renamed", window_id);
         Ok(())
     }
 

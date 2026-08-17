@@ -523,7 +523,7 @@ impl ServerState {
     /// tmux's `server_client_set_session` tail: the client's new current window
     /// loses its alert flags, and the whole session's alert state is examined
     /// again now that somebody is looking at it.
-    fn take_session_for_client(&mut self, session_id: u32) {
+    pub(super) fn take_session_for_client(&mut self, session_id: u32) {
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
             let active = session.active;
             if let Some(link) = session.windows.get_mut(active) {

@@ -265,7 +265,15 @@ impl SplitWindow {
                 None => None,
             }
         };
-        match created {
+        // tmux hands `after-split-window` the find-state of the pane it just
+        // created, not the `-t` the command was given.
+        let settled = created.as_ref().ok().map(|pane| {
+            format!(
+                "%{}",
+                st.window(resolved.session, resolved.window).panes[*pane].id
+            )
+        });
+        let mut result = match created {
             Ok(pane) if self.print => {
                 let sess = &st.sessions()[resolved.session];
                 // `-P` prints the *newly created* pane, at whichever index the split
@@ -291,7 +299,9 @@ impl SplitWindow {
                 CommandResult::ok("")
             }
             Err(error) => CommandResult::err(format!("{error}\n")),
-        }
+        };
+        result.after_hook_target = settled;
+        result
     }
 }
 

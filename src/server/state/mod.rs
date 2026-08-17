@@ -144,6 +144,24 @@ fn fill_spec_spawn_ids(spec: PaneSpec, pane_id: u32, session_id: u32) -> PaneSpe
     }
 }
 
+/// tmux's `default_window_name`: the name a window carries from the moment it
+/// is created, before `automatic-rename` ever looks at the running process.
+///
+/// tmux names the window inside `spawn_window`, between spawning the pane and
+/// raising `window-linked`, so the notification already carries the name. The
+/// spawn vector is what it reduces, and `sh -c <command>` reduces to the
+/// command rather than to the shell — the same recovery `pane_start_command`
+/// makes from the same vector.
+pub(crate) fn default_window_name(argv: &[String]) -> String {
+    let source = argv
+        .iter()
+        .rposition(|argument| argument == "-c")
+        .and_then(|index| argv.get(index + 1))
+        .cloned()
+        .unwrap_or_else(|| crate::server::pane::stringify_argv(argv));
+    crate::server::pane::parse_window_name(&source)
+}
+
 fn pane_start_command(spec: &PaneSpec) -> String {
     let argv = match spec {
         PaneSpec::Inert | PaneSpec::Existing(_) => return String::new(),
@@ -900,6 +918,12 @@ pub struct ServerState {
     /// Stable window selected for the command currently executing, when the
     /// default target names one — a hook body targeting a specific window.
     command_window_id: Option<u32>,
+    /// Stable pane selected for the command currently executing, when the
+    /// default target names one. tmux's `cmd_find_state` carries a pane
+    /// alongside its session and window, which is what makes a pane-scoped hook
+    /// body — `pane-died` on a retained dead pane — act on the pane the event
+    /// was about rather than on the window's active one.
+    command_pane_id: Option<u32>,
     /// Per-window pane selections for an `active-pane` client while one of its
     /// commands is executing. Missing entries fall back to the window's global
     /// active pane.
@@ -984,6 +1008,7 @@ impl ServerState {
             command_mouse: None,
             command_format_jobs: None,
             command_window_id: None,
+            command_pane_id: None,
             command_active_panes: None,
             control_checkpoints: VecDeque::new(),
             next_control_checkpoint: 0,
@@ -1192,6 +1217,17 @@ impl ServerState {
         self.command_window_id
             .and_then(|id| session.windows.iter().position(|link| link.id == id))
             .unwrap_or(session.active)
+    }
+
+    pub(crate) fn replace_command_pane_id(&mut self, pane_id: Option<u32>) -> Option<u32> {
+        std::mem::replace(&mut self.command_pane_id, pane_id)
+    }
+
+    /// The pane inside `window` a command with no explicit target defaults to,
+    /// when the running command's target named one.
+    pub(crate) fn command_pane_index(&self, window: &Window) -> Option<usize> {
+        let pane_id = self.command_pane_id?;
+        window.panes.iter().position(|node| node.id == pane_id)
     }
 
     pub(crate) fn replace_command_active_panes(

@@ -95,6 +95,11 @@ pub struct CommandResult {
     pub(crate) inserted_results: Vec<CommandResult>,
     /// Final control-mode marker field for this inserted queue item.
     pub(crate) control_flags: u8,
+    /// The target this command's `after-*` hook body resolves against, when the
+    /// command settles one of its own. tmux's `cmdq_fire_command` uses the
+    /// find-state the command left behind, which the creation commands point at
+    /// the window or pane they just made rather than at their own `-t`.
+    pub(crate) after_hook_target: Option<String>,
 }
 
 /// What kind of endpoint the commands run under a context come from. Fixed
@@ -244,6 +249,7 @@ impl CommandResult {
             continue_queue: false,
             inserted_results: Vec::new(),
             control_flags: 1,
+            after_hook_target: None,
         }
     }
 
@@ -258,6 +264,7 @@ impl CommandResult {
             continue_queue: false,
             inserted_results: Vec::new(),
             control_flags: 1,
+            after_hook_target: None,
         }
     }
 
@@ -274,6 +281,7 @@ impl CommandResult {
                 continue_queue: false,
                 inserted_results: Vec::new(),
                 control_flags: 1,
+                after_hook_target: None,
             },
         }
     }
@@ -624,6 +632,7 @@ pub(crate) fn start_resumable_command_string_with_tail(
 struct PreviousCommandTargetContext {
     session_id: Option<u32>,
     window_id: Option<u32>,
+    pane_id: Option<u32>,
     active_panes: Option<BTreeMap<u32, u32>>,
     hook_vars: Option<Vec<(String, String)>>,
     mouse: Option<MouseEvent>,
@@ -660,9 +669,12 @@ fn install_command_target_context(
         .or(context.current_session_id);
     let window_id = default_target
         .map(|resolved| state.sessions()[resolved.session].windows[resolved.window].id);
+    let pane_id = default_target
+        .map(|resolved| state.window(resolved.session, resolved.window).panes[resolved.pane].id);
     PreviousCommandTargetContext {
         session_id: state.replace_command_session_id(session_id),
         window_id: state.replace_command_window_id(window_id),
+        pane_id: state.replace_command_pane_id(pane_id),
         active_panes: state.replace_command_active_panes(context.active_panes()),
         hook_vars: context
             .hook
@@ -679,6 +691,7 @@ fn install_command_target_context(
 fn restore_command_target_context(state: &mut ServerState, previous: PreviousCommandTargetContext) {
     state.replace_command_session_id(previous.session_id);
     state.replace_command_window_id(previous.window_id);
+    state.replace_command_pane_id(previous.pane_id);
     state.replace_command_active_panes(previous.active_panes);
     if let Some(vars) = previous.hook_vars {
         state.replace_hook_format_vars(vars);
@@ -1104,7 +1117,7 @@ impl ResumableCommandQueue {
                     contributes_status,
                 } => (command, source, source_depth, contributes_status),
                 SharedQueueItem::FinalizeSource { args } => {
-                    let insert_next = self.plan_command_hooks("source-file", &args, state);
+                    let insert_next = self.plan_command_hooks("source-file", &args, None, state);
                     self.queue.complete(queue::QueueCompletion {
                         discard_group_tail: false,
                         insert_next,
@@ -1112,7 +1125,7 @@ impl ResumableCommandQueue {
                     continue;
                 }
                 SharedQueueItem::FinalizeHooks { command, args } => {
-                    let insert_next = self.plan_command_hooks(command, &args, state);
+                    let insert_next = self.plan_command_hooks(command, &args, None, state);
                     self.queue.complete(queue::QueueCompletion {
                         discard_group_tail: false,
                         insert_next,
@@ -1332,6 +1345,7 @@ impl ResumableCommandQueue {
                 execution.insert_next.extend(self.plan_command_hooks(
                     command.spec.name,
                     &command.args,
+                    execution.result.after_hook_target.as_deref(),
                     state,
                 ));
             }
@@ -1370,6 +1384,7 @@ impl ResumableCommandQueue {
         &self,
         command: &str,
         args: &[String],
+        settled_target: Option<&str>,
         state: &SharedState,
     ) -> Vec<Vec<SharedQueueItem>> {
         if self.context.suppress_after_hooks {
@@ -1378,7 +1393,10 @@ impl ResumableCommandQueue {
         let after = format!("after-{command}");
         let lexed = ParsedArgs::lex(command, args);
         let vars = hook_command_vars(&after, args, &lexed);
-        self.plan_hook(&after, lexed.value('t'), vars, state)
+        // tmux resolves an `after-*` body against the find-state the command
+        // left behind, so a command that settled a new target — the window or
+        // pane it just created — overrides its own `-t`.
+        self.plan_hook(&after, settled_target.or(lexed.value('t')), vars, state)
     }
 
     /// Turn every notification raised while the last command ran into hook
@@ -1560,6 +1578,7 @@ fn interaction_completion_result(completion: PromptCompletion) -> CommandResult 
         continue_queue: true,
         inserted_results: Vec::new(),
         control_flags: 1,
+        after_hook_target: None,
     };
     if completion.inserted {
         let mut original = CommandResult::ok("");
@@ -2137,6 +2156,30 @@ fn expand_command_aliases(command: &[String], st: &ServerState) -> Vec<String> {
     expanded
 }
 
+/// tmux's `default_window_name`: stringify the pane's whole argument vector and
+/// reduce it with `parse_window_name`, falling back to the shell the pane would
+/// run when it was given no command of its own. Reducing the stringified vector
+/// — rather than its first word — is what strips an `exec ` prefix and a login
+/// shell's leading dash, and what keeps a relative path such as `bin/sleep`
+/// whole.
+///
+/// `target` scopes the option lookups; a window being created has none of its
+/// own yet, so its session names the same values.
+pub(super) fn initial_window_name(st: &ServerState, target: &str, command: &[String]) -> String {
+    let default_shell = st
+        .option_for_target(target, "default-shell")
+        .unwrap_or("/bin/sh");
+    let default_command = st
+        .option_for_target(target, "default-command")
+        .unwrap_or("");
+    let source = match command {
+        [] if !default_command.is_empty() => default_command.to_string(),
+        [] => default_shell.to_string(),
+        command => crate::server::pane::stringify_argv(command),
+    };
+    crate::server::pane::parse_window_name(&source)
+}
+
 fn apply_initial_window_name(
     st: &mut ServerState,
     session: &str,
@@ -2151,24 +2194,7 @@ fn apply_initial_window_name(
         return;
     };
     let target = format!("{session}:{}", link.index);
-    let default_shell = st
-        .option_for_target(&target, "default-shell")
-        .unwrap_or("/bin/sh");
-    let default_command = st
-        .option_for_target(&target, "default-command")
-        .unwrap_or("");
-    // tmux's `default_window_name`: stringify the pane's whole argument vector
-    // and reduce it with `parse_window_name`, falling back to the shell the
-    // pane would run when it was given no command of its own. Reducing the
-    // stringified vector — rather than its first word — is what strips an
-    // `exec ` prefix and a login shell's leading dash, and what keeps a
-    // relative path such as `bin/sleep` whole.
-    let source = match command {
-        [] if !default_command.is_empty() => default_command.to_string(),
-        [] => default_shell.to_string(),
-        command => crate::server::pane::stringify_argv(command),
-    };
-    let current = crate::server::pane::parse_window_name(&source);
+    let current = initial_window_name(st, &target, command);
     let name = if st.option_for_target(&target, "automatic-rename") == Some("on") {
         let source = st
             .option_for_target(&target, "automatic-rename-format")
@@ -2423,7 +2449,10 @@ pub(super) fn vars_for(
     let pane_idx = sess
         .windows
         .get(win_idx)
-        .map(|_| st.session_window(sess, win_idx).active)
+        .map(|_| {
+            let window = st.session_window(sess, win_idx);
+            st.command_pane_index(window).unwrap_or(window.active)
+        })
         .unwrap_or(0);
     vars_full(st, sess, win_idx, pane_idx, agents, marked)
 }

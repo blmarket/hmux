@@ -249,14 +249,17 @@ impl ServerState {
         }
     }
 
-    /// The active pane of a window, honoring the per-client active pane the
-    /// running command was dispatched with.
+    /// The active pane of a window, honoring the pane the running command's own
+    /// target named and then the per-client active pane it was dispatched with.
     fn active_pane_pos(&self, session: usize, window: usize) -> usize {
         let window = self.window(session, window);
-        self.command_active_panes
-            .as_ref()
-            .and_then(|panes| panes.get(&window.id))
-            .and_then(|pane_id| window.panes.iter().position(|pane| pane.id == *pane_id))
+        self.command_pane_index(window)
+            .or_else(|| {
+                self.command_active_panes
+                    .as_ref()
+                    .and_then(|panes| panes.get(&window.id))
+                    .and_then(|pane_id| window.panes.iter().position(|pane| pane.id == *pane_id))
+            })
             .unwrap_or(window.active)
     }
 

@@ -270,6 +270,13 @@ impl NewWindow {
             st,
             SpawnSession::Existing(&session),
         );
+        // tmux names the window inside `spawn_window`, before it raises
+        // `window-linked`, so the name is settled here rather than after the
+        // window exists. `-n` is that name; otherwise the command decides it.
+        let initial_name = match self.name.as_deref() {
+            Some(name) => name.to_string(),
+            None => initial_window_name(st, &session, &self.command),
+        };
         let result = if relative {
             match anchor_window_index(&session, explicit, st) {
                 Some(anchor) => st.new_window_relative_with_spawn(
@@ -279,16 +286,31 @@ impl NewWindow {
                     select,
                     &argv,
                     cwd,
+                    &initial_name,
                 ),
-                None if self.kill => {
-                    st.new_window_replacing_with_spawn(&session, explicit, select, &argv, cwd)
+                None if self.kill => st.new_window_replacing_with_spawn(
+                    &session,
+                    explicit,
+                    select,
+                    &argv,
+                    cwd,
+                    &initial_name,
+                ),
+                None => {
+                    st.new_window_with_spawn(&session, explicit, select, &argv, cwd, &initial_name)
                 }
-                None => st.new_window_with_spawn(&session, explicit, select, &argv, cwd),
             }
         } else if self.kill {
-            st.new_window_replacing_with_spawn(&session, explicit, select, &argv, cwd)
+            st.new_window_replacing_with_spawn(
+                &session,
+                explicit,
+                select,
+                &argv,
+                cwd,
+                &initial_name,
+            )
         } else {
-            st.new_window_with_spawn(&session, explicit, select, &argv, cwd)
+            st.new_window_with_spawn(&session, explicit, select, &argv, cwd, &initial_name)
         };
         match result {
             Ok(win_idx) => {
@@ -300,7 +322,10 @@ impl NewWindow {
                 } else {
                     apply_initial_window_name(st, &session, win_idx, &self.command);
                 }
-                if self.print {
+                // tmux hands `after-new-window` the find-state of the window it
+                // just created, not the `-t` the command was given.
+                let created = st.find(&session).expect("session present").windows[win_idx].id;
+                let mut result = if self.print {
                     let sess = st.find(&session).expect("session present");
                     let template = self.format.as_deref().unwrap_or(NEW_WINDOW_TEMPLATE);
                     let marked = st.marked_pane();
@@ -313,7 +338,9 @@ impl NewWindow {
                     CommandResult::ok(format!("{line}\n"))
                 } else {
                     CommandResult::ok("")
-                }
+                };
+                result.after_hook_target = Some(format!("@{created}"));
+                result
             }
             Err(error) => match requested_target {
                 Some(target) => command_target_error(error, target, "window"),

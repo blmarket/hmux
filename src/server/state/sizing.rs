@@ -301,7 +301,8 @@ impl ServerState {
             .option_overrides_mut()
             .set("window-size", "manual");
         self.window_mut(t.session, t.window).manual_size = size;
-        self.recalculate_sizes()
+        // tmux resizes just this window, and immediately: `recalculate_size(w, 1)`.
+        self.recalculate_window_size_now(window_id)
     }
 
     pub(crate) fn resize_linked_window(
@@ -395,31 +396,57 @@ impl ServerState {
         }
         let mut result = Ok(());
         for window_id in window_ids {
-            let Some(window) = self.windows.get(&window_id) else {
-                continue;
-            };
-            let options = window.options(&self.global_options);
-            let policy = WindowSizePolicy::parse(options.get("window-size"));
-            let aggressive = matches!(options.get("aggressive-resize"), Some("on" | "1"));
-            let Some(size) = self.calculate_window_size(&window_id, policy, aggressive, &clients)
-            else {
-                continue;
-            };
-            if now || policy == WindowSizePolicy::Manual {
-                if let Some(window) = self.windows.get_mut(&window_id) {
-                    window.pending_size = None;
-                }
-                if let Err(error) = self.apply_window_size(window_id, size) {
-                    result = Err(error);
-                }
-            } else if let Some(window) = self.windows.get_mut(&window_id) {
-                window.pending_size = Some(size);
+            if let Err(error) = self.recalculate_window_size(window_id, &clients, now) {
+                result = Err(error);
             }
         }
         if let Err(error) = self.flush_pending_window_sizes() {
             result = Err(error);
         }
         result
+    }
+
+    /// tmux's `recalculate_size` for a single window.
+    fn recalculate_window_size(
+        &mut self,
+        window_id: u32,
+        clients: &[SizingClient],
+        now: bool,
+    ) -> io::Result<()> {
+        let Some(window) = self.windows.get(&window_id) else {
+            return Ok(());
+        };
+        let options = window.options(&self.global_options);
+        let policy = WindowSizePolicy::parse(options.get("window-size"));
+        let aggressive = matches!(options.get("aggressive-resize"), Some("on" | "1"));
+        let Some(size) = self.calculate_window_size(&window_id, policy, aggressive, clients) else {
+            return Ok(());
+        };
+        // tmux drops a recalculation that arrived at the size the window
+        // already has — but only when it is free to defer it. `now` resizes
+        // straight through, which is what makes `resize-window` to the size the
+        // window already has still raise `window-resized`.
+        if !now && self.window_size_is_settled(window_id, size) {
+            return Ok(());
+        }
+        if now || policy == WindowSizePolicy::Manual {
+            if let Some(window) = self.windows.get_mut(&window_id) {
+                window.pending_size = None;
+            }
+            self.apply_window_size(window_id, size)
+        } else {
+            if let Some(window) = self.windows.get_mut(&window_id) {
+                window.pending_size = Some(size);
+            }
+            Ok(())
+        }
+    }
+
+    /// tmux's `recalculate_size(w, 1)`: resize one window immediately, whether
+    /// or not the size it arrives at is the one it already has.
+    fn recalculate_window_size_now(&mut self, window_id: u32) -> io::Result<()> {
+        let clients = self.sizing_clients();
+        self.recalculate_window_size(window_id, &clients, true)
     }
 
     /// tmux's `server_client_check_window_resize`: apply a deferred size once
@@ -492,15 +519,34 @@ impl ServerState {
         })
     }
 
+    /// Whether a window already has the size a recalculation arrived at.
+    ///
+    /// A window with a deferred size is compared against *that* rather than
+    /// against the size it currently shows, so a size scheduled and then
+    /// recalculated to the same value is not rescheduled — tmux's
+    /// `WINDOW_RESIZE` branch of `recalculate_size`.
+    fn window_size_is_settled(&self, window_id: u32, size: WindowSize) -> bool {
+        let Some(window) = self.windows.get(&window_id) else {
+            return true;
+        };
+        let scheduled = window
+            .pending_size
+            .map_or((window.cols, window.rows), |pending| {
+                clamp_window_size(pending.size)
+            });
+        scheduled == clamp_window_size(size.size)
+    }
+
     /// Resize one window and everything laid out inside it.
+    ///
+    /// Unconditional, like tmux's `resize_window`: the caller decides whether a
+    /// size that did not move is worth applying, because that is what settles
+    /// whether `window-resized` is raised.
     fn apply_window_size(&mut self, window_id: u32, size: WindowSize) -> io::Result<()> {
         let (cols, rows) = clamp_window_size(size.size);
         let Some(window) = self.windows.get_mut(&window_id) else {
             return Ok(());
         };
-        if window.cols == cols && window.rows == rows {
-            return Ok(());
-        }
         window.cols = cols;
         window.rows = rows;
         // tmux only reaches `resize_window` when the cell count moved, so the
@@ -839,13 +885,18 @@ impl ServerState {
                 .windows
                 .get(&window_id)
                 .map_or((0, 0), |window| (window.xpixel, window.ypixel));
-            self.apply_window_size(
-                window_id,
-                WindowSize {
-                    size: (cols, rows),
-                    pixels,
-                },
-            )?;
+            let size = WindowSize {
+                size: (cols, rows),
+                pixels,
+            };
+            // tmux pins `default-size` before the session's windows exist, so
+            // they are simply created at this size and never resized. Standing
+            // in for that after the fact must not announce a resize that tmux
+            // never performed.
+            if self.window_size_is_settled(window_id, size) {
+                continue;
+            }
+            self.apply_window_size(window_id, size)?;
         }
         self.recalculate_sizes()
     }

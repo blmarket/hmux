@@ -1101,6 +1101,12 @@ impl AttachSession {
                                     .update_size(self.viewport.cols, self.viewport.rows);
                                 {
                                     let mut st = state.borrow_mut();
+                                    // tmux's `MSG_RESIZE` promotes the resizing
+                                    // client before recalculating sizes.
+                                    st.update_latest_client(
+                                        &self.attachments.render_attachment.client_name(),
+                                        self.compositor.target.session_id,
+                                    );
                                     self.viewport.status_height = status::height(&st, target);
                                     self.viewport.pane_rows = self
                                         .viewport

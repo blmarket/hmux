@@ -612,6 +612,15 @@ impl AttachSession {
                 target,
             );
             let data = filtered.as_slice();
+            // tmux's `server_client_handle_key` tail: a key promotes its client
+            // to the latest one of the window it is looking at. Focus reports
+            // are excluded there, and are already out of the stream here.
+            if !data.is_empty() {
+                state.borrow_mut().update_latest_client(
+                    &self.attachments.render_attachment.client_name(),
+                    self.compositor.target.session_id,
+                );
+            }
             self.compositor.input.key_prompt.clear();
             let mut i = 0;
             while i < data.len() {
