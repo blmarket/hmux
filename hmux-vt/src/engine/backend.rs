@@ -166,6 +166,20 @@ impl PaneScreen {
         }
     }
 
+    /// The allocated extents summed over every row: tmux's `cellsize` and
+    /// `extdsize` totals, which are what the `#{history_*_bytes}` variables
+    /// price. Row metadata alone, so this walks rows rather than cells — a
+    /// snapshot would materialize every cell in the history to reach the same
+    /// two numbers.
+    pub fn grid_extents(&self) -> (usize, usize) {
+        let grid = &self.engine.screen.grid;
+        (0..grid.total())
+            .filter_map(|py| grid.line(py))
+            .fold((0, 0), |(cells, extended), line| {
+                (cells + line.size(), extended + line.extd())
+            })
+    }
+
     /// The *inactive* screen — the one the alternate-screen switch displaced —
     /// materialized, or `None` when no alternate screen is in use.
     ///

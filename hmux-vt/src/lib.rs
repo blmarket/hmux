@@ -72,8 +72,8 @@ pub use parser::StringEnd;
 
 // The screen: the grid itself and the values reading it produces.
 pub use screen::{
-    CaptureExtent, CellSemantic, CellWidth, Grid, GridCell, GridDims, GridRow, PaneScreen,
-    RowExtent, RowFlags, ScreenOptions, ScreenSnapshot, mode,
+    CaptureExtent, CellSemantic, CellText, CellWidth, Grid, GridCell, GridDims, GridRow,
+    PaneScreen, RowExtent, RowFlags, ScreenOptions, ScreenSnapshot, mode,
 };
 
 // The key and mouse identities an encode takes.

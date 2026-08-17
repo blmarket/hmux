@@ -19,7 +19,7 @@ use super::grid::Grid as EngineGrid;
 use super::screen::Screen;
 use crate::screen::mode;
 use crate::screen::{
-    CaptureExtent, CellSemantic, CellWidth, Grid, GridCell, GridRow, RowExtent, RowFlags,
+    CaptureExtent, CellSemantic, CellText, CellWidth, Grid, GridCell, GridRow, RowExtent, RowFlags,
 };
 
 use super::grid::line_flag;
@@ -106,17 +106,14 @@ fn snapshot_cell(screen: &Screen, cell: &Cell, semantic: CellSemantic, written: 
     // An erase counts as nothing written, even though it touched the cell.
     let empty = !written || cell.is_padding() || cell.flags & flag::CLEARED != 0;
     let text = if empty {
-        String::new()
+        CellText::EMPTY
     } else {
-        cell.data.text().to_string()
+        CellText::from(cell.data.text())
     };
     // A cell's `link` indexes the screen's hyperlink table. The `id=` a
     // sequence carried stays in that table: `capture-pane -e` re-emits it from
     // there, and a snapshot reader wants the URI and the identity below.
-    let hyperlink = screen
-        .hyperlinks
-        .get(cell.link)
-        .map(|(uri, _)| uri.to_string());
+    let hyperlink = screen.hyperlinks.uri(cell.link);
     // A link the table has forgotten reads as no link at all, so the identity
     // goes with it: tmux's readers skip a cell whose `hyperlinks_get` fails
     // exactly as they skip one whose `link` is zero.
