@@ -879,7 +879,8 @@ impl ServerState {
                             None
                         }
                         "start-of-line" => {
-                            state.cursor.col = 0;
+                            copy_reader_start_of_line(&mut state.cursor, &state.grid);
+                            ensure_copy_cursor_visible(state);
                             None
                         }
                         "cursor-left" => {
@@ -906,11 +907,13 @@ impl ServerState {
                             None
                         }
                         "back-to-indentation" => {
-                            state.cursor.col = copy_first_nonblank(&state.grid, state.cursor.row);
+                            copy_reader_back_to_indentation(&mut state.cursor, &state.grid);
+                            ensure_copy_cursor_visible(state);
                             None
                         }
                         "end-of-line" => {
-                            state.cursor.col = copy_cursor_limit(&state.grid, state.cursor.row, vi);
+                            copy_reader_end_of_line(&mut state.cursor, &state.grid, vi);
+                            ensure_copy_cursor_visible(state);
                             None
                         }
                         "top-line" => {
@@ -1100,8 +1103,7 @@ impl ServerState {
                             select_copy_line(state, vi);
                             for _ in 1..prefix {
                                 move_copy_row(state, false, vi);
-                                state.cursor.col =
-                                    copy_cursor_limit(&state.grid, state.cursor.row, vi);
+                                copy_reader_end_of_line(&mut state.cursor, &state.grid, vi);
                             }
                             None
                         }
@@ -1213,14 +1215,14 @@ impl ServerState {
                         }
                         "previous-word" => {
                             for _ in 0..prefix {
-                                move_previous(&mut state.cursor, &state.grid, vi, separators);
+                                move_previous(&mut state.cursor, &state.grid, vi, separators, true);
                             }
                             ensure_copy_cursor_visible(state);
                             None
                         }
                         "previous-space" => {
                             for _ in 0..prefix {
-                                move_previous(&mut state.cursor, &state.grid, vi, "");
+                                move_previous(&mut state.cursor, &state.grid, vi, "", true);
                             }
                             ensure_copy_cursor_visible(state);
                             None

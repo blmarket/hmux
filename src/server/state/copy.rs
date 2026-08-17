@@ -831,7 +831,7 @@ pub(super) fn move_copy_matching_bracket(state: &mut CopyState, backward: bool, 
             }
         } else if !vi {
             let mut cursor = original;
-            move_previous(&mut cursor, &state.grid, false, "}])");
+            move_previous(&mut cursor, &state.grid, false, "}])", true);
             position_copy_cursor(state, cursor.row, cursor.col);
         }
         return;
@@ -990,59 +990,48 @@ pub(super) fn synchronize_copy_selection(state: &mut CopyState) {
 }
 
 pub(super) fn select_copy_line(state: &mut CopyState, vi: bool) {
-    let row = state.cursor.row;
-    let end = copy_cursor_limit(&state.grid, row, vi);
-    state.cursor.col = end;
+    copy_reader_start_of_line(&mut state.cursor, &state.grid);
+    let anchor = (state.cursor.row, state.cursor.col);
+    copy_reader_end_of_line(&mut state.cursor, &state.grid, vi);
     state.selection = Some(CopySelection {
-        anchor: (row, 0),
-        end: (row, end),
+        anchor,
+        end: (state.cursor.row, state.cursor.col),
         active: true,
     });
 }
 
-fn copy_word_class(grid: &Grid, cursor: &CopyCursor, separators: &str) -> u8 {
-    if copy_cell_in_set(grid, cursor, " \t") {
-        0
-    } else if copy_cell_in_set(grid, cursor, separators) {
-        1
-    } else {
-        2
-    }
-}
-
+/// tmux's `window_copy_cmd_select_word`, built out of the same wrap-following
+/// word motions as `previous-word` and `next-word-end` so that a word straddling
+/// the right margin is selected whole.
 pub(super) fn select_copy_word(state: &mut CopyState, vi: bool, separators: &str) {
-    let row = state.cursor.row;
-    let length = copy_line_length(&state.grid, row);
-    if length == 0 {
+    if state.grid.rows.is_empty() {
         return;
     }
-    let col = state.cursor.col.min(length - 1);
-    let cursor = CopyCursor { row, col };
-    let class = copy_word_class(&state.grid, &cursor, separators);
-    let mut start = col;
-    while start > 0 {
-        let candidate = CopyCursor {
-            row,
-            col: start - 1,
+    move_previous(&mut state.cursor, &state.grid, vi, separators, false);
+    let anchor = (state.cursor.row, state.cursor.col);
+
+    // tmux's "handle single character words": the word ends where it starts
+    // unless the cell after it holds text, and that cell is on the next row
+    // when the word starts in the last column of a wrapped one.
+    let mut next = CopyCursor {
+        row: anchor.0,
+        col: anchor.1 + 1,
+    };
+    if next.col > state.grid.cols.saturating_sub(1) as usize && state.grid.rows[anchor.0].wrapped {
+        next = CopyCursor {
+            row: anchor.0 + 1,
+            col: 0,
         };
-        if copy_word_class(&state.grid, &candidate, separators) != class {
-            break;
-        }
-        start -= 1;
     }
-    let mut end = col + 1;
-    while end < length {
-        let candidate = CopyCursor { row, col: end };
-        if copy_word_class(&state.grid, &candidate, separators) != class {
-            break;
-        }
-        end += 1;
+    if anchor.1 >= copy_line_length(&state.grid, anchor.0)
+        || !copy_cell_in_set(&state.grid, &next, " \t")
+    {
+        move_next_end(&mut state.cursor, &state.grid, vi, separators);
     }
-    let endpoint = if vi { end - 1 } else { end };
-    state.cursor.col = endpoint;
+
     state.selection = Some(CopySelection {
-        anchor: (row, start),
-        end: (row, endpoint),
+        anchor,
+        end: (state.cursor.row, state.cursor.col),
         active: true,
     });
 }
@@ -1608,37 +1597,92 @@ pub(super) fn copy_reader_cursor_left(cursor: &mut CopyCursor, grid: &Grid, wrap
     }
 }
 
-pub(super) fn move_previous(cursor: &mut CopyCursor, grid: &Grid, vi: bool, separators: &str) {
+/// tmux's `grid_reader_cursor_start_of_line` with wrapping, as
+/// `window_copy_cursor_start_of_line` always asks for it.
+///
+/// A soft-wrapped row is a continuation, not a line of its own, so the logical
+/// line starts on the first row above that nothing wrapped into.
+pub(super) fn copy_reader_start_of_line(cursor: &mut CopyCursor, grid: &Grid) {
+    while cursor.row > 0 && grid.rows[cursor.row - 1].wrapped {
+        cursor.row -= 1;
+    }
+    cursor.col = 0;
+}
+
+/// tmux's `grid_reader_cursor_end_of_line` with wrapping, followed by its
+/// `window_copy_cursor_limit`: walk down while the row wraps into the next one,
+/// then stop at that row's own limit.
+pub(super) fn copy_reader_end_of_line(cursor: &mut CopyCursor, grid: &Grid, vi: bool) {
+    let last_row = grid.rows.len().saturating_sub(1);
+    while cursor.row < last_row && grid.rows[cursor.row].wrapped {
+        cursor.row += 1;
+    }
+    cursor.col = copy_cursor_limit(grid, cursor.row, vi);
+}
+
+/// tmux's `grid_reader_cursor_back_to_indentation`: the first non-blank cell of
+/// the logical line, which can begin above a soft-wrapped row and run on below
+/// it. A line with nothing on it leaves the cursor where it was.
+pub(super) fn copy_reader_back_to_indentation(cursor: &mut CopyCursor, grid: &Grid) {
+    let original = cursor.clone();
+    copy_reader_start_of_line(cursor, grid);
+    let last_row = grid.rows.len().saturating_sub(1);
+    loop {
+        let row = cursor.row;
+        let found = (0..copy_line_length(grid, row))
+            .find(|&col| !copy_cell_in_set(grid, &CopyCursor { row, col }, " \t"));
+        if let Some(col) = found {
+            cursor.col = col;
+            return;
+        }
+        if row == last_row || !grid.rows[row].wrapped {
+            break;
+        }
+        cursor.row += 1;
+    }
+    *cursor = original;
+}
+
+/// tmux's `grid_reader_cursor_previous_word`; `already` is its argument of the
+/// same name, set when the caller wants the word *before* the cursor rather
+/// than the start of the word the cursor is already inside.
+pub(super) fn move_previous(
+    cursor: &mut CopyCursor,
+    grid: &Grid,
+    vi: bool,
+    separators: &str,
+    already: bool,
+) {
     if grid.rows.is_empty() {
         return;
     }
     let stop_at_eol = !vi;
-    let word_is_letters;
-
-    loop {
-        if cursor.col > 0 {
-            cursor.col -= 1;
-            if !copy_cell_in_set(grid, cursor, " \t") {
-                word_is_letters = !copy_cell_in_set(grid, cursor, separators);
-                break;
-            }
-        } else {
-            if cursor.row == 0 {
-                return;
-            }
-            cursor.row -= 1;
-            cursor.col = copy_line_length(grid, cursor.row);
-            if stop_at_eol && cursor.col > 0 {
+    let word_is_letters = if already || copy_cell_in_set(grid, cursor, " \t") {
+        loop {
+            if cursor.col > 0 {
                 cursor.col -= 1;
-                let at_eol = copy_cell_in_set(grid, cursor, " \t");
-                cursor.col += 1;
-                if at_eol {
-                    word_is_letters = false;
-                    break;
+                if !copy_cell_in_set(grid, cursor, " \t") {
+                    break !copy_cell_in_set(grid, cursor, separators);
+                }
+            } else {
+                if cursor.row == 0 {
+                    return;
+                }
+                cursor.row -= 1;
+                cursor.col = copy_line_length(grid, cursor.row);
+                if stop_at_eol && cursor.col > 0 {
+                    cursor.col -= 1;
+                    let at_eol = copy_cell_in_set(grid, cursor, " \t");
+                    cursor.col += 1;
+                    if at_eol {
+                        break false;
+                    }
                 }
             }
         }
-    }
+    } else {
+        !copy_cell_in_set(grid, cursor, separators)
+    };
 
     loop {
         let old = cursor.clone();
@@ -1912,11 +1956,11 @@ pub(super) fn copy_selection(state: &CopyState, vi: bool) -> String {
 
 pub(super) fn copy_from_cursor_to_line_end(state: &CopyState, vi: bool) -> String {
     let mut temporary = state.clone();
-    let row = temporary.cursor.row;
-    let end = copy_cursor_limit(&temporary.grid, row, vi);
+    let anchor = (temporary.cursor.row, temporary.cursor.col);
+    copy_reader_end_of_line(&mut temporary.cursor, &temporary.grid, vi);
     temporary.selection = Some(CopySelection {
-        anchor: (row, temporary.cursor.col),
-        end: (row, end),
+        anchor,
+        end: (temporary.cursor.row, temporary.cursor.col),
         active: false,
     });
     copy_selection(&temporary, vi)
@@ -1924,11 +1968,12 @@ pub(super) fn copy_from_cursor_to_line_end(state: &CopyState, vi: bool) -> Strin
 
 pub(super) fn copy_current_line(state: &CopyState, vi: bool) -> String {
     let mut temporary = state.clone();
-    let row = temporary.cursor.row;
-    let end = copy_cursor_limit(&temporary.grid, row, vi);
+    copy_reader_start_of_line(&mut temporary.cursor, &temporary.grid);
+    let anchor = (temporary.cursor.row, temporary.cursor.col);
+    copy_reader_end_of_line(&mut temporary.cursor, &temporary.grid, vi);
     temporary.selection = Some(CopySelection {
-        anchor: (row, 0),
-        end: (row, end),
+        anchor,
+        end: (temporary.cursor.row, temporary.cursor.col),
         active: false,
     });
     copy_selection(&temporary, vi)
