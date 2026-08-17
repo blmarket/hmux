@@ -1398,13 +1398,16 @@ impl ResumableCommandQueue {
     /// Turn every notification raised while the last command ran into hook
     /// bodies, in the order the mutations happened.
     fn plan_notifications(&self, state: &SharedState) -> Vec<Vec<SharedQueueItem>> {
-        if self.context.suppress_notifications {
-            return Vec::new();
-        }
         let notifications = {
             let mut state = state.borrow_mut();
             state.take_notifications()
         };
+        // The latch is tmux's `notify_add` dropping a notification raised under
+        // `CMDQ_STATE_NOHOOKS`, so it has to be *dropped* here rather than left
+        // pending: an outer frame without the latch would otherwise fire it.
+        if self.context.suppress_notifications {
+            return Vec::new();
+        }
         notifications
             .into_iter()
             .flat_map(|notification| {
@@ -1660,8 +1663,12 @@ pub(crate) fn take_client_file_after_hooks(
     let vars = hook_command_vars(&hook, &normalized, &lexed);
     let mut requests = Vec::new();
     push_event_hook(&hook, lexed.value('t'), vars, st, context, &mut requests);
+    // Draining unconditionally is the latch: a notification raised under it is
+    // dropped where it was raised, as tmux's `notify_add` does, rather than
+    // left for a frame that does not carry the latch.
+    let notifications = st.take_notifications();
     if !context.suppress_notifications {
-        for notification in st.take_notifications() {
+        for notification in notifications {
             push_event_hook(
                 &notification.name,
                 notification.target.as_deref(),

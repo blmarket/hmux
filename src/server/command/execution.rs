@@ -123,6 +123,22 @@ impl RunShell {
 
     async fn execute(mut self, context: &mut ExecContext<'_>) -> SharedCommandExecution {
         self.expand_command(context);
+        if self.as_commands && self.background {
+            // `-C` never runs a child, `-b` or not (`cmd_run_shell_timer` only
+            // reaches `job_run` when there is no prepared command list). With
+            // `-b` the line is appended to the client's queue rather than
+            // spliced in here, so the rest of this command line runs first.
+            let mut result = CommandResult::ok("");
+            if let Some(line) = self.command.clone() {
+                result
+                    .background_commands
+                    .push(BackgroundCommandRequest::Ready {
+                        command: Some(line),
+                        context: context.client().clone(),
+                    });
+            }
+            return SharedCommandExecution::completed(result);
+        }
         if self.background {
             let (command, jobs) = {
                 let state = context.state().borrow_mut();
