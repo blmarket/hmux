@@ -235,7 +235,7 @@ pub(crate) fn apply_visual_token(
             } else if let Some(value) = token.strip_prefix("bg=") {
                 patch.bg = Some(parse_colour(value).ok_or(())?);
             } else if let Some(value) = token.strip_prefix("us=") {
-                patch.underline_colour = Some(parse_colour(value).ok_or(())?);
+                patch.underline_colour = Some(parse_underline_colour(value).ok_or(())?);
             } else {
                 return Ok(VisualToken::NotVisual);
             }
@@ -249,6 +249,14 @@ pub(crate) fn split_style_parts(value: &str) -> impl Iterator<Item = &str> {
     value
         .split(|character: char| character == ',' || character.is_ascii_whitespace())
         .filter(|part| !part.is_empty())
+}
+
+pub(crate) fn invalid_underline_colour(value: &str) -> Option<&str> {
+    split_style_parts(value).find(|token| {
+        token
+            .strip_prefix("us=")
+            .is_some_and(|value| parse_underline_colour(value).is_none())
+    })
 }
 
 /// tmux's `colour_totheme`: whether a colour reads as a dark or light
@@ -355,6 +363,14 @@ pub(crate) fn parse_colour(value: &str) -> Option<Colour> {
         return parts.next().is_none().then_some(colour);
     }
     value.parse::<u8>().ok().map(Colour::Palette)
+}
+
+fn parse_underline_colour(value: &str) -> Option<Colour> {
+    let value = value.trim();
+    if value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    parse_colour(value)
 }
 
 #[derive(Clone, Debug, Default)]

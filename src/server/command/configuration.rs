@@ -1,6 +1,7 @@
 //! The option, hook, and environment commands.
 
 use super::*;
+use crate::server::style;
 
 #[derive(Clone, Debug)]
 pub(in crate::server) enum Command {
@@ -517,6 +518,11 @@ impl SetOption {
             value = canonical_command_list(&value, st);
         }
         if !unset {
+            if options::is_style_option(name) {
+                if let Some(token) = style::invalid_underline_colour(&value) {
+                    return CommandResult::err(format!("invalid style: {token}\n"));
+                }
+            }
             if let Some((min, max)) = options::option_number_range(name) {
                 match parse_option_number(&value) {
                     Err(()) => return CommandResult::err(format!("value is invalid: {value}\n")),
