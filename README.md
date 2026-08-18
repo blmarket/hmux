@@ -88,6 +88,13 @@ model for a while after switching sessions in place.
   runs longer than 10ms and throws its marks away, so on a wide grid or a busy
   machine `#{search_present}` and `#{search_count}` report nothing. hmux always
   reports the marks it found, which makes the same search reproducible.
+- **A suspended command owns its queue until the job it started is over.**
+  hmux's command queue awaits a job — `run-shell`, `if-shell` — where tmux
+  dispatches it and resumes the item from the job's completion callback. Three
+  things follow for a control client: a suspended `run-shell`'s `%begin`/`%end`
+  guard stays open across the whole job and its output lands inside the guard,
+  `%output` notifications are held for the duration, and stdin EOF does not drop
+  the commands still queued behind the suspension.
 
 ## Usage
 
