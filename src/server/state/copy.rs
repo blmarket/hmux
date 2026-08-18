@@ -16,6 +16,10 @@ pub(crate) struct CopyState {
     pub(crate) cursor: CopyCursor,
     /// Horizontal goal retained while vertical movement crosses short rows.
     pub(crate) desired_col: usize,
+    /// The length of the row the goal was recorded on — tmux's `lastsx`. A
+    /// cursor that sat at the end of its row lands at the end of the row it
+    /// moves to rather than at that column.
+    pub(crate) desired_line_end: usize,
     pub(crate) selection: Option<CopySelection>,
     pub(crate) rectangle: bool,
     pub(crate) selection_mode: CopySelectionMode,
@@ -294,6 +298,7 @@ pub(super) fn view_copy_state(output: Vec<u8>, cols: u16, rows: u16) -> io::Resu
             col: col as usize,
         },
         desired_col: col as usize,
+        desired_line_end: 0,
         selection: None,
         rectangle: false,
         selection_mode: CopySelectionMode::Character,
@@ -509,18 +514,52 @@ pub(super) fn ensure_copy_cursor_visible(state: &mut CopyState) {
 }
 
 pub(super) fn move_copy_row(state: &mut CopyState, up: bool, vi: bool) {
-    if up {
-        state.cursor.row = state.cursor.row.saturating_sub(1);
-    } else {
-        state.cursor.row = state
-            .cursor
-            .row
-            .saturating_add(1)
-            .min(state.grid.rows.len().saturating_sub(1));
+    move_copy_vertically(state, vi, |state| {
+        if up {
+            state.cursor.row = state.cursor.row.saturating_sub(1);
+        } else {
+            state.cursor.row = state
+                .cursor
+                .row
+                .saturating_add(1)
+                .min(state.grid.rows.len().saturating_sub(1));
+        }
+    });
+}
+
+/// One vertical move, with the column tmux's `lastcx`/`lastsx` pair chooses:
+/// the recorded goal, or the end of the row moved to when the cursor was at
+/// the end of the row it left.
+fn move_copy_vertically(
+    state: &mut CopyState,
+    vi: bool,
+    move_rows: impl FnOnce(&mut CopyState),
+) {
+    // tmux's `norectsel`: a rectangle selection is not bound to the text, so
+    // the cursor keeps the column it is dragging the corner by.
+    if state.selection.is_some() && state.rectangle {
+        move_rows(state);
+        state.cursor.col = state
+            .desired_col
+            .min(copy_cursor_limit(&state.grid, state.cursor.row, vi));
+        ensure_copy_cursor_visible(state);
+        return;
     }
-    state.cursor.col = state
-        .desired_col
-        .min(copy_cursor_limit(&state.grid, state.cursor.row, vi));
+    let left = copy_line_length(&state.grid, state.cursor.row);
+    if state.cursor.col != left {
+        state.desired_col = state.cursor.col;
+        state.desired_line_end = left;
+    }
+    let column = state.desired_col;
+    move_rows(state);
+    let length = copy_line_length(&state.grid, state.cursor.row);
+    let limit = copy_cursor_limit(&state.grid, state.cursor.row, vi);
+    state.cursor.col = if (column >= state.desired_line_end && column != length) || column > length
+    {
+        limit
+    } else {
+        column.min(limit)
+    };
     ensure_copy_cursor_visible(state);
 }
 
@@ -530,24 +569,22 @@ pub(super) fn move_copy_page(state: &mut CopyState, up: bool, vi: bool) {
 }
 
 pub(super) fn move_copy_rows(state: &mut CopyState, up: bool, amount: usize, vi: bool) {
-    if up {
-        state.cursor.row = state.cursor.row.saturating_sub(amount);
-        state.scroll = state
-            .scroll
-            .saturating_add(amount)
-            .min(state.grid.scrollback_rows);
-    } else {
-        state.cursor.row = state
-            .cursor
-            .row
-            .saturating_add(amount)
-            .min(state.grid.rows.len().saturating_sub(1));
-        state.scroll = state.scroll.saturating_sub(amount);
-    }
-    state.cursor.col = state
-        .desired_col
-        .min(copy_cursor_limit(&state.grid, state.cursor.row, vi));
-    ensure_copy_cursor_visible(state);
+    move_copy_vertically(state, vi, |state| {
+        if up {
+            state.cursor.row = state.cursor.row.saturating_sub(amount);
+            state.scroll = state
+                .scroll
+                .saturating_add(amount)
+                .min(state.grid.scrollback_rows);
+        } else {
+            state.cursor.row = state
+                .cursor
+                .row
+                .saturating_add(amount)
+                .min(state.grid.rows.len().saturating_sub(1));
+            state.scroll = state.scroll.saturating_sub(amount);
+        }
+    });
 }
 
 #[derive(Clone, Copy)]

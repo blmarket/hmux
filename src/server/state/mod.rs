@@ -1436,6 +1436,7 @@ mod tests {
             backing: CopyBacking::PaneSnapshot,
             cursor: CopyCursor { row: 0, col: 8 },
             desired_col: 8,
+            desired_line_end: 0,
             selection: Some(CopySelection {
                 anchor: (0, 0),
                 end: (0, 8),
