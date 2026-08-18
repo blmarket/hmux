@@ -63,10 +63,12 @@ impl BindKey {
     /// Defaults and user replacements share the same semantic tables consumed by
     /// attached clients.
     fn execute(self, st: &mut ServerState) -> CommandResult {
-        let table = if self.root {
-            "root"
-        } else {
-            self.table.as_deref().unwrap_or("prefix")
+        // tmux's `cmd_bind_key_exec` reads `-T` first, so an explicit table wins
+        // over `-n`'s root shorthand.
+        let table = match self.table.as_deref() {
+            Some(table) => table,
+            None if self.root => "root",
+            None => "prefix",
         };
         let Some(key_name) = self.operands.first() else {
             return CommandResult::err("missing key\n");
