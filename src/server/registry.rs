@@ -355,7 +355,7 @@ pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
         getopt: "2t:", arity: (0, Some(0)),
         usage: "[-2] [-t target-pane]";
     "server-access" => typed!(Server, Access, server::ServerAccess),
-        getopt: "adlrwt:", arity: (0, Some(1)),
+        getopt: "adlrw", arity: (0, Some(1)),
         usage: "[-adlrw] [-t target-pane] [user]";
     "set-buffer" ("setb") => typed!(Buffer, Set, buffers::SetBuffer),
         getopt: "awb:n:t:", arity: (0, Some(1)),
