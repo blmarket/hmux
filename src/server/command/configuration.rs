@@ -669,7 +669,18 @@ impl SetOption {
                 let aliases = st.command_aliases();
                 let body = match ExecutableCommand::compile(&value, &aliases) {
                     Ok(body) => body,
-                    Err(error) => return CommandResult::err(error),
+                    Err(error) => {
+                        // tmux clears the array before it parses the value, so a
+                        // body that does not compile leaves the option present
+                        // and empty rather than untouched.
+                        if index.is_none() && !self.append {
+                            let table = target.local_mut(st);
+                            table.clear_array(name);
+                            table.set(name, "");
+                            st.option_changed(name);
+                        }
+                        return CommandResult::err(error);
+                    }
                 };
                 apply_hook(st, target, hook, index, self.append, Some(body));
             }
