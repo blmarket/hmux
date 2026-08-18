@@ -65,6 +65,10 @@ pub struct OutputPolicy {
     /// `pane-colours`, packed as `0xrrggbb` by index — the palette a query
     /// falls back to when the pane has set nothing itself.
     pub palette: Vec<Option<u32>>,
+    /// `extended-keys`: whether a pane's `modifyOtherKeys` request is accepted
+    /// at all. tmux decides this where the request is parsed, so a request made
+    /// while the option was off stays refused after it is turned on.
+    pub extended_keys: bool,
 }
 
 /// The options' own defaults, which a pane parses against until the server's
@@ -78,6 +82,7 @@ impl Default for OutputPolicy {
             input_buffer_size: INPUT_BUFFER_DEFAULT_SIZE,
             cursor_style: 0,
             palette: Vec::new(),
+            extended_keys: true,
         }
     }
 }
@@ -376,6 +381,19 @@ impl ObserverState {
             return;
         };
         let (private, final_byte) = (*private, *final_byte);
+        // tmux's `INPUT_CSI_MODSET`: with `extended-keys off` the pane's
+        // `modifyOtherKeys` request is refused where it is parsed, so turning
+        // the option on later does not revive it.
+        if !policy.extended_keys
+            && private == Some(b'>')
+            && intermediates.is_empty()
+            && matches!(final_byte, b'm' | b'n')
+            && params
+                .first()
+                .is_none_or(|param| param.get(0) == Some(4) || param.get(4) == Some(4))
+        {
+            return;
+        }
         match (private, intermediates.as_slice(), final_byte) {
             // DECSET / DECRST.
             (Some(b'?'), [], b'h' | b'l') => {

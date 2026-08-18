@@ -331,6 +331,9 @@ impl ServerState {
                 });
                 node.pane.set_output_policy(PaneOutputPolicy {
                     alternate_screen: options.get("alternate-screen") != Some("off"),
+                    // Server-scoped, and read where the pane's request is
+                    // parsed rather than where its keys are encoded.
+                    extended_keys: self.server_options().get("extended-keys") != Some("off"),
                     allow_set_title: options.get("allow-set-title") != Some("off"),
                     passthrough: match options.get("allow-passthrough") {
                         Some("on") => PassthroughPolicy::Visible,
@@ -2133,12 +2136,9 @@ impl ServerState {
 
     /// Apply the `extended-keys` option to what a pane asked for.
     ///
-    /// tmux latches this when the pane's request arrives, so a request made
-    /// while the option was `off` stays refused even if the option is turned on
-    /// afterwards. Reading the option here instead means a mid-session change
-    /// applies to requests the pane already made — the only difference, and one
-    /// that needs both an application that asked for extended keys and a user
-    /// who changed the option afterwards. See README.md.
+    /// A request made while the option was `off` never reached the pane's
+    /// modes — the parser refuses it there, as tmux's `INPUT_CSI_MODSET` does —
+    /// so what is left here is the `always` upgrade and the option's own state.
     fn pane_key_modes(&self, state: PaneKeyState) -> PaneKeyModes {
         let extended = match self.server_options().get("extended-keys") {
             // `off`: requests are refused outright.

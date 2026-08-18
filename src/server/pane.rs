@@ -427,6 +427,7 @@ pub(crate) struct NativePaneObservation {
 /// so each field is an atomic rather than behind the state lock.
 struct PaneOutputPolicyCell {
     alternate_screen: Cell<bool>,
+    extended_keys: Cell<bool>,
     allow_set_title: Cell<bool>,
     passthrough: Cell<u8>,
     input_buffer_size: Cell<u32>,
@@ -439,6 +440,7 @@ impl PaneOutputPolicyCell {
     fn load(&self) -> PaneOutputPolicy {
         PaneOutputPolicy {
             alternate_screen: self.alternate_screen.get(),
+            extended_keys: self.extended_keys.get(),
             allow_set_title: self.allow_set_title.get(),
             passthrough: match self.passthrough.get() {
                 1 => PassthroughPolicy::Visible,
@@ -453,6 +455,7 @@ impl PaneOutputPolicyCell {
 
     fn store(&self, policy: PaneOutputPolicy) {
         self.alternate_screen.set(policy.alternate_screen);
+        self.extended_keys.set(policy.extended_keys);
         self.allow_set_title.set(policy.allow_set_title);
         self.passthrough.set(match policy.passthrough {
             PassthroughPolicy::Off => 0,
@@ -475,6 +478,7 @@ impl Default for PaneOutputPolicyCell {
     fn default() -> Self {
         let cell = Self {
             alternate_screen: Cell::default(),
+            extended_keys: Cell::default(),
             allow_set_title: Cell::default(),
             passthrough: Cell::default(),
             input_buffer_size: Cell::default(),
