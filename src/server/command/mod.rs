@@ -2958,14 +2958,13 @@ pub(super) fn vars_full(
                         "0"
                     },
                 )
-                // The pid of the process the pane forked for its pty; empty once
-                // there is no child left to report.
+                // The pid of the process the pane forked for its pty; zero for a
+                // pane that never had a child of its own, as tmux reports.
                 .set(
                     "pane_pid",
                     p.pane
                         .child_pid()
-                        .map(|pid| pid.to_string())
-                        .unwrap_or_default(),
+                        .map_or_else(|| "0".to_string(), |pid| pid.to_string()),
                 )
                 .set("pane_tty", p.pane.tty_name().unwrap_or_default())
                 // State flags not derived from the terminal grid. A pane is
