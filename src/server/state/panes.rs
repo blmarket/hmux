@@ -1318,6 +1318,7 @@ impl ServerState {
         dst: &str,
         before: bool,
         select: bool,
+        full: bool,
         direction: SplitDirection,
         new_size: Option<u16>,
     ) -> io::Result<()> {
@@ -1382,10 +1383,13 @@ impl ServerState {
             None => win.panes.len(),
         };
         let old_active = win.active;
-        if !win
-            .layout
-            .split_sized(layout_target_id, node.id, direction, before, new_size)
-        {
+        let split_ok = if full {
+            win.layout.split_full(node.id, direction, before, new_size)
+        } else {
+            win.layout
+                .split_sized(layout_target_id, node.id, direction, before, new_size)
+        };
+        if !split_ok {
             return Err(io::Error::other("target pane is absent from layout"));
         }
         win.panes.insert(insert_at, node);

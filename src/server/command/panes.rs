@@ -963,7 +963,7 @@ pub(in crate::server) struct MovePane {
     /// `-d`: do not make the moved pane active.
     detached: bool,
     /// `-f`: creates new pane spanning full window width or height.
-    _full: bool,
+    full: bool,
     /// `-h`: horizontal split.
     horizontal: bool,
     /// `-v`: vertical split.
@@ -982,7 +982,7 @@ impl MovePane {
         Ok(Self {
             before: args.has('b'),
             detached: args.has('d'),
-            _full: args.has('f'),
+            full: args.has('f'),
             horizontal: args.has('h'),
             _vertical: args.has('v'),
             size: args.value('l').map(str::to_string),
@@ -1011,45 +1011,27 @@ impl MovePane {
         } else {
             SplitDirection::TopBottom
         };
-        let new_size = {
-            let axis_total = {
-                let sess = &st.sessions()[target_resolved.session];
-                let win = st.window_for_link(&sess.windows[target_resolved.window]);
-                let rect = win.pane_rect(win.panes[target_resolved.pane].id).unwrap_or(
-                    super::super::state::PaneRect {
-                        top: 0,
-                        left: 0,
-                        height: win.rows,
-                        width: win.cols,
-                    },
-                );
-                match direction {
-                    SplitDirection::LeftRight => rect.width,
-                    SplitDirection::TopBottom => rect.height,
-                }
-            };
-            let percentage_of = |value: &str| {
-                value
-                    .parse::<u32>()
-                    .ok()
-                    .map(|percentage| (u32::from(axis_total) * percentage / 100) as u16)
-            };
-            let parsed = if let Some(value) = self.size.as_deref() {
-                Some(match value.strip_suffix('%') {
-                    Some(percentage) => percentage_of(percentage),
-                    None => value.parse::<u16>().ok(),
-                })
-            } else {
-                self.percentage.as_deref().map(percentage_of)
-            };
-            match parsed {
-                Some(None) => return CommandResult::err("create pane failed: size invalid\n"),
-                Some(size) => size,
-                None => None,
-            }
+        let new_size = match tiled_split_size(
+            st,
+            target_resolved,
+            direction,
+            self.full,
+            self.size.as_deref(),
+            self.percentage.as_deref(),
+        ) {
+            Ok(size) => size,
+            Err(error) => return error,
         };
         let select = !self.detached;
-        match st.move_pane(&source, &target, self.before, select, direction, new_size) {
+        match st.move_pane(
+            &source,
+            &target,
+            self.before,
+            select,
+            self.full,
+            direction,
+            new_size,
+        ) {
             Ok(()) => CommandResult::ok(""),
             Err(error) => {
                 command_target_error_candidates(error, &[(&source, "pane"), (&target, "pane")])
