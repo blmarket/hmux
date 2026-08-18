@@ -26,6 +26,7 @@ pub(in crate::server) mod sessions;
 pub(crate) mod suspend;
 pub(in crate::server) mod windows;
 
+pub(in crate::server) use clients::template_replace;
 pub(in crate::server) use identity::Command;
 
 pub(crate) use executable::{ExecutableCommand, LazyCommand};

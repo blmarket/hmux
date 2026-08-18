@@ -1345,9 +1345,15 @@ impl DisplayPanesOverlay {
                 format!("%{pane_id}"),
             ]
         } else {
+            let pane = format!("%{pane_id}");
             self.command
                 .iter()
-                .map(|word| word.replace("%%", &format!("%{pane_id}")))
+                // The template was parsed before it reached the overlay, so the
+                // value goes in as it stands rather than in the escaped form a
+                // later parse would need.
+                .map(|word| {
+                    super::super::command::template_replace(word, &pane, false)
+                })
                 .collect()
         };
         OverlayInputOutcome::close(0, Some(command))

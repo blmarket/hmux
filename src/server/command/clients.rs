@@ -289,10 +289,38 @@ fn validate_mode_target(target: Option<&str>, state: &ServerState) -> Result<(),
 /// The two are distinct steps at distinct times: the template is text until
 /// there is a value for it, and only the substituted line is a command.
 fn template_command(template: &str, value: &str) -> Vec<String> {
-    let expanded = template.replace("%%", value);
+    let expanded = template_replace(template, value, true);
     ExecutableCommand::compile(&expanded, &[])
         .map(|compiled| compiled.argv())
         .unwrap_or_default()
+}
+
+/// tmux's `cmd_template_replace`: the first `%%` in a template takes the value,
+/// and a third `%` after it asks for the value in the form the parse that
+/// follows needs — the metacharacters escaped.
+pub(in crate::server) fn template_replace(template: &str, value: &str, parsed: bool) -> String {
+    let mut out = String::with_capacity(template.len());
+    let mut characters = template.chars().peekable();
+    let mut replaced = false;
+    while let Some(character) = characters.next() {
+        if character != '%' || replaced || characters.peek() != Some(&'%') {
+            out.push(character);
+            continue;
+        }
+        characters.next();
+        replaced = true;
+        let quoted = characters.peek() == Some(&'%');
+        if quoted {
+            characters.next();
+        }
+        for character in value.chars() {
+            if quoted && parsed && matches!(character, '"' | '\\' | '$' | ';' | '~') {
+                out.push('\\');
+            }
+            out.push(character);
+        }
+    }
+    out
 }
 
 /// The `-F`, `-f`, `-O` and `-r` every `choose-*` command shares, as tmux's
