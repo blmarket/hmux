@@ -1195,6 +1195,9 @@ struct DrawState {
     ignore: bool,
     section: Section,
     list_align: Option<Align>,
+    /// The align the list carried, once the list has ended: tmux remaps it to
+    /// the `after` section so what follows the list is drawn behind it.
+    after_align: Option<Align>,
     list_active: bool,
     focus_start: Option<usize>,
     focus_end: Option<usize>,
@@ -1214,6 +1217,7 @@ impl DrawState {
             ignore: false,
             section: Section::Left,
             list_align: None,
+            after_align: None,
             list_active: false,
             focus_start: None,
             focus_end: None,
@@ -2010,8 +2014,10 @@ fn apply_status_style(directive: &str, state: &mut DrawState, sections: &mut Sec
                     if state.focus_start.is_some() && state.focus_end.is_none() {
                         state.focus_end = Some(sections.width(Section::List));
                     }
+                    state.after_align = state.list_align.or(Some(Align::Left));
                 }
-                state.section = section_for_align(parse_align_from(directive));
+                let align = parse_align_from(directive);
+                state.section = mapped_section(state, align);
             }
             "list=on" => {
                 state.list_active = true;
@@ -2035,7 +2041,7 @@ fn apply_status_style(directive: &str, state: &mut DrawState, sections: &mut Sec
             "noacs" => state.acs = false,
             "ignore" => state.ignore = true,
             "noignore" => state.ignore = false,
-            "noalign" => state.section = Section::Left,
+            "noalign" => state.section = mapped_section(state, Align::Left),
             _ => {
                 if let Some(value) = part.strip_prefix("fill=") {
                     if let Some(colour) = style::parse_colour(value) {
@@ -2054,7 +2060,8 @@ fn apply_status_style(directive: &str, state: &mut DrawState, sections: &mut Sec
                             | "absolute-center"
                     ) {
                         if !state.list_active {
-                            state.section = section_for_align(parse_align(value));
+                            let align = parse_align(value);
+                            state.section = mapped_section(state, align);
                         }
                     } else {
                         invalid = true;
@@ -2125,6 +2132,15 @@ fn parse_align(value: &str) -> Align {
         "absolute-centre" | "absolute-center" => Align::AbsoluteCentre,
         _ => Align::Left,
     }
+}
+
+/// The section an align names, once a list that carried the same align has
+/// ended and taken it over — tmux's `map[list_align] = AFTER`.
+fn mapped_section(state: &DrawState, align: Align) -> Section {
+    if state.after_align == Some(align) {
+        return Section::After;
+    }
+    section_for_align(align)
 }
 
 fn section_for_align(align: Align) -> Section {
@@ -2337,16 +2353,20 @@ fn put_list(row: &mut StatusRow, sections: &Sections, state: &DrawState, at: usi
         .min(full.saturating_sub(width));
     let mut target = at;
     let mut body_width = width;
-    if start > 0 && !sections.list_left.is_empty() {
-        let marker = sections.width(Section::ListLeft).min(body_width);
+    // tmux draws a marker only where the slot is wider than the marker itself,
+    // so a slot that could hold nothing else drops it instead of reserving it.
+    let left_marker = sections.width(Section::ListLeft);
+    if start > 0 && !sections.list_left.is_empty() && left_marker < body_width {
+        let marker = left_marker;
         put_section(row, sections, Section::ListLeft, target, 0, marker);
         target += marker;
         start += marker;
         body_width -= marker;
     }
     let right_hidden = start + body_width < full;
-    if right_hidden && !sections.list_right.is_empty() {
-        let marker = sections.width(Section::ListRight).min(body_width);
+    let right_marker = sections.width(Section::ListRight);
+    if right_hidden && !sections.list_right.is_empty() && right_marker < body_width {
+        let marker = right_marker;
         body_width -= marker;
         put_section(
             row,
