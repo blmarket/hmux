@@ -1033,6 +1033,7 @@ impl NativePaneObservation {
             ),
             synchronized_output: modes.synchronized_output,
             bracketed_paste: modes.bracketed_paste,
+            cursor_very_visible: modes.cursor_very_visible,
         }
     }
 
@@ -1476,6 +1477,14 @@ impl Pane {
             .map(|path| CString::new(path.as_os_str().as_encoded_bytes()))
             .transpose()
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        // tmux's `spawn_pane` does not give up when the requested directory is
+        // gone: it falls back to the home directory and then to the root, so
+        // the command still runs. Both fallbacks are built before the fork,
+        // where allocating is still safe.
+        let c_home = std::env::var_os("HOME")
+            .filter(|home| !home.is_empty())
+            .and_then(|home| CString::new(home.as_encoded_bytes()).ok());
+        let c_root = CString::new("/").expect("root path has no NUL");
 
         let ws = libc::winsize {
             ws_row: rows,
@@ -1493,8 +1502,12 @@ impl Pane {
                 // strings outlive the call in the forked address space.
                 unsafe {
                     if let Some(cwd) = &c_cwd {
-                        if libc::chdir(cwd.as_ptr()) != 0 {
-                            libc::_exit(127);
+                        if libc::chdir(cwd.as_ptr()) != 0
+                            && c_home
+                                .as_ref()
+                                .is_none_or(|home| libc::chdir(home.as_ptr()) != 0)
+                        {
+                            libc::chdir(c_root.as_ptr());
                         }
                     }
                     reset_child_signal_dispositions();
@@ -2550,6 +2563,8 @@ pub(crate) struct PaneModeSnapshot {
     /// DECSET 2026, tmux's `MODE_SYNC`: the pane asked for its output to be
     /// held back until it says the frame is done.
     pub(crate) synchronized_output: bool,
+    /// tmux's `MODE_CURSOR_VERY_VISIBLE`, which `RM 34` sets.
+    pub(crate) cursor_very_visible: bool,
 }
 
 impl PaneModeSnapshot {
@@ -2588,6 +2603,7 @@ impl PaneModeSnapshot {
                 ExtendedKeys::Off
             },
             synchronized_output: on(mode::SYNC),
+            cursor_very_visible: on(mode::CURSOR_VERY_VISIBLE),
         }
     }
 }
@@ -2612,6 +2628,7 @@ impl Default for PaneModeSnapshot {
             application_keypad: false,
             extended_keys_request: ExtendedKeys::Off,
             synchronized_output: false,
+            cursor_very_visible: false,
         }
     }
 }
@@ -2651,6 +2668,8 @@ pub(crate) struct PaneTerminalModes {
     pub(crate) synchronized_output: bool,
     /// DECSET 2004, as `#{bracket_paste_flag}`.
     pub(crate) bracketed_paste: bool,
+    /// `RM 34`, as `#{cursor_very_visible}`.
+    pub(crate) cursor_very_visible: bool,
 }
 
 impl Default for PaneTerminalModes {
@@ -2668,6 +2687,7 @@ impl Default for PaneTerminalModes {
             cursor_shape: PaneCursorShape::Default,
             synchronized_output: false,
             bracketed_paste: false,
+            cursor_very_visible: false,
         }
     }
 }

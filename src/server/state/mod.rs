@@ -321,7 +321,13 @@ pub(crate) enum ClientAction {
     Suspend,
     /// `detach-client`; `Some` is `-E`, the command the client execs instead
     /// of simply detaching (tmux's `server_client_exec`).
-    Detach(Option<String>),
+    Detach {
+        /// `-E`: what the client execs in place of exiting.
+        exec: Option<String>,
+        /// `-P`/`-x`: the client is told to hang itself up rather than exit
+        /// quietly — tmux's `MSG_DETACHKILL`.
+        hangup: bool,
+    },
     Switch {
         session_id: u32,
         /// Set when the move is the fallout of the client's old session being
@@ -386,9 +392,12 @@ pub struct Window {
     /// Whether the active pane is zoomed (`resize-pane -Z`), tmux's
     /// `#{window_zoomed_flag}`. Toggled by `resize-pane -Z`.
     pub zoomed: bool,
-    /// tmux's `w->activity_time`, which `#{window_activity}` reports. Written
-    /// once, by `window_create`, so it is the window's creation time.
-    pub(crate) activity_epoch: i64,
+    /// tmux's `w->activity_time`, which `#{window_activity}` reports in whole
+    /// seconds. Written once, by `window_create`, so it is the window's
+    /// creation time; kept in microseconds because tmux's activity sort
+    /// compares the `timeval` and two windows created in the same second still
+    /// order.
+    pub(crate) activity_micros: i64,
     /// tmux's `w->name_time`: when `automatic-rename` last re-derived this
     /// window's name. It rate-limits the re-derivation to one per
     /// `NAME_INTERVAL`.
@@ -590,6 +599,14 @@ fn next_active_point() -> u64 {
 impl Window {
     pub(crate) fn options<'a>(&'a self, globals: &'a GlobalOptions) -> OptionsView<'a> {
         OptionsView::two(&self.options, globals.window())
+    }
+
+    /// The options set directly on this window, without the global layer under
+    /// them. tmux's format tree resolves an option name against
+    /// `ft->w->options`, and `format_add_window_neighbor` walks that same table
+    /// to copy a neighbour's user options onto an entry.
+    pub(crate) fn own_options(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.options.iter()
     }
 
     /// tmux's `window_set_active_pane`: make `index` the active pane and stamp

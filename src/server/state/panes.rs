@@ -15,7 +15,7 @@ use super::layout::{resize_panes_to_layout, LayoutCell, PaneRect, SplitDirection
 use super::sizing::{DEFAULT_XPIXEL, DEFAULT_YPIXEL};
 use super::target::{pane_not_found, parse_index_target, split_pane_target, Target, TargetKind};
 use super::{
-    cursor_style_parameter, fill_spawn_ids, fill_spec_spawn_ids, now_epoch, theme_report,
+    cursor_style_parameter, fill_spawn_ids, fill_spec_spawn_ids, now_micros, theme_report,
     ClientActionResult, ExitEmpty, PaneNode, PaneSpec, RenderInvalidation, ServerState,
     TerminalReply, TerminalRequest, TerminalRequestKind, Window, Winlink, ALERT_ACTIVITY,
 };
@@ -1430,7 +1430,7 @@ impl ServerState {
     /// `swap-pane -s src -t dst`: exchange the two panes' positions. Same-window
     /// swaps are a simple positional swap; cross-window swaps exchange the pane
     /// nodes. Reports `can't find pane` on a miss.
-    pub fn swap_pane(&mut self, src: &str, dst: &str) -> io::Result<()> {
+    pub fn swap_pane(&mut self, src: &str, dst: &str, select: bool) -> io::Result<()> {
         let a = self.resolve(src).ok_or_else(|| pane_not_found(src))?;
         let b = self.resolve(dst).ok_or_else(|| pane_not_found(dst))?;
         let src_session_id = self.sessions[a.session].id;
@@ -1441,8 +1441,22 @@ impl ServerState {
         let second_id = self.window(b.session, b.window).panes[b.pane].id;
         if first_window_id == second_window_id {
             let win = self.window_mut(a.session, a.window);
+            let was_active = win.active;
             win.panes.swap(a.pane, b.pane);
             win.layout.swap_panes(first_id, second_id);
+            // tmux tracks the active pane by identity, not by position. Left
+            // selecting, it makes the destination pane active, which the swap
+            // has just moved to the source's slot; `-d` instead runs both of
+            // `cmd_swap_pane_exec`'s guards in turn, and either pane having
+            // been active leaves the source pane — now in the destination's
+            // slot — holding it.
+            win.active = if select {
+                a.pane
+            } else if was_active == a.pane || was_active == b.pane {
+                b.pane
+            } else {
+                was_active
+            };
             resize_panes_to_layout(win)?;
             self.invalidate_session(src_session_id, RenderInvalidation::LAYOUT);
             return Ok(());
@@ -1458,16 +1472,16 @@ impl ServerState {
             .windows
             .remove(&second_window_id)
             .expect("window present");
-        let first_active = first.active == a.pane;
-        let second_active = second.active == b.pane;
         std::mem::swap(&mut first.panes[a.pane], &mut second.panes[b.pane]);
         first.layout.replace_pane(first_id, second_id);
         second.layout.replace_pane(second_id, first_id);
-        if first_active {
-            second.active = b.pane;
-        }
-        if second_active {
+        // Each window keeps the slot it had active and now finds the other
+        // window's pane in it, so `-d` leaves both indices alone; selecting
+        // makes the arriving pane active in both windows, which is the same
+        // pair of indices.
+        if select {
             first.active = a.pane;
+            second.active = b.pane;
         }
         resize_panes_to_layout(&mut first)?;
         resize_panes_to_layout(&mut second)?;
@@ -1680,7 +1694,7 @@ impl ServerState {
                 active: 0,
                 last_pane: None,
                 zoomed: false,
-                activity_epoch: now_epoch(),
+                activity_micros: now_micros(),
                 name_time_micros: 0,
                 name_in_mode: false,
                 scrollbars_on_left: false,

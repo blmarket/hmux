@@ -466,9 +466,7 @@ pub(crate) fn expand_command_prompt_format(
                 agents,
                 st.marked_pane(),
             );
-            for (name, value) in st.env_iter() {
-                vars.set(name.to_string(), value);
-            }
+            st.seed_format_environment(&mut vars, st.sessions().get(resolved.session));
             if let Ok(entries) = st.format_option_entries(target.as_deref().unwrap_or_default()) {
                 for (name, value) in entries {
                     vars.set(name.to_string(), value);
@@ -725,7 +723,7 @@ fn expand_command_format(
     st: &ServerState,
     template: &str,
     vars: &Vars,
-    loops: Option<&dyn format::LoopSource>,
+    loops: Option<&dyn format::ScopedLoopSource>,
 ) -> String {
     format::expand_with_jobs(
         template,
@@ -2189,40 +2187,239 @@ impl format::FormatJobs for CommandJobs {
     }
 }
 
+impl TreeLoops<'_> {
+    /// The session an enclosing `#{S:…}` rebound to, or the anchor.
+    fn scoped_session(&self, vars: &Vars) -> usize {
+        vars.lookup("session_id")
+            .and_then(|id| id.strip_prefix('$')?.parse::<u32>().ok())
+            .and_then(|id| {
+                self.st
+                    .sessions()
+                    .iter()
+                    .position(|session| session.id == id)
+            })
+            .unwrap_or(self.session)
+    }
+
+    /// The position in `session`'s window list that an enclosing `#{W:…}`
+    /// rebound to, or the anchor.
+    fn scoped_window(&self, session: usize, vars: &Vars) -> usize {
+        vars.lookup("window_id")
+            .and_then(|id| id.strip_prefix('@')?.parse::<u32>().ok())
+            .and_then(|id| {
+                self.st.sessions()[session]
+                    .windows
+                    .iter()
+                    .position(|link| link.id == id)
+            })
+            .unwrap_or(self.window)
+    }
+}
+
 impl format::LoopSource for TreeLoops<'_> {
     fn items(&self, kind: format::LoopKind) -> Vec<Vars> {
+        format::ScopedLoopSource::items_in_scope(
+            self,
+            match kind {
+                format::LoopKind::Session => format::FormatLoopKind::Session,
+                format::LoopKind::Window => format::FormatLoopKind::Window,
+                format::LoopKind::Pane => format::FormatLoopKind::Pane,
+            },
+            "",
+            &Vars::empty(),
+        )
+    }
+}
+
+impl format::ScopedLoopSource for TreeLoops<'_> {
+    fn items_in_scope(
+        &self,
+        kind: format::FormatLoopKind,
+        flags: &str,
+        vars: &Vars,
+    ) -> Vec<Vars> {
         match kind {
-            format::LoopKind::Session => {
+            format::FormatLoopKind::Session => {
                 let marked = self.st.marked_pane();
-                // tmux's unflagged `#{S:…}` sorts by `SORT_INDEX`, the session
-                // id, so the loop follows creation order; the `n` flag is what
-                // asks for name order, and the format engine applies it.
                 let mut order: Vec<&Session> = self.st.sessions().iter().collect();
-                order.sort_by_key(|session| session.id);
+                sort_session_loop(&mut order, flags);
                 order
                     .iter()
                     .map(|s| vars_for(self.st, s, s.active, self.agents, marked))
                     .collect()
             }
-            format::LoopKind::Window => {
+            format::FormatLoopKind::Window => {
                 let marked = self.st.marked_pane();
-                let sess = &self.st.sessions()[self.session];
-                (0..sess.windows.len())
-                    .map(|w| vars_for(self.st, sess, w, self.agents, marked))
+                let session = self.scoped_session(vars);
+                let sess = &self.st.sessions()[session];
+                let mut order = (0..sess.windows.len()).collect::<Vec<_>>();
+                sort_window_loop(self.st, sess, &mut order, flags);
+                order
+                    .into_iter()
+                    .map(|w| {
+                        let mut item = vars_for(self.st, sess, w, self.agents, marked);
+                        set_window_neighbour_vars(self.st, session, w, &mut item);
+                        item
+                    })
                     .collect()
             }
-            format::LoopKind::Pane => {
+            format::FormatLoopKind::Pane => {
                 let marked = self.st.marked_pane();
-                let sess = &self.st.sessions()[self.session];
-                let panes = sess
-                    .windows
-                    .get(self.window)
-                    .map(|_| self.st.session_window(sess, self.window).panes.len())
-                    .unwrap_or(0);
-                (0..panes)
-                    .map(|p| vars_full(self.st, sess, self.window, p, self.agents, marked))
+                let session = self.scoped_session(vars);
+                let window = self.scoped_window(session, vars);
+                let sess = &self.st.sessions()[session];
+                if sess.windows.get(window).is_none() {
+                    return Vec::new();
+                }
+                let mut order =
+                    (0..self.st.session_window(sess, window).panes.len()).collect::<Vec<_>>();
+                sort_pane_loop(self.st.session_window(sess, window), &mut order, flags);
+                order
+                    .into_iter()
+                    .map(|p| vars_full(self.st, sess, window, p, self.agents, marked))
                     .collect()
             }
+            format::FormatLoopKind::Client => {
+                let mut clients = self.st.client_snapshots();
+                sort_client_loop(&mut clients, flags);
+                clients
+                    .iter()
+                    .filter_map(|client| clients::client_vars(self.st, self.agents, client))
+                    .collect()
+            }
+        }
+    }
+}
+
+/// tmux's `#{L:…}` order: the client list's own order unless a flag names a
+/// key, with the client name breaking every tie.
+pub(super) fn sort_client_loop(
+    order: &mut [super::state::ClientSnapshot],
+    flags: &str,
+) {
+    if flags.contains('n') || flags.contains('t') {
+        order.sort_by(|left, right| {
+            let key = if flags.contains('n') {
+                left.name.cmp(&right.name)
+            } else {
+                // Most recent first, as `sort_client_cmp` inverts this.
+                right.activity_micros.cmp(&left.activity_micros)
+            };
+            key.then_with(|| left.name.cmp(&right.name))
+        });
+    }
+    if flags.contains('r') {
+        order.reverse();
+    }
+}
+
+/// tmux's `#{S:…}` order: `SORT_INDEX` (the session id) unless a flag names
+/// another key, with the session name breaking every tie and `r` reversing the
+/// result.
+pub(super) fn sort_session_loop(order: &mut [&Session], flags: &str) {
+    order.sort_by(|left, right| {
+        let key = if flags.contains('n') {
+            left.name.cmp(&right.name)
+        } else if flags.contains('t') {
+            // Most recent first, as `sort_session_cmp` inverts this comparison.
+            right.activity_micros.cmp(&left.activity_micros)
+        } else {
+            left.id.cmp(&right.id)
+        };
+        key.then_with(|| left.name.cmp(&right.name))
+    });
+    if flags.contains('r') {
+        order.reverse();
+    }
+}
+
+/// tmux's `#{W:…}` order: the session's own window order unless a flag names a
+/// key, with the window name breaking every tie. `SORT_ORDER` skips the sort
+/// entirely and `r` only reverses the list.
+pub(super) fn sort_window_loop(
+    st: &ServerState,
+    session: &Session,
+    order: &mut [usize],
+    flags: &str,
+) {
+    let sorted = flags.contains('n') || flags.contains('t');
+    if sorted {
+        order.sort_by(|left, right| {
+            let (left, right) = (
+                st.window_for_link(&session.windows[*left]),
+                st.window_for_link(&session.windows[*right]),
+            );
+            let key = if flags.contains('n') {
+                left.name.cmp(&right.name)
+            } else {
+                right.activity_micros.cmp(&left.activity_micros)
+            };
+            key.then_with(|| left.name.cmp(&right.name))
+        });
+    }
+    if flags.contains('r') {
+        order.reverse();
+    }
+}
+
+/// tmux's `#{P:…}` order: always `SORT_CREATION`, the pane id, with the pane
+/// title breaking a tie. The `i`, `n` and `t` flags name no key here; only `r`
+/// is read.
+pub(super) fn sort_pane_loop(window: &super::state::Window, order: &mut [usize], flags: &str) {
+    order.sort_by_key(|pane| window.panes[*pane].id);
+    if flags.contains('r') {
+        order.reverse();
+    }
+}
+
+/// The neighbour variables tmux's `format_loop_windows` adds on top of a window
+/// entry's own: whether the entry sits next to the current window, and the
+/// index, active flag and user options of the entries either side of it.
+pub(super) fn set_window_neighbour_vars(
+    st: &ServerState,
+    session: usize,
+    window: usize,
+    vars: &mut Vars,
+) {
+    let sess = &st.sessions()[session];
+    let count = sess.windows.len();
+    vars.set(
+        "window_after_active",
+        if window > 0 && window - 1 == sess.active {
+            "1"
+        } else {
+            "0"
+        },
+    )
+    .set(
+        "window_before_active",
+        if window + 1 < count && window + 1 == sess.active {
+            "1"
+        } else {
+            "0"
+        },
+    );
+    for (prefix, neighbour) in [
+        ("next", (window + 1 < count).then_some(window + 1)),
+        ("prev", window.checked_sub(1)),
+    ] {
+        let Some(neighbour) = neighbour else {
+            continue;
+        };
+        vars.set(
+            format!("{prefix}_window_index"),
+            sess.windows[neighbour].index.to_string(),
+        )
+        .set(
+            format!("{prefix}_window_active"),
+            if neighbour == sess.active { "1" } else { "0" },
+        );
+        for (name, value) in st
+            .session_window(sess, neighbour)
+            .own_options()
+            .filter(|(name, _)| name.starts_with('@'))
+        {
+            vars.set(format!("{prefix}_{name}"), value.to_string());
         }
     }
 }
@@ -2510,6 +2707,9 @@ pub(super) fn vars_full(
         let window_flags = st.printable_window_flags(sess, win_idx, true);
         let window_raw_flags = st.printable_window_flags(sess, win_idx, false);
         v.set("window_name", win.name.clone());
+        for (name, value) in win.own_options() {
+            v.set(name.to_string(), value.to_string());
+        }
         v.set("window_index", link.index.to_string())
             .set("window_id", format!("@{}", win.id))
             .set("window_panes", win.panes.len().to_string())
@@ -2562,7 +2762,10 @@ pub(super) fn vars_full(
                     "0"
                 },
             )
-            .set("window_activity", win.activity_epoch.to_string())
+            .set(
+                "window_activity",
+                (win.activity_micros / 1_000_000).to_string(),
+            )
             .set(
                 "window_activity_flag",
                 if link.alert_flags & super::state::ALERT_ACTIVITY != 0 {
@@ -3097,10 +3300,6 @@ pub(super) fn vars_full(
 }
 
 /// Publish the pane terminal modes tmux reads out of `screen->mode`.
-///
-/// `cursor_very_visible` is a constant 0: tmux only ever sets
-/// `MODE_CURSOR_VERY_VISIBLE` from a client terminal's own `Cvvis` capability,
-/// never from a pane's output, so no sequence a pane can emit turns it on.
 fn set_terminal_mode_vars(pane: &super::pane::Pane, v: &mut Vars) {
     let modes = pane.terminal_modes();
     let osc = pane.osc_state();
@@ -3122,7 +3321,7 @@ fn set_terminal_mode_vars(pane: &super::pane::Pane, v: &mut Vars) {
         .set("wrap_flag", flag(modes.wrap))
         .set("cursor_flag", flag(modes.cursor_visible))
         .set("cursor_blinking", flag(modes.cursor_blinking))
-        .set("cursor_very_visible", "0")
+        .set("cursor_very_visible", flag(modes.cursor_very_visible))
         .set("keypad_flag", flag(modes.keypad))
         .set("keypad_cursor_flag", flag(modes.cursor_keys))
         .set("synchronized_output_flag", flag(modes.synchronized_output))
@@ -3444,6 +3643,15 @@ pub(crate) fn client_input_path(args: &[String], context: &ClientContext) -> Opt
     let lexed = ParsedArgs::lex(spec.name, &normalize_argv(spec.name, args));
     if matches!(spec.name, "display-message" | "split-window") {
         return lexed.has('I').then(|| PathBuf::from("-"));
+    }
+    if spec.name == "source-file" {
+        // `-` is the client's own standard input; tmux keeps it verbatim and
+        // reads it over the file protocol rather than opening it server-side.
+        return lexed
+            .positionals()
+            .iter()
+            .any(|path| path == "-")
+            .then(|| PathBuf::from("-"));
     }
     if spec.name != "load-buffer" {
         return None;
@@ -4101,6 +4309,23 @@ pub(crate) fn command_positional(name: &str, args: &[String], index: usize) -> O
 /// Recreate the environment a tmux server gives a newly spawned pane. Wrapping
 /// with `env -i` avoids mutating the multithreaded daemon process environment
 /// while preserving the complete environment sent in identify frames.
+/// The command inside the wrap [`pane_argv`] built, so a respawn that reuses a
+/// pane's saved argv rebuilds one environment rather than nesting a second wrap
+/// around the first — where the inner assignments would still win.
+pub(super) fn unwrap_pane_argv(argv: Vec<String>) -> Vec<String> {
+    let Some(rest) = argv
+        .strip_prefix(std::slice::from_ref(&"/usr/bin/env".to_string()))
+        .and_then(|rest| rest.strip_prefix(std::slice::from_ref(&"-i".to_string())))
+    else {
+        return argv;
+    };
+    let start = rest
+        .iter()
+        .position(|word| !word.contains('='))
+        .unwrap_or(rest.len());
+    rest[start..].to_vec()
+}
+
 fn pane_argv(
     argv: Vec<String>,
     context: &ClientContext,

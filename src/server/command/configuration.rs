@@ -303,9 +303,7 @@ fn expand_option_name_argument(
         &PaneAgents::new(),
         st.marked_pane(),
     );
-    for (name, value) in st.env_iter() {
-        vars.set(name.to_string(), value);
-    }
+    st.seed_format_environment(&mut vars, st.sessions().get(resolved.session));
     if let Ok(entries) = st.format_option_entries(target.as_deref().unwrap_or_default()) {
         for (name, value) in entries {
             vars.set(name.to_string(), value);
@@ -319,6 +317,37 @@ enum OptionArgumentResult<'a> {
     Resolved(&'a str, Option<u32>),
     Ambiguous,
     Invalid,
+}
+
+/// Resolve a hook name, exactly or by unambiguous prefix, over the three hook
+/// catalogs.
+fn resolve_hook_name(base: &str) -> OptionArgumentResult<'static> {
+    if options::AnyHook::from_name(base).is_some() {
+        return OptionArgumentResult::Resolved(
+            options::SessionHook::NAMES
+                .iter()
+                .chain(options::WindowHook::NAMES)
+                .chain(options::PaneHook::NAMES)
+                .find(|name| **name == base)
+                .copied()
+                .unwrap_or(""),
+            None,
+        );
+    }
+    let mut candidates = options::SessionHook::NAMES
+        .iter()
+        .chain(options::WindowHook::NAMES)
+        .chain(options::PaneHook::NAMES)
+        .copied()
+        .filter(|candidate| candidate.starts_with(base))
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+    match candidates.len() {
+        0 => OptionArgumentResult::Invalid,
+        1 => OptionArgumentResult::Resolved(candidates[0], None),
+        _ => OptionArgumentResult::Ambiguous,
+    }
 }
 
 fn resolve_option_argument(argument: &str) -> OptionArgumentResult<'_> {
@@ -446,10 +475,13 @@ impl SetOption {
 
     /// Set an option in the local table selected by its catalog scope and target.
     fn run(self, st: &mut ServerState, window_command: bool) -> CommandResult {
-        let argument = match self.operands.first() {
-            Some(argument) => argument.as_str(),
+        // tmux format-expands the option name before matching it against the
+        // option table, exactly as `show-options` does.
+        let expanded = match self.operands.first() {
+            Some(argument) => expand_option_name_argument(&self.scope, st, argument),
             None => return CommandResult::err("set-option: missing option\n"),
         };
+        let argument = expanded.as_str();
         let (name, index) = match resolve_option_argument(argument) {
             OptionArgumentResult::Resolved(name, index) => (name, index),
             OptionArgumentResult::Ambiguous => {
@@ -530,6 +562,15 @@ impl SetOption {
             None => String::new(),
         };
         if !unset {
+            // tmux parses a colour-valued option with `colour_fromstring` at
+            // assignment, so an unusable colour fails the command and what the
+            // table keeps is `colour_tostring`'s canonical spelling.
+            if options::is_colour_option(name) && raw_value.is_some() {
+                match style::canonical_option_colour(&value) {
+                    Some(canonical) => value = canonical,
+                    None => return CommandResult::err(format!("bad colour: {value}\n")),
+                }
+            }
             if options::is_style_option(name) {
                 if let Some(token) = style::invalid_underline_colour(&value) {
                     return CommandResult::err(format!("invalid style: {token}\n"));
@@ -1066,15 +1107,30 @@ impl ShowHooks {
     }
 
     fn run(self, st: &ServerState) -> CommandResult {
-        if let Some(hook) = self.show.option.as_deref() {
-            let base = options::parse_option_name(hook)
-                .map(|(base, _)| base)
-                .unwrap_or(hook);
-            if options::AnyHook::from_name(base).is_none() {
-                return CommandResult::err(format!("invalid option: {hook}\n"));
-            }
-            let result = self.show.run(st, false);
-            if self.global && result.exit == 0 && result.stdout.is_empty() && !hook.contains('[') {
+        if let Some(hook) = self.show.option.clone() {
+            // Hooks live in the option tables, so a hook name resolves from a
+            // prefix the way every other option name does.
+            let (base, index) = match options::parse_option_name(&hook) {
+                Some(parsed) => parsed,
+                None => return CommandResult::err(format!("invalid option: {hook}\n")),
+            };
+            let resolved = match resolve_hook_name(base) {
+                OptionArgumentResult::Resolved(resolved, _) => resolved.to_owned(),
+                OptionArgumentResult::Ambiguous => {
+                    return CommandResult::err(format!("ambiguous option: {hook}\n"))
+                }
+                OptionArgumentResult::Invalid => {
+                    return CommandResult::err(format!("invalid option: {hook}\n"))
+                }
+            };
+            let hook = match index {
+                Some(index) => format!("{resolved}[{index}]"),
+                None => resolved,
+            };
+            let mut show = self.show.clone();
+            show.option = Some(hook.clone());
+            let result = show.run(st, false);
+            if self.global && result.exit == 0 && result.stdout.is_empty() && index.is_none() {
                 return CommandResult::ok(format!("{hook}\n"));
             }
             return result;

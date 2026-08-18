@@ -183,7 +183,7 @@ impl ServerState {
                 active: 0,
                 last_pane: None,
                 zoomed: false,
-                activity_epoch: now_epoch(),
+                activity_micros: now_micros(),
                 name_time_micros: 0,
                 name_in_mode: false,
                 scrollbars_on_left: false,

@@ -583,7 +583,7 @@ impl ChooseTree {
                     };
                     group.windows.push(TreeWindow {
                         id: window.id,
-                        activity: window.activity_epoch,
+                        activity: window.activity_micros,
                         row: ChooseRow {
                             item: ModeItem {
                                 label: opts.label(state, &window_vars, default_label),
@@ -1377,7 +1377,7 @@ impl ListClients {
             |client| client.name.clone(),
         );
         let mut output = String::new();
-        for client in clients {
+        for (line, client) in clients.into_iter().enumerate() {
             let Some(session) = state
                 .sessions()
                 .iter()
@@ -1388,9 +1388,12 @@ impl ListClients {
             if target_session.is_some_and(|target| target.id != session.id) {
                 continue;
             }
-            let Some(vars) = client_vars(state, agents, &client) else {
+            let Some(mut vars) = client_vars(state, agents, &client) else {
                 continue;
             };
+            // tmux numbers the row by its position in the sorted client array,
+            // which the session filter above skips over rather than renumbers.
+            vars.set("line", line.to_string());
             if self
                 .filter
                 .as_deref()
@@ -1442,7 +1445,7 @@ pub(super) fn set_client_entry_vars(
 /// The format variables one attached client answers to, shared by
 /// `list-clients` and `choose-client`. `None` when the client's session has
 /// gone away underneath it.
-fn client_vars(
+pub(super) fn client_vars(
     state: &ServerState,
     agents: &PaneAgents,
     client: &super::super::state::ClientSnapshot,
@@ -1488,6 +1491,8 @@ fn client_vars(
 pub(in crate::server) struct DetachClient {
     /// `-a`: detach all other clients except the target.
     all_others: bool,
+    /// `-P`: the detached client is told to hang itself up (SIGHUP).
+    hangup: bool,
     /// `-E`: the command the detached client runs in place of exiting.
     command: Option<String>,
     /// `-s`: detach all clients attached to the specified session.
@@ -1500,6 +1505,7 @@ impl DetachClient {
     pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
         Ok(Self {
             all_others: args.has('a'),
+            hangup: args.has('P'),
             command: args.value('E').map(str::to_string),
             session: args.value('s').map(str::to_string),
             target: args.value('t').map(str::to_string),
@@ -1512,7 +1518,7 @@ impl DetachClient {
                 return CommandResult::err(format!("can't find session: {session_target}\n"));
             };
             let session_id = session.id;
-            state.detach_session_clients(session_id, self.command.as_deref());
+            state.detach_session_clients(session_id, self.command.as_deref(), self.hangup);
             return CommandResult::ok("");
         }
         let target = self.target.as_deref();
@@ -1522,12 +1528,18 @@ impl DetachClient {
                     target,
                     client.tty_name.as_deref(),
                     self.command.as_deref(),
+                    self.hangup,
                 ),
                 target,
             );
         }
         overlay_result(
-            state.detach_client(target, client.tty_name.as_deref(), self.command.as_deref()),
+            state.detach_client(
+                target,
+                client.tty_name.as_deref(),
+                self.command.as_deref(),
+                self.hangup,
+            ),
             target,
         )
     }
@@ -1629,19 +1641,20 @@ impl RefreshClient {
 
     fn run(self, state: &mut ServerState, client: &ClientContext) -> CommandResult {
         let target = self.target.as_deref();
-        let snapshots = state.client_snapshots();
-        let target_client = if let Some(target) = target {
-            match snapshots.into_iter().find(|c| c.name == target) {
-                Some(c) => c,
-                None => return CommandResult::err(format!("can't find client: {target}\n")),
+        // tmux's `cmd_find_client` resolves an omitted `-c` to the current
+        // client, which for a command client that owns no terminal is the sole
+        // attached one.
+        let target_client = match state.resolve_target_client(target, client.tty_name.as_deref()) {
+            Ok(target_client) => target_client,
+            Err(ClientActionResult::NoCurrentClient) => {
+                return CommandResult::err("no current client\n")
             }
-        } else if let Some(tty) = client.tty_name.as_deref() {
-            match snapshots.into_iter().find(|c| c.name == tty) {
-                Some(c) => c,
-                None => return CommandResult::err("no current client\n"),
+            Err(_) => {
+                return CommandResult::err(format!(
+                    "can't find client: {}\n",
+                    target.unwrap_or_default()
+                ))
             }
-        } else {
-            return CommandResult::err("no current client\n");
         };
 
         if self.has_control_flag && !target_client.control_mode {
@@ -1670,7 +1683,12 @@ impl RefreshClient {
                 Err(_) => return CommandResult::err("adjustment invalid\n"),
             };
             return overlay_result(
-                state.pan_client(target, client.tty_name.as_deref(), adjust, adjustment),
+                state.pan_client(
+                    Some(&target_client.name),
+                    client.tty_name.as_deref(),
+                    adjust,
+                    adjustment,
+                ),
                 target,
             );
         }
@@ -1703,10 +1721,22 @@ impl RefreshClient {
 pub(in crate::server) struct SwitchClient {
     /// `-c`: the client to move.
     client: Option<String>,
-    /// `-r`: toggle the target client's read-only state first.
+    /// `-r`: toggle the target client's read-only state first, and reverse the
+    /// session order `-n`/`-p` cycle in.
     toggle_read_only: bool,
     /// `-Z`: keep target window zoomed.
     zoom: bool,
+    /// `-n`/`-p`/`-l`: cycle to the next, previous, or last session instead of
+    /// a named one.
+    next: bool,
+    previous: bool,
+    last: bool,
+    /// `-O`: the order `-n`/`-p` cycle the sessions in.
+    order: Option<String>,
+    /// `-T`: put the target client in a key table instead of switching it.
+    key_table: Option<String>,
+    /// `-E`: skip the `update-environment` copy into the destination session.
+    no_environment: bool,
     /// `-t`: the session (or window, or pane) to move it to.
     target: Option<String>,
 }
@@ -1717,11 +1747,23 @@ impl SwitchClient {
             client: args.value('c').map(str::to_string),
             toggle_read_only: args.has('r'),
             zoom: args.has('Z'),
+            no_environment: args.has('E'),
+            next: args.has('n'),
+            previous: args.has('p'),
+            last: args.has('l'),
+            order: args.value('O').map(str::to_string),
+            key_table: args.value('T').map(str::to_string),
             target: args.value('t').map(str::to_string),
         })
     }
 
     fn run(self, state: &mut ServerState, client: &ClientContext) -> CommandResult {
+        // `-T` names a key table for the target client and returns before any
+        // session is touched, and `-n`/`-p`/`-l` pick their session from the
+        // target client rather than from `-t`.
+        if self.key_table.is_some() || self.next || self.previous || self.last {
+            return self.run_on_target_client(state, client);
+        }
         let Some(target_session) = self.target.as_deref() else {
             return CommandResult::err("no current client\n");
         };
@@ -1773,8 +1815,133 @@ impl SwitchClient {
         } else {
             None
         };
+        self.refresh_destination_environment(state, client, session_id);
         match state.switch_client(
             self.client.as_deref().or(toggled.as_deref()),
+            client.tty_name.as_deref(),
+            session_id,
+        ) {
+            ClientActionResult::Queued => CommandResult::ok(""),
+            ClientActionResult::NoCurrentClient => CommandResult::err("no current client\n"),
+            ClientActionResult::TargetNotFound => CommandResult::err(format!(
+                "can't find client: {}\n",
+                self.client.as_deref().unwrap_or_default()
+            )),
+        }
+    }
+
+    /// tmux's `environ_update(s->options, tc->environ, s->environ)`: the
+    /// destination session takes the `update-environment` names out of the
+    /// environment the *moved* client attached with, not out of the client that
+    /// ran the command. `-E` skips it.
+    fn refresh_destination_environment(
+        &self,
+        state: &mut ServerState,
+        client: &ClientContext,
+        session_id: u32,
+    ) {
+        if self.no_environment {
+            return;
+        }
+        let Ok(target) =
+            state.resolve_target_client(self.client.as_deref(), client.tty_name.as_deref())
+        else {
+            return;
+        };
+        let environment = state.client_environment(&target.name);
+        if environment.is_empty() {
+            return;
+        }
+        state.update_session_environment(&format!("${session_id}"), &environment);
+    }
+
+    /// The `-T`, `-n`, `-p` and `-l` forms, which act on the target client's
+    /// own state rather than on a `-t` session.
+    fn run_on_target_client(
+        self,
+        state: &mut ServerState,
+        client: &ClientContext,
+    ) -> CommandResult {
+        let target = match state
+            .resolve_target_client(self.client.as_deref(), client.tty_name.as_deref())
+        {
+            Ok(target) => target,
+            Err(ClientActionResult::NoCurrentClient) => {
+                return CommandResult::err("no current client\n")
+            }
+            Err(_) => {
+                return CommandResult::err(format!(
+                    "can't find client: {}\n",
+                    self.client.as_deref().unwrap_or_default()
+                ))
+            }
+        };
+        if self.toggle_read_only {
+            let _ =
+                state.toggle_client_read_only(self.client.as_deref(), client.tty_name.as_deref());
+        }
+        if let Some(table) = self.key_table.as_deref() {
+            if !state.key_table_exists(table) {
+                return CommandResult::err(format!("table {table} doesn't exist\n"));
+            }
+            state.set_client_key_table(&target.name, table);
+            return CommandResult::ok("");
+        }
+        let order = match super::list_sort_order(self.order.as_deref()) {
+            Ok(order) => order,
+            Err(error) => return error,
+        };
+        let session_id = if self.last {
+            match target
+                .last_session_id
+                .filter(|id| state.session_by_id(*id).is_some())
+            {
+                Some(id) => id,
+                None => return CommandResult::err("can't find last session\n"),
+            }
+        } else {
+            // tmux's session tree is keyed by name, so an unsorted cycle walks
+            // the sessions in name order.
+            let mut order_list: Vec<&Session> = state.sessions().iter().collect();
+            order_list.sort_by(|left, right| left.name.cmp(&right.name));
+            super::apply_list_sort(
+                &mut order_list,
+                order,
+                self.toggle_read_only,
+                |key, left, right| match key {
+                    super::ListSortOrder::Index => left.id.cmp(&right.id),
+                    super::ListSortOrder::Creation => {
+                        left.created_epoch.cmp(&right.created_epoch)
+                    }
+                    super::ListSortOrder::Activity => {
+                        right.activity_micros.cmp(&left.activity_micros)
+                    }
+                    super::ListSortOrder::Name => left.name.cmp(&right.name),
+                    _ => std::cmp::Ordering::Equal,
+                },
+                |session| session.name.clone(),
+            );
+            let Some(position) = order_list
+                .iter()
+                .position(|session| session.id == target.session_id)
+            else {
+                return CommandResult::err(if self.next {
+                    "can't find next session\n"
+                } else {
+                    "can't find previous session\n"
+                });
+            };
+            let count = order_list.len();
+            let next = if self.next {
+                (position + 1) % count
+            } else {
+                (position + count - 1) % count
+            };
+            order_list[next].id
+        };
+        self.refresh_destination_environment(state, client, session_id);
+        match state.switch_client(
+            Some(&target.name),
             client.tty_name.as_deref(),
             session_id,
         ) {
@@ -1901,9 +2068,10 @@ impl DisplayMessage {
                 self.client.as_deref(),
                 &mut vars,
             );
-            for (name, value) in st.env_iter() {
-                vars.set(name.to_string(), value);
-            }
+            st.seed_format_environment(
+                &mut vars,
+                resolved.and_then(|resolved| st.sessions().get(resolved.session)),
+            );
             if let Some(target) = target.as_deref() {
                 if let Ok(entries) = st.format_option_entries(target) {
                     for (name, value) in entries {
@@ -1924,7 +2092,7 @@ impl DisplayMessage {
             format::expand_time_with_jobs_verbose(
                 message,
                 &vars,
-                loops.as_ref().map(|loops| loops as &dyn format::LoopSource),
+                loops.as_ref().map(|loops| loops as &dyn format::ScopedLoopSource),
                 command_jobs(st),
                 Some(&ServerFormatTree(st)),
             )
@@ -1933,7 +2101,7 @@ impl DisplayMessage {
                 format::expand_time_with_jobs(
                     message,
                     &vars,
-                    loops.as_ref().map(|loops| loops as &dyn format::LoopSource),
+                    loops.as_ref().map(|loops| loops as &dyn format::ScopedLoopSource),
                     command_jobs(st),
                     Some(&ServerFormatTree(st)),
                 ),

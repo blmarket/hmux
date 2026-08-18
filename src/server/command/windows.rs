@@ -255,7 +255,9 @@ impl NewWindow {
         // `-d` creates the window in the background: it is not selected, so the
         // session's current window stays put (tmux's default is to follow).
         let select = !self.detached;
-        let explicit_cwd = self.cwd.clone().map(PathBuf::from);
+        let explicit_cwd = self.cwd.as_deref().map(|cwd| {
+            execution::spawn_start_directory(cwd, Some(&session), st, context, &PaneAgents::new())
+        });
         let cwd = explicit_cwd.as_deref().or(context.cwd.as_deref());
         let argv = pane_command_argv(&self.command, st, Some(&session));
         let environment = self
@@ -506,8 +508,8 @@ impl ListWindows {
                     ListSortOrder::Index => link_a.index.cmp(&link_b.index),
                     // `activity_epoch` is written once at creation (see `Window`),
                     // so it is the creation key; tmux's activity sort is inverted.
-                    ListSortOrder::Creation => win_a.activity_epoch.cmp(&win_b.activity_epoch),
-                    ListSortOrder::Activity => win_b.activity_epoch.cmp(&win_a.activity_epoch),
+                    ListSortOrder::Creation => win_a.activity_micros.cmp(&win_b.activity_micros),
+                    ListSortOrder::Activity => win_b.activity_micros.cmp(&win_a.activity_micros),
                     ListSortOrder::Name => win_a.name.cmp(&win_b.name),
                     ListSortOrder::Size => (u32::from(win_a.cols) * u32::from(win_a.rows))
                         .cmp(&(u32::from(win_b.cols) * u32::from(win_b.rows))),
@@ -519,10 +521,14 @@ impl ListWindows {
 
         let marked = st.marked_pane();
         let mut out = String::new();
+        // Where `list-sessions` publishes each row's position, `cmd_list_windows`
+        // hands `format_add` the row *count* instead, the same on every row.
+        let rows = links.len();
         for (sess, idx) in links {
             let mut vars = vars_for(st, sess, idx, agents, marked);
             // tmux's `FORMAT_TYPE_WINDOW` marker for this list context.
             vars.set("window_format", "1");
+            vars.set("line", rows.to_string());
             if let Some(filter) = self.filter.as_deref() {
                 if !format::is_true(&expand_command_format(st, filter, &vars, None)) {
                     continue;
@@ -960,10 +966,24 @@ impl RespawnWindow {
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>();
+        let mut cwd_from_spec = None;
         let argv = if environment.is_empty() {
             argv
         } else {
-            argv.map(|argv| {
+            // With no replacement command, tmux's `spawn_pane` reuses the
+            // pane's saved argv and still copies `-e` into the child, so the
+            // saved command is materialized here to carry the wrap.
+            let base = argv.or_else(|| {
+                let spec = st
+                    .window(resolved.session, resolved.window)
+                    .panes
+                    .first()?
+                    .pane
+                    .spawn_spec()?;
+                cwd_from_spec = spec.cwd;
+                Some(unwrap_pane_argv(spec.argv))
+            });
+            base.map(|argv| {
                 pane_argv(
                     argv,
                     context,
@@ -973,7 +993,19 @@ impl RespawnWindow {
                 )
             })
         };
-        let cwd = self.cwd.map(PathBuf::from);
+        let cwd = self
+            .cwd
+            .as_deref()
+            .map(|cwd| {
+                execution::spawn_start_directory(
+                    cwd,
+                    Some(&target),
+                    st,
+                    context,
+                    &PaneAgents::new(),
+                )
+            })
+            .or(cwd_from_spec);
         match st.respawn_window_process(&target, argv, cwd) {
             Ok(()) => CommandResult::ok(""),
             Err(error) => CommandResult::err(format!("{error}\n")),

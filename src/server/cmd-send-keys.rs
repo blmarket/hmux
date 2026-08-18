@@ -317,9 +317,7 @@ fn send_copy_mode_command(
                 agents,
                 state.marked_pane(),
             );
-            for (name, value) in state.env_iter() {
-                vars.set(name.to_string(), value);
-            }
+            state.seed_format_environment(&mut vars, state.sessions().get(resolved.session));
             if let Ok(entries) = state.format_option_entries(target) {
                 for (name, value) in entries {
                     vars.set(name.to_string(), value);

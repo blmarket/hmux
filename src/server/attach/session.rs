@@ -121,6 +121,7 @@ impl AttachSession {
             .and_then(super::super::format::username)
             .unwrap_or_default();
         render_attachment.set_peer_identity(peer_uid, peer_user.clone());
+        render_attachment.set_environment(context.environment.clone());
         // The cell's pixel size arrives with the terminal size and feeds the
         // window's own, so it is published alongside — a client that reports
         // none publishes zero, as tmux's `tty->xpixel` does.
@@ -231,6 +232,7 @@ impl AttachSession {
             },
             compositor,
             pending_exec: None,
+            pending_hangup: false,
         })
     }
 
@@ -432,7 +434,13 @@ impl AttachSession {
                     .find(|candidate| candidate.id == self.compositor.target.session_id)
                     .map(|candidate| candidate.name.clone())
                     .unwrap_or_else(|| self.compositor.target.stable_target.clone());
-                Some(Message::Detach(Some(session_name)))
+                // `detach-client -P` and `attach-session -x` ask the client to
+                // hang itself up, which it reports as `[detached and SIGHUP]`.
+                if std::mem::take(&mut self.pending_hangup) {
+                    Some(Message::DetachKill(Some(session_name)))
+                } else {
+                    Some(Message::Detach(Some(session_name)))
+                }
             }
             AttachFinishReason::SessionEnded => Some(Message::Exit(Some(0))),
             AttachFinishReason::ConnectionClosed => None,
@@ -827,7 +835,8 @@ impl AttachSession {
                         self.compositor.render.last_render.clear();
                         self.compositor.render.force_clear = true;
                     }
-                    ClientAction::Detach(exec) => {
+                    ClientAction::Detach { exec, hangup } => {
+                        self.pending_hangup = hangup;
                         // `detach-client -E` hands the client a command to exec
                         // in place of detaching, the way tmux's
                         // `server_client_exec` does. The client replaces itself

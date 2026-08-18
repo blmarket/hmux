@@ -379,6 +379,29 @@ impl ServerState {
         self.removed_environment.contains(key)
     }
 
+    /// Seed a format table's environment layer the way tmux's `format_find`
+    /// reads it: the target session's own entries over the global ones, and a
+    /// name the session removed hiding the global value rather than exposing
+    /// it.
+    pub(crate) fn seed_format_environment(
+        &self,
+        vars: &mut crate::server::format::Vars,
+        session: Option<&super::Session>,
+    ) {
+        for (name, value) in &self.environment {
+            vars.set_environment(name.clone(), value.clone());
+        }
+        let Some(session) = session else {
+            return;
+        };
+        for (name, value) in &session.environment {
+            vars.set_environment(name.clone(), value.clone());
+        }
+        for name in &session.removed_environment {
+            vars.unset_environment(name);
+        }
+    }
+
     /// Iterate the global environment in sorted order.
     pub fn env_iter(&self) -> impl Iterator<Item = (&String, &String)> {
         self.environment.iter()

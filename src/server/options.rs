@@ -1521,6 +1521,22 @@ pub(crate) fn option_is_flag(name: &str) -> bool {
     FLAGS.contains(name, &[OPTION_FLAGS])
 }
 
+/// Whether an option's value is a colour — tmux's `OPTIONS_TABLE_COLOUR`,
+/// which parses and canonicalises what is assigned to it.
+pub(crate) fn is_colour_option(name: &str) -> bool {
+    matches!(
+        name,
+        "clock-mode-colour"
+            | "cursor-colour"
+            | "display-panes-active-colour"
+            | "display-panes-colour"
+            | "pane-colours"
+            | "prompt-cursor-colour"
+            | "status-bg"
+            | "status-fg"
+    )
+}
+
 pub(crate) fn is_style_option(name: &str) -> bool {
     name.ends_with("-style") && option_choices(name).is_none()
 }

@@ -58,6 +58,9 @@ pub mod mode {
     /// The pane has spoken about the cursor blink itself, so a query is
     /// answered from [`CURSOR_BLINKING`] rather than from `cursor-style`.
     pub const CURSOR_BLINKING_SET: u32 = 0x2_0000;
+    /// tmux's `MODE_CURSOR_VERY_VISIBLE`, which `RM 34` sets and `SM 34`
+    /// clears — the reverse of the usual set/reset pairing, as in tmux.
+    pub const CURSOR_VERY_VISIBLE: u32 = 0x20_0000;
 
     /// tmux's `ALL_MOUSE_MODES`: the program asked for reports at all.
     pub(crate) const ALL_MOUSE: u32 = MOUSE_STANDARD | MOUSE_BUTTON | MOUSE_ALL;

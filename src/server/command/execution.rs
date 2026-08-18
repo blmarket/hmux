@@ -323,6 +323,61 @@ pub(super) fn expand_if_cond(
     expand_target_format(cond, requested_target, st, agents, &[])
 }
 
+/// The directory a spawn's `-c` names, under tmux's `spawn_pane` rules: the
+/// value is format-expanded first, and a relative one is joined onto the
+/// directory `server_client_get_cwd` reports — the command client's own while
+/// it has no session of its own, else the target session's, else the home
+/// directory.
+pub(super) fn spawn_start_directory(
+    requested: &str,
+    requested_target: Option<&str>,
+    st: &ServerState,
+    context: &ClientContext,
+    agents: &PaneAgents,
+) -> std::path::PathBuf {
+    let expanded = expand_target_format(requested, requested_target, st, agents, &[]);
+    let path = std::path::PathBuf::from(&expanded);
+    if path.is_absolute() {
+        return path;
+    }
+    let base = client_working_directory(st, context, requested_target);
+    if expanded.is_empty() {
+        base
+    } else {
+        base.join(expanded)
+    }
+}
+
+/// tmux's `server_client_get_cwd`.
+fn client_working_directory(
+    st: &ServerState,
+    context: &ClientContext,
+    requested_target: Option<&str>,
+) -> std::path::PathBuf {
+    if context.current_session_id.is_none() {
+        if let Some(cwd) = context.cwd.clone() {
+            return cwd;
+        }
+    }
+    let session = requested_target
+        .map(str::to_string)
+        .or_else(|| current_target(st))
+        .and_then(|target| st.resolve(&target))
+        .and_then(|resolved| st.sessions().get(resolved.session))
+        .or_else(|| {
+            context
+                .current_session_id
+                .and_then(|id| st.session_by_id(id))
+        });
+    if let Some(cwd) = session.and_then(|session| session.cwd()) {
+        return cwd.to_path_buf();
+    }
+    std::env::var_os("HOME")
+        .filter(|home| !home.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("/"))
+}
+
 pub(super) fn expand_run_shell_command(
     command: &str,
     requested_target: Option<&str>,
@@ -364,9 +419,7 @@ fn expand_target_format(
                 agents,
                 st.marked_pane(),
             );
-            for (name, value) in st.env_iter() {
-                vars.set(name.to_string(), value);
-            }
+            st.seed_format_environment(&mut vars, st.sessions().get(resolved.session));
             if let Ok(entries) = st.format_option_entries(&target) {
                 for (name, value) in entries {
                     vars.set(name.to_string(), value);
@@ -424,22 +477,32 @@ impl SourceFile {
         })
     }
 
-    /// The paths to read, with `-F` expanded against the command's target.
+    /// The paths to read: `-F` expanded against the command's target, and a
+    /// relative one taken from the directory `server_client_get_cwd` reports
+    /// for the client that issued the command rather than from the daemon's.
+    /// `-` names the client's own standard input and is never joined.
     fn resolved_paths(&self, context: &ExecContext<'_>) -> Vec<String> {
-        if !self.expand {
-            return self.paths.clone();
-        }
-        self.paths
+        let mut state = context.state().borrow_mut();
+        let previous = install_command_target_context(&mut state, context.client());
+        let cwd = client_working_directory(&state, context.client(), None);
+        let paths = self
+            .paths
             .iter()
             .map(|raw_path| {
-                let mut state = context.state().borrow_mut();
-                let previous = install_command_target_context(&mut state, context.client());
-                let path =
-                    expand_if_cond(raw_path, self.target.as_deref(), &state, context.agents());
-                restore_command_target_context(&mut state, previous);
-                path
+                let path = if self.expand {
+                    expand_if_cond(raw_path, self.target.as_deref(), &state, context.agents())
+                } else {
+                    raw_path.clone()
+                };
+                if path == "-" || Path::new(&path).is_absolute() {
+                    path
+                } else {
+                    cwd.join(&path).to_string_lossy().into_owned()
+                }
             })
-            .collect()
+            .collect();
+        restore_command_target_context(&mut state, previous);
+        paths
     }
 
     async fn execute(self, context: &mut ExecContext<'_>) -> SharedCommandExecution {
@@ -449,7 +512,31 @@ impl SourceFile {
             ));
         }
         let paths = self.resolved_paths(context);
-        let reads = suspend::source_file(context.tasks(), paths).await;
+        // `-` is the client's standard input, which the file protocol has
+        // already read into the context; only the real paths are the server's
+        // to open.
+        let stdin = context.client().input_file.clone();
+        let mut reads = Vec::new();
+        for path in paths {
+            if path == "-" {
+                reads.push(SourceFileRead {
+                    path,
+                    contents: match stdin.clone() {
+                        Some(Ok(bytes)) => String::from_utf8(bytes).map_err(|_| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "stream did not contain valid UTF-8",
+                            )
+                        }),
+                        Some(Err(errno)) => Err(std::io::Error::from_raw_os_error(errno)),
+                        None => Ok(String::new()),
+                    },
+                    existed: true,
+                });
+                continue;
+            }
+            reads.extend(suspend::source_file(context.tasks(), vec![path]).await);
+        }
         self.queue_contents(reads, context)
     }
 

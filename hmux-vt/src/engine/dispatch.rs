@@ -539,15 +539,16 @@ impl Engine {
         }
     }
 
-    /// SM / RM, the non-private modes. tmux implements only IRM.
+    /// SM / RM, the non-private modes: IRM, and the very-visible cursor, whose
+    /// sense tmux inverts — `RM 34` sets it and `SM 34` clears it.
     fn set_modes(&mut self, params: &[Param], set: bool) {
         for param in params {
-            if param.get(0) == Some(4) {
-                if set {
-                    self.screen.mode_set(mode::INSERT);
-                } else {
-                    self.screen.mode_clear(mode::INSERT);
-                }
+            match param.get(0) {
+                Some(4) if set => self.screen.mode_set(mode::INSERT),
+                Some(4) => self.screen.mode_clear(mode::INSERT),
+                Some(34) if set => self.screen.mode_clear(mode::CURSOR_VERY_VISIBLE),
+                Some(34) => self.screen.mode_set(mode::CURSOR_VERY_VISIBLE),
+                _ => {}
             }
         }
     }

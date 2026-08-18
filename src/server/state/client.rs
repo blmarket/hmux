@@ -216,6 +216,9 @@ pub(super) struct ClientRenderEntry {
     /// it caches from it. Empty until the attach path reports them.
     uid: Option<u32>,
     user: String,
+    /// The environment the client attached with — tmux's `c->environ`, which
+    /// `switch-client` copies `update-environment` names out of.
+    environment: Vec<String>,
     pub(super) cols: u16,
     pub(super) rows: u16,
     /// The client terminal's cell size in pixels — tmux's `tty->xpixel` and
@@ -726,6 +729,7 @@ impl ClientRenderRegistry {
                 pid,
                 uid: None,
                 user: String::new(),
+                environment: Vec::new(),
                 cols,
                 rows,
                 // A client reports its pixel size after the handshake, if at
@@ -1192,6 +1196,7 @@ impl ClientRenderRegistry {
         target: Option<&str>,
         invoking_tty: Option<&str>,
         exec: Option<&str>,
+        hangup: bool,
     ) -> ClientActionResult {
         let inner = self.inner.borrow();
         let entry = match Self::client_entry(&inner, target, invoking_tty) {
@@ -1200,7 +1205,10 @@ impl ClientRenderRegistry {
         };
         {
             let mut action = entry.slot.action.borrow_mut();
-            *action = Some(ClientAction::Detach(exec.map(str::to_owned)));
+            *action = Some(ClientAction::Detach {
+                exec: exec.map(str::to_owned),
+                hangup,
+            });
             let _ = entry.slot.wakeup.wake();
         }
         ClientActionResult::Queued
@@ -1211,6 +1219,7 @@ impl ClientRenderRegistry {
         target: Option<&str>,
         invoking_tty: Option<&str>,
         exec: Option<&str>,
+        hangup: bool,
     ) -> ClientActionResult {
         let inner = self.inner.borrow();
         let target_entry = match Self::client_entry(&inner, target, invoking_tty) {
@@ -1221,19 +1230,30 @@ impl ClientRenderRegistry {
         for entry in inner.clients.values() {
             if entry.name != target_name {
                 let mut action = entry.slot.action.borrow_mut();
-                *action = Some(ClientAction::Detach(exec.map(str::to_owned)));
+                *action = Some(ClientAction::Detach {
+                exec: exec.map(str::to_owned),
+                hangup,
+            });
                 let _ = entry.slot.wakeup.wake();
             }
         }
         ClientActionResult::Queued
     }
 
-    pub(super) fn detach_session_clients(&self, session_id: u32, exec: Option<&str>) {
+    pub(super) fn detach_session_clients(
+        &self,
+        session_id: u32,
+        exec: Option<&str>,
+        hangup: bool,
+    ) {
         let inner = self.inner.borrow();
         for entry in inner.clients.values() {
             if entry.session_id == session_id {
                 let mut action = entry.slot.action.borrow_mut();
-                *action = Some(ClientAction::Detach(exec.map(str::to_owned)));
+                *action = Some(ClientAction::Detach {
+                exec: exec.map(str::to_owned),
+                hangup,
+            });
                 let _ = entry.slot.wakeup.wake();
             }
         }
@@ -1435,6 +1455,17 @@ impl ClientRenderRegistry {
         {
             entry.activity_micros = at;
         }
+    }
+
+    /// The environment a named client attached with.
+    pub(super) fn client_environment(&self, client: &str) -> Vec<String> {
+        self.inner
+            .borrow()
+            .clients
+            .values()
+            .find(|entry| entry.name == client)
+            .map(|entry| entry.environment.clone())
+            .unwrap_or_default()
     }
 
     /// Record the key table a client moved into.
@@ -1787,6 +1818,16 @@ impl ClientRenderAttachment {
         if let Some(entry) = inner.clients.get_mut(&self.id) {
             entry.uid = uid;
             entry.user = user;
+        }
+    }
+
+    /// Record the environment this client attached with, which outlives the
+    /// attach command: `switch-client` copies out of it later, from whatever
+    /// other client happens to run it.
+    pub(crate) fn set_environment(&self, environment: Vec<String>) {
+        let mut inner = self.registry.inner.borrow_mut();
+        if let Some(entry) = inner.clients.get_mut(&self.id) {
+            entry.environment = environment;
         }
     }
 
@@ -2211,9 +2252,10 @@ impl ServerState {
         target: Option<&str>,
         invoking_tty: Option<&str>,
         exec: Option<&str>,
+        hangup: bool,
     ) -> ClientActionResult {
         self.client_renders
-            .detach_client(target, invoking_tty, exec)
+            .detach_client(target, invoking_tty, exec, hangup)
     }
 
     pub(crate) fn detach_all_other_clients(
@@ -2221,13 +2263,20 @@ impl ServerState {
         target: Option<&str>,
         invoking_tty: Option<&str>,
         exec: Option<&str>,
+        hangup: bool,
     ) -> ClientActionResult {
         self.client_renders
-            .detach_all_other_clients(target, invoking_tty, exec)
+            .detach_all_other_clients(target, invoking_tty, exec, hangup)
     }
 
-    pub(crate) fn detach_session_clients(&self, session_id: u32, exec: Option<&str>) {
-        self.client_renders.detach_session_clients(session_id, exec);
+    pub(crate) fn detach_session_clients(
+        &self,
+        session_id: u32,
+        exec: Option<&str>,
+        hangup: bool,
+    ) {
+        self.client_renders
+            .detach_session_clients(session_id, exec, hangup);
     }
 
     pub(crate) fn suspend_client(
@@ -2353,6 +2402,47 @@ impl ServerState {
         self.client_renders
             .toggle_client_read_only(target, invoking_tty)
     }
+
+    /// The environment a named client attached with — tmux's `c->environ`.
+    pub(crate) fn client_environment(&self, client: &str) -> Vec<String> {
+        self.client_renders.client_environment(client)
+    }
+
+    /// The client a `-c` target names, resolved the way tmux's
+    /// `cmd_find_client` does it: the named client, else the one on the
+    /// invoking terminal, else — for a command client that owns no terminal —
+    /// the sole attached client.
+    pub(crate) fn resolve_target_client(
+        &self,
+        target: Option<&str>,
+        invoking_tty: Option<&str>,
+    ) -> Result<ClientSnapshot, ClientActionResult> {
+        let clients = self.client_snapshots();
+        let matches = |entry: &ClientSnapshot, name: &str| {
+            entry.name == name
+                || entry
+                    .name
+                    .strip_prefix("/dev/")
+                    .is_some_and(|tty| tty == name)
+        };
+        if let Some(target) = target.map(|target| target.strip_suffix(':').unwrap_or(target)) {
+            return clients
+                .into_iter()
+                .find(|entry| matches(entry, target))
+                .ok_or(ClientActionResult::TargetNotFound);
+        }
+        if let Some(entry) = invoking_tty
+            .and_then(|tty| clients.iter().find(|entry| matches(entry, tty)))
+            .cloned()
+        {
+            return Ok(entry);
+        }
+        match clients.len() {
+            1 => Ok(clients.into_iter().next().expect("one client present")),
+            _ => Err(ClientActionResult::NoCurrentClient),
+        }
+    }
+
 
     /// tmux stamps `c->activity_time` alongside the session's whenever a key
     /// arrives; it is what orders `cmd_find_best_client`.

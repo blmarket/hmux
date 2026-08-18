@@ -508,7 +508,7 @@ impl EventControlClient {
                 session_id,
                 destroyed,
             }) => Some((session_id, destroyed)),
-            Some(ClientAction::Detach(_)) => return Ok(ControlServing::Stop),
+            Some(ClientAction::Detach { .. }) => return Ok(ControlServing::Stop),
             Some(ClientAction::Lock(command)) => {
                 self.frames.push_back(Frame::new(Message::Lock(command)));
                 None

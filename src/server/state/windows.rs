@@ -13,7 +13,7 @@ use super::layout::resize_panes_to_layout;
 use super::sizing::{DEFAULT_XPIXEL, DEFAULT_YPIXEL};
 use super::target::{parse_index_target, window_not_found};
 use super::{
-    fill_spawn_ids, now_epoch, now_micros, LayoutCell, Pane, PaneNode, RenderInvalidation,
+    fill_spawn_ids, now_micros, LayoutCell, Pane, PaneNode, RenderInvalidation,
     ServerState, Session, Window, Winlink, ALERT_ACTIVITY, ALERT_BELL, ALERT_SILENCE,
 };
 use crate::server::options::{OptionSet, SessionHook, WindowHook};
@@ -590,7 +590,7 @@ impl ServerState {
                 active: 0,
                 last_pane: None,
                 zoomed: false,
-                activity_epoch: now_epoch(),
+                activity_micros: now_micros(),
                 name_time_micros: 0,
                 name_in_mode: false,
                 scrollbars_on_left: false,
@@ -759,7 +759,7 @@ impl ServerState {
                 active: 0,
                 last_pane: None,
                 zoomed: false,
-                activity_epoch: now_epoch(),
+                activity_micros: now_micros(),
                 name_time_micros: 0,
                 name_in_mode: false,
                 scrollbars_on_left: false,
@@ -919,6 +919,11 @@ impl ServerState {
     /// session's only (and active) window.
     pub fn kill_other_windows(&mut self, target: &str) -> io::Result<()> {
         let t = self.resolve_window_target(target)?;
+        // A session holding one winlink has nothing to kill, and tmux returns
+        // before its renumber pass in that case.
+        if self.sessions[t.session].windows.len() < 2 {
+            return Ok(());
+        }
         let keep_id = self.sessions[t.session].windows[t.window].id;
         let links = &self.sessions[t.session].windows;
         let mut destroy = links
@@ -931,7 +936,22 @@ impl ServerState {
         for window_id in destroy {
             self.destroy_window_id(window_id);
         }
+        // tmux finishes the bulk kill with `server_renumber_all`, so every
+        // session that asked for renumbering is renumbered, not only the ones
+        // that lost a window.
+        self.renumber_all_sessions();
         Ok(())
+    }
+
+    /// tmux's `server_renumber_all`: renumber every session whose
+    /// `renumber-windows` option is on.
+    fn renumber_all_sessions(&mut self) {
+        let session_ids = self
+            .sessions
+            .iter()
+            .map(|session| session.id)
+            .collect::<Vec<_>>();
+        self.renumber_affected_sessions(&session_ids);
     }
 
     /// `unlink-window`: remove one logical winlink from its session (and thus

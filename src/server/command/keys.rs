@@ -266,21 +266,24 @@ impl ListKeys {
             .max()
             .unwrap_or(0);
 
+        // `prefix` is a session option, so tmux reads it from `global_s_options`
+        // rather than from the server table, and `None` leaves the variable
+        // empty. The same string goes on every row, root bindings included.
         let default_prefix = self.prefix.clone().unwrap_or_else(|| {
-            st.server_options()
+            match st
+                .global_session_options()
                 .get("prefix")
+                .or_else(|| super::super::options::option_default("prefix"))
                 .unwrap_or("C-b")
-                .to_string()
+            {
+                "None" => String::new(),
+                prefix => prefix.to_string(),
+            }
         });
 
         let mut out = String::new();
         for (table_name, key, binding) in &filtered {
             if let Some(template) = self.format.as_deref() {
-                let prefix_str = if *table_name == "root" {
-                    ""
-                } else {
-                    &default_prefix
-                };
                 let mut vars = format::Vars::new();
                 vars.set("notes_only", if self.notes { "1" } else { "0" })
                     .set("key_has_repeat", if key_has_repeat { "1" } else { "0" })
@@ -288,7 +291,7 @@ impl ListKeys {
                     .set("key_table_width", key_table_width.to_string())
                     .set("key_repeat", if binding.repeat { "1" } else { "0" })
                     .set("key_note", binding.note.clone().unwrap_or_default())
-                    .set("key_prefix", prefix_str)
+                    .set("key_prefix", default_prefix.clone())
                     .set("key_table", *table_name)
                     .set("key_string", format_key_name(*key))
                     .set("key_command", binding.command.print());
@@ -298,11 +301,7 @@ impl ListKeys {
                     out.push('\n');
                 }
             } else if self.notes {
-                let prefix_str = if *table_name == "root" {
-                    ""
-                } else {
-                    &default_prefix
-                };
+                let prefix_str = default_prefix.as_str();
                 let key_name = format_key_name(*key);
                 // tmux falls back to the binding's own command line when it
                 // carries no note (`cmd_list_print` in `cmd-list-keys.c`).

@@ -82,6 +82,8 @@ pub use input::{Key, KeyEvent, MouseAction, MouseButton, MouseEvent, encode_key_
 // The client tty path: the outer terminal's answers, picked out of its input.
 pub use answer::{AnswerScanner, TerminalAnswer};
 
+pub use x11_colour::colour_by_name;
+
 // The model for out-of-process harnesses: feed bytes, read the screen back.
 pub use model::TerminalModel;
 

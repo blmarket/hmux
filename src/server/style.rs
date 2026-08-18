@@ -310,6 +310,64 @@ fn palette_rgb(index: u8) -> (u8, u8, u8) {
     }
 }
 
+/// The colour names tmux's `colour_fromstring` recognises, paired with the
+/// number it maps them to; `colour_tostring` spells the same number back.
+const OPTION_COLOUR_NAMES: [(&str, u16); 18] = [
+    ("black", 0),
+    ("red", 1),
+    ("green", 2),
+    ("yellow", 3),
+    ("blue", 4),
+    ("magenta", 5),
+    ("cyan", 6),
+    ("white", 7),
+    ("default", 8),
+    ("terminal", 9),
+    ("brightblack", 90),
+    ("brightred", 91),
+    ("brightgreen", 92),
+    ("brightyellow", 93),
+    ("brightblue", 94),
+    ("brightmagenta", 95),
+    ("brightcyan", 96),
+    ("brightwhite", 97),
+];
+
+/// The canonical spelling of a colour-valued option: tmux's
+/// `colour_fromstring` followed by `colour_tostring`. `None` is a value tmux
+/// rejects outright with `bad colour`.
+///
+/// This is deliberately not [`parse_colour`], which reads the colours a *style*
+/// or an SGR sequence names and folds the bright names onto palette entries
+/// 8-15. An option keeps tmux's distinction between `colour9` and `brightred`.
+pub(crate) fn canonical_option_colour(value: &str) -> Option<String> {
+    if value.len() == 7 && value.starts_with('#') {
+        let hex = &value[1..];
+        if hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Some(format!("#{}", hex.to_ascii_lowercase()));
+        }
+    }
+    for prefix in ["colour", "color"] {
+        if value.len() >= prefix.len() && value[..prefix.len()].eq_ignore_ascii_case(prefix) {
+            let index = value[prefix.len()..].parse::<u16>().ok().filter(|n| *n < 256)?;
+            return Some(format!("colour{index}"));
+        }
+    }
+    let named = OPTION_COLOUR_NAMES
+        .iter()
+        .find(|(name, number)| {
+            value.eq_ignore_ascii_case(name)
+                // `default` and `terminal` have no numeric spelling; the
+                // sixteen ANSI names do, and tmux compares those exactly rather
+                // than case-insensitively.
+                || (!matches!(number, 8 | 9) && value == number.to_string())
+        });
+    if let Some((name, _)) = named {
+        return Some((*name).to_string());
+    }
+    hmux_vt::colour_by_name(value).map(|rgb| format!("#{rgb:06x}"))
+}
+
 pub(crate) fn parse_colour(value: &str) -> Option<Colour> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("default")

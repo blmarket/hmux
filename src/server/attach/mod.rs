@@ -325,6 +325,9 @@ pub(crate) struct AttachSession {
     commands: AttachCommands,
     compositor: AttachCompositorState,
     pending_exec: Option<(String, String)>,
+    /// Whether the detach the client is about to be told about is tmux's
+    /// `MSG_DETACHKILL`, which makes the client hang itself up.
+    pending_hangup: bool,
 }
 
 struct AttachTty {
@@ -966,6 +969,20 @@ fn decode_tty_key(bytes: &[u8]) -> Option<(DecodedTtyKey, usize)> {
         if fields.next().is_some() {
             return None;
         }
+        // Some terminals send a button-release report for a scroll-wheel
+        // press. tmux's `tty_keys_mouse` drops those reports outright, so
+        // nothing inside the server — or inside a pane — ever sees them.
+        if bytes[end] == b'm' && button & 0x40 == 0x40 {
+            return Some((
+                DecodedTtyKey {
+                    code: None,
+                    name: "Mouse".into(),
+                    mouse: None,
+                    flags: TtyKeyFlags::default(),
+                },
+                end + 1,
+            ));
+        }
         let mouse = MouseEvent::from_terminal_report(
             MouseProtocol::Sgr,
             button,
@@ -1577,6 +1594,15 @@ where
             }
             if !command::command_flag("attach-session", args, 'E') {
                 st.update_session_environment(&target, &context.environment);
+            }
+            // `-d` detaches every other client already on the session, and
+            // `-x` does the same but tells them to hang up. This client has not
+            // registered yet, so every client on the session is an "other".
+            let hangup = command::command_flag("attach-session", args, 'x');
+            if hangup || command::command_flag("attach-session", args, 'd') {
+                if let Some(session_id) = st.session_id(&target) {
+                    st.detach_session_clients(session_id, None, hangup);
+                }
             }
             target
         }

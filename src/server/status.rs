@@ -1505,11 +1505,7 @@ impl<'a> StatusContext<'a> {
                 }
             }
         }
-        for (name, value) in self.state.env_iter() {
-            if vars.lookup(name).is_none() {
-                vars.set(name.to_string(), value);
-            }
-        }
+        self.state.seed_format_environment(&mut vars, Some(session));
         vars
     }
 
@@ -1671,9 +1667,39 @@ impl<'a> StatusContext<'a> {
     }
 }
 
+impl StatusContext<'_> {
+    /// The session an enclosing `#{S:…}` rebound to, or the client's own.
+    fn scoped_session(&self, vars: &Vars) -> &Session {
+        vars.lookup("session_id")
+            .and_then(|id| id.strip_prefix('$')?.parse::<u32>().ok())
+            .and_then(|id| {
+                self.state
+                    .sessions()
+                    .iter()
+                    .find(|session| session.id == id)
+            })
+            .unwrap_or(self.session)
+    }
+
+    /// The position in `session`'s window list that an enclosing `#{W:…}`
+    /// rebound to — the window-list entry being drawn, for a
+    /// `window-status-format` — or the session's current window.
+    fn scoped_window(&self, session: &Session, vars: &Vars) -> usize {
+        vars.lookup("window_id")
+            .and_then(|id| id.strip_prefix('@')?.parse::<u32>().ok())
+            .and_then(|id| session.windows.iter().position(|link| link.id == id))
+            .unwrap_or(session.active)
+    }
+}
+
 impl format::FormatContext for StatusContext<'_> {
     fn lookup(&self, vars: &Vars, key: &str) -> Option<String> {
-        vars.lookup(key).map(str::to_string).or_else(|| {
+        format::FormatContext::lookup_variable(self, vars, key)
+            .or_else(|| vars.lookup_environment(key).map(str::to_string))
+    }
+
+    fn lookup_variable(&self, vars: &Vars, key: &str) -> Option<String> {
+        vars.lookup_variable(key).map(str::to_string).or_else(|| {
             (!key.contains([':', ';']))
                 .then(|| {
                     self.state
@@ -1691,14 +1717,15 @@ impl format::FormatContext for StatusContext<'_> {
         flags: &str,
         _vars: &Vars,
     ) -> Option<Vec<format::FormatLoopItem>> {
+        // tmux's loops read the format tree's own session and window, which an
+        // enclosing loop has already rebound for the item being expanded, so a
+        // `#{P:…}` inside `window-status-format` walks the panes of the window
+        // the entry is for rather than the client's current one.
+        let scoped_session = self.scoped_session(_vars);
         let mut items = match kind {
             format::FormatLoopKind::Session => {
                 let mut sessions = self.state.sessions().iter().collect::<Vec<_>>();
-                if flags.contains('n') {
-                    sessions.sort_by(|left, right| left.name.cmp(&right.name));
-                } else {
-                    sessions.sort_by_key(|session| session.id);
-                }
+                super::command::sort_session_loop(&mut sessions, flags);
                 sessions
                     .into_iter()
                     .map(|session| format::FormatLoopItem {
@@ -1708,36 +1735,45 @@ impl format::FormatContext for StatusContext<'_> {
                     .collect()
             }
             format::FormatLoopKind::Window => {
-                let mut indices = (0..self.session.windows.len()).collect::<Vec<_>>();
-                if flags.contains('n') {
-                    indices.sort_by(|left, right| {
-                        self.state
-                            .window_for_link(&self.session.windows[*left])
-                            .name
-                            .cmp(
-                                &self
-                                    .state
-                                    .window_for_link(&self.session.windows[*right])
-                                    .name,
-                            )
-                    });
-                } else {
-                    indices.sort_by_key(|index| self.session.windows[*index].index);
-                }
+                let mut indices = (0..scoped_session.windows.len()).collect::<Vec<_>>();
+                indices.sort_by_key(|index| scoped_session.windows[*index].index);
+                super::command::sort_window_loop(
+                    self.state,
+                    scoped_session,
+                    &mut indices,
+                    flags,
+                );
+                let session = self
+                    .state
+                    .sessions()
+                    .iter()
+                    .position(|session| session.id == scoped_session.id);
                 indices
                     .into_iter()
-                    .map(|index| format::FormatLoopItem {
-                        vars: self.vars_for(self.session, index, None),
-                        active: index == self.session.active,
+                    .map(|index| {
+                        let mut vars = self.vars_for(scoped_session, index, None);
+                        if let Some(session) = session {
+                            super::command::set_window_neighbour_vars(
+                                self.state, session, index, &mut vars,
+                            );
+                        }
+                        format::FormatLoopItem {
+                            vars,
+                            active: index == scoped_session.active,
+                        }
                     })
                     .collect()
             }
             format::FormatLoopKind::Pane => {
-                let link = self.session.windows.get(self.session.active)?;
+                let scoped_window = self.scoped_window(scoped_session, _vars);
+                let link = scoped_session.windows.get(scoped_window)?;
                 let window = self.state.window_for_link(link);
-                (0..window.panes.len())
+                let mut order = (0..window.panes.len()).collect::<Vec<_>>();
+                super::command::sort_pane_loop(window, &mut order, flags);
+                order
+                    .into_iter()
                     .map(|index| format::FormatLoopItem {
-                        vars: self.vars_for(self.session, self.session.active, Some(index)),
+                        vars: self.vars_for(scoped_session, scoped_window, Some(index)),
                         active: index == window.active,
                     })
                     .collect()
@@ -1747,7 +1783,10 @@ impl format::FormatContext for StatusContext<'_> {
                 active: true,
             }],
         };
-        if flags.contains('r') {
+        // The client loop has one entry, so only it is left to reverse here;
+        // the tree loops are ordered by the same `sort_*_loop` the command
+        // layer uses.
+        if kind == format::FormatLoopKind::Client && flags.contains('r') {
             items.reverse();
         }
         Some(items)

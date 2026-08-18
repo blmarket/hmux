@@ -74,10 +74,12 @@ impl ListSessions {
 
         let marked = st.marked_pane();
         let mut out = String::new();
-        for session in order {
+        for (line, session) in order.into_iter().enumerate() {
             let mut vars = vars_for(st, session, session.active, agents, marked);
             // tmux's `FORMAT_TYPE_SESSION` marker for this list context.
             vars.set("session_format", "1");
+            // tmux publishes the row's own position here.
+            vars.set("line", line.to_string());
             if let Some(filter) = self.filter.as_deref() {
                 if !format::is_true(&expand_command_format(st, filter, &vars, None)) {
                     continue;

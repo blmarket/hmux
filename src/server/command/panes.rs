@@ -190,7 +190,18 @@ impl SplitWindow {
                 None => None,
             }
         };
-        let explicit_cwd = self.cwd.clone().map(PathBuf::from);
+        let explicit_cwd = self
+            .cwd
+            .as_deref()
+            .map(|cwd| {
+                execution::spawn_start_directory(
+                    cwd,
+                    Some(&target),
+                    st,
+                    context,
+                    &PaneAgents::new(),
+                )
+            });
         let cwd = explicit_cwd.as_deref().or(context.cwd.as_deref());
         if self.empty && self.command.iter().any(|word| !word.is_empty()) {
             return CommandResult::err("command cannot be given for empty pane\n");
@@ -411,7 +422,18 @@ impl NewPane {
             Ok(value) => value,
             Err(error) => return error,
         };
-        let explicit_cwd = self.cwd.clone().map(PathBuf::from);
+        let explicit_cwd = self
+            .cwd
+            .as_deref()
+            .map(|cwd| {
+                execution::spawn_start_directory(
+                    cwd,
+                    Some(&target),
+                    st,
+                    context,
+                    &PaneAgents::new(),
+                )
+            });
         let cwd = explicit_cwd.as_deref().or(context.cwd.as_deref());
         let shell = context
             .env("SHELL")
@@ -780,7 +802,12 @@ impl SwapPane {
                 None => CommandResult::err("can't establish current session\n"),
             };
         }
-        let source = self.source.or_else(|| current.clone());
+        // tmux declares swap-pane's source with `CMD_FIND_DEFAULT_MARKED`, so
+        // an omitted `-s` is the marked pane when there is one.
+        let source = self
+            .source
+            .or_else(|| st.marked_pane().map(|id| format!("%{id}")))
+            .or_else(|| current.clone());
         let target = self.target.or(current);
         match (source, target) {
             (Some(source), Some(target)) => {
@@ -798,7 +825,7 @@ impl SwapPane {
                 };
                 st.push_zoom_at(src.session, src.window);
                 st.push_zoom_at(dst.session, dst.window);
-                let result = st.swap_pane(&source, &target);
+                let result = st.swap_pane(&source, &target, !self.detached);
                 st.pop_zoom_at(src.session, src.window, self.zoom);
                 st.pop_zoom_at(dst.session, dst.window, self.zoom);
                 match result {
@@ -1060,7 +1087,18 @@ impl RespawnPane {
         // shell command line, several are an argv (tmux's `spawn_pane`).
         let argv =
             (!self.command.is_empty()).then(|| pane_command_argv(&self.command, st, Some(&target)));
-        let mut cwd = self.cwd.clone().map(PathBuf::from);
+        let mut cwd = self
+            .cwd
+            .as_deref()
+            .map(|cwd| {
+                execution::spawn_start_directory(
+                    cwd,
+                    Some(&target),
+                    st,
+                    context,
+                    &PaneAgents::new(),
+                )
+            });
         // `-e` reaches the replacement the way a spawn's environment does. With no
         // command the saved spawn spec is materialized so the wrap has an argv to
         // carry, keeping its stored working directory.
@@ -1077,7 +1115,7 @@ impl RespawnPane {
                 if cwd.is_none() {
                     cwd = saved.cwd;
                 }
-                Some(saved.argv)
+                Some(unwrap_pane_argv(saved.argv))
             });
             base.map(|argv| {
                 pane_argv(
@@ -1181,9 +1219,7 @@ impl PipePane {
                 agents,
                 st.marked_pane(),
             );
-            for (name, value) in st.env_iter() {
-                vars.set(name.to_string(), value);
-            }
+            st.seed_format_environment(&mut vars, st.sessions().get(resolved.session));
             if let Ok(entries) = st.format_option_entries(&target) {
                 for (name, value) in entries {
                     vars.set(name.to_string(), value);
@@ -1289,6 +1325,15 @@ impl ResizePane {
         }
         let resolved = st.resolve(&target).expect("validated target");
         st.window_mut(resolved.session, resolved.window).zoomed = false;
+        // tmux parses the adjustment before it applies `-x`/`-y`, so a bad
+        // adjustment is reported even when an absolute size would have worked.
+        let adjustment = match self.adjustment.as_deref() {
+            None => 1,
+            Some(value) => match strtonum(value, 1, i64::from(i32::MAX)) {
+                Ok(value) => u16::try_from(value).unwrap_or(u16::MAX),
+                Err(reason) => return CommandResult::err(format!("adjustment {reason}\n")),
+            },
+        };
         let (window_cols, window_rows) = {
             let win = st.window(resolved.session, resolved.window);
             (win.cols, win.rows)
@@ -1302,27 +1347,27 @@ impl ResizePane {
                     SplitDirection::LeftRight => window_cols,
                     SplitDirection::TopBottom => window_rows,
                 };
-                let size = if let Some(pct_str) = value.strip_suffix('%') {
-                    match pct_str.parse::<u32>() {
-                        Ok(pct) => (u32::from(total) * pct / 100) as u16,
-                        Err(_) => return CommandResult::err(format!("{label} invalid\n")),
-                    }
-                } else {
-                    match value.parse::<u16>() {
-                        Ok(size) => size,
-                        Err(_) => return CommandResult::err(format!("{label} invalid\n")),
-                    }
+                let size = match args_percentage(value, 0, i64::from(i32::MAX), i64::from(total)) {
+                    Ok(size) => size,
+                    Err(reason) => return CommandResult::err(format!("{label} {reason}\n")),
                 };
+                // A pane that gave up a row to `pane-border-status` is asked
+                // for one row more, so the height the caller named is the
+                // height the pane's own screen ends up with.
+                let size = if direction == SplitDirection::TopBottom
+                    && size != i64::from(i32::MAX)
+                    && st.active_pane_border_status(&target).is_some()
+                {
+                    size + 1
+                } else {
+                    size
+                };
+                let size = u16::try_from(size).unwrap_or(u16::MAX);
                 if let Err(error) = st.resize_pane_to(&target, direction, size) {
                     return CommandResult::err(format!("{error}\n"));
                 }
             }
         }
-        let adjustment = match self.adjustment.as_deref().unwrap_or("1").parse::<u16>() {
-            Ok(0) => return CommandResult::err("adjustment too small\n"),
-            Ok(value) => value,
-            Err(_) => return CommandResult::err("adjustment invalid\n"),
-        };
         let direction = if self.left {
             Some((SplitDirection::LeftRight, false))
         } else if self.right {
@@ -1519,6 +1564,47 @@ impl ResizeWindow {
 }
 
 /// tmux's inclusive size bounds for `resize-window -x/-y` (`strtonum` range).
+/// tmux's `strtonum(3)` diagnostics: the word that follows the value's label
+/// when the text is not a number at all, or names a value outside the range
+/// the caller allows. Values beyond `i64` saturate, so a long run of digits
+/// still reports too large rather than invalid.
+fn strtonum(value: &str, min: i64, max: i64) -> Result<i64, &'static str> {
+    let negative = value.starts_with('-');
+    let digits = value
+        .strip_prefix(['-', '+'])
+        .unwrap_or(value);
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("invalid");
+    }
+    let parsed = value
+        .parse::<i64>()
+        .unwrap_or(if negative { i64::MIN } else { i64::MAX });
+    if parsed < min {
+        return Err("too small");
+    }
+    if parsed > max {
+        return Err("too large");
+    }
+    Ok(parsed)
+}
+
+/// tmux's `args_string_percentage`: a `%`-suffixed value is a percentage of
+/// `current`, ranged over `0..=100` before it is scaled; anything else is an
+/// absolute number ranged over `min..=max`.
+fn args_percentage(value: &str, min: i64, max: i64, current: i64) -> Result<i64, &'static str> {
+    let Some(percent) = value.strip_suffix('%') else {
+        return strtonum(value, min, max);
+    };
+    let scaled = current * strtonum(percent, 0, 100)? / 100;
+    if scaled < min {
+        return Err("too small");
+    }
+    if scaled > max {
+        return Err("too large");
+    }
+    Ok(scaled)
+}
+
 const WINDOW_SIZE_MIN: i64 = 1;
 const WINDOW_SIZE_MAX: i64 = 10000;
 
@@ -1851,7 +1937,15 @@ impl ListPanes {
         let marked = st.marked_pane();
         let mut out = String::new();
         for (sess, win_pos, pane_idx) in panes {
-            let vars = vars_full(st, sess, win_pos, pane_idx, agents, marked);
+            let mut vars = vars_full(st, sess, win_pos, pane_idx, agents, marked);
+            // `cmd_list_panes_window` publishes the row *count* of the window
+            // the row belongs to rather than the row's own position, and it
+            // runs once per window, so a multi-window listing counts per
+            // window.
+            vars.set(
+                "line",
+                st.session_window(sess, win_pos).panes.len().to_string(),
+            );
             if let Some(filter) = self.filter.as_deref() {
                 if !format::is_true(&expand_command_format(st, filter, &vars, None)) {
                     continue;
@@ -2113,9 +2207,7 @@ impl CapturePane {
             agents,
             st.marked_pane(),
         );
-        for (name, value) in st.env_iter() {
-            vars.set(name.to_string(), value);
-        }
+        st.seed_format_environment(&mut vars, st.sessions().get(resolved.session));
         if let Ok(entries) = st.format_option_entries(&target) {
             for (name, value) in entries {
                 vars.set(name.to_string(), value);

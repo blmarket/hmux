@@ -86,6 +86,10 @@ pub struct Vars {
     /// cost nothing to store. The borrowed names an option or environment
     /// walk produces are copied, as they must be.
     map: HashMap<std::borrow::Cow<'static, str>, Slot>,
+    /// The environment layer `format_find` consults only after every option
+    /// and format variable has missed, and skips entirely for `t:`. Keeping it
+    /// out of `map` is what preserves both of those orderings.
+    environment: HashMap<String, String>,
 }
 
 impl Vars {
@@ -97,12 +101,14 @@ impl Vars {
     pub(crate) fn empty() -> Vars {
         Vars {
             map: HashMap::new(),
+            environment: HashMap::new(),
         }
     }
 
     pub fn new() -> Vars {
         let mut vars = Vars {
             map: HashMap::with_capacity(TYPICAL_VARS),
+            environment: HashMap::new(),
         };
         // The daemon's uid cannot change, and resolving the name walks NSS
         // (sockets to nscd, /etc/passwd) — worth doing exactly once.
@@ -161,7 +167,31 @@ impl Vars {
         self
     }
 
+    /// Set an environment variable. tmux resolves these last of all, so they
+    /// live beside the variable table rather than in it.
+    pub(crate) fn set_environment(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        self.environment.insert(key.into(), value.into());
+    }
+
+    /// Drop an environment name, so a session's `set-environment -r` hides the
+    /// global value the way `environ_find` returning a valueless entry does.
+    pub(crate) fn unset_environment(&mut self, key: &str) {
+        self.environment.remove(key);
+    }
+
     pub(crate) fn lookup(&self, key: &str) -> Option<&str> {
+        self.lookup_variable(key)
+            .or_else(|| self.environment.get(key).map(String::as_str))
+    }
+
+    /// The environment layer alone, for a context that has its own fallbacks
+    /// to consult between the variable table and it.
+    pub(crate) fn lookup_environment(&self, key: &str) -> Option<&str> {
+        self.environment.get(key).map(String::as_str)
+    }
+
+    /// The lookup that stops before the environment layer.
+    pub(crate) fn lookup_variable(&self, key: &str) -> Option<&str> {
         match self.map.get(key)? {
             Slot::Ready(value) => Some(value),
             Slot::Lazy(slot) => Some(slot.cache.get_or_init(|| (slot.compute)())),
@@ -249,6 +279,39 @@ pub trait LoopSource {
     fn items(&self, kind: LoopKind) -> Vec<Vars>;
 }
 
+/// A loop source that reads its session and window from the item the format is
+/// currently being expanded against.
+///
+/// tmux's `format_loop_windows`/`format_loop_panes` walk `ft->s` and `ft->w`,
+/// and each loop rebinds those for the body it expands, so a `#{P:…}` written
+/// inside `#{W:…}` iterates the panes of the window being listed rather than
+/// the panes of the window the format was targeted at. [`LoopSource`] is
+/// anchored at one target for its whole expansion and cannot express that, so
+/// the internal callers supply this instead.
+pub(super) trait ScopedLoopSource {
+    /// The [`Vars`] context for each item of `kind` within `vars`'s scope, in
+    /// the order `flags` asks for. tmux sorts inside `sort_get_*`, on the
+    /// objects themselves rather than on the strings a format entry carries,
+    /// so the source owns the ordering.
+    fn items_in_scope(&self, kind: FormatLoopKind, flags: &str, vars: &Vars) -> Vec<Vars>;
+}
+
+/// A [`LoopSource`] used as a [`ScopedLoopSource`]: the anchor it was built
+/// with answers every loop, whatever the enclosing item is.
+struct AnchoredLoops<'a>(&'a dyn LoopSource);
+
+impl ScopedLoopSource for AnchoredLoops<'_> {
+    fn items_in_scope(&self, kind: FormatLoopKind, _flags: &str, _vars: &Vars) -> Vec<Vars> {
+        self.0.items(match kind {
+            FormatLoopKind::Session => LoopKind::Session,
+            FormatLoopKind::Window => LoopKind::Window,
+            FormatLoopKind::Pane => LoopKind::Pane,
+            // The public [`LoopSource`] has no client kind of its own.
+            FormatLoopKind::Client => return Vec::new(),
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct FormatLoopItem {
     pub(super) vars: Vars,
@@ -271,6 +334,13 @@ pub(super) enum FormatLoopKind {
 pub(super) trait FormatContext {
     fn lookup(&self, vars: &Vars, key: &str) -> Option<String> {
         vars.lookup(key).map(str::to_string)
+    }
+
+    /// The lookup `t:` performs. tmux's `format_find` skips the environment
+    /// under `FORMAT_TIMESTRING`, so a name that only the environment carries
+    /// is not a timestamp source.
+    fn lookup_variable(&self, vars: &Vars, key: &str) -> Option<String> {
+        vars.lookup_variable(key).map(str::to_string)
     }
 
     fn loop_items(
@@ -319,7 +389,7 @@ pub(super) trait FormatTree {
 }
 
 struct BasicContext<'a> {
-    loops: Option<&'a dyn LoopSource>,
+    loops: Option<&'a dyn ScopedLoopSource>,
     jobs: Option<&'a dyn FormatJobs>,
     tree: Option<&'a dyn FormatTree>,
 }
@@ -348,59 +418,23 @@ impl FormatContext for BasicContext<'_> {
         flags: &str,
         _vars: &Vars,
     ) -> Option<Vec<FormatLoopItem>> {
-        let mut items = self
+        let items = self
             .loops?
-            .items(match kind {
-                FormatLoopKind::Session => LoopKind::Session,
-                FormatLoopKind::Window => LoopKind::Window,
-                FormatLoopKind::Pane => LoopKind::Pane,
-                FormatLoopKind::Client => return None,
-            })
+            .items_in_scope(kind, flags, _vars)
             .into_iter()
             .map(|vars| {
                 let active_key = match kind {
                     FormatLoopKind::Session => "session_active",
                     FormatLoopKind::Window => "window_active",
                     FormatLoopKind::Pane => "pane_active",
-                    FormatLoopKind::Client => unreachable!(),
+                    // tmux's client loop has no active branch: every client
+                    // expands the one body it was given.
+                    FormatLoopKind::Client => return FormatLoopItem { vars, active: false },
                 };
                 let active = vars.lookup(active_key).is_some_and(is_true);
                 FormatLoopItem { vars, active }
             })
             .collect::<Vec<_>>();
-        if flags.contains('n') {
-            let name_key = match kind {
-                FormatLoopKind::Session => "session_name",
-                FormatLoopKind::Window => "window_name",
-                FormatLoopKind::Pane => "pane_index",
-                FormatLoopKind::Client => unreachable!(),
-            };
-            items.sort_by(|left, right| {
-                left.vars
-                    .lookup(name_key)
-                    .unwrap_or("")
-                    .cmp(right.vars.lookup(name_key).unwrap_or(""))
-            });
-        }
-        if flags.contains('t') {
-            // Newest first, as tmux's `SORT_ACTIVITY` orders a collection.
-            let activity_key = match kind {
-                FormatLoopKind::Session => "session_activity",
-                FormatLoopKind::Window => "window_activity",
-                FormatLoopKind::Pane => "pane_index",
-                FormatLoopKind::Client => unreachable!(),
-            };
-            let stamp = |item: &FormatLoopItem| {
-                item.vars
-                    .lookup(activity_key)
-                    .and_then(|value| value.parse::<i64>().ok())
-                    .unwrap_or(0)
-            };
-            items.sort_by_key(|item| std::cmp::Reverse(stamp(item)));
-        }
-        if flags.contains('r') {
-            items.reverse();
-        }
         Some(items)
     }
 }
@@ -447,11 +481,12 @@ pub fn expand(template: &str, vars: &Vars) -> String {
 /// enumerate the session tree. The plain [`expand`] passes `None` (loops then
 /// expand to empty, as they would with nothing to iterate).
 pub fn expand_with(template: &str, vars: &Vars, ls: Option<&dyn LoopSource>) -> String {
+    let anchored = ls.map(AnchoredLoops);
     expand_with_context(
         template,
         vars,
         &BasicContext {
-            loops: ls,
+            loops: anchored.as_ref().map(|loops| loops as &dyn ScopedLoopSource),
             jobs: None,
             tree: None,
         },
@@ -462,7 +497,7 @@ pub fn expand_with(template: &str, vars: &Vars, ls: Option<&dyn LoopSource>) -> 
 pub(super) fn expand_with_jobs(
     template: &str,
     vars: &Vars,
-    ls: Option<&dyn LoopSource>,
+    ls: Option<&dyn ScopedLoopSource>,
     jobs: Option<&dyn FormatJobs>,
     tree: Option<&dyn FormatTree>,
 ) -> String {
@@ -484,7 +519,7 @@ pub(super) fn expand_with_jobs(
 pub(super) fn expand_time_with_jobs(
     template: &str,
     vars: &Vars,
-    ls: Option<&dyn LoopSource>,
+    ls: Option<&dyn ScopedLoopSource>,
     jobs: Option<&dyn FormatJobs>,
     tree: Option<&dyn FormatTree>,
 ) -> String {
@@ -502,7 +537,7 @@ pub(super) fn expand_time_with_jobs(
 pub(super) fn expand_time_with_jobs_verbose(
     template: &str,
     vars: &Vars,
-    ls: Option<&dyn LoopSource>,
+    ls: Option<&dyn ScopedLoopSource>,
     jobs: Option<&dyn FormatJobs>,
     tree: Option<&dyn FormatTree>,
 ) -> (String, String) {
@@ -557,6 +592,10 @@ struct Expander<'a> {
 impl Expander<'_> {
     fn lookup(&self, vars: &Vars, key: &str) -> Option<String> {
         self.context.lookup(vars, key)
+    }
+
+    fn lookup_variable(&self, vars: &Vars, key: &str) -> Option<String> {
+        self.context.lookup_variable(vars, key)
     }
 
     fn expand(&self, template: &str, vars: &Vars, depth: usize) -> String {
@@ -842,7 +881,9 @@ impl Expander<'_> {
         // `q[:/h|/e|/a]:BODY` — quote shell metacharacters, format-style
         // hashes, or a command argument in the resolved value.
         if let Some((style, body)) = parse_quote_modifier(content) {
-            let value = self.resolve_body(body, vars, depth);
+            let Some(value) = self.resolve_body_opt(body, vars, depth) else {
+                return String::new();
+            };
             return match style {
                 QuoteStyle::Shell => quote_shell(&value),
                 QuoteStyle::Style => quote_style(&value),
@@ -897,10 +938,19 @@ impl Expander<'_> {
 /// `#{=3:session_name}` truncates the *value* of `session_name`.
 impl Expander<'_> {
     fn resolve_body(&self, body: &str, vars: &Vars, depth: usize) -> String {
+        self.resolve_body_opt(body, vars, depth).unwrap_or_default()
+    }
+
+    /// Resolve a modifier body while keeping "no such variable" distinct from
+    /// "variable holds an empty value". tmux applies its quoting modifiers
+    /// inside the variable lookup, so an unknown name never reaches the quoting
+    /// step and the whole replacement expands empty rather than to a quoted
+    /// empty string.
+    fn resolve_body_opt(&self, body: &str, vars: &Vars, depth: usize) -> Option<String> {
         if body.contains("#{") {
-            self.expand(body, vars, depth)
+            Some(self.expand(body, vars, depth))
         } else {
-            self.lookup(vars, body).unwrap_or_default()
+            self.lookup(vars, body)
         }
     }
 }
@@ -1045,7 +1095,7 @@ impl Expander<'_> {
         if modifier.body.contains("#{") {
             return self.expand(modifier.body, vars, depth);
         }
-        let Some(value) = self.lookup(vars, modifier.body) else {
+        let Some(value) = self.lookup_variable(vars, modifier.body) else {
             return String::new();
         };
         let Ok(timestamp) = value.parse::<i64>() else {
@@ -1728,6 +1778,10 @@ fn quote_style(value: &str) -> String {
     quoted
 }
 
+/// Escape a value for reuse as a command argument, following tmux's
+/// `args_escape`: pick the quoting form from the characters present, then
+/// visually encode the rest with the C-style escapes `vis(3)` recognises and
+/// three-digit octal for every other control byte.
 fn quote_argument(value: &str) -> String {
     if value.is_empty() {
         return "''".to_string();
@@ -1749,15 +1803,26 @@ fn quote_argument(value: &str) -> String {
     }
 
     let mut escaped = String::with_capacity(value.len());
-    for character in value.chars() {
+    let mut characters = value.chars().peekable();
+    while let Some(character) = characters.next() {
         match character {
             '\n' => escaped.push_str("\\n"),
             '\r' => escaped.push_str("\\r"),
             '\t' => escaped.push_str("\\t"),
-            '\u{1b}' => escaped.push_str("\\e"),
+            '\u{8}' => escaped.push_str("\\b"),
+            '\u{7}' => escaped.push_str("\\a"),
+            '\u{b}' => escaped.push_str("\\v"),
+            '\u{c}' => escaped.push_str("\\f"),
             '\\' => escaped.push_str("\\\\"),
             '"' if quote == Some('"') => escaped.push_str("\\\""),
-            character if character.is_control() => {
+            '$' if quote == Some('"')
+                && characters.peek().is_some_and(|next| {
+                    next.is_ascii_alphabetic() || *next == '_' || *next == '{'
+                }) =>
+            {
+                escaped.push_str("\\$");
+            }
+            character if character.is_ascii_control() => {
                 escaped.push_str(&format!("\\{:03o}", character as u32));
             }
             character => escaped.push(character),
