@@ -4564,10 +4564,18 @@ mod tests {
         // wait on rather than to fail against.
         let _client = {
             let state = state.borrow_mut();
-            let registry = state.client_prompt_registry();
-            registry
-                .attach("/dev/pts/0".to_string(), Some(1), 0)
-                .expect("prompt client")
+            // A real attach registers with both registries, and the command
+            // looks the client up through the render one.
+            let prompts = state.client_prompt_registry();
+            let renders = state.client_render_registry();
+            (
+                prompts
+                    .attach("/dev/pts/0".to_string(), Some(1), 0)
+                    .expect("prompt client"),
+                renders
+                    .attach(0, "/dev/pts/0".to_string())
+                    .expect("render client"),
+            )
         };
         let context = ClientContext {
             kind: ClientKind::Command,

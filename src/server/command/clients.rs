@@ -134,6 +134,25 @@ impl CommandPrompt {
         if !context.client().wait_for_interactions() {
             return SharedCommandExecution::completed(CommandResult::err("no current client\n"));
         }
+        // tmux finds `-t`'s client while it prepares the queue item, so a
+        // missing client is reported before the prompt's own arguments are.
+        let prompt_target = command_prompt_target(&self.args);
+        {
+            let state = context.state().borrow();
+            match prompt_target.as_deref() {
+                Some(name) if !client_named(&state, name) => {
+                    return SharedCommandExecution::completed(CommandResult::err(format!(
+                        "can't find client: {name}\n"
+                    )))
+                }
+                None if state.client_snapshots().is_empty() => {
+                    return SharedCommandExecution::completed(CommandResult::err(
+                        "no current client\n",
+                    ))
+                }
+                _ => {}
+            }
+        }
         if let Err(error) = command_prompt_spec(&self.args) {
             return SharedCommandExecution::completed(CommandResult::err(error));
         }
@@ -146,7 +165,7 @@ impl CommandPrompt {
         let start = suspend::client_prompt(
             self.args.clone(),
             &registry,
-            command_prompt_target(&self.args),
+            prompt_target,
             context.client().tty_name.clone(),
             command_prompt_waits(&self.args),
         );
@@ -1041,6 +1060,20 @@ impl ClockMode {
     }
 }
 
+/// Whether an attached client answers to `name`, matching the lookup the client
+/// registry itself does for a `-c`/`-t` client target: the client's own name, or
+/// that name with `/dev/` stripped off the front.
+fn client_named(state: &ServerState, name: &str) -> bool {
+    let name = name.strip_suffix(':').unwrap_or(name);
+    state.client_snapshots().iter().any(|client| {
+        client.name == name
+            || client
+                .name
+                .strip_prefix("/dev/")
+                .is_some_and(|tty| tty == name)
+    })
+}
+
 fn overlay_result(result: ClientActionResult, target: Option<&str>) -> CommandResult {
     match result {
         ClientActionResult::Queued => CommandResult::ok(""),
@@ -1816,6 +1849,13 @@ impl SwitchClient {
     }
 
     fn run(self, state: &mut ServerState, client: &ClientContext) -> CommandResult {
+        // tmux resolves `-c` while it prepares the queue item, so a client that
+        // does not exist is reported before the command body runs at all.
+        if let Some(name) = self.client.as_deref() {
+            if !client_named(state, name) {
+                return CommandResult::err(format!("can't find client: {name}\n"));
+            }
+        }
         // `-T` names a key table for the target client and returns before any
         // session is touched, and `-n`/`-p`/`-l` pick their session from the
         // target client rather than from `-t`.
