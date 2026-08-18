@@ -660,6 +660,9 @@ impl KillPane {
         let Some(target) = target else {
             return CommandResult::err("can't establish current session\n");
         };
+        if st.resolve(&target).is_none() {
+            return CommandResult::err(format!("{}\n", st.pane_target_error(&target)));
+        }
         let result = if self.all_but {
             st.kill_other_panes(&target)
         } else {
@@ -741,6 +744,9 @@ impl SelectPane {
         let Some(target) = target else {
             return CommandResult::err("can't establish current session\n");
         };
+        if st.resolve(&target).is_none() {
+            return CommandResult::err(format!("{}\n", st.pane_target_error(&target)));
+        }
         // tmux's deprecated `-P`/`-g` pair sets and prints the pane's own style
         // before any of the selection flags are considered.
         if self.style.is_some() || self.show_style {
@@ -1002,6 +1008,9 @@ impl MovePane {
         let (Some(source), Some(target)) = (source, target) else {
             return CommandResult::err("can't establish current session\n");
         };
+        if st.resolve(&source).is_none() {
+            return CommandResult::err(format!("{}\n", st.pane_target_error(&source)));
+        }
         let target_resolved = match st.resolve(&target) {
             Some(t) => t,
             None => return CommandResult::err(format!("{}\n", st.pane_target_error(&target))),
@@ -1093,6 +1102,11 @@ impl BreakPane {
             .clone()
             .or_else(|| current_session(st).map(|session| format!("{session}:")));
         let relative = (self.after || self.before).then_some(!self.before);
+        if let Some(source) = source.as_deref() {
+            if st.resolve(source).is_none() {
+                return CommandResult::err(format!("{}\n", st.pane_target_error(source)));
+            }
+        }
         match (source, target) {
             (Some(source), Some(target)) => match st.break_pane(
                 &source,
