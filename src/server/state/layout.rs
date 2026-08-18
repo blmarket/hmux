@@ -719,6 +719,157 @@ impl LayoutCell {
         }
     }
 
+    /// tmux's `layout_check`: every child of a split spans its cross axis, and
+    /// the children plus the separator between each pair fill the split.
+    pub(super) fn consistent(&self) -> bool {
+        let Self::Split {
+            direction,
+            rect,
+            children,
+        } = self
+        else {
+            return true;
+        };
+        let mut total = 0u32;
+        for child in children {
+            let child_rect = child.rect();
+            match direction {
+                SplitDirection::LeftRight => {
+                    if child_rect.height != rect.height {
+                        return false;
+                    }
+                    total += u32::from(child_rect.width) + 1;
+                }
+                SplitDirection::TopBottom => {
+                    if child_rect.width != rect.width {
+                        return false;
+                    }
+                    total += u32::from(child_rect.height) + 1;
+                }
+            }
+            if !child.consistent() {
+                return false;
+            }
+        }
+        let axis = match direction {
+            SplitDirection::LeftRight => rect.width,
+            SplitDirection::TopBottom => rect.height,
+        };
+        total.saturating_sub(1) == u32::from(axis)
+    }
+
+    /// tmux's `layout_parse` fixup for a top cell whose own size disagrees with
+    /// its children's: the children win, and a still-inconsistent tree is left
+    /// for [`Self::consistent`] to reject.
+    pub(super) fn fit_to_children(&mut self) {
+        let Self::Split {
+            direction,
+            rect,
+            children,
+        } = self
+        else {
+            return;
+        };
+        let mut across = 0u16;
+        let mut along = 0u16;
+        for child in children.iter() {
+            let child_rect = child.rect();
+            match direction {
+                SplitDirection::LeftRight => {
+                    across = child_rect.height.saturating_add(1);
+                    along = along.saturating_add(child_rect.width).saturating_add(1);
+                }
+                SplitDirection::TopBottom => {
+                    across = child_rect.width.saturating_add(1);
+                    along = along.saturating_add(child_rect.height).saturating_add(1);
+                }
+            }
+        }
+        let (width, height) = match direction {
+            SplitDirection::LeftRight => (along, across),
+            SplitDirection::TopBottom => (across, along),
+        };
+        if rect.width != width || rect.height != height {
+            rect.width = width.saturating_sub(1);
+            rect.height = height.saturating_sub(1);
+        }
+    }
+
+    /// tmux's `layout_destroy_cell` on `layout_find_bottomright`: drop the
+    /// bottom-right cell, hand its space to the sibling beside it, and replace
+    /// a split left with one child by that child.
+    pub(super) fn prune_bottom_right(&mut self) -> bool {
+        let Self::Split {
+            direction,
+            rect,
+            children,
+        } = self
+        else {
+            return false;
+        };
+        let direction = *direction;
+        let origin = *rect;
+        if let Some(last) = children.last_mut() {
+            if matches!(last, Self::Split { .. }) && last.prune_bottom_right() {
+                return true;
+            }
+        }
+        if children.len() < 2 {
+            return false;
+        }
+        let removed = children.pop().expect("a cell to prune").rect();
+        let change = match direction {
+            SplitDirection::LeftRight => removed.width.saturating_add(1),
+            SplitDirection::TopBottom => removed.height.saturating_add(1),
+        };
+        if let Some(sibling) = children.last_mut() {
+            sibling.grow(direction, change);
+        }
+        if children.len() == 1 {
+            let mut only = children.pop().expect("the surviving cell");
+            let only_rect = only.rect_mut();
+            only_rect.left = origin.left;
+            only_rect.top = origin.top;
+            *self = only;
+        }
+        self.fix_offsets();
+        true
+    }
+
+    /// tmux's `layout_resize_adjust`: grow a cell along one axis, handing the
+    /// space to the children that run along it.
+    fn grow(&mut self, direction: SplitDirection, change: u16) {
+        {
+            let rect = self.rect_mut();
+            match direction {
+                SplitDirection::LeftRight => rect.width = rect.width.saturating_add(change),
+                SplitDirection::TopBottom => rect.height = rect.height.saturating_add(change),
+            }
+        }
+        let Self::Split {
+            direction: own,
+            children,
+            ..
+        } = self
+        else {
+            return;
+        };
+        let own = *own;
+        if own != direction {
+            for child in children.iter_mut() {
+                child.grow(direction, change);
+            }
+            return;
+        }
+        let count = children.len();
+        if count == 0 {
+            return;
+        }
+        for step in 0..change {
+            children[usize::from(step) % count].grow(direction, 1);
+        }
+    }
+
     fn fix_offsets(&mut self) {
         let Self::Split {
             direction,
@@ -1205,12 +1356,19 @@ impl ServerState {
             .filter(|pane| pane.floating.is_none())
             .map(|pane| pane.id)
             .collect::<Vec<_>>();
+        // tmux closes the bottom-right cell until the layout holds no more
+        // cells than the window has panes, and only then decides it cannot fit.
+        while layout.panes().len() > pane_ids.len() && layout.prune_bottom_right() {}
         if layout.panes().len() != pane_ids.len() {
             return Err(io::Error::other(format!(
                 "have {} panes but need {}",
                 pane_ids.len(),
                 layout.panes().len()
             )));
+        }
+        layout.fit_to_children();
+        if !layout.consistent() {
+            return Err(io::Error::other("size mismatch after applying layout"));
         }
         layout.assign_panes(&mut pane_ids.into_iter());
         let size = (layout.rect().width, layout.rect().height);

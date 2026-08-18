@@ -1842,10 +1842,9 @@ impl SelectLayout {
             }
             return match st.select_custom_layout(target, layout) {
                 Ok(()) => CommandResult::ok(""),
-                Err(error) if error.to_string() == "invalid layout" => {
-                    CommandResult::err(format!("invalid layout: {layout}\n"))
-                }
-                Err(error) => CommandResult::err(format!("can't set layout: {error}\n")),
+                // tmux's `cmd_select_layout_exec` reports the cause its parse
+                // gave and the layout it was given, whatever the cause was.
+                Err(error) => CommandResult::err(format!("{error}: {layout}\n")),
             };
         }
         if self.restore {
