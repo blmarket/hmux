@@ -291,12 +291,18 @@ pub(crate) async fn run_shell(
     context: ClientContext,
 ) -> RunShellCompletion {
     let resolved = |result: CommandResult| RunShellCompletion { result, view: None };
-    let Some(command) = run.command.clone() else {
-        return resolved(CommandResult::ok(""));
-    };
     let delay = match run.delay() {
         Ok(delay) => delay,
         Err(error) => return resolved(error),
+    };
+    let Some(command) = run.command.clone() else {
+        // tmux still arms the timer for a `-d` with no command at all: its
+        // `cmd_run_shell_timer` only continues the queue when it fires, so the
+        // delay holds the commands behind it.
+        if !delay.is_zero() {
+            sleep(tasks, delay).await;
+        }
+        return resolved(CommandResult::ok(""));
     };
     let mut shell = shell_command(&command, &context);
     if let Some(cwd) = run.cwd.as_deref() {
