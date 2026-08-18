@@ -26,9 +26,34 @@ struct BackgroundJobRegistryState {
 #[derive(Default)]
 pub(crate) struct BackgroundJobRegistry {
     inner: RefCell<BackgroundJobRegistryState>,
+    /// Jobs the server has to wait for before it exits — tmux's
+    /// `job_still_running`, which counts every job whose `JOB_NOWAIT` is
+    /// unset. A `run-shell -b` job sets that flag and is not counted here.
+    waiting: std::cell::Cell<usize>,
+}
+
+/// One outstanding waited-for job, counted for as long as the guard lives.
+pub(crate) struct JobHold(std::rc::Rc<BackgroundJobRegistry>);
+
+impl Drop for JobHold {
+    fn drop(&mut self) {
+        self.0.waiting.set(self.0.waiting.get().saturating_sub(1));
+    }
 }
 
 impl BackgroundJobRegistry {
+    /// Count a job the server must outlive, until the returned guard is
+    /// dropped.
+    pub(crate) fn hold(self: &std::rc::Rc<Self>) -> JobHold {
+        self.waiting.set(self.waiting.get() + 1);
+        JobHold(std::rc::Rc::clone(self))
+    }
+
+    /// Whether any waited-for job is still running.
+    pub(crate) fn waiting(&self) -> bool {
+        self.waiting.get() != 0
+    }
+
     pub(crate) fn register(&self, command: String, fd: RawFd, pid: u32) -> u64 {
         let mut inner = self.inner.borrow_mut();
         let id = inner.next_id;

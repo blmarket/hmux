@@ -16,7 +16,7 @@ use super::sizing::{DEFAULT_XPIXEL, DEFAULT_YPIXEL};
 use super::target::{pane_not_found, parse_index_target, split_pane_target, Target, TargetKind};
 use super::{
     cursor_style_parameter, fill_spawn_ids, fill_spec_spawn_ids, now_micros, theme_report,
-    ClientActionResult, ExitEmpty, PaneNode, PaneSpec, RenderInvalidation, ServerState,
+    ClientActionResult, PaneNode, PaneSpec, RenderInvalidation, ServerState,
     TerminalReply, TerminalRequest, TerminalRequestKind, Window, Winlink, ALERT_ACTIVITY,
 };
 use bytes::Bytes;
@@ -286,9 +286,8 @@ impl ServerState {
         }
         self.sessions.retain(|session| !session.windows.is_empty());
         self.remove_unlinked_windows();
-
-        if had_sessions && self.sessions.is_empty() && self.exit_empty_policy() != ExitEmpty::Off {
-            self.shutdown_requested = true;
+        if had_sessions && self.sessions.is_empty() {
+            self.enforce_exit_options();
         }
         removed
     }

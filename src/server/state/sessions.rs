@@ -360,14 +360,14 @@ impl ServerState {
         self.sessions.clear();
         self.windows.clear();
         self.session_groups.clear();
-        self.shutdown_requested = true;
+        self.server_exit = true;
+        self.enforce_exit_options();
         self.invalidate_all_clients(RenderInvalidation::SESSION_GONE);
     }
 
     /// Remove a session by name. Returns whether it existed (its panes' children
     /// are killed as the panes drop).
     pub fn kill_session(&mut self, name: &str) -> bool {
-        let had_sessions = !self.sessions.is_empty();
         let removed_id = self
             .sessions
             .iter()
@@ -381,7 +381,6 @@ impl ServerState {
         let removed = self.sessions.len() != before;
         if removed {
             self.remove_unlinked_windows();
-            self.request_shutdown_if_became_empty(had_sessions);
             if let Some(session_id) = removed_id {
                 self.invalidate_session(session_id, RenderInvalidation::SESSION_GONE);
                 self.notify_closed_session(SessionHook::SessionClosed, session_id, name);
@@ -762,25 +761,38 @@ impl ServerState {
     }
 
     /// tmux's `server_loop` shutdown test: with `exit-empty` on, the server
-    /// exits once nothing holds it — no sessions (or `exit-unattached` on) and
-    /// no client still attached to one.
+    /// exits once nothing holds it — no sessions (or `exit-unattached` on), no
+    /// client still attached to one, and no job it has to wait for.
+    ///
+    /// tmux re-derives the whole condition every turn instead of latching it,
+    /// so this both raises and clears the request.
     pub(crate) fn enforce_exit_options(&mut self) {
-        match self.exit_empty_policy() {
-            ExitEmpty::Off => return,
-            // An hmux daemon is launched before any client exists, so
-            // `after-session` holds the policy back until the server has held
-            // a session at least once; tmux never sees this window because its
-            // server is forked by the client that creates the first session.
-            ExitEmpty::AfterSession if self.initial_attach_pending => return,
-            ExitEmpty::AfterSession | ExitEmpty::On => {}
+        self.shutdown_requested = self.exit_conditions_hold();
+    }
+
+    fn exit_conditions_hold(&self) -> bool {
+        if !self.server_exit {
+            match self.exit_empty_policy() {
+                ExitEmpty::Off => return false,
+                // An hmux daemon is launched before any client exists, so
+                // `after-session` holds the policy back until the server has
+                // held a session at least once; tmux never sees this window
+                // because its server is forked by the client that creates the
+                // first session.
+                ExitEmpty::AfterSession if self.initial_attach_pending => return false,
+                ExitEmpty::AfterSession | ExitEmpty::On => {}
+            }
+            if !self.server_option_is_on("exit-unattached", false) && !self.sessions.is_empty() {
+                return false;
+            }
+            if !self.attached_session_ids().is_empty() {
+                return false;
+            }
         }
-        if !self.server_option_is_on("exit-unattached", false) && !self.sessions.is_empty() {
-            return;
-        }
-        if !self.attached_session_ids().is_empty() {
-            return;
-        }
-        self.shutdown_requested = true;
+        // tmux's `job_still_running`: a job the server owes an answer to keeps
+        // it up, so a hook body parked on `run-shell` outlives the kill that
+        // raised it.
+        !self.background_jobs.waiting()
     }
 
     /// `kill-session -g`: destroy every member when the target is grouped, or
@@ -793,7 +805,6 @@ impl ServerState {
         if !self.session_groups.contains_key(&link_set_id) {
             return self.kill_session(name);
         }
-        let had_sessions = !self.sessions.is_empty();
         let removed = self
             .sessions
             .iter()
@@ -802,7 +813,6 @@ impl ServerState {
         self.sessions
             .retain(|session| session.link_set_id != link_set_id);
         self.remove_unlinked_windows();
-        self.request_shutdown_if_became_empty(had_sessions);
         for session_id in removed {
             self.invalidate_session(session_id, RenderInvalidation::SESSION_GONE);
         }

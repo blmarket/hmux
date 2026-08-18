@@ -179,14 +179,16 @@ impl RunShell {
                 Err(result) => SharedCommandExecution::completed(result),
             };
         }
-        let (command, job_context) = {
+        let (command, job_context, hold) = {
             let state = context.state().borrow_mut();
             let mut command = self;
             command.pin_view_target(&state);
             let job_context = context.client().with_job_environment(&state);
-            (command, job_context)
+            let hold = state.background_job_registry().hold();
+            (command, job_context, hold)
         };
         let completion = suspend::run_shell(context.tasks(), command, job_context).await;
+        drop(hold);
         let result = context.run_sync(context.client(), |inner| {
             finish_run_shell(completion, inner.state)
         });
@@ -303,11 +305,13 @@ impl IfShell {
             result.background_commands.push(request);
             return SharedCommandExecution::completed(result);
         }
-        let job_context = {
+        let (job_context, hold) = {
             let state = context.state().borrow_mut();
-            context.client().with_job_environment(&state)
+            let hold = state.background_job_registry().hold();
+            (context.client().with_job_environment(&state), hold)
         };
         let matched = suspend::if_shell(context.tasks(), condition, job_context).await;
+        drop(hold);
         self.plan_branch(matched, context)
     }
 }

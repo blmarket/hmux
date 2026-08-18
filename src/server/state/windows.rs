@@ -855,7 +855,6 @@ impl ServerState {
     /// is global to the window rather than an unlink from only the target
     /// session.
     pub(super) fn destroy_window_id(&mut self, window_id: u32) {
-        let had_sessions = !self.sessions.is_empty();
         let affected = self
             .sessions
             .iter()
@@ -893,7 +892,6 @@ impl ServerState {
         self.windows.remove(&window_id);
         self.remove_unlinked_windows();
         self.renumber_affected_sessions(&affected);
-        self.request_shutdown_if_became_empty(had_sessions);
         for session_id in affected {
             if self.sessions.iter().any(|session| session.id == session_id) {
                 self.invalidate_session(
@@ -959,7 +957,6 @@ impl ServerState {
     /// bypasses the singly-linked guard; it does not kill links in other
     /// sessions.
     pub fn unlink_window(&mut self, target: &str, kill: bool) -> io::Result<()> {
-        let had_sessions = !self.sessions.is_empty();
         let t = self.resolve_window_target(target)?;
         let link_set_id = self.sessions[t.session].link_set_id;
         let window_id = self.sessions[t.session].windows[t.window].id;
@@ -989,7 +986,6 @@ impl ServerState {
         }
         self.remove_unlinked_windows();
         self.renumber_affected_sessions(&affected);
-        self.request_shutdown_if_became_empty(had_sessions);
         for session_id in affected {
             if self.sessions.iter().any(|session| session.id == session_id) {
                 self.invalidate_session(

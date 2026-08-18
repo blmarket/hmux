@@ -852,8 +852,13 @@ pub struct ServerState {
     /// Group names outlive the session they were originally named after, and a
     /// one-member group remains grouped until its final session is destroyed.
     session_groups: BTreeMap<u32, String>,
-    /// Set once an empty server is one `exit-empty` asks to shut down.
+    /// Whether the exit conditions held when they were last re-derived. tmux's
+    /// `server_loop` recomputes them every turn rather than latching them, so
+    /// a session created while an exit is pending simply makes them false
+    /// again.
     shutdown_requested: bool,
+    /// `kill-server`: the exit no longer depends on the tree being empty.
+    server_exit: bool,
     /// Client-registry generation the unattached sweep last ran against.
     lifecycle_generation: u64,
     /// Sessions a client just took, whose windows the next alert pass
@@ -1015,6 +1020,7 @@ impl ServerState {
             windows: BTreeMap::new(),
             session_groups: BTreeMap::new(),
             shutdown_requested: false,
+            server_exit: false,
             lifecycle_generation: 0,
             alert_check_sessions: BTreeSet::new(),
             focused_panes: BTreeSet::new(),
@@ -1314,14 +1320,6 @@ impl ServerState {
         }
     }
 
-    /// Apply tmux's `exit-empty` policy after an explicit tree mutation.
-    fn request_shutdown_if_became_empty(&mut self, had_sessions: bool) {
-        // A server that just lost its last session has held one, so
-        // `after-session` and `on` agree here.
-        if had_sessions && self.sessions.is_empty() && self.exit_empty_policy() != ExitEmpty::Off {
-            self.shutdown_requested = true;
-        }
-    }
 
     /// Record the pathname the server is listening on.
     pub fn set_socket_path(&mut self, path: impl Into<PathBuf>) {
@@ -1617,6 +1615,7 @@ mod tests {
         let mut state = ServerState::with_test_session().expect("state");
         state.kill_window("0:0").expect("kill last window");
         assert!(state.sessions().is_empty());
+        state.enforce_exit_options();
         assert!(state.shutdown_requested());
     }
 
@@ -1624,6 +1623,7 @@ mod tests {
     fn killing_last_session_requests_exit_empty_shutdown() {
         let mut state = ServerState::with_test_session().expect("state");
         assert!(state.kill_session("0"));
+        state.enforce_exit_options();
         assert!(state.shutdown_requested());
     }
 
@@ -1637,6 +1637,7 @@ mod tests {
 
         state.create_session("0", PaneSpec::Inert).expect("create");
         assert!(state.kill_session("0"));
+        state.enforce_exit_options();
         assert!(state.shutdown_requested());
     }
 
@@ -1661,6 +1662,7 @@ mod tests {
             .for_scope_mut(super::super::options::OptionScope::Server)
             .set("exit-empty", "off");
         assert!(state.kill_session("0"));
+        state.enforce_exit_options();
         assert!(!state.shutdown_requested());
     }
 
