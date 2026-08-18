@@ -159,6 +159,10 @@ async fn run_queue(
     for request in result.background_commands.drain(..) {
         runtime.background.start(request);
     }
+    // The client's queue is empty, which in tmux's loop is when the global
+    // queue gets its turn: the events this line raised become hook bodies now,
+    // before the server takes another request.
+    runtime.background.pump();
     Ok(result)
 }
 
@@ -267,11 +271,12 @@ async fn write_client_file(
     // handshake, not to the queue step that never ran it.
     let hooks = {
         let mut state = runtime.state.borrow_mut();
-        command::take_client_file_after_hooks(args, &mut state, context)
+        command::client_file_after_hooks(args, &mut state, context)
     };
     for request in hooks {
         runtime.background.start(request);
     }
+    runtime.background.pump();
     Ok(CommandResult::ok(""))
 }
 

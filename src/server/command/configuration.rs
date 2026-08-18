@@ -1032,7 +1032,6 @@ impl SetHook {
             self.set.scope.target.as_deref(),
             vec![("hook".to_string(), hook.as_str().to_string())],
             NestedCapture::Discard,
-            HookOrigin::Command,
         );
         insert_next.push(context.finalize_hooks("set-hook"));
         SharedCommandExecution {

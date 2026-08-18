@@ -518,12 +518,13 @@ pub fn run(args: &[String], state: &SharedState, agents: &PaneAgents) -> Command
     let mut driver =
         crate::event_loop::test_driver::LoopCommandDriver::new().expect("command test loop");
     let mut result = match start_resumable_command_argv(args, state, agents, &context) {
-        Ok(queue) => driver.run_queue(queue, state),
+        Ok(queue) => driver.run_queue(queue, state, agents),
         Err(result) => result,
     };
     for request in result.background_commands.drain(..) {
         driver.run_background(request, state, agents);
     }
+    driver.drain_notifications(state, agents);
     result
 }
 
@@ -562,7 +563,7 @@ pub(crate) fn run_lazy_with_context(
     };
     crate::event_loop::test_driver::LoopCommandDriver::new()
         .expect("command test loop")
-        .run_queue(queue, state)
+        .run_queue(queue, state, agents)
 }
 
 /// Run a command line to completion on the calling thread. Test scaffolding;
@@ -580,7 +581,7 @@ pub fn run_with_context(
     };
     crate::event_loop::test_driver::LoopCommandDriver::new()
         .expect("command test loop")
-        .run_queue(queue, state)
+        .run_queue(queue, state, agents)
 }
 
 /// Start a queue on an already compiled command line.
@@ -1196,6 +1197,13 @@ impl ResumableCommandQueue {
                 source_depth,
                 contributes_status,
             };
+            // tmux's `notify_add` looks at the *global* queue's running item,
+            // and `cmdq_running` masks an item that is waiting — so a hook
+            // body drops only what is raised while it is actively on the
+            // stack. The latch goes on around each poll, not around the whole
+            // await: what another queue raises while this body is parked is
+            // kept, queued behind it.
+            let suppressed = self.context.frame.suppress_notifications;
             // The command is the one that knows whether it waits, and for what.
             let mut execution = {
                 let mut context = ExecContext {
@@ -1208,7 +1216,19 @@ impl ResumableCommandQueue {
                     source_depth: inflight.source_depth,
                     args: &inflight.command.args,
                 };
-                inflight.command.command.clone().execute(&mut context).await
+                let mut future =
+                    std::pin::pin!(inflight.command.command.clone().execute(&mut context));
+                std::future::poll_fn(|poll_context| {
+                    if suppressed {
+                        state.borrow_mut().begin_notification_suppression();
+                    }
+                    let poll = future.as_mut().poll(poll_context);
+                    if suppressed {
+                        state.borrow_mut().end_notification_suppression();
+                    }
+                    poll
+                })
+                .await
             };
             if !execution.result.deferred_commands.is_empty() {
                 let commands = std::mem::take(&mut execution.result.deferred_commands);
@@ -1356,10 +1376,6 @@ impl ResumableCommandQueue {
                 ));
             }
         }
-        // tmux inserts a command's after-hook directly behind it but *appends*
-        // the notifications its mutations raised, so the after-hook runs first
-        // — and a hook body's own mutations still notify.
-        execution.insert_next.extend(self.plan_notifications(state));
         if inflight.contributes_status {
             self.out.continue_queue |= execution.result.continue_queue;
         }
@@ -1405,34 +1421,6 @@ impl ResumableCommandQueue {
         self.plan_hook(&after, settled_target.or(lexed.value('t')), vars, state)
     }
 
-    /// Turn every notification raised while the last command ran into hook
-    /// bodies, in the order the mutations happened.
-    fn plan_notifications(&self, state: &SharedState) -> Vec<Vec<SharedQueueItem>> {
-        let notifications = {
-            let mut state = state.borrow_mut();
-            state.take_notifications()
-        };
-        // The latch is tmux's `notify_add` dropping a notification raised under
-        // `CMDQ_STATE_NOHOOKS`, so it has to be *dropped* here rather than left
-        // pending: an outer frame without the latch would otherwise fire it.
-        if self.context.frame.suppress_notifications {
-            return Vec::new();
-        }
-        notifications
-            .into_iter()
-            .flat_map(|notification| {
-                self.plan_hook_with_capture(
-                    &notification.name,
-                    notification.target.as_deref(),
-                    notification.vars,
-                    state,
-                    NestedCapture::Hook,
-                    HookOrigin::Event,
-                )
-            })
-            .collect()
-    }
-
     fn plan_hook(
         &self,
         hook: &str,
@@ -1440,16 +1428,14 @@ impl ResumableCommandQueue {
         vars: Vec<(String, String)>,
         state: &SharedState,
     ) -> Vec<Vec<SharedQueueItem>> {
-        self.plan_hook_with_capture(
-            hook,
-            requested_target,
-            vars,
-            state,
-            NestedCapture::Hook,
-            HookOrigin::Command,
-        )
+        self.plan_hook_with_capture(hook, requested_target, vars, state, NestedCapture::Hook)
     }
 
+    /// Plan a *command* hook's body as items of this queue.
+    ///
+    /// Only a command's own hooks are planned here: tmux inserts those behind
+    /// the triggering item in the same queue (`notify_hook`), while an event's
+    /// hook belongs to the server-wide queue and never reaches this path.
     fn plan_hook_with_capture(
         &self,
         hook: &str,
@@ -1457,7 +1443,6 @@ impl ResumableCommandQueue {
         vars: Vec<(String, String)>,
         state: &SharedState,
         capture: NestedCapture,
-        origin: HookOrigin,
     ) -> Vec<Vec<SharedQueueItem>> {
         let commands = {
             let mut state = {
@@ -1465,7 +1450,8 @@ impl ResumableCommandQueue {
                 state
             };
             let previous = install_command_target_context(&mut state, &self.context);
-            let commands = hook_commands(hook, requested_target, &mut state, origin);
+            let commands =
+                hook_commands(hook, requested_target, &mut state, HookOrigin::Command);
             restore_command_target_context(&mut state, previous);
             let Some(commands) = commands else {
                 return Vec::new();
@@ -1487,12 +1473,6 @@ impl ResumableCommandQueue {
                     .and_then(|hook| hook.target.clone())
             }),
         });
-        if matches!(origin, HookOrigin::Event) {
-            // tmux runs an event hook's body on the global queue with
-            // `CMDQ_STATE_NOHOOKS`, which is exactly what makes `notify_add`
-            // drop anything the body itself raises.
-            hook_context.frame.suppress_notifications = true;
-        }
         if matches!(capture, NestedCapture::Hook) {
             hook_context.frame.suppress_after_hooks = true;
             hook_context.frame.nested_granularity = true;
@@ -1516,11 +1496,9 @@ impl ResumableCommandQueue {
                     .collect(),
             );
         }
-        if matches!(origin, HookOrigin::Command) {
-            groups.push(vec![SharedQueueItem::EndHook {
-                name: hook.to_string(),
-            }]);
-        }
+        groups.push(vec![SharedQueueItem::EndHook {
+            name: hook.to_string(),
+        }]);
         groups
     }
 
@@ -1646,9 +1624,10 @@ fn hook_command_vars(hook: &str, args: &[String], lexed: &ParsedArgs) -> Vec<(St
 }
 
 /// The `after-*` hook of a command the client file protocol completed outside
-/// the command queue (`save-buffer` to a client-side path), plus whatever it
-/// raised, for the loop to run as detached queues.
-pub(crate) fn take_client_file_after_hooks(
+/// the command queue (`save-buffer` to a client-side path), for the loop to run
+/// as a detached queue. Whatever the command raised is on the server-wide
+/// queue, which its own runner drains.
+pub(crate) fn client_file_after_hooks(
     args: &[String],
     st: &mut ServerState,
     context: &ClientContext,
@@ -1665,45 +1644,31 @@ pub(crate) fn take_client_file_after_hooks(
     let vars = hook_command_vars(&hook, &normalized, &lexed);
     let mut requests = Vec::new();
     push_event_hook(&hook, lexed.value('t'), vars, st, context, &mut requests);
-    // Draining unconditionally is the latch: a notification raised under it is
-    // dropped where it was raised, as tmux's `notify_add` does, rather than
-    // left for a frame that does not carry the latch.
-    let notifications = st.take_notifications();
-    if !context.frame.suppress_notifications {
-        for notification in notifications {
-            push_event_hook(
-                &notification.name,
-                notification.target.as_deref(),
-                notification.vars,
-                st,
-                context,
-                &mut requests,
-            );
-        }
-    }
     requests
 }
 
-/// The bodies of notifications raised outside the command queue — a pane
-/// exiting, an alert firing. tmux dispatches these from its global command
-/// queue; hmux hands them to the loop as detached queues of their own, so a
-/// body that has to wait for a shell waits there rather than on the loop.
-pub(crate) fn take_deferred_notification_hooks(
+/// The bodies of the next item on the server-wide queue.
+///
+/// This is tmux's global queue running one `notify_callback`: the item is taken
+/// off the queue and the hook's bodies are resolved and inserted where it was,
+/// which is why the runner runs them before it takes the item after this one.
+/// `None` means the queue is empty; an empty vector means the item's hook has
+/// no body.
+pub(crate) fn next_notification_hooks(
     st: &mut ServerState,
-) -> Vec<BackgroundCommandRequest> {
+) -> Option<Vec<BackgroundCommandRequest>> {
+    let notification = st.next_notification()?;
     let context = ClientContext::default();
     let mut requests = Vec::new();
-    for notification in st.take_deferred_notifications() {
-        push_event_hook(
-            &notification.name,
-            notification.target.as_deref(),
-            notification.vars,
-            st,
-            &context,
-            &mut requests,
-        );
-    }
-    requests
+    push_event_hook(
+        &notification.name,
+        notification.target.as_deref(),
+        notification.vars,
+        st,
+        &context,
+        &mut requests,
+    );
+    Some(requests)
 }
 
 fn push_event_hook(
@@ -1764,7 +1729,7 @@ fn hook_commands(
         .filter(|target| st.resolve(target).is_some())
         .map(str::to_string)
         .or_else(|| current_target(st));
-    let commands = target
+    let view = target
         .as_deref()
         .and_then(|target| match name.scope() {
             OptionScope::Session => st.session_options(target).ok(),
@@ -1772,6 +1737,15 @@ fn hook_commands(
             OptionScope::WindowPane => st.pane_options(target).ok(),
             OptionScope::Server => None,
         })
+        // Nothing to read the hook through — the subject the event is about
+        // was the last one there was. tmux's empty find state falls back to the
+        // global session table, and has no window or pane table to fall back
+        // to.
+        .or_else(|| match name.scope() {
+            OptionScope::Session => Some(st.global_session_options()),
+            _ => None,
+        });
+    let commands = view
         .map(|view| {
             view.array_commands(name.as_str())
                 .into_iter()
@@ -1891,10 +1865,9 @@ impl<'a> ExecContext<'a> {
         requested_target: Option<&str>,
         vars: Vec<(String, String)>,
         capture: NestedCapture,
-        origin: HookOrigin,
     ) -> Vec<Vec<SharedQueueItem>> {
         self.queue
-            .plan_hook_with_capture(hook, requested_target, vars, self.state, capture, origin)
+            .plan_hook_with_capture(hook, requested_target, vars, self.state, capture)
     }
 
     /// The queue item that runs a command's `after-*` hooks once the work it

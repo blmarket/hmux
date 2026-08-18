@@ -333,6 +333,9 @@ fn publish(
     for request in control.take_background_commands() {
         runtime.background.start(request);
     }
+    // Whatever this client's commands raised is on the server-wide queue; a
+    // publish is the point its own work is done, so the queue gets its turn.
+    runtime.background.pump();
     Ok(())
 }
 

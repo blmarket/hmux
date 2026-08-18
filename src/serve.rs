@@ -42,6 +42,7 @@ pub fn run_event_loop(
     term_signal::spawn(&tasks)?;
     let listener = listener::spawn(&tasks, bind_listener(listen_path)?, ACCEPT_BUDGET)?;
     let background = BackgroundRunner::new(&server, tasks.clone());
+    tasks.spawn(background.clone().run_drainer());
     let mut clients = Vec::new();
     let mut panes = BTreeMap::new();
     let mut next_observer_tick = Instant::now();
@@ -72,9 +73,10 @@ pub fn run_event_loop(
         sync_event_loop_panes(&tasks, &server, &mut panes)?;
         adopt_spawned_io(&tasks, &server);
         reap_protocol_clients(&mut clients);
-        for request in server.enforce_lifecycle_policies()? {
-            background.start(request);
-        }
+        server.enforce_lifecycle_policies()?;
+        // tmux's server loop drains its global queue every turn; whatever the
+        // policies above raised runs from here.
+        background.pump();
         // Unconditionally, because work in hand is not a reason to skip the
         // reactor: a task that re-queues itself — the reap retry, a pane
         // yielding mid-burst — keeps the run queue non-empty for as long as it

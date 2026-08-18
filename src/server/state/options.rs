@@ -76,6 +76,16 @@ impl ServerState {
         OptionsView::one(self.global_options.server())
     }
 
+    /// The global session table on its own.
+    ///
+    /// What a hook lookup falls back to when no target resolves at all — the
+    /// last session closing takes the layer its hook would have been read
+    /// through with it, and tmux's `notify_insert_hook` reads
+    /// `global_s_options` for exactly that case.
+    pub(crate) fn global_session_options(&self) -> OptionsView<'_> {
+        OptionsView::one(self.global_options.session())
+    }
+
     pub(crate) fn command_aliases(&self) -> Vec<(String, String)> {
         self.server_options()
             .iter_effective()

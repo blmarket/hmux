@@ -196,11 +196,9 @@ impl Server {
         self.state.borrow_mut().save_prompt_history();
     }
 
-    /// Apply the per-loop policies and hand back the hook bodies raised by
-    /// events the loop itself noticed, for the caller to give to the loop.
-    pub(crate) fn enforce_lifecycle_policies(
-        &self,
-    ) -> io::Result<Vec<command::BackgroundCommandRequest>> {
+    /// Apply the per-loop policies. What they raise goes on the server-wide
+    /// queue, which the loop's runner drains.
+    pub(crate) fn enforce_lifecycle_policies(&self) -> io::Result<()> {
         let mut state = self.state.borrow_mut();
         state.enforce_lifecycle_policies();
         // tmux's per-loop `recalculate_sizes`. Most size changes are applied by
@@ -217,7 +215,7 @@ impl Server {
         state.process_pane_renames();
         state.process_window_names();
         state.process_pane_themes();
-        Ok(command::take_deferred_notification_hooks(&mut state))
+        Ok(())
     }
 
     pub(crate) fn try_event_pane_snapshot(&self) -> io::Result<Option<EventPaneSnapshot>> {

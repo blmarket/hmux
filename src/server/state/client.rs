@@ -2082,7 +2082,6 @@ impl ServerState {
         if !self.client_renders.set_client_focused(client, focused) {
             return;
         }
-        let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
         self.notify_client(
             if focused {
                 SessionHook::ClientFocusIn
@@ -2092,7 +2091,6 @@ impl ServerState {
             client,
             Some(session_id),
         );
-        self.notifications_are_deferred = was_deferred;
         let _ = target;
         if let Some(window_id) = self.current_window_of_session(session_id) {
             self.update_window_focus(window_id);
@@ -2105,7 +2103,6 @@ impl ServerState {
         if !self.client_renders.set_client_theme(client, theme) {
             return;
         }
-        let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
         self.notify_client(
             if theme == "dark" {
                 SessionHook::ClientDarkTheme
@@ -2115,7 +2112,6 @@ impl ServerState {
             client,
             Some(session_id),
         );
-        self.notifications_are_deferred = was_deferred;
     }
 
     /// Whether a clipboard query may be sent to this client now. tmux keeps one
@@ -2330,9 +2326,7 @@ impl ServerState {
         if follows_latest {
             let _ = self.recalculate_sizes();
         }
-        let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
         self.notify_client(SessionHook::ClientActive, client, Some(session_id));
-        self.notifications_are_deferred = was_deferred;
     }
 
     /// Raise `client-session-changed` for a client that has just been given a
@@ -2343,9 +2337,7 @@ impl ServerState {
     /// client-layer snapshot is moved along with it, because that diff is what
     /// reports the session moves nothing calls this for.
     fn announce_client_session(&mut self, client: &str, session_id: u32) {
-        let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
         self.notify_client(SessionHook::ClientSessionChanged, client, Some(session_id));
-        self.notifications_are_deferred = was_deferred;
         self.take_session_for_client(session_id);
         if let Some(known) = self.known_clients.get_mut(client) {
             known.0 = session_id;

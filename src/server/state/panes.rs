@@ -95,7 +95,6 @@ impl ServerState {
         if subscribed {
             let _ = self.write_pane_input(pane_id, if focused { b"\x1b[I" } else { b"\x1b[O" });
         }
-        let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
         self.notify_pane(
             if focused {
                 PaneHook::FocusIn
@@ -104,7 +103,6 @@ impl ServerState {
             },
             pane_id,
         );
-        self.notifications_are_deferred = was_deferred;
     }
 
     /// Apply pane child-exit lifecycle (`remain-on-exit`, then `exit-empty`).
@@ -213,16 +211,14 @@ impl ServerState {
             pane.pane
                 .feed(format!("\x1b[r\x1b[{rows};1H\n\x1b[?25l{expanded}").as_bytes());
         }
-        self.deferred_notifications(|state| {
-            for pane_id in newly_exited {
-                let hook = if retained.contains(&pane_id) {
-                    PaneHook::Died
-                } else {
-                    PaneHook::Exited
-                };
-                state.notify_pane(hook, pane_id);
-            }
-        });
+        for pane_id in newly_exited {
+            let hook = if retained.contains(&pane_id) {
+                PaneHook::Died
+            } else {
+                PaneHook::Exited
+            };
+            self.notify_pane(hook, pane_id);
+        }
         for window in self.windows.values_mut() {
             let active_id = window.panes.get(window.active).map(|pane| pane.id);
             let last_id = window
@@ -454,10 +450,7 @@ impl ServerState {
                 match event {
                     PaneClipboardEvent::Set { data } => {
                         self.set_buffer(None, &data);
-                        let was_deferred =
-                            std::mem::replace(&mut self.notifications_are_deferred, true);
                         self.notify_pane(PaneHook::SetClipboard, pane_id);
-                        self.notifications_are_deferred = was_deferred;
                     }
                     PaneClipboardEvent::Query {
                         selection,

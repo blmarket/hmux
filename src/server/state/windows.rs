@@ -1444,9 +1444,7 @@ impl ServerState {
             if !applies {
                 continue;
             }
-            let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
             self.notify_session_window(hook, session_id, window_id);
-            self.notifications_are_deferred = was_deferred;
             // One visual notification per session, however many of its
             // winlinks alerted.
             if !alerted_sessions.insert(session_id) {

@@ -92,16 +92,54 @@ pub(crate) mod test_driver {
             &mut self,
             queue: ResumableCommandQueue,
             state: &SharedState,
+            agents: &crate::integration::status::PaneAgents,
         ) -> CommandResult {
-            let state = Rc::clone(state);
+            let result = self.run_queue_inner(queue, state);
+            self.drain_notifications(state, agents);
+            result
+        }
+
+        /// The queue alone, without the server-wide drain that follows it: what
+        /// an event hook body gets, so the flat drain loop stays the only place
+        /// events are taken.
+        fn run_queue_inner(
+            &mut self,
+            queue: ResumableCommandQueue,
+            state: &SharedState,
+        ) -> CommandResult {
+            let owned = Rc::clone(state);
             // A queue is awaited by whoever started it, which in the daemon is
             // a client's own task; the test runs one for the same reason.
             let result = self.drive_task_future(move |tasks| async move {
-                command::spawn_queue(&tasks, queue, state, DISPATCH_BUDGET)?.await
+                command::spawn_queue(&tasks, queue, owned, DISPATCH_BUDGET)?.await
             });
             match result {
                 Ok(result) => result,
                 Err(error) => CommandResult::err(format!("{error}\n")),
+            }
+        }
+
+        /// Run the server-wide queue the way the daemon's drainer does: one
+        /// raised event at a time, its bodies to completion, everything a body
+        /// raises queued behind the events already waiting rather than run in
+        /// its own frame.
+        pub(crate) fn drain_notifications(
+            &mut self,
+            state: &SharedState,
+            agents: &crate::integration::status::PaneAgents,
+        ) {
+            loop {
+                let requests = {
+                    let mut state = state.borrow_mut();
+                    command::next_notification_hooks(&mut state)
+                };
+                let Some(requests) = requests else {
+                    return;
+                };
+                for request in requests {
+                    self.run_background(request, state, agents);
+                }
+                state.borrow_mut().finish_notification();
             }
         }
 
@@ -155,7 +193,7 @@ pub(crate) mod test_driver {
                     return;
                 }
             };
-            let mut result = self.run_queue(queue, state);
+            let mut result = self.run_queue_inner(queue, state);
             for request in result.background_commands.drain(..) {
                 self.run_background(request, state, agents);
             }

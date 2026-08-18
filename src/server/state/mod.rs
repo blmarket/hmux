@@ -503,11 +503,13 @@ pub struct Session {
     cwd: Option<PathBuf>,
 }
 
-/// One event notification waiting to become hook bodies.
+/// One event notification waiting on the server-wide queue to become hook
+/// bodies.
 ///
-/// tmux appends an equivalent `notify_entry` callback to the command queue at
-/// each mutation point; hmux records it while the state lock is held and lets
-/// the command queue drain it once the triggering command has finished.
+/// tmux appends an equivalent `notify_entry` callback to its global command
+/// queue at each mutation point, whether the mutation came from a client's
+/// command or from the server loop; hmux records it while the state lock is
+/// held and the server-wide queue runner drains it.
 #[derive(Clone, Debug)]
 pub(crate) struct Notification {
     /// Hook name, e.g. `window-linked`.
@@ -517,9 +519,6 @@ pub(crate) struct Notification {
     pub(crate) target: Option<String>,
     /// `hook*` format variables the body sees.
     pub(crate) vars: Vec<(String, String)>,
-    /// Raised outside any command (a pane exiting, an alert firing), so the
-    /// server loop must run its body rather than the command queue.
-    pub(crate) deferred: bool,
 }
 
 /// A key-table entry installed by `bind-key`.
@@ -840,14 +839,24 @@ pub struct ServerState {
     terminal_requests: Vec<TerminalRequest>,
     /// Panes currently holding focus, so the focus hooks fire only on a change.
     focused_panes: BTreeSet<u32>,
-    /// Event notifications raised by mutations since the command queue last
-    /// drained them, in the order they happened. tmux's `notify_add` appends
-    /// to the command queue; hmux collects them here because the mutation
-    /// sites hold the state lock and the queue lives above it.
-    pending_notifications: Vec<Notification>,
-    /// Set while a mutation runs outside the command queue, so what it raises
-    /// is marked for the server loop to dispatch.
-    notifications_are_deferred: bool,
+    /// The server-wide queue: event notifications raised by mutations and not
+    /// yet turned into hook bodies, in the order they happened. tmux's
+    /// `notify_add` appends to its global command queue; hmux collects them
+    /// here because the mutation sites hold the state lock and the runner that
+    /// drains them lives above it.
+    pending_notifications: VecDeque<Notification>,
+    /// Whether the server-wide queue's runner is between taking an item and
+    /// finishing its bodies — tmux's `queue->item` on the global queue. The
+    /// exit decision reads it: a queue with a running item is not yet idle
+    /// even when nothing else is waiting.
+    notification_running: bool,
+    /// How many suppressed hook-body polls are on the stack right now. tmux's
+    /// `notify_add` drops a notification only while a `CMDQ_STATE_NOHOOKS`
+    /// item is *actively executing* — `cmdq_running` masks a waiting item —
+    /// so the latch covers each poll of a body's future, not the parked spans
+    /// between them. A count rather than a flag because a body's poll can
+    /// nest another queue's first inline turn.
+    suppressed_notification_frames: usize,
     /// Client name → (session, width, height) as of the last client-layer
     /// notification sweep.
     known_clients: BTreeMap<String, (u32, u16, u16)>,
@@ -984,8 +993,9 @@ impl ServerState {
             focused_panes: BTreeSet::new(),
             pane_theme_pushed: BTreeMap::new(),
             terminal_requests: Vec::new(),
-            pending_notifications: Vec::new(),
-            notifications_are_deferred: false,
+            pending_notifications: VecDeque::new(),
+            notification_running: false,
+            suppressed_notification_frames: 0,
             known_clients: BTreeMap::new(),
             next_session_id: 0,
             next_link_set_id: 0,

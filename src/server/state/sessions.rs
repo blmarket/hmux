@@ -390,45 +390,37 @@ impl ServerState {
         removed
     }
 
-    /// Record an event notification for the command queue to turn into hook
-    /// bodies. Mirrors tmux's `notify_add`.
+    /// Append an event notification to the server-wide queue, for its runner
+    /// to turn into hook bodies. Mirrors tmux's `notify_add`, including the
+    /// drop while the global queue is running a body of its own.
     fn notify(
         &mut self,
         name: &'static str,
         target: Option<String>,
         mut vars: Vec<(String, String)>,
     ) {
+        if self.suppressed_notification_frames > 0 {
+            return;
+        }
         vars.insert(0, ("hook".to_string(), name.to_string()));
-        self.pending_notifications.push(Notification {
+        self.pending_notifications.push_back(Notification {
             name: name.to_string(),
             target,
             vars,
-            deferred: self.notifications_are_deferred,
         });
     }
 
-    /// Mark notifications raised inside `body` as server-loop work rather than
-    /// command-queue work.
-    pub(super) fn deferred_notifications<T>(&mut self, body: impl FnOnce(&mut Self) -> T) -> T {
-        let previous = std::mem::replace(&mut self.notifications_are_deferred, true);
-        let result = body(self);
-        self.notifications_are_deferred = previous;
-        result
+    /// Latch a hook body as actively on the stack: what is raised from here
+    /// until [`Self::end_notification_suppression`] is dropped where it is
+    /// raised, as tmux's `notify_add` drops what a running
+    /// `CMDQ_STATE_NOHOOKS` item raises. Held per poll, not per command — a
+    /// parked body is tmux's waiting item, which `cmdq_running` masks.
+    pub(crate) fn begin_notification_suppression(&mut self) {
+        self.suppressed_notification_frames += 1;
     }
 
-    /// Take the notifications the server loop owns, leaving the rest for the
-    /// command queue.
-    pub(crate) fn take_deferred_notifications(&mut self) -> Vec<Notification> {
-        let mut deferred = Vec::new();
-        self.pending_notifications.retain(|notification| {
-            if notification.deferred {
-                deferred.push(notification.clone());
-                false
-            } else {
-                true
-            }
-        });
-        deferred
+    pub(crate) fn end_notification_suppression(&mut self) {
+        self.suppressed_notification_frames = self.suppressed_notification_frames.saturating_sub(1);
     }
 
     /// tmux's `notify_session`: an event about a session as a whole.
@@ -527,9 +519,19 @@ impl ServerState {
         self.notify(hook.as_str(), session_id.map(|id| format!("${id}")), vars);
     }
 
-    /// Take everything raised since the last drain.
-    pub(crate) fn take_notifications(&mut self) -> Vec<Notification> {
-        std::mem::take(&mut self.pending_notifications)
+    /// Take the next item off the server-wide queue, in the order the
+    /// mutations raised them, and mark it as the queue's running item until
+    /// [`Self::finish_notification`].
+    pub(crate) fn next_notification(&mut self) -> Option<Notification> {
+        let notification = self.pending_notifications.pop_front()?;
+        self.notification_running = true;
+        Some(notification)
+    }
+
+    /// The running item's bodies are done; the queue is idle until the next
+    /// [`Self::next_notification`].
+    pub(crate) fn finish_notification(&mut self) {
+        self.notification_running = false;
     }
 
     /// tmux's `server_client_set_session` tail: the client's new current window
@@ -562,7 +564,6 @@ impl ServerState {
                 .collect::<BTreeMap<_, _>>()
         });
         let previous = std::mem::replace(&mut self.known_clients, current.clone());
-        let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
         for (name, (session_id, cols, rows)) in &current {
             match previous.get(name) {
                 None => {
@@ -587,7 +588,6 @@ impl ServerState {
         for name in previous.keys().filter(|name| !current.contains_key(*name)) {
             self.notify_client(SessionHook::ClientDetached, name, None);
         }
-        self.notifications_are_deferred = was_deferred;
         // Gaining or losing a client moves pane focus, for the window it
         // arrived at and the one it left.
         let touched = previous
