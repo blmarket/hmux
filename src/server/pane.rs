@@ -2882,41 +2882,37 @@ impl PaneProcessProbe {
             .filter(|name| !name.is_empty())
     }
 
-    /// Whether the pane's own shell holds the terminal, meaning it is sitting
-    /// at a prompt with nothing running in front of it.
+    /// Whether the shell holding the terminal is sitting at a prompt with
+    /// nothing running in front of it.
     ///
-    /// The session leader is the process the pane forked; while it is also the
-    /// foreground group, nothing it launched has taken the terminal from it.
-    /// Running a command moves the foreground group to that command, and it
-    /// moves back when the command finishes.
+    /// The program holding the terminal is the pane's foreground group, which
+    /// is the pane's own shell until something it launched takes over — and a
+    /// shell started from that shell is a shell at a prompt just as much as the
+    /// pane's own is, so what the test asks is what the foreground program is
+    /// rather than whether it is the process the pane forked.
     ///
-    /// That test alone is not enough, because a pane launched straight into a
-    /// program (`new-window -- tail -f log`) has that program as leader *and*
-    /// foreground group, and a prompt is the one thing it is not. So the
-    /// program has to be a shell, and a shell handed a command to run
-    /// (`sh -c 'while :; do :; done'`) is working rather than prompting.
+    /// The program has to be a shell, and a shell handed work of its own
+    /// (`sh -c 'while :; do :; done'`, or a script to run) is working rather
+    /// than prompting. A pane launched straight into a program
+    /// (`new-window -- tail -f log`) is not a shell at all, so it never gets
+    /// here.
     ///
     /// What this cannot do is ask the shell whether it is currently at its
     /// prompt: bash and dash sit in a `poll` loop there, which is
     /// indistinguishable from any other wait. Reading the invocation is what
-    /// is left, and it is right for the panes that matter — a login shell has
-    /// no `-c`, and a shell given one never returns to a prompt.
+    /// is left, and it is right for the panes that matter — an interactive
+    /// shell has no work on its command line, and a shell given some never
+    /// returns to a prompt.
     fn shell_at_prompt(&self) -> bool {
-        let holds_terminal = match (self.foreground, self.session_leader) {
-            (Some(foreground), Some(leader)) => foreground == leader,
-            _ => false,
-        };
-        holds_terminal
-            && self
-                .current_command()
-                .is_some_and(|command| is_shell(&command))
+        self.current_command()
+            .is_some_and(|command| is_shell(&command))
             && !self.runs_a_command_string()
     }
 
-    /// Whether the foreground process was invoked with `-c`, i.e. handed a
-    /// command to run rather than started interactively.
+    /// Whether the foreground process was invoked with work of its own — `-c`,
+    /// or a script to run — rather than started interactively.
     ///
-    /// An unreadable argument vector reads as no `-c`, leaving the shell to be
+    /// An unreadable argument vector reads as no work, leaving the shell to be
     /// treated as interactive — which is what a pane's shell usually is.
     fn runs_a_command_string(&self) -> bool {
         let Some(pid) = self.foreground else {
@@ -2939,21 +2935,35 @@ impl PaneProcessProbe {
     }
 }
 
-/// Whether a shell's argument vector carries `-c`.
+/// Whether a shell's argument vector carries work of its own: a `-c` command
+/// string, or a script operand.
 ///
-/// Only the leading option arguments are scanned: everything from the first
-/// non-option onwards is the command string and its own arguments, which may
-/// contain anything at all. `--` ends the options.
+/// Only the leading option arguments are scanned for `-c`: everything from the
+/// first non-option onwards is the command string and its own arguments, which
+/// may contain anything at all. `--` ends the options, and whatever follows it
+/// is a script to run.
 ///
-/// Within that, only single-dash arguments are short-option bundles, so `-lc`
-/// counts while a long option merely spelled with a `c` in it — `--norc` —
-/// does not.
+/// Within the options, only single-dash arguments are short-option bundles, so
+/// `-lc` counts while a long option merely spelled with a `c` in it — `--norc`
+/// — does not.
 fn invoked_with_command_string<'a>(arguments: impl Iterator<Item = &'a str>) -> bool {
-    arguments
-        .skip(1)
-        .take_while(|argument| argument.starts_with('-') && *argument != "--")
+    let mut rest = arguments.skip(1).peekable();
+    let mut options = Vec::new();
+    while let Some(argument) = rest.peek() {
+        if !argument.starts_with('-') {
+            break;
+        }
+        let argument = rest.next().expect("the peeked option");
+        if argument == "--" {
+            break;
+        }
+        options.push(argument);
+    }
+    options
+        .into_iter()
         .filter(|argument| !argument.starts_with("--"))
         .any(|argument| argument.contains('c'))
+        || rest.next().is_some()
 }
 
 /// Whether a program name — as [`parse_window_name`] reduces it, so already
@@ -3165,9 +3175,15 @@ mod tests {
             PaneClass::classify(Some(&probe(Some(0), Some(0), "bash")), false, false),
             PaneClass::ShellPrompt
         );
+        // A shell started from the pane's own shell holds the terminal in its
+        // place, and is a shell at a prompt just the same.
+        assert_eq!(
+            PaneClass::classify(Some(&probe(Some(0), Some(1), "zsh")), false, false),
+            PaneClass::ShellPrompt
+        );
         // A command took the terminal away from the shell.
         assert_eq!(
-            PaneClass::classify(Some(&probe(Some(0), Some(1), "bash")), false, false),
+            PaneClass::classify(Some(&probe(Some(0), Some(1), "make")), false, false),
             PaneClass::Running
         );
         // A pane launched straight into a program is its own session leader,
@@ -3189,10 +3205,11 @@ mod tests {
         );
     }
 
-    /// A shell handed a command is working, not prompting — and the scan has
-    /// to stop before the command string, which can hold anything.
+    /// A shell handed work — a command string or a script — is working, not
+    /// prompting, and the option scan has to stop before that work, which can
+    /// hold anything.
     #[test]
-    fn a_shell_given_a_command_string_is_not_at_a_prompt() {
+    fn a_shell_given_work_is_not_at_a_prompt() {
         let invoked = |arguments: &[&str]| invoked_with_command_string(arguments.iter().copied());
 
         assert!(invoked(&["sh", "-c", "while :; do :; done"]));
@@ -3200,10 +3217,10 @@ mod tests {
         assert!(!invoked(&["bash", "--norc", "-i"]));
         assert!(!invoked(&["-bash"]));
         assert!(!invoked(&["zsh"]));
-        // The command string is not an option, so a `c` inside it is not a
-        // `-c`, and neither is anything after `--`.
-        assert!(!invoked(&["sh", "-i", "printf c"]));
-        assert!(!invoked(&["sh", "--", "-c"]));
+        // A shell given a script to run is running it, whether the operand
+        // stands on its own or behind the `--` that ends the options.
+        assert!(invoked(&["sh", "-i", "script.sh"]));
+        assert!(invoked(&["sh", "--", "script.sh"]));
         // Only single-dash arguments bundle short options, so a long option
         // that merely contains a `c` is not one.
         assert!(!invoked(&["bash", "--noprofile", "--norc"]));
