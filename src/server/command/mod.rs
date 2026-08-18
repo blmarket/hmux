@@ -3162,6 +3162,35 @@ pub(super) fn vars_full(
                 });
             }
             set_terminal_mode_vars(&p.pane, &mut v);
+            // tmux's `tty_default_colours`: the pane's own OSC 10/11 colours
+            // are the base its `window-style` is applied over, and the active
+            // pane prefers whatever `window-active-style` sets on top.
+            {
+                let pane_target = format!("%{}", p.id);
+                let option = |name: &str| {
+                    st.option_for_target(&pane_target, name)
+                        .map(str::to_string)
+                        .unwrap_or_default()
+                };
+                let style = option("window-style");
+                let active_style = option("window-active-style");
+                let active = pane_idx == win.active;
+                for (key, base) in [
+                    ("fg", p.pane.osc_state().foreground),
+                    ("bg", p.pane.background_color()),
+                ] {
+                    let base = super::style::canonical_option_colour(&base)
+                        .unwrap_or_else(|| "default".to_string());
+                    let cached = style_colour(&style, key).unwrap_or_else(|| base.clone());
+                    let cached_active = style_colour(&active_style, key).unwrap_or(base);
+                    let colour = if active && cached_active != "default" {
+                        cached_active
+                    } else {
+                        cached
+                    };
+                    v.set(if key == "fg" { "pane_fg" } else { "pane_bg" }, colour);
+                }
+            }
             if let Some(copy) = p.copy.as_ref() {
                 let view_top = copy.grid.scrollback_rows.saturating_sub(copy.scroll);
                 let search = copy.search.as_ref();
@@ -3339,6 +3368,16 @@ pub(super) fn vars_full(
     }
     set_mouse_vars(st, sess, win_idx, pane_idx, &mut v);
     v
+}
+
+/// One colour out of a style option's `fg=`/`bg=` field, in the spelling
+/// tmux's `colour_tostring` gives it back in.
+fn style_colour(style: &str, key: &str) -> Option<String> {
+    super::style::split_style_parts(style)
+        .filter_map(|part| part.split_once('='))
+        .filter(|(name, _)| *name == key)
+        .last()
+        .and_then(|(_, value)| super::style::canonical_option_colour(value.trim()))
 }
 
 /// Publish the pane terminal modes tmux reads out of `screen->mode`.
