@@ -1795,6 +1795,25 @@ fn mode_view_action(view: &mut ModeView, key: &str) -> Option<ModeAction> {
             }
             Some(ModeAction::command(chain(commands)).removing(rows))
         }
+        (ModeKind::Client, "z" | "Z") => {
+            let rows = action_rows(view, key == "Z");
+            let commands: Vec<Vec<String>> = rows
+                .iter()
+                .filter_map(|index| view.items.get(*index))
+                .filter_map(|item| match item.target.as_ref() {
+                    Some(ModeTarget::Client { name }) => Some(vec![
+                        "suspend-client".to_owned(),
+                        "-t".to_owned(),
+                        name.clone(),
+                    ]),
+                    _ => None,
+                })
+                .collect();
+            if commands.is_empty() {
+                return Some(ModeAction::nothing());
+            }
+            Some(ModeAction::command(chain(commands)).removing(rows))
+        }
         (ModeKind::Buffer, "d" | "D") => {
             let rows = action_rows(view, key == "D");
             let commands: Vec<Vec<String>> = rows

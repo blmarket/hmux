@@ -577,42 +577,19 @@ impl ChooseTree {
                     session_row: None,
                     windows: Vec::new(),
                 };
-                // `-s` lists only sessions and `-w` only windows; without either, a
-                // session is followed by its own windows.
-                if !self.windows_only && opts.keep(state, &session_vars) {
-                    group.session_row = Some(ChooseRow {
-                        item: ModeItem {
-                            label: opts.label(
-                                state,
-                                &session_vars,
-                                format!("{} ({} windows)", session.name, session.windows.len()),
-                            ),
-                            command: template_command(
-                                template.unwrap_or("switch-client -Zt '%%'"),
-                                &session.name,
-                            ),
-                            prompt_target: Some(format!("={}:", session.name)),
-                            edit: None,
-                            tagged: false,
-                            preview_target: Some(format!("={}:", session.name)),
-                            depth: 0,
-                            expanded: None,
-                            target: Some(ModeTarget::Session {
-                                name: session.name.clone(),
-                            }),
-                        },
-                        vars: session_vars,
-                    });
-                }
-                if self.sessions_only {
-                    groups.push(group);
-                    continue;
-                }
+                let mut kept_windows = 0usize;
                 for (position, link) in session.windows.iter().enumerate() {
                     let window = state.session_window(session, position);
                     let target = format!("{}:{}", session.name, link.index);
                     let window_vars = super::vars_for(state, session, position, agents, marked);
-                    if !opts.keep(state, &window_vars) {
+                    // tmux's `window_tree_build_window` drops a window only when
+                    // its one pane fails the filter; a window holding several
+                    // panes survives whatever the filter says about them.
+                    if window.panes.len() == 1 && !opts.keep(state, &window_vars) {
+                        continue;
+                    }
+                    kept_windows += 1;
+                    if self.sessions_only {
                         continue;
                     }
                     let title = window_vars.lookup("pane_title").unwrap_or("");
@@ -665,6 +642,34 @@ impl ChooseTree {
                             },
                             vars: window_vars,
                         },
+                    });
+                }
+                // `-s` lists only sessions and `-w` only windows; without either, a
+                // session is followed by its own windows. tmux keeps a session
+                // whenever any of its windows survived the filter.
+                if !self.windows_only && kept_windows > 0 {
+                    group.session_row = Some(ChooseRow {
+                        item: ModeItem {
+                            label: opts.label(
+                                state,
+                                &session_vars,
+                                format!("{} ({} windows)", session.name, session.windows.len()),
+                            ),
+                            command: template_command(
+                                template.unwrap_or("switch-client -Zt '%%'"),
+                                &session.name,
+                            ),
+                            prompt_target: Some(format!("={}:", session.name)),
+                            edit: None,
+                            tagged: false,
+                            preview_target: Some(format!("={}:", session.name)),
+                            depth: 0,
+                            expanded: None,
+                            target: Some(ModeTarget::Session {
+                                name: session.name.clone(),
+                            }),
+                        },
+                        vars: session_vars,
                     });
                 }
                 groups.push(group);
@@ -730,6 +735,9 @@ impl ChooseClient {
         let options = &self.options;
         let mut rows = Vec::new();
         for client in state.client_snapshots() {
+            if client.suspended {
+                continue;
+            }
             let Some(vars) = client_vars(state, agents, &client) else {
                 continue;
             };
@@ -1446,7 +1454,13 @@ impl ListClients {
             Ok(order) => order,
             Err(error) => return error,
         };
-        let mut clients = state.client_snapshots();
+        // tmux lists from `sort_get_clients`, which skips a client stopped by
+        // `suspend-client` until it wakes back up.
+        let mut clients: Vec<_> = state
+            .client_snapshots()
+            .into_iter()
+            .filter(|client| !client.suspended)
+            .collect();
         super::apply_list_sort(
             &mut clients,
             sort_order,

@@ -842,6 +842,7 @@ impl AttachSession {
                         self.compositor.render.output_cursor_visible = None;
                         self.tty.termios_guard.restore();
                         writer.send(Frame::new(Message::Suspend))?;
+                        self.attachments.render_attachment.set_suspended(true);
                         self.compositor.io_state = ClientIoState::Suspended;
                         self.compositor.render.last_render.clear();
                         self.compositor.render.force_clear = true;
@@ -1202,6 +1203,7 @@ impl AttachSession {
                             let mut st = state.borrow_mut();
                             st.touch_session_activity(self.compositor.target.session_id, false);
                         }
+                        self.attachments.render_attachment.set_suspended(false);
                         self.compositor.io_state = ClientIoState::Active;
                         self.compositor.render.last_render.clear();
                         self.compositor.render.force_clear = true;

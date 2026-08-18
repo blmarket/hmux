@@ -259,6 +259,9 @@ pub(super) struct ClientRenderEntry {
     last_session_id: Option<u32>,
     /// Bytes written to this client's terminal — tmux's `c->written`.
     written: u64,
+    /// tmux's `CLIENT_SUSPENDED`: set while the client is stopped by
+    /// `suspend-client` and cleared when it wakes back up.
+    suspended: bool,
     /// When a clipboard query was last sent to this client's terminal.
     clipboard_query_at: Option<Instant>,
     flag_state: ClientFlagState,
@@ -362,6 +365,9 @@ pub(crate) struct ClientSnapshot {
     pub(crate) termtype: String,
     /// Bytes written to this client's terminal — `#{client_written}`.
     pub(crate) written: u64,
+    /// Whether the client is stopped on `suspend-client`, which is what tmux's
+    /// `sort_get_clients` skips a `CLIENT_SUSPENDED` client for.
+    pub(crate) suspended: bool,
 }
 
 /// A question a pane asked that only the attached terminal can answer, waiting
@@ -755,6 +761,7 @@ impl ClientRenderRegistry {
                 created_micros: now_micros(),
                 last_session_id: None,
                 written: 0,
+                suspended: false,
                 clipboard_query_at: None,
                 flag_state,
                 terminal: None,
@@ -816,6 +823,7 @@ impl ClientRenderRegistry {
                     .unwrap_or_default(),
                 termtype: entry.term_type.clone(),
                 written: entry.written,
+                suspended: entry.suspended,
             })
             .collect()
     }
@@ -1759,6 +1767,19 @@ impl ClientRenderAttachment {
                 entry.size_changed = true;
             }
         }
+    }
+
+    /// Record that the client is stopped on `suspend-client`, or has woken
+    /// back up. tmux's `sort_get_clients` skips a suspended client, so the
+    /// listings built on it lose the row until it resumes.
+    pub(crate) fn set_suspended(&self, suspended: bool) {
+        {
+            let mut inner = self.registry.inner.borrow_mut();
+            if let Some(entry) = inner.clients.get_mut(&self.id) {
+                entry.suspended = suspended;
+            }
+        }
+        self.registry.bump_generation();
     }
 
     /// Publish the flag set a control client keeps of its own, so the registry
