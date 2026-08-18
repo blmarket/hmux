@@ -537,7 +537,7 @@ pub fn expand(template: &str, vars: &Vars) -> String {
 /// [`expand`], but with a [`LoopSource`] so `#{S:…}`/`#{W:…}`/`#{P:…}` loops can
 /// enumerate the session tree. The plain [`expand`] passes `None` (loops then
 /// expand to empty, as they would with nothing to iterate).
-pub fn expand_with(template: &str, vars: &Vars, ls: Option<&dyn LoopSource>) -> String {
+fn expand_with(template: &str, vars: &Vars, ls: Option<&dyn LoopSource>) -> String {
     let anchored = ls.map(AnchoredLoops);
     expand_with_context(
         template,

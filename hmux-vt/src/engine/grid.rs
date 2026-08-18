@@ -74,7 +74,7 @@ fn lay_out(out: &mut Vec<Line>, cells: Vec<Cell>, sx: usize, flags: u8, time: u6
 /// exactly — one byte of text one column wide, an attribute byte, two palette
 /// colours, the default underline colour and no link — so a compact round trip
 /// gives the cell back unchanged.
-pub fn needs_extended(cell: &Cell) -> bool {
+fn needs_extended(cell: &Cell) -> bool {
     cell.attr > 0xff
         || cell.data.len() != 1
         || cell.data.width != 1
@@ -90,9 +90,9 @@ pub fn needs_extended(cell: &Cell) -> bool {
 /// out; a [`Cell`] never carries one.
 mod entry_flag {
     /// tmux's `GRID_FLAG_FG256`: the stored foreground byte is a palette index.
-    pub const FG256: u8 = 0x1;
+    pub(crate) const FG256: u8 = 0x1;
     /// tmux's `GRID_FLAG_BG256`.
-    pub const BG256: u8 = 0x2;
+    pub(crate) const BG256: u8 = 0x2;
     /// tmux's `GRID_FLAG_EXTENDED`: the payload is an index into the line's
     /// extended entries rather than the cell itself.
     pub const EXTENDED: u8 = 0x8;
@@ -501,7 +501,7 @@ pub struct Grid {
     pub history: bool,
     /// How far the history has scrolled, tmux's `hscrolled`. Only the
     /// `history_bytes`-style accounting reads it.
-    pub hscrolled: usize,
+    hscrolled: usize,
     lines: Vec<Line>,
 }
 
@@ -615,7 +615,7 @@ impl Grid {
     /// The rounding is not just an allocation detail: the cells it brings into
     /// existence are *cleared* with `bg`, so how far a row grows decides what
     /// colour the space past a program's last write has.
-    pub fn expand_line(&mut self, py: usize, sx: usize, bg: i32) {
+    fn expand_line(&mut self, py: usize, sx: usize, bg: i32) {
         let Some(line) = self.lines.get(py) else {
             return;
         };
@@ -660,7 +660,7 @@ impl Grid {
     /// tmux's `grid_empty_line`: forget the row entirely. A non-default
     /// background is painted straight back over the full width, because an
     /// erase to a colour has to be visible where nothing was written.
-    pub fn empty_line(&mut self, py: usize, bg: i32) {
+    fn empty_line(&mut self, py: usize, bg: i32) {
         if py >= self.lines.len() {
             return;
         }
@@ -671,7 +671,7 @@ impl Grid {
     }
 
     /// tmux's `grid_clear_lines`.
-    pub fn clear_lines(&mut self, py: usize, ny: usize, bg: i32) {
+    fn clear_lines(&mut self, py: usize, ny: usize, bg: i32) {
         if ny == 0 || py + ny > self.lines.len() {
             return;
         }
@@ -716,7 +716,7 @@ impl Grid {
     }
 
     /// tmux's `grid_clear_cell`: put a cleared cell in place, keeping `bg`.
-    pub fn clear_cell(&mut self, px: usize, py: usize, bg: i32) {
+    fn clear_cell(&mut self, px: usize, py: usize, bg: i32) {
         if let Some(line) = self.lines.get_mut(py) {
             line.clear_cell(px, bg);
         }

@@ -31,7 +31,7 @@ use super::message::{Frame, Message};
 use super::traits::{NonblockingFrameReader, NonblockingFrameWriter, WriteQueueFull};
 
 /// `IMSG_HEADER_SIZE` — `sizeof(struct imsg_hdr)`.
-pub const HEADER_SIZE: usize = 16;
+const HEADER_SIZE: usize = 16;
 /// `IMSG_FD_MARK` — high bit of `len` signalling an attached fd.
 const IMSG_FD_MARK: u32 = 0x8000_0000;
 /// `MAX_IMSGSIZE` — largest single imsg (compat/imsg.h).
@@ -258,7 +258,7 @@ impl NonblockingImsgWriter {
 
     /// Construct a nonblocking writer with a private output queue high-water
     /// mark.
-    pub fn with_queue_limit(fd: OwnedFd, max_pending_bytes: usize) -> Self {
+    fn with_queue_limit(fd: OwnedFd, max_pending_bytes: usize) -> Self {
         NonblockingImsgWriter {
             fd,
             pending: VecDeque::new(),

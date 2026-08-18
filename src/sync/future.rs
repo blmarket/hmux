@@ -91,7 +91,7 @@ pub fn maybe<F: Future>(future: Option<F>) -> Maybe<F> {
     Maybe { future }
 }
 
-pub struct Maybe<F> {
+pub(crate) struct Maybe<F> {
     future: Option<F>,
 }
 
@@ -118,7 +118,7 @@ pub fn yield_now() -> YieldNow {
     YieldNow { yielded: false }
 }
 
-pub struct YieldNow {
+pub(crate) struct YieldNow {
     yielded: bool,
 }
 

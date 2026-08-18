@@ -1517,12 +1517,6 @@ impl ServerState {
         Ok(())
     }
 
-    /// Dump the plain-text screen of the pane named by `target` (`capture-pane`).
-    pub fn dump_pane(&self, target: &str) -> io::Result<String> {
-        let t = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
-        Ok(self.window(t.session, t.window).panes[t.pane].pane.dump())
-    }
-
     /// `swap-pane -s src -t dst`: exchange the two panes' positions. Same-window
     /// swaps are a simple positional swap; cross-window swaps exchange the pane
     /// nodes. Reports `can't find pane` on a miss.
@@ -2504,14 +2498,6 @@ impl ServerState {
         Ok(pane.take_terminal_queries())
     }
 
-    /// Dump the active pane as VT sequences, if present.
-    pub fn dump_active_pane_vt(&self, session_name: &str) -> io::Result<Vec<u8>> {
-        let pane = self
-            .active_pane(session_name)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no active pane"))?;
-        Ok(pane.dump_vt())
-    }
-
     pub(crate) fn dump_active_pane_viewport_vt(
         &self,
         session_name: &str,
@@ -2650,14 +2636,6 @@ impl ServerState {
         Ok(self.window(t.session, t.window).panes[t.pane]
             .pane
             .scrollback_rows())
-    }
-
-    /// Dump the active pane as plain text (for debugging / tests).
-    pub fn dump_active_pane_plain(&self, session_name: &str) -> io::Result<String> {
-        let pane = self
-            .active_pane(session_name)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no active pane"))?;
-        Ok(pane.dump())
     }
 }
 

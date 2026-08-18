@@ -22,7 +22,7 @@ const DEFAULT_EVENT_CAPACITY: usize = 1024;
 pub struct Token(usize);
 
 impl Token {
-    pub fn as_usize(self) -> usize {
+    fn as_usize(self) -> usize {
         self.0
     }
 }
@@ -105,18 +105,6 @@ impl Readiness {
         self.intersects(Self::WRITABLE)
     }
 
-    pub fn is_read_closed(self) -> bool {
-        self.intersects(Self::READ_CLOSED)
-    }
-
-    pub fn is_write_closed(self) -> bool {
-        self.intersects(Self::WRITE_CLOSED)
-    }
-
-    pub fn is_error(self) -> bool {
-        self.intersects(Self::ERROR)
-    }
-
     /// We pray mio never gives empty Event
     fn from_mio(event: &mio::event::Event) -> Self {
         let mut bits = 0;
@@ -185,7 +173,7 @@ pub struct PollResult {
 
 impl PollResult {
     #[cfg(test)]
-    pub fn ready_count(self) -> usize {
+    fn ready_count(self) -> usize {
         self.ready_count
     }
 }

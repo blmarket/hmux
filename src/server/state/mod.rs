@@ -770,7 +770,7 @@ impl PaneNode {
 /// Format `epoch` as tmux's `(created ...)` timestamp (e.g.
 /// `Tue Jul  7 20:57:17 2026`). Best-effort; an empty string on failure (the
 /// value is normalized away in conformance comparisons regardless).
-pub fn created_stamp(epoch: i64) -> String {
+fn created_stamp(epoch: i64) -> String {
     // SAFETY: standard libc localtime/strftime dance. `localtime` returns a
     // pointer into a static buffer, used only until the next call; we copy out
     // immediately via strftime.

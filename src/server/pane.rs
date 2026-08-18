@@ -2195,7 +2195,8 @@ impl Pane {
         (self.cols, self.rows)
     }
 
-    pub fn is_live(&self) -> bool {
+    #[cfg(test)]
+    fn is_live(&self) -> bool {
         self.child.as_ref().is_some_and(|child| child.alive.get())
     }
 

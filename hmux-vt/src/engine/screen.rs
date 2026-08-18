@@ -938,7 +938,7 @@ impl Screen {
     // ---- tabs ------------------------------------------------------------
 
     /// tmux's `screen_reset_tabs`.
-    pub fn reset_tabs(&mut self) {
+    fn reset_tabs(&mut self) {
         self.tabs = default_tabs(self.sx());
     }
 

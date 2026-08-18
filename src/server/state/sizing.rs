@@ -64,7 +64,7 @@ pub struct WindowResizeRequest {
 /// `tty->oox`/`ooy`/`osx`/`osy` and the `oflag` that reports whether the window
 /// is bigger than the terminal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ClientViewport {
+pub(crate) struct ClientViewport {
     /// Whether the window is bigger than the client — `#{window_bigger}`.
     pub bigger: bool,
     /// The viewport's top-left corner in window coordinates.

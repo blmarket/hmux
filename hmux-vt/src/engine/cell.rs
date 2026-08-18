@@ -80,7 +80,7 @@ pub mod colour {
     /// The palette index of a 256-colour value, if it is one. The eight bright
     /// aixterm colours (90–97, 100–107) are folded onto 8–15, as tmux folds
     /// them.
-    pub fn as_index(colour: i32) -> Option<u8> {
+    pub(crate) fn as_index(colour: i32) -> Option<u8> {
         if colour & FLAG_256 != 0 {
             return u8::try_from(colour & 0xff).ok();
         }

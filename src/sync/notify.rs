@@ -61,7 +61,7 @@ impl Notify {
     }
 }
 
-pub struct Notified {
+pub(crate) struct Notified {
     shared: Rc<RefCell<NotifyState>>,
 }
 

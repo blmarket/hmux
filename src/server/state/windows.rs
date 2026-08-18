@@ -646,26 +646,6 @@ impl ServerState {
     /// keep their indices. The new window becomes the session's active window and
     /// the previous active window becomes "last". Returns the new window's `Vec`
     /// position. Errors (`can't find session`/`can't find window`) mirror tmux.
-    pub fn new_window_relative(
-        &mut self,
-        session: &str,
-        anchor_index: u32,
-        after: bool,
-        select: bool,
-    ) -> io::Result<usize> {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-        let name = super::default_window_name(std::slice::from_ref(&shell));
-        self.new_window_relative_with_spawn(
-            session,
-            anchor_index,
-            after,
-            select,
-            &[shell],
-            None,
-            &name,
-        )
-    }
-
     pub(crate) fn new_window_relative_with_spawn(
         &mut self,
         session: &str,

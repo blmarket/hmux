@@ -25,7 +25,7 @@ pub mod agy;
 pub mod claude;
 pub mod codex;
 pub mod pi;
-pub mod session_model;
+mod session_model;
 pub mod status;
 
 use session_model::ModelScan;

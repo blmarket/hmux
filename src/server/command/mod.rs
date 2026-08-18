@@ -96,7 +96,7 @@ pub(crate) enum DeferredCommand {
 /// and the process exit code.
 pub struct CommandResult {
     pub stdout: String,
-    pub stdout_bytes: Vec<u8>,
+    stdout_bytes: Vec<u8>,
     pub stderr: String,
     pub exit: i32,
     pub(crate) deferred_commands: Vec<DeferredCommand>,
@@ -572,7 +572,7 @@ pub(crate) fn run_lazy_with_context(
 /// Run a command line to completion on the calling thread. Test scaffolding;
 /// the server drives the same queue through the loop.
 #[cfg(test)]
-pub fn run_with_context(
+fn run_with_context(
     args: &[String],
     state: &SharedState,
     agents: &PaneAgents,
