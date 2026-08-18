@@ -3151,7 +3151,12 @@ fn compose_split_frame(
         }
     }
 
-    let indicators = st.option_for_target(target, "pane-border-indicators") == Some("both");
+    // tmux's `screen_redraw_draw_border_arrows` draws the markers for both the
+    // `arrows` and `both` values; only the border colouring is `colour`'s.
+    let indicators = matches!(
+        st.option_for_target(target, "pane-border-indicators"),
+        Some("arrows" | "both")
+    );
     let border_lines = st
         .option_for_target(target, "pane-border-lines")
         .unwrap_or("single")
