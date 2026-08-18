@@ -1959,6 +1959,8 @@ impl SwitchClient {
 /// [-t target-pane] [message]`.
 #[derive(Clone, Debug)]
 pub(in crate::server) struct DisplayMessage {
+    /// `-a`: print the target's whole format tree instead of a message.
+    dump: bool,
     /// `-I`: feed the client's standard input into the target pane.
     feed_input: bool,
     /// `-l`: print the message literally, without expanding it.
@@ -1981,6 +1983,7 @@ pub(in crate::server) struct DisplayMessage {
 impl DisplayMessage {
     pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
         Ok(Self {
+            dump: args.has('a'),
             feed_input: args.has('I'),
             literal: args.has('l'),
             print: args.has('p'),
@@ -2045,7 +2048,7 @@ impl DisplayMessage {
         // `-l` prints the message as it stands and a message that names no
         // variable reads nothing, so in both cases the table below is built
         // for a lookup that never comes.
-        let reads_vars = !self.literal && format::reads_vars(message);
+        let reads_vars = self.dump || (!self.literal && format::reads_vars(message));
         // Honor the *resolved* pane (e.g. `-t sess:win.{top}`), not just the window's
         // active pane, so pane-scoped variables reflect the target.
         let mut vars = match resolved.filter(|_| reads_vars) {
@@ -2072,6 +2075,15 @@ impl DisplayMessage {
                 &mut vars,
                 resolved.and_then(|resolved| st.sessions().get(resolved.session)),
             );
+            // `-a` walks the format tree itself, which options are no part of:
+            // tmux reaches an option only when a lookup misses the tree.
+            if self.dump {
+                let mut out = String::new();
+                for (name, value) in vars.entries() {
+                    out.push_str(&format!("{name}={value}\n"));
+                }
+                return CommandResult::ok(out);
+            }
             if let Some(target) = target.as_deref() {
                 if let Ok(entries) = st.format_option_entries(target) {
                     for (name, value) in entries {

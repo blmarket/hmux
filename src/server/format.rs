@@ -234,6 +234,19 @@ impl Vars {
         self.environment.get(key).map(String::as_str)
     }
 
+    /// Every variable in the table, name-ordered, as tmux's `format_each`
+    /// walks the format tree. The environment layer is not part of it: tmux
+    /// reaches that only when a lookup misses the tree.
+    pub(crate) fn entries(&self) -> Vec<(&str, &str)> {
+        let mut entries: Vec<(&str, &str)> = self
+            .map
+            .keys()
+            .filter_map(|key| Some((key.as_ref(), self.lookup_variable(key)?)))
+            .collect();
+        entries.sort_unstable_by_key(|(key, _)| *key);
+        entries
+    }
+
     /// The lookup that stops before the environment layer.
     pub(crate) fn lookup_variable(&self, key: &str) -> Option<&str> {
         match self.map.get(key)? {
