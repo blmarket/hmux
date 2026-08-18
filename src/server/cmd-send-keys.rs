@@ -202,16 +202,24 @@ fn send_client_keys(
     }
 
     let mut keys = Vec::new();
+    let mut unencodable = Vec::new();
     if operands.is_empty() {
         if let Some(key) = context.key_event {
-            if let Some(key) = encode_parsed_key_for_client(key) {
-                keys.push(key);
+            match encode_parsed_key_for_client(key) {
+                Some(key) => keys.push(key),
+                None => unencodable.push(key),
             }
         }
     } else {
         for _ in 0..repeat {
             for operand in operands {
-                inject_client_string(operand, command.literal, command.hex, &mut keys);
+                inject_client_string(
+                    operand,
+                    command.literal,
+                    command.hex,
+                    &mut keys,
+                    &mut unencodable,
+                );
             }
         }
     }
@@ -219,7 +227,26 @@ fn send_client_keys(
         let _ =
             state.send_client_keys(command.client.as_deref(), context.tty_name.as_deref(), keys);
     }
-    CommandResult::ok("")
+    // tmux routes `-K` through the target client's key tables rather than
+    // through its terminal, so a key with no byte spelling of its own — a user
+    // key, say — still runs whatever it is bound to.
+    let mut result = CommandResult::ok("");
+    let target = command
+        .client
+        .clone()
+        .or_else(|| context.tty_name.clone())
+        .unwrap_or_default();
+    let table = state.session_key_table(&target);
+    for key in unencodable {
+        if let Some(binding) = state.key_binding(&table, key) {
+            result
+                .deferred_commands
+                .push(super::command::DeferredCommand::Command(
+                    super::command::LazyCommand::Compiled(binding.command.clone()),
+                ));
+        }
+    }
+    result
 }
 
 /// Execute `send-prefix`, which shares tmux's semantic key injection path with
@@ -527,6 +554,7 @@ fn inject_client_string(
     literal: bool,
     hex_literal: bool,
     output: &mut Vec<ClientKey>,
+    unencodable: &mut Vec<KeyCode>,
 ) {
     if hex_literal {
         if let Some(bytes) = encode_hex_literal(operand) {
@@ -541,8 +569,10 @@ fn inject_client_string(
         if let Some(key) = parse_key_name(operand) {
             if matches!(key.base, KeyBase::None) {
                 push_client_literal(operand, output);
-            } else if let Some(key) = encode_parsed_key_for_client(key) {
-                output.push(key);
+            } else if let Some(encoded) = encode_parsed_key_for_client(key) {
+                output.push(encoded);
+            } else {
+                unencodable.push(key);
             }
             return;
         }
