@@ -599,6 +599,10 @@ pub(in crate::server) struct SelectPane {
     clear_mark: bool,
     /// `-m`: mark the target pane without activating it.
     mark: bool,
+    /// `-P`: the deprecated way to set the pane's own style.
+    style: Option<String>,
+    /// `-g`: the deprecated way to print the pane's own style.
+    show_style: bool,
     /// `-T`: set the pane's title.
     title: Option<String>,
     /// `-t`: the pane to act on.
@@ -617,6 +621,8 @@ impl SelectPane {
             last: args.has('l'),
             clear_mark: args.has('M'),
             mark: args.has('m'),
+            style: args.value('P').map(str::to_string),
+            show_style: args.has('g'),
             title: args.value('T').map(str::to_string),
             target: args.value('t').map(str::to_string),
         })
@@ -645,6 +651,27 @@ impl SelectPane {
         let Some(target) = target else {
             return CommandResult::err("can't establish current session\n");
         };
+        // tmux's deprecated `-P`/`-g` pair sets and prints the pane's own style
+        // before any of the selection flags are considered.
+        if self.style.is_some() || self.show_style {
+            let resolved = match st.resolve(&target) {
+                Some(resolved) => resolved,
+                None => return CommandResult::err(format!("{}\n", st.pane_target_error(&target))),
+            };
+            if let Some(style) = self.style.as_deref() {
+                st.set_pane_option(resolved, "window-style", style);
+                st.set_pane_option(resolved, "window-active-style", style);
+            }
+            if self.show_style {
+                let style = st
+                    .pane_options(&target)
+                    .ok()
+                    .and_then(|options| options.get("window-style").map(str::to_string))
+                    .unwrap_or_default();
+                return CommandResult::ok(format!("{style}\n"));
+            }
+            return CommandResult::ok("");
+        }
         if let Some(title) = self.title.as_deref() {
             return match st.set_pane_title(&target, title) {
                 Ok(()) => CommandResult::ok(""),

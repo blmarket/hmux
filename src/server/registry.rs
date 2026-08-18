@@ -343,7 +343,7 @@ pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
         getopt: "Enopt:", arity: (0, Some(1)),
         usage: "[-Enop] [-t target-pane] [layout-name]";
     "select-pane" ("selectp") => typed!(Pane, Select, panes::SelectPane),
-        getopt: "DdeLlMmRUZT:t:", arity: (0, Some(0)),
+        getopt: "DdegLlMmP:RUZT:t:", arity: (0, Some(0)),
         usage: "[-DdeLlMmRUZ] [-T title] [-t target-pane]";
     "select-window" ("selectw") => typed!(Window, Select, windows::SelectWindow),
         getopt: "lnpTt:", arity: (0, Some(0)),
