@@ -914,9 +914,13 @@ impl SwapPane {
                             ))
                         }
                     };
+                    // tmux's `window_push_zoom(w, 0, flag)` only remembers a
+                    // zoom that is already there, so `-Z` restores one rather
+                    // than creating one.
+                    let zoomed = st.window(resolved.session, resolved.window).zoomed;
                     st.push_zoom_at(resolved.session, resolved.window);
                     let result = st.swap_pane_neighbour(&target, self.down, !self.detached);
-                    st.pop_zoom_at(resolved.session, resolved.window, self.zoom);
+                    st.pop_zoom_at(resolved.session, resolved.window, self.zoom && zoomed);
                     match result {
                         Ok(()) => CommandResult::ok(""),
                         Err(error) => CommandResult::err(format!("{error}\n")),
@@ -946,11 +950,13 @@ impl SwapPane {
                         return CommandResult::err(format!("{}\n", st.pane_target_error(&target)))
                     }
                 };
+                let src_zoomed = st.window(src.session, src.window).zoomed;
+                let dst_zoomed = st.window(dst.session, dst.window).zoomed;
                 st.push_zoom_at(src.session, src.window);
                 st.push_zoom_at(dst.session, dst.window);
                 let result = st.swap_pane(&source, &target, !self.detached);
-                st.pop_zoom_at(src.session, src.window, self.zoom);
-                st.pop_zoom_at(dst.session, dst.window, self.zoom);
+                st.pop_zoom_at(src.session, src.window, self.zoom && src_zoomed);
+                st.pop_zoom_at(dst.session, dst.window, self.zoom && dst_zoomed);
                 match result {
                     Ok(()) => CommandResult::ok(""),
                     Err(error) => CommandResult::err(format!("{error}\n")),
@@ -1761,6 +1767,11 @@ impl RotateWindow {
         let Some(target) = self.target.or_else(|| current_target(st)) else {
             return CommandResult::err("can't establish current session\n");
         };
+        // tmux's `window_push_zoom(w, 0, flag)` only remembers a zoom the window
+        // already had, so `-Z` restores one rather than creating one.
+        let zoomed = st
+            .resolve(&target)
+            .is_some_and(|resolved| st.window(resolved.session, resolved.window).zoomed);
         if let Err(error) = st.push_zoom(&target) {
             return command_target_error(error, &target, "window");
         }
@@ -1769,7 +1780,7 @@ impl RotateWindow {
         } else {
             st.rotate_window(&target)
         };
-        let zoom_result = st.pop_zoom(&target, self.zoom);
+        let zoom_result = st.pop_zoom(&target, self.zoom && zoomed);
         match (result, zoom_result) {
             (Ok(()), Ok(())) => CommandResult::ok(""),
             (Err(error), _) | (Ok(()), Err(error)) => {
