@@ -29,7 +29,7 @@ use crate::server::key::parse_key_name;
 use crate::server::mouse::TtyMouseMode;
 use crate::server::options::{OptionSet, OptionsView, PaneHook, WindowHook};
 use crate::server::pane::{
-    parse_packed_colour, MouseTrackingMode, Pane, PaneClipboardEvent, PaneIo, PaneKeyState,
+    MouseTrackingMode, Pane, PaneClipboardEvent, PaneIo, PaneKeyState,
     PaneOutputPolicy, PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
 };
 use hmux_vt::MouseEvent;
@@ -362,7 +362,8 @@ impl ServerState {
                         let mut palette =
                             vec![None; entries.last().map_or(0, |(index, _)| *index as usize + 1)];
                         for (index, value) in entries {
-                            palette[index as usize] = parse_packed_colour(value);
+                            palette[index as usize] =
+                                crate::server::style::packed_option_colour(value);
                         }
                         palette
                     },

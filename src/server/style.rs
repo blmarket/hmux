@@ -272,6 +272,19 @@ pub(crate) fn colour_theme(colour: Colour) -> Option<&'static str> {
     Some(if brightness > 382 { "light" } else { "dark" })
 }
 
+/// A colour *option*'s value as the packed `0xrrggbb` an OSC 4 reply carries —
+/// tmux's `colour_force_rgb` over what `colour_fromstring` read. A palette
+/// index resolves through the stock xterm palette rather than through the X11
+/// colour names, which name different colours for the same words.
+pub(crate) fn packed_option_colour(value: &str) -> Option<u32> {
+    let (red, green, blue) = match parse_colour(value)? {
+        Colour::Default => return None,
+        Colour::Rgb(red, green, blue) => (red, green, blue),
+        Colour::Palette(index) | Colour::Indexed(index) => palette_rgb(index),
+    };
+    Some((u32::from(red) << 16) | (u32::from(green) << 8) | u32::from(blue))
+}
+
 /// The RGB value of an xterm 256-colour palette entry.
 fn palette_rgb(index: u8) -> (u8, u8, u8) {
     const BASE: [(u8, u8, u8); 16] = [
