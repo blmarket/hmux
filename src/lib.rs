@@ -25,7 +25,6 @@
 pub mod error;
 pub(crate) mod event_loop;
 pub mod integration;
-pub mod model;
 pub mod observability;
 #[allow(dead_code)]
 mod platform;
