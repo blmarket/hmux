@@ -90,6 +90,10 @@ pub(in crate::server) struct SplitWindow {
     percentage: Option<String>,
     /// `-m`: the message a kept pane shows once its command exits.
     message: Option<String>,
+    /// `-s`/`-S`/`-R`: the new pane's own style and border styles.
+    style: Option<String>,
+    active_border_style: Option<String>,
+    inactive_border_style: Option<String>,
     /// `-t`: the pane to split.
     target: Option<String>,
     /// The new pane's command line.
@@ -114,6 +118,9 @@ impl SplitWindow {
             size: args.value('l').map(str::to_string),
             percentage: args.value('p').map(str::to_string),
             message: args.value('m').map(str::to_string),
+            style: args.value('s').map(str::to_string),
+            active_border_style: args.value('S').map(str::to_string),
+            inactive_border_style: args.value('R').map(str::to_string),
             target: args.value('t').map(str::to_string),
             command: args.positionals().to_vec(),
         })
@@ -245,12 +252,22 @@ impl SplitWindow {
         // `-k` (and `-m format`) keep the pane in place when its command exits:
         // tmux sets the pane's remain-on-exit to `key` plus the format under `-m`.
         if let Ok(pane) = &created {
+            let new_target = Target {
+                session: resolved.session,
+                window: resolved.window,
+                pane: *pane,
+            };
+            if let Some(style) = self.style.as_deref() {
+                st.set_pane_option(new_target, "window-style", style);
+                st.set_pane_option(new_target, "window-active-style", style);
+            }
+            if let Some(style) = self.active_border_style.as_deref() {
+                st.set_pane_option(new_target, "pane-active-border-style", style);
+            }
+            if let Some(style) = self.inactive_border_style.as_deref() {
+                st.set_pane_option(new_target, "pane-border-style", style);
+            }
             if self.keep || self.message.is_some() {
-                let new_target = Target {
-                    session: resolved.session,
-                    window: resolved.window,
-                    pane: *pane,
-                };
                 st.set_pane_option(new_target, "remain-on-exit", "key");
                 if let Some(message) = self.message.as_deref() {
                     st.set_pane_option(new_target, "remain-on-exit-format", message);
