@@ -84,6 +84,10 @@ model for a while after switching sessions in place.
   panning therefore have no observable effect for a control-mode client.
 - **Single-user access only.** hmux implements no multi-user ACLs, so tmux's
   read-only client flag and `server-access` state have no equivalent.
+- **Copy-mode searches have no wall-clock budget.** tmux abandons a search that
+  runs longer than 10ms and throws its marks away, so on a wide grid or a busy
+  machine `#{search_present}` and `#{search_count}` report nothing. hmux always
+  reports the marks it found, which makes the same search reproducible.
 
 ## Usage
 
