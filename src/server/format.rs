@@ -92,6 +92,41 @@ pub struct Vars {
     environment: HashMap<String, String>,
 }
 
+/// The command-queue item a format is expanded under, which tmux publishes
+/// through `cmdq_merge_formats` as `#{command}` and `#{current_file}`.
+#[derive(Clone, Default)]
+pub(crate) struct QueueItem {
+    pub(crate) command: Option<&'static str>,
+    pub(crate) current_file: Option<std::rc::Rc<str>>,
+}
+
+thread_local! {
+    static QUEUE_ITEM: std::cell::RefCell<QueueItem> =
+        const { std::cell::RefCell::new(QueueItem { command: None, current_file: None }) };
+}
+
+/// Publish `item` for as long as the returned guard lives, restoring whatever
+/// was published before it. The queue installs one around each poll of a
+/// command, so an item that suspends does not keep its own formats published
+/// while another queue runs.
+pub(crate) fn enter_queue_item(item: QueueItem) -> QueueItemGuard {
+    QueueItemGuard(QUEUE_ITEM.with(|current| current.replace(item)))
+}
+
+pub(crate) struct QueueItemGuard(QueueItem);
+
+impl Drop for QueueItemGuard {
+    fn drop(&mut self) {
+        QUEUE_ITEM.with(|current| *current.borrow_mut() = std::mem::take(&mut self.0));
+    }
+}
+
+/// The file the running queue item was compiled from, for a queue that inserts
+/// items of its own from within one.
+pub(crate) fn queue_item_file() -> Option<std::rc::Rc<str>> {
+    QUEUE_ITEM.with(|current| current.borrow().current_file.clone())
+}
+
 impl Vars {
     /// The table a template that cannot read one is expanded against.
     ///
@@ -127,6 +162,15 @@ impl Vars {
         // session, window or pane to hang the rest of the context off.
         vars.set_lazy("host", hostname)
             .set_lazy("host_short", hostname_short);
+        QUEUE_ITEM.with(|item| {
+            let item = item.borrow();
+            if let Some(command) = item.command {
+                vars.set("command", command);
+            }
+            if let Some(file) = &item.current_file {
+                vars.set("current_file", file.to_string());
+            }
+        });
         vars
     }
 

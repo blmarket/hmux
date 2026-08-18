@@ -176,6 +176,10 @@ pub(crate) struct FrameState {
     /// scope is independent of the `suppress_*` latches: its hook body gets a
     /// scope but still runs its commands' own `after-*` hooks.
     pub(crate) hook: Option<HookScope>,
+    /// The file the command line this queue runs was compiled from, inherited
+    /// by whatever a sourced command inserts so `#{current_file}` survives the
+    /// nesting the way tmux's copied queue state does.
+    pub(crate) current_file: Option<Rc<str>>,
 }
 
 /// Per-command-client process context collected from tmux identify frames.
@@ -1202,6 +1206,14 @@ impl ResumableCommandQueue {
             // await: what another queue raises while this body is parked is
             // kept, queued behind it.
             let suppressed = self.context.frame.suppress_notifications;
+            let item_formats = format::QueueItem {
+                command: Some(inflight.command.spec.name),
+                current_file: inflight
+                    .source
+                    .as_ref()
+                    .map(|source| Rc::from(source.path.as_str()))
+                    .or_else(|| self.context.frame.current_file.clone()),
+            };
             // The command is the one that knows whether it waits, and for what.
             let mut execution = {
                 let mut context = ExecContext {
@@ -1217,6 +1229,7 @@ impl ResumableCommandQueue {
                 let mut future =
                     std::pin::pin!(inflight.command.command.clone().execute(&mut context));
                 std::future::poll_fn(|poll_context| {
+                    let _formats = format::enter_queue_item(item_formats.clone());
                     if suppressed {
                         state.borrow_mut().begin_notification_suppression();
                     }
@@ -1266,6 +1279,7 @@ impl ResumableCommandQueue {
             result
         })?;
         let mut nested_context = self.context.clone();
+        nested_context.frame.current_file = format::queue_item_file();
         if matches!(capture, NestedCapture::Inserted | NestedCapture::Hook) {
             nested_context.frame.nested_granularity = true;
         }
