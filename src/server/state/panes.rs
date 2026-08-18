@@ -20,6 +20,7 @@ use super::{
     TerminalReply, TerminalRequest, TerminalRequestKind, Window, Winlink, ALERT_ACTIVITY,
 };
 use bytes::Bytes;
+use regex::RegexBuilder;
 
 use crate::server::input_keys::{
     self, ExtendedKeys, ExtendedKeysFormat, PaneKey, PaneKeyEncoding, PaneKeyModes, PaneKeyOptions,
@@ -2019,6 +2020,17 @@ impl ServerState {
         let Ok(screen) = node.pane.visible_screen() else {
             return 0;
         };
+        // tmux wraps a plain term in `*…*` and fnmatches it; a regular
+        // expression is matched unanchored, and a pattern that fails to compile
+        // makes the whole search report no match.
+        let pattern = if regex {
+            match RegexBuilder::new(term).case_insensitive(ignore_case).build() {
+                Ok(pattern) => Some(pattern),
+                Err(_) => return 0,
+            }
+        } else {
+            None
+        };
         let needle = if ignore_case {
             term.to_lowercase()
         } else {
@@ -2026,17 +2038,18 @@ impl ServerState {
         };
         for (index, line) in screen.lines().enumerate() {
             let line = line.trim_end();
-            let line = if ignore_case {
-                line.to_lowercase()
-            } else {
-                line.to_owned()
+            let found = match &pattern {
+                Some(pattern) => pattern.is_match(line),
+                None => {
+                    let line = if ignore_case {
+                        line.to_lowercase()
+                    } else {
+                        line.to_owned()
+                    };
+                    line.contains(&needle)
+                }
             };
-            // tmux wraps a plain term in `*…*` and fnmatches it; a regular
-            // expression is matched unanchored. hmux has no regex engine here,
-            // so `r` falls back to the same containment test — which agrees for
-            // every pattern that is a literal.
-            let _ = regex;
-            if line.contains(&needle) {
+            if found {
                 return index as u32 + 1;
             }
         }
