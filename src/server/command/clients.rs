@@ -2138,6 +2138,15 @@ impl DisplayMessage {
         if self.message.is_some() && self.format.is_some() {
             return CommandResult::err("only one of -F or argument must be given\n");
         }
+        // tmux reads `-d` here, before it has anything to say, so a delay that
+        // is not a number in range fails even when nothing would be displayed.
+        let delay_ms = match self.delay.as_deref() {
+            Some(value) => match parse_delay(value) {
+                Ok(delay) => Some(delay),
+                Err(cause) => return CommandResult::err(format!("delay {cause}\n")),
+            },
+            None => None,
+        };
         let message = self
             .message
             .as_deref()
@@ -2229,13 +2238,8 @@ impl DisplayMessage {
             out.push_str(&expanded);
             out.push('\n');
         } else {
-            let duration_ms = match self.delay.as_deref() {
-                Some(value) => match value.parse::<u32>() {
-                    Ok(value) => u64::from(value),
-                    Err(_) => {
-                        return CommandResult::err(format!("delay {value}: invalid number\n"))
-                    }
-                },
+            let duration_ms = match delay_ms {
+                Some(delay) => delay,
                 None => st
                     .option_for_target(target.as_deref().unwrap_or_default(), "display-time")
                     .and_then(|value| value.parse().ok())
@@ -2266,6 +2270,17 @@ impl DisplayMessage {
             }
         }
         CommandResult::ok(out)
+    }
+}
+
+/// tmux's `args_strtonum` against `strtonum(value, 0, UINT_MAX)`: the failure is
+/// reported as the reason the conversion gave, not as the value that failed.
+fn parse_delay(value: &str) -> Result<u64, &'static str> {
+    match value.parse::<i64>() {
+        Ok(delay) if delay < 0 => Err("too small"),
+        Ok(delay) if delay > i64::from(u32::MAX) => Err("too large"),
+        Ok(delay) => Ok(delay as u64),
+        Err(_) => Err("invalid"),
     }
 }
 
