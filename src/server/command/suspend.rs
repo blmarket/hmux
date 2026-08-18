@@ -135,6 +135,36 @@ pub(crate) fn client_prompt(
     SuspensionStart::Ready(result)
 }
 
+/// tmux's `job_run`: the child starts in the directory it was given, in the home
+/// directory when that one cannot be entered, and in `/` when neither can. It
+/// carries the directory it settled on as `PWD`, the way tmux does.
+///
+/// Entering a directory needs search permission on it, which is what `X_OK`
+/// asks about — a plain existence check would accept directories the child
+/// could not `chdir` into.
+fn set_job_directory(shell: &mut Command, cwd: &str) {
+    let home = std::env::var_os("HOME")
+        .filter(|home| !home.is_empty())
+        .map(PathBuf::from);
+    let directory = [Some(PathBuf::from(cwd)), home, Some(PathBuf::from("/"))]
+        .into_iter()
+        .flatten()
+        .find(|path| enterable(path));
+    let Some(directory) = directory else {
+        return;
+    };
+    shell.env("PWD", &directory);
+    shell.current_dir(directory);
+}
+
+/// Whether a process could `chdir` into `path`.
+fn enterable(path: &Path) -> bool {
+    let Ok(raw) = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()) else {
+        return false;
+    };
+    path.is_dir() && unsafe { libc::access(raw.as_ptr(), libc::X_OK) } == 0
+}
+
 /// A finished `sh -c` child.
 pub(crate) struct ShellOutput {
     stdout: Vec<u8>,
@@ -306,7 +336,7 @@ pub(crate) async fn run_shell(
     };
     let mut shell = shell_command(&command, &context);
     if let Some(cwd) = run.cwd.as_deref() {
-        shell.current_dir(cwd);
+        set_job_directory(&mut shell, cwd);
     }
     let running = match spawn_shell(tasks, shell, delay).await {
         Ok(running) => running,
@@ -372,7 +402,7 @@ pub(crate) async fn background_shell(
     };
     let mut shell = shell_command(&command, &context);
     if let Some(cwd) = run.cwd.as_deref() {
-        shell.current_dir(cwd);
+        set_job_directory(&mut shell, cwd);
     }
     // Identified client streams are open in the daemon as descriptors above
     // stderr. A background job retaining one would make the command client
