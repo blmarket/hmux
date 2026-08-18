@@ -263,6 +263,9 @@ pub(super) struct ClientRenderEntry {
     clipboard_query_at: Option<Instant>,
     flag_state: ClientFlagState,
     pub(super) terminal: Option<ResolvedTerm>,
+    /// What the terminal called itself in its XTVERSION reply, empty until it
+    /// answers — `#{client_termtype}`.
+    pub(super) term_type: String,
     slot: Rc<ClientRenderSlot>,
     /// This client's `#()` job tree — tmux's `c->jobs`, shared by every format
     /// the client expands (its status line and the commands it runs). Dropped
@@ -355,6 +358,8 @@ pub(crate) struct ClientSnapshot {
     /// The features resolved for this client's terminal, in tmux's
     /// feature-bit order — `#{client_termfeatures}`.
     pub(crate) termfeatures: String,
+    /// The name the terminal gave for itself — `#{client_termtype}`.
+    pub(crate) termtype: String,
     /// Bytes written to this client's terminal — `#{client_written}`.
     pub(crate) written: u64,
 }
@@ -753,6 +758,7 @@ impl ClientRenderRegistry {
                 clipboard_query_at: None,
                 flag_state,
                 terminal: None,
+                term_type: String::new(),
                 slot: Rc::clone(&slot),
                 format_jobs: Rc::clone(&format_jobs),
             },
@@ -808,6 +814,7 @@ impl ClientRenderRegistry {
                     .as_ref()
                     .map(|terminal| terminal.feature_list())
                     .unwrap_or_default(),
+                termtype: entry.term_type.clone(),
                 written: entry.written,
             })
             .collect()
@@ -1799,6 +1806,15 @@ impl ClientRenderAttachment {
             .get(&self.id)
             .map(|entry| (entry.display_flags(), entry.read_only()))
             .unwrap_or_default()
+    }
+
+    /// Record the name the client's terminal gave for itself in its XTVERSION
+    /// reply — `#{client_termtype}`.
+    pub(crate) fn update_term_type(&self, term_type: &str) {
+        let mut inner = self.registry.inner.borrow_mut();
+        if let Some(entry) = inner.clients.get_mut(&self.id) {
+            entry.term_type = term_type.to_owned();
+        }
     }
 
     pub(crate) fn update_terminal(&self, terminal: &ResolvedTerm) {

@@ -1484,9 +1484,7 @@ pub(super) fn set_client_entry_vars(
     .set("client_cell_width", client.xpixel.to_string())
     .set("client_cell_height", client.ypixel.to_string())
     .set("client_termfeatures", client.termfeatures.clone())
-    // The secondary-DA terminal type: empty until the terminal answers a
-    // query the attach flow does not send.
-    .set("client_termtype", "")
+    .set("client_termtype", client.termtype.clone())
     .set("client_written", client.written.to_string())
     // hmux never discards output the way tmux's backoff does.
     .set("client_discarded", "0")

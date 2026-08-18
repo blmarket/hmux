@@ -127,15 +127,107 @@ impl AttachSession {
     /// pane, and taking it would break the pane that asked for it directly.
     fn take_terminal_answers(&mut self, data: &[u8], state: &SharedState) -> Vec<u8> {
         let client = self.attachments.render_attachment.client_name();
+        let awaiting = self.compositor.input.awaiting;
         let scanner = &mut self.compositor.input.terminal_answer;
-        if !scanner.is_holding() && !state.borrow_mut().client_awaits_terminal_reply(&client) {
+        scanner.expect_colours(awaiting.foreground, awaiting.background);
+        if !scanner.is_holding()
+            && !awaiting.any()
+            && !state.borrow_mut().client_awaits_terminal_reply(&client)
+        {
             return data.to_vec();
         }
         let (kept, answers) = scanner.feed(data);
         for reply in answers {
-            state.borrow_mut().deliver_terminal_reply(&client, reply);
+            match reply {
+                // The capability answers belong to the client's terminal
+                // profile rather than to a pane that asked a question.
+                super::super::state::TerminalReply::DeviceAttributes(parameters) => {
+                    self.compositor.input.awaiting.device_attributes = false;
+                    self.apply_device_attributes(&parameters);
+                }
+                super::super::state::TerminalReply::SecondaryDeviceAttributes(parameters) => {
+                    self.compositor.input.awaiting.secondary_device_attributes = false;
+                    self.apply_secondary_device_attributes(&parameters);
+                }
+                super::super::state::TerminalReply::TerminalVersion(version) => {
+                    self.compositor.input.awaiting.version = false;
+                    self.apply_terminal_version(&version);
+                }
+                // The colours the terminal reports for itself are the server's
+                // to keep; a pane that asks the same question is answered
+                // separately.
+                super::super::state::TerminalReply::TerminalColour { number, .. } => {
+                    if number == 10 {
+                        self.compositor.input.awaiting.foreground = false;
+                    } else {
+                        self.compositor.input.awaiting.background = false;
+                    }
+                }
+                reply => state.borrow_mut().deliver_terminal_reply(&client, reply),
+            }
         }
         kept
+    }
+
+    /// tmux's `tty_keys_device_attributes`: the primary reply's parameters name
+    /// features the terminal has that its terminfo entry may not mention.
+    fn apply_device_attributes(&mut self, parameters: &[u32]) {
+        if !matches!(parameters.first(), Some(61..=65)) {
+            return;
+        }
+        let mut names = Vec::new();
+        for parameter in &parameters[1..] {
+            match parameter {
+                4 => names.push("sixel"),
+                21 => names.push("margins"),
+                28 => names.push("rectfill"),
+                52 => names.push("clipboard"),
+                _ => {}
+            }
+        }
+        self.report_terminal_features(&names.join(","));
+    }
+
+    /// tmux's `tty_keys_device_attributes2`: the secondary reply names which
+    /// terminal this is.
+    fn apply_secondary_device_attributes(&mut self, parameters: &[u32]) {
+        let name = match parameters.first() {
+            Some(77) => "mintty",
+            Some(84) => "tmux",
+            Some(85) => "rxvt-unicode",
+            _ => return,
+        };
+        if self.tty.terminal.add_named_terminal_features(name) {
+            self.publish_terminal();
+        }
+    }
+
+    /// tmux's `tty_keys_extended_device_attributes`: XTVERSION names the
+    /// terminal and its version, which becomes `#{client_termtype}`.
+    fn apply_terminal_version(&mut self, version: &str) {
+        for name in ["iTerm2", "tmux", "XTerm", "mintty", "foot", "WezTerm"] {
+            let prefix = format!("{name}{}", if name == "XTerm" || name == "foot" { "(" } else { " " });
+            if version.starts_with(&prefix) {
+                self.tty.terminal.add_named_terminal_features(name);
+                break;
+            }
+        }
+        self.attachments
+            .render_attachment
+            .update_term_type(version);
+        self.publish_terminal();
+    }
+
+    fn report_terminal_features(&mut self, names: &str) {
+        if self.tty.terminal.add_reported_features(names) {
+            self.publish_terminal();
+        }
+    }
+
+    fn publish_terminal(&mut self) {
+        self.attachments
+            .render_attachment
+            .update_terminal(&self.tty.terminal);
     }
 
     fn apply_terminal_report(&mut self, report: &[u8], state: &SharedState, target: &str) {

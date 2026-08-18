@@ -34,6 +34,17 @@ pub enum TerminalAnswer {
         selection: Option<u8>,
         data: Vec<u8>,
     },
+    /// `CSI ? … c`, the primary device attributes: what the terminal says it
+    /// can do, as the numbers `tty_keys_device_attributes` reads.
+    DeviceAttributes(Vec<u32>),
+    /// `CSI > … c`, the secondary device attributes: which terminal it is.
+    SecondaryDeviceAttributes(Vec<u32>),
+    /// `DCS > | … ST`, XTVERSION: the name and version the terminal gives
+    /// itself.
+    TerminalVersion(String),
+    /// An `OSC 10`/`OSC 11` answer to the server's own colour question, packed
+    /// as `0xrrggbb`.
+    TerminalColour { number: u32, colour: u32 },
 }
 
 /// How far parsing got with the head of the buffer.
@@ -51,11 +62,23 @@ enum Progress {
 #[derive(Default)]
 pub struct AnswerScanner {
     pending: Vec<u8>,
+    /// Which of `OSC 10` and `OSC 11` the server is still owed an answer to,
+    /// and so takes for itself rather than leaving to a pane that asked the
+    /// same question — tmux's `TTY_WAITFG` and `TTY_WAITBG`.
+    expect_foreground: bool,
+    expect_background: bool,
 }
 
 impl AnswerScanner {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Take the terminal's answers to the server's own `OSC 10`/`OSC 11`
+    /// questions, until they have arrived.
+    pub fn expect_colours(&mut self, foreground: bool, background: bool) {
+        self.expect_foreground = foreground;
+        self.expect_background = background;
     }
 
     /// Whether an unfinished answer is held from an earlier read — bytes that
@@ -84,8 +107,9 @@ impl AnswerScanner {
         // Everything since the last answer, copied out in one run when an
         // answer ends it rather than a byte at a time as it is walked.
         let mut run = 0;
+        let expect = (self.expect_foreground, self.expect_background);
         while index < buffered.len() {
-            match parse_answer(&buffered[index..]) {
+            match parse_answer(&buffered[index..], expect) {
                 Progress::Complete(answer, consumed) => {
                     passthrough.extend_from_slice(&buffered[run..index]);
                     index += consumed;
@@ -105,21 +129,42 @@ impl AnswerScanner {
     }
 }
 
-/// Recognize an OSC 4 or OSC 52 answer at the head of `data`.
+/// Recognize an answer at the head of `data`: an OSC 4 palette colour, an
+/// OSC 52 clipboard payload, or one of the capability replies
+/// `tty_send_requests` asks for.
 ///
-/// These are the only two terminal answers the server routes itself; every
-/// other byte belongs to whoever is reading the client's input.
-fn parse_answer(data: &[u8]) -> Progress {
+/// These are the answers the server routes itself; every other byte belongs to
+/// whoever is reading the client's input.
+fn parse_answer(data: &[u8], expect_colours: (bool, bool)) -> Progress {
+    let expects = |number: u32| match number {
+        10 => expect_colours.0,
+        _ => expect_colours.1,
+    };
+    match parse_capability_answer(data) {
+        Progress::None => {}
+        progress => return progress,
+    }
     let Some(rest) = data.strip_prefix(b"\x1b]") else {
         return Progress::None;
     };
-    let (palette, body) = if let Some(body) = rest.strip_prefix(b"4;") {
+    let colour_number = [10u32, 11]
+        .into_iter()
+        .find(|number| expects(*number) && rest.starts_with(format!("{number};").as_bytes()));
+    let (palette, body) = if let Some(number) = colour_number {
+        (false, &rest[number.to_string().len() + 1..])
+    } else if let Some(body) = rest.strip_prefix(b"4;") {
         (true, body)
     } else if let Some(body) = rest.strip_prefix(b"52;") {
         (false, body)
     } else {
-        // A prefix of either introducer is still worth waiting on.
-        return if b"4;".starts_with(rest) || b"52;".starts_with(rest) {
+        // A prefix of any introducer is still worth waiting on, once the
+        // introducer itself is not all there is.
+        return if !rest.is_empty()
+            && (b"4;".starts_with(rest)
+                || b"52;".starts_with(rest)
+                || (expects(10) && b"10;".starts_with(rest))
+                || (expects(11) && b"11;".starts_with(rest)))
+        {
             Progress::Partial
         } else {
             Progress::None
@@ -139,6 +184,13 @@ fn parse_answer(data: &[u8]) -> Progress {
     };
     let consumed = data.len() - body.len() + end + terminator;
     let payload = &body[..end];
+    if let Some(number) = colour_number {
+        let colour = std::str::from_utf8(payload)
+            .ok()
+            .and_then(parse_packed_colour)
+            .unwrap_or(0);
+        return Progress::Complete(TerminalAnswer::TerminalColour { number, colour }, consumed);
+    }
     if palette {
         let Some((index, colour)) = std::str::from_utf8(payload)
             .ok()
@@ -187,6 +239,60 @@ fn parse_answer(data: &[u8]) -> Progress {
         },
         consumed,
     )
+}
+
+/// Recognize a device-attributes or XTVERSION reply at the head of `data`.
+fn parse_capability_answer(data: &[u8]) -> Progress {
+    if let Some(rest) = data.strip_prefix(b"\x1b[") {
+        let Some((marker, body)) = rest.split_first() else {
+            return Progress::Partial;
+        };
+        let secondary = match marker {
+            b'?' => false,
+            b'>' => true,
+            _ => return Progress::None,
+        };
+        let Some(end) = body.iter().position(|byte| byte.is_ascii_alphabetic()) else {
+            return Progress::Partial;
+        };
+        if body[end] != b'c' {
+            return Progress::None;
+        }
+        let parameters = numeric_parameters(&body[..end]);
+        let consumed = data.len() - body.len() + end + 1;
+        let answer = if secondary {
+            TerminalAnswer::SecondaryDeviceAttributes(parameters)
+        } else {
+            TerminalAnswer::DeviceAttributes(parameters)
+        };
+        return Progress::Complete(answer, consumed);
+    }
+    if let Some(body) = data.strip_prefix(b"\x1bP>|") {
+        let Some(end) = body.windows(2).position(|window| window == b"\x1b\\") else {
+            return Progress::Partial;
+        };
+        let text = String::from_utf8_lossy(&body[..end]).into_owned();
+        let consumed = data.len() - body.len() + end + 2;
+        return Progress::Complete(TerminalAnswer::TerminalVersion(text), consumed);
+    }
+    // A prefix of an introducer is only worth waiting on once it is more than
+    // the escape itself: a lone `ESC` is the user's key far more often than the
+    // head of a reply, and holding it would keep it from whoever is reading.
+    for introducer in [b"\x1b[?".as_slice(), b"\x1b[>".as_slice(), b"\x1bP>|".as_slice()] {
+        if data.len() > 1 && introducer.starts_with(data) {
+            return Progress::Partial;
+        }
+    }
+    Progress::None
+}
+
+/// The `;`-separated numbers of a device-attributes reply, with an unreadable
+/// field counted as zero the way `strtoul` leaves it.
+fn numeric_parameters(body: &[u8]) -> Vec<u32> {
+    String::from_utf8_lossy(body)
+        .split(';')
+        .map(|field| field.parse::<u32>().unwrap_or(0))
+        .collect()
 }
 
 #[cfg(test)]

@@ -224,7 +224,43 @@ struct AttachInputState {
     key_prompt: KeyPromptState,
     terminal_reply: Option<PendingTerminalReply>,
     terminal_answer: hmux_vt::AnswerScanner,
+    /// Which of the capability queries `tty_send_requests` wrote are still
+    /// waiting for their answers, which is the window those answers are
+    /// recognised in — tmux's `TTY_HAVEDA`, `TTY_HAVEDA2`, `TTY_HAVEXDA`,
+    /// `TTY_WAITFG` and `TTY_WAITBG`.
+    awaiting: CapabilityAnswers,
     injected: VecDeque<ClientKey>,
+}
+
+/// The answers to `tty_send_requests`'s questions that have not arrived yet.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct CapabilityAnswers {
+    device_attributes: bool,
+    secondary_device_attributes: bool,
+    version: bool,
+    foreground: bool,
+    background: bool,
+}
+
+impl CapabilityAnswers {
+    /// Every question the requests ask, none of them answered yet.
+    fn asked() -> Self {
+        Self {
+            device_attributes: true,
+            secondary_device_attributes: true,
+            version: true,
+            foreground: true,
+            background: true,
+        }
+    }
+
+    fn any(self) -> bool {
+        self.device_attributes
+            || self.secondary_device_attributes
+            || self.version
+            || self.foreground
+            || self.background
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -582,6 +618,7 @@ impl AttachCompositorState {
                 key_prompt: KeyPromptState::Idle,
                 terminal_reply: None,
                 terminal_answer: hmux_vt::AnswerScanner::new(),
+                awaiting: CapabilityAnswers::default(),
                 injected: VecDeque::new(),
             },
             io_state: ClientIoState::Active,
@@ -1430,7 +1467,18 @@ fn tty_start_sequence(terminal: &ResolvedTerm, focus_events: bool) -> Vec<u8> {
             output.extend_from_slice(value);
         }
     }
+    output.extend_from_slice(&tty_requests(terminal));
     output
+}
+
+/// tmux's `tty_send_requests`: what the server asks a VT100-like terminal
+/// about itself once its tty is started. The answers arrive on the client's
+/// input stream and are folded into the client's feature set.
+fn tty_requests(terminal: &ResolvedTerm) -> Vec<u8> {
+    if !terminal.is_vt100_like() {
+        return Vec::new();
+    }
+    b"\x1b[c\x1b[>c\x1b[>q\x1b]10;?\x1b\\\x1b]11;?\x1b\\".to_vec()
 }
 
 fn tty_stop_sequence(terminal: &ResolvedTerm, rows: u16) -> Vec<u8> {

@@ -131,7 +131,8 @@ impl AttachSession {
         let mut attached_context = context.clone();
         attached_context.current_session_id = Some(session_id);
         attached_context.kind = command::ClientKind::Attached;
-        let compositor = AttachCompositorState::new(session_id, attached_context, stable_target);
+        let mut compositor =
+            AttachCompositorState::new(session_id, attached_context, stable_target);
         let target = compositor.target.stable_target.as_str();
         let terminal_identity = TerminalIdentity::new(
             client_tty.term.clone().unwrap_or_default(),
@@ -190,6 +191,11 @@ impl AttachSession {
         let mut tty_output = TtyOutput::new();
         let focus_events = Self::focus_events(&state.borrow_mut());
         let tty_start = tty_start_sequence(&terminal, focus_events);
+        // The capability queries ride out with the start sequence, so their
+        // answers are recognised from the first read of this client's input.
+        if terminal.is_vt100_like() {
+            compositor.input.awaiting = CapabilityAnswers::asked();
+        }
         let _ = tty_output.queue(render_fd.as_raw_fd(), &tty_start);
         // The mouse mode is not set here: `sync_tty_mouse_mode` does it on the
         // first pass of the loop, from the pane's modes and the options as

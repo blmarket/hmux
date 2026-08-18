@@ -664,6 +664,8 @@ pub(crate) struct ResolvedTerm {
     identity: TerminalIdentity,
     capabilities: Vec<Option<CapabilityValue>>,
     features: u32,
+    /// Features the terminal itself reported, which an options refresh keeps.
+    reported_features: u32,
     terminal_flags: u8,
     acs: BTreeMap<u8, u8>,
     generation: u64,
@@ -706,7 +708,7 @@ impl ResolvedTerm {
         }
 
         const KNOWN_FEATURES: u32 = (1 << FEATURES.len()) - 1;
-        self.features = self.identity.feature_bits & KNOWN_FEATURES;
+        self.features = (self.identity.feature_bits & KNOWN_FEATURES) | self.reported_features;
         match self.identity.colorterm.as_deref() {
             Some(value)
                 if value.eq_ignore_ascii_case("truecolor")
@@ -843,6 +845,61 @@ impl ResolvedTerm {
                 format!("{index:4}: {}: {description}", capability.name())
             })
             .collect()
+    }
+
+    /// Fold in features the terminal reported for itself — tmux's
+    /// `tty_add_features` from a device-attributes or XTVERSION reply. The
+    /// names are remembered so a later options refresh keeps them, the way
+    /// tmux's per-client feature set outlives one.
+    pub(crate) fn add_reported_features(&mut self, names: &str) -> bool {
+        let before = self.features;
+        for name in names.split(',').map(str::trim).filter(|name| !name.is_empty()) {
+            let Some(bit) = feature_bit(name) else {
+                continue;
+            };
+            self.reported_features |= bit;
+            self.features |= bit;
+        }
+        if self.features == before {
+            return false;
+        }
+        self.generation = self.generation.wrapping_add(1);
+        let mut feature_flags = self.terminal_flags & TERM_VT100_LIKE;
+        for (index, feature) in FEATURES.iter().enumerate() {
+            if self.features & (1 << index) == 0 {
+                continue;
+            }
+            for capabilities in feature.capabilities {
+                self.apply_capabilities(capabilities);
+            }
+            feature_flags |= feature.flags;
+        }
+        self.recompute_derived_flags(feature_flags);
+        self.rebuild_acs();
+        true
+    }
+
+    /// The feature set tmux's `tty_default_features` gives a terminal that
+    /// named itself, in the reply to XTVERSION or the secondary device
+    /// attributes.
+    pub(crate) fn add_named_terminal_features(&mut self, name: &str) -> bool {
+        const MODERN_XTERM: &str = "256,RGB,bpaste,clipboard,mouse,strikethrough,title";
+        let features = match name {
+            "mintty" => format!("{MODERN_XTERM},ccolour,cstyle,extkeys,margins,overline,usstyle"),
+            "tmux" => format!(
+                "{MODERN_XTERM},ccolour,cstyle,extkeys,focus,overline,usstyle,hyperlinks,\
+                 progressbar"
+            ),
+            "rxvt-unicode" => "256,bpaste,ccolour,cstyle,mouse,title,ignorefkeys".to_owned(),
+            "iTerm2" => format!(
+                "{MODERN_XTERM},cstyle,extkeys,margins,usstyle,sync,osc7,hyperlinks,progressbar"
+            ),
+            "foot" => format!("{MODERN_XTERM},ccolour,cstyle,extkeys,usstyle,sync,osc7,hyperlinks"),
+            "WezTerm" => format!("{MODERN_XTERM},ccolour,cstyle,extkeys,focus,usstyle"),
+            "XTerm" => format!("{MODERN_XTERM},ccolour,cstyle,extkeys,focus"),
+            _ => return false,
+        };
+        self.add_reported_features(&features)
     }
 
     fn add_features(&mut self, names: &[&str]) {
