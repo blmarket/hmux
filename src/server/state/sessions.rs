@@ -14,7 +14,7 @@ use super::{
     Notification, Pane, PaneNode, PaneSpec, RenderInvalidation, ServerState, Session, Window,
     Winlink, ALERT_ACTIVITY,
 };
-use crate::server::options::{is_hook, OptionSet};
+use crate::server::options::{HookName, OptionSet, PaneHook, SessionHook, WindowHook};
 
 impl ServerState {
     pub(crate) fn is_grouped(&self, session: &Session) -> bool {
@@ -232,7 +232,7 @@ impl ServerState {
             cwd: None,
         });
         self.initial_attach_pending = false;
-        self.notify_session("session-created", session_id);
+        self.notify_session(SessionHook::SessionCreated, session_id);
         Ok(session_id)
     }
 
@@ -332,7 +332,7 @@ impl ServerState {
         }
         if renamed {
             self.invalidate_session(session_id, RenderInvalidation::STATUS);
-            self.notify_session("session-renamed", session_id);
+            self.notify_session(SessionHook::SessionRenamed, session_id);
         }
         Ok(())
     }
@@ -384,7 +384,7 @@ impl ServerState {
             self.request_shutdown_if_became_empty(had_sessions);
             if let Some(session_id) = removed_id {
                 self.invalidate_session(session_id, RenderInvalidation::SESSION_GONE);
-                self.notify_closed_session("session-closed", session_id, name);
+                self.notify_closed_session(SessionHook::SessionClosed, session_id, name);
             }
         }
         removed
@@ -392,10 +392,12 @@ impl ServerState {
 
     /// Record an event notification for the command queue to turn into hook
     /// bodies. Mirrors tmux's `notify_add`.
-    fn notify(&mut self, name: &str, target: Option<String>, mut vars: Vec<(String, String)>) {
-        if !is_hook(name) {
-            return;
-        }
+    fn notify(
+        &mut self,
+        name: &'static str,
+        target: Option<String>,
+        mut vars: Vec<(String, String)>,
+    ) {
         vars.insert(0, ("hook".to_string(), name.to_string()));
         self.pending_notifications.push(Notification {
             name: name.to_string(),
@@ -430,7 +432,7 @@ impl ServerState {
     }
 
     /// tmux's `notify_session`: an event about a session as a whole.
-    pub(crate) fn notify_session(&mut self, name: &str, session_id: u32) {
+    pub(crate) fn notify_session(&mut self, hook: SessionHook, session_id: u32) {
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
             // A closed session is still named by its own event.
             return;
@@ -439,21 +441,26 @@ impl ServerState {
             ("hook_session".to_string(), format!("${session_id}")),
             ("hook_session_name".to_string(), session.name.clone()),
         ];
-        self.notify(name, Some(format!("${session_id}")), vars);
+        self.notify(hook.as_str(), Some(format!("${session_id}")), vars);
     }
 
     /// Like [`Self::notify_session`], for a session that has already been
     /// removed from the tree and can only be named by the caller.
-    pub(crate) fn notify_closed_session(&mut self, name: &str, session_id: u32, session: &str) {
+    pub(crate) fn notify_closed_session(
+        &mut self,
+        hook: SessionHook,
+        session_id: u32,
+        session: &str,
+    ) {
         let vars = vec![
             ("hook_session".to_string(), format!("${session_id}")),
             ("hook_session_name".to_string(), session.to_string()),
         ];
-        self.notify(name, None, vars);
+        self.notify(hook.as_str(), None, vars);
     }
 
     /// tmux's `notify_window`: an event about a window, carrying no session.
-    pub(crate) fn notify_window(&mut self, name: &str, window_id: u32) {
+    pub(crate) fn notify_window(&mut self, hook: WindowHook, window_id: u32) {
         let Some(window) = self.windows.get(&window_id) else {
             return;
         };
@@ -461,12 +468,17 @@ impl ServerState {
             ("hook_window".to_string(), format!("@{window_id}")),
             ("hook_window_name".to_string(), window.name.clone()),
         ];
-        self.notify(name, Some(format!("@{window_id}")), vars);
+        self.notify(hook.as_str(), Some(format!("@{window_id}")), vars);
     }
 
     /// tmux's `notify_session_window`/`notify_winlink`: an event about a window
     /// as seen from one session, so both layers are published.
-    pub(crate) fn notify_session_window(&mut self, name: &str, session_id: u32, window_id: u32) {
+    pub(crate) fn notify_session_window(
+        &mut self,
+        hook: SessionHook,
+        session_id: u32,
+        window_id: u32,
+    ) {
         let session = self.sessions.iter().find(|s| s.id == session_id);
         let window_name = self.windows.get(&window_id).map(|w| w.name.clone());
         let mut vars = Vec::new();
@@ -486,12 +498,12 @@ impl ServerState {
             .find(|s| s.id == session_id && s.windows.iter().any(|link| link.id == window_id))
             .map(|_| format!("${session_id}:@{window_id}"))
             .or_else(|| session.map(|_| format!("${session_id}")));
-        self.notify(name, target, vars);
+        self.notify(hook.as_str(), target, vars);
     }
 
     /// tmux's `notify_pane`: an event about a pane, which also publishes the
     /// window the pane belongs to.
-    pub(crate) fn notify_pane(&mut self, name: &str, pane_id: u32) {
+    pub(crate) fn notify_pane(&mut self, hook: PaneHook, pane_id: u32) {
         let Some((window_id, window_name)) = self.windows.iter().find_map(|(id, window)| {
             window
                 .panes
@@ -506,13 +518,13 @@ impl ServerState {
             ("hook_window".to_string(), format!("@{window_id}")),
             ("hook_window_name".to_string(), window_name),
         ];
-        self.notify(name, Some(format!("%{pane_id}")), vars);
+        self.notify(hook.as_str(), Some(format!("%{pane_id}")), vars);
     }
 
     /// tmux's `notify_client`: an event about one client.
-    pub(crate) fn notify_client(&mut self, name: &str, client: &str, session_id: Option<u32>) {
+    pub(crate) fn notify_client(&mut self, hook: SessionHook, client: &str, session_id: Option<u32>) {
         let vars = vec![("hook_client".to_string(), client.to_string())];
-        self.notify(name, session_id.map(|id| format!("${id}")), vars);
+        self.notify(hook.as_str(), session_id.map(|id| format!("${id}")), vars);
     }
 
     /// Take everything raised since the last drain.
@@ -554,26 +566,26 @@ impl ServerState {
         for (name, (session_id, cols, rows)) in &current {
             match previous.get(name) {
                 None => {
-                    self.notify_client("client-attached", name, Some(*session_id));
-                    self.notify_client("client-session-changed", name, Some(*session_id));
+                    self.notify_client(SessionHook::ClientAttached, name, Some(*session_id));
+                    self.notify_client(SessionHook::ClientSessionChanged, name, Some(*session_id));
                     // A new client announces its terminal size as part of
                     // attaching, which tmux reports as a resize of its own.
-                    self.notify_client("client-resized", name, Some(*session_id));
+                    self.notify_client(SessionHook::ClientResized, name, Some(*session_id));
                     self.take_session_for_client(*session_id);
                 }
                 Some((old_session, old_cols, old_rows)) => {
                     if old_session != session_id {
-                        self.notify_client("client-session-changed", name, Some(*session_id));
+                        self.notify_client(SessionHook::ClientSessionChanged, name, Some(*session_id));
                         self.take_session_for_client(*session_id);
                     }
                     if (old_cols, old_rows) != (cols, rows) {
-                        self.notify_client("client-resized", name, Some(*session_id));
+                        self.notify_client(SessionHook::ClientResized, name, Some(*session_id));
                     }
                 }
             }
         }
         for name in previous.keys().filter(|name| !current.contains_key(*name)) {
-            self.notify_client("client-detached", name, None);
+            self.notify_client(SessionHook::ClientDetached, name, None);
         }
         self.notifications_are_deferred = was_deferred;
         // Gaining or losing a client moves pane focus, for the window it

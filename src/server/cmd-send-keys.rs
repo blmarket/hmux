@@ -163,7 +163,7 @@ pub(in crate::server) fn exec(
                 return result;
             }
         }
-        return run_mode_bindings(&target, mode_bindings);
+        return run_mode_bindings(state, &target, mode_bindings);
     }
 
     let mut bytes = Vec::new();
@@ -187,7 +187,7 @@ pub(in crate::server) fn exec(
             return result;
         }
     }
-    run_mode_bindings(&target, mode_bindings)
+    run_mode_bindings(state, &target, mode_bindings)
 }
 
 fn send_client_keys(
@@ -681,23 +681,32 @@ fn route_mode_key(
     }
 }
 
-fn run_mode_bindings(target: &str, bindings: Vec<KeyBinding>) -> CommandResult {
+fn run_mode_bindings(state: &ServerState, target: &str, bindings: Vec<KeyBinding>) -> CommandResult {
     let mut output = CommandResult::ok("");
     for binding in bindings {
-        let mut command = binding.command.argv();
-        if command
+        let words = binding.command.argv();
+        let retarget = words
             .first()
             .is_some_and(|name| matches!(name.as_str(), "send-keys" | "send"))
-            && !command.iter().any(|word| word == "-t")
-        {
-            command.splice(1..1, ["-t".to_string(), target.to_string()]);
-        }
+            && !words.iter().any(|word| word == "-t");
+        let deferred = if retarget {
+            let mut words = words;
+            words.splice(1..1, ["-t".to_string(), target.to_string()]);
+            let compiled =
+                super::command::ExecutableCommand::compile_argv(&words, &state.command_aliases());
+            match compiled {
+                Ok(compiled) => super::command::LazyCommand::Compiled(compiled),
+                Err(_) => continue,
+            }
+        } else {
+            super::command::LazyCommand::Compiled(binding.command)
+        };
         // Handed back to the queue that owns this command rather than run
         // here: a mode binding is an ordinary command line, and running one
         // under the caller's state borrow is what forced the blocking paths.
         output
             .deferred_commands
-            .push(super::command::DeferredCommand::Args(command));
+            .push(super::command::DeferredCommand::Command(deferred));
     }
     output
 }

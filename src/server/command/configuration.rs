@@ -1,6 +1,8 @@
 //! The option, hook, and environment commands.
 
 use super::*;
+use crate::server::options::HookName;
+use crate::server::state::Hookable;
 use crate::server::style;
 
 #[derive(Clone, Debug)]
@@ -229,18 +231,50 @@ fn option_target_from_name(
     }
 }
 
-/// Re-print a command list the way tmux's `cmd_list_print` does for a stored
-/// command option: every command by its canonical name, its value-less flags as
-/// one cluster, then its valued flags and its operands. A body that does not
-/// compile is kept verbatim so a not-yet-valid hook still round-trips.
+/// Put a compiled body on a hook, or take one off, in the table `target`
+/// selects.
 ///
-/// Compiling without the alias table is deliberate: an alias expands to a whole
-/// command line, and rewriting the stored body into that expansion would report
-/// back something the user never wrote.
-fn canonical_command_list(value: &str, _st: &ServerState) -> String {
-    match ExecutableCommand::compile(value, &[]) {
-        Ok(compiled) if !compiled.is_empty() => compiled.print(),
-        _ => value.to_string(),
+/// A target that *is* the entity of the hook's own scope goes through that
+/// entity's [`Hookable`] impl, where the scope's catalog and the array rules
+/// meet. The rest are layers rather than entities — a global table, or the
+/// window table a `-w` pane hook lands in — and take the same operation applied
+/// to the table directly.
+fn apply_hook(
+    st: &mut ServerState,
+    target: OptionTarget,
+    hook: options::AnyHook,
+    index: Option<u32>,
+    append: bool,
+    body: Option<ExecutableCommand>,
+) {
+    match (hook, target, body) {
+        (options::AnyHook::Session(hook), OptionTarget::Session(session), Some(body)) => {
+            st.session_mut(session).set_hook(hook, index, append, body)
+        }
+        (options::AnyHook::Session(hook), OptionTarget::Session(session), None) => {
+            st.session_mut(session).unset_hook(hook, index)
+        }
+        (options::AnyHook::Window(hook), OptionTarget::Window(target), Some(body)) => st
+            .window_mut(target.session, target.window)
+            .set_hook(hook, index, append, body),
+        (options::AnyHook::Window(hook), OptionTarget::Window(target), None) => st
+            .window_mut(target.session, target.window)
+            .unset_hook(hook, index),
+        (options::AnyHook::Pane(hook), OptionTarget::Pane(target), Some(body)) => {
+            st.window_mut(target.session, target.window).panes[target.pane]
+                .set_hook(hook, index, append, body)
+        }
+        (options::AnyHook::Pane(hook), OptionTarget::Pane(target), None) => {
+            st.window_mut(target.session, target.window).panes[target.pane]
+                .unset_hook(hook, index)
+        }
+        (hook, target, body) => {
+            let store = target.local_mut(st);
+            match body {
+                Some(body) => options::set_hook_in(store, hook.as_str(), index, append, body),
+                None => options::unset_hook_in(store, hook.as_str(), index),
+            }
+        }
     }
 }
 
@@ -495,12 +529,6 @@ impl SetOption {
             Some(raw) => raw.to_string(),
             None => String::new(),
         };
-        // tmux parses a hook (or any command-typed option) into a command list at
-        // assignment time, so what `show-hooks` prints back is the canonical
-        // command name rather than whatever alias the body was written with.
-        if !unset && raw_value.is_some() && options::is_hook(name) {
-            value = canonical_command_list(&value, st);
-        }
         if !unset {
             if options::is_style_option(name) {
                 if let Some(token) = style::invalid_underline_colour(&value) {
@@ -580,6 +608,32 @@ impl SetOption {
                     }
                 }
             }
+        }
+        // A hook is command-typed — tmux's `OPTIONS_TABLE_COMMAND` — so its body
+        // is parsed at assignment: a body that does not compile fails this
+        // command, and what the table keeps is the compiled line rather than the
+        // text it was written as.
+        if let Some(hook) = options::AnyHook::from_name(name) {
+            if unset {
+                apply_hook(st, target, hook, index, self.append, None);
+            } else if value.is_empty() && index.is_none() {
+                // An assignment with no members leaves the array cleared but
+                // present, so it still shadows the layer behind it.
+                let table = target.local_mut(st);
+                if !self.append {
+                    table.clear_array(name);
+                    table.set(name, "");
+                }
+            } else {
+                let aliases = st.command_aliases();
+                let body = match ExecutableCommand::compile(&value, &aliases) {
+                    Ok(body) => body,
+                    Err(error) => return CommandResult::err(error),
+                };
+                apply_hook(st, target, hook, index, self.append, Some(body));
+            }
+            st.option_changed(name);
+            return CommandResult::ok("");
         }
         if kind == Some(options::OptionKind::Array) && index.is_none() {
             let global = target.is_global();
@@ -966,17 +1020,17 @@ impl SetHook {
                 "set-hook: missing hook\n",
             ));
         };
-        if !options::is_hook(hook) {
+        let Some(hook) = options::AnyHook::from_name(hook) else {
             return SharedCommandExecution::completed(CommandResult::err(format!(
                 "invalid option: {hook}\n"
             )));
-        }
+        };
         // `-R` runs the hook's body as queue items of its own; the command's
         // own hooks wait until they have run.
         let mut insert_next = context.plan_hook_with_capture(
-            hook,
+            hook.as_str(),
             self.set.scope.target.as_deref(),
-            vec![("hook".to_string(), hook.to_string())],
+            vec![("hook".to_string(), hook.as_str().to_string())],
             NestedCapture::Discard,
             HookOrigin::Command,
         );
@@ -1014,11 +1068,10 @@ impl ShowHooks {
 
     fn run(self, st: &ServerState) -> CommandResult {
         if let Some(hook) = self.show.option.as_deref() {
-            if !options::is_hook(
-                options::parse_option_name(hook)
-                    .map(|(base, _)| base)
-                    .unwrap_or(hook),
-            ) {
+            let base = options::parse_option_name(hook)
+                .map(|(base, _)| base)
+                .unwrap_or(hook);
+            if options::AnyHook::from_name(base).is_none() {
                 return CommandResult::err(format!("invalid option: {hook}\n"));
             }
             let result = self.show.run(st, false);
@@ -1032,16 +1085,16 @@ impl ShowHooks {
             if self.global {
                 Vec::new()
             } else {
-                options::PANE_HOOKS.to_vec()
+                options::PaneHook::NAMES.to_vec()
             }
         } else if self.window {
-            options::PANE_HOOKS
+            options::PaneHook::NAMES
                 .iter()
-                .chain(options::WINDOW_HOOKS)
+                .chain(options::WindowHook::NAMES)
                 .copied()
                 .collect()
         } else {
-            options::SESSION_HOOKS.to_vec()
+            options::SessionHook::NAMES.to_vec()
         };
         let mut output = String::new();
         for hook in hooks {

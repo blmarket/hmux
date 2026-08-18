@@ -13,6 +13,7 @@ use super::copy::*;
 use super::mode::update_mode_edit_item;
 use super::sizing::pane_slider;
 use super::target::pane_not_found;
+use crate::server::options::PaneHook;
 use super::{
     ModeBindingUpdate, ModeEdit, ModeKind, ModePrompt, ModeView, ModeViewKeyResult, PopupRequest,
     RenderInvalidation, ServerState,
@@ -91,7 +92,7 @@ impl ServerState {
         // tmux notifies from `window_pane_set_mode`/`window_pane_reset_mode`,
         // that is only when the pane actually enters or leaves a mode.
         if was_in_mode != mode.is_some() {
-            self.notify_pane("pane-mode-changed", pane_id);
+            self.notify_pane(PaneHook::ModeChanged, pane_id);
         }
         Ok(())
     }
@@ -118,7 +119,7 @@ impl ServerState {
         node.mode_view = Some(view);
         self.invalidate_session(session_id, RenderInvalidation::MODE);
         if !was_in_mode {
-            self.notify_pane("pane-mode-changed", pane_id);
+            self.notify_pane(PaneHook::ModeChanged, pane_id);
         }
         Ok(())
     }
@@ -536,7 +537,7 @@ impl ServerState {
         node.mode = Some("copy-mode".to_string());
         self.invalidate_session(session_id, RenderInvalidation::MODE);
         if entered {
-            self.notify_pane("pane-mode-changed", pane_id);
+            self.notify_pane(PaneHook::ModeChanged, pane_id);
         }
         Ok(())
     }
@@ -1377,7 +1378,7 @@ impl ServerState {
             // written through the same `Ms` capability and to the same clients
             // as any other pane output: those with the window on screen.
             self.write_window_selection(window_id, copied.clone().into_bytes());
-            self.notify_pane("pane-set-clipboard", pane_id);
+            self.notify_pane(PaneHook::SetClipboard, pane_id);
         }
         Ok(result)
     }

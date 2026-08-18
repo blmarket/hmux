@@ -1229,7 +1229,7 @@ fn run_mode_edit(
             let mut result = command::CommandResult::ok("");
             result
                 .deferred_commands
-                .push(command::DeferredCommand::Args(args));
+                .push(command::DeferredCommand::Argv(args));
             result
         }
         ModeEdit::BindingCommand {

@@ -26,7 +26,7 @@ use crate::server::input_keys::{
 };
 use crate::server::key::parse_key_name;
 use crate::server::mouse::TtyMouseMode;
-use crate::server::options::{OptionSet, OptionsView};
+use crate::server::options::{OptionSet, OptionsView, PaneHook, WindowHook};
 use crate::server::pane::{
     parse_packed_colour, MouseTrackingMode, Pane, PaneClipboardEvent, PaneIo, PaneKeyState,
     PaneOutputPolicy, PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
@@ -98,9 +98,9 @@ impl ServerState {
         let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
         self.notify_pane(
             if focused {
-                "pane-focus-in"
+                PaneHook::FocusIn
             } else {
-                "pane-focus-out"
+                PaneHook::FocusOut
             },
             pane_id,
         );
@@ -215,12 +215,12 @@ impl ServerState {
         }
         self.deferred_notifications(|state| {
             for pane_id in newly_exited {
-                let name = if retained.contains(&pane_id) {
-                    "pane-died"
+                let hook = if retained.contains(&pane_id) {
+                    PaneHook::Died
                 } else {
-                    "pane-exited"
+                    PaneHook::Exited
                 };
-                state.notify_pane(name, pane_id);
+                state.notify_pane(hook, pane_id);
             }
         });
         for window in self.windows.values_mut() {
@@ -456,7 +456,7 @@ impl ServerState {
                         self.set_buffer(None, &data);
                         let was_deferred =
                             std::mem::replace(&mut self.notifications_are_deferred, true);
-                        self.notify_pane("pane-set-clipboard", pane_id);
+                        self.notify_pane(PaneHook::SetClipboard, pane_id);
                         self.notifications_are_deferred = was_deferred;
                     }
                     PaneClipboardEvent::Query {
@@ -895,9 +895,9 @@ impl ServerState {
             RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
         );
         if active_changed {
-            self.notify_window("window-pane-changed", window_id);
+            self.notify_window(WindowHook::PaneChanged, window_id);
         }
-        self.notify_window("window-layout-changed", window_id);
+        self.notify_window(WindowHook::LayoutChanged, window_id);
         Ok(insert_at)
     }
 
@@ -1015,7 +1015,7 @@ impl ServerState {
                 session_id,
                 RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
             );
-            self.notify_window("window-pane-changed", window_id);
+            self.notify_window(WindowHook::PaneChanged, window_id);
             // tmux only follows the active pane with focus while
             // `focus-events` is on (`window_set_active_pane`).
             if self.server_option_is_on("focus-events", false) {
@@ -1042,7 +1042,7 @@ impl ServerState {
         if changed {
             self.invalidate_session(session_id, RenderInvalidation::STATUS);
         }
-        self.notify_pane("pane-title-changed", pane_id);
+        self.notify_pane(PaneHook::TitleChanged, pane_id);
         Ok(())
     }
 
@@ -1231,7 +1231,7 @@ impl ServerState {
         } else {
             self.invalidate_session(session_id, RenderInvalidation::SESSION_GONE);
         }
-        self.notify_window("window-layout-changed", window_id);
+        self.notify_window(WindowHook::LayoutChanged, window_id);
         Ok(())
     }
 
@@ -1422,9 +1422,9 @@ impl ServerState {
             );
         }
         if active_changed {
-            self.notify_window("window-pane-changed", window_id);
+            self.notify_window(WindowHook::PaneChanged, window_id);
         }
-        self.notify_window("window-layout-changed", window_id);
+        self.notify_window(WindowHook::LayoutChanged, window_id);
         Ok(())
     }
 

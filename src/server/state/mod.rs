@@ -19,6 +19,7 @@ mod buffers;
 mod client;
 mod copy;
 mod environ;
+mod hooks;
 mod jobs;
 mod keys;
 mod layout;
@@ -42,6 +43,7 @@ pub(crate) use client::{
 pub(crate) use copy::{
     copy_search_segments, copy_selection_segments, CopySelectionMode, CopyState,
 };
+pub(crate) use hooks::Hookable;
 pub(crate) use jobs::{BackgroundJobRegistry, WaitOutcome, WaitRegistry};
 pub(crate) use layout::{LayoutCell, PaneRect, SplitDirection};
 pub(crate) use mode::{

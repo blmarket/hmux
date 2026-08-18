@@ -21,16 +21,51 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::server::command::ExecutableCommand;
+
+/// One stored option value.
+///
+/// tmux's options table has a command type beside its string one
+/// (`OPTIONS_TABLE_COMMAND`): a hook body is parsed into a `struct cmd_list` at
+/// assignment and the table then holds the compiled line, not the text. hmux
+/// stores the same compiled value, paired with the canonical text it prints as,
+/// so every reader that wants a string still gets one and only the fire path
+/// needs to know the difference.
+#[derive(Clone, Debug)]
+enum OptionValue {
+    Text(String),
+    Command {
+        compiled: ExecutableCommand,
+        printed: String,
+    },
+}
+
+impl OptionValue {
+    fn as_str(&self) -> &str {
+        match self {
+            OptionValue::Text(text) => text,
+            OptionValue::Command { printed, .. } => printed,
+        }
+    }
+
+    fn command(&self) -> Option<&ExecutableCommand> {
+        match self {
+            OptionValue::Text(_) => None,
+            OptionValue::Command { compiled, .. } => Some(compiled),
+        }
+    }
+}
+
 /// One table of option values. Local object tables are sparse; global tables
 /// contain the modeled defaults for their scope.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OptionSet {
-    entries: BTreeMap<String, String>,
+    entries: BTreeMap<String, OptionValue>,
 }
 
 impl OptionSet {
     pub(crate) fn get(&self, name: &str) -> Option<&str> {
-        self.entries.get(name).map(String::as_str)
+        self.entries.get(name).map(OptionValue::as_str)
     }
 
     pub(crate) fn contains(&self, name: &str) -> bool {
@@ -47,14 +82,47 @@ impl OptionSet {
     }
 
     pub(crate) fn set(&mut self, name: impl Into<String>, value: impl Into<String>) {
-        self.entries.insert(name.into(), value.into());
+        self.entries
+            .insert(name.into(), OptionValue::Text(value.into()));
+    }
+
+    /// Store a compiled command line, the way tmux stores a `cmd_list` in an
+    /// `OPTIONS_TABLE_COMMAND` entry. The canonical text is derived once here,
+    /// so a string reader never has to compile anything back.
+    pub(crate) fn set_command(&mut self, name: impl Into<String>, compiled: ExecutableCommand) {
+        let printed = compiled.print();
+        self.entries
+            .insert(name.into(), OptionValue::Command { compiled, printed });
+    }
+
+    /// The compiled members of a command-typed array option, in index order —
+    /// tmux walking `options_array_first`/`_next`, whose red-black tree is keyed
+    /// by the index rather than by the printed name.
+    pub(crate) fn array_commands(&self, base: &str) -> Vec<&ExecutableCommand> {
+        let mut members = self
+            .entries
+            .iter()
+            .filter_map(|(name, value)| {
+                let (name, index) = parse_option_name(name)?;
+                (name == base).then_some((index?, value.command()?))
+            })
+            .collect::<Vec<_>>();
+        members.sort_unstable_by_key(|(index, _)| *index);
+        members
+            .into_iter()
+            .map(|(_, command)| command)
+            .collect()
     }
 
     pub(crate) fn append(&mut self, name: &str, value: &str) {
+        let mut existing = self
+            .entries
+            .get(name)
+            .map(|value| value.as_str().to_string())
+            .unwrap_or_default();
+        existing.push_str(value);
         self.entries
-            .entry(name.to_string())
-            .or_default()
-            .push_str(value);
+            .insert(name.to_string(), OptionValue::Text(existing));
     }
 
     pub(crate) fn remove(&mut self, name: &str) -> bool {
@@ -82,6 +150,47 @@ impl OptionSet {
         self.entries
             .iter()
             .map(|(name, value)| (name.as_str(), value.as_str()))
+    }
+}
+
+/// Attach a compiled body to one hook of a table.
+///
+/// tmux's `cmd_set_option` on a command-typed array: without `-a` the array is
+/// cleared first and the body takes the first free member — member 0 for a
+/// fresh array. An index names one member outright, and `-a` means nothing
+/// there, since `options_array_set` replaces a command member rather than
+/// appending text to it.
+pub(crate) fn set_hook_in(
+    store: &mut OptionSet,
+    name: &str,
+    index: Option<u32>,
+    append: bool,
+    body: ExecutableCommand,
+) {
+    let index = match index {
+        Some(index) => index,
+        None => {
+            if !append {
+                store.clear_array(name);
+            }
+            store.next_array_index(name)
+        }
+    };
+    // The bare name is the marker for an array that exists and is empty; a
+    // member replaces it.
+    store.remove(name);
+    store.set_command(format!("{name}[{index}]"), body);
+}
+
+/// Remove one hook member, or the whole hook array when no index names one.
+pub(crate) fn unset_hook_in(store: &mut OptionSet, name: &str, index: Option<u32>) {
+    match index {
+        Some(index) => {
+            store.remove(&format!("{name}[{index}]"));
+        }
+        None => {
+            store.clear_array(name);
+        }
     }
 }
 
@@ -155,6 +264,19 @@ impl<'a> OptionsView<'a> {
             .into_iter()
             .map(|(_, value)| value)
             .collect()
+    }
+
+    /// The compiled members of a command-typed array option, resolved through
+    /// the layers. An array is inherited whole, so the most local layer holding
+    /// any entry for it supplies all of them — the same rule
+    /// [`Self::iter_effective`] applies to the printed values.
+    pub(crate) fn array_commands(&self, base: &str) -> Vec<&'a ExecutableCommand> {
+        self.layers
+            .into_iter()
+            .flatten()
+            .find(|layer| layer.contains_array(base))
+            .map(|layer| layer.array_commands(base))
+            .unwrap_or_default()
     }
 
     pub(crate) fn iter_effective(&self) -> impl Iterator<Item = (&'a str, &'a str)> + use<'a> {
@@ -880,82 +1002,169 @@ pub(crate) fn flag_extension_value(name: &str) -> Option<&'static str> {
     (name == "exit-empty").then_some(EXIT_EMPTY_AFTER_SESSION)
 }
 
-pub(crate) const SESSION_HOOKS: &[&str] = &[
-    "after-bind-key",
-    "after-capture-pane",
-    "after-copy-mode",
-    "after-display-message",
-    "after-display-panes",
-    "after-kill-pane",
-    "after-list-buffers",
-    "after-list-clients",
-    "after-list-keys",
-    "after-list-panes",
-    "after-list-sessions",
-    "after-list-windows",
-    "after-load-buffer",
-    "after-lock-server",
-    "after-new-session",
-    "after-new-window",
-    "after-paste-buffer",
-    "after-pipe-pane",
-    "after-queue",
-    "after-refresh-client",
-    "after-rename-session",
-    "after-rename-window",
-    "after-resize-pane",
-    "after-resize-window",
-    "after-save-buffer",
-    "after-select-layout",
-    "after-select-pane",
-    "after-select-window",
-    "after-send-keys",
-    "after-set-buffer",
-    "after-set-environment",
-    "after-set-hook",
-    "after-set-option",
-    "after-show-environment",
-    "after-show-messages",
-    "after-show-options",
-    "after-split-window",
-    "after-unbind-key",
-    "alert-activity",
-    "alert-bell",
-    "alert-silence",
-    "client-active",
-    "client-attached",
-    "client-detached",
-    "client-focus-in",
-    "client-focus-out",
-    "client-resized",
-    "client-session-changed",
-    "client-light-theme",
-    "client-dark-theme",
-    "command-error",
-    "session-closed",
-    "session-created",
-    "session-renamed",
-    "session-window-changed",
-    "window-linked",
-    "window-unlinked",
-];
+/// One scope's hook catalog as a closed type.
+///
+/// A value of an implementing type *is* a catalogued hook name of that scope,
+/// so the checks a string needs — is this a hook at all, is it a hook of this
+/// scope — are already done by the time one exists. Strings remain at the
+/// boundaries: [`HookName::from_name`] at the parse boundary, and
+/// [`HookName::as_str`] where the option store and `show-hooks` speak names.
+pub(crate) trait HookName: Copy + Eq + 'static {
+    /// Every hook of the scope, by name, in tmux's `options-table.c` order —
+    /// which is the order `show-hooks` lists them in.
+    const NAMES: &'static [&'static str];
 
-pub(crate) const PANE_HOOKS: &[&str] = &[
-    "pane-died",
-    "pane-exited",
-    "pane-focus-in",
-    "pane-focus-out",
-    "pane-mode-changed",
-    "pane-set-clipboard",
-    "pane-title-changed",
-];
+    fn as_str(self) -> &'static str;
+    fn from_name(name: &str) -> Option<Self>;
+}
 
-pub(crate) const WINDOW_HOOKS: &[&str] = &[
-    "window-layout-changed",
-    "window-pane-changed",
-    "window-renamed",
-    "window-resized",
-];
+/// Generate a scope's hook enum and its [`HookName`] impl from one
+/// variant-to-name list, so the variants, the names, and the catalog order
+/// cannot drift apart.
+macro_rules! hook_names {
+    ($vis:vis enum $enum_name:ident { $($variant:ident => $text:literal,)* }) => {
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        $vis enum $enum_name {
+            $($variant,)*
+        }
+
+        impl HookName for $enum_name {
+            const NAMES: &'static [&'static str] = &[$($text,)*];
+
+            fn as_str(self) -> &'static str {
+                match self {
+                    $($enum_name::$variant => $text,)*
+                }
+            }
+
+            fn from_name(name: &str) -> Option<Self> {
+                match name {
+                    $($text => Some($enum_name::$variant),)*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+hook_names! {
+    pub(crate) enum SessionHook {
+        AfterBindKey => "after-bind-key",
+        AfterCapturePane => "after-capture-pane",
+        AfterCopyMode => "after-copy-mode",
+        AfterDisplayMessage => "after-display-message",
+        AfterDisplayPanes => "after-display-panes",
+        AfterKillPane => "after-kill-pane",
+        AfterListBuffers => "after-list-buffers",
+        AfterListClients => "after-list-clients",
+        AfterListKeys => "after-list-keys",
+        AfterListPanes => "after-list-panes",
+        AfterListSessions => "after-list-sessions",
+        AfterListWindows => "after-list-windows",
+        AfterLoadBuffer => "after-load-buffer",
+        AfterLockServer => "after-lock-server",
+        AfterNewSession => "after-new-session",
+        AfterNewWindow => "after-new-window",
+        AfterPasteBuffer => "after-paste-buffer",
+        AfterPipePane => "after-pipe-pane",
+        AfterQueue => "after-queue",
+        AfterRefreshClient => "after-refresh-client",
+        AfterRenameSession => "after-rename-session",
+        AfterRenameWindow => "after-rename-window",
+        AfterResizePane => "after-resize-pane",
+        AfterResizeWindow => "after-resize-window",
+        AfterSaveBuffer => "after-save-buffer",
+        AfterSelectLayout => "after-select-layout",
+        AfterSelectPane => "after-select-pane",
+        AfterSelectWindow => "after-select-window",
+        AfterSendKeys => "after-send-keys",
+        AfterSetBuffer => "after-set-buffer",
+        AfterSetEnvironment => "after-set-environment",
+        AfterSetHook => "after-set-hook",
+        AfterSetOption => "after-set-option",
+        AfterShowEnvironment => "after-show-environment",
+        AfterShowMessages => "after-show-messages",
+        AfterShowOptions => "after-show-options",
+        AfterSplitWindow => "after-split-window",
+        AfterUnbindKey => "after-unbind-key",
+        AlertActivity => "alert-activity",
+        AlertBell => "alert-bell",
+        AlertSilence => "alert-silence",
+        ClientActive => "client-active",
+        ClientAttached => "client-attached",
+        ClientDetached => "client-detached",
+        ClientFocusIn => "client-focus-in",
+        ClientFocusOut => "client-focus-out",
+        ClientResized => "client-resized",
+        ClientSessionChanged => "client-session-changed",
+        ClientLightTheme => "client-light-theme",
+        ClientDarkTheme => "client-dark-theme",
+        CommandError => "command-error",
+        SessionClosed => "session-closed",
+        SessionCreated => "session-created",
+        SessionRenamed => "session-renamed",
+        SessionWindowChanged => "session-window-changed",
+        WindowLinked => "window-linked",
+        WindowUnlinked => "window-unlinked",
+    }
+}
+
+hook_names! {
+    pub(crate) enum PaneHook {
+        Died => "pane-died",
+        Exited => "pane-exited",
+        FocusIn => "pane-focus-in",
+        FocusOut => "pane-focus-out",
+        ModeChanged => "pane-mode-changed",
+        SetClipboard => "pane-set-clipboard",
+        TitleChanged => "pane-title-changed",
+    }
+}
+
+hook_names! {
+    pub(crate) enum WindowHook {
+        LayoutChanged => "window-layout-changed",
+        PaneChanged => "window-pane-changed",
+        Renamed => "window-renamed",
+        Resized => "window-resized",
+    }
+}
+
+/// A catalogued hook of any scope: what a name parsed at a command boundary
+/// becomes before the scope decides which entity carries it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AnyHook {
+    Session(SessionHook),
+    Window(WindowHook),
+    Pane(PaneHook),
+}
+
+impl AnyHook {
+    pub(crate) fn from_name(name: &str) -> Option<AnyHook> {
+        SessionHook::from_name(name)
+            .map(AnyHook::Session)
+            .or_else(|| WindowHook::from_name(name).map(AnyHook::Window))
+            .or_else(|| PaneHook::from_name(name).map(AnyHook::Pane))
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            AnyHook::Session(hook) => hook.as_str(),
+            AnyHook::Window(hook) => hook.as_str(),
+            AnyHook::Pane(hook) => hook.as_str(),
+        }
+    }
+
+    /// The option table the hook lives in, which is also the entity that
+    /// carries it.
+    pub(crate) fn scope(self) -> OptionScope {
+        match self {
+            AnyHook::Session(_) => OptionScope::Session,
+            AnyHook::Window(_) => OptionScope::Window,
+            AnyHook::Pane(_) => OptionScope::WindowPane,
+        }
+    }
+}
 
 /// A name index over the tables above, sorted once and searched thereafter.
 ///
@@ -988,7 +1197,10 @@ impl NameIndex {
 
 pub(crate) fn is_hook(name: &str) -> bool {
     static HOOKS: NameIndex = NameIndex::new();
-    HOOKS.contains(name, &[SESSION_HOOKS, WINDOW_HOOKS, PANE_HOOKS])
+    HOOKS.contains(
+        name,
+        &[SessionHook::NAMES, WindowHook::NAMES, PaneHook::NAMES],
+    )
 }
 
 const SERVER_OPTIONS: &[&str] = &[
@@ -1166,12 +1378,8 @@ pub(crate) enum OptionScope {
 }
 
 pub(crate) fn option_scope(name: &str) -> Option<OptionScope> {
-    if SESSION_HOOKS.contains(&name) {
-        Some(OptionScope::Session)
-    } else if WINDOW_HOOKS.contains(&name) {
-        Some(OptionScope::Window)
-    } else if PANE_HOOKS.contains(&name) {
-        Some(OptionScope::WindowPane)
+    if let Some(hook) = AnyHook::from_name(name) {
+        Some(hook.scope())
     } else if SERVER_OPTIONS.contains(&name) {
         Some(OptionScope::Server)
     } else if SESSION_OPTIONS.contains(&name) {
@@ -1334,9 +1542,9 @@ pub(crate) fn resolve_option_name(name: &str) -> OptionResolveResult {
         .iter()
         .map(|(name, _)| *name)
         .chain(OPTION_VALID_ONLY.iter().copied())
-        .chain(SESSION_HOOKS.iter().copied())
-        .chain(WINDOW_HOOKS.iter().copied())
-        .chain(PANE_HOOKS.iter().copied())
+        .chain(SessionHook::NAMES.iter().copied())
+        .chain(WindowHook::NAMES.iter().copied())
+        .chain(PaneHook::NAMES.iter().copied())
         .filter(|candidate| candidate.starts_with(base))
         .collect::<Vec<_>>();
     candidates.sort_unstable();
@@ -1468,6 +1676,201 @@ mod tests {
             "status-format[1][2]",
         ] {
             assert_eq!(parse_option_name(name), None, "{name}");
+        }
+    }
+
+    /// The catalog as it was written before the enums existed, kept verbatim so
+    /// the generated names are checked against a table nothing else derives.
+    const PREVIOUS_SESSION_HOOKS: &[&str] = &[
+        "after-bind-key",
+        "after-capture-pane",
+        "after-copy-mode",
+        "after-display-message",
+        "after-display-panes",
+        "after-kill-pane",
+        "after-list-buffers",
+        "after-list-clients",
+        "after-list-keys",
+        "after-list-panes",
+        "after-list-sessions",
+        "after-list-windows",
+        "after-load-buffer",
+        "after-lock-server",
+        "after-new-session",
+        "after-new-window",
+        "after-paste-buffer",
+        "after-pipe-pane",
+        "after-queue",
+        "after-refresh-client",
+        "after-rename-session",
+        "after-rename-window",
+        "after-resize-pane",
+        "after-resize-window",
+        "after-save-buffer",
+        "after-select-layout",
+        "after-select-pane",
+        "after-select-window",
+        "after-send-keys",
+        "after-set-buffer",
+        "after-set-environment",
+        "after-set-hook",
+        "after-set-option",
+        "after-show-environment",
+        "after-show-messages",
+        "after-show-options",
+        "after-split-window",
+        "after-unbind-key",
+        "alert-activity",
+        "alert-bell",
+        "alert-silence",
+        "client-active",
+        "client-attached",
+        "client-detached",
+        "client-focus-in",
+        "client-focus-out",
+        "client-resized",
+        "client-session-changed",
+        "client-light-theme",
+        "client-dark-theme",
+        "command-error",
+        "session-closed",
+        "session-created",
+        "session-renamed",
+        "session-window-changed",
+        "window-linked",
+        "window-unlinked",
+    ];
+
+    const PREVIOUS_PANE_HOOKS: &[&str] = &[
+        "pane-died",
+        "pane-exited",
+        "pane-focus-in",
+        "pane-focus-out",
+        "pane-mode-changed",
+        "pane-set-clipboard",
+        "pane-title-changed",
+    ];
+
+    const PREVIOUS_WINDOW_HOOKS: &[&str] = &[
+        "window-layout-changed",
+        "window-pane-changed",
+        "window-renamed",
+        "window-resized",
+    ];
+
+    #[test]
+    fn hook_enums_name_for_name_match_the_previous_string_tables() {
+        assert_eq!(SessionHook::NAMES, PREVIOUS_SESSION_HOOKS);
+        assert_eq!(WindowHook::NAMES, PREVIOUS_WINDOW_HOOKS);
+        assert_eq!(PaneHook::NAMES, PREVIOUS_PANE_HOOKS);
+    }
+
+    #[test]
+    fn every_hook_variant_round_trips_through_its_name() {
+        fn round_trip<H: HookName + std::fmt::Debug>() {
+            for name in H::NAMES {
+                let hook = H::from_name(name).unwrap_or_else(|| panic!("{name} has no variant"));
+                assert_eq!(hook.as_str(), *name);
+                let any = AnyHook::from_name(name).expect("catalogued");
+                assert_eq!(any.as_str(), *name);
+                assert_eq!(option_scope(name), Some(any.scope()), "{name}");
+                assert!(is_hook(name), "{name}");
+            }
+        }
+        round_trip::<SessionHook>();
+        round_trip::<WindowHook>();
+        round_trip::<PaneHook>();
+        assert_eq!(
+            SessionHook::NAMES.len() + WindowHook::NAMES.len() + PaneHook::NAMES.len(),
+            68
+        );
+    }
+
+    #[test]
+    fn hook_members_are_stored_compiled_and_read_back_in_index_order() {
+        let compile = |source: &str| ExecutableCommand::compile(source, &[]).expect("compiles");
+        let name = SessionHook::AfterNewWindow.as_str();
+        let mut store = OptionSet::default();
+
+        // A bare name replaces the array, so the body lands on member 0 and the
+        // printed form is the canonical one rather than what was written.
+        set_hook_in(&mut store, name, None, false, compile("neww -dP"));
+        assert_eq!(store.get(&format!("{name}[0]")), Some("new-window -Pd"));
+
+        // `-a` adds a member instead; members past nine still read back in
+        // numeric order, the way tmux walks its index-keyed array.
+        for index in 1..12 {
+            set_hook_in(
+                &mut store,
+                name,
+                None,
+                true,
+                compile(&format!("display-message {index}")),
+            );
+        }
+        let printed = store
+            .array_commands(name)
+            .into_iter()
+            .map(ExecutableCommand::print)
+            .collect::<Vec<_>>();
+        assert_eq!(printed[0], "new-window -Pd");
+        assert_eq!(printed[10], "display-message 10");
+        assert_eq!(printed.len(), 12);
+
+        // An index names one member outright, and unsetting one leaves a gap
+        // the walk skips.
+        set_hook_in(&mut store, name, Some(3), false, compile("kill-pane"));
+        assert_eq!(store.get(&format!("{name}[3]")), Some("kill-pane"));
+        unset_hook_in(&mut store, name, Some(3));
+        assert_eq!(store.array_commands(name).len(), 11);
+        unset_hook_in(&mut store, name, None);
+        assert!(store.array_commands(name).is_empty());
+        assert!(!store.contains_array(name));
+    }
+
+    #[test]
+    fn hook_bodies_resolve_through_the_most_local_layer_holding_the_array() {
+        let compile = |source: &str| ExecutableCommand::compile(source, &[]).expect("compiles");
+        let name = PaneHook::TitleChanged.as_str();
+        let mut global = OptionSet::default();
+        set_hook_in(&mut global, name, None, false, compile("display-message g"));
+        let mut window = OptionSet::default();
+        let mut pane = OptionSet::default();
+
+        let printed = |view: OptionsView<'_>| {
+            view.array_commands(name)
+                .into_iter()
+                .map(ExecutableCommand::print)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            printed(OptionsView::three(&pane, &window, &global)),
+            ["display-message g"]
+        );
+
+        set_hook_in(&mut window, name, None, false, compile("display-message w"));
+        assert_eq!(
+            printed(OptionsView::three(&pane, &window, &global)),
+            ["display-message w"]
+        );
+
+        set_hook_in(&mut pane, name, None, false, compile("display-message p"));
+        assert_eq!(
+            printed(OptionsView::three(&pane, &window, &global)),
+            ["display-message p"]
+        );
+
+        // An array that exists but is empty still shadows the layers behind it.
+        unset_hook_in(&mut pane, name, None);
+        pane.set(name, "");
+        assert!(printed(OptionsView::three(&pane, &window, &global)).is_empty());
+    }
+
+    #[test]
+    fn names_outside_the_catalog_are_not_hooks() {
+        for name in ["after-kill-session", "pane-renamed", "not-a-hook", "status"] {
+            assert_eq!(AnyHook::from_name(name), None, "{name}");
+            assert!(!is_hook(name), "{name}");
         }
     }
 

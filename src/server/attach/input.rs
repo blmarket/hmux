@@ -251,9 +251,9 @@ impl AttachSession {
                 }
                 *force_render = true;
             }
-            PrefixOutcome::DeferredCommand { args, context } => {
+            PrefixOutcome::DeferredCommand { command, context } => {
                 self.commands.pending.push_back(AttachCommandRequest {
-                    source: command::DeferredCommand::Args(args),
+                    source: command::DeferredCommand::Command(command),
                     context,
                     continuation: AttachCommandContinuation::PrefixBinding {
                         target: target.to_string(),
@@ -264,14 +264,14 @@ impl AttachSession {
                 return BindingFlow::Break;
             }
             PrefixOutcome::DeferredMessage {
-                args,
+                command,
                 context,
                 target,
                 escape_hashes,
                 explicit_duration,
             } => {
                 self.commands.pending.push_back(AttachCommandRequest {
-                    source: command::DeferredCommand::Args(args),
+                    source: command::DeferredCommand::Command(command),
                     context,
                     continuation: AttachCommandContinuation::Message {
                         target,
@@ -670,7 +670,7 @@ impl AttachSession {
                             .take()
                             .expect("overlay checked");
                         self.commands.pending.push_back(AttachCommandRequest {
-                            source: command::DeferredCommand::Args(command.clone()),
+                            source: command::DeferredCommand::Argv(command.clone()),
                             context: self.compositor.target.context.clone(),
                             continuation: AttachCommandContinuation::Overlay {
                                 overlay: Box::new(overlay),
@@ -775,7 +775,7 @@ impl AttachSession {
                         self.viewport.pane_rows,
                     ) {
                         self.commands.pending.push_back(AttachCommandRequest {
-                            source: command::DeferredCommand::Args(command),
+                            source: command::DeferredCommand::Argv(command),
                             context: self.compositor.target.context.clone(),
                             continuation: AttachCommandContinuation::Confirm {
                                 reply,
@@ -806,7 +806,7 @@ impl AttachSession {
                     match outcome {
                         ModeViewKeyResult::Command(command) if !command.is_empty() => {
                             self.commands.pending.push_back(AttachCommandRequest {
-                                source: command::DeferredCommand::Args(command),
+                                source: command::DeferredCommand::Argv(command),
                                 context: self.compositor.target.context.clone(),
                                 continuation: AttachCommandContinuation::Ignore,
                             });

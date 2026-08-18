@@ -728,7 +728,7 @@ impl AttachSession {
                         // ordinary command line and may suspend. The file it
                         // reads is removed by the continuation, once it has.
                         self.commands.pending.push_back(AttachCommandRequest {
-                            source: command::DeferredCommand::Args(command),
+                            source: command::DeferredCommand::Argv(command),
                             context: self.compositor.target.context.clone(),
                             continuation: AttachCommandContinuation::CloseHook { remove },
                         });

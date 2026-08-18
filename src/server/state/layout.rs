@@ -10,6 +10,7 @@ use std::io;
 use super::copy::reflow_copy_snapshot;
 use super::target::pane_not_found;
 use super::{RenderInvalidation, ServerState, Window};
+use crate::server::options::WindowHook;
 
 /// Direction used by the attach compositor for an evenly divided window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1117,8 +1118,8 @@ impl ServerState {
         }
         // tmux notifies twice for a named layout: once from `layout_set_*` when
         // the cells are rebuilt, and once from the command itself.
-        self.notify_window("window-layout-changed", window_id);
-        self.notify_window("window-layout-changed", window_id);
+        self.notify_window(WindowHook::LayoutChanged, window_id);
+        self.notify_window(WindowHook::LayoutChanged, window_id);
         Ok(())
     }
 
@@ -1168,7 +1169,7 @@ impl ServerState {
                     RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
                 );
             }
-            self.notify_window("window-layout-changed", window_id);
+            self.notify_window(WindowHook::LayoutChanged, window_id);
         }
         Ok(())
     }
@@ -1229,7 +1230,7 @@ impl ServerState {
                 RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
             );
         }
-        self.notify_window("window-layout-changed", window_id);
+        self.notify_window(WindowHook::LayoutChanged, window_id);
         Ok(())
     }
 }

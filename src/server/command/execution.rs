@@ -132,8 +132,8 @@ impl RunShell {
             if let Some(line) = self.command.clone() {
                 result
                     .background_commands
-                    .push(BackgroundCommandRequest::Ready {
-                        command: Some(line),
+                    .push(BackgroundCommandRequest::Command {
+                        command: LazyCommand::Line(line),
                         context: context.client().clone(),
                     });
             }
@@ -212,7 +212,8 @@ fn finish_run_shell(completion: RunShellCompletion, state: &mut ServerState) -> 
 /// `if-shell [-bF] [-t target-pane] shell-command command [command]`.
 #[derive(Clone, Debug)]
 pub(in crate::server) struct IfShell {
-    /// `-b`: run the condition as a detached job.
+    /// `-b`: run the condition as a detached job. A `-F` condition has no job,
+    /// so tmux's `-F` path never consults this flag and neither does ours.
     background: bool,
     /// `-F`: the condition is a format, not a shell command.
     format: bool,
@@ -281,15 +282,6 @@ impl IfShell {
         };
         if self.format {
             let matched = self.matches_format(condition, context);
-            if self.background {
-                let request = BackgroundCommandRequest::Ready {
-                    command: self.branch(matched).map(str::to_string),
-                    context: context.client().clone(),
-                };
-                let mut result = CommandResult::ok("");
-                result.background_commands.push(request);
-                return SharedCommandExecution::completed(result);
-            }
             return self.plan_branch(matched, context);
         }
         let condition = {

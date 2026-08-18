@@ -22,6 +22,7 @@ use super::{
     ClientMessageResult, MessageLogEntry, OverlayRequest, ServerState, DEFAULT_KEY_TABLE,
 };
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
+use crate::server::options::SessionHook;
 use crate::server::pane::NativePaneObservation;
 use crate::server::term::ResolvedTerm;
 use crate::sync::{completion_pair, Completion, CompletionSender};
@@ -2084,9 +2085,9 @@ impl ServerState {
         let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
         self.notify_client(
             if focused {
-                "client-focus-in"
+                SessionHook::ClientFocusIn
             } else {
-                "client-focus-out"
+                SessionHook::ClientFocusOut
             },
             client,
             Some(session_id),
@@ -2107,9 +2108,9 @@ impl ServerState {
         let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
         self.notify_client(
             if theme == "dark" {
-                "client-dark-theme"
+                SessionHook::ClientDarkTheme
             } else {
-                "client-light-theme"
+                SessionHook::ClientLightTheme
             },
             client,
             Some(session_id),
@@ -2330,7 +2331,7 @@ impl ServerState {
             let _ = self.recalculate_sizes();
         }
         let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
-        self.notify_client("client-active", client, Some(session_id));
+        self.notify_client(SessionHook::ClientActive, client, Some(session_id));
         self.notifications_are_deferred = was_deferred;
     }
 
@@ -2343,7 +2344,7 @@ impl ServerState {
     /// reports the session moves nothing calls this for.
     fn announce_client_session(&mut self, client: &str, session_id: u32) {
         let was_deferred = std::mem::replace(&mut self.notifications_are_deferred, true);
-        self.notify_client("client-session-changed", client, Some(session_id));
+        self.notify_client(SessionHook::ClientSessionChanged, client, Some(session_id));
         self.notifications_are_deferred = was_deferred;
         self.take_session_for_client(session_id);
         if let Some(known) = self.known_clients.get_mut(client) {

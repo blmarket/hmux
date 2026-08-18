@@ -20,6 +20,43 @@ use super::{
     tokenized_command_groups, unknown_bind_key_flag, unknown_flag,
 };
 use crate::server::registry::{self, CommandSpec, SpecResolution};
+use crate::server::state::SharedState;
+
+/// A command line that may still be waiting to be compiled: hmux's
+/// `struct args_command_state`.
+///
+/// Deferred work — a `-b` command, a key binding the attached client hands
+/// back to the queue — carries this instead of an argv, so the moment of
+/// compilation is part of the value rather than a property of the caller:
+///
+/// * [`LazyCommand::Compiled`] was parsed where it was written or stored — a
+///   hook body at `set-hook` time, a binding body at `bind-key` time — and
+///   fires exactly as it was compiled, whatever `command-alias` says later.
+/// * [`LazyCommand::Line`] is still text, so its aliases, its command names,
+///   and its parse errors all resolve when it fires. `run-shell -b` and
+///   `if-shell -b` branches are this, as they are in tmux.
+#[derive(Clone, Debug)]
+pub(crate) enum LazyCommand {
+    Compiled(ExecutableCommand),
+    Line(String),
+}
+
+impl LazyCommand {
+    /// The compiled line, compiling the text form against the server's current
+    /// `command-alias` table if that is what this still is.
+    pub(crate) fn compile(self, state: &SharedState) -> Result<ExecutableCommand, String> {
+        match self {
+            Self::Compiled(command) => Ok(command),
+            Self::Line(line) => {
+                let aliases = {
+                    let state = state.borrow_mut();
+                    state.command_aliases()
+                };
+                ExecutableCommand::compile(&line, &aliases)
+            }
+        }
+    }
+}
 
 /// One command of a command line, ready to run.
 ///

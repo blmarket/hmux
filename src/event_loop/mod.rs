@@ -21,8 +21,8 @@ pub(crate) mod test_driver {
     use std::time::{Duration, Instant};
 
     use crate::server::command::{
-        self, BackgroundCommand, BackgroundCommandRequest, CommandResult, PendingBackground,
-        ResumableCommandQueue,
+        self, BackgroundCommand, BackgroundCommandRequest, CommandResult, LazyCommand,
+        PendingBackground, ResumableCommandQueue,
     };
     use crate::server::state::SharedState;
     use crate::sync::{completion_pair, Completion, WakeFn};
@@ -126,24 +126,24 @@ pub(crate) mod test_driver {
                         crate::server::command::suspend::if_shell(&tasks, condition, job_context)
                             .await
                     });
-                    let command = if matched { then_command } else { else_command };
-                    (BackgroundCommand::Line(command), context)
+                    let Some(branch) = (if matched { then_command } else { else_command }) else {
+                        return;
+                    };
+                    (
+                        BackgroundCommand::Command(LazyCommand::Line(branch)),
+                        context,
+                    )
                 }
             };
             let queue = match command {
-                BackgroundCommand::Line(command) => {
-                    let Some(command) = command.filter(|line| !line.trim().is_empty()) else {
+                BackgroundCommand::Command(command) => {
+                    let Ok(compiled) = command.compile(state) else {
                         return;
                     };
-                    crate::server::command::start_resumable_command_string(
-                        &command, state, agents, &context,
-                    )
-                }
-                BackgroundCommand::Args(args) => {
-                    if args.is_empty() {
+                    if compiled.is_empty() {
                         return;
                     }
-                    crate::server::command::start_resumable_command(&args, state, agents, &context)
+                    crate::server::command::start_compiled_command(compiled, agents, &context)
                 }
                 BackgroundCommand::RunShell { command, jobs } => {
                     self.drive_task_future(|tasks| async move {
@@ -155,7 +155,6 @@ pub(crate) mod test_driver {
                     return;
                 }
             };
-            let Ok(queue) = queue else { return };
             let mut result = self.run_queue(queue, state);
             for request in result.background_commands.drain(..) {
                 self.run_background(request, state, agents);

@@ -107,11 +107,11 @@ pub(super) enum PrefixOutcome {
         args: Vec<String>,
     },
     DeferredCommand {
-        args: Vec<String>,
+        command: command::LazyCommand,
         context: command::ClientContext,
     },
     DeferredMessage {
-        args: Vec<String>,
+        command: command::LazyCommand,
         context: command::ClientContext,
         target: String,
         escape_hashes: bool,
@@ -147,8 +147,10 @@ pub(super) fn dispatch_key_binding(
     };
     // The attached client answers a few bindings itself rather than queueing
     // them, and decides from the words; the compiled body prints back as the
-    // argv the command path would have re-parsed.
+    // argv the command path would have re-parsed; what dispatch defers is the
+    // binding as it was bound.
     let mut words = binding.command.argv();
+    let mut deferred = command::LazyCommand::Compiled(binding.command);
     // The default mouse bindings guard their real command behind `if-shell -F`,
     // so resolve that here: the branch may be a client-local outcome the
     // command interpreter has no way to express.
@@ -157,9 +159,13 @@ pub(super) fn dispatch_key_binding(
         binding_context.key_event = Some(key);
         binding_context.mouse = mouse.clone();
         let agents = hub.snapshot().panes;
-        {
+        let branch = {
             let mut st = state.borrow_mut();
-            words = command::resolve_conditional_binding(words, &mut st, &agents, &binding_context);
+            command::resolve_conditional_binding(&words, &mut st, &agents, &binding_context)
+        };
+        if let Some(branch) = branch {
+            words = command::binding_words(&branch);
+            deferred = command::LazyCommand::Line(branch);
         }
     }
     let Some(command_name) = words.first().map(String::as_str) else {
@@ -203,17 +209,24 @@ pub(super) fn dispatch_key_binding(
             if !words.iter().any(|word| word == ";")
                 && !words.iter().any(|word| word == "-p") =>
         {
-            let mut command = words.clone();
-            command.insert(1, "-p".to_string());
+            let mut argv = words.clone();
+            argv.insert(1, "-p".to_string());
             let explicit_duration = words
                 .windows(2)
                 .find(|words| words[0] == "-d")
                 .and_then(|words| words[1].parse::<u64>().ok());
+            let aliases = {
+                let st = state.borrow_mut();
+                st.command_aliases()
+            };
+            let Ok(compiled) = command::ExecutableCommand::compile_argv(&argv, &aliases) else {
+                return PrefixOutcome::Handled { changed: false };
+            };
             let mut binding_context = context.clone();
             binding_context.key_event = Some(key);
             binding_context.mouse = mouse;
             return PrefixOutcome::DeferredMessage {
-                args: command,
+                command: command::LazyCommand::Compiled(compiled),
                 context: binding_context,
                 target: target.to_string(),
                 escape_hashes: words.iter().any(|word| word == "-N"),
@@ -252,7 +265,7 @@ pub(super) fn dispatch_key_binding(
     binding_context.key_event = Some(key);
     binding_context.mouse = mouse;
     PrefixOutcome::DeferredCommand {
-        args: words,
+        command: deferred,
         context: binding_context,
     }
 }
@@ -309,9 +322,11 @@ pub(in crate::server) fn dispatch_control_client_keys(
                     let _ = state.input_to_active_pane(target, &bytes);
                 }
                 PrefixOutcome::CopyMode(action) => action.apply(state, target),
-                PrefixOutcome::DeferredCommand { args, context }
-                | PrefixOutcome::DeferredMessage { args, context, .. } => {
-                    deferred.push(command::BackgroundCommandRequest::ReadyArgs { args, context });
+                PrefixOutcome::DeferredCommand { command, context }
+                | PrefixOutcome::DeferredMessage {
+                    command, context, ..
+                } => {
+                    deferred.push(command::BackgroundCommandRequest::Command { command, context });
                 }
                 PrefixOutcome::Confirm { .. }
                 | PrefixOutcome::Prompt { .. }
@@ -347,10 +362,10 @@ pub(super) fn dispatch_prefix_key(
         &context,
         None,
     );
-    let PrefixOutcome::DeferredCommand { args, context } = outcome else {
+    let PrefixOutcome::DeferredCommand { command, context } = outcome else {
         return outcome;
     };
-    let result = command::run_with_context(&args, state, &hub.snapshot().panes, &context);
+    let result = command::run_lazy_with_context(command, state, &hub.snapshot().panes, &context);
     let changed = result.exit == 0;
     if changed {
         let mut st = state.borrow_mut();

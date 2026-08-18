@@ -28,7 +28,7 @@ pub(in crate::server) mod windows;
 
 pub(in crate::server) use identity::Command;
 
-pub(crate) use executable::ExecutableCommand;
+pub(crate) use executable::{ExecutableCommand, LazyCommand};
 use executable::ParsedCommand;
 
 /// The tests that drive a job the way a command would need to build one.
@@ -77,8 +77,17 @@ const NEW_WINDOW_TEMPLATE: &str = "#{session_name}:#{window_index}.#{pane_index}
 const DISPLAY_MESSAGE_TEMPLATE: &str = "[#{session_name}] #{window_index}:#{window_name}, current pane #{pane_index} - (%H:%M %d-%b-%y)";
 const NEW_SESSION_MAX_SIZE: u16 = 10_000;
 
+/// A command line the attached client hands back to the queue rather than
+/// running where it was resolved.
 pub(crate) enum DeferredCommand {
-    Args(Vec<String>),
+    /// A stored command line, compiled where it was written or still text (see
+    /// [`LazyCommand`]).
+    Command(LazyCommand),
+    /// Words that arrived already split: a menu or mode item's stored argv, a
+    /// popup's close hook. The argv edge, compiled when the queue starts.
+    Argv(Vec<String>),
+    /// A prompt's answer, plus the words the client typed after it: two lexers,
+    /// compiled separately and run as one line.
     Line { line: String, tail: Vec<String> },
 }
 
@@ -508,7 +517,7 @@ pub fn run(args: &[String], state: &SharedState, agents: &PaneAgents) -> Command
     let context = ClientContext::default();
     let mut driver =
         crate::event_loop::test_driver::LoopCommandDriver::new().expect("command test loop");
-    let mut result = match start_resumable_command(args, state, agents, &context) {
+    let mut result = match start_resumable_command_argv(args, state, agents, &context) {
         Ok(queue) => driver.run_queue(queue, state),
         Err(result) => result,
     };
@@ -538,6 +547,24 @@ pub(crate) fn uses_client_file_protocol(args: &[String]) -> bool {
     }
 }
 
+/// Run a deferred command line to completion on the calling thread. Test
+/// scaffolding standing in for the loop that would have started its queue.
+#[cfg(test)]
+pub(crate) fn run_lazy_with_context(
+    command: LazyCommand,
+    state: &SharedState,
+    agents: &PaneAgents,
+    context: &ClientContext,
+) -> CommandResult {
+    let queue = match start_resumable_command(command, state, agents, context) {
+        Ok(queue) => queue,
+        Err(error) => return error,
+    };
+    crate::event_loop::test_driver::LoopCommandDriver::new()
+        .expect("command test loop")
+        .run_queue(queue, state)
+}
+
 /// Run a command line to completion on the calling thread. Test scaffolding;
 /// the server drives the same queue through the loop.
 #[cfg(test)]
@@ -547,7 +574,7 @@ pub fn run_with_context(
     agents: &PaneAgents,
     context: &ClientContext,
 ) -> CommandResult {
-    let queue = match start_resumable_command(args, state, agents, context) {
+    let queue = match start_resumable_command_argv(args, state, agents, context) {
         Ok(queue) => queue,
         Err(error) => return error,
     };
@@ -569,7 +596,24 @@ pub(crate) fn start_compiled_command(
     ResumableCommandQueue::new(command, agents, context)
 }
 
+/// Start a queue on deferred work: a body compiled where it was stored runs as
+/// it was compiled, a line still kept as text is compiled here.
 pub(crate) fn start_resumable_command(
+    command: LazyCommand,
+    state: &SharedState,
+    agents: &PaneAgents,
+    context: &ClientContext,
+) -> Result<ResumableCommandQueue, CommandResult> {
+    let compiled = command.compile(state).map_err(CommandResult::err)?;
+    Ok(ResumableCommandQueue::new(compiled, agents, context))
+}
+
+/// Start a queue on a line that arrived already split into words.
+///
+/// The argv edge: a command client's operands, a menu or mode item's stored
+/// words, the test scaffolding. Everything that *stores* a command line keeps
+/// a [`LazyCommand`] and goes through [`start_resumable_command`] instead.
+pub(crate) fn start_resumable_command_argv(
     args: &[String],
     state: &SharedState,
     agents: &PaneAgents,
@@ -580,20 +624,6 @@ pub(crate) fn start_resumable_command(
         state.command_aliases()
     };
     let compiled = ExecutableCommand::compile_argv(args, &aliases).map_err(CommandResult::err)?;
-    Ok(ResumableCommandQueue::new(compiled, agents, context))
-}
-
-pub(crate) fn start_resumable_command_string(
-    line: &str,
-    state: &SharedState,
-    agents: &PaneAgents,
-    context: &ClientContext,
-) -> Result<ResumableCommandQueue, CommandResult> {
-    let aliases = {
-        let state = state.borrow_mut();
-        state.command_aliases()
-    };
-    let compiled = ExecutableCommand::compile(line, &aliases).map_err(CommandResult::err)?;
     Ok(ResumableCommandQueue::new(compiled, agents, context))
 }
 
@@ -769,7 +799,6 @@ enum SharedQueueItem {
         queue: Box<ResumableCommandQueue>,
         capture: NestedCapture,
     },
-    CapturedResult(CommandResult),
     EndHook {
         name: String,
     },
@@ -799,12 +828,10 @@ pub(crate) struct ResumableCommandQueue {
 }
 
 pub(crate) enum BackgroundCommandRequest {
-    Ready {
-        command: Option<String>,
-        context: ClientContext,
-    },
-    ReadyArgs {
-        args: Vec<String>,
+    /// A command line to run detached, carrying with it whether it was already
+    /// compiled where it was stored or is still text to compile when it fires.
+    Command {
+        command: LazyCommand,
         context: ClientContext,
     },
     IfShell {
@@ -835,11 +862,8 @@ pub(crate) enum PendingBackground {
 impl BackgroundCommandRequest {
     pub(crate) fn into_pending(self) -> PendingBackground {
         match self {
-            Self::Ready { command, context } => {
-                PendingBackground::Ready(BackgroundCommand::Line(command), context)
-            }
-            Self::ReadyArgs { args, context } => {
-                PendingBackground::Ready(BackgroundCommand::Args(args), context)
+            Self::Command { command, context } => {
+                PendingBackground::Ready(BackgroundCommand::Command(command), context)
             }
             Self::IfShell {
                 condition,
@@ -861,9 +885,10 @@ impl BackgroundCommandRequest {
     }
 }
 
+/// What a detached queue starts from, once an `if-shell -b` condition (if any)
+/// has picked its branch.
 pub(crate) enum BackgroundCommand {
-    Line(Option<String>),
-    Args(Vec<String>),
+    Command(LazyCommand),
     RunShell {
         command: execution::RunShell,
         jobs: Rc<BackgroundJobRegistry>,
@@ -1139,15 +1164,6 @@ impl ResumableCommandQueue {
                     });
                     continue;
                 }
-                SharedQueueItem::CapturedResult(result) => {
-                    let stops_group = result.exit != 0 && !result.continue_queue;
-                    self.capture_nested_result(result, NestedCapture::Hook);
-                    self.queue.complete(queue::QueueCompletion {
-                        discard_group_tail: stops_group,
-                        insert_next: Vec::new(),
-                    });
-                    continue;
-                }
                 SharedQueueItem::EndHook { name } => {
                     {
                         let mut state = state.borrow_mut();
@@ -1264,7 +1280,11 @@ impl ResumableCommandQueue {
         let mut planned = Vec::new();
         for command in commands {
             let compiled = match command {
-                DeferredCommand::Args(args) => {
+                DeferredCommand::Command(LazyCommand::Compiled(compiled)) => compiled,
+                DeferredCommand::Command(LazyCommand::Line(line)) => {
+                    ExecutableCommand::compile(&line, &aliases).map_err(CommandResult::err)?
+                }
+                DeferredCommand::Argv(args) => {
                     ExecutableCommand::compile_argv(&args, &aliases).map_err(CommandResult::err)?
                 }
                 DeferredCommand::Line { line, tail } => {
@@ -1439,7 +1459,7 @@ impl ResumableCommandQueue {
         capture: NestedCapture,
         origin: HookOrigin,
     ) -> Vec<Vec<SharedQueueItem>> {
-        let (commands, aliases) = {
+        let commands = {
             let mut state = {
                 let state = state.borrow_mut();
                 state
@@ -1450,7 +1470,7 @@ impl ResumableCommandQueue {
             let Some(commands) = commands else {
                 return Vec::new();
             };
-            (commands, state.command_aliases())
+            commands
         };
 
         let mut hook_context = self.context.clone();
@@ -1478,31 +1498,23 @@ impl ResumableCommandQueue {
             hook_context.frame.nested_granularity = true;
         }
         let mut groups = Vec::new();
-        for line in commands {
-            match ExecutableCommand::compile(&line, &aliases) {
-                Ok(compiled) if !compiled.is_empty() => {
-                    groups.push(
-                        compiled
-                            .split()
-                            .into_iter()
-                            .map(|command| SharedQueueItem::NestedCommand {
-                                queue: Box::new(ResumableCommandQueue::new(
-                                    command,
-                                    &self.agents,
-                                    &hook_context,
-                                )),
-                                capture,
-                            })
-                            .collect(),
-                    );
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    let mut result = CommandResult::err(error);
-                    result.continue_queue = true;
-                    groups.push(vec![SharedQueueItem::CapturedResult(result)]);
-                }
+        for body in commands {
+            if body.is_empty() {
+                continue;
             }
+            groups.push(
+                body.split()
+                    .into_iter()
+                    .map(|command| SharedQueueItem::NestedCommand {
+                        queue: Box::new(ResumableCommandQueue::new(
+                            command,
+                            &self.agents,
+                            &hook_context,
+                        )),
+                        capture,
+                    })
+                    .collect(),
+            );
         }
         if matches!(origin, HookOrigin::Command) {
             groups.push(vec![SharedQueueItem::EndHook {
@@ -1713,11 +1725,11 @@ fn push_event_hook(
     context.frame.suppress_after_hooks = true;
     context.frame.suppress_notifications = true;
     for command in commands {
-        if command.trim().is_empty() {
+        if command.is_empty() {
             continue;
         }
-        requests.push(BackgroundCommandRequest::Ready {
-            command: Some(command),
+        requests.push(BackgroundCommandRequest::Command {
+            command: LazyCommand::Compiled(command),
             context: context.clone(),
         });
     }
@@ -1733,15 +1745,18 @@ enum HookOrigin {
     Event,
 }
 
+/// The compiled bodies a hook fires, in array-index order, resolved through the
+/// target's own option layers.
+///
+/// The bodies were compiled when they were set, so a fire hands the queue
+/// clones of the stored [`ExecutableCommand`]s rather than re-parsing text.
 fn hook_commands(
     hook: &str,
     requested_target: Option<&str>,
     st: &mut ServerState,
     origin: HookOrigin,
-) -> Option<Vec<String>> {
-    if !options::is_hook(hook) {
-        return None;
-    }
+) -> Option<Vec<ExecutableCommand>> {
+    let name = options::AnyHook::from_name(hook)?;
     if matches!(origin, HookOrigin::Command) && !st.begin_hook(hook) {
         return None;
     }
@@ -1751,20 +1766,19 @@ fn hook_commands(
         .or_else(|| current_target(st));
     let commands = target
         .as_deref()
-        .and_then(|target| match options::option_scope(hook) {
-            Some(OptionScope::Session) => st.session_options(target).ok(),
-            Some(OptionScope::Window) => st.window_options(target).ok(),
-            Some(OptionScope::WindowPane) => st.pane_options(target).ok(),
-            _ => None,
+        .and_then(|target| match name.scope() {
+            OptionScope::Session => st.session_options(target).ok(),
+            OptionScope::Window => st.window_options(target).ok(),
+            OptionScope::WindowPane => st.pane_options(target).ok(),
+            OptionScope::Server => None,
         })
-        .into_iter()
-        .flat_map(|view| view.iter_effective())
-        .filter(|(name, _)| {
-            options::parse_option_name(name)
-                .is_some_and(|(base, index)| base == hook && index.is_some())
+        .map(|view| {
+            view.array_commands(name.as_str())
+                .into_iter()
+                .cloned()
+                .collect()
         })
-        .map(|(_, value)| value.to_string())
-        .collect::<Vec<_>>();
+        .unwrap_or_default();
     Some(commands)
 }
 
@@ -3597,24 +3611,33 @@ impl RunShellCompletion {
     }
 }
 
-/// {send -M} {copy-mode -M}`, and the branch decides between a client-local
-/// outcome (entering copy mode, resizing) and an ordinary command. Resolving
-/// the condition before dispatch is what lets the attach loop keep handling
-/// those outcomes itself instead of losing them inside the command interpreter.
+/// Resolve a binding whose real command sits behind an `if-shell -F` guard,
+/// the shape the default mouse bindings take: `if -F ... {send -M}
+/// {copy-mode -M}`, where the branch decides between a client-local outcome
+/// (entering copy mode, resizing) and an ordinary command. Resolving the
+/// condition before dispatch is what lets the attach loop keep handling those
+/// outcomes itself instead of losing them inside the command interpreter.
+///
+/// The chosen branch comes back as the text it was written as — tmux compiles
+/// a string branch when it runs it, so a `;` inside the branch splits there and
+/// nowhere earlier. `None` means the binding is not a client-side guard at all
+/// and stands exactly as it was bound; a guard that chose no branch answers
+/// with the empty line, which runs nothing.
 pub(super) fn resolve_conditional_binding(
-    command: Vec<String>,
+    command: &[String],
     st: &mut ServerState,
     agents: &PaneAgents,
     context: &ClientContext,
-) -> Vec<String> {
+) -> Option<String> {
+    let mut words = command.to_vec();
+    let mut resolved = None;
     // Bounded: a binding that somehow nests conditionals forever must not hang
     // the client's input loop.
-    let mut command = command;
     for _ in 0..4 {
-        if !matches!(command.first().map(String::as_str), Some("if-shell" | "if")) {
+        if !matches!(words.first().map(String::as_str), Some("if-shell" | "if")) {
             break;
         }
-        let args = ParsedArgs::lex("if-shell", &normalize_argv("if-shell", &command));
+        let args = ParsedArgs::lex("if-shell", &normalize_argv("if-shell", &words));
         if !args.has('F') || args.has('b') {
             break;
         }
@@ -3630,9 +3653,11 @@ pub(super) fn resolve_conditional_binding(
         } else {
             positional.get(2)
         };
-        command = branch.map(|line| binding_words(line)).unwrap_or_default();
+        let branch = branch.map(|line| (*line).to_string()).unwrap_or_default();
+        words = binding_words(&branch);
+        resolved = Some(branch);
     }
-    command
+    resolved
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4241,7 +4266,7 @@ mod tests {
             kind: ClientKind::Command,
             ..ClientContext::default()
         };
-        let queue = match start_resumable_command(
+        let queue = match start_resumable_command_argv(
             &["command-prompt".to_string()],
             &state,
             &PaneAgents::new(),

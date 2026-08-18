@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 use std::io;
 
 use super::layout::{resize_panes_to_layout, WINDOW_MAXIMUM, WINDOW_MINIMUM};
+use crate::server::options::WindowHook;
 use super::{
     ClientActionResult, PaneBorderStatus, PaneNode, PaneScrollbar, RenderInvalidation, ServerState,
     Session, ViewportClient,
@@ -570,8 +571,8 @@ impl ServerState {
                 RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
             );
         }
-        self.notify_window("window-layout-changed", window_id);
-        self.notify_window("window-resized", window_id);
+        self.notify_window(WindowHook::LayoutChanged, window_id);
+        self.notify_window(WindowHook::Resized, window_id);
         result
     }
 

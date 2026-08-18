@@ -226,12 +226,26 @@ impl EventAttachClient {
         loop {
             let request = self.session.take_command_request()?;
             let agents = self.hub.snapshot().panes;
-            let queue = match &request.source {
-                command::DeferredCommand::Args(args) => {
-                    tracing::debug!(?args, "starting attached-client command");
-                    command::start_resumable_command(args, &self.state, &agents, &request.context)
+            let queue = match request.source {
+                command::DeferredCommand::Command(command) => {
+                    tracing::debug!("starting attached-client command");
+                    command::start_resumable_command(
+                        command,
+                        &self.state,
+                        &agents,
+                        &request.context,
+                    )
                 }
-                command::DeferredCommand::Line { line, tail } => {
+                command::DeferredCommand::Argv(ref args) => {
+                    tracing::debug!(?args, "starting attached-client command");
+                    command::start_resumable_command_argv(
+                        args,
+                        &self.state,
+                        &agents,
+                        &request.context,
+                    )
+                }
+                command::DeferredCommand::Line { ref line, ref tail } => {
                     tracing::debug!(line, ?tail, "starting attached-client command line");
                     command::start_resumable_command_string_with_tail(
                         line,

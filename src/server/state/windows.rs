@@ -16,7 +16,7 @@ use super::{
     fill_spawn_ids, now_epoch, now_micros, LayoutCell, Pane, PaneNode, RenderInvalidation,
     ServerState, Session, Window, Winlink, ALERT_ACTIVITY, ALERT_BELL, ALERT_SILENCE,
 };
-use crate::server::options::OptionSet;
+use crate::server::options::{OptionSet, SessionHook, WindowHook};
 
 impl ServerState {
     pub(crate) fn window(&self, session: usize, window: usize) -> &Window {
@@ -238,7 +238,7 @@ impl ServerState {
         Self::select_window_position(session, position);
         if session.active != previous {
             let session_id = session.id;
-            self.notify_session("session-window-changed", session_id);
+            self.notify_session(SessionHook::SessionWindowChanged, session_id);
             // tmux's `session_select` tail: a selection runs
             // `window_update_activity`, so the alert check fires again and an
             // unattached session's monitor-activity re-flags even the winlink
@@ -354,7 +354,7 @@ impl ServerState {
                 .expect("inserted winlink is present");
             (member.id, link.id)
         };
-        self.notify_session_window("window-linked", session_id, window_id);
+        self.notify_session_window(SessionHook::WindowLinked, session_id, window_id);
         if select || !had_windows {
             let new_active = self.sessions[session]
                 .windows
@@ -371,7 +371,7 @@ impl ServerState {
         let removed = links.remove(position);
         Self::install_links_by_index(&mut self.sessions[session], links);
         self.synchronize_group_from(session);
-        self.notify_session_window("window-unlinked", session_id, removed.id);
+        self.notify_session_window(SessionHook::WindowUnlinked, session_id, removed.id);
         removed
     }
 
@@ -829,7 +829,7 @@ impl ServerState {
         // window to the name it already has raises the hook again. The
         // automatic-rename pass compares before it gets here, which is where
         // tmux's own unchanged-name filter lives too.
-        self.notify_window("window-renamed", window_id);
+        self.notify_window(WindowHook::Renamed, window_id);
         Ok(())
     }
 
@@ -887,7 +887,7 @@ impl ServerState {
         // Named while the window is still known, but reported per session it
         // was linked into, exactly as tmux's `session_detach` does.
         for session_id in &affected {
-            self.notify_session_window("window-unlinked", *session_id, window_id);
+            self.notify_session_window(SessionHook::WindowUnlinked, *session_id, window_id);
         }
         self.sessions.retain(|session| !session.windows.is_empty());
         self.windows.remove(&window_id);
@@ -1376,18 +1376,23 @@ impl ServerState {
     /// the hook and the user-visible notification follow.
     fn deliver_alert(&mut self, window_id: u32, bit: u8) -> bool {
         let (label, action_option, visual_option, hook) = match bit {
-            ALERT_BELL => ("Bell", "bell-action", "visual-bell", "alert-bell"),
+            ALERT_BELL => (
+                "Bell",
+                "bell-action",
+                "visual-bell",
+                SessionHook::AlertBell,
+            ),
             ALERT_ACTIVITY => (
                 "Activity",
                 "activity-action",
                 "visual-activity",
-                "alert-activity",
+                SessionHook::AlertActivity,
             ),
             _ => (
                 "Silence",
                 "silence-action",
                 "visual-silence",
-                "alert-silence",
+                SessionHook::AlertSilence,
             ),
         };
         let attached = self.attached_session_ids();

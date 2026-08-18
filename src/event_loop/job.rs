@@ -8,7 +8,8 @@ use std::rc::Rc;
 
 use crate::integration::status::StatusHub;
 use crate::server::command::{
-    self, BackgroundCommand, BackgroundCommandRequest, ClientContext, PendingBackground,
+    self, BackgroundCommand, BackgroundCommandRequest, ClientContext, LazyCommand,
+    PendingBackground,
 };
 use crate::server::state::SharedState;
 use crate::server::Server;
@@ -59,8 +60,13 @@ impl BackgroundRunner {
             } => {
                 let job_context = self.job_context(&context);
                 let matched = command::suspend::if_shell(&self.tasks, condition, job_context).await;
-                let command = if matched { then_command } else { else_command };
-                self.start_command(BackgroundCommand::Line(command), context);
+                let Some(branch) = (if matched { then_command } else { else_command }) else {
+                    return;
+                };
+                self.start_command(
+                    BackgroundCommand::Command(LazyCommand::Line(branch)),
+                    context,
+                );
             }
         }
     }
@@ -75,17 +81,14 @@ impl BackgroundRunner {
     fn start_command(&self, command: BackgroundCommand, context: ClientContext) {
         let agents = self.hub.snapshot().panes;
         let queue = match command {
-            BackgroundCommand::Line(command) => {
-                let Some(command) = command.filter(|command| !command.trim().is_empty()) else {
+            BackgroundCommand::Command(command) => {
+                let Ok(compiled) = command.compile(&self.state) else {
                     return;
                 };
-                command::start_resumable_command_string(&command, &self.state, &agents, &context)
-            }
-            BackgroundCommand::Args(args) => {
-                if args.is_empty() {
+                if compiled.is_empty() {
                     return;
                 }
-                command::start_resumable_command(&args, &self.state, &agents, &context)
+                command::start_compiled_command(compiled, &agents, &context)
             }
             BackgroundCommand::RunShell { command, jobs } => {
                 let job_context = self.job_context(&context);
@@ -103,7 +106,6 @@ impl BackgroundRunner {
                 return;
             }
         };
-        let Ok(queue) = queue else { return };
         // A detached queue has no client polling it, so the loop owns the
         // whole thing; its first turn runs here, inside this job's own task.
         let Ok(completion) = command::spawn_detached_queue(
