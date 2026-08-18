@@ -342,6 +342,9 @@ pub(super) struct OverlayInputOutcome {
     pub(super) close: bool,
     pub(super) exit: i32,
     pub(super) command: Option<Vec<String>>,
+    /// Whether the key that closed the overlay still reaches the pane, as it
+    /// does for an overlay tmux installed without a key callback.
+    pub(super) forward: bool,
 }
 
 impl OverlayInputOutcome {
@@ -350,6 +353,7 @@ impl OverlayInputOutcome {
             close: false,
             exit: 0,
             command: None,
+            forward: false,
         }
     }
 
@@ -358,6 +362,16 @@ impl OverlayInputOutcome {
             close: true,
             exit,
             command,
+            forward: false,
+        }
+    }
+
+    fn close_forwarding() -> Self {
+        Self {
+            close: true,
+            exit: 0,
+            command: None,
+            forward: true,
         }
     }
 }
@@ -1293,7 +1307,13 @@ impl PopupOverlay {
 
 impl DisplayPanesOverlay {
     fn handle_key(&self, key: &str, state: &SharedState, target: &str) -> OverlayInputOutcome {
-        if !self.accept_input || matches!(key, "Escape" | "C-c") {
+        // tmux's `display-panes -N` installs the overlay with no key callback,
+        // so `server_client_handle_key` closes it and then handles the key as
+        // if the overlay had not been there.
+        if !self.accept_input {
+            return OverlayInputOutcome::close_forwarding();
+        }
+        if matches!(key, "Escape" | "C-c") {
             return OverlayInputOutcome::close(0, None);
         }
         let index = if key.len() == 1 {

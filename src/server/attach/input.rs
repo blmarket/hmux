@@ -655,7 +655,7 @@ impl AttachSession {
                         );
                     let close = outcome.close;
                     let close_exit = outcome.exit;
-                    let selected_command = outcome.command;
+                    let selected_command = outcome.command.clone();
                     let inserted = selected_command
                         .as_ref()
                         .is_some_and(|command| !command.is_empty());
@@ -700,7 +700,13 @@ impl AttachSession {
                         }
                     }
                     force_render = true;
-                    continue;
+                    // An overlay with no key callback of its own leaves the key
+                    // to whatever would have had it: the client's key tables,
+                    // and through them the pane.
+                    if !outcome.forward {
+                        continue;
+                    }
+                    i = start;
                 }
                 if let Some(prompt) = self.compositor.ui.command_prompt.as_mut() {
                     let (decoded, consumed) = decode_tty_key(&data[i..])
