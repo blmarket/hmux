@@ -278,7 +278,11 @@ fn parse_capability_answer(data: &[u8]) -> Progress {
     // A prefix of an introducer is only worth waiting on once it is more than
     // the escape itself: a lone `ESC` is the user's key far more often than the
     // head of a reply, and holding it would keep it from whoever is reading.
-    for introducer in [b"\x1b[?".as_slice(), b"\x1b[>".as_slice(), b"\x1bP>|".as_slice()] {
+    for introducer in [
+        b"\x1b[?".as_slice(),
+        b"\x1b[>".as_slice(),
+        b"\x1bP>|".as_slice(),
+    ] {
         if data.len() > 1 && introducer.starts_with(data) {
             return Progress::Partial;
         }
