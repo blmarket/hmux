@@ -397,7 +397,7 @@ def test_preset_decides_which_agent_the_loop_starts(tmp_path: Path) -> None:
 
     assert looper.run() == 0
     assert service.splits[0]["agent"] == "agy"
-    assert service.splits[0]["model"] == "gemini-3.6-flash"
+    assert service.splits[0]["model"] == "gemini-3.7-flash"
     assert service.splits[0]["effort"] == "high"
 
 
@@ -420,7 +420,7 @@ def test_main_plumbs_the_chosen_preset_into_the_config(
 
     assert main(["--preset", "agy"]) == 0
     assert configs == [
-        LooperConfig(agent="agy", model="gemini-3.6-flash", effort="high",
+        LooperConfig(agent="agy", model="gemini-3.7-flash", effort="high",
                      provider="antigravity")
     ]
 

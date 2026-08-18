@@ -34,7 +34,7 @@ the run changed. `nix develop` puts `looper` on `$PATH`; from this directory
 
 `--preset` chooses what runs. `codex` (the default) is codex with
 `gpt-5.6-luna` at effort `max`; `agy` is the Antigravity CLI with
-`gemini-3.6-flash` at effort `high`. Launching `agy` also records the worktree
+`gemini-3.7-flash` at effort `high`. Launching `agy` also records the worktree
 in the CLI's `trustedWorkspaces`, since it would otherwise stop on its trust
 dialog in a worktree it has never seen.
 

@@ -54,7 +54,7 @@ PRESETS = {
         agent="codex", model="gpt-5.6-luna", effort="max", provider="codex"
     ),
     "agy": Preset(
-        agent="agy", model="gemini-3.6-flash", effort="high", provider="antigravity"
+        agent="agy", model="gemini-3.7-flash", effort="high", provider="antigravity"
     ),
 }
 DEFAULT_PRESET = "codex"
