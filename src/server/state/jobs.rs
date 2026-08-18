@@ -122,9 +122,11 @@ impl WaitRegistry {
         let mut channels = self.channels.borrow_mut();
         let channel = channels.entry(name.to_string()).or_default();
         if channel.woken {
-            if channel.locked {
-                channel.woken = false;
-            } else {
+            // tmux clears a wake only by dropping the channel, and
+            // `cmd_wait_for_remove` refuses to drop a locked one — so the wake
+            // stays available to the waiters behind this one until the lock is
+            // released.
+            if !channel.locked {
                 channels.remove(name);
             }
             return WaitOutcome::Ready;
