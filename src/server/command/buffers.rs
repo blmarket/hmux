@@ -450,6 +450,9 @@ pub(in crate::server) struct PasteBuffer {
     raw_newlines: bool,
     /// `-s`: what a newline in the buffer is replaced with.
     separator: Option<String>,
+    /// `-S`: send the buffer's bytes as they stand instead of escaping the
+    /// unsafe ones.
+    unescaped: bool,
     /// `-t`: the pane the buffer is pasted into.
     target: Option<String>,
 }
@@ -462,6 +465,7 @@ impl PasteBuffer {
             bracketed: args.has('p'),
             raw_newlines: args.has('r'),
             separator: args.value('s').map(str::to_string),
+            unescaped: args.has('S'),
             target: args.value('t').map(str::to_string),
         })
     }
@@ -507,14 +511,22 @@ impl PasteBuffer {
             bytes.extend_from_slice(PASTE_START);
         }
         // The runs between newlines are copied whole; only a newline is
-        // rewritten, and a paste is mostly not newlines.
+        // rewritten, and a paste is mostly not newlines. tmux escapes each run
+        // on its own and writes the separator as it stands.
+        let copy = |run: &[u8], bytes: &mut Vec<u8>| {
+            if self.unescaped {
+                bytes.extend_from_slice(run);
+            } else {
+                vis_safe(run, bytes);
+            }
+        };
         for run in data.split_inclusive(|byte| *byte == b'\n') {
             match run.split_last() {
                 Some((b'\n', head)) => {
-                    bytes.extend_from_slice(head);
+                    copy(head, &mut bytes);
                     bytes.extend_from_slice(separator.as_bytes());
                 }
-                _ => bytes.extend_from_slice(run),
+                _ => copy(run, &mut bytes),
             }
         }
         if bracketed {
@@ -527,5 +539,69 @@ impl PasteBuffer {
             st.delete_buffer(&name);
         }
         CommandResult::ok("")
+    }
+}
+
+/// tmux's `utf8_stravisx(..., VIS_SAFE|VIS_NOSLASH)`: whole UTF-8 characters
+/// travel untouched and so do the bytes a terminal can be trusted with, while
+/// everything else is rendered as the `^X`/`M-X` text `vis(3)` gives it. It is
+/// what keeps a pasted escape sequence out of the pane's parser.
+fn vis_safe(data: &[u8], out: &mut Vec<u8>) {
+    let mut index = 0;
+    while index < data.len() {
+        if let Some(width) = utf8_character(&data[index..]) {
+            out.extend_from_slice(&data[index..index + width]);
+            index += width;
+            continue;
+        }
+        vis_safe_byte(data[index], out);
+        index += 1;
+    }
+}
+
+/// The length of the complete, valid multi-byte UTF-8 character `data` starts
+/// with. An ASCII byte is not one: `vis(3)` is what decides its fate.
+fn utf8_character(data: &[u8]) -> Option<usize> {
+    let width = match data[0] {
+        0x00..=0x7f => return None,
+        0xc2..=0xdf => 2,
+        0xe0..=0xef => 3,
+        0xf0..=0xf4 => 4,
+        _ => return None,
+    };
+    let candidate = data.get(..width)?;
+    std::str::from_utf8(candidate).ok().map(|_| width)
+}
+
+/// One byte through `vis(3)` under `VIS_SAFE|VIS_NOSLASH`.
+fn vis_safe_byte(byte: u8, out: &mut Vec<u8>) {
+    let safe = matches!(byte, 0x07 | 0x08 | b'\t' | b'\n' | b'\r' | b' ');
+    if byte.is_ascii_graphic() || safe {
+        out.push(byte);
+        return;
+    }
+    // `\240` and nothing else: the octal escape is the one form that keeps its
+    // backslash under `VIS_NOSLASH`.
+    if byte & 0o177 == b' ' {
+        out.push(b'\\');
+        out.extend_from_slice(&[
+            (byte >> 6 & 0o7) + b'0',
+            (byte >> 3 & 0o7) + b'0',
+            (byte & 0o7) + b'0',
+        ]);
+        return;
+    }
+    let byte = if byte & 0o200 != 0 {
+        out.push(b'M');
+        byte & 0o177
+    } else {
+        byte
+    };
+    if byte.is_ascii_control() {
+        out.push(b'^');
+        out.push(if byte == 0o177 { b'?' } else { byte + b'@' });
+    } else {
+        out.push(b'-');
+        out.push(byte);
     }
 }
