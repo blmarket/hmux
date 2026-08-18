@@ -766,6 +766,8 @@ pub(in crate::server) struct ShowOptions {
     quiet: bool,
     /// `-v`: print the value alone, without its name.
     value_only: bool,
+    /// `-H`: include the hook catalogue in an unfiltered listing.
+    hooks: bool,
     scope: OptionScopeFlags,
     /// The single option to show, instead of the whole table.
     option: Option<String>,
@@ -777,6 +779,7 @@ impl ShowOptions {
             inherited: args.has('A'),
             quiet: args.has('q'),
             value_only: args.has('v'),
+            hooks: args.has('H'),
             scope: OptionScopeFlags::parse(args),
             option: args.positionals().first().cloned(),
         })
@@ -891,6 +894,21 @@ impl ShowOptions {
                             }
                         }
                     }
+                }
+                // Hooks live in their own catalogue rather than the option one, so
+                // `-H` appends them the way tmux's shared table walk reaches them
+                // after the plain options.
+                if self.hooks && !self.scope.server {
+                    let listing = ShowHooks {
+                        pane: self.scope.pane,
+                        window: self.scope.window,
+                        global: self.scope.global,
+                        show: Self {
+                            hooks: false,
+                            ..self.clone()
+                        },
+                    };
+                    output.push_str(&listing.run(st).stdout);
                 }
                 return CommandResult::ok(output);
             }
