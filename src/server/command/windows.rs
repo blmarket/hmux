@@ -219,12 +219,21 @@ impl NewWindow {
             Some(target) => target,
             None => return CommandResult::err("can't establish current session\n"),
         };
+        // tmux expands `-n` as a format before it does anything else with it,
+        // and a name that expands to nothing names nothing at all.
+        let requested_name = self
+            .name
+            .as_deref()
+            .map(|name| {
+                execution::expand_target_format(name, requested_target, st, &PaneAgents::new(), &[])
+            })
+            .filter(|name| !name.is_empty());
         // `-S` with a name and no explicit window index selects an existing window
         // of that name instead of creating one. tmux errors on an ambiguous name,
         // skips the selection under `-d`, and returns before the `-P` print either
         // way.
         if self.select_existing && explicit.is_none() {
-            if let Some(name) = self.name.as_deref() {
+            if let Some(name) = requested_name.as_deref() {
                 let sess = st.find(&session).expect("session present");
                 let matches: Vec<u32> = sess
                     .windows
@@ -275,7 +284,7 @@ impl NewWindow {
         // tmux names the window inside `spawn_window`, before it raises
         // `window-linked`, so the name is settled here rather than after the
         // window exists. `-n` is that name; otherwise the command decides it.
-        let initial_name = match self.name.as_deref() {
+        let initial_name = match requested_name.as_deref() {
             Some(name) => name.to_string(),
             None => initial_window_name(st, &session, &self.command),
         };
@@ -318,11 +327,13 @@ impl NewWindow {
             Ok(win_idx) => {
                 // `-n name` sets the new window's name (otherwise it stays the
                 // model's default, empty).
-                if let Some(name) = self.name.as_deref() {
-                    let index = st.find(&session).expect("session present").windows[win_idx].index;
-                    let _ = st.rename_window(&format!("{session}:{index}"), name);
-                } else {
-                    apply_initial_window_name(st, &session, win_idx, &self.command);
+                match requested_name.as_deref() {
+                    Some(name) => {
+                        let index =
+                            st.find(&session).expect("session present").windows[win_idx].index;
+                        let _ = st.rename_window(&format!("{session}:{index}"), name);
+                    }
+                    None => apply_initial_window_name(st, &session, win_idx, &self.command),
                 }
                 // tmux hands `after-new-window` the find-state of the window it
                 // just created, not the `-t` the command was given.

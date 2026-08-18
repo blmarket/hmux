@@ -397,7 +397,7 @@ pub(super) fn expand_run_shell_command(
     expand_target_format(command, requested_target, st, agents, &positional)
 }
 
-fn expand_target_format(
+pub(super) fn expand_target_format(
     source: &str,
     requested_target: Option<&str>,
     st: &ServerState,

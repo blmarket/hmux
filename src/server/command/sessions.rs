@@ -181,7 +181,12 @@ impl NewSession {
     /// session via `-F` (or the default `NEW_SESSION_TEMPLATE`) and a trailing
     /// newline, like real tmux.
     fn execute(self, st: &mut ServerState, context: &ClientContext) -> CommandResult {
-        let name = self.name.clone().unwrap_or_else(|| st.next_session_name());
+        // tmux expands `-s` as a format before it looks for a session of that
+        // name, and the expansion sees no session of its own — only the server.
+        let name = match self.name.as_deref() {
+            Some(name) => expand_command_format(st, name, &Vars::default(), None),
+            None => st.next_session_name(),
+        };
         // `-A` (attach-or-create): if the named session already exists, tmux
         // attaches to it instead of failing with "duplicate session". Over the
         // command path with no real tty that attach fails the same way
@@ -233,15 +238,19 @@ impl NewSession {
         st: &mut ServerState,
         context: &ClientContext,
     ) -> Result<String, String> {
+        let requested = self
+            .name
+            .as_deref()
+            .map(|name| expand_command_format(st, name, &Vars::default(), None));
         // `-A` (attach-or-create): an existing named session is attached as-is.
         if self.attach_or_create {
-            if let Some(name) = self.name.as_deref() {
+            if let Some(name) = requested.as_deref() {
                 if st.find(name).is_some() {
                     return Ok(name.to_string());
                 }
             }
         }
-        let name = self.name.clone().unwrap_or_else(|| st.next_session_name());
+        let name = requested.unwrap_or_else(|| st.next_session_name());
         self.reject_target_with_command()?;
         let dimensions = self.dimensions()?;
         self.create(&name, st, context, dimensions)?;
@@ -353,8 +362,15 @@ impl NewSession {
                 let _ = st.set_session_env(name, key, value, false);
             }
         }
-        // `-n name` names the session's first window.
-        if let Some(window_name) = self.window_name.as_deref() {
+        // `-n name` names the session's first window. tmux expands it as a
+        // format first, and a name that comes out empty leaves the automatic
+        // name in place.
+        let window_name = self
+            .window_name
+            .as_deref()
+            .map(|window_name| expand_command_format(st, window_name, &Vars::default(), None))
+            .filter(|window_name| !window_name.is_empty());
+        if let Some(window_name) = window_name.as_deref() {
             let _ = st.rename_window(&format!("{name}:"), window_name);
         } else if self.group_target.is_none() {
             apply_initial_window_name(st, name, 0, &self.command);
