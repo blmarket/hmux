@@ -1267,12 +1267,19 @@ impl ServerState {
                         | "pipe-and-cancel"
                         | "append-selection"
                         | "append-selection-and-cancel" => {
-                            let data = copy_selection(state, vi);
+                            // With nothing selected tmux copies the marked
+                            // search match under the cursor, and copies nothing
+                            // at all when there is none.
+                            let data = if state.selection.is_some() {
+                                Some(copy_selection(state, vi))
+                            } else {
+                                copy_match_at_cursor(state)
+                            };
                             if !command.ends_with("no-clear") {
                                 clear_copy_selection(state);
                             }
                             end_mode = command.ends_with("and-cancel");
-                            Some(data)
+                            data
                         }
                         "copy-end-of-line"
                         | "copy-end-of-line-and-cancel"

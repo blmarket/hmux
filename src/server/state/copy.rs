@@ -1897,6 +1897,41 @@ fn append_copy_cells(output: &mut String, grid: &Grid, row: usize, from: usize, 
     }
 }
 
+/// tmux's `window_copy_match_at_cursor`: the marked search match the cursor sits
+/// in — or the one that ends immediately before it — which a copy command with no
+/// selection yanks instead of nothing.
+pub(super) fn copy_match_at_cursor(state: &CopyState) -> Option<String> {
+    if !state.search_marks {
+        return None;
+    }
+    let matches = &state.search.as_ref()?.matches;
+    let covers = |candidate: &CopySearchMatch, row: usize, col: usize| {
+        candidate
+            .segments
+            .iter()
+            .any(|&(at_row, from, to)| at_row == row && col >= from && col < to)
+    };
+    let (row, col) = (state.cursor.row, state.cursor.col);
+    let previous = if col == 0 {
+        row.checked_sub(1)
+            .map(|row| (row, usize::from(state.grid.cols).saturating_sub(1)))
+    } else {
+        Some((row, col - 1))
+    };
+    let matched = matches
+        .iter()
+        .find(|candidate| covers(candidate, row, col))
+        .or_else(|| {
+            let (row, col) = previous?;
+            matches.iter().find(|candidate| covers(candidate, row, col))
+        })?;
+    let mut output = String::new();
+    for &(row, from, to) in &matched.segments {
+        append_copy_cells(&mut output, &state.grid, row, from, to);
+    }
+    (!output.is_empty()).then_some(output)
+}
+
 pub(super) fn copy_selection(state: &CopyState, vi: bool) -> String {
     let Some(selection) = state.selection.as_ref() else {
         return String::new();

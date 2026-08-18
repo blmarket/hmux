@@ -415,8 +415,11 @@ fn send_copy_mode_command(
                     }
                 }
             }
-            let sets_buffer =
-                set_paste && !matches!(command, "pipe" | "pipe-no-clear" | "pipe-and-cancel");
+            // tmux's `paste_add` drops an empty copy, so a command that produced
+            // no bytes leaves the buffer list alone.
+            let sets_buffer = set_paste
+                && !selection.is_empty()
+                && !matches!(command, "pipe" | "pipe-no-clear" | "pipe-and-cancel");
             if sets_buffer {
                 let buffer_name = if is_pipe {
                     copy_positionals.get(1).copied()
