@@ -540,7 +540,7 @@ pub(crate) fn uses_client_file_protocol(args: &[String]) -> bool {
     let lexed = ParsedArgs::lex(name, &normalize_argv(name, args));
     match name {
         "load-buffer" => true,
-        "display-message" | "split-window" => lexed.has('I'),
+        "display-message" | "split-window" | "new-pane" => lexed.has('I'),
         "save-buffer" => lexed.positionals().first().is_some_and(|path| path != "-"),
         _ => false,
     }
@@ -3641,7 +3641,7 @@ pub(crate) fn client_input_path(args: &[String], context: &ClientContext) -> Opt
         _ => return None,
     };
     let lexed = ParsedArgs::lex(spec.name, &normalize_argv(spec.name, args));
-    if matches!(spec.name, "display-message" | "split-window") {
+    if matches!(spec.name, "display-message" | "split-window" | "new-pane") {
         return lexed.has('I').then(|| PathBuf::from("-"));
     }
     if spec.name == "source-file" {

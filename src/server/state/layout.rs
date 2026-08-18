@@ -445,51 +445,51 @@ impl LayoutCell {
         let old_size = if before { second } else { first };
         let new_pane_size = if before { first } else { second };
 
-        match self {
-            Self::Split {
-                direction: dir,
-                children,
-                rect,
-            } if *dir == direction => {
-                let mut new_rect = *rect;
-                new_rect.set_axis(direction, new_pane_size);
-                let new_leaf = Self::Pane {
-                    pane_id: new_id,
-                    rect: new_rect,
-                };
-                let insert_at = if before { 0 } else { children.len() };
-                children.insert(insert_at, new_leaf);
-                let target_width = total.width;
-                let target_height = total.height;
-                self.fix_offsets();
-                self.resize(target_width, target_height);
-                true
-            }
-            _ => {
-                let mut old = self.clone();
-                let mut old_target_rect = total;
-                old_target_rect.set_axis(direction, old_size);
-                old.resize(old_target_rect.width, old_target_rect.height);
-
-                let mut new_rect = total;
-                new_rect.set_axis(direction, new_pane_size);
-                let new_leaf = Self::Pane {
-                    pane_id: new_id,
-                    rect: new_rect,
-                };
-                *self = Self::Split {
-                    direction,
-                    rect: total,
-                    children: if before {
-                        vec![new_leaf, old]
-                    } else {
-                        vec![old, new_leaf]
-                    },
-                };
-                self.fix_offsets();
-                true
-            }
+        // A root that already splits along this axis takes the new cell as another
+        // child, so the panes it holds are squeezed into the old layout's share
+        // *before* the cell is inserted, the way tmux resizes the root's children
+        // ahead of the insertion.
+        if matches!(self, Self::Split { direction: dir, .. } if *dir == direction) {
+            let mut shrunk = total;
+            shrunk.set_axis(direction, old_size);
+            self.resize(shrunk.width, shrunk.height);
+            let mut new_rect = total;
+            new_rect.set_axis(direction, new_pane_size);
+            let new_leaf = Self::Pane {
+                pane_id: new_id,
+                rect: new_rect,
+            };
+            let Self::Split { children, rect, .. } = self else {
+                return false;
+            };
+            let insert_at = if before { 0 } else { children.len() };
+            children.insert(insert_at, new_leaf);
+            *rect = total;
+            self.fix_offsets();
+            return true;
         }
+        let mut old = self.clone();
+        let mut old_target_rect = total;
+        old_target_rect.set_axis(direction, old_size);
+        old.resize(old_target_rect.width, old_target_rect.height);
+
+        let mut new_rect = total;
+        new_rect.set_axis(direction, new_pane_size);
+        let new_leaf = Self::Pane {
+            pane_id: new_id,
+            rect: new_rect,
+        };
+        *self = Self::Split {
+            direction,
+            rect: total,
+            children: if before {
+                vec![new_leaf, old]
+            } else {
+                vec![old, new_leaf]
+            },
+        };
+        self.fix_offsets();
+        true
     }
 
     /// tmux's `layout_spread_out`: climb from the pane's innermost parent

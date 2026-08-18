@@ -894,7 +894,7 @@ impl ServerState {
         Ok(insert_at)
     }
 
-    pub(crate) fn new_floating_pane_with_spawn(
+    pub(crate) fn new_floating_pane_with_spec(
         &mut self,
         target: &str,
         select: bool,
@@ -902,8 +902,7 @@ impl ServerState {
         height: Option<u16>,
         left: Option<i32>,
         top: Option<i32>,
-        argv: &[String],
-        cwd: Option<&Path>,
+        spec: PaneSpec,
     ) -> io::Result<usize> {
         let target = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let session_id = self.sessions[target.session].id;
@@ -915,9 +914,19 @@ impl ServerState {
         let height = height
             .unwrap_or(rows / 4)
             .clamp(1, rows.saturating_sub(1).max(1));
-        let argv = fill_spawn_ids(argv, self.next_pane_id, session_id);
-        let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
-        let pane = Pane::spawn(&refs, cwd, width, height)?;
+        let spec = fill_spec_spawn_ids(spec, self.next_pane_id, session_id);
+        let pane = match spec {
+            PaneSpec::Inert => Pane::inert(width, height)?,
+            PaneSpec::Command(argv) => {
+                let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
+                Pane::spawn(&refs, None, width, height)?
+            }
+            PaneSpec::CommandIn(argv, cwd) => {
+                let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
+                Pane::spawn(&refs, Some(&cwd), width, height)?
+            }
+            PaneSpec::Existing(pane) => *pane,
+        };
         let pane_id = self.next_pane_id;
         self.next_pane_id += 1;
         let window = self.window_mut(target.session, target.window);

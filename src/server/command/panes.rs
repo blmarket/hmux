@@ -149,53 +149,16 @@ impl SplitWindow {
         } else {
             SplitDirection::TopBottom
         };
-        // `-l size` (cells, or `N%`) and `-p percentage` pin the *new* pane's size
-        // on the split axis; percentages are of the target pane's current extent.
-        let new_size = {
-            let axis_total = {
-                let sess = &st.sessions()[resolved.session];
-                let win = st.window_for_link(&sess.windows[resolved.window]);
-                if self.full {
-                    match direction {
-                        SplitDirection::LeftRight => win.cols,
-                        SplitDirection::TopBottom => win.rows,
-                    }
-                } else {
-                    let rect = win.pane_rect(win.panes[resolved.pane].id).unwrap_or(
-                        super::super::state::PaneRect {
-                            top: 0,
-                            left: 0,
-                            height: win.rows,
-                            width: win.cols,
-                        },
-                    );
-                    match direction {
-                        SplitDirection::LeftRight => rect.width,
-                        SplitDirection::TopBottom => rect.height,
-                    }
-                }
-            };
-            let percentage_of = |value: &str| {
-                value
-                    .parse::<u32>()
-                    .ok()
-                    .map(|percentage| (u32::from(axis_total) * percentage / 100) as u16)
-            };
-            let parsed = if let Some(value) = self.size.as_deref() {
-                Some(match value.strip_suffix('%') {
-                    Some(percentage) => percentage_of(percentage),
-                    None => value.parse::<u16>().ok(),
-                })
-            } else {
-                self.percentage.as_deref().map(percentage_of)
-            };
-            match parsed {
-                Some(None) => {
-                    return CommandResult::err("size or position invalid tiled geometry\n")
-                }
-                Some(size) => size,
-                None => None,
-            }
+        let new_size = match tiled_split_size(
+            st,
+            resolved,
+            direction,
+            self.full,
+            self.size.as_deref(),
+            self.percentage.as_deref(),
+        ) {
+            Ok(size) => size,
+            Err(error) => return error,
         };
         let explicit_cwd = self
             .cwd
@@ -333,6 +296,63 @@ impl SplitWindow {
     }
 }
 
+/// The cell size `-l size` (cells, or `N%`) and `-p percentage` pin on the split
+/// axis for a tiled split. Percentages are of the target pane's current extent,
+/// or of the whole window under `-f`.
+fn tiled_split_size(
+    st: &ServerState,
+    resolved: Target,
+    direction: SplitDirection,
+    full: bool,
+    size: Option<&str>,
+    percentage: Option<&str>,
+) -> Result<Option<u16>, CommandResult> {
+    let axis_total = {
+        let sess = &st.sessions()[resolved.session];
+        let win = st.window_for_link(&sess.windows[resolved.window]);
+        if full {
+            match direction {
+                SplitDirection::LeftRight => win.cols,
+                SplitDirection::TopBottom => win.rows,
+            }
+        } else {
+            let rect = win.pane_rect(win.panes[resolved.pane].id).unwrap_or(
+                super::super::state::PaneRect {
+                    top: 0,
+                    left: 0,
+                    height: win.rows,
+                    width: win.cols,
+                },
+            );
+            match direction {
+                SplitDirection::LeftRight => rect.width,
+                SplitDirection::TopBottom => rect.height,
+            }
+        }
+    };
+    let percentage_of = |value: &str| {
+        value
+            .parse::<u32>()
+            .ok()
+            .map(|percentage| (u32::from(axis_total) * percentage / 100) as u16)
+    };
+    let parsed = if let Some(value) = size {
+        Some(match value.strip_suffix('%') {
+            Some(percentage) => percentage_of(percentage),
+            None => value.parse::<u16>().ok(),
+        })
+    } else {
+        percentage.map(percentage_of)
+    };
+    match parsed {
+        Some(None) => Err(CommandResult::err(
+            "size or position invalid tiled geometry\n",
+        )),
+        Some(size) => Ok(size),
+        None => Ok(None),
+    }
+}
+
 /// `new-pane [-bdefhIklPvZ] [-c start-directory] [-e environment] [-F format]
 /// [-l size] [-m message] [-p percentage] [-s style] [-S active-border-style]
 /// [-R inactive-border-style] [-x width] [-y height] [-X x-position]
@@ -343,14 +363,24 @@ pub(in crate::server) struct NewPane {
     before: bool,
     /// `-d`: leave the original pane active.
     detached: bool,
+    /// `-f`: with `-L`, split the whole window rather than the target's cell.
+    full: bool,
     /// `-h`: with `-L`, split left/right instead of top/bottom.
     horizontal: bool,
+    /// `-E`/`-I`: create the pane with no command of its own.
+    empty: bool,
+    /// `-I`: feed the client's standard input into the new pane.
+    feed_input: bool,
     /// `-k`/`-m`: keep the pane when its command exits.
     keep: bool,
     /// `-L`: place the pane in the layout instead of floating it.
     layout: bool,
     /// `-P`: print the new pane.
     print: bool,
+    /// `-l`: with `-L`, the new pane's size in cells, or a percentage.
+    size: Option<String>,
+    /// `-p`: with `-L`, the new pane's size as a percentage.
+    percentage: Option<String>,
     /// `-c`: the new pane's working directory.
     cwd: Option<String>,
     /// `-e`: environment assignments for the new pane, repeatable.
@@ -380,10 +410,15 @@ impl NewPane {
         Ok(Self {
             before: args.has('b'),
             detached: args.has('d'),
+            full: args.has('f'),
             horizontal: args.has('h'),
+            empty: args.has('E') || args.has('I'),
+            feed_input: args.has('I'),
             keep: args.has('k') || args.has('m'),
             layout: args.has('L'),
             print: args.has('P'),
+            size: args.value('l').map(str::to_string),
+            percentage: args.value('p').map(str::to_string),
             cwd: args.value('c').map(str::to_string),
             environment: args.values('e').map(str::to_string).collect(),
             format: args.value('F').map(str::to_string),
@@ -409,6 +444,9 @@ impl NewPane {
             Some(target) => target,
             None => return CommandResult::err(format!("{}\n", st.pane_target_error(&target))),
         };
+        if self.empty && self.command.iter().any(|word| !word.is_empty()) {
+            return CommandResult::err("command cannot be given for empty pane\n");
+        }
         let window = st.window(resolved.session, resolved.window);
         let (window_width, window_height) = (window.cols, window.rows);
         let geometry = |value: Option<&str>, total| -> Result<Option<u16>, CommandResult> {
@@ -475,24 +513,42 @@ impl NewPane {
             SpawnSession::Existing(&target),
         );
         let select = !self.detached;
+        let spec = if self.empty {
+            PaneSpec::Inert
+        } else {
+            match cwd {
+                Some(cwd) => PaneSpec::CommandIn(argv.clone(), cwd.to_path_buf()),
+                None => PaneSpec::Command(argv.clone()),
+            }
+        };
         let created = if self.layout {
             let direction = if self.horizontal {
                 SplitDirection::LeftRight
             } else {
                 SplitDirection::TopBottom
             };
-            st.split_window_direction_with_spawn(
+            let new_size = match tiled_split_size(
+                st,
+                resolved,
+                direction,
+                self.full,
+                self.size.as_deref(),
+                self.percentage.as_deref(),
+            ) {
+                Ok(size) => size,
+                Err(error) => return error,
+            };
+            st.split_window_direction_with_spec(
                 &target,
                 select,
                 self.before,
-                false,
+                self.full,
                 direction,
-                &argv,
-                cwd,
-                None,
+                spec,
+                new_size,
             )
         } else {
-            st.new_floating_pane_with_spawn(&target, select, width, height, left, top, &argv, cwd)
+            st.new_floating_pane_with_spec(&target, select, width, height, left, top, spec)
         };
         let pane = match created {
             Ok(pane) => pane,
@@ -513,11 +569,28 @@ impl NewPane {
         if let Some(style) = self.inactive_border_style.as_deref() {
             st.set_pane_option(pane_target, "pane-border-style", style);
         }
+        // `-k` (and `-m format`) keep the pane in place when its command exits:
+        // tmux sets the pane's remain-on-exit to `key` plus the format under `-m`.
         if self.keep {
-            st.set_pane_option(pane_target, "remain-on-exit", "on");
+            st.set_pane_option(pane_target, "remain-on-exit", "key");
         }
         if let Some(message) = self.message.as_deref() {
             st.set_pane_option(pane_target, "remain-on-exit-format", message);
+        }
+        // `-I` feeds the client's standard input into the pane it just created.
+        if self.feed_input {
+            match context.input_file.as_ref() {
+                Some(Ok(data)) => st.window(resolved.session, resolved.window).panes[pane]
+                    .pane
+                    .feed(data),
+                Some(Err(error)) => {
+                    return CommandResult::err(format!(
+                        "{}: -\n",
+                        io_error_message(&io::Error::from_raw_os_error(*error))
+                    ))
+                }
+                None => {}
+            }
         }
         if self.print {
             let session = &st.sessions()[resolved.session];
