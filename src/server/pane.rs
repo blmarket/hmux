@@ -408,6 +408,12 @@ pub(crate) struct NativePaneObservation {
     /// for the server to put them to an attached terminal. Each carries the
     /// terminator the pane asked with, because that is what its answer uses.
     palette_queries: RefCell<VecDeque<(u8, bool)>>,
+    /// Whether a question this pane put to the terminal is still unanswered,
+    /// and the replies held behind it. tmux's `input_reply` queues a local
+    /// answer while `ictx->requests` is non-empty, so the pane reads the two
+    /// answers in the order it asked the questions.
+    terminal_request_pending: Cell<bool>,
+    deferred_replies: RefCell<VecDeque<Vec<u8>>>,
     /// tmux's `PANE_CHANGED`: something happened in this pane that could change
     /// the name `automatic-rename` derives from it — output arrived, or the
     /// pane became the active one. Cleared by the pass that re-derives the name.
@@ -974,6 +980,8 @@ impl NativePaneObservation {
             clipboard_events: RefCell::new(VecDeque::new()),
             passthrough: RefCell::new(VecDeque::new()),
             palette_queries: RefCell::new(VecDeque::new()),
+            terminal_request_pending: Cell::new(false),
+            deferred_replies: RefCell::new(VecDeque::new()),
             // A pane that has produced nothing yet still needs naming once.
             changed: Cell::new(true),
             renames: RefCell::new(VecDeque::new()),
@@ -1098,6 +1106,35 @@ impl NativePaneObservation {
     /// `(index, answer with BEL)` pairs.
     pub(crate) fn take_palette_queries(&self) -> Vec<(u8, bool)> {
         self.palette_queries.borrow_mut().drain(..).collect()
+    }
+
+    /// Whether a question this pane put to the terminal is still owed an
+    /// answer, which is what holds its own replies back.
+    pub(crate) fn set_terminal_request_pending(&self, pending: bool) {
+        self.terminal_request_pending.set(pending);
+    }
+
+    /// Hold a local reply behind an unanswered terminal question, reporting
+    /// whether it was held rather than written.
+    fn defer_reply(&self, reply: &[u8]) -> bool {
+        // A question still waiting to be put to the terminal holds the pane's
+        // own answers back just as one already asked does: tmux queues the
+        // request where the sequence is parsed, which is here.
+        if !self.terminal_request_pending.get() && self.palette_queries.borrow().is_empty() {
+            return false;
+        }
+        let mut deferred = self.deferred_replies.borrow_mut();
+        // A pane that outruns the server loop loses the excess rather than
+        // growing the server, as the other queues here do.
+        if deferred.len() < 16 {
+            deferred.push_back(reply.to_vec());
+        }
+        true
+    }
+
+    /// The replies held behind a terminal question, now that it is over.
+    pub(crate) fn take_deferred_replies(&self) -> Vec<Vec<u8>> {
+        self.deferred_replies.borrow_mut().drain(..).collect()
     }
 
     /// tmux's `wp->flags |= PANE_CHANGED`, for the changes the pane itself does
@@ -2498,6 +2535,9 @@ impl PaneIo {
             }
         }
         for reply in replies {
+            if self.observation.defer_reply(&reply) {
+                continue;
+            }
             enqueue_pane_input(self.fd.as_raw_fd(), &self.pending_input, &reply);
         }
     }

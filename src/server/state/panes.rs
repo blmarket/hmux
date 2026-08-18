@@ -540,7 +540,9 @@ impl ServerState {
             .map(|node| (node.id, node.pane.observation_state()))
             .collect::<Vec<_>>();
         for (pane_id, observation) in panes {
-            for (index, bel) in observation.take_palette_queries() {
+            let queries = observation.take_palette_queries();
+            let asked = !queries.is_empty();
+            for (index, bel) in queries {
                 let Some(client) = self.request_client_for_pane(pane_id) else {
                     continue;
                 };
@@ -555,6 +557,11 @@ impl ServerState {
                     pane_id,
                     TerminalRequestKind::Palette { index, bel },
                 );
+            }
+            // A question no client could be asked is over as soon as it is
+            // taken, and the replies behind it are owed to the pane now.
+            if asked {
+                self.release_answered_panes([pane_id]);
             }
         }
     }
@@ -588,6 +595,43 @@ impl ServerState {
             kind,
             at: Instant::now(),
         });
+        self.set_pane_requests_pending(pane_id, true);
+    }
+
+    /// Hold or release the pane's own replies behind the questions it has put
+    /// to the terminal, and write what was held once the last one is over.
+    fn set_pane_requests_pending(&self, pane_id: u32, pending: bool) {
+        let Some(node) = self
+            .windows
+            .values()
+            .flat_map(|window| window.panes.iter())
+            .find(|node| node.id == pane_id)
+        else {
+            return;
+        };
+        let observation = node.pane.observation_state();
+        observation.set_terminal_request_pending(pending);
+        if pending {
+            return;
+        }
+        for reply in observation.take_deferred_replies() {
+            let _ = node.pane.input(&reply);
+        }
+    }
+
+    /// Release the replies a pane held behind a question the terminal has now
+    /// answered — or stopped owing an answer to.
+    fn release_answered_panes(&self, panes: impl IntoIterator<Item = u32>) {
+        for pane_id in panes {
+            if self
+                .terminal_requests
+                .iter()
+                .any(|request| request.pane_id == pane_id)
+            {
+                continue;
+            }
+            self.set_pane_requests_pending(pane_id, false);
+        }
     }
 
     /// Whether anything is still owed an answer from this client's terminal,
@@ -605,8 +649,15 @@ impl ServerState {
         /// tmux's `INPUT_REQUEST_TIMEOUT`.
         const TIMEOUT: Duration = Duration::from_millis(500);
         let now = Instant::now();
+        let expired = self
+            .terminal_requests
+            .iter()
+            .filter(|request| now.saturating_duration_since(request.at) >= TIMEOUT)
+            .map(|request| request.pane_id)
+            .collect::<Vec<_>>();
         self.terminal_requests
             .retain(|request| now.saturating_duration_since(request.at) < TIMEOUT);
+        self.release_answered_panes(expired);
     }
 
     /// Route what an attached terminal answered, mirroring tmux's
@@ -643,6 +694,7 @@ impl ServerState {
             return;
         };
         let request = self.terminal_requests.remove(matching);
+        let answered = request.pane_id;
         match (request.kind, reply) {
             (
                 TerminalRequestKind::Palette { index, bel },
@@ -682,6 +734,7 @@ impl ServerState {
             }
             _ => {}
         }
+        self.release_answered_panes([answered]);
     }
 
     /// Answer pending DSR ?996 questions and push theme changes to the panes
