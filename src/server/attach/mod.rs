@@ -832,6 +832,12 @@ fn decode_csi(params: &str, final_byte: u8) -> Option<String> {
         }
     }
     match final_byte {
+        // tmux's `tty_keys_extended_key` xterm form: `CSI 27 ; modifier ; key ~`.
+        b'~' if params.starts_with("27;") => {
+            let rest = params.strip_prefix("27;")?;
+            let (modifier, code) = rest.split_once(';')?;
+            extended_key_name(code, modifier)
+        }
         b'~' => match params {
             "1" | "7" => Some("Home".to_string()),
             "2" => Some("IC".to_string()),
@@ -848,18 +854,33 @@ fn decode_csi(params: &str, final_byte: u8) -> Option<String> {
         b'$' => shifted_function_key(params),
         b'^' => function_key(params).map(|name| format!("C-{name}")),
         b'@' => function_key(params).map(|name| format!("C-S-{name}")),
+        // The CSI-u form of the same report: `CSI key ; modifier u`.
         b'u' => {
             let (code, modifier) = params.split_once(';')?;
-            let code = code.parse::<u8>().ok()?;
-            match modifier {
-                "2" => Some(format!("S-{}", plain_prompt_key(code))),
-                "5" => Some(format!("C-{}", plain_prompt_key(code))),
-                "7" => Some(format!("C-M-{}", plain_prompt_key(code))),
-                _ => None,
-            }
+            extended_key_name(code, modifier)
         }
         _ => None,
     }
+}
+
+/// One extended keyboard report's key name. The modifier is xterm's bitmask
+/// plus one, and tmux reads bit 2 as Alt and bit 8 as Meta — both of which
+/// reach a pane the same way.
+fn extended_key_name(code: &str, modifier: &str) -> Option<String> {
+    let code = code.parse::<u8>().ok()?;
+    let mask = modifier.parse::<u32>().ok()?.checked_sub(1)?;
+    let mut name = String::new();
+    if mask & 4 != 0 {
+        name.push_str("C-");
+    }
+    if mask & (2 | 8) != 0 {
+        name.push_str("M-");
+    }
+    if mask & 1 != 0 {
+        name.push_str("S-");
+    }
+    name.push_str(&plain_prompt_key(code));
+    Some(name)
 }
 
 #[derive(Clone, Debug)]
