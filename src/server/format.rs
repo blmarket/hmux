@@ -2004,17 +2004,25 @@ impl Expander<'_> {
         bool01(keep(a.cmp(&b)))
     }
 
-    /// `a,b` for `||`/`&&`: combine the *truthiness* of the two expanded operands.
+    /// `a,b` for `||`/`&&`: combine the *truthiness* of the operands, stopping
+    /// at the one that decides the result. tmux's `format_choose_state` leaves
+    /// the rest unexpanded, so a `#()` operand behind a decided `||` never
+    /// starts its job.
     fn eval_logical(&self, rest: &str, vars: &Vars, depth: usize, is_or: bool) -> String {
         let parts = split_top_level(rest, b',');
-        let values = parts
-            .iter()
-            .map(|part| is_true(&self.expand(part, vars, depth)));
-        bool01(if is_or {
-            values.fold(false, |acc, value| acc || value)
-        } else {
-            values.fold(true, |acc, value| acc && value)
-        })
+        let mut result = !is_or;
+        for part in &parts {
+            let value = is_true(&self.expand(part, vars, depth));
+            if is_or {
+                result |= value;
+            } else {
+                result &= value;
+            }
+            if result == is_or {
+                break;
+            }
+        }
+        bool01(result)
     }
 
     /// `OP[|FLAGS[|PRECISION]]:a,b` (following the `e|` prefix): arithmetic and
