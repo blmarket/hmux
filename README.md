@@ -57,6 +57,15 @@ model for a while after switching sessions in place.
   starts with no session, so we keep it alive until the first one is created.
 - `hmux` does not have client, so launching it will create daemon and
   immediately exit. You may want to run `tmux attach` to start using it.
+- **The first untargeted attach on a fresh daemon creates its session.** Because
+  the daemon is started on its own rather than by a client command, an
+  `attach-session` with no target on a server that has never held a session
+  creates session `0` and attaches to it, where tmux reports `no sessions`. Once
+  the server has held a session, both report `no sessions` the same way.
+- **Access control is single-user.** `server-access -l` reports the user who owns
+  the server, with write access; the `-a`/`-d`/`-r`/`-w` flags validate their
+  user argument but keep no per-user ACL, because a server is reachable only
+  through a socket its owner owns.
 - **A rewrap keeps a scrollback line's timestamp.** `#{top_line_time}` reports
   when the row at the top of a copy-mode view scrolled into the history. hmux's
   emulator rewraps a resized pane one *logical* line at a time, so a logical
