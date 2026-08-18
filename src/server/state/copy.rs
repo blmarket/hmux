@@ -174,6 +174,10 @@ pub(crate) struct CopySelection {
     pub(crate) anchor: (usize, usize),
     pub(crate) end: (usize, usize),
     pub(crate) active: bool,
+    /// Which end the cursor drags — tmux's `cursordrag`. `other-end` puts the
+    /// cursor on the far end and drags that one instead, leaving both ends
+    /// where the formats report them.
+    pub(crate) drag_anchor: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1048,7 +1052,11 @@ pub(super) fn synchronize_copy_selection(state: &mut CopyState) {
         .as_mut()
         .filter(|selection| selection.active)
     {
-        selection.end = (state.cursor.row, state.cursor.col);
+        if selection.drag_anchor {
+            selection.anchor = (state.cursor.row, state.cursor.col);
+        } else {
+            selection.end = (state.cursor.row, state.cursor.col);
+        }
     }
 }
 
@@ -1060,6 +1068,7 @@ pub(super) fn select_copy_line(state: &mut CopyState, vi: bool) {
         anchor,
         end: (state.cursor.row, state.cursor.col),
         active: true,
+        drag_anchor: false,
     });
 }
 
@@ -1096,6 +1105,7 @@ pub(super) fn select_copy_word(state: &mut CopyState, vi: bool, separators: &str
         anchor,
         end: (state.cursor.row, state.cursor.col),
         active: true,
+        drag_anchor: false,
     });
 }
 
@@ -2060,6 +2070,7 @@ pub(super) fn copy_from_cursor_to_line_end(state: &CopyState, vi: bool) -> Strin
         anchor,
         end: (temporary.cursor.row, temporary.cursor.col),
         active: false,
+        drag_anchor: false,
     });
     copy_selection(&temporary, vi)
 }
@@ -2073,6 +2084,7 @@ pub(super) fn copy_current_line(state: &CopyState, vi: bool) -> String {
         anchor,
         end: (temporary.cursor.row, temporary.cursor.col),
         active: false,
+        drag_anchor: false,
     });
     copy_selection(&temporary, vi)
 }

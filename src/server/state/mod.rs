@@ -1441,6 +1441,7 @@ mod tests {
                 anchor: (0, 0),
                 end: (0, 8),
                 active: true,
+                drag_anchor: false,
             }),
             rectangle: false,
             selection_mode: CopySelectionMode::Character,

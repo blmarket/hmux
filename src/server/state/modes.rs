@@ -1052,6 +1052,7 @@ impl ServerState {
                                 anchor: point,
                                 end: point,
                                 active: true,
+                                drag_anchor: false,
                             });
                             None
                         }
@@ -1111,9 +1112,18 @@ impl ServerState {
                         "other-end" => {
                             if !prefix.is_multiple_of(2) {
                                 if let Some(selection) = state.selection.as_mut() {
-                                    std::mem::swap(&mut selection.anchor, &mut selection.end);
-                                    state.cursor.row = selection.end.0;
-                                    state.cursor.col = selection.end.1;
+                                    // tmux flips which end the cursor drags and
+                                    // leaves both where they are, so the
+                                    // geometry formats keep reporting the same
+                                    // pair.
+                                    selection.drag_anchor = !selection.drag_anchor;
+                                    let target = if selection.drag_anchor {
+                                        selection.anchor
+                                    } else {
+                                        selection.end
+                                    };
+                                    state.cursor.row = target.0;
+                                    state.cursor.col = target.1;
                                     selection.active = true;
                                     ensure_copy_cursor_visible(state);
                                 }
