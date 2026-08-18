@@ -1120,7 +1120,20 @@ impl NativePaneObservation {
     fn observe_output(&self, pending: Bytes) -> (Vec<Vec<u8>>, Vec<&'static [u8]>) {
         self.append_control_output(pending.clone());
         let policy = self.output_policy();
-        let events = self.term.borrow_mut().process(&pending, &policy);
+        let events = {
+            let mut term = self.term.borrow_mut();
+            // tmux stamps every row that scrolls into the history with
+            // `current_time`, which its server loop refreshes once a turn. One
+            // read per output chunk is the same granularity seen from a pane:
+            // whatever this chunk scrolls off carries the second it arrived.
+            term.set_current_time(
+                SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            );
+            term.process(&pending, &policy)
+        };
 
         let mut replies: Vec<Vec<u8>> = Vec::new();
         let mut queries: Vec<&'static [u8]> = Vec::new();

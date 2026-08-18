@@ -76,6 +76,13 @@ impl PaneScreen {
         self.engine.screen.set_history_limit(limit);
     }
 
+    /// Set the second the next row to reach the history is stamped with, which
+    /// `#{top_line_time}` reads back. tmux's `current_time`: one clock read per
+    /// server loop, not one per scrolled row.
+    pub fn set_current_time(&mut self, now: u64) {
+        self.engine.screen.set_current_time(now);
+    }
+
     /// The pane's VT modes, as [`crate::screen::mode`]'s bits.
     ///
     /// Every mode a pane can set lives here, not only the ones that steer the

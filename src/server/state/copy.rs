@@ -62,6 +62,15 @@ impl CopyState {
         })
     }
 
+    /// `#{top_line_time}`: the second the row at the top of the view scrolled
+    /// into the history, tmux's `grid_get_line(backing, hsize - oy)->time`. A
+    /// view still at the bottom tops out on a row that is on screen rather than
+    /// in the history, and one of those was never stamped, so it reports zero.
+    pub(crate) fn top_line_time(&self) -> u64 {
+        let view_top = self.grid.scrollback_rows.saturating_sub(self.scroll);
+        self.grid.rows.get(view_top).map_or(0, |row| row.time)
+    }
+
     pub(crate) fn vt_rows(&self) -> impl Iterator<Item = &[u8]> {
         self.vt_rows.iter().map(|range| &self.vt[range.clone()])
     }
@@ -193,6 +202,17 @@ pub(super) fn reflow_copy_snapshot(state: &mut CopyState, cols: u16, rows: u16) 
     let mark_offset = state
         .mark
         .map(|point| copy_point_offset(&state.grid, point));
+    // A logical line's history stamp survives a rewrap on the row the rewrap
+    // leaves it starting on, as `Grid::reflow` keeps it. The replay below
+    // rebuilds the snapshot from VT, which carries no stamps, so they are
+    // re-attached afterwards by the offset the logical line starts at.
+    let mut stamps = Vec::new();
+    for (row, line) in state.grid.rows.iter().enumerate() {
+        let starts_logical_line = row == 0 || !state.grid.rows[row - 1].wrapped;
+        if line.time != 0 && starts_logical_line {
+            stamps.push((copy_point_offset(&state.grid, (row, 0)), line.time));
+        }
+    }
     let mut metadata = Vec::new();
     for (row, line) in state.grid.rows.iter().enumerate() {
         for (col, cell) in line.cells.iter().enumerate() {
@@ -219,6 +239,12 @@ pub(super) fn reflow_copy_snapshot(state: &mut CopyState, cols: u16, rows: u16) 
         {
             cell.semantic = semantic;
             cell.hyperlink = hyperlink;
+        }
+    }
+    for (offset, time) in stamps {
+        let (row, _) = copy_point_at_offset(&state.grid, offset);
+        if let Some(line) = state.grid.rows.get_mut(row) {
+            line.time = time;
         }
     }
     let vt = terminal.dump_vt_rows(0, terminal.grid_dims().total_rows, RowExtent::Redraw);

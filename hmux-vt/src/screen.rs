@@ -398,6 +398,10 @@ pub struct GridRow {
     /// which `#{history_all_bytes}` counts.
     pub extd: usize,
     pub flags: RowFlags,
+    /// tmux's `gl->time`: the second this row scrolled into the history, or
+    /// zero for a row still on screen. `#{top_line_time}` reads it off the row
+    /// at the top of a copy-mode view.
+    pub time: u64,
 }
 
 /// An immutable copy of the active screen, scrollback first, viewport last.

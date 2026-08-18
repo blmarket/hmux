@@ -436,7 +436,8 @@ fn render_mark_and_position(
                 .unwrap_or_default(),
         )
         .set("copy_cursor_x", copy.cursor.col.to_string())
-        .set("copy_cursor_y", copy.cursor.row.to_string());
+        .set("copy_cursor_y", copy.cursor.row.to_string())
+        .set("top_line_time", copy.top_line_time().to_string());
     let configured = state
         .option_for_target(target, "copy-mode-position-format")
         .filter(|value| !value.is_empty());

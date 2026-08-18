@@ -33,9 +33,14 @@ pub mod line_flag {
 ///
 /// An empty logical line still produces one row: it was a line, and dropping it
 /// would shift everything below it up.
-fn lay_out(out: &mut Vec<Line>, cells: Vec<Cell>, sx: usize, flags: u8) {
+///
+/// `time` is the history stamp of the logical line's first row and lands on the
+/// first row it becomes; the rows a split adds behind it carry none, as the
+/// ones tmux's `grid_reflow_add` allocates do not.
+fn lay_out(out: &mut Vec<Line>, cells: Vec<Cell>, sx: usize, flags: u8, time: u64) {
     let mut row = Line {
         flags,
+        time,
         ..Line::default()
     };
     let mut width = 0;
@@ -230,6 +235,11 @@ pub struct Line {
     /// tmux's `cellused`: how far a program has written into the row.
     used: usize,
     pub flags: u8,
+    /// tmux's `gl->time`: the wall-clock second this row entered the history,
+    /// or zero while it is still on screen. Only a scroll stamps it, so a
+    /// resize that hands rows to the history leaves them unstamped, as tmux's
+    /// `screen_resize_y` does.
+    pub time: u64,
 }
 
 impl Line {
@@ -754,17 +764,21 @@ impl Grid {
 
     /// tmux's `grid_scroll_history`: the top visible row becomes history and a
     /// fresh row appears at the bottom.
-    pub fn scroll_history(&mut self, bg: i32) {
+    ///
+    /// `now` is the second the promoted row is stamped with, tmux's
+    /// `current_time`.
+    pub fn scroll_history(&mut self, bg: i32, now: u64) {
         self.lines.push(Line::default());
         let last = self.lines.len() - 1;
         self.empty_line(last, bg);
         self.hscrolled += 1;
+        self.lines[self.hsize].time = now;
         self.hsize += 1;
     }
 
     /// tmux's `grid_scroll_history_region`: scrolling a region whose top is the
     /// top of the screen still feeds the history, unlike one further down.
-    pub fn scroll_history_region(&mut self, upper: usize, lower: usize, bg: i32) {
+    pub fn scroll_history_region(&mut self, upper: usize, lower: usize, bg: i32, now: u64) {
         self.lines.insert(self.hsize, Line::default());
         // The region moved down by one with the insert; take its first row into
         // the history slot and close the gap behind it.
@@ -772,6 +786,7 @@ impl Grid {
         let lower = self.hsize + lower + 1;
         let promoted = self.lines.remove(upper);
         self.lines[self.hsize] = promoted;
+        self.lines[self.hsize].time = now;
         self.lines.insert(lower, Line::default());
         self.empty_line(lower, bg);
         self.hscrolled += 1;
@@ -823,7 +838,7 @@ impl Grid {
     /// clearing does not fill the scrollback with the blank tail of a
     /// half-drawn screen — and a screen nothing was written to scrolls nothing
     /// at all.
-    pub fn view_clear_history(&mut self, bg: i32) {
+    pub fn view_clear_history(&mut self, bg: i32, now: u64) {
         let last = (0..self.sy)
             .filter(|yy| {
                 self.line(self.hsize + yy)
@@ -839,7 +854,7 @@ impl Grid {
         }
         for _ in 0..last {
             self.collect_history();
-            self.scroll_history(bg);
+            self.scroll_history(bg, now);
         }
         if last < self.sy {
             let py = self.hsize;
@@ -974,12 +989,16 @@ impl Grid {
         let mut rewrapped: Vec<Line> = Vec::new();
         let mut logical: Vec<Cell> = Vec::new();
         let mut carried_flags = 0u8;
+        // The history stamp belongs to the logical line, so it is the one its
+        // first row carried; the rows a wrap split it into are the same line.
+        let mut carried_time = None;
 
         let lines = std::mem::take(&mut self.lines);
         for line in lines {
             // The flags that belong to the logical line, not to the row the
             // old width happened to split it into.
             carried_flags |= line.flags & !line_flag::WRAPPED;
+            carried_time.get_or_insert(line.time);
             logical.extend(line.iter().take(line.used()));
             if line.flags & line_flag::WRAPPED != 0 {
                 continue;
@@ -989,12 +1008,19 @@ impl Grid {
                 std::mem::take(&mut logical),
                 sx,
                 carried_flags,
+                carried_time.take().unwrap_or(0),
             );
             carried_flags = 0;
         }
         // A trailing run that never met an unwrapped row still has to land.
         if !logical.is_empty() {
-            lay_out(&mut rewrapped, logical, sx, carried_flags);
+            lay_out(
+                &mut rewrapped,
+                logical,
+                sx,
+                carried_flags,
+                carried_time.unwrap_or(0),
+            );
         }
 
         self.sx = sx;
@@ -1106,6 +1132,35 @@ mod tests {
     }
 
     #[test]
+    fn a_rewrap_keeps_the_logical_lines_history_stamp() {
+        let mut grid = Grid::new(4, 2, 100);
+        for (px, ch) in "abcd".chars().enumerate() {
+            grid.set(
+                px,
+                0,
+                &Cell {
+                    data: CellData::from_char(ch, 1),
+                    ..Cell::default()
+                },
+            );
+        }
+        grid.scroll_history(colour::DEFAULT, 1_700_000_000);
+        grid.reflow(2);
+        assert_eq!(written(&grid, 0), "ab");
+        assert_eq!(written(&grid, 1), "cd");
+        assert_eq!(
+            grid.line(0).map(|line| line.time),
+            Some(1_700_000_000),
+            "the row the split leaves the line starting on keeps the stamp"
+        );
+        assert_eq!(
+            grid.line(1).map(|line| line.time),
+            Some(0),
+            "the row the split added carries none"
+        );
+    }
+
+    #[test]
     fn a_read_past_the_allocated_extent_is_the_default_cell() {
         let grid = Grid::new(80, 4, 100);
         let cell = grid.get(79, 0);
@@ -1161,17 +1216,27 @@ mod tests {
                 ..Cell::default()
             },
         );
-        grid.scroll_history(colour::DEFAULT);
+        grid.scroll_history(colour::DEFAULT, 1_700_000_000);
         assert_eq!(grid.hsize, 1);
         assert_eq!(grid.total(), 3);
         assert_eq!(written(&grid, 0), "a", "the row is now history row zero");
+        assert_eq!(
+            grid.line(0).map(|line| line.time),
+            Some(1_700_000_000),
+            "the promoted row is stamped"
+        );
+        assert_eq!(
+            grid.line(1).map(|line| line.time),
+            Some(0),
+            "a row still on screen carries no stamp"
+        );
     }
 
     #[test]
     fn history_is_collected_a_tenth_at_a_time_once_over_the_limit() {
         let mut grid = Grid::new(10, 1, 10);
         for _ in 0..10 {
-            grid.scroll_history(colour::DEFAULT);
+            grid.scroll_history(colour::DEFAULT, 0);
         }
         assert_eq!(grid.hsize, 10);
         grid.collect_history();
@@ -1224,9 +1289,14 @@ mod tests {
                 },
             );
         }
-        grid.scroll_history_region(0, 2, colour::DEFAULT);
+        grid.scroll_history_region(0, 2, colour::DEFAULT, 1_700_000_000);
         assert_eq!(grid.hsize, 1);
         assert_eq!(written(&grid, 0), "a", "the region's top row is history");
+        assert_eq!(
+            grid.line(0).map(|line| line.time),
+            Some(1_700_000_000),
+            "the promoted row is stamped"
+        );
         assert_eq!(written(&grid, 1), "b");
         assert_eq!(written(&grid, 2), "c");
         assert_eq!(written(&grid, 3), "", "the region's bottom row is blank");

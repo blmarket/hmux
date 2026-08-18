@@ -57,6 +57,12 @@ model for a while after switching sessions in place.
   starts with no session, so we keep it alive until the first one is created.
 - `hmux` does not have client, so launching it will create daemon and
   immediately exit. You may want to run `tmux attach` to start using it.
+- **A rewrap keeps a scrollback line's timestamp.** `#{top_line_time}` reports
+  when the row at the top of a copy-mode view scrolled into the history. hmux's
+  emulator rewraps a resized pane one *logical* line at a time, so a logical
+  line keeps its stamp on whichever row the new width leaves it starting on.
+  tmux rewraps row by row and drops the stamp of any line it has to split, which
+  reports such a line as unstamped after a narrowing resize.
 
 ## Usage
 

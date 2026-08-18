@@ -73,6 +73,7 @@ pub fn snapshot_grid(screen: &Screen, grid: &EngineGrid, start: usize, count: us
             size: line.map_or(0, super::grid::Line::size),
             extd: line.map_or(0, super::grid::Line::extd),
             flags: row_flags(line),
+            time: line.map_or(0, |line| line.time),
         });
     }
     Grid {

@@ -88,6 +88,12 @@ impl Terminal {
         self.screen.set_history_limit(limit);
     }
 
+    /// Set the second the next row to reach the history is stamped with; see
+    /// [`PaneScreen::set_current_time`].
+    pub fn set_current_time(&mut self, now: u64) {
+        self.screen.set_current_time(now);
+    }
+
     /// `resize-pane -T`: drop the rows below the cursor and pull the same
     /// number of rows out of the history in their place; see
     /// [`PaneScreen::trim_history_below_cursor`].

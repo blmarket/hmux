@@ -1421,6 +1421,7 @@ mod tests {
                 size,
                 extd: 0,
                 flags: RowFlags::default(),
+                time: 0,
             }],
         };
         let state = CopyState {

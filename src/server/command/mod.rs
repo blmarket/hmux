@@ -3153,6 +3153,7 @@ pub(super) fn vars_full(
                     )
                     .set("copy_position", copy.scroll.to_string())
                     .set("copy_position_limit", copy.grid.scrollback_rows.to_string())
+                    .set("top_line_time", copy.top_line_time().to_string())
                     .set("rectangle_toggle", if copy.rectangle { "1" } else { "0" })
                     .set(
                         "selection_mode",

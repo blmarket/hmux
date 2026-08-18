@@ -120,6 +120,11 @@ pub struct Screen {
     titles: Vec<Option<String>>,
     /// The run of plain characters in progress; see [`Run`].
     run: Option<Run>,
+    /// tmux's `current_time`: the second a row scrolling into the history is
+    /// stamped with. The server sets it, rather than the screen reading a clock
+    /// per row, so a burst of scrolling stamps one time as tmux's does — and so
+    /// the engine stays free of a clock of its own.
+    current_time: u64,
 }
 
 impl Screen {
@@ -146,7 +151,14 @@ impl Screen {
             title: None,
             titles: Vec::new(),
             run: None,
+            current_time: 0,
         }
+    }
+
+    /// Set the second the next row to reach the history is stamped with, tmux's
+    /// `current_time`.
+    pub fn set_current_time(&mut self, now: u64) {
+        self.current_time = now;
     }
 
     /// tmux's `screen_push_title`: keep ten and evict the oldest to make
@@ -340,10 +352,11 @@ impl Screen {
         let (rupper, rlower) = (self.rupper, self.rlower);
         if self.has_history() {
             self.grid.collect_history();
+            let now = self.current_time;
             if rupper == 0 && rlower == self.sy() - 1 {
-                self.grid.scroll_history(bg);
+                self.grid.scroll_history(bg, now);
             } else {
-                self.grid.scroll_history_region(rupper, rlower, bg);
+                self.grid.scroll_history_region(rupper, rlower, bg, now);
             }
             return;
         }
@@ -525,7 +538,7 @@ impl Screen {
     /// tmux's `screen_write_clearscreen`.
     pub fn clear_screen(&mut self, bg: i32) {
         if self.scrolls_on_clear() {
-            self.grid.view_clear_history(bg);
+            self.grid.view_clear_history(bg, self.current_time);
             return;
         }
         let py = self.view_y(0);
@@ -546,7 +559,7 @@ impl Screen {
         // same route as `clear_screen`. From anywhere else it does not, and
         // tmux checks the cursor rather than the extent.
         if self.cx == 0 && self.cy == 0 && self.scrolls_on_clear() {
-            self.grid.view_clear_history(bg);
+            self.grid.view_clear_history(bg, self.current_time);
             return;
         }
         let py = self.view_y(self.cy);
