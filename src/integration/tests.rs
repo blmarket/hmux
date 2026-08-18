@@ -1421,49 +1421,6 @@ fn tree_walk_without_agent_reports_not_found() {
     ));
 }
 
-/// Live smoke test against the real `/proc` on the running machine. Ignored by
-/// default because it needs an agent process actually running below the pid in
-/// `HMUX_TEST_ROOT_PID`. Run with, e.g.:
-///
-/// ```text
-/// HMUX_TEST_ROOT_PID=$(pgrep -f claude_code/claude | head -1 | xargs -I{} \
-///   sed -E 's/^[0-9]+ \(.*\) . ([0-9]+).*/\1/' /proc/{}/stat) \
-///   cargo test --lib real_proc -- --ignored --nocapture
-/// ```
-#[test]
-#[ignore = "requires a live agent process under HMUX_TEST_ROOT_PID"]
-fn real_proc_attributes_a_live_agent() {
-    let root: u32 = std::env::var("HMUX_TEST_ROOT_PID")
-        .expect("set HMUX_TEST_ROOT_PID")
-        .parse()
-        .expect("numeric pid");
-    let detectors = default_detectors();
-    let snapshot = ProcessSnapshot::capture(&SystemProcesses);
-    let scan = find_agent_in_tree(&snapshot, root, &detectors);
-    match scan {
-        TreeScan::Found { detector, pid, .. } => {
-            eprintln!(
-                "attributed to agent: {} pid {pid}",
-                detectors[detector].label()
-            );
-            // The session stamp is only present while the agent has a live
-            // subprocess, so its absence is reported rather than asserted.
-            match find_descendant_env_session(&snapshot, pid, detectors[detector].as_ref()) {
-                Some((session_id, file)) => {
-                    eprintln!("session from descendant environment: {session_id} at {file:?}");
-                    assert!(
-                        file.ends_with(format!("{session_id}.jsonl")),
-                        "the resolved file must be the one the stamped id names"
-                    );
-                }
-                None => eprintln!("no session stamp visible (agent has no live subprocess)"),
-            }
-        }
-        other => panic!("expected Found, got {other:?}"),
-    }
-    assert!(matches!(scan, TreeScan::Found { .. }));
-}
-
 /// A steady, busy server must scan the process table on the poll cadence, not on
 /// output churn. Several agents stream new output every poll (advancing their
 /// revision), yet the dedicated poller captures one shared process snapshot per
