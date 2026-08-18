@@ -317,17 +317,21 @@ impl ListKeys {
                     ));
                 }
             } else {
-                out.push_str("bind-key");
-                if binding.repeat {
-                    out.push_str(" -r");
-                }
-                out.push_str(" -T ");
-                out.push_str(table_name);
-                out.push(' ');
-                out.push_str(&format_key_name(*key));
-                out.push(' ');
-                out.push_str(&binding.command.print());
-                out.push('\n');
+                // tmux's `LIST_KEYS_TEMPLATE` pads three columns: the repeat
+                // flag is blanked out to its own width once any listed binding
+                // repeats, and the table and key names are padded to the widest
+                // entry in the listing.
+                let repeat = match (key_has_repeat, binding.repeat) {
+                    (false, _) => "",
+                    (true, true) => "-r",
+                    (true, false) => "  ",
+                };
+                let key_name = format_key_name(*key);
+                out.push_str(&format!(
+                    "bind-key {repeat} -T {table_name:<key_table_width$} \
+                     {key_name:<key_string_width$} {}\n",
+                    binding.command.print()
+                ));
             }
         }
         CommandResult::ok(out)

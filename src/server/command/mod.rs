@@ -4934,7 +4934,7 @@ mod tests {
         let listed = run_str(&st, &["list-keys", "-T", "foo"]);
         assert_eq!(
             listed.stdout,
-            "bind-key -r -T foo F1 new-window -d\nbind-key -T foo F2 display-message two\n",
+            "bind-key -r -T foo F1 new-window -d\nbind-key    -T foo F2 display-message two\n",
             "got {:?}",
             listed.stdout.clone()
         );
