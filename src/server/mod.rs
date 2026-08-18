@@ -192,6 +192,12 @@ impl Server {
     /// tmux's per-loop `server_check_unattached` plus the `server_loop` exit
     /// test, run once the current batch of client events has been applied.
     /// tmux's `status_prompt_save_history`, run as the server exits.
+    /// Ask the server to exit the way `kill-server` does, so every client is
+    /// told before the loop leaves — tmux's `server_signal` on `SIGTERM`.
+    pub(crate) fn request_signal_shutdown(&self) {
+        self.state.borrow_mut().kill_server();
+    }
+
     pub(crate) fn save_prompt_history(&self) {
         self.state.borrow_mut().save_prompt_history();
     }

@@ -39,7 +39,7 @@ pub fn run_event_loop(
     let mut runtime = TaskRuntime::new()?;
     let tasks = runtime.handle();
     let child_signal = process::spawn(&tasks, server.clone())?;
-    term_signal::spawn(&tasks)?;
+    term_signal::spawn(&tasks, server.clone())?;
     let listener = listener::spawn(&tasks, bind_listener(listen_path)?, ACCEPT_BUDGET)?;
     let background = BackgroundRunner::new(&server, tasks.clone());
     tasks.spawn(background.clone().run_drainer());
