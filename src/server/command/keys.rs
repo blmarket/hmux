@@ -183,6 +183,8 @@ pub(in crate::server) struct ListKeys {
     table: Option<String>,
     /// `-F`: the line each binding expands to.
     format: Option<String>,
+    /// `-O`: the sort order tmux validates before listing.
+    order: Option<String>,
     prefix: Option<String>,
     key: Option<String>,
 }
@@ -196,6 +198,7 @@ impl ListKeys {
             repeat_only: args.has('r'),
             table: args.value('T').map(str::to_string),
             format: args.value('F').map(str::to_string),
+            order: args.value('O').map(str::to_string),
             prefix: args.value('P').map(str::to_string),
             key: args.positionals().first().cloned(),
         })
@@ -203,6 +206,9 @@ impl ListKeys {
 
     /// Lists the shared mutable key tables.
     fn execute(self, st: &ServerState) -> CommandResult {
+        if let Err(error) = list_sort_order(self.order.as_deref()) {
+            return error;
+        }
         let table = self.table.as_deref();
         if let Some(table) = table {
             if !st.key_table_exists(table) {
