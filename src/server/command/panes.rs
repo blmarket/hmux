@@ -2163,7 +2163,15 @@ impl CopyMode {
             }
         }
         if self.page_down {
-            let _ = st.copy_mode_command(&target, "page-down", vi, &separators);
+            // tmux hands `-e` to this page-down itself rather than storing it,
+            // so a re-entering `copy-mode -d -e` still leaves the mode at the
+            // bottom without changing what a later page-down does.
+            let command = if self.exit_at_bottom {
+                "page-down-and-cancel"
+            } else {
+                "page-down"
+            };
+            let _ = st.copy_mode_command(&target, command, vi, &separators);
         }
         CommandResult::ok("")
     }
