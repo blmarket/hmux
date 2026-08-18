@@ -1719,6 +1719,32 @@ fn hook_commands(
     st: &mut ServerState,
     origin: HookOrigin,
 ) -> Option<Vec<ExecutableCommand>> {
+    // A user hook is a plain string option rather than a catalogued command
+    // array, so tmux compiles its body when the hook fires and drops a body
+    // that does not compile.
+    if hook.starts_with('@') {
+        if matches!(origin, HookOrigin::Command) && !st.begin_hook(hook) {
+            return None;
+        }
+        let target = requested_target
+            .filter(|target| st.resolve(target).is_some())
+            .map(str::to_string)
+            .or_else(|| current_target(st));
+        let body = target
+            .as_deref()
+            .and_then(|target| st.session_options(target).ok())
+            .or_else(|| Some(st.global_session_options()))
+            .and_then(|view| view.get(hook).map(str::to_string));
+        let Some(body) = body else {
+            return Some(Vec::new());
+        };
+        let aliases = st.command_aliases();
+        return Some(
+            ExecutableCommand::compile(&body, &aliases)
+                .map(|command| vec![command])
+                .unwrap_or_default(),
+        );
+    }
     let name = options::AnyHook::from_name(hook)?;
     if matches!(origin, HookOrigin::Command) && !st.begin_hook(hook) {
         return None;

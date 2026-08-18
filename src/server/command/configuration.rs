@@ -1090,17 +1090,16 @@ impl SetHook {
                 "set-hook: missing hook\n",
             ));
         };
-        let Some(hook) = options::AnyHook::from_name(hook) else {
-            return SharedCommandExecution::completed(CommandResult::err(format!(
-                "invalid option: {hook}\n"
-            )));
-        };
+        // tmux fires whatever `-R` names without matching it against the option
+        // table first, so a name with no hook behind it is a no-op rather than an
+        // error.
+        let hook = hook.clone();
         // `-R` runs the hook's body as queue items of its own; the command's
         // own hooks wait until they have run.
         let mut insert_next = context.plan_hook_with_capture(
-            hook.as_str(),
+            &hook,
             self.set.scope.target.as_deref(),
-            vec![("hook".to_string(), hook.as_str().to_string())],
+            vec![("hook".to_string(), hook.clone())],
             NestedCapture::Discard,
         );
         insert_next.push(context.finalize_hooks("set-hook"));
