@@ -200,6 +200,23 @@ impl AttachSession {
         self.compositor.input.mouse.click_deadline()
     }
 
+    /// tmux's `tty_keys_next1`: the client's termios `VERASE` names the
+    /// Backspace key, because terminfo's `kbs` cannot be trusted to.
+    fn verase_backspace(&self, key: KeyCode) -> KeyCode {
+        let Some(verase) = self.tty.verase else {
+            return key;
+        };
+        let meta = key.modifiers.meta();
+        let plain = KeyCode::new(key.base, key.modifiers.without_meta());
+        if plain != key_from_byte(verase) {
+            return key;
+        }
+        KeyCode::new(
+            super::super::key::KeyBase::Special(super::super::key::SpecialKey::Backspace),
+            super::super::key::Modifiers::new(meta, false, false),
+        )
+    }
+
     /// Apply one key binding's client-local outcome.
     ///
     /// Shared by the tty read loop and the repeat-click timer, which delivers a
@@ -914,7 +931,7 @@ impl AttachSession {
                     },
                 };
                 i += consumed;
-                let Some(key) = key else {
+                let Some(key) = key.map(|key| self.verase_backspace(key)) else {
                     continue;
                 };
                 // With `mouse off` the client never consults its key tables for

@@ -332,6 +332,9 @@ pub(crate) struct AttachSession {
 
 struct AttachTty {
     termios_guard: TermiosGuard,
+    /// The client terminal's `VERASE`, which names its Backspace key. `None`
+    /// when the terminal disabled it or its attributes could not be read.
+    verase: Option<u8>,
     input_fd: OwnedFd,
     render_fd: OwnedFd,
     terminal: ResolvedTerm,

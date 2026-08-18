@@ -176,6 +176,10 @@ impl AttachSession {
         }
 
         let saved_termios = make_raw(input_fd.as_raw_fd()).ok();
+        let verase = saved_termios
+            .as_ref()
+            .map(|termios| termios.c_cc[libc::VERASE])
+            .filter(|byte| *byte != 0);
         let termios_guard = TermiosGuard {
             fd: input_fd.as_raw_fd(),
             saved: saved_termios,
@@ -199,6 +203,7 @@ impl AttachSession {
         Ok(Self {
             tty: AttachTty {
                 termios_guard,
+                verase,
                 input_fd,
                 render_fd,
                 terminal,
