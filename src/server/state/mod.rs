@@ -309,6 +309,9 @@ pub(crate) struct PopupRequest {
     /// how tmux's `popup_editor` reads an edited buffer back in.
     pub(crate) on_close: Vec<String>,
     pub(crate) on_close_remove: Option<PathBuf>,
+    /// Text the popup shows instead of running anything — tmux's
+    /// `POPUP_NOJOB`, which is how its mode-tree help is drawn.
+    pub(crate) content: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

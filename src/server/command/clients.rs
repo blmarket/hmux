@@ -1273,6 +1273,7 @@ impl DisplayPopup {
         let request = OverlayRequest::Popup(PopupRequest {
             on_close: Vec::new(),
             on_close_remove: None,
+            content: None,
             title: self.title.clone().unwrap_or_default(),
             argv: self.command.clone(),
             environment: state.spawn_environment(

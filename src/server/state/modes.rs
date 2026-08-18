@@ -14,6 +14,9 @@ use super::mode::update_mode_edit_item;
 use super::sizing::pane_slider;
 use super::target::pane_not_found;
 use crate::server::options::PaneHook;
+/// tmux's `MODE_TREE_HELP_DEFAULT_WIDTH`.
+const MODE_TREE_HELP_DEFAULT_WIDTH: u16 = 39;
+
 use super::{
     ModeBindingUpdate, ModeEdit, ModeKind, ModePrompt, ModeTarget, ModeView, ModeViewKeyResult,
     PopupRequest, RenderInvalidation, ServerState,
@@ -202,6 +205,7 @@ impl ServerState {
             title: String::new(),
             pane: None,
             mouse: None,
+            content: None,
             argv,
             environment: self.job_environment(None).as_ref().clone(),
             cwd: None,
@@ -221,6 +225,126 @@ impl ServerState {
             ],
             on_close_remove: Some(path),
         })
+    }
+
+    /// tmux's `mode_tree_display_help`: the key list a mode-tree shows for
+    /// `F1`, in a popup that closes on any key. The box is the mode's own
+    /// width and one row per line, centred on the client — a client too small
+    /// for it gets nothing, as tmux gives it nothing.
+    fn mode_tree_help_popup(kind: &ModeKind, cols: u16, rows: u16) -> Option<PopupRequest> {
+        const COMMON: &[(&str, &str)] = &[
+            ("Up, k", "Move cursor up"),
+            ("Down, j", "Move cursor down"),
+            ("g", "Go to top"),
+            ("G", "Go to bottom"),
+            ("PPage, C-b", "Page up"),
+            ("NPage, C-f", "Page down"),
+            ("Left, h", "Collapse %1"),
+            ("Right, l", "Expand %1"),
+            ("M--", "Collapse all %1s"),
+            ("M-+", "Expand all %1s"),
+            ("t", "Toggle %1 tag"),
+            ("T", "Untag all %1s"),
+            ("C-t", "Tag all %1s"),
+            ("C-s", "Search forward"),
+            ("n", "Repeat search forward"),
+            ("N", "Repeat search backward"),
+            ("f", "Filter %1s"),
+            ("O", "Change sort order"),
+            ("r", "Reverse sort order"),
+            ("v", "Toggle preview"),
+        ];
+        const TREE: &[(&str, &str)] = &[
+            ("Enter", "Choose selected item"),
+            ("S-Up", "Swap current and previous window"),
+            ("S-Down", "Swap current and next window"),
+            ("x", "Kill selected item"),
+            ("X", "Kill tagged items"),
+            ("<", "Scroll previews left"),
+            (">", "Scroll previews right"),
+            ("m", "Set the marked pane"),
+            ("M", "Clear the marked pane"),
+            (":", "Run a command for each tagged item"),
+            ("f", "Enter a format"),
+            ("H", "Jump to the starting pane"),
+        ];
+        const CLIENT: &[(&str, &str)] = &[
+            ("Enter", "Choose selected %1"),
+            ("d", "Detach selected %1"),
+            ("D", "Detach tagged %1s"),
+            ("x", "Detach selected %1"),
+            ("X", "Detach tagged %1s"),
+            ("z", "Suspend selected %1"),
+            ("Z", "Suspend tagged %1s"),
+            ("f", "Enter a filter"),
+        ];
+        const BUFFER: &[(&str, &str)] = &[
+            ("Enter", "Paste selected %1"),
+            ("p", "Paste selected %1"),
+            ("P", "Paste tagged %1s"),
+            ("d", "Delete selected %1"),
+            ("D", "Delete tagged %1s"),
+            ("e", "Open %1 in editor"),
+            ("f", "Enter a filter"),
+        ];
+        // tmux's per-mode help width, and the default the tree's own overrides.
+        let (own, item, own_width) = match kind {
+            ModeKind::Tree => (TREE, "item", 51),
+            ModeKind::Client => (CLIENT, "client", 0),
+            ModeKind::Buffer => (BUFFER, "buffer", 0),
+            _ => return None,
+        };
+        const END: &[(&str, &str)] = &[("q, Escape", "Exit mode")];
+        let lines = COMMON
+            .iter()
+            .chain(own)
+            .chain(END)
+            .map(|(key, description)| {
+                format!("{key:>11} \u{2502} {}", description.replace("%1", item))
+            })
+            .collect::<Vec<_>>();
+        // tmux sizes the whole box — borders included — at the mode's width
+        // and one row per line, so the two lines the borders take are the ones
+        // the text scrolls past.
+        let width = own_width.max(MODE_TREE_HELP_DEFAULT_WIDTH);
+        let height = lines.len() as u16;
+        if cols < width || rows < height {
+            return None;
+        }
+        let content = lines.join("\r\n").into_bytes();
+        Some(PopupRequest {
+            title: String::new(),
+            pane: None,
+            mouse: None,
+            content: Some(content),
+            argv: Vec::new(),
+            environment: Vec::new(),
+            cwd: None,
+            width: Some(width.to_string()),
+            height: Some(height.to_string()),
+            x: Some(((cols - width) / 2).to_string()),
+            // A popup's `-y` names the row below its last line.
+            y: Some(((rows - height) / 2 + height).to_string()),
+            close_on_exit: false,
+            close_on_success: false,
+            close_on_key: true,
+            border: true,
+            on_close: Vec::new(),
+            on_close_remove: None,
+        })
+    }
+
+    /// The size of the client the mode is drawn on, which is what a popup is
+    /// centred in. The largest client showing the session stands in for the
+    /// one that pressed the key, which the state does not see from here.
+    fn client_size_for_pane(&self, session: usize) -> (u16, u16) {
+        let session_id = self.sessions[session].id;
+        self.client_snapshots()
+            .iter()
+            .filter(|client| !client.control_mode && client.session_id == session_id)
+            .map(|client| (client.cols, client.rows))
+            .max()
+            .unwrap_or((80, 24))
     }
 
     pub(crate) fn mode_view_key(
@@ -263,6 +387,17 @@ impl ServerState {
             return Ok(ModeViewKeyResult::Prompt(prompt));
         }
 
+        // tmux's `mode_tree_display_help`, which the mode-tree answers before
+        // it looks at its own action keys.
+        if matches!(key, "F1" | "C-h") {
+            let kind = view.kind.clone();
+            let (cols, rows) = self.client_size_for_pane(resolved.session);
+            self.invalidate_session(session_id, RenderInvalidation::MODE);
+            return Ok(match Self::mode_tree_help_popup(&kind, cols, rows) {
+                Some(request) => ModeViewKeyResult::Popup(Box::new(request)),
+                None => ModeViewKeyResult::None,
+            });
+        }
         if let Some(result) = mode_view_action(view, key) {
             let ModeAction {
                 command,

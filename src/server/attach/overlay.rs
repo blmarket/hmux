@@ -454,13 +454,24 @@ impl ActiveOverlay {
                     wrapped.extend(argv);
                     wrapped
                 };
-                let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
-                let mut pane = Pane::spawn(
-                    &refs,
-                    request.cwd.as_deref(),
-                    inner_width.max(1),
-                    inner_height.max(1),
-                )?;
+                // A popup that shows text rather than running anything —
+                // tmux's `POPUP_NOJOB` — draws it in a pane with no child.
+                let mut pane = match request.content.as_deref() {
+                    Some(content) => {
+                        let pane = Pane::inert(inner_width.max(1), inner_height.max(1))?;
+                        pane.feed(content);
+                        pane
+                    }
+                    None => {
+                        let refs = argv.iter().map(String::as_str).collect::<Vec<_>>();
+                        Pane::spawn(
+                            &refs,
+                            request.cwd.as_deref(),
+                            inner_width.max(1),
+                            inner_height.max(1),
+                        )?
+                    }
+                };
                 let io = pane.take_event_io().map(Box::new);
                 Some(Self {
                     state: OverlayState::Popup(PopupOverlay {
