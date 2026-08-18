@@ -60,6 +60,30 @@ model for a while after switching sessions in place.
 - **The first untargeted attach on a fresh daemon creates its session.** When
   `exit-empty` is set as `after-session`, the first client attaches will create
   a session `0`.
+- **The hmux binary is the server, not a client.** Client-side global flags —
+  `-2`, `-C`/`-CC`, `-c`, `-D`, `-l`, `-L`, `-f`, `-N`, `-T`, `-u`, `-v` — are
+  consumed by the stock tmux client before it ever reaches hmux, so the daemon
+  does not duplicate them; it accepts `--foreground` and `-S` only. For the same
+  reason the daemon reads no config file, and `#{config_files}` is always empty
+  where tmux reports its `-f` path.
+- **Hyperlink storage is per-screen, not server-wide.** tmux caps OSC 8
+  hyperlinks with a single server-wide LRU, so a flood of links in one pane
+  evicts another pane's link. hmux's hyperlink store belongs to the screen that
+  holds the cells, so the cap applies per pane and an older link in a quiet pane
+  survives a neighbour's flood.
+- **Status lines are a pure function of live server state.** A displayed message
+  owns only its own status line, so the window list keeps updating underneath it
+  where tmux's stale status cache freezes the whole status area until the
+  message clears.
+- **A client is never parked on an unanswerable prompt.** When the client that
+  owns a `command-prompt` loses its session, tmux leaves the client that issued
+  the prompt waiting forever, because nothing can answer or cancel the item.
+  hmux releases that client instead. Both agree the prompt's command does not
+  run.
+- **Control clients start no tty renderer.** `refresh-client -l` and viewport
+  panning therefore have no observable effect for a control-mode client.
+- **Single-user access only.** hmux implements no multi-user ACLs, so tmux's
+  read-only client flag and `server-access` state have no equivalent.
 
 ## Usage
 
