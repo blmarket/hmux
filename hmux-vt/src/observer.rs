@@ -304,6 +304,14 @@ impl Observer {
     }
 }
 
+impl Observer {
+    /// Drop the pane's `OSC 4` palette, as tmux's `colour_palette_clear` does
+    /// for a reset the pane's own byte stream did not carry.
+    pub fn clear_palette(&mut self) {
+        *self.state.palette = [None; 256];
+    }
+}
+
 impl ObserverState {
     fn token(&mut self, token: Token, policy: &OutputPolicy, out: &mut Observed) {
         match &token.kind {
@@ -316,7 +324,17 @@ impl ObserverState {
                 }
                 out.keep(token);
             }
-            TokenKind::Esc { .. } => out.keep(token),
+            TokenKind::Esc {
+                intermediates,
+                final_byte,
+            } => {
+                // RIS returns the pane's own palette to the terminal's, the
+                // way tmux's `INPUT_ESC_RIS` clears `wp->palette`.
+                if intermediates.is_empty() && *final_byte == b'c' {
+                    *self.palette = [None; 256];
+                }
+                out.keep(token)
+            }
             TokenKind::Csi { .. } => self.csi(token, policy, out),
             TokenKind::Osc { .. } => self.osc(token, policy, out),
             TokenKind::Dcs {

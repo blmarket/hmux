@@ -159,6 +159,7 @@ impl Terminal {
 
     /// Reset the terminal as `RIS` does, without any bytes from the pane.
     pub fn reset(&mut self) {
+        self.observer.clear_palette();
         self.apply_sequence(b"\x1bc");
     }
 
