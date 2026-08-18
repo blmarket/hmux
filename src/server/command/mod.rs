@@ -687,7 +687,8 @@ fn install_command_target_context(
         });
     let session_id = default_target
         .map(|resolved| state.sessions()[resolved.session].id)
-        .or(context.current_session_id);
+        .or(context.current_session_id)
+        .or_else(|| inside_pane_session(state, context));
     let window_id = default_target
         .map(|resolved| state.sessions()[resolved.session].windows[resolved.window].id);
     let pane_id = default_target
@@ -3554,6 +3555,34 @@ fn unix_seconds(at: SystemTime) -> u64 {
 fn server_pid() -> i32 {
     // SAFETY: `getpid` reads no memory and always succeeds.
     unsafe { libc::getpid() }
+}
+
+/// tmux's `cmd_find_inside_pane`: the session of the pane a command client is
+/// running in, found by the client's own tty and failing that by the
+/// `TMUX_PANE` it identified with. Only the session comes from the pane; the
+/// window and pane parts still come from that session's current window.
+fn inside_pane_session(state: &ServerState, context: &ClientContext) -> Option<u32> {
+    let by_tty = context.tty_name.as_deref().and_then(|tty| {
+        state
+            .sessions()
+            .iter()
+            .enumerate()
+            .find_map(|(index, session)| {
+                let holds = (0..session.windows.len()).any(|window| {
+                    state
+                        .window(index, window)
+                        .panes
+                        .iter()
+                        .any(|node| node.pane.tty_name().as_deref() == Some(tty))
+                });
+                holds.then_some(session.id)
+            })
+    });
+    by_tty.or_else(|| {
+        let pane = context.env("TMUX_PANE")?;
+        let resolved = state.resolve(pane)?;
+        Some(state.sessions()[resolved.session].id)
+    })
 }
 
 /// The "current" session for a command with no explicit target. Client-scoped
