@@ -1543,16 +1543,18 @@ fn write_control_notifications(
     for window_id in before_ids.intersection(&after_ids) {
         let old = &before.windows[window_id];
         let new = &after.windows[window_id];
-        if old.active_pane_id != new.active_pane_id {
-            writer.enqueue_line(format!(
-                "%window-pane-changed @{} %{}",
-                new.id, new.active_pane_id
-            ));
-        }
+        // tmux's `server_kill_pane` closes the layout before it moves the
+        // active pane, so a client that sees both sees the layout first.
         if old.layout != new.layout {
             writer.enqueue_line(format!(
                 "%layout-change @{} {} {} {}",
                 new.id, new.layout, new.layout, new.flags
+            ));
+        }
+        if old.active_pane_id != new.active_pane_id {
+            writer.enqueue_line(format!(
+                "%window-pane-changed @{} %{}",
+                new.id, new.active_pane_id
             ));
         }
         if old.name != new.name {
