@@ -292,6 +292,28 @@ impl ServerState {
         removed
     }
 
+    /// tmux's `cmd_refresh_report`: a control client's `%pane:REPORT` gives the
+    /// pane the OSC 10 or OSC 11 answer the client's terminal returned, which
+    /// the pane's own colour questions are then answered from.
+    pub(crate) fn set_pane_control_colour(&mut self, report: &str) {
+        let Some((pane, reply)) = report.split_once(':') else {
+            return;
+        };
+        let Some(resolved) = self.resolve(pane) else {
+            return;
+        };
+        let Some((number, colour)) = parse_colour_report(reply) else {
+            return;
+        };
+        let node = &mut self.window_mut(resolved.session, resolved.window).panes[resolved.pane];
+        match number {
+            10 => node.control_colours.0 = Some(colour),
+            11 => node.control_colours.1 = Some(colour),
+            _ => return,
+        }
+        self.refresh_pane_options();
+    }
+
     /// Push each pane the options it has to consult about its own output: how
     /// the bytes are parsed, and what an operation on the grid does.
     ///
@@ -331,6 +353,8 @@ impl ServerState {
                 });
                 node.pane.set_output_policy(PaneOutputPolicy {
                     alternate_screen: options.get("alternate-screen") != Some("off"),
+                    control_foreground: node.control_colours.0.clone(),
+                    control_background: node.control_colours.1.clone(),
                     // Server-scoped, and read where the pane's request is
                     // parsed rather than where its keys are encoded.
                     extended_keys: self.server_options().get("extended-keys") != Some("off"),
@@ -866,6 +890,7 @@ impl ServerState {
                 border_status: None,
                 unseen_changes: false,
                 active_point: 0,
+                control_colours: (None, None),
                 options: OptionSet::default(),
             },
         );
@@ -978,6 +1003,7 @@ impl ServerState {
                 border_status: None,
                 unseen_changes: false,
                 active_point: 0,
+                control_colours: (None, None),
                 options: OptionSet::default(),
             },
         );
@@ -2379,6 +2405,7 @@ impl ServerState {
             border_status: None,
             unseen_changes: false,
             active_point: 0,
+            control_colours: (None, None),
             options: OptionSet::default(),
         });
         window.layout.keep_only(id);
@@ -2579,4 +2606,17 @@ impl ServerState {
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no active pane"))?;
         Ok(pane.dump())
     }
+}
+
+/// One `OSC 10`/`OSC 11` reply as `refresh-client -r` carries it: the number it
+/// answers and the colour it names.
+fn parse_colour_report(reply: &str) -> Option<(u32, String)> {
+    let body = reply
+        .trim_start_matches('\x1b')
+        .trim_start_matches(']')
+        .trim_end_matches('\x07')
+        .trim_end_matches('\\')
+        .trim_end_matches('\x1b');
+    let (number, colour) = body.split_once(';')?;
+    Some((number.parse().ok()?, colour.to_owned()))
 }

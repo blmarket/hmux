@@ -237,6 +237,10 @@ pub struct PaneNode {
     /// the only record of how recently a pane was looked at — a pane that has
     /// never been selected keeps the initial 0.
     pub(crate) active_point: u64,
+    /// The foreground and background a control client reported for this pane
+    /// with `refresh-client -r` — tmux's `wp->control_fg`/`control_bg`, which
+    /// answer the pane's own OSC 10/11 questions.
+    pub(crate) control_colours: (Option<String>, Option<String>),
     options: OptionSet,
 }
 

@@ -36,7 +36,6 @@ use hmux_rt::{sleep, AsyncFd, TaskHandle};
 use hmux_vt::StringEnd;
 use hmux_vt::{Terminal, TerminalEvent as VtEvent};
 
-pub(crate) use hmux_vt::parse_packed_colour;
 use hmux_vt::MouseEvent;
 use hmux_vt::PaneScreen;
 use hmux_vt::{mode, CaptureExtent, Grid, GridDims, RowExtent, ScreenOptions, ScreenSnapshot};
@@ -434,6 +433,7 @@ struct PaneOutputPolicyCell {
     cursor_style: Cell<u8>,
     /// Read only where a pane's bytes are parsed, so a plain mutex is enough.
     palette: RefCell<Vec<Option<u32>>>,
+    control_colours: RefCell<(Option<String>, Option<String>)>,
 }
 
 impl PaneOutputPolicyCell {
@@ -450,6 +450,8 @@ impl PaneOutputPolicyCell {
             input_buffer_size: self.input_buffer_size.get(),
             cursor_style: self.cursor_style.get(),
             palette: self.palette.borrow().clone(),
+            control_foreground: self.control_colours.borrow().0.clone(),
+            control_background: self.control_colours.borrow().1.clone(),
         }
     }
 
@@ -468,6 +470,8 @@ impl PaneOutputPolicyCell {
             let mut palette = self.palette.borrow_mut();
             *palette = policy.palette;
         }
+        *self.control_colours.borrow_mut() =
+            (policy.control_foreground, policy.control_background);
     }
 }
 
@@ -484,6 +488,7 @@ impl Default for PaneOutputPolicyCell {
             input_buffer_size: Cell::default(),
             cursor_style: Cell::default(),
             palette: RefCell::default(),
+            control_colours: RefCell::default(),
         };
         cell.store(PaneOutputPolicy::default());
         cell

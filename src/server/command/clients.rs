@@ -1664,6 +1664,8 @@ pub(in crate::server) struct RefreshClient {
     flags: Vec<String>,
     /// `-t`: the client to refresh.
     target: Option<String>,
+    /// `-r`: terminal reports a control client is answering for a pane.
+    reports: Vec<String>,
     adjustment: Option<String>,
 }
 
@@ -1686,6 +1688,7 @@ impl RefreshClient {
             has_control_flag,
             flags,
             target: args.value('t').map(str::to_string),
+            reports: args.values('r').map(str::to_string).collect(),
             adjustment: args.positionals().first().cloned(),
         })
     }
@@ -1742,6 +1745,11 @@ impl RefreshClient {
                 ),
                 target,
             );
+        }
+        // `-r %pane:REPORT` hands the server the OSC 10/11 answer the client's
+        // own terminal gave, which then answers that pane's questions.
+        for report in &self.reports {
+            state.set_pane_control_colour(report);
         }
         if !self.flags.is_empty() {
             let result =

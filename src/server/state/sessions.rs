@@ -178,6 +178,7 @@ impl ServerState {
                     border_status: None,
                     unseen_changes: false,
                     active_point: 0,
+                    control_colours: (None, None),
                     options: OptionSet::default(),
                 }],
                 active: 0,

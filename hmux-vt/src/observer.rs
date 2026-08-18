@@ -69,6 +69,11 @@ pub struct OutputPolicy {
     /// at all. tmux decides this where the request is parsed, so a request made
     /// while the option was off stays refused after it is turned on.
     pub extended_keys: bool,
+    /// The foreground and background a control client reported for this pane
+    /// with `refresh-client -r`, which answer its OSC 10/11 questions when the
+    /// pane has set no colour of its own.
+    pub control_foreground: Option<String>,
+    pub control_background: Option<String>,
 }
 
 /// The options' own defaults, which a pane parses against until the server's
@@ -83,6 +88,8 @@ impl Default for OutputPolicy {
             cursor_style: 0,
             palette: Vec::new(),
             extended_keys: true,
+            control_foreground: None,
+            control_background: None,
         }
     }
 }
@@ -576,7 +583,15 @@ impl ObserverState {
                     _ => &mut self.osc_state.cursor_colour,
                 };
                 if text == "?" {
-                    match colour_query_reply(number, stored, end) {
+                    // tmux answers from what a control client reported for the
+                    // pane before it looks anywhere else.
+                    let reported = match number {
+                        10 => policy.control_foreground.as_deref(),
+                        11 => policy.control_background.as_deref(),
+                        _ => None,
+                    };
+                    let answer = reported.unwrap_or(stored);
+                    match colour_query_reply(number, answer, end) {
                         Some(reply) => out.event(Event::Reply(reply)),
                         // With no colour of its own, tmux answers a background
                         // question from the attached terminal's; ask it. An
