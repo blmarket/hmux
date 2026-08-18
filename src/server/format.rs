@@ -947,6 +947,39 @@ impl Expander<'_> {
                 QuoteStyle::Arguments => quote_argument(&value),
             };
         }
+        // A `;`-separated modifier list, which tmux's `format_replace` applies
+        // in its own order: substitutions first, then the truncation, then the
+        // padding — whatever order they were written in.
+        if content.contains(';') {
+            if let Some((items, body)) = split_modifier_chain(content) {
+                if items.len() > 1 && items.iter().all(|item| chain_modifier(item).is_some()) {
+                    let mut value = self.resolve_body(body, vars, depth);
+                    for item in &items {
+                        if let Some(ChainModifier::Substitute(step)) = chain_modifier(item) {
+                            value =
+                                substitute(&value, step.pattern, step.replacement, step.flags);
+                        }
+                    }
+                    let limit = items.iter().rev().find_map(|item| match chain_modifier(item) {
+                        Some(ChainModifier::Limit(limit)) => Some(limit),
+                        _ => None,
+                    });
+                    if let Some(limit) = limit {
+                        let limit = self.expand(limit, vars, depth).parse::<isize>().unwrap_or(0);
+                        value = truncate(&value, limit, None);
+                    }
+                    let width = items.iter().rev().find_map(|item| match chain_modifier(item) {
+                        Some(ChainModifier::Width(width)) => Some(width),
+                        _ => None,
+                    });
+                    if let Some(width) = width {
+                        let width = self.expand(width, vars, depth).parse::<isize>().unwrap_or(0);
+                        value = pad(&value, width);
+                    }
+                    return value;
+                }
+            }
+        }
         // `=N:BODY` / `=-N:BODY` / `=/N/marker:BODY` — truncate the resolved body
         // to N display columns from the start (N>0) or the end (N<0), optionally
         // appending or prepending a marker if truncation occurred.
@@ -2371,6 +2404,64 @@ fn parse_loop(content: &str, kind: char) -> Option<(&str, &str)> {
         .chars()
         .all(|flag| matches!(flag, 'i' | 'n' | 't' | 'r'))
         .then_some((flags, body))
+}
+
+/// One entry of a `;`-separated modifier list.
+enum ChainModifier<'a> {
+    Substitute(Subst<'a>),
+    Limit(&'a str),
+    Width(&'a str),
+}
+
+/// The modifiers a chain may carry, as tmux's `format_build_modifiers` reads
+/// them. A modifier this does not recognize leaves the chain to the
+/// single-modifier paths, which is where the rest of them live.
+fn chain_modifier(item: &str) -> Option<ChainModifier<'_>> {
+    if starts_subst(item) {
+        let delim = item.as_bytes()[1] as char;
+        let mut parts = item[2..].splitn(3, delim);
+        return Some(ChainModifier::Substitute(Subst {
+            pattern: parts.next()?,
+            replacement: parts.next()?,
+            flags: parts.next()?,
+        }));
+    }
+    let count = |rest: &str| -> bool {
+        let rest = rest.strip_prefix('-').unwrap_or(rest);
+        !rest.is_empty() && rest.bytes().all(|byte| byte.is_ascii_digit())
+    };
+    if let Some(rest) = item.strip_prefix('=') {
+        return count(rest).then_some(ChainModifier::Limit(rest));
+    }
+    if let Some(rest) = item.strip_prefix('p') {
+        return count(rest).then_some(ChainModifier::Width(rest));
+    }
+    None
+}
+
+/// Split a `;`-separated modifier list from the body it applies to. A
+/// substitution's own delimiters are skipped, so a pattern may hold either
+/// separator.
+fn split_modifier_chain(content: &str) -> Option<(Vec<&str>, &str)> {
+    let mut items = Vec::new();
+    let mut rest = content;
+    loop {
+        let end = if starts_subst(rest) {
+            let delim = rest.as_bytes()[1] as char;
+            let mut offset = 2;
+            for _ in 0..2 {
+                offset = rest[offset..].find(delim)? + offset + delim.len_utf8();
+            }
+            rest[offset..].find([';', ':'])? + offset
+        } else {
+            rest.find([';', ':'])?
+        };
+        items.push(&rest[..end]);
+        if rest.as_bytes()[end] == b':' {
+            return Some((items, &rest[end + 1..]));
+        }
+        rest = &rest[end + 1..];
+    }
 }
 
 fn split_modifier_key(content: &str) -> Option<(Vec<&str>, &str)> {

@@ -1016,10 +1016,12 @@ mod tests {
     #[test]
     fn client_injection_preserves_semantic_and_literal_keys() {
         let mut keys = Vec::new();
-        inject_client_string("C-b", false, false, &mut keys);
-        inject_client_string("F1", false, false, &mut keys);
-        inject_client_string("None", false, false, &mut keys);
-        inject_client_string("ff", false, true, &mut keys);
+        let mut unencodable = Vec::new();
+        inject_client_string("C-b", false, false, &mut keys, &mut unencodable);
+        inject_client_string("F1", false, false, &mut keys, &mut unencodable);
+        inject_client_string("None", false, false, &mut keys, &mut unencodable);
+        inject_client_string("ff", false, true, &mut keys, &mut unencodable);
+        assert!(unencodable.is_empty());
         let bytes = keys
             .iter()
             .flat_map(|key| key.bytes.iter().copied())
