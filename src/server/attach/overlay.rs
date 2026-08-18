@@ -268,10 +268,17 @@ struct PopupOverlay {
 
 /// The item list tmux's `popup_menu_items` offers, keyed as it keys them. The
 /// commands are markers the popup itself reads; they never reach the command
-/// layer.
-fn popup_menu_items() -> Vec<super::super::state::MenuItem> {
+/// layer. The Paste action is conditional on there being a buffer to paste,
+/// the way tmux's `#{?buffer_name,Paste …,}` item is.
+fn popup_menu_items(paste: Option<&str>) -> Vec<super::super::state::MenuItem> {
+    let paste = paste.map(|name| (format!("Paste {name}"), "p".to_owned()));
     [
-        ("Close", "q"),
+        ("Close".to_owned(), "q".to_owned()),
+    ]
+    .into_iter()
+    .chain(paste)
+    .chain(
+    [
         ("", ""),
         ("Fill Space", "F"),
         ("Centre", "C"),
@@ -280,16 +287,28 @@ fn popup_menu_items() -> Vec<super::super::state::MenuItem> {
         ("To Vertical Pane", "v"),
     ]
     .into_iter()
+    .map(|(label, key)| (label.to_owned(), key.to_owned())),
+    )
     .map(|(label, key)| super::super::state::MenuItem {
-        label: label.to_owned(),
-        key: key.to_owned(),
+        label,
+        key: key.clone(),
         command: if key.is_empty() {
             Vec::new()
         } else {
-            vec![POPUP_MENU_MARKER.to_owned(), key.to_owned()]
+            vec![POPUP_MENU_MARKER.to_owned(), key]
         },
     })
     .collect()
+}
+
+/// The name of the buffer a paste would take, which is tmux's `paste_get_top`
+/// and the `#{buffer_name}` its popup menu item is conditional on.
+fn top_buffer_name(state: &SharedState) -> Option<String> {
+    state
+        .borrow_mut()
+        .buffers()
+        .first()
+        .map(|(name, _)| name.clone())
 }
 
 /// The first word of a popup menu item's command, which marks it as one the
@@ -954,7 +973,7 @@ impl PopupOverlay {
         if outside {
             // tmux opens the popup's menu on a right-click outside it.
             if right_button && mouse.kind == MouseEventKind::Down {
-                self.open_menu(x, y, cols, rows);
+                self.open_menu(x, y, cols, rows, state);
             }
             return true;
         }
@@ -970,7 +989,7 @@ impl PopupOverlay {
             && self.request.border
             && (x == place.left || y == place.top)
         {
-            self.open_menu(x, y, cols, rows);
+            self.open_menu(x, y, cols, rows, state);
             return true;
         }
         if on_border && dragging {
@@ -986,11 +1005,12 @@ impl PopupOverlay {
     }
 
     /// Open the popup's own menu, centred on the pointer as tmux centres it.
-    fn open_menu(&mut self, x: u16, y: u16, cols: u16, rows: u16) {
+    fn open_menu(&mut self, x: u16, y: u16, cols: u16, rows: u16, state: &SharedState) {
+        let paste = top_buffer_name(state);
         let mut menu = MenuOverlay {
             request: MenuRequest {
                 title: String::new(),
-                items: popup_menu_items(),
+                items: popup_menu_items(paste.as_deref()),
                 selected: 0,
                 x: None,
                 y: None,
@@ -1021,6 +1041,18 @@ impl PopupOverlay {
         let place = self.geometry(cols, rows);
         match key {
             Some("q") => self.exit_status = Some(0),
+            // tmux writes the top paste buffer straight into the popup's job,
+            // which for a pty job is its own input.
+            Some("p") => {
+                let data = state
+                    .borrow_mut()
+                    .buffers()
+                    .first()
+                    .map(|(_, data)| data.clone());
+                if let Some(data) = data {
+                    let _ = self.pane.input(&data);
+                }
+            }
             // tmux's `popup_make_pane`: the popup's running child moves into a
             // new pane split from the window's active one, and the popup is
             // done — there is nothing left in it to draw.
