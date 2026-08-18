@@ -273,6 +273,11 @@ pub(crate) struct MenuRequest {
     pub(crate) selected: usize,
     pub(crate) x: Option<String>,
     pub(crate) y: Option<String>,
+    /// The pane the command was aimed at, which the `-x`/`-y` letters anchor
+    /// the box to.
+    pub(crate) pane: Option<u32>,
+    /// The mouse event that triggered the command, where one did.
+    pub(crate) mouse: Option<(u16, u16)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -287,6 +292,11 @@ pub(crate) struct PopupRequest {
     pub(crate) height: Option<String>,
     pub(crate) x: Option<String>,
     pub(crate) y: Option<String>,
+    /// The pane the command was aimed at, which the `-x`/`-y` letters anchor
+    /// the box to.
+    pub(crate) pane: Option<u32>,
+    /// The mouse event that triggered the command, where one did.
+    pub(crate) mouse: Option<(u16, u16)>,
     pub(crate) close_on_exit: bool,
     pub(crate) close_on_success: bool,
     pub(crate) close_on_key: bool,

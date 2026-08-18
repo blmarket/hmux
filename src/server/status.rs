@@ -726,6 +726,17 @@ impl RenderedStatus {
         });
     }
 
+    /// Where a window's own entry is drawn: the status line it is on and the
+    /// column it starts at, which anchors an overlay's `W` position.
+    pub(crate) fn window_range(&self, index: u32) -> Option<(u16, u16)> {
+        self.screen.rows.iter().enumerate().find_map(|(row, line)| {
+            line.ranges
+                .iter()
+                .find(|range| range.kind == StatusRangeKind::Window(index))
+                .map(|range| (row as u16, range.start))
+        })
+    }
+
     pub(crate) fn range_at(&self, row: usize, column: u16) -> Option<&StatusRange> {
         self.screen
             .rows
@@ -807,6 +818,12 @@ impl RenderCache {
 
     pub(crate) fn invalidate(&mut self) {
         <Self as StatusRenderer>::invalidate(self)
+    }
+
+    /// Where a window's own entry is drawn on the status this client last
+    /// rendered, which anchors an overlay's `W` position.
+    pub(crate) fn window_range(&self, index: u32) -> Option<(u16, u16)> {
+        self.rendered.as_ref()?.window_range(index)
     }
 
     /// Install the newest agent snapshot and invalidate cached status content

@@ -199,6 +199,8 @@ impl ServerState {
         ];
         Some(PopupRequest {
             title: String::new(),
+            pane: None,
+            mouse: None,
             argv,
             environment: self.job_environment(None).as_ref().clone(),
             cwd: None,

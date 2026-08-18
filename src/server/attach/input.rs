@@ -832,11 +832,20 @@ impl AttachSession {
                             }
                         }
                         ModeViewKeyResult::Popup(request) => {
+                            let request = super::super::state::OverlayRequest::Popup(*request);
+                            let anchor = super::overlay::OverlayAnchor::capture(
+                                state,
+                                target,
+                                &request,
+                                self.viewport.status_height,
+                                &self.status.status_cache,
+                            );
                             if let Ok(overlay) = ActiveOverlay::from_request(
-                                super::super::state::OverlayRequest::Popup(*request),
+                                request,
                                 None,
                                 self.viewport.cols,
                                 self.viewport.rows,
+                                anchor,
                             ) {
                                 self.compositor.ui.active_overlay = overlay;
                             }

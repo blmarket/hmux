@@ -1,5 +1,5 @@
 use super::*;
-use crate::server::state::SharedState;
+use crate::server::state::{PaneRect, SharedState};
 
 pub(crate) struct ActiveOverlay {
     state: OverlayState,
@@ -15,6 +15,231 @@ enum OverlayState {
 struct MenuOverlay {
     request: MenuRequest,
     selected: usize,
+    anchor: OverlayAnchor,
+}
+
+/// What tmux's `cmd_display_menu_get_pos` publishes the `popup_*` variables
+/// from: the client's status lines, the target pane inside the client's view of
+/// the window, the window's own entry in the status line, and the mouse event
+/// that triggered the overlay.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct OverlayAnchor {
+    pub(super) status_lines: u16,
+    pub(super) status_top: bool,
+    pub(super) pane: PaneRect,
+    pub(super) offset: (u16, u16),
+    /// The status line the target window's range is drawn on, and the column
+    /// it starts at.
+    pub(super) window_status: Option<(u16, u16)>,
+    pub(super) mouse: Option<(u16, u16)>,
+}
+
+impl OverlayAnchor {
+    /// What the client knows about where the overlay's box can go: its status
+    /// lines, the target pane's place in the window, and the window's own
+    /// entry in the status line.
+    pub(super) fn capture(
+        state: &SharedState,
+        target: &str,
+        request: &OverlayRequest,
+        status_height: u16,
+        status_cache: &status::RenderCache,
+    ) -> Self {
+        let (pane, mouse) = match request {
+            OverlayRequest::Menu(request) => (request.pane, request.mouse),
+            OverlayRequest::Popup(request) => (request.pane, request.mouse),
+            _ => (None, None),
+        };
+        let state = state.borrow_mut();
+        let resolved = pane.and_then(|pane| state.resolve(&format!("%{pane}")));
+        let rect = resolved
+            .and_then(|resolved| {
+                pane.and_then(|pane| state.window(resolved.session, resolved.window).pane_rect(pane))
+            })
+            .unwrap_or_default();
+        let window = resolved.map(|resolved| {
+            state.sessions()[resolved.session].windows[resolved.window].index
+        });
+        Self {
+            status_lines: status_height,
+            status_top: status::at_top(&state, target),
+            pane: rect,
+            offset: state
+                .client_snapshots()
+                .iter()
+                .find(|client| client.name == target)
+                .and_then(|client| state.client_window_offset(&client.viewport()))
+                .map(|view| (view.ox, view.oy))
+                .unwrap_or((0, 0)),
+            window_status: window.and_then(|index| status_cache.window_range(index)),
+            mouse,
+        }
+    }
+
+    /// The variables the position formats read, for a box of this size on a
+    /// client of this size.
+    fn vars(&self, cols: u16, rows: u16, width: u16, height: u16) -> format::Vars {
+        let mut vars = format::Vars::new();
+        let top = if self.status_top { self.status_lines } else { 0 };
+        vars.set("popup_width", width.to_string())
+            .set("popup_height", height.to_string());
+        let centre_x = i32::from(cols.saturating_sub(1)) / 2 - i32::from(width) / 2;
+        vars.set("popup_centre_x", centre_x.max(0).to_string());
+        let centre_y = i32::from(rows.saturating_sub(1)) / 2 + i32::from(height) / 2;
+        vars.set(
+            "popup_centre_y",
+            if centre_y >= i32::from(rows) {
+                i32::from(rows) - i32::from(height)
+            } else {
+                centre_y
+            }
+            .to_string(),
+        );
+        if self.status_lines != 0 {
+            vars.set(
+                "popup_status_line_y",
+                if self.status_top {
+                    i32::from(self.status_lines) + i32::from(height)
+                } else {
+                    i32::from(rows) - i32::from(self.status_lines)
+                }
+                .to_string(),
+            );
+            if let Some((line, start)) = self.window_status {
+                vars.set("popup_window_status_line_x", start.to_string());
+                vars.set(
+                    "popup_window_status_line_y",
+                    if self.status_top {
+                        i32::from(line) + 1 + i32::from(height)
+                    } else {
+                        i32::from(rows) - i32::from(self.status_lines) + i32::from(line)
+                    }
+                    .to_string(),
+                );
+            }
+        }
+        let (ox, oy) = self.offset;
+        let pane_top = i32::from(top) + i32::from(self.pane.top) - i32::from(oy)
+            + i32::from(height);
+        vars.set(
+            "popup_pane_top",
+            if pane_top >= i32::from(rows) {
+                i32::from(rows) - i32::from(height)
+            } else {
+                pane_top
+            }
+            .to_string(),
+        );
+        vars.set(
+            "popup_pane_bottom",
+            (i32::from(top) + i32::from(self.pane.top) + i32::from(self.pane.height)
+                - i32::from(oy))
+            .to_string(),
+        );
+        vars.set(
+            "popup_pane_left",
+            (i32::from(self.pane.left) - i32::from(ox)).max(0).to_string(),
+        );
+        vars.set(
+            "popup_pane_right",
+            (i32::from(self.pane.left) + i32::from(self.pane.width)
+                - i32::from(ox)
+                - i32::from(width))
+            .max(0)
+            .to_string(),
+        );
+        if let Some((x, y)) = self.mouse {
+            vars.set("popup_mouse_x", x.to_string())
+                .set("popup_mouse_y", y.to_string());
+            vars.set(
+                "popup_mouse_centre_x",
+                (i32::from(x) - i32::from(width) / 2).max(0).to_string(),
+            );
+            let centre_y = i32::from(y) - i32::from(height) / 2;
+            vars.set(
+                "popup_mouse_centre_y",
+                if centre_y + i32::from(height) >= i32::from(rows) {
+                    i32::from(rows) - i32::from(height)
+                } else {
+                    centre_y
+                }
+                .to_string(),
+            );
+            let mouse_top = i32::from(y) + i32::from(height);
+            vars.set(
+                "popup_mouse_top",
+                if mouse_top >= i32::from(rows) {
+                    i32::from(rows) - 1
+                } else {
+                    mouse_top
+                }
+                .to_string(),
+            );
+            vars.set(
+                "popup_mouse_bottom",
+                (i32::from(y) - i32::from(height)).max(0).to_string(),
+            );
+        }
+        vars
+    }
+
+    /// The box's left column, from tmux's `-x` letter aliases and formats.
+    fn left(&self, value: Option<&str>, cols: u16, rows: u16, width: u16, height: u16) -> u16 {
+        let template = match value {
+            None | Some("C") => "#{popup_centre_x}",
+            Some("R") => "#{popup_pane_right}",
+            Some("P") => "#{popup_pane_left}",
+            Some("M") => "#{popup_mouse_centre_x}",
+            Some("W") => "#{popup_window_status_line_x}",
+            Some(value) => value,
+        };
+        let vars = self.vars(cols, rows, width, height);
+        let position = leading_number(&format::expand(template, &vars));
+        if position + i32::from(width) >= i32::from(cols) {
+            i32::from(cols) - i32::from(width)
+        } else {
+            position
+        }
+        .clamp(0, i32::from(cols)) as u16
+    }
+
+    /// The box's top row. A vertical position names the row *below* the box's
+    /// last line, so tmux subtracts the height before it clamps.
+    fn top(&self, value: Option<&str>, cols: u16, rows: u16, width: u16, height: u16) -> u16 {
+        let template = match value {
+            None | Some("C") => "#{popup_centre_y}",
+            Some("P") => "#{popup_pane_bottom}",
+            Some("M") => "#{popup_mouse_top}",
+            Some("S") => "#{popup_status_line_y}",
+            Some("W") => "#{popup_window_status_line_y}",
+            Some(value) => value,
+        };
+        let vars = self.vars(cols, rows, width, height);
+        let position = leading_number(&format::expand(template, &vars));
+        let position = if position < i32::from(height) {
+            0
+        } else {
+            position - i32::from(height)
+        };
+        if position + i32::from(height) >= i32::from(rows) {
+            i32::from(rows) - i32::from(height)
+        } else {
+            position
+        }
+        .clamp(0, i32::from(rows)) as u16
+    }
+}
+
+/// `strtol` over an expanded position: the number the value starts with, or 0
+/// where it starts with none.
+fn leading_number(value: &str) -> i32 {
+    let value = value.trim_start();
+    let (sign, digits) = match value.strip_prefix('-') {
+        Some(rest) => (-1, rest),
+        None => (1, value.strip_prefix('+').unwrap_or(value)),
+    };
+    let digits: String = digits.chars().take_while(char::is_ascii_digit).collect();
+    sign * digits.parse::<i32>().unwrap_or(0)
 }
 
 struct PopupOverlay {
@@ -38,6 +263,7 @@ struct PopupOverlay {
     /// tmux's `pd->close`, set by a menu item that ends the popup rather than
     /// changing it — the pane conversions, which leave nothing behind to draw.
     closing: bool,
+    anchor: OverlayAnchor,
 }
 
 /// The item list tmux's `popup_menu_items` offers, keyed as it keys them. The
@@ -119,17 +345,22 @@ impl OverlayInputOutcome {
 
 impl ActiveOverlay {
     pub(super) fn menu(request: MenuRequest, selected: usize) -> Self {
-        Self::menu_with_reply(request, selected, None)
+        Self::menu_with_reply(request, selected, None, OverlayAnchor::default())
     }
 
     fn menu_with_reply(
         request: MenuRequest,
         selected: usize,
         reply: Option<super::super::state::PromptReply>,
+        anchor: OverlayAnchor,
     ) -> Self {
         let selected = selected.min(request.items.len().saturating_sub(1));
         Self {
-            state: OverlayState::Menu(MenuOverlay { request, selected }),
+            state: OverlayState::Menu(MenuOverlay {
+                request,
+                selected,
+                anchor,
+            }),
             reply,
         }
     }
@@ -139,12 +370,13 @@ impl ActiveOverlay {
         reply: Option<super::super::state::PromptReply>,
         cols: u16,
         rows: u16,
+        anchor: OverlayAnchor,
     ) -> io::Result<Option<Self>> {
         Ok(match request {
             OverlayRequest::Clear => None,
             OverlayRequest::Menu(request) => {
                 let selected = request.selected;
-                Some(Self::menu_with_reply(request, selected, reply))
+                Some(Self::menu_with_reply(request, selected, reply, anchor))
             }
             OverlayRequest::DisplayPanes {
                 duration_ms,
@@ -209,6 +441,7 @@ impl ActiveOverlay {
                         last_pointer: None,
                         menu: None,
                         closing: false,
+                        anchor,
                     }),
                     reply,
                 })
@@ -361,8 +594,12 @@ impl MenuOverlay {
             .max(format::display_width(&self.request.title));
         let width = (content_width + 4).min(cols as usize).max(3) as u16;
         let height = (self.request.items.len() + 2).min(rows as usize).max(3) as u16;
-        let left = overlay_position(self.request.x.as_deref(), cols, width, false);
-        let top = overlay_position(self.request.y.as_deref(), rows, height, true);
+        let left = self
+            .anchor
+            .left(self.request.x.as_deref(), cols, rows, width, height);
+        let top = self
+            .anchor
+            .top(self.request.y.as_deref(), cols, rows, width, height);
         (left, top, width, height)
     }
 
@@ -629,8 +866,12 @@ impl PopupOverlay {
             .max(3)
             .min(rows.max(3));
         PopupPlacement {
-            left: overlay_position(self.request.x.as_deref(), cols, width, false),
-            top: overlay_position(self.request.y.as_deref(), rows, height, true),
+            left: self
+                .anchor
+                .left(self.request.x.as_deref(), cols, rows, width, height),
+            top: self
+                .anchor
+                .top(self.request.y.as_deref(), cols, rows, width, height),
             width,
             height,
         }
@@ -753,8 +994,11 @@ impl PopupOverlay {
                 selected: 0,
                 x: None,
                 y: None,
+                pane: None,
+                mouse: None,
             },
             selected: 0,
+            anchor: OverlayAnchor::default(),
         };
         // The menu is centred on the pointer, so its own width has to be
         // measured the way it will be drawn.
@@ -1152,33 +1396,6 @@ fn overlay_dimension(value: Option<&str>, available: u16, default_percent: u16) 
             .unwrap_or(available),
         Some(value) => value.parse().unwrap_or(available),
         None => (u32::from(available) * u32::from(default_percent) / 100) as u16,
-    }
-}
-
-/// Where an overlay's box starts on one axis.
-///
-/// A vertical position names the row *below* the box's last line, as tmux's
-/// `cmd_display_menu_get_pos` does — it subtracts the height before clamping,
-/// so `-y 10` puts a four-row menu on rows 6 to 9.
-fn overlay_position(value: Option<&str>, available: u16, size: u16, vertical: bool) -> u16 {
-    let limit = available.saturating_sub(size);
-    match value {
-        Some("C" | "M" | "P" | "W" | "S") | None => limit / 2,
-        Some(value) if value.ends_with('%') => value
-            .trim_end_matches('%')
-            .parse::<u32>()
-            .ok()
-            .map(|percent| (u32::from(limit) * percent / 100) as u16)
-            .unwrap_or(0),
-        Some(value) => {
-            let position = value.parse::<u16>().unwrap_or(0);
-            let position = if vertical {
-                position.checked_sub(size).unwrap_or(0)
-            } else {
-                position
-            };
-            position.min(limit)
-        }
     }
 }
 

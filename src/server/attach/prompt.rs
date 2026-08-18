@@ -1661,6 +1661,8 @@ pub(super) fn render_prompt_completion(
             // A menu's `-y` names the row below its last line, so the top row
             // this menu wants is written as the row past its bottom.
             y: Some(top.saturating_add(height).to_string()),
+            pane: None,
+            mouse: None,
         },
         completion.selected,
     );

@@ -910,11 +910,19 @@ impl AttachSession {
                                 }));
                             }
                         } else {
+                            let anchor = overlay::OverlayAnchor::capture(
+                                state,
+                                target,
+                                &request,
+                                self.viewport.status_height,
+                                &self.status.status_cache,
+                            );
                             self.compositor.ui.active_overlay = ActiveOverlay::from_request(
                                 request,
                                 reply,
                                 self.viewport.cols,
                                 self.viewport.rows,
+                                anchor,
                             )
                             .ok()
                             .flatten();

@@ -1154,6 +1154,8 @@ impl DisplayMenu {
             selected,
             x: self.x.clone(),
             y: self.y.clone(),
+            pane: overlay_target_pane(state, self.target.as_deref()),
+            mouse: overlay_mouse(client),
         });
         let target = self.client.as_deref();
         overlay_result(
@@ -1196,6 +1198,8 @@ pub(in crate::server) struct DisplayPopup {
     y: Option<String>,
     /// `-T`: the popup's title.
     title: Option<String>,
+    /// `-t`: the pane the popup is placed against.
+    target: Option<String>,
     /// The popup's command line.
     command: Vec<String>,
 }
@@ -1208,6 +1212,7 @@ impl DisplayPopup {
             exit_flags: args.count('E'),
             close_on_key: args.has('k'),
             client: args.value('c').map(str::to_string),
+            target: args.value('t').map(str::to_string),
             cwd: args.value('d').map(str::to_string),
             environment: args.values('e').map(str::to_string).collect(),
             width: args.value('w').map(str::to_string),
@@ -1256,6 +1261,8 @@ impl DisplayPopup {
             height: self.height.clone(),
             x: self.x.clone(),
             y: self.y.clone(),
+            pane: overlay_target_pane(state, self.target.as_deref()),
+            mouse: overlay_mouse(client),
             close_on_exit: self.exit_flags == 1,
             close_on_success: self.exit_flags >= 2,
             close_on_key: self.close_on_key,
@@ -2261,4 +2268,22 @@ impl ClearPromptHistory {
         st.clear_prompt_history(prompt_type);
         CommandResult::ok("")
     }
+}
+
+/// The pane an overlay command's `-t` names, which anchors its `-x`/`-y`.
+fn overlay_target_pane(state: &ServerState, target: Option<&str>) -> Option<u32> {
+    let target = target
+        .map(str::to_string)
+        .or_else(|| current_target(state))?;
+    let resolved = state.resolve(&target)?;
+    Some(state.window(resolved.session, resolved.window).panes[resolved.pane].id)
+}
+
+/// The pointer position of the key event an overlay command ran from, which
+/// tmux publishes as `popup_mouse_x`/`popup_mouse_y`.
+fn overlay_mouse(client: &ClientContext) -> Option<(u16, u16)> {
+    client
+        .mouse
+        .as_ref()
+        .map(|event| (event.position.x, event.position.y))
 }
