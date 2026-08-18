@@ -841,6 +841,15 @@ impl AttachSession {
                                 self.compositor.ui.active_overlay = overlay;
                             }
                         }
+                        ModeViewKeyResult::Confirm { prompt, command } => {
+                            self.compositor.ui.confirm = Some(ActiveConfirm {
+                                prompt,
+                                action: ConfirmAction::Command(command),
+                                confirm_key: b'y',
+                                default_yes: false,
+                                reply: None,
+                            });
+                        }
                         ModeViewKeyResult::None | ModeViewKeyResult::Command(_) => {}
                     }
                     force_render = true;

@@ -1,6 +1,7 @@
 //! The client commands: what a client is shown, asked, and moved to.
 
 use super::*;
+use crate::server::state::ModeTarget;
 
 #[derive(Clone, Debug)]
 pub(in crate::server) enum Command {
@@ -549,6 +550,9 @@ impl ChooseTree {
                             preview_target: Some(format!("={}:", session.name)),
                             depth: 0,
                             expanded: None,
+                            target: Some(ModeTarget::Session {
+                                name: session.name.clone(),
+                            }),
                         },
                         vars: session_vars,
                     });
@@ -605,8 +609,12 @@ impl ChooseTree {
                                 edit: None,
                                 tagged: false,
                                 preview_target: Some(format!("={}:{}.", session.name, link.index)),
-                                depth: 0,
+                                depth: u16::from(!self.windows_only),
                                 expanded: None,
+                                target: Some(ModeTarget::Window {
+                                    session: session.name.clone(),
+                                    index: link.index,
+                                }),
                             },
                             vars: window_vars,
                         },
@@ -704,6 +712,9 @@ impl ChooseClient {
                         preview_target: None,
                         depth: 0,
                         expanded: None,
+                        target: Some(ModeTarget::Client {
+                            name: client.name.clone(),
+                        }),
                     },
                     vars,
                 },
@@ -804,6 +815,7 @@ impl ChooseBuffer {
                         preview_target: None,
                         depth: 0,
                         expanded: None,
+                        target: Some(ModeTarget::Buffer { name: name.clone() }),
                     },
                     vars,
                 },
@@ -883,6 +895,7 @@ impl CustomizeMode {
                 depth: 0,
                 // `M-+` expands the complete tree after the initial screen.
                 expanded: Some(false),
+                target: None,
             });
             for entry in entries {
                 let mut vars = format::Vars::new();
@@ -919,6 +932,7 @@ impl CustomizeMode {
                         .is_array
                         .then_some(entry.array_has_entries)
                         .and_then(|has_entries| has_entries.then_some(false)),
+                    target: None,
                 });
             }
         }
@@ -952,6 +966,7 @@ impl CustomizeMode {
                 preview_target: None,
                 depth: 1,
                 expanded: None,
+                target: None,
             });
             let note_value = note.unwrap_or_default();
             items.push(ModeItem {
@@ -969,6 +984,7 @@ impl CustomizeMode {
                 preview_target: None,
                 depth: 1,
                 expanded: None,
+                target: None,
             });
         }
         // tmux's options mode has no title row above its section tree.

@@ -15,8 +15,8 @@ use super::sizing::pane_slider;
 use super::target::pane_not_found;
 use crate::server::options::PaneHook;
 use super::{
-    ModeBindingUpdate, ModeEdit, ModeKind, ModePrompt, ModeView, ModeViewKeyResult, PopupRequest,
-    RenderInvalidation, ServerState,
+    ModeBindingUpdate, ModeEdit, ModeKind, ModePrompt, ModeTarget, ModeView, ModeViewKeyResult,
+    PopupRequest, RenderInvalidation, ServerState,
 };
 
 impl ServerState {
@@ -260,6 +260,31 @@ impl ServerState {
             return Ok(ModeViewKeyResult::Prompt(prompt));
         }
 
+        if let Some(result) = mode_view_action(view, key) {
+            let ModeAction {
+                command,
+                removed,
+                exit,
+                confirm,
+            } = result;
+            for index in removed.iter().rev() {
+                view.remove(*index);
+            }
+            let emptied = view.items.is_empty() && !removed.is_empty();
+            if exit || emptied {
+                node.mode = None;
+                node.mode_view = None;
+            }
+            self.invalidate_session(session_id, RenderInvalidation::MODE);
+            return Ok(match (confirm, command) {
+                (Some(prompt), command) if !command.is_empty() => {
+                    ModeViewKeyResult::Confirm { prompt, command }
+                }
+                (_, command) if !command.is_empty() => ModeViewKeyResult::Command(command),
+                _ => ModeViewKeyResult::None,
+            });
+        }
+
         let last = view.items.len().saturating_sub(1);
         match key {
             "q" | "Escape" | "C-c" => {
@@ -286,6 +311,10 @@ impl ServerState {
                 if let Some(item) = view.items.get_mut(view.selected) {
                     item.tagged = !item.tagged;
                 }
+                // tmux's `mode_tree_key` moves on after tagging whenever it has
+                // a mouse event to look at, and the key path always hands it
+                // the client's, so a tagging key from the keyboard advances too.
+                view.selected = (view.selected + 1).min(view.items.len().saturating_sub(1));
             }
             "T" => {
                 for item in &mut view.items {
@@ -1398,5 +1427,253 @@ impl ServerState {
     pub(crate) fn active_mode_view(&self, session_name: &str) -> Option<&ModeView> {
         let (window, active) = self.active_window_panes(session_name).ok()?;
         window.panes.get(active)?.mode_view.as_ref()
+    }
+}
+
+/// What one of a mode's own action keys does: the command it runs, the rows it
+/// destroyed, whether the mode is over, and the question asked first.
+struct ModeAction {
+    command: Vec<String>,
+    removed: Vec<usize>,
+    exit: bool,
+    confirm: Option<String>,
+}
+
+impl ModeAction {
+    fn command(command: Vec<String>) -> Self {
+        Self {
+            command,
+            removed: Vec::new(),
+            exit: false,
+            confirm: None,
+        }
+    }
+
+    fn nothing() -> Self {
+        Self::command(Vec::new())
+    }
+
+    fn exiting(mut self) -> Self {
+        self.exit = true;
+        self
+    }
+
+    fn removing(mut self, removed: Vec<usize>) -> Self {
+        self.removed = removed;
+        self
+    }
+
+    fn confirmed(mut self, prompt: String) -> Self {
+        self.confirm = Some(prompt);
+        self
+    }
+}
+
+/// Chain several commands into the one argv the queue compiles, the way a
+/// mode-tree row's own template already carries a `;` between two commands.
+fn chain(commands: Vec<Vec<String>>) -> Vec<String> {
+    let mut argv = Vec::new();
+    for command in commands {
+        if command.is_empty() {
+            continue;
+        }
+        if !argv.is_empty() {
+            argv.push(";".to_owned());
+        }
+        argv.extend(command);
+    }
+    argv
+}
+
+/// The `-t` a row's target spells.
+fn mode_target_argument(target: &ModeTarget) -> String {
+    match target {
+        ModeTarget::Session { name } => format!("={name}:"),
+        ModeTarget::Window { session, index } => format!("={session}:{index}"),
+        ModeTarget::Client { name } | ModeTarget::Buffer { name } => name.clone(),
+    }
+}
+
+/// The `-t` a row's target spells for the commands that take a session or a
+/// window rather than a pane.
+fn mode_kill_argument(target: &ModeTarget) -> String {
+    match target {
+        ModeTarget::Session { name } => name.clone(),
+        ModeTarget::Window { session, index } => format!("{session}:{index}"),
+        _ => mode_target_argument(target),
+    }
+}
+
+/// The kill this row's `x` runs, and the question it asks first.
+fn mode_kill_command(target: &ModeTarget) -> Option<(String, Vec<String>)> {
+    let argument = mode_kill_argument(target);
+    match target {
+        ModeTarget::Session { name } => Some((
+            format!("Kill session {name}? "),
+            vec!["kill-session".to_owned(), "-t".to_owned(), argument],
+        )),
+        ModeTarget::Window { index, .. } => Some((
+            format!("Kill window {index}? "),
+            vec!["kill-window".to_owned(), "-t".to_owned(), argument],
+        )),
+        ModeTarget::Client { .. } | ModeTarget::Buffer { .. } => None,
+    }
+}
+
+/// The rows `x`, `d` and their tagged forms act on: every tagged row, or —
+/// where tmux passes `mode_tree_each_tagged` a current of its own — the
+/// selected one when nothing is tagged.
+fn action_rows(view: &ModeView, tagged_only: bool) -> Vec<usize> {
+    let tagged: Vec<usize> = view
+        .items
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| item.tagged.then_some(index))
+        .collect();
+    if !tagged.is_empty() || tagged_only {
+        return tagged;
+    }
+    vec![view.selected]
+}
+
+/// The per-mode action keys tmux keeps in `window_tree_key`,
+/// `window_client_key` and `window_buffer_key`, which its mode-tree dispatches
+/// to after its own common keys.
+fn mode_view_action(view: &mut ModeView, key: &str) -> Option<ModeAction> {
+    match (&view.kind, key) {
+        // Mode-tree's own reordering and sorting, which the tree mode backs
+        // with a window swap.
+        (_, "r") => {
+            view.reverse_sort();
+            Some(ModeAction::nothing())
+        }
+        (ModeKind::Tree, "K" | "J" | "S-Up" | "S-Down") => {
+            let forward = matches!(key, "J" | "S-Down");
+            let other = if forward {
+                view.selected.checked_add(1)
+            } else {
+                view.selected.checked_sub(1)
+            }
+            .filter(|index| *index < view.items.len())?;
+            let (
+                Some(ModeTarget::Window {
+                    session,
+                    index: current,
+                }),
+                Some(ModeTarget::Window {
+                    session: other_session,
+                    index: swap_with,
+                }),
+            ) = (
+                view.items.get(view.selected).and_then(|item| item.target.clone()),
+                view.items.get(other).and_then(|item| item.target.clone()),
+            )
+            else {
+                return Some(ModeAction::nothing());
+            };
+            if session != other_session {
+                return Some(ModeAction::nothing());
+            }
+            view.swap(view.selected, other);
+            Some(ModeAction::command(vec![
+                "swap-window".to_owned(),
+                "-d".to_owned(),
+                "-s".to_owned(),
+                format!("={session}:{current}"),
+                "-t".to_owned(),
+                format!("={other_session}:{swap_with}"),
+            ]))
+        }
+        (ModeKind::Tree, "m") => {
+            let target = view
+                .items
+                .get(view.selected)
+                .and_then(|item| item.target.as_ref())
+                .map(mode_target_argument)?;
+            Some(ModeAction::command(vec![
+                "select-pane".to_owned(),
+                "-m".to_owned(),
+                "-t".to_owned(),
+                target,
+            ]))
+        }
+        (ModeKind::Tree, "M") => Some(ModeAction::command(vec![
+            "select-pane".to_owned(),
+            "-M".to_owned(),
+        ])),
+        (ModeKind::Tree, "x" | "X") => {
+            let tagged_only = key == "X";
+            let rows = action_rows(view, tagged_only);
+            let kills: Vec<(String, Vec<String>)> = rows
+                .iter()
+                .filter_map(|index| view.items.get(*index))
+                .filter_map(|item| item.target.as_ref())
+                .filter_map(mode_kill_command)
+                .collect();
+            if kills.is_empty() {
+                return Some(ModeAction::nothing());
+            }
+            let prompt = if tagged_only || rows.len() > 1 {
+                format!("Kill {} tagged? ", kills.len())
+            } else {
+                kills[0].0.clone()
+            };
+            let commands = kills.into_iter().map(|(_, command)| command).collect();
+            Some(ModeAction::command(chain(commands)).confirmed(prompt))
+        }
+        (ModeKind::Client, "d" | "x" | "D" | "X") => {
+            let tagged_only = matches!(key, "D" | "X");
+            let hangup = matches!(key, "x" | "X");
+            let rows = action_rows(view, tagged_only);
+            let commands: Vec<Vec<String>> = rows
+                .iter()
+                .filter_map(|index| view.items.get(*index))
+                .filter_map(|item| match item.target.as_ref() {
+                    Some(ModeTarget::Client { name }) => {
+                        let mut command = vec!["detach-client".to_owned()];
+                        if hangup {
+                            command.push("-P".to_owned());
+                        }
+                        command.push("-t".to_owned());
+                        command.push(name.clone());
+                        Some(command)
+                    }
+                    _ => None,
+                })
+                .collect();
+            if commands.is_empty() {
+                return Some(ModeAction::nothing());
+            }
+            Some(ModeAction::command(chain(commands)).removing(rows))
+        }
+        (ModeKind::Buffer, "d" | "D") => {
+            let rows = action_rows(view, key == "D");
+            let commands: Vec<Vec<String>> = rows
+                .iter()
+                .filter_map(|index| view.items.get(*index))
+                .filter_map(|item| match item.target.as_ref() {
+                    Some(ModeTarget::Buffer { name }) => Some(vec![
+                        "delete-buffer".to_owned(),
+                        "-b".to_owned(),
+                        name.clone(),
+                    ]),
+                    _ => None,
+                })
+                .collect();
+            if commands.is_empty() {
+                return Some(ModeAction::nothing());
+            }
+            Some(ModeAction::command(chain(commands)).removing(rows))
+        }
+        (ModeKind::Buffer, "p" | "P") => {
+            let rows = action_rows(view, key == "P");
+            let commands: Vec<Vec<String>> = rows
+                .iter()
+                .filter_map(|index| view.items.get(*index))
+                .map(|item| item.command.clone())
+                .collect();
+            Some(ModeAction::command(chain(commands)).exiting())
+        }
+        _ => None,
     }
 }

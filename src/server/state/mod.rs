@@ -47,8 +47,8 @@ pub(crate) use hooks::Hookable;
 pub(crate) use jobs::{BackgroundJobRegistry, WaitOutcome, WaitRegistry};
 pub(crate) use layout::{LayoutCell, PaneRect, SplitDirection};
 pub(crate) use mode::{
-    CustomizeOption, ModeBindingUpdate, ModeEdit, ModeItem, ModeKind, ModePrompt, ModeView,
-    ModeViewKeyResult,
+    CustomizeOption, ModeBindingUpdate, ModeEdit, ModeItem, ModeKind, ModePrompt, ModeTarget,
+    ModeView, ModeViewKeyResult,
 };
 pub(crate) use sizing::{
     pane_slider, WindowResizeAdjust, WindowResizeRequest, WindowSize, WindowSizePolicy,

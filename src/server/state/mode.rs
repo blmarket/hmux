@@ -16,6 +16,17 @@ pub(crate) enum ModeKind {
     Clock,
 }
 
+/// What a mode-tree row names, for the per-mode action keys that act on the
+/// row itself rather than running its template — tmux's `window_tree_itemdata`,
+/// `window_client_itemdata` and `window_buffer_itemdata`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ModeTarget {
+    Session { name: String },
+    Window { session: String, index: u32 },
+    Client { name: String },
+    Buffer { name: String },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ModeItem {
     pub(crate) label: String,
@@ -32,6 +43,9 @@ pub(crate) struct ModeItem {
     /// Whether this row has children, and whether they are currently shown.
     /// `None` for a leaf.
     pub(crate) expanded: Option<bool>,
+    /// What the row names, where an action key needs the thing rather than the
+    /// template the row would run.
+    pub(crate) target: Option<ModeTarget>,
 }
 
 /// One option row in customize mode, with the scope text its table prints.
@@ -160,6 +174,12 @@ pub(crate) enum ModeViewKeyResult {
     Prompt(ModePrompt),
     /// An overlay the mode itself asks for — buffer mode's editor.
     Popup(Box<PopupRequest>),
+    /// A single-key confirmation the mode asks for before its command runs —
+    /// mode-tree's `x` and `X`.
+    Confirm {
+        prompt: String,
+        command: Vec<String>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -195,6 +215,34 @@ impl ModeView {
         visible
     }
 
+    /// Drop a row the action key just destroyed, keeping the selection on the
+    /// row below it as tmux's per-item delete does before it rebuilds.
+    pub(crate) fn remove(&mut self, index: usize) {
+        if index >= self.items.len() {
+            return;
+        }
+        let removed = self.items.remove(index);
+        self.all_items.retain(|item| item != &removed);
+        let last = self.items.len().saturating_sub(1);
+        self.selected = self.selected.min(last);
+        self.scroll = self.scroll.min(self.selected);
+    }
+
+    /// Reverse the active sort, as `r` does: the top-level rows swap order and
+    /// each one keeps its own children, themselves reversed.
+    pub(crate) fn reverse_sort(&mut self) {
+        self.items = reverse_rows(std::mem::take(&mut self.items));
+        self.all_items = reverse_rows(std::mem::take(&mut self.all_items));
+    }
+
+    /// Swap two rows and follow the selection to where the row moved, as
+    /// tmux's `mode_tree_swap` does once the mode has swapped the things
+    /// themselves.
+    pub(crate) fn swap(&mut self, left: usize, right: usize) {
+        self.items.swap(left, right);
+        self.selected = right;
+    }
+
     /// Set every row's expansion, as `M-+` and `M--` do.
     pub(crate) fn expand_all(&mut self, expanded: bool) {
         for item in &mut self.items {
@@ -220,4 +268,29 @@ impl ModeView {
     pub(crate) fn clock() -> Self {
         Self::list(ModeKind::Clock, "Clock", Vec::new())
     }
+}
+
+/// One level of a mode tree in reverse, each row still carrying the rows that
+/// sit under it.
+fn reverse_rows(items: Vec<ModeItem>) -> Vec<ModeItem> {
+    let Some(top) = items.iter().map(|item| item.depth).min() else {
+        return items;
+    };
+    let mut groups: Vec<Vec<ModeItem>> = Vec::new();
+    for item in items {
+        if item.depth == top || groups.is_empty() {
+            groups.push(vec![item]);
+        } else {
+            groups.last_mut().expect("group for a child row").push(item);
+        }
+    }
+    groups.reverse();
+    groups
+        .into_iter()
+        .flat_map(|group| {
+            let mut group = group.into_iter();
+            let parent = group.next().expect("group with its own row");
+            std::iter::once(parent).chain(reverse_rows(group.collect()))
+        })
+        .collect()
 }
