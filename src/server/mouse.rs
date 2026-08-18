@@ -348,9 +348,10 @@ pub(crate) fn range_name(range: &MouseStatusRange) -> String {
 ///
 /// tmux reads these straight off the grid (`format_grid_word`/
 /// `format_grid_line`) rather than through copy mode, and stops a word at the
-/// first `word-separators` character in either direction. Unlike tmux this does
-/// not follow a wrapped line into its neighbour, which only shows up for a word
-/// straddling the right margin.
+/// first `word-separators` character in either direction. A word split by a
+/// soft wrap is one word: `format_grid_word` follows the wrap out of the
+/// clicked row in both directions. The line stays the clicked row, as tmux's
+/// `format_grid_line` reads it.
 pub(crate) fn grid_word_and_line(
     pane: &super::pane::Pane,
     position: MousePosition,
@@ -358,13 +359,43 @@ pub(crate) fn grid_word_and_line(
 ) -> (String, String) {
     let dump = pane.dump();
     let history = pane.scrollback_rows();
-    let Some(line) = dump.lines().nth(history + usize::from(position.y)) else {
+    let clicked = history + usize::from(position.y);
+    let Some(line) = dump.lines().nth(clicked) else {
         return (String::new(), String::new());
     };
     let line = line.trim_end_matches(' ');
-    let cells: Vec<char> = line.chars().collect();
-    let index = usize::from(position.x);
     let is_separator = |ch: char| ch == ' ' || separators.contains(ch);
+    // The rows the clicked one soft-wraps out of and into, so a word that
+    // straddles the margin is read whole.
+    let rows: Vec<String> = dump.lines().map(str::to_owned).collect();
+    let wrapped = |row: usize| -> bool {
+        pane.grid_snapshot_range(row, 1)
+            .rows
+            .first()
+            .is_some_and(|row| row.wrapped)
+    };
+    let mut first = clicked;
+    while first > 0 && wrapped(first - 1) {
+        first -= 1;
+    }
+    let mut last = clicked;
+    while last + 1 < rows.len() && wrapped(last) {
+        last += 1;
+    }
+    let mut text = String::new();
+    let mut index = usize::from(position.x);
+    for row in first..=last {
+        let row_text = if row == last {
+            rows[row].trim_end_matches(' ')
+        } else {
+            rows[row].as_str()
+        };
+        if row < clicked {
+            index += row_text.chars().count();
+        }
+        text.push_str(row_text);
+    }
+    let cells: Vec<char> = text.chars().collect();
     let word = match cells.get(index) {
         Some(&ch) if !is_separator(ch) => {
             let start = cells[..index]
