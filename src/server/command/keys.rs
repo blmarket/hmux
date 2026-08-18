@@ -242,12 +242,6 @@ impl ListKeys {
                     && (!self.repeat_only || binding.repeat)
             })
             .collect();
-        if requested.is_some() && filtered.is_empty() {
-            return CommandResult::err(format!(
-                "unknown key: {}\n",
-                self.key.as_deref().unwrap_or_default()
-            ));
-        }
         filtered.sort_by_key(|(_, key, _)| list_key_order(*key));
 
         if self.single && filtered.len() > 1 {
