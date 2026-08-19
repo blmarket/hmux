@@ -14,6 +14,7 @@ use super::copy::{view_copy_state, CopyBacking};
 use super::layout::{resize_panes_to_layout, LayoutCell, PaneRect, SplitDirection};
 use super::sizing::{DEFAULT_XPIXEL, DEFAULT_YPIXEL};
 use super::target::{pane_not_found, parse_index_target, split_pane_target, Target, TargetKind};
+use super::windows::LinkOrder;
 use super::{
     cursor_style_parameter, fill_spawn_ids, fill_spec_spawn_ids, now_micros, theme_report,
     ClientActionResult, PaneNode, PaneSpec, RenderInvalidation, ServerState,
@@ -1286,6 +1287,7 @@ impl ServerState {
         let session_id = self.sessions[t.session].id;
         let window_id = self.sessions[t.session].windows[t.window].id;
         let pane_idx = t.pane;
+        let lost_active = self.window(t.session, t.window).active == pane_idx;
         let window_empty = {
             let win = self.window_mut(t.session, t.window);
             let pane_id = win.panes[pane_idx].id;
@@ -1316,7 +1318,13 @@ impl ServerState {
         } else {
             self.invalidate_session(session_id, RenderInvalidation::SESSION_GONE);
         }
+        // tmux's `server_kill_pane` closes the layout before `window_lost_pane`
+        // moves the active pane, so a client that sees both sees the layout
+        // first.
         self.notify_window(WindowHook::LayoutChanged, window_id);
+        if lost_active {
+            self.notify_window(WindowHook::PaneChanged, window_id);
+        }
         Ok(())
     }
 
@@ -1531,24 +1539,45 @@ impl ServerState {
         let second_id = self.window(b.session, b.window).panes[b.pane].id;
         if first_window_id == second_window_id {
             let win = self.window_mut(a.session, a.window);
-            let was_active = win.active;
+            let mut active_id = win.panes[win.active].id;
             win.panes.swap(a.pane, b.pane);
             win.layout.swap_panes(first_id, second_id);
-            // tmux tracks the active pane by identity, not by position. Left
-            // selecting, it makes the destination pane active, which the swap
-            // has just moved to the source's slot; `-d` instead runs both of
-            // `cmd_swap_pane_exec`'s guards in turn, and either pane having
-            // been active leaves the source pane — now in the destination's
-            // slot — holding it.
-            win.active = if select {
-                a.pane
-            } else if was_active == a.pane || was_active == b.pane {
-                b.pane
+            // tmux tracks the active pane by identity, not by position, and
+            // reports every `window_set_active_pane` that moves it. Left
+            // selecting, it makes the destination pane active once; `-d`
+            // instead runs both of `cmd_swap_pane_exec`'s guards in turn, so
+            // the pane moves twice and is reported twice even though it ends
+            // where it started.
+            let mut moves = Vec::new();
+            if select {
+                moves.push(second_id);
             } else {
-                was_active
-            };
+                if active_id == first_id {
+                    moves.push(second_id);
+                }
+                if moves.last().copied().unwrap_or(active_id) == second_id {
+                    moves.push(first_id);
+                }
+            }
+            let mut reports = 0;
+            for target in moves {
+                if active_id != target {
+                    active_id = target;
+                    reports += 1;
+                }
+            }
+            let win = self.window_mut(a.session, a.window);
+            win.active = win
+                .panes
+                .iter()
+                .position(|pane| pane.id == active_id)
+                .unwrap_or(win.active);
             resize_panes_to_layout(win)?;
             self.invalidate_session(src_session_id, RenderInvalidation::LAYOUT);
+            for _ in 0..reports {
+                self.notify_window(WindowHook::PaneChanged, first_window_id);
+            }
+            self.notify_window(WindowHook::LayoutChanged, first_window_id);
             return Ok(());
         }
         // Cross-window/session: exchange the two pane nodes by value. Windows
@@ -1562,6 +1591,8 @@ impl ServerState {
             .windows
             .remove(&second_window_id)
             .expect("window present");
+        let first_active_id = first.panes[first.active].id;
+        let second_active_id = second.panes[second.active].id;
         std::mem::swap(&mut first.panes[a.pane], &mut second.panes[b.pane]);
         first.layout.replace_pane(first_id, second_id);
         second.layout.replace_pane(second_id, first_id);
@@ -1573,6 +1604,8 @@ impl ServerState {
             first.active = a.pane;
             second.active = b.pane;
         }
+        let first_moved = first.panes[first.active].id != first_active_id;
+        let second_moved = second.panes[second.active].id != second_active_id;
         resize_panes_to_layout(&mut first)?;
         resize_panes_to_layout(&mut second)?;
         self.windows.insert(first_window_id, first);
@@ -1581,6 +1614,14 @@ impl ServerState {
         if dst_session_id != src_session_id {
             self.invalidate_session(dst_session_id, RenderInvalidation::LAYOUT);
         }
+        if first_moved {
+            self.notify_window(WindowHook::PaneChanged, first_window_id);
+        }
+        if second_moved {
+            self.notify_window(WindowHook::PaneChanged, second_window_id);
+        }
+        self.notify_window(WindowHook::LayoutChanged, first_window_id);
+        self.notify_window(WindowHook::LayoutChanged, second_window_id);
         Ok(())
     }
 
@@ -1753,6 +1794,7 @@ impl ServerState {
             index
         };
         let source_size = (self.sessions[t.session].cols, self.sessions[t.session].rows);
+        let lost_active = self.window(t.session, t.window).active == t.pane;
         let node = self.window_mut(t.session, t.window).panes.remove(t.pane);
         let node_id = node.id;
         self.window_mut(t.session, t.window).layout.remove(node_id);
@@ -1762,6 +1804,13 @@ impl ServerState {
             win.active = win.panes.len() - 1;
         }
         win.last_pane = None;
+        // tmux's `window_lost_pane` then `layout_close_pane`: the source window
+        // reports a new active pane only when it lost the one it had, and
+        // reports its layout either way.
+        if lost_active {
+            self.notify_window(WindowHook::PaneChanged, source_window_id);
+        }
+        self.notify_window(WindowHook::LayoutChanged, source_window_id);
         let window_id = self.next_window_id;
         self.next_window_id += 1;
         let winlink_id = self.next_winlink_id;
@@ -1816,6 +1865,7 @@ impl ServerState {
                 alert_flags: 0,
             },
             select,
+            LinkOrder::Spawned,
         );
         self.invalidate_session(
             source_session_id,
@@ -1840,27 +1890,35 @@ impl ServerState {
         let t = self.resolve_window(target)?;
         let session_id = self.sessions[t.session].id;
         let win = self.window_mut(t.session, t.window);
+        let window_id = win.id;
         win.zoomed = !win.zoomed;
         let zoomed = win.zoomed;
         self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
+        // tmux's `window_zoom` swaps the layout root for a single full-window
+        // cell and `window_unzoom` swaps it back, and both report it.
+        self.notify_window(WindowHook::LayoutChanged, window_id);
         Ok(zoomed)
     }
 
     pub(crate) fn push_zoom_at(&mut self, session: usize, window: usize) {
         let session_id = self.sessions[session].id;
         let win = self.window_mut(session, window);
+        let window_id = win.id;
         if win.zoomed {
             win.zoomed = false;
             self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
+            self.notify_window(WindowHook::LayoutChanged, window_id);
         }
     }
 
     pub(crate) fn pop_zoom_at(&mut self, session: usize, window: usize, keep: bool) {
         let session_id = self.sessions[session].id;
         let win = self.window_mut(session, window);
+        let window_id = win.id;
         if win.zoomed != keep {
             win.zoomed = keep;
             self.invalidate_session(session_id, RenderInvalidation::LAYOUT);
+            self.notify_window(WindowHook::LayoutChanged, window_id);
         }
     }
 
@@ -1887,6 +1945,8 @@ impl ServerState {
         let session_id = self.sessions[resolved.session].id;
         let pane_id = self.window(resolved.session, resolved.window).panes[resolved.pane].id;
         let window = self.window_mut(resolved.session, resolved.window);
+        let window_id = window.id;
+        let was_zoomed = window.zoomed;
         window.zoomed = false;
         window
             .layout
@@ -1896,6 +1956,11 @@ impl ServerState {
             session_id,
             RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
         );
+        // tmux unzooms first and reports that, then reports the resize itself.
+        if was_zoomed {
+            self.notify_window(WindowHook::LayoutChanged, window_id);
+        }
+        self.notify_window(WindowHook::LayoutChanged, window_id);
         Ok(())
     }
 
@@ -1909,6 +1974,8 @@ impl ServerState {
         let session_id = self.sessions[resolved.session].id;
         let pane_id = self.window(resolved.session, resolved.window).panes[resolved.pane].id;
         let window = self.window_mut(resolved.session, resolved.window);
+        let window_id = window.id;
+        let was_zoomed = window.zoomed;
         window.zoomed = false;
         window.layout.resize_pane_to(pane_id, direction, size);
         resize_panes_to_layout(window)?;
@@ -1916,6 +1983,10 @@ impl ServerState {
             session_id,
             RenderInvalidation::LAYOUT | RenderInvalidation::STATUS,
         );
+        if was_zoomed {
+            self.notify_window(WindowHook::LayoutChanged, window_id);
+        }
+        self.notify_window(WindowHook::LayoutChanged, window_id);
         Ok(())
     }
 

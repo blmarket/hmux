@@ -9,7 +9,6 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::rc::Rc;
@@ -165,6 +164,10 @@ impl RenderInvalidation {
     pub(crate) const RESET_MODE: Self = Self(1 << 3);
     pub(crate) const MODE: Self = Self(1 << 4);
     pub(crate) const TERMINAL: Self = Self(1 << 5);
+    /// A control notification was fired. Published to every control client,
+    /// whichever session it is on: the event stream is server-wide, and an
+    /// event in another session is exactly what a per-session wake misses.
+    pub(crate) const NOTIFY: Self = Self(1 << 6);
 
     fn bits(self) -> u8 {
         self.0
@@ -433,41 +436,24 @@ pub(crate) struct ControlPaneSnapshot {
 }
 
 #[derive(Clone)]
-pub(crate) struct ControlGlobalWindowSnapshot {
-    pub(crate) name: String,
-    pub(crate) links: usize,
-}
-
-#[derive(Clone)]
 pub(crate) struct ControlWindowSnapshot {
     pub(crate) id: u32,
     pub(crate) index: u32,
-    pub(crate) name: String,
-    pub(crate) layout: String,
-    pub(crate) flags: String,
-    pub(crate) active_pane_id: u32,
     pub(crate) panes: Vec<ControlPaneSnapshot>,
 }
 
+/// What a control client reads its own session out of: the panes it streams
+/// output from, and the layouts `refresh-client -C` dumps.
+///
+/// Notifications are not derived from this — they arrive on the server-wide
+/// notification log, resolved where the event fired — so nothing here exists
+/// to be compared against a previous copy of itself.
 #[derive(Clone)]
 pub(crate) struct ControlStateSnapshot {
     pub(crate) session_id: u32,
     pub(crate) session_name: String,
-    pub(crate) active_window_id: u32,
     pub(crate) windows: BTreeMap<u32, ControlWindowSnapshot>,
-    pub(crate) sessions: BTreeMap<u32, String>,
-    pub(crate) global_windows: BTreeMap<u32, ControlGlobalWindowSnapshot>,
-    pub(crate) pane_modes: BTreeMap<u32, Option<String>>,
-    pub(crate) buffers: BTreeMap<String, u64>,
-    pub(crate) clients: BTreeMap<String, (u32, String)>,
 }
-
-pub(super) struct ControlCheckpoint {
-    pub(super) sequence: u64,
-    pub(super) snapshots: BTreeMap<u32, ControlStateSnapshot>,
-}
-
-pub(super) const CONTROL_CHECKPOINT_LIMIT: usize = 1024;
 
 const CLIENT_READONLY: i64 = 0x800;
 
@@ -968,6 +954,15 @@ impl ClientRenderRegistry {
             .values()
             .filter(|entry| entry.session_id == session_id)
         {
+            entry.slot.publish(reason);
+        }
+    }
+
+    /// Wake every control-mode client, which is the audience of the
+    /// server-wide notification log.
+    pub(super) fn publish_control(&self, reason: RenderInvalidation) {
+        let inner = self.inner.borrow();
+        for entry in inner.clients.values().filter(|entry| entry.control_mode) {
             entry.slot.publish(reason);
         }
     }
@@ -1598,10 +1593,7 @@ impl ClientRenderRegistry {
         entry.session_id = session_id;
         {
             let mut action = entry.slot.action.borrow_mut();
-            *action = Some(ClientAction::Switch {
-                session_id,
-                destroyed: false,
-            });
+            *action = Some(ClientAction::Switch { session_id });
             let _ = entry.slot.wakeup.wake();
         }
         drop(inner);
@@ -1638,10 +1630,7 @@ impl ClientRenderRegistry {
             entry.session_id = target;
             {
                 let mut action = entry.slot.action.borrow_mut();
-                *action = Some(ClientAction::Switch {
-                    session_id: target,
-                    destroyed: true,
-                });
+                *action = Some(ClientAction::Switch { session_id: target });
                 let _ = entry.slot.wakeup.wake();
             }
         }
@@ -1710,17 +1699,13 @@ impl ClientRenderAttachment {
     /// it, so the command path claims that one action as it finishes rather
     /// than leaving it for the next event-loop pass. Every other action stays
     /// in the slot for the loop to handle.
-    pub(crate) fn take_switch(&self) -> Option<(u32, bool)> {
+    pub(crate) fn take_switch(&self) -> Option<u32> {
         let mut action = self.slot.action.borrow_mut();
-        let Some(ClientAction::Switch {
-            session_id,
-            destroyed,
-        }) = *action
-        else {
+        let Some(ClientAction::Switch { session_id }) = *action else {
             return None;
         };
         *action = None;
-        Some((session_id, destroyed))
+        Some(session_id)
     }
 
     pub(crate) fn take_messages(&self) -> Vec<ClientMessage> {
@@ -2544,24 +2529,14 @@ impl ServerState {
     pub(crate) fn control_snapshot(&self, session_name: &str) -> Option<ControlStateSnapshot> {
         let session_pos = self.session_index(session_name)?;
         let session = &self.sessions[session_pos];
-        let active_window_id = session.windows.get(session.active)?.id;
         let mut windows = BTreeMap::new();
-        for (position, link) in session.windows.iter().enumerate() {
+        for link in session.windows.iter() {
             let window = self.windows.get(&link.id)?;
-            let body = window.layout.dump();
-            let checksum = body.bytes().fold(0u16, |sum, byte| {
-                sum.rotate_right(1).wrapping_add(u16::from(byte))
-            });
-            let flags = self.printable_window_flags(session, position, false);
             windows.insert(
                 window.id,
                 ControlWindowSnapshot {
                     id: window.id,
                     index: link.index,
-                    name: window.name.clone(),
-                    layout: format!("{checksum:04x},{body}"),
-                    flags,
-                    active_pane_id: window.panes.get(window.active)?.id,
                     panes: window
                         .panes
                         .iter()
@@ -2574,106 +2549,11 @@ impl ServerState {
                 },
             );
         }
-        let sessions = self
-            .sessions
-            .iter()
-            .map(|session| (session.id, session.name.clone()))
-            .collect::<BTreeMap<_, _>>();
-        let global_windows = self
-            .windows
-            .iter()
-            .map(|(id, window)| {
-                let links = self
-                    .sessions
-                    .iter()
-                    .flat_map(|session| &session.windows)
-                    .filter(|link| link.id == *id)
-                    .count();
-                (
-                    *id,
-                    ControlGlobalWindowSnapshot {
-                        name: window.name.clone(),
-                        links,
-                    },
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
-        let pane_modes = self
-            .windows
-            .values()
-            .flat_map(|window| &window.panes)
-            .map(|pane| (pane.id, pane.mode.clone()))
-            .collect::<BTreeMap<_, _>>();
-        let buffers = self
-            .buffers
-            .iter()
-            .map(|(name, data)| {
-                let mut hasher = DefaultHasher::new();
-                data.hash(&mut hasher);
-                (name.clone(), hasher.finish())
-            })
-            .collect::<BTreeMap<_, _>>();
-        let clients = self.client_renders.with_entries(|entries| {
-            entries
-                .filter_map(|entry| {
-                    sessions
-                        .get(&entry.session_id)
-                        .cloned()
-                        .map(|name| (entry.name.clone(), (entry.session_id, name)))
-                })
-                .collect::<BTreeMap<_, _>>()
-        });
         Some(ControlStateSnapshot {
             session_id: session.id,
             session_name: session.name.clone(),
-            active_window_id,
             windows,
-            sessions,
-            global_windows,
-            pane_modes,
-            buffers,
-            clients,
         })
     }
 
-    pub(crate) fn control_checkpoint_end(&self) -> u64 {
-        self.next_control_checkpoint
-    }
-
-    pub(crate) fn record_control_checkpoint(&mut self) {
-        let session_ids = self
-            .sessions
-            .iter()
-            .map(|session| session.id)
-            .collect::<Vec<_>>();
-        let snapshots = session_ids
-            .into_iter()
-            .filter_map(|session_id| {
-                self.control_snapshot(&format!("${session_id}"))
-                    .map(|snapshot| (session_id, snapshot))
-            })
-            .collect::<BTreeMap<_, _>>();
-        self.next_control_checkpoint = self.next_control_checkpoint.saturating_add(1);
-        self.control_checkpoints.push_back(ControlCheckpoint {
-            sequence: self.next_control_checkpoint,
-            snapshots,
-        });
-        while self.control_checkpoints.len() > CONTROL_CHECKPOINT_LIMIT {
-            self.control_checkpoints.pop_front();
-        }
-    }
-
-    pub(crate) fn control_checkpoints_since(
-        &self,
-        session_id: u32,
-        sequence: u64,
-    ) -> (u64, Vec<ControlStateSnapshot>) {
-        let snapshots = self
-            .control_checkpoints
-            .iter()
-            .filter(|checkpoint| checkpoint.sequence > sequence)
-            .filter_map(|checkpoint| checkpoint.snapshots.get(&session_id).cloned())
-            .collect();
-        (self.next_control_checkpoint, snapshots)
-    }
 }

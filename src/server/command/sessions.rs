@@ -371,7 +371,7 @@ impl NewSession {
             .map(|window_name| expand_command_format(st, window_name, &Vars::default(), None))
             .filter(|window_name| !window_name.is_empty());
         if let Some(window_name) = window_name.as_deref() {
-            let _ = st.rename_window(&format!("{name}:"), window_name);
+            let _ = st.name_new_window(&format!("{name}:"), window_name, true);
         } else if self.group_target.is_none() {
             apply_initial_window_name(st, name, 0, &self.command);
         }

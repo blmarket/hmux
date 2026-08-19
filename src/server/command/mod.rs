@@ -1171,9 +1171,11 @@ impl ResumableCommandQueue {
                 }
                 SharedQueueItem::EndHook { name } => {
                     {
-                        let mut state = state.borrow_mut();
-                        state.end_hook(&name);
-                        state.record_control_checkpoint();
+                        {
+                            let mut state = state.borrow_mut();
+                            state.end_hook(&name);
+                            state.fire_control_notifications();
+                        }
                     }
                     self.queue.complete(queue::QueueCompletion::done());
                     continue;
@@ -1865,7 +1867,9 @@ impl<'a> ExecContext<'a> {
             client,
             agents: self.agents,
         });
-        state.record_control_checkpoint();
+        // tmux fires the global queue once the command that filled it is over,
+        // and every record is resolved against the state the command left.
+        state.fire_control_notifications();
         restore_command_target_context(&mut state, previous);
         result
     }
@@ -2038,7 +2042,7 @@ fn apply_initial_window_name(
         current
     };
     if !name.is_empty() {
-        let _ = st.rename_window_automatically(&target, &name);
+        let _ = st.name_new_window(&target, &name, false);
     }
 }
 

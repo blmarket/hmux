@@ -17,6 +17,7 @@
 
 mod buffers;
 mod client;
+mod control_notify;
 mod copy;
 mod environ;
 mod hooks;
@@ -33,7 +34,7 @@ mod sizing;
 mod target;
 mod windows;
 
-use client::ControlCheckpoint;
+pub(crate) use control_notify::{ControlRecord, NotifyEvent};
 pub(crate) use client::{
     ActiveCommandPrompt, ClientFlagState, ClientPromptAttachment, ClientPromptRegistry,
     ClientRenderAttachment, ClientRenderRegistry, ClientSnapshot, CommandPromptRequestResult,
@@ -347,10 +348,6 @@ pub(crate) enum ClientAction {
     },
     Switch {
         session_id: u32,
-        /// Set when the move is the fallout of the client's old session being
-        /// destroyed, which a control client reports differently from an
-        /// ordinary `switch-client`.
-        destroyed: bool,
     },
     Keys(Vec<ClientKey>),
     /// Write the client's terminal selection, or query it with `None`.
@@ -986,8 +983,14 @@ pub struct ServerState {
     /// commands is executing. Missing entries fall back to the window's global
     /// active pane.
     command_active_panes: Option<BTreeMap<u32, u32>>,
-    control_checkpoints: VecDeque<ControlCheckpoint>,
-    next_control_checkpoint: u64,
+    /// Events raised since the last fire, in the order the mutation sites
+    /// raised them — tmux's global queue between `notify_add` and the drain
+    /// that runs its callbacks.
+    pending_control_events: VecDeque<NotifyEvent>,
+    /// The server-wide control-notification log: tmux's `control_write` calls
+    /// resolved once and read by each control client at its own pace.
+    control_notifications: VecDeque<(u64, ControlRecord)>,
+    next_control_notification: u64,
     pane_alert_seen: BTreeMap<u32, (u64, u64)>,
     window_last_activity: BTreeMap<u32, std::time::Instant>,
     silence_alerted: BTreeSet<u32>,
@@ -1070,8 +1073,9 @@ impl ServerState {
             command_window_id: None,
             command_pane_id: None,
             command_active_panes: None,
-            control_checkpoints: VecDeque::new(),
-            next_control_checkpoint: 0,
+            pending_control_events: VecDeque::new(),
+            control_notifications: VecDeque::new(),
+            next_control_notification: 0,
             pane_alert_seen: BTreeMap::new(),
             window_last_activity: BTreeMap::new(),
             silence_alerted: BTreeSet::new(),

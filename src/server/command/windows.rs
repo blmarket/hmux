@@ -331,7 +331,7 @@ impl NewWindow {
                     Some(name) => {
                         let index =
                             st.find(&session).expect("session present").windows[win_idx].index;
-                        let _ = st.rename_window(&format!("{session}:{index}"), name);
+                        let _ = st.name_new_window(&format!("{session}:{index}"), name, true);
                     }
                     None => apply_initial_window_name(st, &session, win_idx, &self.command),
                 }

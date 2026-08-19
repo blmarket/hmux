@@ -356,6 +356,7 @@ impl ServerState {
         let resolved = self.resolve(target).ok_or_else(|| pane_not_found(target))?;
         let session_id = self.sessions[resolved.session].id;
         let node = &mut self.window_mut(resolved.session, resolved.window).panes[resolved.pane];
+        let pane_id = node.id;
         let Some(view) = node.mode_view.as_mut() else {
             return Ok(ModeViewKeyResult::None);
         };
@@ -363,6 +364,9 @@ impl ServerState {
             node.mode = None;
             node.mode_view = None;
             self.invalidate_session(session_id, RenderInvalidation::MODE);
+            // tmux reports the leave from `window_pane_reset_mode`, wherever
+            // the key that ended the mode was handled.
+            self.notify_pane(PaneHook::ModeChanged, pane_id);
             return Ok(ModeViewKeyResult::None);
         }
 
@@ -409,11 +413,15 @@ impl ServerState {
                 view.remove(*index);
             }
             let emptied = view.items.is_empty() && !removed.is_empty();
-            if exit || emptied {
+            let left = exit || emptied;
+            if left {
                 node.mode = None;
                 node.mode_view = None;
             }
             self.invalidate_session(session_id, RenderInvalidation::MODE);
+            if left {
+                self.notify_pane(PaneHook::ModeChanged, pane_id);
+            }
             return Ok(match (confirm, command) {
                 (Some(prompt), command) if !command.is_empty() => {
                     ModeViewKeyResult::Confirm { prompt, command }
@@ -424,10 +432,12 @@ impl ServerState {
         }
 
         let last = view.items.len().saturating_sub(1);
+        let mut left = false;
         match key {
             "q" | "Escape" | "C-c" => {
                 node.mode = None;
                 node.mode_view = None;
+                left = true;
             }
             "Up" | "k" | "C-p" => view.selected = view.selected.saturating_sub(1),
             "Down" | "j" | "C-n" => view.selected = (view.selected + 1).min(last),
@@ -490,6 +500,7 @@ impl ServerState {
                 node.mode = None;
                 node.mode_view = None;
                 self.invalidate_session(session_id, RenderInvalidation::MODE);
+                self.notify_pane(PaneHook::ModeChanged, pane_id);
                 return Ok(command
                     .map(ModeViewKeyResult::Command)
                     .unwrap_or(ModeViewKeyResult::None));
@@ -505,6 +516,9 @@ impl ServerState {
             }
         }
         self.invalidate_session(session_id, RenderInvalidation::MODE);
+        if left {
+            self.notify_pane(PaneHook::ModeChanged, pane_id);
+        }
         Ok(ModeViewKeyResult::None)
     }
 
@@ -873,10 +887,12 @@ impl ServerState {
                 .is_some_and(|copy| copy.scroll == 0);
         if exited {
             let pane = &mut self.window_mut(resolved.session, resolved.window).panes[resolved.pane];
+            let pane_id = pane.id;
             pane.mode = None;
             pane.copy = None;
             pane.mode_view = None;
             self.invalidate_session(session_id, RenderInvalidation::MODE);
+            self.notify_pane(PaneHook::ModeChanged, pane_id);
         }
         Ok(exited)
     }
@@ -908,6 +924,7 @@ impl ServerState {
             Some("absolute" | "relative" | "hybrid")
         );
         let session_id = self.sessions[resolved.session].id;
+        let mut left_mode = false;
         let result = {
             let node = &mut self.window_mut(resolved.session, resolved.window).panes[resolved.pane];
             if node.copy.is_none() {
@@ -1545,11 +1562,18 @@ impl ServerState {
                     node.mode = None;
                     node.copy = None;
                     node.mode_view = None;
+                    left_mode = true;
                 }
                 output
             }
         };
         self.invalidate_session(session_id, RenderInvalidation::MODE);
+        if left_mode {
+            // tmux's `window_pane_reset_mode`: the pane reports the leave
+            // however the command that ended the mode reached it.
+            let pane_id = self.window(resolved.session, resolved.window).panes[resolved.pane].id;
+            self.notify_pane(PaneHook::ModeChanged, pane_id);
+        }
         // A copy that produced data writes the terminal selection unless
         // `set-clipboard` is `off`, and tmux notifies the pane whenever it
         // does — including under `external`, where the write is the client's.

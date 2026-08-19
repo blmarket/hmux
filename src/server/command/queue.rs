@@ -85,6 +85,19 @@ impl<T> CommandQueue<T> {
 
     /// Take the next item, which becomes the current one. The item already
     /// running has to be completed first.
+    /// Whether the group the current item belongs to still holds work that has
+    /// not started.
+    ///
+    /// A control client's input line is one group, and tmux drains the whole
+    /// client queue before the global queue fires — so a line's notifications
+    /// wait behind every marker the line produces.
+    pub(in crate::server) fn current_group_has_more(&self) -> bool {
+        let Some(current) = self.current else {
+            return false;
+        };
+        self.pending.iter().any(|entry| entry.group == current)
+    }
+
     pub(in crate::server) fn start_next(&mut self) -> Option<T> {
         if self.current.is_some() {
             return None;

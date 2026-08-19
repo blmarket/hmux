@@ -19,17 +19,23 @@ impl ServerState {
                 self.buffer_created.insert(n.to_string(), created);
                 if let Some(entry) = self.buffers.iter_mut().find(|(bn, _)| bn == n) {
                     entry.1 = Bytes::copy_from_slice(data);
+                    // tmux's `paste_set` frees the buffer it replaces before it
+                    // inserts the new one, so a replacement is reported as a
+                    // deletion and a change rather than as one change.
+                    self.notify_paste_buffer(n, true);
                 } else {
                     self.buffers
                         .insert(0, (n.to_string(), Bytes::copy_from_slice(data)));
                 }
+                self.notify_paste_buffer(n, false);
             }
             None => {
                 let n = format!("buffer{}", self.next_buffer_id);
                 self.next_buffer_id += 1;
                 self.automatic_buffers.insert(n.clone());
                 self.buffer_created.insert(n.clone(), created);
-                self.buffers.insert(0, (n, Bytes::copy_from_slice(data)));
+                self.buffers.insert(0, (n.clone(), Bytes::copy_from_slice(data)));
+                self.notify_paste_buffer(&n, false);
                 self.enforce_buffer_limit();
             }
         }
@@ -54,6 +60,7 @@ impl ServerState {
             let (name, _) = self.buffers.remove(position);
             self.automatic_buffers.remove(&name);
             self.buffer_created.remove(&name);
+            self.notify_paste_buffer(&name, true);
         }
     }
 
@@ -83,11 +90,17 @@ impl ServerState {
             Some(n) => self.buffers.iter_mut().find(|(bn, _)| bn == n),
             None => self.buffers.first_mut(),
         };
-        if let Some((_, existing)) = entry {
+        if let Some((existing_name, existing)) = entry {
             let mut appended = BytesMut::with_capacity(existing.len() + data.len());
             appended.put_slice(existing);
             appended.put_slice(data);
             *existing = appended.freeze();
+            // tmux appends by building the joined data and handing it back to
+            // `paste_set`, so an append reports the same pair a replacement
+            // does.
+            let existing_name = existing_name.clone();
+            self.notify_paste_buffer(&existing_name, true);
+            self.notify_paste_buffer(&existing_name, false);
         } else {
             self.set_buffer(name, data);
         }
@@ -104,6 +117,15 @@ impl ServerState {
             return false;
         }
         if name != new_name {
+            if self
+                .buffers
+                .iter()
+                .any(|(buffer_name, _)| buffer_name == new_name)
+            {
+                // The buffer the new name belonged to is freed first, which is
+                // a deletion of its own before the rename is reported.
+                self.notify_paste_buffer(new_name, true);
+            }
             self.buffers
                 .retain(|(buffer_name, _)| buffer_name != new_name);
             if let Some((buffer_name, _)) = self
@@ -116,6 +138,8 @@ impl ServerState {
             if let Some(created) = self.buffer_created.remove(name) {
                 self.buffer_created.insert(new_name.to_string(), created);
             }
+            self.notify_paste_buffer(name, true);
+            self.notify_paste_buffer(new_name, false);
         }
         self.automatic_buffers.remove(name);
         self.automatic_buffers.remove(new_name);
@@ -162,6 +186,10 @@ impl ServerState {
         self.buffers.retain(|(n, _)| n != name);
         self.automatic_buffers.remove(name);
         self.buffer_created.remove(name);
-        self.buffers.len() != before
+        let removed = self.buffers.len() != before;
+        if removed {
+            self.notify_paste_buffer(name, true);
+        }
+        removed
     }
 }

@@ -312,12 +312,29 @@ impl ServerState {
         cols: u16,
         rows: u16,
     ) -> io::Result<()> {
+        self.pin_linked_window_size(target, cols, rows)?;
+        self.recalculate_sizes()
+    }
+
+    /// Record the size a client asked one window to be, without deriving the
+    /// window sizes from it yet.
+    ///
+    /// tmux's `refresh-client -C` stores the client's size and then runs one
+    /// `recalculate_sizes_now(1)` over every window; splitting the store from
+    /// the derivation is what lets a caller setting several sizes end in a
+    /// single pass, and so report each window's layout once.
+    pub(crate) fn pin_linked_window_size(
+        &mut self,
+        target: &str,
+        cols: u16,
+        rows: u16,
+    ) -> io::Result<()> {
         let resolved = self.resolve_window_target(target)?;
         let window_id = self.sessions[resolved.session].windows[resolved.window].id;
         let window = self.windows.get_mut(&window_id).expect("window present");
         window.manual_size = (cols, rows);
         window.option_overrides_mut().set("window-size", "manual");
-        self.recalculate_sizes()
+        Ok(())
     }
 
     /// tmux's `default_window_size`: the size to create a window at, or the size
@@ -839,6 +856,18 @@ impl ServerState {
     /// window sizes it used to set directly now come from
     /// [`ServerState::recalculate_sizes`].
     pub fn resize_session(&mut self, session_name: &str, cols: u16, rows: u16) -> io::Result<()> {
+        self.pin_session_size(session_name, cols, rows)?;
+        self.recalculate_sizes()
+    }
+
+    /// [`ServerState::resize_session`] without the derivation, for a caller
+    /// that runs one of its own afterwards.
+    pub(crate) fn pin_session_size(
+        &mut self,
+        session_name: &str,
+        cols: u16,
+        rows: u16,
+    ) -> io::Result<()> {
         let session = self.session_index(session_name).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::NotFound,
@@ -847,7 +876,7 @@ impl ServerState {
         })?;
         self.sessions[session].cols = cols;
         self.sessions[session].rows = rows;
-        self.recalculate_sizes()
+        Ok(())
     }
 
     /// `new-session -x/-y`: pin the session's own `default-size`.

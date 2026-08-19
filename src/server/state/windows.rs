@@ -18,6 +18,18 @@ use super::{
 };
 use crate::server::options::{OptionSet, SessionHook, WindowHook};
 
+/// Which of tmux's two link paths a winlink insertion is on.
+///
+/// They report the new link and the selection in opposite orders:
+/// `spawn_window` selects the new window and *then* notifies `window-linked`,
+/// while `server_link_window` notifies from `session_attach` and selects after
+/// it. A control client sees the difference, so the caller names its path.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum LinkOrder {
+    Spawned,
+    Attached,
+}
+
 impl ServerState {
     pub(crate) fn window(&self, session: usize, window: usize) -> &Window {
         let id = self.sessions[session].windows[window].id;
@@ -313,6 +325,13 @@ impl ServerState {
         self.synchronize_group_from(session);
     }
 
+    /// [`Self::replace_link_set`] without the group synchronization, for a
+    /// caller that has events of its own to report first — tmux reports the
+    /// session that lost the window before its group members relink.
+    fn replace_link_set_quietly(&mut self, session: usize, links: Vec<Winlink>) {
+        Self::install_links_by_index(&mut self.sessions[session], links);
+    }
+
     fn replace_link_set_preserving_positions(&mut self, session: usize, links: Vec<Winlink>) {
         let member = &mut self.sessions[session];
         member.windows = links;
@@ -327,6 +346,7 @@ impl ServerState {
         position: usize,
         link: Winlink,
         select: bool,
+        order: LinkOrder,
     ) {
         let link_id = link.link_id;
         let had_windows = !self.sessions[session].windows.is_empty();
@@ -344,7 +364,6 @@ impl ServerState {
             })
             .unwrap_or(0);
         Self::refresh_last_window(&mut self.sessions[session]);
-        self.synchronize_group_from(session);
         let (session_id, window_id) = {
             let member = &self.sessions[session];
             let link = member
@@ -354,25 +373,52 @@ impl ServerState {
                 .expect("inserted winlink is present");
             (member.id, link.id)
         };
-        self.notify_session_window(SessionHook::WindowLinked, session_id, window_id);
-        if select || !had_windows {
-            let new_active = self.sessions[session]
+        let selected = (select || !had_windows).then(|| {
+            self.sessions[session]
                 .windows
                 .iter()
                 .position(|candidate| candidate.link_id == link_id)
-                .expect("inserted winlink is present");
+                .expect("inserted winlink is present")
+        });
+        // The two link paths report in opposite orders, so which one this is
+        // decides what a control client sees first.
+        if order == LinkOrder::Attached {
+            self.notify_session_window(SessionHook::WindowLinked, session_id, window_id);
+        }
+        if let Some(new_active) = selected {
             self.select_session_window(session, new_active);
         }
+        if order == LinkOrder::Spawned {
+            self.notify_session_window(SessionHook::WindowLinked, session_id, window_id);
+        }
+        // tmux synchronizes the session group at the end of the path that
+        // linked the window, so the group's members report after the session
+        // that gained it.
+        self.synchronize_group_from(session);
     }
 
     fn remove_link(&mut self, session: usize, position: usize) -> Winlink {
         let session_id = self.sessions[session].id;
+        let showing = self.current_window_of_session(session_id);
         let mut links = self.sessions[session].windows.clone();
         let removed = links.remove(position);
         Self::install_links_by_index(&mut self.sessions[session], links);
-        self.synchronize_group_from(session);
+        self.report_current_window_moves(&[(session_id, showing)]);
         self.notify_session_window(SessionHook::WindowUnlinked, session_id, removed.id);
+        self.synchronize_group_from(session);
         removed
+    }
+
+    /// tmux's `session_detach` head: a session showing the window that is
+    /// going away moves to another one *before* the unlink is reported, so a
+    /// control client hears `%session-window-changed` first.
+    fn report_current_window_moves(&mut self, before: &[(u32, Option<u32>)]) {
+        for (session_id, previous) in before {
+            let current = self.current_window_of_session(*session_id);
+            if current.is_some() && current != *previous {
+                self.notify_session(SessionHook::SessionWindowChanged, *session_id);
+            }
+        }
     }
 
     pub(super) fn remove_unlinked_windows(&mut self) {
@@ -623,6 +669,7 @@ impl ServerState {
                 alert_flags: 0,
             },
             select,
+            LinkOrder::Spawned,
         );
         self.remove_unlinked_windows();
         let reason = if select || !had_windows {
@@ -773,6 +820,7 @@ impl ServerState {
                 alert_flags: 0,
             },
             select,
+            LinkOrder::Spawned,
         );
         self.invalidate_session(
             session_id,
@@ -790,6 +838,30 @@ impl ServerState {
         target: &str,
         name: &str,
         disable_automatic_rename: bool,
+    ) -> io::Result<()> {
+        self.store_window_name(target, name, disable_automatic_rename, true)
+    }
+
+    /// The name a window is created with — tmux's `spawn_window` storing
+    /// `sc->name` or `default_window_name(w)` straight into `w->name`.
+    ///
+    /// Deliberately not `window_set_name`: a window nobody has seen yet has not
+    /// been renamed, so no `window-renamed` event is raised for it.
+    pub(crate) fn name_new_window(
+        &mut self,
+        target: &str,
+        name: &str,
+        disable_automatic_rename: bool,
+    ) -> io::Result<()> {
+        self.store_window_name(target, name, disable_automatic_rename, false)
+    }
+
+    fn store_window_name(
+        &mut self,
+        target: &str,
+        name: &str,
+        disable_automatic_rename: bool,
+        notify: bool,
     ) -> io::Result<()> {
         let t = self.resolve_window_target(target)?;
         let session_id = self.sessions[t.session].id;
@@ -811,7 +883,9 @@ impl ServerState {
         // window to the name it already has raises the hook again. The
         // automatic-rename pass compares before it gets here, which is where
         // tmux's own unchanged-name filter lives too.
-        self.notify_window(WindowHook::Renamed, window_id);
+        if notify {
+            self.notify_window(WindowHook::Renamed, window_id);
+        }
         Ok(())
     }
 
@@ -849,6 +923,11 @@ impl ServerState {
             .filter(|session| session.windows.iter().any(|link| link.id == window_id))
             .map(|session| session.link_set_id)
             .collect::<BTreeSet<_>>();
+        let showing = affected
+            .iter()
+            .map(|session_id| (*session_id, self.current_window_of_session(*session_id)))
+            .collect::<Vec<_>>();
+        let mut synchronized = Vec::new();
         for link_set_id in link_sets {
             let Some(member) = self
                 .sessions
@@ -863,12 +942,38 @@ impl ServerState {
                 .copied()
                 .filter(|link| link.id != window_id)
                 .collect();
-            self.replace_link_set(member, links);
+            self.replace_link_set_quietly(member, links);
+            synchronized.push(self.sessions[member].id);
         }
         // Named while the window is still known, but reported per session it
         // was linked into, exactly as tmux's `session_detach` does.
-        for session_id in &affected {
+        self.report_current_window_moves(&showing);
+        // One report per link set, not per session: tmux detaches the window
+        // from the session it reached and lets the group synchronization carry
+        // it to that session's group members, which report for themselves.
+        for session_id in &synchronized {
             self.notify_session_window(SessionHook::WindowUnlinked, *session_id, window_id);
+        }
+        for session_id in synchronized {
+            if let Some(member) = self
+                .sessions
+                .iter()
+                .position(|session| session.id == session_id)
+            {
+                self.synchronize_group_from(member);
+            }
+        }
+        // tmux's `session_detach` reports the window first and tells its caller
+        // the session is empty, which destroys it — so the session's own event
+        // follows the window's rather than leading it.
+        let emptied = self
+            .sessions
+            .iter()
+            .filter(|session| session.windows.is_empty())
+            .map(|session| session.id)
+            .collect::<Vec<_>>();
+        for session_id in emptied {
+            self.notify_session_destroyed(session_id);
         }
         self.sessions.retain(|session| !session.windows.is_empty());
         self.windows.remove(&window_id);
@@ -1817,6 +1922,22 @@ impl ServerState {
         let moved_link_id = self.sessions[s.session].windows[s.window].link_id;
         let source_set = self.sessions[s.session].link_set_id;
         let destination_set = self.sessions[dst_session].link_set_id;
+        // tmux's `server_link_window` unlinks whatever `-k` displaces before
+        // it attaches the moved window, so the displaced window's event leads.
+        if replace && occupied && !same_slot {
+            if let Some(displaced) = self.sessions[dst_session]
+                .windows
+                .iter()
+                .find(|link| link.index == new_index)
+                .map(|link| link.id)
+            {
+                self.notify_session_window(
+                    SessionHook::WindowUnlinked,
+                    dst_session_id,
+                    displaced,
+                );
+            }
+        }
         if source_set == destination_set {
             let mut links = self.sessions[s.session].windows.clone();
             if occupied && !same_slot {
@@ -1846,24 +1967,44 @@ impl ServerState {
             destination_links.push(moved);
             destination_links.sort_by_key(|link| link.index);
             self.replace_link_set(dst_session, destination_links);
-            if self.sessions[s.session].windows.is_empty() {
-                self.sessions
-                    .retain(|session| session.link_set_id != source_set);
-            }
         }
         let dst_session = self
             .sessions
             .iter()
             .position(|session| session.id == dst_session_id)
             .expect("destination session remains present");
+        // tmux moves a window by linking it where it is going and unlinking it
+        // where it was — `server_link_window` then `server_unlink_window` —
+        // rather than by moving the link. Both events resolve after the move,
+        // so a client of either session sees the window as linked throughout.
+        self.notify_session_window(SessionHook::WindowLinked, dst_session_id, source_window_id);
         if select {
-            let sess = &mut self.sessions[dst_session];
-            let new_pos = sess
+            let new_pos = self.sessions[dst_session]
                 .windows
                 .iter()
                 .position(|w| w.link_id == moved_link_id)
                 .expect("moved window is present in the destination");
-            Self::select_window_position(sess, new_pos);
+            self.select_session_window(dst_session, new_pos);
+        }
+        self.notify_session_window(SessionHook::WindowUnlinked, src_session_id, source_window_id);
+        if source_set != destination_set {
+            let emptied = self
+                .sessions
+                .iter()
+                .filter(|session| session.link_set_id == source_set && session.windows.is_empty())
+                .map(|session| session.id)
+                .collect::<Vec<_>>();
+            if self
+                .sessions
+                .iter()
+                .any(|session| session.id == src_session_id && session.windows.is_empty())
+            {
+                for session_id in emptied {
+                    self.notify_session_destroyed(session_id);
+                }
+                self.sessions
+                    .retain(|session| session.link_set_id != source_set);
+            }
         }
         self.remove_unlinked_windows();
         if self
@@ -2163,6 +2304,7 @@ impl ServerState {
                 alert_flags: 0,
             },
             select,
+            LinkOrder::Attached,
         );
         self.remove_unlinked_windows();
         self.invalidate_session(

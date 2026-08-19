@@ -157,16 +157,12 @@ async fn serve(
             break;
         }
 
-        let mut state_ready = false;
         let mut pane_ready = false;
         let mut input_pending = false;
         match ready.take() {
             Some(Ready::Input) => input_pending = control.read_input().map_err(fault)?,
             Some(Ready::Output) => control.flush_output().map_err(fault)?,
-            Some(Ready::State) => {
-                control.note_state_change();
-                state_ready = true;
-            }
+            Some(Ready::State) => control.note_state_change(),
             Some(Ready::Pane(pane_id)) => pane_ready = control.note_pane_output(pane_id),
             Some(Ready::Timer) | None => {}
         }
@@ -181,9 +177,7 @@ async fn serve(
             }
         }
 
-        let serving = control
-            .finish_turn(state_ready, pane_ready)
-            .map_err(fault)?;
+        let serving = control.finish_turn(pane_ready).map_err(fault)?;
         publish(wire, runtime, control)?;
         if serving == ControlServing::Stop {
             break;

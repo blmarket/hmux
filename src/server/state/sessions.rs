@@ -11,8 +11,8 @@ use std::path::PathBuf;
 use super::sizing::{clamp_window_size, parse_size_pair, DEFAULT_XPIXEL, DEFAULT_YPIXEL};
 use super::{
     fill_spec_spawn_ids, now_epoch, now_micros, pane_start_command, ExitEmpty, LayoutCell,
-    Notification, Pane, PaneNode, PaneSpec, RenderInvalidation, ServerState, Session, Window,
-    Winlink, ALERT_ACTIVITY,
+    Notification, NotifyEvent, Pane, PaneNode, PaneSpec, RenderInvalidation, ServerState, Session,
+    Window, Winlink, ALERT_ACTIVITY,
 };
 use crate::server::options::{HookName, OptionSet, PaneHook, SessionHook, WindowHook};
 
@@ -66,12 +66,38 @@ impl ServerState {
         let source_id = self.sessions[source].id;
         let link_set_id = self.sessions[source].link_set_id;
         let links = self.sessions[source].windows.clone();
+        // tmux's `session_group_synchronize1` throws every member's winlinks
+        // away and builds them again from the source, reporting each link it
+        // makes and each one it does not make again. A member's clients hear
+        // the whole set relinked rather than only the window that moved, which
+        // is what a synchronize looks like from the protocol.
+        let mut events = Vec::new();
         for member in self
             .sessions
             .iter_mut()
             .filter(|member| member.link_set_id == link_set_id && member.id != source_id)
         {
+            let previous = member
+                .windows
+                .iter()
+                .map(|link| link.id)
+                .collect::<Vec<_>>();
             Self::install_links_by_index(member, links.clone());
+            let member_id = member.id;
+            let current = member
+                .windows
+                .iter()
+                .map(|link| link.id)
+                .collect::<Vec<_>>();
+            for window_id in &current {
+                events.push((SessionHook::WindowLinked, member_id, *window_id));
+            }
+            for window_id in previous.iter().filter(|id| !current.contains(id)) {
+                events.push((SessionHook::WindowUnlinked, member_id, *window_id));
+            }
+        }
+        for (hook, session_id, window_id) in events {
+            self.notify_session_window(hook, session_id, window_id);
         }
     }
 
@@ -109,6 +135,16 @@ impl ServerState {
 
     /// Create a session named `name` with a single window holding one pane.
     pub fn create_session(&mut self, name: &str, spec: PaneSpec) -> io::Result<u32> {
+        let session_id = self.create_session_unreported(name, spec)?;
+        self.notify_session(SessionHook::SessionCreated, session_id);
+        Ok(session_id)
+    }
+
+    /// [`Self::create_session`] with the session's own event held back, for
+    /// the grouped path: tmux's `new-session -t` synchronizes the group before
+    /// it reports the session, so the windows it gains and the one it discards
+    /// are reported first.
+    fn create_session_unreported(&mut self, name: &str, spec: PaneSpec) -> io::Result<u32> {
         if self.find_exact(name).is_some() {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
@@ -233,7 +269,10 @@ impl ServerState {
             cwd: None,
         });
         self.initial_attach_pending = false;
-        self.notify_session(SessionHook::SessionCreated, session_id);
+        // tmux's `spawn_window` links the new window before `new-session`
+        // reports the session, so a control client hears about the window
+        // first.
+        self.notify_session_window(SessionHook::WindowLinked, session_id, window_id);
         Ok(session_id)
     }
 
@@ -292,18 +331,38 @@ impl ServerState {
         // spawn failures.
         let source_windows = self.sessions[target].windows.clone();
         let source_size = (self.sessions[target].cols, self.sessions[target].rows);
-        let session_id = self.create_session(name, spec)?;
+        let session_id = self.create_session_unreported(name, spec)?;
         let created = self
             .sessions
             .iter()
             .position(|session| session.id == session_id)
             .expect("new session is present");
+        let discarded = self.sessions[created]
+            .windows
+            .iter()
+            .map(|link| link.id)
+            .collect::<Vec<_>>();
         self.sessions[created].windows = source_windows;
         self.sessions[created].link_set_id = link_set_id;
         self.sessions[created].active = 0;
         self.sessions[created].last_windows.clear();
         self.sessions[created].cols = source_size.0;
         self.sessions[created].rows = source_size.1;
+        // `session_group_synchronize_to` links every window of the group into
+        // the new session and drops the one it was created with, and reports
+        // both — the whole set, not just what changed.
+        let linked = self.sessions[created]
+            .windows
+            .iter()
+            .map(|link| link.id)
+            .collect::<Vec<_>>();
+        for window_id in linked {
+            self.notify_session_window(SessionHook::WindowLinked, session_id, window_id);
+        }
+        for window_id in discarded {
+            self.notify_session_window(SessionHook::WindowUnlinked, session_id, window_id);
+        }
+        self.notify_session(SessionHook::SessionCreated, session_id);
         self.remove_unlinked_windows();
         Ok(session_id)
     }
@@ -376,6 +435,7 @@ impl ServerState {
             .map(|session| session.id);
         if let Some(session_id) = removed_id {
             self.apply_detach_on_destroy(session_id);
+            self.notify_session_destroyed(session_id);
         }
         let before = self.sessions.len();
         self.sessions.retain(|s| s.name != name);
@@ -384,10 +444,28 @@ impl ServerState {
             self.remove_unlinked_windows();
             if let Some(session_id) = removed_id {
                 self.invalidate_session(session_id, RenderInvalidation::SESSION_GONE);
-                self.notify_closed_session(SessionHook::SessionClosed, session_id, name);
             }
         }
         removed
+    }
+
+    /// tmux's `session_destroy` notification tail, raised while the session is
+    /// still in the tree so the events name it: the session is reported closed
+    /// first, then every window it still links is reported unlinked.
+    pub(super) fn notify_session_destroyed(&mut self, session_id: u32) {
+        let Some(session) = self.session_by_id(session_id) else {
+            return;
+        };
+        let name = session.name.clone();
+        let windows = session
+            .windows
+            .iter()
+            .map(|link| link.id)
+            .collect::<Vec<_>>();
+        self.notify_closed_session(SessionHook::SessionClosed, session_id, &name);
+        for window_id in windows {
+            self.notify_session_window(SessionHook::WindowUnlinked, session_id, window_id);
+        }
     }
 
     /// Append an event notification to the server-wide queue, for its runner
@@ -398,16 +476,38 @@ impl ServerState {
         name: &'static str,
         target: Option<String>,
         mut vars: Vec<(String, String)>,
+        control: Option<NotifyEvent>,
     ) {
         if self.suppressed_notification_frames > 0 {
             return;
         }
         vars.insert(0, ("hook".to_string(), name.to_string()));
+        if let Some(control) = control {
+            self.pending_control_events.push_back(control);
+        }
         self.pending_notifications.push_back(Notification {
             name: name.to_string(),
             target,
             vars,
         });
+    }
+
+    /// tmux's `notify_paste_buffer`: an event about a paste buffer, which
+    /// carries no hook of its own and exists only for the control protocol.
+    pub(crate) fn notify_paste_buffer(&mut self, name: &str, deleted: bool) {
+        let event = match deleted {
+            true => NotifyEvent::PasteBufferDeleted {
+                name: name.to_string(),
+            },
+            false => NotifyEvent::PasteBufferChanged {
+                name: name.to_string(),
+            },
+        };
+        let hook = match deleted {
+            true => "paste-buffer-deleted",
+            false => "paste-buffer-changed",
+        };
+        self.notify(hook, None, Vec::new(), Some(event));
     }
 
     /// Latch a hook body as actively on the stack: what is raised from here
@@ -433,7 +533,15 @@ impl ServerState {
             ("hook_session".to_string(), format!("${session_id}")),
             ("hook_session_name".to_string(), session.name.clone()),
         ];
-        self.notify(hook.as_str(), Some(format!("${session_id}")), vars);
+        let control = match hook {
+            SessionHook::SessionCreated => Some(NotifyEvent::SessionCreated),
+            SessionHook::SessionRenamed => Some(NotifyEvent::SessionRenamed { session_id }),
+            SessionHook::SessionWindowChanged => {
+                Some(NotifyEvent::SessionWindowChanged { session_id })
+            }
+            _ => None,
+        };
+        self.notify(hook.as_str(), Some(format!("${session_id}")), vars, control);
     }
 
     /// Like [`Self::notify_session`], for a session that has already been
@@ -448,7 +556,8 @@ impl ServerState {
             ("hook_session".to_string(), format!("${session_id}")),
             ("hook_session_name".to_string(), session.to_string()),
         ];
-        self.notify(hook.as_str(), None, vars);
+        let control = matches!(hook, SessionHook::SessionClosed).then_some(NotifyEvent::SessionClosed);
+        self.notify(hook.as_str(), None, vars, control);
     }
 
     /// tmux's `notify_window`: an event about a window, carrying no session.
@@ -460,7 +569,13 @@ impl ServerState {
             ("hook_window".to_string(), format!("@{window_id}")),
             ("hook_window_name".to_string(), window.name.clone()),
         ];
-        self.notify(hook.as_str(), Some(format!("@{window_id}")), vars);
+        let control = match hook {
+            WindowHook::Renamed => Some(NotifyEvent::WindowRenamed { window_id }),
+            WindowHook::PaneChanged => Some(NotifyEvent::WindowPaneChanged { window_id }),
+            WindowHook::LayoutChanged => Some(NotifyEvent::WindowLayoutChanged { window_id }),
+            WindowHook::Resized => None,
+        };
+        self.notify(hook.as_str(), Some(format!("@{window_id}")), vars, control);
     }
 
     /// tmux's `notify_session_window`/`notify_winlink`: an event about a window
@@ -490,7 +605,12 @@ impl ServerState {
             .find(|s| s.id == session_id && s.windows.iter().any(|link| link.id == window_id))
             .map(|_| format!("${session_id}:@{window_id}"))
             .or_else(|| session.map(|_| format!("${session_id}")));
-        self.notify(hook.as_str(), target, vars);
+        let control = match hook {
+            SessionHook::WindowLinked => Some(NotifyEvent::WindowLinked { window_id }),
+            SessionHook::WindowUnlinked => Some(NotifyEvent::WindowUnlinked { window_id }),
+            _ => None,
+        };
+        self.notify(hook.as_str(), target, vars, control);
     }
 
     /// tmux's `notify_pane`: an event about a pane, which also publishes the
@@ -510,13 +630,29 @@ impl ServerState {
             ("hook_window".to_string(), format!("@{window_id}")),
             ("hook_window_name".to_string(), window_name),
         ];
-        self.notify(hook.as_str(), Some(format!("%{pane_id}")), vars);
+        let control =
+            matches!(hook, PaneHook::ModeChanged).then_some(NotifyEvent::PaneModeChanged { pane_id });
+        self.notify(hook.as_str(), Some(format!("%{pane_id}")), vars, control);
     }
 
     /// tmux's `notify_client`: an event about one client.
     pub(crate) fn notify_client(&mut self, hook: SessionHook, client: &str, session_id: Option<u32>) {
         let vars = vec![("hook_client".to_string(), client.to_string())];
-        self.notify(hook.as_str(), session_id.map(|id| format!("${id}")), vars);
+        let control = match hook {
+            SessionHook::ClientSessionChanged => Some(NotifyEvent::ClientSessionChanged {
+                client: client.to_string(),
+            }),
+            SessionHook::ClientDetached => Some(NotifyEvent::ClientDetached {
+                client: client.to_string(),
+            }),
+            _ => None,
+        };
+        self.notify(
+            hook.as_str(),
+            session_id.map(|id| format!("${id}")),
+            vars,
+            control,
+        );
     }
 
     /// Take the next item off the server-wide queue, in the order the
@@ -811,6 +947,9 @@ impl ServerState {
             .iter()
             .filter_map(|session| (session.link_set_id == link_set_id).then_some(session.id))
             .collect::<Vec<_>>();
+        for session_id in &removed {
+            self.notify_session_destroyed(*session_id);
+        }
         self.sessions
             .retain(|session| session.link_set_id != link_set_id);
         self.remove_unlinked_windows();
@@ -835,6 +974,9 @@ impl ServerState {
             .iter()
             .filter_map(|session| (session.id != keep_id).then_some(session.id))
             .collect();
+        for session_id in &removed {
+            self.notify_session_destroyed(*session_id);
+        }
         self.sessions.retain(|s| s.id == keep_id);
         self.remove_unlinked_windows();
         for session_id in removed {

@@ -1,7 +1,7 @@
 //! Runtime-independent control-mode client state.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::rc::Rc;
@@ -19,7 +19,7 @@ use super::command::queue::{CommandQueue, QueueCompletion};
 use super::pane::{ControlOutputReader, OutputSubscription};
 use super::registry::{self, Resolution};
 use super::state::{
-    ClientAction, ClientFlagState as ControlClientOptions, ClientRenderAttachment,
+    ClientAction, ClientFlagState as ControlClientOptions, ClientRenderAttachment, ControlRecord,
     ControlStateSnapshot, ServerState, SharedState,
 };
 use super::status;
@@ -69,7 +69,8 @@ pub(crate) struct EventControlClient {
     subscriptions: ControlSubscriptions,
     format_cache: status::RenderCache,
     snapshot: ControlStateSnapshot,
-    checkpoint: u64,
+    /// How far this client has read the server-wide notification log.
+    notify_cursor: u64,
     streams: BTreeMap<u32, ControlPaneStream>,
     sequence: u64,
     /// Client input not yet split into whole lines. Split at the newline
@@ -185,13 +186,13 @@ impl EventControlClient {
         let output_fd = unsafe { OwnedFd::from_raw_fd(duplicated_output) };
         let mut control_writer = ControlWriter::new(output_fd.as_raw_fd())?;
         let stable_session = format!("${session_id}");
-        let (snapshot, checkpoint) = {
+        let (snapshot, notify_cursor) = {
             let state = state.borrow_mut();
             (
                 state
                     .control_snapshot(&stable_session)
                     .ok_or_else(|| io::Error::other(format!("can't find session: {session}")))?,
-                state.control_checkpoint_end(),
+                state.control_notification_end(),
             )
         };
         let streams = control_pane_streams(&snapshot)?;
@@ -252,7 +253,7 @@ impl EventControlClient {
             subscriptions: ControlSubscriptions::default(),
             format_cache,
             snapshot,
-            checkpoint,
+            notify_cursor,
             streams,
             sequence,
             pending: BytesMut::new(),
@@ -433,37 +434,25 @@ impl EventControlClient {
 
     /// The tail of a turn: everything a client with an idle queue does, and
     /// then whether it has anything left to serve.
-    pub(crate) fn finish_turn(
-        &mut self,
-        state_ready: bool,
-        pane_ready: bool,
-    ) -> io::Result<ControlServing> {
-        if state_ready {
-            self.advance_snapshot()?;
-        }
-        let alert_changed = {
-            let mut state = self.state.borrow_mut();
-            let changed = state.refresh_alerts(Instant::now());
-            if changed {
-                state.record_control_checkpoint();
-            }
-            changed
-        };
-        if alert_changed {
-            self.advance_snapshot()?;
-        }
+    pub(crate) fn finish_turn(&mut self, pane_ready: bool) -> io::Result<ControlServing> {
+        // Unconditional: a notification the client has not read yet must reach
+        // it before the marker of the next command it starts, and the wake that
+        // announced the notification may have been consumed by a turn that ran
+        // a command instead.
+        self.drain_notifications()?;
+        // Alerts raise no control notification of their own — tmux's `alert-*`
+        // notify names have no `control-notify.c` emitter — so the check runs
+        // for the window flags an attached client repaints from and this
+        // client has nothing to write for it.
+        self.state.borrow_mut().refresh_alerts(Instant::now());
         self.pump_output()?;
         if self.too_far_behind(Instant::now()) {
             self.release_streams();
             return Ok(ControlServing::Stop);
         }
         if pane_ready {
-            {
-                let mut state = self.state.borrow_mut();
-                state.reap_exited_panes();
-                state.record_control_checkpoint();
-            }
-            self.advance_snapshot()?;
+            self.state.borrow_mut().reap_exited_panes();
+            self.drain_notifications()?;
         }
         if self
             .subscriptions
@@ -504,10 +493,7 @@ impl EventControlClient {
         }
         self.apply_remote_flag_updates();
         let requested_switch = match self.render_attachment.take_action() {
-            Some(ClientAction::Switch {
-                session_id,
-                destroyed,
-            }) => Some((session_id, destroyed)),
+            Some(ClientAction::Switch { session_id }) => Some(session_id),
             Some(ClientAction::Detach { .. }) => return Ok(ControlServing::Stop),
             Some(ClientAction::Lock(command)) => {
                 self.frames.push_back(Frame::new(Message::Lock(command)));
@@ -541,24 +527,23 @@ impl EventControlClient {
             }
             None => None,
         };
-        if let Some((session_id, destroyed)) = requested_switch {
-            self.apply_switch(session_id, destroyed)?;
+        if let Some(session_id) = requested_switch {
+            self.apply_switch(session_id)?;
         }
         Ok(ControlServing::Continue)
     }
 
     /// Move this client onto `session_id`, reporting it as tmux's
     /// `server_client_set_session` does.
-    fn apply_switch(&mut self, session_id: u32, destroyed: bool) -> io::Result<()> {
+    fn apply_switch(&mut self, session_id: u32) -> io::Result<()> {
         let stable = format!("${session_id}");
-        let checkpoint = {
-            let state = self.state.borrow_mut();
-            state
-                .control_snapshot(&stable)
-                .map(|_| state.control_checkpoint_end())
-        };
-        if let Some(checkpoint) = checkpoint {
-            self.replace_session(session_id, stable, checkpoint, destroyed)?;
+        let present = self
+            .state
+            .borrow_mut()
+            .control_snapshot(&stable)
+            .is_some();
+        if present {
+            self.replace_session(session_id, stable)?;
         }
         Ok(())
     }
@@ -614,16 +599,14 @@ impl EventControlClient {
         Ok(ControlServing::Stop)
     }
 
-    fn replace_session(
-        &mut self,
-        session_id: u32,
-        stable: String,
-        checkpoint: u64,
-        destroyed: bool,
-    ) -> io::Result<()> {
+    /// Move this client onto another session, writing the `%session-changed`
+    /// tmux's `control_notify_client_session_changed` writes for the client
+    /// that moved. The notification log carries the same event for every
+    /// *other* control client, which is why this client drops its own copy of
+    /// it when it drains.
+    fn replace_session(&mut self, session_id: u32, stable: String) -> io::Result<()> {
         self.session_id = session_id;
         self.stable_session = stable;
-        self.checkpoint = checkpoint;
         self.render_attachment.update_session(session_id);
         self.context.current_session_id = Some(session_id);
         if let Some(active_panes) = self.context.control_active_panes() {
@@ -638,18 +621,6 @@ impl EventControlClient {
             "%session-changed ${} {}",
             next.session_id, next.session_name
         ));
-        if destroyed {
-            self.control_writer.enqueue_line("%sessions-changed");
-            for window_id in self
-                .snapshot
-                .global_windows
-                .keys()
-                .filter(|window_id| !next.global_windows.contains_key(window_id))
-            {
-                self.control_writer
-                    .enqueue_line(format!("%unlinked-window-close @{window_id}"));
-            }
-        }
         self.streams = control_pane_streams(&next)?;
         self.snapshot = next;
         Ok(())
@@ -732,6 +703,11 @@ impl EventControlClient {
             let Some(item) = self.command_queue.start_next() else {
                 return Ok(None);
             };
+            // Read while the item just started still owns the group: an input
+            // line's notifications wait behind every marker the line produces,
+            // so an item that ends the line releases them and one that does not
+            // leaves them for the item after it.
+            let line_done = !self.command_queue.current_group_has_more();
             let command = match item {
                 ControlQueueItem::Completed(result) => {
                     let id = ControlCommandId::next(&mut self.sequence);
@@ -739,6 +715,9 @@ impl EventControlClient {
                     write_control_marker(&mut self.control_writer, "%begin", id, flags);
                     self.enqueue_command_result(&result, id, flags);
                     self.command_queue.complete(QueueCompletion::done());
+                    if line_done {
+                        self.drain_notifications()?;
+                    }
                     continue;
                 }
                 ControlQueueItem::ParseError(result) => {
@@ -750,12 +729,21 @@ impl EventControlClient {
                         .enqueue(Bytes::copy_from_slice(result.stderr.as_bytes()));
                     write_control_marker(&mut self.control_writer, "%error", id, 1);
                     self.command_queue.complete(QueueCompletion::failed());
+                    if line_done {
+                        self.drain_notifications()?;
+                    }
                     continue;
                 }
                 ControlQueueItem::Command(command) => command,
             };
             if let Some(started) = self.run_control_command(command)? {
                 return Ok(Some(started));
+            }
+            // A command the client answered itself never reaches
+            // `finish_control_command`, so it releases the line's
+            // notifications here instead.
+            if line_done {
+                self.drain_notifications()?;
             }
         }
     }
@@ -830,9 +818,9 @@ impl EventControlClient {
                             &self.client_name,
                             &self.options,
                         ) {
-                            let _ = state.resize_session(&self.stable_session, cols, rows);
+                            let _ = state.pin_session_size(&self.stable_session, cols, rows);
                             for (window_id, (cols, rows)) in &self.client_window_sizes {
-                                let _ = state.resize_linked_window(
+                                let _ = state.pin_linked_window_size(
                                     &format!("@{window_id}"),
                                     *cols,
                                     *rows,
@@ -850,7 +838,7 @@ impl EventControlClient {
                             &self.options,
                         ) {
                             let _ =
-                                state.resize_linked_window(&format!("@{window_id}"), cols, rows);
+                                state.pin_linked_window_size(&format!("@{window_id}"), cols, rows);
                         }
                     }
                     ControlSizeAction::Window(window_id, None) => {
@@ -864,15 +852,22 @@ impl EventControlClient {
                             &self.options,
                         ) {
                             let _ =
-                                state.resize_linked_window(&format!("@{window_id}"), cols, rows);
+                                state.pin_linked_window_size(&format!("@{window_id}"), cols, rows);
                         }
                     }
                 }
+                // tmux's `-C` ends in `recalculate_sizes_now(1)` whichever
+                // form it took, and the `now` flag skips the unchanged-size
+                // test — so every window is resized in place and reports its
+                // layout, including the ones the new size did not move.
+                let _ = state.recalculate_sizes_now(true);
                 state.control_snapshot(&self.stable_session)
             };
             write_control_marker(&mut self.control_writer, "%end", id, 1);
+            // The layouts the resize moved arrive as `%layout-change` on the
+            // notification log, which is where tmux raises them too; a size
+            // that moved nothing reports nothing.
             if let Some(next) = next {
-                write_all_control_layouts(&mut self.control_writer, &next);
                 sync_control_pane_streams(&next, &mut self.streams)?;
                 self.snapshot = next;
             }
@@ -952,7 +947,15 @@ impl EventControlClient {
         self.enqueue_command_result(&result, id, 1);
         self.enqueue_config_errors()?;
         if result.exit != 0 || !switches_client {
-            self.advance_snapshot()?;
+            // Held back while the input line this command came from still has
+            // commands to run: tmux drains the client's whole queue before the
+            // global one fires, so `cmd1 ; cmd2` reads as both markers and then
+            // both notifications rather than as two interleaved pairs.
+            if !self.command_queue.current_group_has_more()
+                && result.inserted_results.is_empty()
+            {
+                self.drain_notifications()?;
+            }
             self.pump_output()?;
         } else {
             // tmux switches the client inside `switch-client` itself, so the
@@ -961,8 +964,8 @@ impl EventControlClient {
             // `%begin`. Claiming the action here instead of leaving it for the
             // next event-loop pass keeps that order, which a client that
             // pipelines a command behind the switch can otherwise observe.
-            if let Some((session_id, destroyed)) = self.render_attachment.take_switch() {
-                self.apply_switch(session_id, destroyed)?;
+            if let Some(session_id) = self.render_attachment.take_switch() {
+                self.apply_switch(session_id)?;
             }
         }
         let completion = QueueCompletion {
@@ -1011,13 +1014,15 @@ impl EventControlClient {
         Ok(())
     }
 
-    fn advance_snapshot(&mut self) -> io::Result<()> {
-        advance_control_snapshot(
+    /// Write what the notification log has for this client and bring its pane
+    /// streams in line with the session it is on.
+    fn drain_notifications(&mut self) -> io::Result<()> {
+        advance_control_state(
             &self.state,
             self.session_id,
             &self.stable_session,
             &self.client_name,
-            &mut self.checkpoint,
+            &mut self.notify_cursor,
             &mut self.snapshot,
             &mut self.streams,
             &mut self.control_writer,
@@ -1383,30 +1388,55 @@ fn sync_control_pane_streams(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn advance_control_snapshot(
+/// Write everything the server-wide notification log has for this client, and
+/// bring its pane streams in line with the session it is on.
+///
+/// The log is the whole of tmux's `control-notify.c`: each record was resolved
+/// once, when the event fired, and what is left here is the per-client branch
+/// its emitter makes — the winlink test that picks `%window-add` over
+/// `%unlinked-window-add`, the session filter on `%layout-change`, and the
+/// `self` test that turns one `client-session-changed` event into
+/// `%session-changed` for the client that moved.
+fn advance_control_state(
     state: &SharedState,
     session_id: u32,
     stable_session: &str,
     client_name: &str,
-    checkpoint: &mut u64,
+    cursor: &mut u64,
     snapshot: &mut ControlStateSnapshot,
     streams: &mut BTreeMap<u32, ControlPaneStream>,
     writer: &mut ControlWriter,
 ) -> io::Result<()> {
-    let (end, mut updates, current) = {
-        let state = state.borrow_mut();
-        let (end, updates) = state.control_checkpoints_since(session_id, *checkpoint);
-        (end, updates, state.control_snapshot(stable_session))
+    let (end, records, current) = {
+        let mut state = state.borrow_mut();
+        // Anything a path outside the command queue raised — a reaped pane, a
+        // lifecycle sweep, this client's own `refresh-client -C` — is resolved
+        // here rather than left for whoever runs next, so what the client is
+        // about to read is everything the server has to say so far.
+        state.fire_control_notifications();
+        let (end, records) = state.control_notifications_since(*cursor);
+        (end, records, state.control_snapshot(stable_session))
     };
-    *checkpoint = end;
-    if let Some(current) = current {
-        updates.push(current);
+    // A client whose session has gone away is tmux's `c->session == NULL`: the
+    // server has already told it what became of it, and the events it would
+    // have branched on have no session to branch against.
+    let Some(current) = current else {
+        return Ok(());
+    };
+    *cursor = end;
+    for record in records {
+        // The client that moved writes its own `%session-changed` where the
+        // move is applied, so the record it raised is not written twice.
+        if matches!(&record, ControlRecord::ClientSessionChanged { client, .. } if client == client_name)
+        {
+            continue;
+        }
+        if let Some(line) = record.line_for(client_name, session_id) {
+            writer.enqueue_line(line);
+        }
     }
-    for next in updates {
-        write_control_notifications(writer, client_name, snapshot, &next);
-        sync_control_pane_streams(&next, streams)?;
-        *snapshot = next;
-    }
+    sync_control_pane_streams(&current, streams)?;
+    *snapshot = current;
     Ok(())
 }
 
@@ -1499,175 +1529,6 @@ fn escape_control_output(line: &mut Vec<u8>, bytes: &[u8]) {
         start = index + 1;
     }
     line.extend_from_slice(&bytes[start..]);
-}
-
-fn write_control_notifications(
-    writer: &mut ControlWriter,
-    client_name: &str,
-    before: &ControlStateSnapshot,
-    after: &ControlStateSnapshot,
-) {
-    let before_session_ids = before.sessions.keys().copied().collect::<BTreeSet<_>>();
-    let after_session_ids = after.sessions.keys().copied().collect::<BTreeSet<_>>();
-    for _ in before_session_ids.difference(&after_session_ids) {
-        writer.enqueue_line("%sessions-changed");
-    }
-    if before.session_name != after.session_name {
-        writer.enqueue_line(format!(
-            "%session-renamed ${} {}",
-            after.session_id, after.session_name
-        ));
-    }
-    for session_id in before_session_ids.intersection(&after_session_ids) {
-        if *session_id == after.session_id {
-            continue;
-        }
-        let old = &before.sessions[session_id];
-        let new = &after.sessions[session_id];
-        if old != new {
-            writer.enqueue_line(format!("%session-renamed ${session_id} {new}"));
-        }
-    }
-    if before.active_window_id != after.active_window_id {
-        writer.enqueue_line(format!(
-            "%session-window-changed ${} @{}",
-            after.session_id, after.active_window_id
-        ));
-    }
-
-    let before_ids = before.windows.keys().copied().collect::<BTreeSet<_>>();
-    let after_ids = after.windows.keys().copied().collect::<BTreeSet<_>>();
-    for window_id in after_ids.difference(&before_ids) {
-        writer.enqueue_line(format!("%window-add @{window_id}"));
-    }
-    for window_id in before_ids.intersection(&after_ids) {
-        let old = &before.windows[window_id];
-        let new = &after.windows[window_id];
-        // tmux's `server_kill_pane` closes the layout before it moves the
-        // active pane, so a client that sees both sees the layout first.
-        if old.layout != new.layout {
-            writer.enqueue_line(format!(
-                "%layout-change @{} {} {} {}",
-                new.id, new.layout, new.layout, new.flags
-            ));
-        }
-        if old.active_pane_id != new.active_pane_id {
-            writer.enqueue_line(format!(
-                "%window-pane-changed @{} %{}",
-                new.id, new.active_pane_id
-            ));
-        }
-        if old.name != new.name {
-            writer.enqueue_line(format!("%window-renamed @{} {}", new.id, new.name));
-        }
-    }
-    for window_id in before_ids.difference(&after_ids) {
-        writer.enqueue_line(format!("%unlinked-window-close @{window_id}"));
-    }
-
-    let before_global_ids = before
-        .global_windows
-        .keys()
-        .copied()
-        .collect::<BTreeSet<_>>();
-    let after_global_ids = after
-        .global_windows
-        .keys()
-        .copied()
-        .collect::<BTreeSet<_>>();
-    for window_id in after_global_ids.difference(&before_global_ids) {
-        if !after.windows.contains_key(window_id) {
-            writer.enqueue_line(format!("%unlinked-window-add @{window_id}"));
-        }
-    }
-    for _ in after_session_ids.difference(&before_session_ids) {
-        writer.enqueue_line("%sessions-changed");
-    }
-    for window_id in before_global_ids.difference(&after_global_ids) {
-        if !before.windows.contains_key(window_id) {
-            writer.enqueue_line(format!("%unlinked-window-close @{window_id}"));
-        }
-    }
-    for window_id in before_global_ids.intersection(&after_global_ids) {
-        let old = &before.global_windows[window_id];
-        let new = &after.global_windows[window_id];
-        let was_linked = before.windows.contains_key(window_id);
-        let is_linked = after.windows.contains_key(window_id);
-        if old.name != new.name && !is_linked {
-            writer.enqueue_line(format!(
-                "%unlinked-window-renamed @{window_id} {}",
-                new.name
-            ));
-        }
-        if was_linked == is_linked && old.links != new.links {
-            let notification = match (new.links > old.links, is_linked) {
-                (true, true) => "%window-add",
-                (true, false) => "%unlinked-window-add",
-                (false, true) => "%window-close",
-                (false, false) => "%unlinked-window-close",
-            };
-            for _ in 0..old.links.abs_diff(new.links) {
-                writer.enqueue_line(format!("{notification} @{window_id}"));
-            }
-        }
-    }
-
-    for (pane_id, old_mode) in &before.pane_modes {
-        if after
-            .pane_modes
-            .get(pane_id)
-            .is_some_and(|new_mode| new_mode != old_mode)
-        {
-            writer.enqueue_line(format!("%pane-mode-changed %{pane_id}"));
-        }
-    }
-
-    for (name, data) in &after.buffers {
-        if before
-            .buffers
-            .get(name)
-            .is_some_and(|previous| previous != data)
-        {
-            writer.enqueue_line(format!("%paste-buffer-deleted {name}"));
-        }
-        if before.buffers.get(name) != Some(data) {
-            writer.enqueue_line(format!("%paste-buffer-changed {name}"));
-        }
-    }
-    for name in before.buffers.keys() {
-        if !after.buffers.contains_key(name) {
-            writer.enqueue_line(format!("%paste-buffer-deleted {name}"));
-        }
-    }
-
-    for (name, (session_id, session_name)) in &after.clients {
-        // A client hears about its own move as `%session-changed`, raised
-        // where the move is applied; `%client-session-changed` is what the
-        // other clients get. tmux draws the same line in
-        // `control_notify_client_session_changed`.
-        if name == client_name {
-            continue;
-        }
-        if before.clients.get(name) != Some(&(*session_id, session_name.clone())) {
-            writer.enqueue_line(format!(
-                "%client-session-changed {name} ${session_id} {session_name}"
-            ));
-        }
-    }
-    for name in before.clients.keys() {
-        if !after.clients.contains_key(name) {
-            writer.enqueue_line(format!("%client-detached {name}"));
-        }
-    }
-}
-
-fn write_all_control_layouts(writer: &mut ControlWriter, snapshot: &ControlStateSnapshot) {
-    for window in snapshot.windows.values() {
-        writer.enqueue_line(format!(
-            "%layout-change @{} {} {} {}",
-            window.id, window.layout, window.layout, window.flags
-        ));
-    }
 }
 
 fn apply_control_offset_actions(
@@ -2061,7 +1922,7 @@ mod tests {
             control.start_next_command()?.is_none(),
             "this client's commands all finish where they are started"
         );
-        assert_eq!(control.finish_turn(false, false)?, ControlServing::Continue);
+        assert_eq!(control.finish_turn(false)?, ControlServing::Continue);
         Ok(())
     }
 

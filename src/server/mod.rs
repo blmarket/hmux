@@ -167,18 +167,17 @@ impl Server {
     /// wakes the loop, and the returned interval is how long the loop may sleep
     /// before a pending `monitor-silence` timer must be reconsidered.
     ///
-    /// Recording a control checkpoint on change is what lets control clients
-    /// report the new flags; the render invalidation raised by the check itself
-    /// wakes attached clients to repaint their status line.
+    /// The render invalidation raised by the check itself wakes attached
+    /// clients to repaint their status line. Alerts raise no control-mode
+    /// notification: tmux's `alert-*` notify names have no emitter in
+    /// `control-notify.c`.
     ///
     /// A control client rechecks alerts on its own turns as well. The check
     /// only consumes pane observation deltas it has not seen, so whichever
-    /// caller reaches a delta first raises the flags and the checkpoint.
+    /// caller reaches a delta first raises the flags.
     pub(crate) fn refresh_alerts(&self) -> io::Result<Option<std::time::Duration>> {
         let mut state = self.state.borrow_mut();
-        if state.refresh_alerts(std::time::Instant::now()) {
-            state.record_control_checkpoint();
-        }
+        state.refresh_alerts(std::time::Instant::now());
         Ok(state.alert_poll_timeout())
     }
 
@@ -207,6 +206,7 @@ impl Server {
     pub(crate) fn enforce_lifecycle_policies(&self) -> io::Result<()> {
         let mut state = self.state.borrow_mut();
         state.enforce_lifecycle_policies();
+        state.fire_control_notifications();
         // tmux's per-loop `recalculate_sizes`. Most size changes are applied by
         // whichever path caused them, but a client going away has no such path
         // — the window it sized has to be re-derived from the clients left.
