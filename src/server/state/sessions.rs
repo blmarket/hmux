@@ -705,9 +705,13 @@ impl ServerState {
                 None => {
                     self.notify_client(SessionHook::ClientAttached, name, Some(*session_id));
                     self.notify_client(SessionHook::ClientSessionChanged, name, Some(*session_id));
-                    // A new client announces its terminal size as part of
-                    // attaching, which tmux reports as a resize of its own.
-                    self.notify_client(SessionHook::ClientResized, name, Some(*session_id));
+                    // The attach-time resize is not raised from here. A client
+                    // announces its terminal size once it is ready, and tmux
+                    // reports that announcement like any other, so it arrives
+                    // through `announce_client_resize` instead — which is also
+                    // what keeps a control client, whose size reaches the
+                    // server by another route entirely, from being announced
+                    // as resized when tmux would not.
                     self.take_session_for_client(*session_id);
                 }
                 Some((old_session, old_cols, old_rows)) => {
@@ -715,6 +719,8 @@ impl ServerState {
                         self.notify_client(SessionHook::ClientSessionChanged, name, Some(*session_id));
                         self.take_session_for_client(*session_id);
                     }
+                    // Only a size the client never announced reaches this;
+                    // an announced one moved the snapshot as it was reported.
                     if (old_cols, old_rows) != (cols, rows) {
                         self.notify_client(SessionHook::ClientResized, name, Some(*session_id));
                     }

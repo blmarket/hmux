@@ -2416,6 +2416,28 @@ impl ServerState {
         }
     }
 
+    /// Raise `client-resized` for a client that has just reported its terminal
+    /// size.
+    ///
+    /// tmux notifies from the `MSG_RESIZE` arm of `server_client_dispatch`,
+    /// which is the message itself rather than a change in what it carries: a
+    /// client that reports the size it already had is announced again. The
+    /// client-layer snapshot is moved along with it, so the size diff that
+    /// reports the resizes no client announces does not report this one twice.
+    pub(crate) fn announce_client_resize(
+        &mut self,
+        client: &str,
+        session_id: u32,
+        cols: u16,
+        rows: u16,
+    ) {
+        self.notify_client(SessionHook::ClientResized, client, Some(session_id));
+        if let Some(known) = self.known_clients.get_mut(client) {
+            known.1 = cols;
+            known.2 = rows;
+        }
+    }
+
     /// Toggle `switch-client -r` on the target client, reporting its name.
     pub(crate) fn toggle_client_read_only(
         &self,

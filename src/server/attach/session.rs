@@ -1155,6 +1155,16 @@ impl AttachSession {
                                 self.status.status_cache.invalidate();
                             }
                         }
+                        // tmux's `MSG_RESIZE` announces the report, not the
+                        // change: a client repeating the size it already had
+                        // raises the hook again, and the size a client never
+                        // reports is not announced from here at all.
+                        state.borrow_mut().announce_client_resize(
+                            &self.attachments.render_attachment.client_name(),
+                            self.compositor.target.session_id,
+                            self.viewport.cols,
+                            self.viewport.rows,
+                        );
                     }
                     Message::Unlock if self.compositor.io_state == ClientIoState::Locked => {
                         let _ = make_raw(self.tty.input_fd.as_raw_fd());
