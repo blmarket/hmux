@@ -373,7 +373,7 @@ impl EventControlClient {
     /// The frame reporting this client's exit status, sent once everything it
     /// queued has gone out.
     pub(crate) fn exit_frame(&self) -> Frame {
-        Frame::new(Message::Exit(Some(self.exit_status)))
+        Frame::new(Message::Exit(Some(self.exit_status), None))
     }
 
     /// Move pane-output backlog into the writer and onto the socket until the

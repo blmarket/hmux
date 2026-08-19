@@ -453,7 +453,7 @@ impl AttachSession {
                     Some(Message::Detach(Some(session_name)))
                 }
             }
-            AttachFinishReason::SessionEnded => Some(Message::Exit(Some(0))),
+            AttachFinishReason::SessionEnded => Some(Message::Exit(Some(0), None)),
             AttachFinishReason::ConnectionClosed => None,
         }
     }
@@ -1224,7 +1224,7 @@ impl AttachSession {
                         // the graceful handshake below, like a `C-b d` detach.
                         return Ok(Some(AttachDrive::Finish(AttachFinishReason::Detached)));
                     }
-                    Message::Exit(_) | Message::Shutdown => {
+                    Message::Exit(..) | Message::Shutdown => {
                         return Ok(Some(AttachDrive::Finish(
                             AttachFinishReason::ConnectionClosed,
                         )));

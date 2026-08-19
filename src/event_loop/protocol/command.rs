@@ -176,7 +176,7 @@ async fn watch_for_close(wire: &mut Wire) -> ProtocolCloseReason {
             Ok(frame) => match frame.msg {
                 Message::Detach(_)
                 | Message::DetachKill(_)
-                | Message::Exit(_)
+                | Message::Exit(..)
                 | Message::Shutdown => return ProtocolCloseReason::Completed,
                 _ => {}
             },
@@ -215,7 +215,7 @@ async fn read_client_file(
             } => {
                 return Ok(if error == 0 { Ok(data) } else { Err(error) });
             }
-            Message::Detach(_) | Message::DetachKill(_) | Message::Exit(_) | Message::Shutdown => {
+            Message::Detach(_) | Message::DetachKill(_) | Message::Exit(..) | Message::Shutdown => {
                 return Err(ProtocolCloseReason::Completed);
             }
             _ => {}
@@ -296,7 +296,7 @@ pub(super) async fn report(wire: &mut Wire, result: CommandResult) -> ProtocolCl
 async fn respond(wire: &mut Wire, result: CommandResult) -> Result<(), ProtocolCloseReason> {
     write_stream(wire, 1, result.stdout_data()).await?;
     write_stream(wire, 2, result.stderr.as_bytes()).await?;
-    wire.send(Frame::new(Message::Exit(Some(result.exit))))
+    wire.send(Frame::new(Message::Exit(Some(result.exit), None)))
         .await?;
     wire.flush()
 }
@@ -341,7 +341,7 @@ async fn await_write_ready(wire: &mut Wire, stream: i32) -> Result<i32, Protocol
                 stream: ready,
                 error,
             } if ready == stream => return Ok(error),
-            Message::Detach(_) | Message::DetachKill(_) | Message::Exit(_) | Message::Shutdown => {
+            Message::Detach(_) | Message::DetachKill(_) | Message::Exit(..) | Message::Shutdown => {
                 return Err(ProtocolCloseReason::Completed);
             }
             _ => {}

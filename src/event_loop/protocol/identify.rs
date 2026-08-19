@@ -101,7 +101,7 @@ pub(super) async fn identify(
                 wire.drain().await?;
                 return Err(ProtocolCloseReason::Completed);
             }
-            Message::Detach(_) | Message::DetachKill(_) | Message::Exit(_) | Message::Shutdown => {
+            Message::Detach(_) | Message::DetachKill(_) | Message::Exit(..) | Message::Shutdown => {
                 return Err(ProtocolCloseReason::Completed);
             }
             _ => continue,

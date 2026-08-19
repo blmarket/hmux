@@ -133,9 +133,12 @@ pub enum Message {
     /// `MSG_DETACHKILL`: like [`Message::Detach`] but the client exits with a
     /// hangup reason. Also carries the session name.
     DetachKill(Option<String>),
-    /// `MSG_EXIT`: optional return code. (tmux may also append an exit message;
-    /// that shape decodes to [`Message::Unknown`] and forwards verbatim.)
-    Exit(Option<i32>),
+    /// `MSG_EXIT`: optional return code, optionally followed by the reason
+    /// the server is ending this client — tmux's `c->exit_message`, which the
+    /// client prints as its exit reason (`[access not allowed]` when attached,
+    /// on standard error otherwise). A message can only accompany a return
+    /// code, because the wire puts the code first.
+    Exit(Option<i32>, Option<String>),
     /// `MSG_LOCK`: server asks the client to temporarily leave tty mode and run
     /// this shell command. The client replies with [`Message::Unlock`].
     Lock(String),
@@ -273,11 +276,17 @@ impl Message {
             MSG_DETACHKILL => cstr_body(payload)
                 .map(|s| Message::DetachKill(Some(s)))
                 .unwrap_or_else(unknown),
-            MSG_EXIT => match payload.len() {
-                0 => Message::Exit(None),
-                4 => Message::Exit(Some(i32::from_ne_bytes(payload.try_into().unwrap()))),
-                _ => unknown(), // retval + trailing message: forward verbatim
-            },
+            MSG_EXIT if payload.is_empty() => Message::Exit(None, None),
+            MSG_EXIT if payload.len() >= 4 => {
+                let (code, rest) = payload.split_at(4);
+                let code = i32::from_ne_bytes(code.try_into().unwrap());
+                match rest {
+                    [] => Message::Exit(Some(code), None),
+                    rest => cstr_body(rest)
+                        .map(|message| Message::Exit(Some(code), Some(message)))
+                        .unwrap_or_else(unknown),
+                }
+            }
             MSG_LOCK => cstr_body(payload)
                 .map(Message::Lock)
                 .unwrap_or_else(unknown),
@@ -345,8 +354,13 @@ impl Message {
             Message::Detach(Some(s)) => (MSG_DETACH, cstr_bytes(s)),
             Message::DetachKill(None) => (MSG_DETACHKILL, Vec::new()),
             Message::DetachKill(Some(s)) => (MSG_DETACHKILL, cstr_bytes(s)),
-            Message::Exit(None) => (MSG_EXIT, Vec::new()),
-            Message::Exit(Some(code)) => (MSG_EXIT, code.to_ne_bytes().to_vec()),
+            Message::Exit(None, _) => (MSG_EXIT, Vec::new()),
+            Message::Exit(Some(code), None) => (MSG_EXIT, code.to_ne_bytes().to_vec()),
+            Message::Exit(Some(code), Some(message)) => {
+                let mut payload = code.to_ne_bytes().to_vec();
+                payload.extend_from_slice(&cstr_bytes(message));
+                (MSG_EXIT, payload)
+            }
             Message::Lock(command) => (MSG_LOCK, cstr_bytes(command)),
             Message::Unlock => (MSG_UNLOCK, Vec::new()),
             Message::Suspend => (MSG_SUSPEND, Vec::new()),
@@ -410,7 +424,7 @@ impl Message {
             Message::Command(_) => "Command",
             Message::Detach(_) => "Detach",
             Message::DetachKill(_) => "DetachKill",
-            Message::Exit(_) => "Exit",
+            Message::Exit(..) => "Exit",
             Message::Lock(_) => "Lock",
             Message::Unlock => "Unlock",
             Message::Suspend => "Suspend",

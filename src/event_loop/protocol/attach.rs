@@ -736,7 +736,7 @@ async fn await_finish_ack(
 }
 
 fn is_finish_ack(frame: &Frame) -> bool {
-    matches!(frame.msg, Message::Exiting | Message::Exit(_))
+    matches!(frame.msg, Message::Exiting | Message::Exit(..))
 }
 
 /// Move what the engine has produced onto the socket, and start what it asked

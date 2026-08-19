@@ -418,7 +418,7 @@ mod tests {
                             .send(Frame::new(Message::WriteReady { stream, error: 0 }))
                             .unwrap(),
                         Message::Write { stream: 1, data } => stdout.extend_from_slice(&data),
-                        Message::Exit(exit) => {
+                        Message::Exit(exit, _) => {
                             exit_status = exit;
                             break;
                         }
@@ -530,7 +530,7 @@ mod tests {
             runtime.dispatch(256).unwrap();
             match reader.try_recv() {
                 Ok(frame) => {
-                    if let Message::Exit(exit) = frame.msg {
+                    if let Message::Exit(exit, _) = frame.msg {
                         break exit;
                     }
                 }
