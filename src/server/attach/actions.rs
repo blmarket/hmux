@@ -117,6 +117,9 @@ pub(super) enum PrefixOutcome {
         escape_hashes: bool,
         explicit_duration: Option<u64>,
     },
+    /// The binding was refused before it ran. The loop shows the reason the
+    /// way it shows a command's own error.
+    Error(String),
     /// The binding ran (or was a no-op / unknown key). `changed` is true when it
     /// altered the window/pane layout, so the compositor must redraw.
     Handled {
@@ -145,6 +148,12 @@ pub(super) fn dispatch_key_binding(
     let Some(binding) = binding else {
         return PrefixOutcome::Handled { changed: false };
     };
+    // tmux's `key_bindings_dispatch` decides this before the binding is looked
+    // at any further, so a read-only client cannot reach even the bindings the
+    // attached client answers itself.
+    if context.read_only && !binding.command.all_read_only() {
+        return PrefixOutcome::Error("client is read-only".to_string());
+    }
     // The attached client answers a few bindings itself rather than queueing
     // them, and decides from the words; the compiled body prints back as the
     // argv the command path would have re-parsed; what dispatch defers is the
@@ -328,8 +337,12 @@ pub(in crate::server) fn dispatch_control_client_keys(
                 } => {
                     deferred.push(command::BackgroundCommandRequest::Command { command, context });
                 }
+                // A read-only control client never reaches the refusal here:
+                // the `send-keys` that injected these keys checked the target
+                // client's own read-only flag first.
                 PrefixOutcome::Confirm { .. }
                 | PrefixOutcome::Prompt { .. }
+                | PrefixOutcome::Error(_)
                 | PrefixOutcome::Handled { .. } => {}
             }
         }

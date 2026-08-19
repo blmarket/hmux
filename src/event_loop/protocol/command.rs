@@ -352,7 +352,7 @@ async fn await_write_ready(wire: &mut Wire, stream: i32) -> Result<i32, Protocol
 /// Keep the socket open until the client drops it, flushing what is left.
 ///
 /// Whatever it says now is moot; the read is only here to see the close.
-async fn await_client_close(wire: &mut Wire) -> ProtocolCloseReason {
+pub(super) async fn await_client_close(wire: &mut Wire) -> ProtocolCloseReason {
     loop {
         if let Err(reason) = wire.recv().await {
             return reason;

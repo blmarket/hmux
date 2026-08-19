@@ -201,6 +201,13 @@ impl ExecutableCommand {
         argv
     }
 
+    /// Whether every command of the line is one a read-only client may run —
+    /// tmux's `cmd_list_all_have(cmdlist, CMD_READONLY)`. An empty line
+    /// qualifies, as it does there.
+    pub(crate) fn all_read_only(&self) -> bool {
+        self.commands.iter().all(|command| command.spec.read_only)
+    }
+
     /// The compiled commands, in order, for the queue to run.
     pub(super) fn into_commands(self) -> Vec<ParsedCommand> {
         self.commands
@@ -406,6 +413,21 @@ mod tests {
             names(&compiled),
             ["new-window", "list-windows", "kill-pane"]
         );
+    }
+
+    #[test]
+    fn a_line_is_read_only_only_when_every_command_of_it_is() {
+        // tmux's `cmd_list_all_have`: one command outside the read-only set
+        // takes the whole line with it, and an empty line qualifies.
+        assert!(compile("detach-client").expect("compiles").all_read_only());
+        assert!(compile("list-clients ; copy-mode")
+            .expect("compiles")
+            .all_read_only());
+        assert!(!compile("detach-client ; kill-window")
+            .expect("compiles")
+            .all_read_only());
+        assert!(!compile("new-window").expect("compiles").all_read_only());
+        assert!(compile("").expect("compiles").all_read_only());
     }
 
     #[test]

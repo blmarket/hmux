@@ -390,6 +390,10 @@ impl AttachSession {
                 });
                 return BindingFlow::Break;
             }
+            PrefixOutcome::Error(message) => {
+                self.show_command_error(state, &message);
+                *force_render = true;
+            }
             PrefixOutcome::Handled { changed } => {
                 if changed {
                     *force_render = true;

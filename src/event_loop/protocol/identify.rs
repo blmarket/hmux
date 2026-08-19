@@ -14,7 +14,7 @@ use crate::tmux::codec::encode_bytes;
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 
 use super::wire::Wire;
-use super::ProtocolCloseReason;
+use super::{ProtocolCloseReason, ProtocolKind};
 
 const CLIENT_CONTROL: i64 = 0x2000;
 const IDENTIFY_LIMIT: usize = crate::tmux::codec::MAX_IMSGSIZE * 64;
@@ -35,6 +35,36 @@ pub(super) enum Role {
         tty: ClientTty,
         context: ClientContext,
     },
+}
+
+impl Role {
+    /// The command line the peer asked for, whichever kind of client it turned
+    /// out to be.
+    pub(super) fn args(&self) -> &[String] {
+        match self {
+            Self::Command { args, .. } | Self::Control { args, .. } | Self::Attach { args, .. } => {
+                args
+            }
+        }
+    }
+
+    /// Which kind of client this connection became, for the status its owner
+    /// reads.
+    pub(super) fn kind(&self) -> ProtocolKind {
+        match self {
+            Self::Command { .. } => ProtocolKind::Command,
+            Self::Control { .. } => ProtocolKind::Control,
+            Self::Attach { .. } => ProtocolKind::Attach,
+        }
+    }
+
+    pub(super) fn context(&self) -> &ClientContext {
+        match self {
+            Self::Command { context, .. }
+            | Self::Control { context, .. }
+            | Self::Attach { context, .. } => context,
+        }
+    }
 }
 
 /// The identification being folded together, one frame at a time.

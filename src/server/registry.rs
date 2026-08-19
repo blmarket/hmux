@@ -62,6 +62,11 @@ pub(in crate::server) struct CommandSpec {
     /// `lock-server`, `start-server`), which tmux still prints with a trailing
     /// space after the name.
     pub(in crate::server) usage: &'static str,
+    /// tmux's `CMD_READONLY`: whether a read-only client may run this command.
+    /// Exactly the six commands tmux marks, and the only thing that decides
+    /// what such a client is allowed to do — the check is central, at command
+    /// dispatch and at key-binding dispatch, not inside the commands.
+    pub(in crate::server) read_only: bool,
 }
 
 impl CommandSpec {
@@ -72,6 +77,7 @@ impl CommandSpec {
         getopt: &'static str,
         arity: (usize, Option<usize>),
         usage: &'static str,
+        read_only: bool,
     ) -> Self {
         Self {
             name,
@@ -80,8 +86,19 @@ impl CommandSpec {
             getopt,
             arity,
             usage,
+            read_only,
         }
     }
+}
+
+/// `true` for a row marked `read_only`, `false` for one that isn't.
+macro_rules! spec_read_only {
+    () => {
+        false
+    };
+    (read_only) => {
+        true
+    };
 }
 
 /// `Some(alias)` for a row that names one, `None` for a row that doesn't.
@@ -99,21 +116,23 @@ macro_rules! spec_alias {
 /// ```text
 /// "name" ("alias") => <parse hook>,
 ///     getopt: "<flags>", arity: (<min>, <max>),
-///     usage: "<usage>";
+///     usage: "<usage>", read_only;
 /// ```
 ///
-/// with the alias omitted for a command that has none. Rows are separated by
-/// `;`, so every field of the per-command contract is written in one place and
-/// a new command cannot be half-registered.
+/// with the alias omitted for a command that has none, and `read_only` only on
+/// the commands tmux marks `CMD_READONLY`. Rows are separated by `;`, so every
+/// field of the per-command contract is written in one place and a new command
+/// cannot be half-registered.
 ///
 /// The hook is written inline as a closure over the command's lexed arguments;
 /// a non-capturing one is just a function pointer, so the table stays a static.
 macro_rules! command_specs {
     ($($name:literal $(($alias:literal))? => $parse:expr,
         getopt: $getopt:literal, arity: $arity:expr,
-        usage: $usage:literal);* $(;)?) => {
+        usage: $usage:literal $(, $read_only:ident)?);* $(;)?) => {
         &[$( CommandSpec::new(
             $name, spec_alias!($($alias)?), $parse, $getopt, $arity, $usage,
+            spec_read_only!($($read_only)?),
         ) ),*]
     };
 }
@@ -152,7 +171,7 @@ macro_rules! typed {
 pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
     "attach-session" ("attach") => typed!(Session, Attach, sessions::AttachSession),
         getopt: "dErxc:f:t:", arity: (0, Some(0)),
-        usage: "[-dErx] [-c working-directory] [-f flags] [-t target-session]";
+        usage: "[-dErx] [-c working-directory] [-f flags] [-t target-session]", read_only;
     "bind-key" ("bind") => typed!(Keys, Bind, keys::BindKey),
         getopt: "nrT:N:", arity: (1, None),
         usage: "[-nr] [-T key-table] [-N note] key [command [argument ...]]";
@@ -188,7 +207,7 @@ pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
         usage: "[-by] [-c confirm-key] [-p prompt] [-t target-client] command";
     "copy-mode" => typed!(Pane, CopyMode, panes::CopyMode),
         getopt: "deHMqSus:t:", arity: (0, Some(0)),
-        usage: "[-deHMqSu] [-s src-pane] [-t target-pane]";
+        usage: "[-deHMqSu] [-s src-pane] [-t target-pane]", read_only;
     "customize-mode" => typed!(Client, CustomizeMode, clients::CustomizeMode),
         getopt: "NZF:f:t:", arity: (0, Some(0)),
         usage: "[-NZ] [-F format] [-f filter] [-t target-pane]";
@@ -197,7 +216,7 @@ pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
         usage: "[-b buffer-name]";
     "detach-client" ("detach") => typed!(Client, Detach, clients::DetachClient),
         getopt: "aPE:s:t:", arity: (0, Some(0)),
-        usage: "[-aP] [-E shell-command] [-s target-session] [-t target-client]";
+        usage: "[-aP] [-E shell-command] [-s target-session] [-t target-client]", read_only;
     "display-menu" ("menu") => typed!(Client, DisplayMenu, clients::DisplayMenu),
         getopt: "MOb:c:C:H:s:S:t:T:x:y:", arity: (1, None),
         usage: "[-MO] [-b border-lines] [-c target-client] [-C starting-choice] [-H selected-style] [-s style] [-S border-style] [-t target-pane] [-T title] [-x position] [-y position] name [key] [command] ...";
@@ -248,7 +267,7 @@ pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
         usage: "[-F format] [-f filter] [-O order]";
     "list-clients" ("lsc") => typed!(Client, List, clients::ListClients),
         getopt: "F:f:O:rt:", arity: (0, Some(0)),
-        usage: "[-F format] [-f filter] [-O order][-t target-session]";
+        usage: "[-F format] [-f filter] [-O order][-t target-session]", read_only;
     "list-commands" ("lscm") => typed!(Server, ListCommands, server::ListCommands),
         getopt: "F:", arity: (0, Some(1)),
         usage: "[-F format] [command]";
@@ -350,7 +369,7 @@ pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
         usage: "[-lnpT] [-t target-window]";
     "send-keys" ("send") => typed!(Keys, Send, keys::SendKeys),
         getopt: "FHKlMRXc:N:t:", arity: (0, None),
-        usage: "[-FHKlMRX] [-c target-client] [-N repeat-count] [-t target-pane] [key ...]";
+        usage: "[-FHKlMRX] [-c target-client] [-N repeat-count] [-t target-pane] [key ...]", read_only;
     "send-prefix" => typed!(Keys, SendPrefix, keys::SendPrefix),
         getopt: "2t:", arity: (0, Some(0)),
         usage: "[-2] [-t target-pane]";
@@ -413,7 +432,7 @@ pub(in crate::server) static COMMAND_SPECS: &[CommandSpec] = command_specs![
         usage: "[-d] [-s src-window] [-t dst-window]";
     "switch-client" ("switchc") => typed!(Client, Switch, clients::SwitchClient),
         getopt: "c:EFlnO:pt:rT:Z", arity: (0, Some(0)),
-        usage: "[-ElnprZ] [-c target-client] [-t target-session] [-T key-table] [-O order]";
+        usage: "[-ElnprZ] [-c target-client] [-t target-session] [-T key-table] [-O order]", read_only;
     "unbind-key" ("unbind") => typed!(Keys, Unbind, keys::UnbindKey),
         getopt: "anqT:", arity: (0, Some(1)),
         usage: "[-anq] [-T key-table] key";
@@ -555,6 +574,29 @@ mod tests {
             .map(|spec| spec.name)
             .collect::<HashSet<_>>();
         assert_eq!(names.len(), COMMAND_SPECS.len());
+    }
+
+    #[test]
+    fn exactly_tmuxs_six_commands_are_read_only() {
+        // tmux 3.7b marks `CMD_READONLY` on these and nothing else, and the
+        // whole read-only client policy is that list — so it is pinned here
+        // rather than left to be discovered from the enforcement sites.
+        let marked = COMMAND_SPECS
+            .iter()
+            .filter(|spec| spec.read_only)
+            .map(|spec| spec.name)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            marked,
+            [
+                "attach-session",
+                "copy-mode",
+                "detach-client",
+                "list-clients",
+                "send-keys",
+                "switch-client",
+            ]
+        );
     }
 
     #[test]
