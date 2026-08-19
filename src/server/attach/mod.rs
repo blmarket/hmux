@@ -1634,6 +1634,45 @@ pub(crate) fn attach_target(
     Err("no sessions\n".to_string())
 }
 
+/// The session-state work an interactive attach owes its target before the
+/// client registers: `-c` moves the session, the `update-environment` copy-in
+/// that `-E` skips, and the `-d`/`-x` eviction of the clients already there.
+///
+/// tmux routes both spellings through `cmd_attach_session`: `attach-session`
+/// directly, and `new-session -A` onto a session that already exists, which
+/// spells the eviction `-D`/`-X`. Both of hmux's interactive front ends — the
+/// tty path below and the control-mode path in [`crate::server::control`] —
+/// call this, so neither can drift from the other.
+///
+/// The caller has resolved `target` but has not registered its own client yet,
+/// so every client on the session is an "other" for the eviction.
+pub(crate) fn apply_attach_target_state(
+    intent: command::Intent,
+    args: &[String],
+    target: &str,
+    st: &mut ServerState,
+    context: &command::ClientContext,
+) {
+    let (command, detach, hangup) = match intent {
+        command::Intent::NewAttach => ("new-session", 'D', 'X'),
+        _ => ("attach-session", 'd', 'x'),
+    };
+    if let Some(cwd) = command::command_value(command, args, 'c') {
+        if let Some(session_id) = st.session_id(target) {
+            st.set_session_cwd(session_id, Some(std::path::PathBuf::from(cwd)));
+        }
+    }
+    if !command::command_flag(command, args, 'E') {
+        st.update_session_environment(target, &context.environment);
+    }
+    let hangup = command::command_flag(command, args, hangup);
+    if hangup || command::command_flag(command, args, detach) {
+        if let Some(session_id) = st.session_id(target) {
+            st.detach_session_clients(session_id, None, hangup);
+        }
+    }
+}
+
 pub(crate) fn start_attach_session<W>(
     args: &[String],
     client_tty: ClientTty,
@@ -1659,23 +1698,7 @@ where
                     "can't find session: {target}\n"
                 )));
             }
-            if let Some(cwd) = command::command_value("attach-session", args, 'c') {
-                if let Some(session_id) = st.session_id(&target) {
-                    st.set_session_cwd(session_id, Some(std::path::PathBuf::from(cwd)));
-                }
-            }
-            if !command::command_flag("attach-session", args, 'E') {
-                st.update_session_environment(&target, &context.environment);
-            }
-            // `-d` detaches every other client already on the session, and
-            // `-x` does the same but tells them to hang up. This client has not
-            // registered yet, so every client on the session is an "other".
-            let hangup = command::command_flag("attach-session", args, 'x');
-            if hangup || command::command_flag("attach-session", args, 'd') {
-                if let Some(session_id) = st.session_id(&target) {
-                    st.detach_session_clients(session_id, None, hangup);
-                }
-            }
+            apply_attach_target_state(command::Intent::Attach, args, &target, &mut st, context);
             target
         }
         command::Intent::NewAttach => {
@@ -1683,8 +1706,19 @@ where
             // that cannot attach leaves nothing behind.
             AttachSession::check_terminal(&client_tty)?;
             let mut st = state.borrow_mut();
-            command::new_session_for_attach(args, &mut st, context)
-                .map_err(AttachStartFailure::Client)?
+            let attaches_to_existing = command::existing_attach_target(args, &st).is_some();
+            let target = command::new_session_for_attach(args, &mut st, context)
+                .map_err(AttachStartFailure::Client)?;
+            if attaches_to_existing {
+                apply_attach_target_state(
+                    command::Intent::NewAttach,
+                    args,
+                    &target,
+                    &mut st,
+                    context,
+                );
+            }
+            target
         }
         command::Intent::Command => {
             return Err(AttachStartFailure::Io(io::Error::new(

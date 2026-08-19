@@ -2156,6 +2156,17 @@ pub fn new_session_for_attach(
     command.create_for_attach(st, context)
 }
 
+/// The session an interactive `new-session -A` will attach to instead of
+/// creating, when it names one that already exists. tmux hands that case to
+/// `cmd_attach_session`, so the attach front ends owe it the attach-side state
+/// work; an argv that would create a fresh session answers `None`.
+pub fn existing_attach_target(raw: &[String], st: &ServerState) -> Option<String> {
+    let args = normalize_argv("new-session", raw);
+    sessions::NewSession::parse(&ParsedArgs::lex("new-session", &args))
+        .ok()?
+        .existing_attach_target(st)
+}
+
 fn pane_command_argv(command: &[String], st: &ServerState, target: Option<&str>) -> Vec<String> {
     let option = |name| {
         target

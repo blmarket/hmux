@@ -238,23 +238,31 @@ impl NewSession {
         st: &mut ServerState,
         context: &ClientContext,
     ) -> Result<String, String> {
+        // `-A` (attach-or-create): an existing named session is attached as-is.
+        if let Some(name) = self.existing_attach_target(st) {
+            return Ok(name);
+        }
         let requested = self
             .name
             .as_deref()
             .map(|name| expand_command_format(st, name, &Vars::default(), None));
-        // `-A` (attach-or-create): an existing named session is attached as-is.
-        if self.attach_or_create {
-            if let Some(name) = requested.as_deref() {
-                if st.find(name).is_some() {
-                    return Ok(name.to_string());
-                }
-            }
-        }
         let name = requested.unwrap_or_else(|| st.next_session_name());
         self.reject_target_with_command()?;
         let dimensions = self.dimensions()?;
         self.create(&name, st, context, dimensions)?;
         Ok(name)
+    }
+
+    /// The session `-A` attaches to instead of creating, when the name it was
+    /// given already exists. tmux hands that case straight to
+    /// `cmd_attach_session`, so the caller owes the target the attach-side
+    /// state work rather than the create-side option pass.
+    pub(in crate::server) fn existing_attach_target(&self, st: &ServerState) -> Option<String> {
+        if !self.attach_or_create {
+            return None;
+        }
+        let name = expand_command_format(st, self.name.as_deref()?, &Vars::default(), None);
+        st.find(&name).map(|_| name)
     }
 
     /// tmux refuses to group a session and give it a first window of its own.

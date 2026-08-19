@@ -101,8 +101,20 @@ impl EventControlClient {
         let session = match command::classify(args) {
             command::Intent::NewAttach => {
                 let mut state = state.borrow_mut();
-                command::new_session_for_attach(args, &mut state, context)
-                    .map_err(io::Error::other)?
+                let attaches_to_existing =
+                    command::existing_attach_target(args, &state).is_some();
+                let target = command::new_session_for_attach(args, &mut state, context)
+                    .map_err(io::Error::other)?;
+                if attaches_to_existing {
+                    attach::apply_attach_target_state(
+                        command::Intent::NewAttach,
+                        args,
+                        &target,
+                        &mut state,
+                        context,
+                    );
+                }
+                target
             }
             command::Intent::Attach => {
                 let supplied_target = args
@@ -122,11 +134,13 @@ impl EventControlClient {
                 if state.find(&target).is_none() {
                     return Err(io::Error::other(format!("can't find session: {target}")));
                 }
-                if let Some(cwd) = command::command_value("attach-session", args, 'c') {
-                    if let Some(session_id) = state.session_id(&target) {
-                        state.set_session_cwd(session_id, Some(std::path::PathBuf::from(cwd)));
-                    }
-                }
+                attach::apply_attach_target_state(
+                    command::Intent::Attach,
+                    args,
+                    &target,
+                    &mut state,
+                    context,
+                );
                 target
             }
             command::Intent::Command => "0".to_string(),
