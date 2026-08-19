@@ -145,12 +145,22 @@ impl ServerState {
             .collect::<BTreeSet<_>>();
         // tmux's `server_destroy_pane` reports `pane-died` for a pane held open
         // by `remain-on-exit` and `pane-exited` for one that goes away. Either
-        // way it is announced once, the first time the child is seen gone.
+        // way it is announced once, and from the same pass that acts on the
+        // death, so a body queued behind it sees the tree tmux's body sees:
+        // the pane already unlinked when it goes away, still there when it is
+        // kept. That pairing is why the child has to be reaped first.
+        // `has_exited` is the pty side alone — the slave closed — while the
+        // removal below, and `death()`'s answer for `remain-on-exit failed`,
+        // both wait for `waitpid` to collect the child. Under load the two
+        // land in different passes, and announcing on the earlier one resolves
+        // the body against a pane that is still linked.
         let newly_exited = self
             .windows
             .values_mut()
             .flat_map(|window| window.panes.iter_mut())
-            .filter(|pane| pane.pane.has_exited() && !pane.exit_notified)
+            .filter(|pane| {
+                pane.pane.has_exited() && pane.pane.child_reaped() && !pane.exit_notified
+            })
             .map(|pane| {
                 pane.exit_notified = true;
                 pane.id
@@ -2428,6 +2438,9 @@ impl ServerState {
         let pane = Pane::spawn_from_spec(&spec, cols, rows)?;
         let node = &mut self.window_mut(resolved.session, resolved.window).panes[resolved.pane];
         node.pane = pane;
+        // The child whose death was announced is gone; the one taking its
+        // place has a death of its own to announce.
+        node.exit_notified = false;
         node.mode = None;
         node.copy = None;
         node.mode_view = None;
@@ -2474,6 +2487,7 @@ impl ServerState {
             for (node, pane) in window.panes.iter_mut().zip(replacements) {
                 if let Some(pane) = pane {
                     node.pane = pane;
+                    node.exit_notified = false;
                     node.mode = None;
                     node.copy = None;
                     node.mode_view = None;
