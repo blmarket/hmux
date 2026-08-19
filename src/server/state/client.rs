@@ -2,8 +2,9 @@
 //! it has been told, and what it has been asked.
 //!
 //! [`ClientRenderRegistry`] holds one slot per attached client — its size,
-//! flags, pending invalidations, and the control-mode checkpoints it has
-//! acknowledged. [`ClientPromptRegistry`] is the parallel table for
+//! flags, and pending invalidations, and it is where a wakeup is published to
+//! one session's clients or to every control client.
+//! [`ClientPromptRegistry`] is the parallel table for
 //! `command-prompt`, `confirm-before`, and the other interactive requests a
 //! command can park on a client.
 
