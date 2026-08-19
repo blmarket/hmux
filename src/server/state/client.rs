@@ -1158,6 +1158,42 @@ impl ClientRenderRegistry {
         Ok(entry.name.clone())
     }
 
+    /// tmux's `server_acl_user_allow_write` / `_deny_write` client sweep: every
+    /// connected client whose peer uid matches follows its user's new access.
+    ///
+    /// The flag moves on the registry entry directly rather than through a
+    /// `refresh-client -f` value, because such a value cannot clear read-only;
+    /// the queued value is what tells the client to re-read the entry.
+    pub(super) fn set_read_only_for_uid(&self, uid: u32, read_only: bool) {
+        let mut inner = self.inner.borrow_mut();
+        for entry in inner.clients.values_mut() {
+            if entry.uid != Some(uid) || entry.flag_state.read_only == read_only {
+                continue;
+            }
+            entry.flag_state.read_only = read_only;
+            let value = if read_only { "read-only" } else { "!read-only" };
+            entry.slot.flag_updates.borrow_mut().push(value.to_owned());
+            let _ = entry.slot.wakeup.wake();
+        }
+    }
+
+    /// End every connected client belonging to `uid`, each reporting `message`
+    /// as why it stopped — the sweep `server-access -d` runs over `clients`
+    /// before dropping the entry.
+    pub(super) fn evict_clients_with_uid(&self, uid: u32, message: &str) {
+        let inner = self.inner.borrow();
+        for entry in inner.clients.values() {
+            if entry.uid != Some(uid) {
+                continue;
+            }
+            let mut action = entry.slot.action.borrow_mut();
+            *action = Some(ClientAction::Evict {
+                message: message.to_owned(),
+            });
+            let _ = entry.slot.wakeup.wake();
+        }
+    }
+
     pub(super) fn send_message(
         &self,
         target: Option<&str>,

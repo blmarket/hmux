@@ -317,6 +317,39 @@ pub(crate) fn username(uid: libc::uid_t) -> Option<String> {
     )
 }
 
+/// The uid and canonical login name a user name maps to, when the password
+/// database has an entry for it — `getpwnam`, which `server-access` resolves
+/// its argument through. Walks NSS, like [`username`].
+pub(crate) fn passwd_entry(name: &str) -> Option<(libc::uid_t, String)> {
+    let name = std::ffi::CString::new(name).ok()?;
+    let suggested = unsafe { libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) };
+    let size = usize::try_from(suggested)
+        .ok()
+        .filter(|size| *size > 0)
+        .unwrap_or(16 * 1024);
+    let mut buffer = vec![0_u8; size];
+    let mut passwd = unsafe { std::mem::zeroed::<libc::passwd>() };
+    let mut result = std::ptr::null_mut();
+    let status = unsafe {
+        libc::getpwnam_r(
+            name.as_ptr(),
+            &mut passwd,
+            buffer.as_mut_ptr().cast(),
+            buffer.len(),
+            &mut result,
+        )
+    };
+    if status != 0 || result.is_null() || passwd.pw_name.is_null() {
+        return None;
+    }
+    Some((
+        passwd.pw_uid,
+        unsafe { CStr::from_ptr(passwd.pw_name) }
+            .to_string_lossy()
+            .into_owned(),
+    ))
+}
+
 /// Which collection a `#{S:…}` / `#{W:…}` / `#{P:…}` loop iterates.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum LoopKind {

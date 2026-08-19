@@ -15,8 +15,10 @@
 //! private — Rust privacy reaches descendant modules, so the split needs no
 //! accessors.
 
+mod acl;
 mod buffers;
 mod client;
+mod connections;
 mod control_notify;
 mod copy;
 mod environ;
@@ -34,6 +36,8 @@ mod sizing;
 mod target;
 mod windows;
 
+pub(crate) use acl::{AclAccess, AclJoin, ACCESS_DENIED};
+pub(crate) use connections::{ConnectionHandle, ConnectionRegistry, Eviction};
 pub(crate) use control_notify::{ControlRecord, NotifyEvent};
 pub(crate) use client::{
     ActiveCommandPrompt, ClientFlagState, ClientPromptAttachment, ClientPromptRegistry,
@@ -345,6 +349,11 @@ pub(crate) enum ClientAction {
         /// `-P`/`-x`: the client is told to hang itself up rather than exit
         /// quietly — tmux's `MSG_DETACHKILL`.
         hangup: bool,
+    },
+    /// The server is ending this client itself, with the reason it should
+    /// report — tmux's `c->exit_message` alongside `CLIENT_EXIT`.
+    Evict {
+        message: String,
     },
     Switch {
         session_id: u32,
@@ -1001,6 +1010,15 @@ pub struct ServerState {
     /// A format expanded with no client caches its `#()` jobs here; per-client
     /// trees live in `client_renders`.
     format_jobs: Rc<super::status::FormatJobRegistry>,
+    /// The uid that started this server — tmux's `getuid()` in `server-acl.c`
+    /// and `cmd-server-access.c`. Read once, because it cannot change.
+    owner_uid: u32,
+    /// The server access-control list: which uids may connect, and which of
+    /// them are confined to read-only clients.
+    acl: BTreeMap<u32, AclAccess>,
+    /// Live connections that have no client registration to be reached
+    /// through, so an access change can still end them.
+    connections: Rc<ConnectionRegistry>,
 }
 
 /// When an empty server shuts itself down.
@@ -1083,8 +1101,12 @@ impl ServerState {
             format_jobs: Rc::new(super::status::FormatJobRegistry::new(&client_renders)),
             client_renders,
             wait_registry: Rc::new(WaitRegistry::default()),
+            owner_uid: unsafe { libc::getuid() },
+            acl: BTreeMap::new(),
+            connections: Rc::new(ConnectionRegistry::default()),
         };
         state.install_default_key_bindings();
+        state.seed_server_acl();
         state
     }
 

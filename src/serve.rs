@@ -425,6 +425,10 @@ mod tests {
         let server = Server::new().unwrap();
         let (peer, endpoint) = UnixStream::pair().unwrap();
         let (mut reader, mut writer) = split_stream(peer).unwrap();
+        // The queue limit is what this test is about, so it builds the client
+        // by hand instead of going through `add_protocol_client` — but the peer
+        // uid still has to be the real one, or the server ACL refuses it.
+        let peer_uid = CurrentPlatform::peer_uid(endpoint.as_fd());
         let (protocol_reader, protocol_writer) =
             split_nonblocking_stream_with_queue_limit(endpoint, 1).unwrap();
         let mut runtime = TaskRuntime::new().unwrap();
@@ -435,7 +439,7 @@ mod tests {
             protocol_writer,
             server.clone(),
             background,
-            None,
+            peer_uid,
         );
 
         writer

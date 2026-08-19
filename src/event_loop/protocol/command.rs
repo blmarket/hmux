@@ -14,6 +14,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use crate::server::command::{self, ClientContext, CommandResult};
+use crate::server::state::Eviction;
 use crate::sync::{select, Either};
 use crate::tmux::message::{Frame, Message};
 
@@ -32,8 +33,9 @@ pub(super) async fn run(
     runtime: &ClientRuntime,
     args: Vec<String>,
     context: ClientContext,
+    eviction: &Eviction,
 ) -> ProtocolCloseReason {
-    match serve(wire, runtime, args, context).await {
+    match serve(wire, runtime, args, context, eviction).await {
         Ok(reason) => reason,
         Err(reason) => reason,
     }
@@ -44,8 +46,28 @@ async fn serve(
     runtime: &ClientRuntime,
     args: Vec<String>,
     context: ClientContext,
+    eviction: &Eviction,
 ) -> Result<ProtocolCloseReason, ProtocolCloseReason> {
-    let result = run_command_line(wire, runtime, args, context).await?;
+    // A command client can sit in its queue indefinitely — `wait-for`, a
+    // prompt, a shell command — so the access sweep has to be able to reach it
+    // there. The command is the biased arm: one that finishes on the same turn
+    // as the sweep still gets to answer, as it would in tmux's queue.
+    let line = select(
+        run_command_line(wire, runtime, args, context),
+        eviction.evicted(),
+    )
+    .await;
+    let result = match line {
+        Either::First(result) => result?,
+        // The exit message replaces the response the command would have made:
+        // tmux's `server_client_check_exit` sends one `MSG_EXIT` either way.
+        Either::Second(reason) => {
+            wire.send(Frame::new(Message::Exit(Some(0), Some(reason))))
+                .await?;
+            wire.flush()?;
+            return Ok(await_client_close(wire).await);
+        }
+    };
     respond(wire, result).await?;
     // tmux leaves the socket open here and lets the client disconnect, which is
     // what gives a client still flushing a `save-buffer` of its own the chance

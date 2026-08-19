@@ -9,7 +9,7 @@
 
 use crate::server::attach::ClientTty;
 use crate::server::command::{self, ClientContext, ClientKind};
-use crate::server::state::SharedState;
+use crate::server::state::{AclJoin, SharedState, ACCESS_DENIED};
 use crate::tmux::codec::encode_bytes;
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 
@@ -95,6 +95,7 @@ pub(super) async fn identify(
         bytes: 0,
         control_mode: false,
     };
+    let mut joined = false;
 
     loop {
         let mut frame = wire.recv().await?;
@@ -105,6 +106,28 @@ pub(super) async fn identify(
             wire.queue(Frame::new(Message::Version))?;
             wire.drain().await?;
             return Err(ProtocolCloseReason::Completed);
+        }
+
+        // tmux's `server_acl_join`, which it runs at accept: the peer's uid
+        // decides whether it is served at all, and whether it is served
+        // read-only. It runs here instead so a peer speaking another protocol
+        // version still gets the version answer it came for, and a refused one
+        // is told why over a connection it can read.
+        if !std::mem::replace(&mut joined, true) {
+            let join = state.borrow_mut().acl_join(peer_uid);
+            match join {
+                AclJoin::Denied => {
+                    wire.queue(Frame::new(Message::Exit(
+                        Some(0),
+                        Some(ACCESS_DENIED.to_owned()),
+                    )))?;
+                    wire.drain().await?;
+                    return Err(ProtocolCloseReason::Completed);
+                }
+                AclJoin::Allowed { read_only } => {
+                    identification.context.read_only = read_only;
+                }
+            }
         }
 
         if is_identify_message(&frame.msg) {

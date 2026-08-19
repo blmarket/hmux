@@ -105,6 +105,7 @@ impl AttachSession {
             .clone()
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| format!("client-{}", client_tty.client_pid.unwrap_or_default()));
+        let client_read_only = client_flags.read_only;
         let render_attachment = render_registry.attach_with_details(
             session_id,
             render_name,
@@ -131,6 +132,10 @@ impl AttachSession {
         let mut attached_context = context.clone();
         attached_context.current_session_id = Some(session_id);
         attached_context.kind = command::ClientKind::Attached;
+        // `attach-session -r` and `-f read-only` are the client's own way of
+        // arriving read-only; the server ACL is the other, and has already
+        // stamped the context this one was cloned from.
+        attached_context.read_only |= client_read_only;
         let mut compositor =
             AttachCompositorState::new(session_id, attached_context, stable_target);
         let target = compositor.target.stable_target.as_str();
@@ -244,6 +249,7 @@ impl AttachSession {
             compositor,
             pending_exec: None,
             pending_hangup: false,
+            pending_exit_message: None,
         })
     }
 
@@ -452,6 +458,9 @@ impl AttachSession {
                 } else {
                     Some(Message::Detach(Some(session_name)))
                 }
+            }
+            AttachFinishReason::Evicted => {
+                Some(Message::Exit(Some(0), self.pending_exit_message.take()))
             }
             AttachFinishReason::SessionEnded => Some(Message::Exit(Some(0), None)),
             AttachFinishReason::ConnectionClosed => None,
@@ -866,6 +875,12 @@ impl AttachSession {
                         }
                         return Ok(AttachNotificationOutcome::Return(AttachDrive::Finish(
                             AttachFinishReason::Detached,
+                        )));
+                    }
+                    ClientAction::Evict { message } => {
+                        self.pending_exit_message = Some(message);
+                        return Ok(AttachNotificationOutcome::Return(AttachDrive::Finish(
+                            AttachFinishReason::Evicted,
                         )));
                     }
                     ClientAction::Switch { session_id } => {

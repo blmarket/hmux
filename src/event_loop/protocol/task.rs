@@ -11,6 +11,7 @@ use std::os::fd::AsRawFd;
 use crate::server::attach::ClientTty;
 use crate::server::command::{self as server_command, ClientContext, CommandResult};
 use crate::server::state::SharedState;
+use crate::sync::{select, Either};
 use crate::server::Server;
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 use crate::tmux::message::{Frame, Message};
@@ -98,9 +99,19 @@ async fn serve(
         Ok(wire) => wire,
         Err(error) => return ProtocolCloseReason::Error(error.kind()),
     };
-    let role = match identify(&mut wire, &runtime.state, peer_uid).await {
-        Ok(role) => role,
-        Err(reason) => return reason,
+    // tmux lists a connection in `clients` from accept, so a sweep can end it
+    // before it has said what it is. The registration lasts as long as this
+    // task does.
+    let connection = runtime.state.borrow_mut().register_connection(peer_uid);
+    let identified = select(
+        identify(&mut wire, &runtime.state, peer_uid),
+        connection.eviction().evicted(),
+    )
+    .await;
+    let role = match identified {
+        Either::First(Ok(role)) => role,
+        Either::First(Err(reason)) => return reason,
+        Either::Second(reason) => return evicted(&mut wire, reason).await,
     };
     if let Some(refusal) = read_only_refusal(role.args(), role.context(), &runtime.state) {
         status.set_kind(role.kind());
@@ -117,7 +128,7 @@ async fn serve(
     match role {
         Role::Command { args, context } => {
             status.set_kind(ProtocolKind::Command);
-            command::run(&mut wire, &runtime, args, context).await
+            command::run(&mut wire, &runtime, args, context, connection.eviction()).await
         }
         Role::Control { args, tty, context } => {
             status.set_kind(ProtocolKind::Control);
@@ -128,6 +139,23 @@ async fn serve(
             attach::run(&mut wire, &runtime, args, tty, context).await
         }
     }
+}
+
+/// Answer a connection the server decided to end — tmux's
+/// `server_client_check_exit` for a client carrying an `exit_message`. The
+/// status is zero: nothing set a return value, because no command of this
+/// client's ever finished.
+pub(super) async fn evicted(wire: &mut Wire, reason: String) -> ProtocolCloseReason {
+    if let Err(reason) = wire
+        .send(Frame::new(Message::Exit(Some(0), Some(reason))))
+        .await
+    {
+        return reason;
+    }
+    if let Err(reason) = wire.flush() {
+        return reason;
+    }
+    command::await_client_close(wire).await
 }
 
 /// Report a refusal to a control client the way `control_write` does — on the

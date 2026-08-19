@@ -1,6 +1,7 @@
 //! Commands that act on the server as a whole.
 
 use super::*;
+use crate::server::state::{AclAccess, ACCESS_DENIED};
 
 #[derive(Clone, Debug)]
 pub(in crate::server) enum Command {
@@ -22,7 +23,7 @@ impl Command {
                 context.state.kill_server();
                 CommandResult::ok("")
             }
-            Self::Access(command) => command.execute(context.state),
+            Self::Access(command) => command.execute(context),
             Self::ShowMessages(command) => command.execute(context.state),
             Self::Lock => {
                 context.state.lock_all_clients();
@@ -219,50 +220,81 @@ impl LockSession {
     }
 }
 
-/// `server-access [-adglrw] [-t target-pane] [user|group]`.
+/// `server-access [-adlrw] [user]`.
+///
+/// The whole of tmux's `cmd-server-access.c`: the argument is format-expanded
+/// and resolved through the password database, the server owner is refused,
+/// and the surviving flags edit the ACL table. `-a` deliberately does not
+/// return early — it composes with `-r`/`-w`, which in turn imply it.
 #[derive(Clone, Debug)]
 pub(in crate::server) struct ServerAccess {
+    /// `-a`: add the user to the table.
+    add: bool,
+    /// `-d`: remove the user, ending the clients they have connected.
+    deny: bool,
+    /// `-l`: list the table instead of changing it.
     list: bool,
+    /// `-r`: the user's clients are read-only.
+    read_only: bool,
+    /// `-w`: the user's clients may write.
+    write: bool,
     user: Option<String>,
 }
 
 impl ServerAccess {
     pub(in crate::server) fn parse(args: &ParsedArgs) -> Result<Self, String> {
         Ok(Self {
+            add: args.has('a'),
+            deny: args.has('d'),
             list: args.has('l'),
+            read_only: args.has('r'),
+            write: args.has('w'),
             user: args.positionals().first().cloned(),
         })
     }
 
-    fn execute(self, _st: &mut ServerState) -> CommandResult {
+    fn execute(self, context: &mut CommandContext<'_>) -> CommandResult {
         if self.list {
-            let uid = unsafe { libc::getuid() };
-            let user_name = unsafe {
-                let pw = libc::getpwuid(uid);
-                if pw.is_null() {
-                    "unknown".to_string()
-                } else {
-                    std::ffi::CStr::from_ptr((*pw).pw_name)
-                        .to_str()
-                        .unwrap_or("unknown")
-                        .to_string()
-                }
-            };
-            return CommandResult::ok(format!("{user_name} (W)\n"));
+            return CommandResult::ok(context.state.acl_display());
         }
         let Some(user) = self.user.as_deref() else {
             return CommandResult::err("missing user argument\n");
         };
-        let c_user = match std::ffi::CString::new(user) {
-            Ok(c_user) => c_user,
-            Err(_) => return CommandResult::err(format!("unknown user: {user}\n")),
-        };
-        let exists = unsafe {
-            let pw = libc::getpwnam(c_user.as_ptr());
-            !pw.is_null()
-        };
-        if !exists {
+        let user = execution::expand_untargeted_format(user, context.state);
+        let Some((uid, name)) = format::passwd_entry(&user).filter(|_| !user.is_empty()) else {
             return CommandResult::err(format!("unknown user: {user}\n"));
+        };
+        if uid == 0 || uid == context.state.server_owner_uid() {
+            return CommandResult::err(format!("{name} owns the server, can't change access\n"));
+        }
+        if self.add && self.deny {
+            return CommandResult::err("-a and -d cannot be used together\n");
+        }
+        if self.write && self.read_only {
+            return CommandResult::err("-r and -w cannot be used together\n");
+        }
+
+        if self.deny {
+            if context.state.acl_entry(uid).is_none() {
+                return CommandResult::err(format!("user {name} not found\n"));
+            }
+            context.state.acl_evict(uid, ACCESS_DENIED);
+            context.state.acl_deny(uid);
+            return CommandResult::ok("");
+        }
+        if self.add {
+            if context.state.acl_entry(uid).is_some() {
+                return CommandResult::err(format!("user {name} is already added\n"));
+            }
+            context.state.acl_allow(uid);
+        } else if self.read_only || self.write {
+            context.state.acl_allow(uid);
+        }
+
+        if self.write {
+            context.state.acl_set_access(uid, AclAccess::Write);
+        } else if self.read_only {
+            context.state.acl_set_access(uid, AclAccess::ReadOnly);
         }
         CommandResult::ok("")
     }

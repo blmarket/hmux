@@ -397,6 +397,17 @@ pub(super) fn expand_run_shell_command(
     expand_target_format(command, requested_target, st, agents, &positional)
 }
 
+/// Expand a format with no session, window or pane in scope — tmux's
+/// `format_single(item, …, NULL, NULL, NULL)` for a command whose entry
+/// declares no target of its own, so nothing supplies a default one and only
+/// the server-wide variables resolve.
+pub(super) fn expand_untargeted_format(source: &str, st: &ServerState) -> String {
+    if !format::reads_vars(source) {
+        return source.to_string();
+    }
+    expand_command_format(st, source, &Vars::default(), None)
+}
+
 pub(super) fn expand_target_format(
     source: &str,
     requested_target: Option<&str>,

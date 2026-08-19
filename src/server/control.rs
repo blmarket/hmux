@@ -83,6 +83,10 @@ pub(crate) struct EventControlClient {
     background_commands: Vec<command::BackgroundCommandRequest>,
     stdin_open: bool,
     exit_status: i32,
+    /// Why the server ended this client, when it was not the client's own
+    /// doing — tmux's `c->exit_message`, which the client reports as `%exit
+    /// <reason>` instead of a bare `%exit`.
+    exit_message: Option<String>,
     injected_prefix_pending: bool,
     context: command::ClientContext,
     options: ControlClientOptions,
@@ -159,7 +163,11 @@ impl EventControlClient {
             .clone()
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| format!("client-{}", client_tty.client_pid.unwrap_or_default()));
-        let options = control_client_options(args);
+        let mut options = control_client_options(args);
+        // A client the server ACL joined read-only stays read-only whatever
+        // its own flags say; the context this one was cloned from carries that
+        // decision, and everything below reads the merged value.
+        options.read_only |= context.read_only;
         let render_attachment = render_registry.attach_with_details(
             session_id,
             client_name.clone(),
@@ -277,6 +285,7 @@ impl EventControlClient {
             background_commands: Vec::new(),
             stdin_open: true,
             exit_status: 0,
+            exit_message: None,
             injected_prefix_pending: false,
             context: control_context,
             options,
@@ -373,7 +382,10 @@ impl EventControlClient {
     /// The frame reporting this client's exit status, sent once everything it
     /// queued has gone out.
     pub(crate) fn exit_frame(&self) -> Frame {
-        Frame::new(Message::Exit(Some(self.exit_status), None))
+        Frame::new(Message::Exit(
+            Some(self.exit_status),
+            self.exit_message.clone(),
+        ))
     }
 
     /// Move pane-output backlog into the writer and onto the socket until the
@@ -509,6 +521,10 @@ impl EventControlClient {
         let requested_switch = match self.render_attachment.take_action() {
             Some(ClientAction::Switch { session_id }) => Some(session_id),
             Some(ClientAction::Detach { .. }) => return Ok(ControlServing::Stop),
+            Some(ClientAction::Evict { message }) => {
+                self.exit_message = Some(message);
+                return Ok(ControlServing::Stop);
+            }
             Some(ClientAction::Lock(command)) => {
                 self.frames.push_back(Frame::new(Message::Lock(command)));
                 None
@@ -573,6 +589,11 @@ impl EventControlClient {
         for value in &updates {
             self.options.apply_flags(value);
         }
+        // The registry entry is the authority on read-only: a `refresh-client
+        // -f` value updated it under the same guard this client just applied,
+        // and the server ACL sweep sets it outright — which no `-f` value can
+        // express, since one cannot clear read-only.
+        self.options.read_only = self.render_attachment.client_flags_view().1;
         let display_flags = self.options.display_flags(self.client_tty.flags);
         self.render_attachment.update_control_flags(&self.options);
         self.format_cache

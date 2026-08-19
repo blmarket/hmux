@@ -275,6 +275,10 @@ enum ClientIoState {
 pub(crate) enum AttachFinishReason {
     ConnectionClosed,
     Detached,
+    /// The server ended this client itself — a `server-access -d` on the user
+    /// it belongs to. The reason it reports is held beside the attach, so this
+    /// stays the plain copyable value the transitions carry.
+    Evicted,
     SessionEnded,
 }
 
@@ -364,6 +368,9 @@ pub(crate) struct AttachSession {
     /// Whether the detach the client is about to be told about is tmux's
     /// `MSG_DETACHKILL`, which makes the client hang itself up.
     pending_hangup: bool,
+    /// The reason an [`AttachFinishReason::Evicted`] client reports, which it
+    /// prints in place of a detach message.
+    pending_exit_message: Option<String>,
 }
 
 struct AttachTty {
@@ -1730,7 +1737,11 @@ where
     // tmux's `cmd_attach_session` applies the client's `-f` flags as it
     // attaches, which is what puts an `ignore-size` client outside the window
     // sizing.
-    let client_flags = super::state::ClientFlagState::from_attach_args(args);
+    let mut client_flags = super::state::ClientFlagState::from_attach_args(args);
+    // A client the server ACL joined read-only stays read-only however it
+    // attached. tmux sets `CLIENT_READONLY` alone there, so unlike `-r` this
+    // does not carry `ignore-size` with it.
+    client_flags.read_only |= context.read_only;
     AttachSession::start_in_mode(
         &target,
         client_tty,
