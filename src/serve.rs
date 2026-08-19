@@ -30,6 +30,7 @@ const PROTOCOL_WRITE_QUEUE_LIMIT: usize = MAX_IMSGSIZE;
 /// nonblocking task-based protocol engine.
 pub fn run_event_loop(
     listen_path: &Path,
+    socket_is_default: bool,
     server: Server,
     mut observer: AgentObserver,
 ) -> io::Result<()> {
@@ -40,12 +41,17 @@ pub fn run_event_loop(
     let tasks = runtime.handle();
     let child_signal = process::spawn(&tasks, server.clone())?;
     term_signal::spawn(&tasks, server.clone())?;
-    let listener = listener::spawn(&tasks, bind_listener(listen_path)?, ACCEPT_BUDGET)?;
+    let listener = listener::spawn(
+        &tasks,
+        bind_listener(listen_path, socket_is_default)?,
+        ACCEPT_BUDGET,
+    )?;
     let background = BackgroundRunner::new(&server, tasks.clone());
     tasks.spawn(background.clone().run_drainer());
     let mut clients = Vec::new();
     let mut panes = BTreeMap::new();
     let mut next_observer_tick = Instant::now();
+    let mut socket_attached_state = None;
 
     loop {
         if server.event_loop_shutdown_requested() {
@@ -74,6 +80,7 @@ pub fn run_event_loop(
         adopt_spawned_io(&tasks, &server);
         reap_protocol_clients(&mut clients);
         server.enforce_lifecycle_policies()?;
+        update_socket_mode(listen_path, &server, &mut socket_attached_state);
         // tmux's server loop drains its global queue every turn; whatever the
         // policies above raised runs from here.
         background.pump();
@@ -195,7 +202,7 @@ fn sync_event_loop_panes(
     Ok(())
 }
 
-fn bind_listener(listen_path: &Path) -> io::Result<UnixListener> {
+fn bind_listener(listen_path: &Path, socket_is_default: bool) -> io::Result<UnixListener> {
     // Remove a stale socket, but never unlink a live tmux/hmux listener. This is
     // especially important for the discoverable default path: unlinking a live
     // socket would strand the existing server and let two servers claim the
@@ -203,10 +210,53 @@ fn bind_listener(listen_path: &Path) -> io::Result<UnixListener> {
     if listen_path.exists() && UnixStream::connect(listen_path).is_err() {
         let _ = std::fs::remove_file(listen_path);
     }
-    let listener = UnixListener::bind(listen_path)?;
+    // Who may reach the socket at all is the outer half of the access decision
+    // the server ACL makes at accept, so the mode is tmux's
+    // `server_create_socket`: an explicit `-S` path is the owner's alone, and
+    // the discoverable default is group-readable behind its 0700 directory.
+    // Set through the umask rather than a `chmod` afterwards, so the socket is
+    // never briefly reachable by anyone the final mode excludes.
+    let mask = if socket_is_default {
+        libc::S_IXUSR | libc::S_IXGRP | libc::S_IRWXO
+    } else {
+        libc::S_IXUSR | libc::S_IRWXG | libc::S_IRWXO
+    };
+    let previous = unsafe { libc::umask(mask) };
+    let bound = UnixListener::bind(listen_path);
+    unsafe { libc::umask(previous) };
+    let listener = bound?;
     listener.set_nonblocking(true)?;
     info!(socket = %listen_path.display(), "hmux listening");
     Ok(listener)
+}
+
+/// tmux's `server_update_socket`: the socket's execute bits mirror whether any
+/// session currently has a client, which is what lets `stat` on the pathname
+/// answer "is anyone attached" without connecting. The bits follow whatever
+/// read permissions the mode already carries, so an operator who widened the
+/// socket for a shared server keeps their own mode.
+fn update_socket_mode(listen_path: &Path, server: &Server, last: &mut Option<bool>) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let attached = server.any_session_attached();
+    if *last == Some(attached) {
+        return;
+    }
+    *last = Some(attached);
+    let Ok(metadata) = std::fs::metadata(listen_path) else {
+        return;
+    };
+    let mut mode = metadata.permissions().mode() & 0o7777;
+    if attached {
+        for (read, execute) in [(0o400, 0o100), (0o040, 0o010), (0o004, 0o001)] {
+            if mode & read != 0 {
+                mode |= execute;
+            }
+        }
+    } else {
+        mode &= !0o111;
+    }
+    let _ = std::fs::set_permissions(listen_path, std::fs::Permissions::from_mode(mode));
 }
 
 fn add_protocol_client(

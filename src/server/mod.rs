@@ -181,6 +181,12 @@ impl Server {
         Ok(state.alert_poll_timeout())
     }
 
+    /// Whether any session has a client attached, which the loop mirrors onto
+    /// the socket's execute bits.
+    pub(crate) fn any_session_attached(&self) -> bool {
+        self.state.borrow_mut().any_session_attached()
+    }
+
     /// tmux's `session_lock_timer`, polled once per server loop: lock the
     /// clients of any session idle past its `lock-after-time`. Returns when the
     /// next session falls due, so the loop can sleep until then.

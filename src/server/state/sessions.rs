@@ -758,6 +758,12 @@ impl ServerState {
         }
     }
 
+    /// Whether any session currently has a client — tmux's attached-session
+    /// scan in `server_update_socket`.
+    pub(crate) fn any_session_attached(&self) -> bool {
+        self.client_renders.with_entries(|mut entries| entries.next().is_some())
+    }
+
     /// The sessions that currently have at least one client attached.
     pub(super) fn attached_session_ids(&self) -> BTreeSet<u32> {
         self.client_renders
