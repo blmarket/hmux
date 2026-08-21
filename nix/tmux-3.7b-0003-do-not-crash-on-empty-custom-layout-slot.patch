@@ -1,0 +1,22 @@
+From 97472e374f821f71e94cdebdfe7fff6f0bd837c1 Mon Sep 17 00:00:00 2001
+From: nicm <nicm>
+Date: Sun, 14 Jun 2026 08:47:44 +0000
+Subject: Return early if cannot construct cell, reported by Jere Viikari.
+
+---
+ layout-custom.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/layout-custom.c b/layout-custom.c
+index 1e7b3b9a..2a1c4f5e 100644
+--- a/layout-custom.c
++++ b/layout-custom.c
+@@ -379,6 +379,8 @@ layout_construct(struct layout_cell *lcparent, const char **layout,
+ 	struct layout_cell	*lcchild;
+
+ 	*lc = layout_construct_cell(lcparent, layout);
++	if (*lc == NULL)
++		return (-1);
+
+ 	switch (**layout) {
+ 	case ',':

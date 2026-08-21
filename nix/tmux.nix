@@ -38,8 +38,18 @@ tmux.overrideAttrs (old: {
   # dangling session pointer. Calling `server_destroy_session()` first clears
   # those references. In 3.7b, `set -g destroy-unattached on` can kill the
   # server as a client detaches.
+  #
+  # 0003, tmux 97472e37 ("Return early if cannot construct cell.", post-3.7b):
+  # `layout_construct()` inserted the child cell without checking that
+  # `layout_construct_cell()` returned one, and the empty-slot cases
+  # (`,`/`}`/`]`/`>`/NUL) return success, so a custom layout with an empty
+  # slot - `select-layout` on `<csum>,80x24,0,0{,40x24,0,0}` and friends -
+  # linked a NULL cell and dereferenced it. In 3.7b this kills the server from
+  # a single client command. The transpilation reproduces the 3.7b crash
+  # faithfully; the matching Rust guard lives in tmux-c2rs.
   patches = [
     ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch
     ./tmux-3.7b-0002-detach-clients-when-processing-destroy-unattached.patch
+    ./tmux-3.7b-0003-do-not-crash-on-empty-custom-layout-slot.patch
   ];
 })
