@@ -22,9 +22,13 @@ tmux.overrideAttrs (old: {
     ++ [ "--disable-sixel" ];
 
   # Drop the patches nixpkgs' tmux carries; the oracle must be stock 3.7b plus
-  # only the crash fixes below. A crashed oracle answers nothing, so a
-  # conformance test that trips one of these tells us about tmux, not about
-  # hmux; every patch here has to stay this narrow.
+  # only what is below. Most of it is crash fixes: a crashed oracle answers
+  # nothing, so a conformance test that trips one tells us about tmux, not
+  # about hmux. The other reason a patch may stand here is that hmux has
+  # already stopped doing the thing and the fix has gone upstream, so that
+  # oracle and hmux agree and there is no lasting difference to describe.
+  # Nothing wider than those two belongs here: a patch that changes what the
+  # oracle *answers* would hide a real difference rather than settle one.
   #
   # 0001, tmux c515d8ca ("Do not crash looking for next or previous session.
   # GitHub issue 5344.", released in 3.7c): `server_destroy_session()` passed a
@@ -47,9 +51,20 @@ tmux.overrideAttrs (old: {
   # linked a NULL cell and dereferenced it. In 3.7b this kills the server from
   # a single client command. The transpilation reproduces the 3.7b crash
   # faithfully; the matching Rust guard lives in tmux-c2rs.
+  #
+  # 0004, submitted upstream as 68d54cfb, not a crash fix: a pane's
+  # `border_status_line.expanded` holds the last expansion of
+  # `pane-border-format`, and the pane was freed without it -- in 3.7b, and
+  # still on master, where the drawing has moved to `window-border.c` and the
+  # teardown has split in two. `status.c` frees the client's own five copies of
+  # the same struct, so only the pane's was missed. `pane-border-format` is the
+  # user's to set, so each leak is as large as the user makes it. hmux frees
+  # it, and this keeps the oracle from being the only one of the two that does
+  # not; `tmux-c2rs/demo-expanded-mem.sh` measures either binary.
   patches = [
     ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch
     ./tmux-3.7b-0002-detach-clients-when-processing-destroy-unattached.patch
     ./tmux-3.7b-0003-do-not-crash-on-empty-custom-layout-slot.patch
+    ./tmux-3.7b-0004-free-pane-border-status-string-on-destroy.patch
   ];
 })
