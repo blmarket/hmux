@@ -61,10 +61,20 @@ tmux.overrideAttrs (old: {
   # user's to set, so each leak is as large as the user makes it. hmux frees
   # it, and this keeps the oracle from being the only one of the two that does
   # not; `tmux-c2rs/demo-expanded-mem.sh` measures either binary.
+  #
+  # 0005, submitted upstream as 9261bcd5, not a crash fix: `server_client_lost`
+  # frees every other string a client owns -- `title` among them -- and not
+  # `c->path`, which is freed only where `server_client_set_path` replaces it,
+  # so the last one a client held goes with it. The string is the active pane's
+  # OSC 7 path, which whatever runs in the pane sets and `input-buffer-size`
+  # lets reach a megabyte, so a program that writes to a terminal decides how
+  # much each lost client costs. `tmux-c2rs/demo-client-path-mem.sh` measures
+  # either binary.
   patches = [
     ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch
     ./tmux-3.7b-0002-detach-clients-when-processing-destroy-unattached.patch
     ./tmux-3.7b-0003-do-not-crash-on-empty-custom-layout-slot.patch
     ./tmux-3.7b-0004-free-pane-border-status-string-on-destroy.patch
+    ./tmux-3.7b-0005-free-client-path-when-losing-client.patch
   ];
 })
