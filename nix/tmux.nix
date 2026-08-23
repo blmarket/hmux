@@ -81,6 +81,17 @@ tmux.overrideAttrs (old: {
   # check_exit left the pointers dangling, so the free in `server_client_lost`
   # needs the clearing hunk beside it or the ordinary path double-frees.
   # Applies after 0005, whose `free(c->path)` is in its first hunk's context.
+  #
+  # 0007, submitted upstream as 27cd0bd0, not a crash fix: a pane that writes
+  # output makes the server work out which of its columns are not obscured, and
+  # the ranges builder grows the pane's own `struct visible_ranges r` through
+  # `server_client_ensure_ranges`. The three other owners of one free their
+  # array -- `tty_free`, `popup_free_cb` and `menu_free_cb` -- and the pane's
+  # was freed nowhere, in 3.7b and still on master, so every pane the server
+  # destroys loses one allocation. It is bounded, one block per pane sized by
+  # how many panes obscure it, but a long-lived server loses one every time a
+  # pane goes. Applies after 0004, which touches the same function further
+  # down.
   patches = [
     ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch
     ./tmux-3.7b-0002-detach-clients-when-processing-destroy-unattached.patch
@@ -88,5 +99,6 @@ tmux.overrideAttrs (old: {
     ./tmux-3.7b-0004-free-pane-border-status-string-on-destroy.patch
     ./tmux-3.7b-0005-free-client-path-when-losing-client.patch
     ./tmux-3.7b-0006-free-client-exit-strings-when-losing-client.patch
+    ./tmux-3.7b-0007-free-pane-visible-ranges-on-destroy.patch
   ];
 })
