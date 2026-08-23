@@ -1,0 +1,50 @@
+From 7b640f6a0288e8280bc463e682d2cdbc4df8aea6 Mon Sep 17 00:00:00 2001
+From: "Jeong, Heon" <blmarket@gmail.com>
+Date: Sun, 23 Aug 2026 17:30:00 -0700
+Subject: Fix memory leak when losing detached client
+
+exit_session and exit_message should be freed when losing a client.
+server_client_check_exit is the only place that frees them, and it
+returns at once if CLIENT_DEAD is set; server_client_lost sets
+CLIENT_DEAD as its first statement. A client that goes away between
+being detached and the next pass through check_exit therefore takes both
+strings with it, and nothing can reach them afterwards.
+
+check_exit did not clear the pointers after freeing them, so freeing
+them in server_client_lost alone would be a double free on the ordinary
+path, where check_exit runs first and sets CLIENT_EXITED. Clear them
+there and the free when the client is lost becomes a no-op in that case.
+
+exit_session is the name of the session being left, which the user
+chooses the length of.
+
+Applies on top of 0005, which puts free(c->path) in the context of the
+first hunk. 3.7b's check_exit takes no force argument, so the second
+hunk sits at a different line than upstream.
+---
+ server-client.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/server-client.c b/server-client.c
+index 640b7eb..a3707c9 100644
+--- a/server-client.c
++++ b/server-client.c
+@@ -477,6 +477,8 @@ server_client_lost(struct client *c)
+ 	free(c->title);
+ 	free(c->path);
+ 	free((void *)c->cwd);
++	free(c->exit_session);
++	free(c->exit_message);
+ 
+ 	evtimer_del(&c->repeat_timer);
+ 	evtimer_del(&c->click_timer);
+@@ -1952,7 +1954,9 @@ server_client_check_exit(struct client *c)
+ 		break;
+ 	}
+ 	free(c->exit_session);
++	c->exit_session = NULL;
+ 	free(c->exit_message);
++	c->exit_message = NULL;
+ }
+ 
+ /* Redraw timer callback. */

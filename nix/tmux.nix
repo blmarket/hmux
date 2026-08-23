@@ -70,11 +70,23 @@ tmux.overrideAttrs (old: {
   # lets reach a megabyte, so a program that writes to a terminal decides how
   # much each lost client costs. `tmux-c2rs/demo-client-path-mem.sh` measures
   # either binary.
+  #
+  # 0006, submitted upstream as 7b640f6a, not a crash fix, and the one patch
+  # here with no demo beside it: `server_client_check_exit` is the only place
+  # that frees `exit_session` and `exit_message`, and it returns at once on
+  # `CLIENT_DEAD`, which `server_client_lost` sets as its first statement. A
+  # client that goes away between being detached and the next pass through
+  # check_exit takes both with it. Reaching that window is a race the caller
+  # does not control, so it is argued from the code rather than measured.
+  # check_exit left the pointers dangling, so the free in `server_client_lost`
+  # needs the clearing hunk beside it or the ordinary path double-frees.
+  # Applies after 0005, whose `free(c->path)` is in its first hunk's context.
   patches = [
     ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch
     ./tmux-3.7b-0002-detach-clients-when-processing-destroy-unattached.patch
     ./tmux-3.7b-0003-do-not-crash-on-empty-custom-layout-slot.patch
     ./tmux-3.7b-0004-free-pane-border-status-string-on-destroy.patch
     ./tmux-3.7b-0005-free-client-path-when-losing-client.patch
+    ./tmux-3.7b-0006-free-client-exit-strings-when-losing-client.patch
   ];
 })
