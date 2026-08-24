@@ -24,9 +24,9 @@ tmux.overrideAttrs (old: {
   # Drop the patches nixpkgs' tmux carries; the oracle must be stock 3.7b plus
   # only what is below. Most of it is crash fixes: a crashed oracle answers
   # nothing, so a conformance test that trips one tells us about tmux, not
-  # about hmux. The other reason a patch may stand here is that hmux has
-  # already stopped doing the thing and the fix has gone upstream, so that
-  # oracle and hmux agree and there is no lasting difference to describe.
+  # about hmux. The other reason a patch may stand here is that hmux or the
+  # transpilation has already stopped doing the thing, so that oracle and
+  # implementation agree and there is no lasting difference to describe.
   # Nothing wider than those two belongs here: a patch that changes what the
   # oracle *answers* would hide a real difference rather than settle one.
   #
@@ -137,6 +137,14 @@ tmux.overrideAttrs (old: {
   # but one too many for a command parsed from a string, whose parse result
   # already carries the caller's. `if-shell -F` and `confirm-before` therefore
   # never free a command given as a string either, in 3.7b and on master.
+  #
+  # 0014, local fix, not upstream: `environ_push()` points the process
+  # `environ` at a freshly xcalloc'd empty array, and the first `setenv()`
+  # replaces it with an array libc allocates itself, orphaning ours. tmux only
+  # calls it between fork() and exec, so the loss is erased by the exec and
+  # nothing observable changes - but the transpilation's unit tests call
+  # `environ_push()` in a process that lives on, and its Rust carries the
+  # matching fix, so the oracle does too.
   patches = [
     ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch
     ./tmux-3.7b-0002-detach-clients-when-processing-destroy-unattached.patch
@@ -151,5 +159,6 @@ tmux.overrideAttrs (old: {
     ./tmux-3.7b-0011-free-collected-items-left-on-a-screen.patch
     ./tmux-3.7b-0012-free-if-shell-command-list.patch
     ./tmux-3.7b-0013-free-a-command-list-parsed-from-a-string.patch
+    ./tmux-3.7b-0014-free-the-environ-array-setenv-replaces.patch
   ];
 })
