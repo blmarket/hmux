@@ -1,0 +1,46 @@
+From 7ba1db774853fc34b82b8add449f5007fc9e94b0 Mon Sep 17 00:00:00 2001
+From: "Jeong, Heon" <blmarket@gmail.com>
+Date: Sun, 23 Aug 2026 17:33:45 -0700
+Subject: Fix memory leak of a command list parsed from a string
+
+args_make_commands_now() takes a reference on the list it answers, which
+is right for a command given in braces -- args_make_commands_prepare()
+takes one for the state and args_make_commands_free() gives it back
+again, so without the extra one the caller would hold none. A command
+given as a string is parsed by args_make_commands(), and a parse result
+already carries the caller's reference: load_cfg_from_buffer() queues one
+and frees it once. Taking another leaves the list one reference above
+zero for ever, so if-shell -F and confirm-before never free the commands
+they were given as a string.
+
+A configuration file of 20 "if-shell -F 1 'set -g @x 1'" lines exits
+under AddressSanitizer with
+
+    Direct leak of 304 byte(s) in 19 object(s) allocated from:
+        #2 cmd_list_new cmd.c:600
+        #3 cmd_parse_build_commands cmd-parse.y:901
+        #4 cmd_parse_from_buffer cmd-parse.y:1057
+        #5 cmd_parse_from_string cmd-parse.y:980
+        #6 args_make_commands arguments.c:846
+        #7 args_make_commands_now arguments.c:760
+
+and none with this applied.
+
+Applies to 3.7b at a different offset; the function is the same there.
+---
+ arguments.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arguments.c b/arguments.c
+--- a/arguments.c
++++ b/arguments.c
+@@ -749,8 +749,8 @@ args_make_commands_now(struct cmd *self, struct cmdq_item *item, u_int idx,
+ 	if (cmdlist == NULL) {
+ 		cmdq_error(item, "%s", error);
+ 		free(error);
+ 	}
+-	else
++	else if (cmdlist == state->cmdlist)
+ 		cmdlist->references++;
+ 	args_make_commands_free(state);
+ 	return (cmdlist);

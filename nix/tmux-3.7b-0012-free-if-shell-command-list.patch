@@ -1,0 +1,41 @@
+From 1024707b28455dc78abccb5faff887002066c1d9 Mon Sep 17 00:00:00 2001
+From: "Jeong, Heon" <blmarket@gmail.com>
+Date: Sun, 23 Aug 2026 17:33:37 -0700
+Subject: Fix memory leak in if-shell -F
+
+The -F path takes a command list from args_make_commands_now(), which
+hands the caller a reference, queues it with cmdq_get_command() -- which
+takes one of its own for each item it makes -- and returned without
+giving its own back. load_cfg_from_buffer() and cmd_confirm_before_exec()
+both free theirs after queuing; this one did not, so a list given in
+braces was never freed.
+
+A configuration file of 20 "if-shell -F 1 { set -g @x 1 }" lines exits
+under AddressSanitizer with
+
+    Direct leak of 320 byte(s) in 20 object(s) allocated from:
+        #2 cmd_list_new cmd.c:600
+        #3 cmd_parse_build_commands cmd-parse.y:901
+        #4 cmd_parse_build_command cmd-parse.y:844
+        #5 cmd_parse_build_commands cmd-parse.y:915
+        #6 cmd_parse_from_buffer cmd-parse.y:1057
+
+and its arguments underneath it; none with this applied.
+
+Applies to 3.7b unchanged; the file is the same there but for its
+$OpenBSD$ line.
+---
+ cmd-if-shell.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/cmd-if-shell.c b/cmd-if-shell.c
+--- a/cmd-if-shell.c
++++ b/cmd-if-shell.c
+@@ -98,6 +98,7 @@ cmd_if_shell_exec(struct cmd *self, struct cmdq_item *item)
+ 			return (CMD_RETURN_ERROR);
+ 		new_item = cmdq_get_command(cmdlist, cmdq_get_state(item));
+ 		cmdq_insert_after(item, new_item);
++		cmd_list_free(cmdlist);
+ 		return (CMD_RETURN_NORMAL);
+ 	}
+ 

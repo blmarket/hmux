@@ -124,6 +124,19 @@ tmux.overrideAttrs (old: {
   # zero-width screen shows it: `format_draw` sizes its screens by the length of
   # the string, so an empty format gives each one a collected clear item and no
   # column to write it in.
+  #
+  # 0012, submitted upstream as 1024707b, not a crash fix: `if-shell -F` queues
+  # the command list `args_make_commands_now` hands it and never gives its own
+  # reference back, though `load_cfg_from_buffer` and `cmd_confirm_before_exec`
+  # both free theirs after queuing, so a list given in braces was never freed --
+  # in 3.7b and still on master.
+  #
+  # 0013, submitted upstream as 7ba1db77, not a crash fix and the other half of
+  # 0012: `args_make_commands_now` takes a reference unconditionally, which is
+  # right for a command in braces -- prepare takes one and free gives it back --
+  # but one too many for a command parsed from a string, whose parse result
+  # already carries the caller's. `if-shell -F` and `confirm-before` therefore
+  # never free a command given as a string either, in 3.7b and on master.
   patches = [
     ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch
     ./tmux-3.7b-0002-detach-clients-when-processing-destroy-unattached.patch
@@ -136,5 +149,7 @@ tmux.overrideAttrs (old: {
     ./tmux-3.7b-0009-free-set-buffer-name.patch
     ./tmux-3.7b-0010-free-collected-items-when-style-is-not-terminated.patch
     ./tmux-3.7b-0011-free-collected-items-left-on-a-screen.patch
+    ./tmux-3.7b-0012-free-if-shell-command-list.patch
+    ./tmux-3.7b-0013-free-a-command-list-parsed-from-a-string.patch
   ];
 })
