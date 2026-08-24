@@ -92,6 +92,13 @@ tmux.overrideAttrs (old: {
   # how many panes obscure it, but a long-lived server loses one every time a
   # pane goes. Applies after 0004, which touches the same function further
   # down.
+  #
+  # 0008, submitted upstream as 108b09e0, not a crash fix: tree mode's preview
+  # makes a `format_tree` for every window or pane it draws and freed none of
+  # them, in 3.7b and still on master, where every other format tree in
+  # `window-tree.c` is freed. The preview is redrawn on each key that moves the
+  # selection, so this grows while tree mode is on screen rather than being
+  # bounded like 0007.
   patches = [
     ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch
     ./tmux-3.7b-0002-detach-clients-when-processing-destroy-unattached.patch
@@ -100,5 +107,6 @@ tmux.overrideAttrs (old: {
     ./tmux-3.7b-0005-free-client-path-when-losing-client.patch
     ./tmux-3.7b-0006-free-client-exit-strings-when-losing-client.patch
     ./tmux-3.7b-0007-free-pane-visible-ranges-on-destroy.patch
+    ./tmux-3.7b-0008-free-tree-mode-preview-format-trees.patch
   ];
 })
