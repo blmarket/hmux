@@ -108,6 +108,13 @@ tmux.overrideAttrs (old: {
   # `set-buffer`, `set-buffer -n` and the empty-data case all returned without
   # doing so, in 3.7b and still on master. The user names the buffer, so the
   # user sizes each leak.
+  #
+  # 0010, submitted upstream as bfe2ee3e, not a crash fix: `format_draw` holds a
+  # collected item per screen from `screen_write_start` onwards, and the one
+  # exit that skips its `screen_write_stop` loop -- the "no terminating ]" case
+  # -- drops them all instead of handing them back to the free list, in 3.7b and
+  # still on master. The string is a user format and the draw happens on every
+  # redraw, so a format left unterminated leaks on each one.
   patches = [
     ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch
     ./tmux-3.7b-0002-detach-clients-when-processing-destroy-unattached.patch
@@ -118,5 +125,6 @@ tmux.overrideAttrs (old: {
     ./tmux-3.7b-0007-free-pane-visible-ranges-on-destroy.patch
     ./tmux-3.7b-0008-free-tree-mode-preview-format-trees.patch
     ./tmux-3.7b-0009-free-set-buffer-name.patch
+    ./tmux-3.7b-0010-free-collected-items-when-style-is-not-terminated.patch
   ];
 })

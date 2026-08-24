@@ -1,0 +1,41 @@
+From bfe2ee3e898cedbf73a7d73d123c91a12e0b76a6 Mon Sep 17 00:00:00 2001
+From: "Jeong, Heon" <blmarket@gmail.com>
+Date: Sun, 23 Aug 2026 17:10:22 -0700
+Subject: Fix memory leak when a style is not terminated
+
+format_draw() starts a screen write context for each of its screens, and
+a context holds a collected item from the moment screen_write_start()
+takes one off the free list. The one exit that does not go through the
+screen_write_stop() loop is the "no terminating ]" case, which jumps
+straight to freeing the screens, so every context's items are lost rather
+than being handed back to the free list.
+
+The string is a user format and the draw happens on every redraw, so this
+grows for as long as the format stays wrong. A server drawing a status
+format of "left#[fg=red" ten times exits under AddressSanitizer with
+
+    Direct leak of 7296 byte(s) in 76 object(s) allocated from:
+        #2 screen_write_get_citem screen-write.c:73
+        #3 screen_write_clearline screen-write.c:1647
+        #4 format_draw format-draw.c:750
+
+and more of the same out of screen_write_start(); none with this applied.
+
+Applies to 3.7b at a different offset; the branch and the TOTAL contexts
+around it are the same there.
+---
+ format-draw.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/format-draw.c b/format-draw.c
+--- a/format-draw.c
++++ b/format-draw.c
+@@ -820,6 +820,8 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
+ 			    cp + 2);
+ 			TAILQ_FOREACH_SAFE(fr, &frs, entry, fr1)
+ 			    format_free_range(&frs, fr);
++			for (i = 0; i < TOTAL; i++)
++				screen_write_stop(&ctx[i]);
+ 			goto out;
+ 		}
+ 		tmp = xstrndup(cp + 2, end - (cp + 2));
