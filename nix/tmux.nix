@@ -115,6 +115,15 @@ tmux.overrideAttrs (old: {
   # -- drops them all instead of handing them back to the free list, in 3.7b and
   # still on master. The string is a user format and the draw happens on every
   # redraw, so a format left unterminated leaks on each one.
+  #
+  # 0011, submitted upstream as 16e82a82, not a crash fix:
+  # `screen_write_collect_flush_line` writes out the visible part of each
+  # collected item and leaves the rest collected, so a line can still hold items
+  # when the screen is freed -- and `screen_write_free_list` freed the lines'
+  # text and the array and dropped those, in 3.7b and still on master. A
+  # zero-width screen shows it: `format_draw` sizes its screens by the length of
+  # the string, so an empty format gives each one a collected clear item and no
+  # column to write it in.
   patches = [
     ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch
     ./tmux-3.7b-0002-detach-clients-when-processing-destroy-unattached.patch
@@ -126,5 +135,6 @@ tmux.overrideAttrs (old: {
     ./tmux-3.7b-0008-free-tree-mode-preview-format-trees.patch
     ./tmux-3.7b-0009-free-set-buffer-name.patch
     ./tmux-3.7b-0010-free-collected-items-when-style-is-not-terminated.patch
+    ./tmux-3.7b-0011-free-collected-items-left-on-a-screen.patch
   ];
 })

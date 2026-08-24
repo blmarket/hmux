@@ -1,0 +1,58 @@
+From 16e82a82fbdb7c8565d2aa15e014ca87c3d6620c Mon Sep 17 00:00:00 2001
+From: "Jeong, Heon" <blmarket@gmail.com>
+Date: Sun, 23 Aug 2026 17:14:53 -0700
+Subject: Fix memory leak of collected items left on a screen
+
+screen_write_collect_flush_line() writes out the part of each collected
+item that is visible and leaves the rest collected, so a line can still
+hold items when the screen is freed -- there is nothing in front of the
+flush that promises it emptied the list. screen_write_free_list() freed
+the lines' text and the array and dropped whatever was still on them.
+
+A zero-width screen is the easy way to see it: format_draw() sizes its
+screens by the length of the string, so drawing an empty format gives
+each one the clear item screen_write_clearendofline() collected and no
+column to write it in. A server drawing an empty status format ten times
+exits under AddressSanitizer with
+
+    Direct leak of 384 byte(s) in 4 object(s) allocated from:
+        #2 screen_write_get_citem screen-write.c:73
+        #3 screen_write_init screen-write.c:358
+        #4 screen_write_start screen-write.c:401
+        #5 format_draw format-draw.c:748
+
+and none with this applied. The items go back to the free list they came
+from, which is also what a screen_resize() through free_list/make_list
+should do with them rather than losing them.
+
+Applies to 3.7b unchanged but for the offset; the function is the same
+there.
+---
+ screen-write.c | 14 +++++++++++---
+ 1 file changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/screen-write.c b/screen-write.c
+--- a/screen-write.c
++++ b/screen-write.c
+@@ -289,10 +289,18 @@ screen_write_make_list(struct screen *s)
+ void
+ screen_write_free_list(struct screen *s)
+ {
+-	u_int	y;
++	struct screen_write_cline	*cl;
++	struct screen_write_citem	*ci, *ci1;
++	u_int				 y;
+ 
+-	for (y = 0; y < screen_size_y(s); y++)
+-		free(s->write_list[y].data);
++	for (y = 0; y < screen_size_y(s); y++) {
++		cl = &s->write_list[y];
++		TAILQ_FOREACH_SAFE(ci, &cl->items, entry, ci1) {
++			TAILQ_REMOVE(&cl->items, ci, entry);
++			screen_write_free_citem(ci);
++		}
++		free(cl->data);
++	}
+ 	free(s->write_list);
+ }
+ 
