@@ -1,0 +1,58 @@
+From 759397c51fc744592945bb6eff01eb627d3f0714 Mon Sep 17 00:00:00 2001
+From: "Jeong, Heon" <blmarket@gmail.com>
+Date: Sun, 23 Aug 2026 17:05:29 -0700
+Subject: Fix memory leak in set-buffer
+
+cmd_set_buffer_exec() copies the -b name, or takes the copy
+paste_get_top() makes when there is none, and freed it only on the
+delete-buffer and the error paths. paste_set() and paste_rename() take
+the name as a const char * and make their own copy of it, so the
+command's copy is the command's to free, and set-buffer, set-buffer -n
+and the empty-data case all returned without doing so.
+
+A server given 10 set-buffer and 10 set-buffer -n commands exits under
+AddressSanitizer with
+
+    Direct leak of 102 byte(s) in 20 object(s) allocated from:
+        #1 xstrdup xmalloc.c:91
+        #2 cmd_set_buffer_exec cmd-set-buffer.c:66
+
+and none with this applied.
+
+Applies to 3.7b unchanged; the file is the same there but for its
+$OpenBSD$ line.
+---
+ cmd-set-buffer.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/cmd-set-buffer.c b/cmd-set-buffer.c
+--- a/cmd-set-buffer.c
++++ b/cmd-set-buffer.c
+@@ -100,6 +100,7 @@ cmd_set_buffer_exec(struct cmd *self, struct cmdq_item *item)
+ 			cmdq_error(item, "%s", cause);
+ 			goto fail;
+ 		}
++		free(bufname);
+ 		return (CMD_RETURN_NORMAL);
+ 	}
+ 
+@@ -107,8 +108,10 @@ cmd_set_buffer_exec(struct cmd *self, struct cmdq_item *item)
+ 		cmdq_error(item, "no data specified");
+ 		goto fail;
+ 	}
+-	if ((newsize = strlen(args_string(args, 0))) == 0)
++	if ((newsize = strlen(args_string(args, 0))) == 0) {
++		free(bufname);
+ 		return (CMD_RETURN_NORMAL);
++	}
+ 
+ 	if (args_has(args, 'a') && pb != NULL) {
+ 		olddata = paste_buffer_data(pb, &bufsize);
+@@ -127,6 +130,7 @@ cmd_set_buffer_exec(struct cmd *self, struct cmdq_item *item)
+ 	if (args_has(args, 'w') && tc != NULL)
+  		tty_set_selection(&tc->tty, "", bufdata, bufsize);
+ 
++	free(bufname);
+ 	return (CMD_RETURN_NORMAL);
+ 
+ fail:

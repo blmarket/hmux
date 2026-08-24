@@ -99,6 +99,15 @@ tmux.overrideAttrs (old: {
   # `window-tree.c` is freed. The preview is redrawn on each key that moves the
   # selection, so this grows while tree mode is on screen rather than being
   # bounded like 0007.
+  #
+  # 0009, submitted upstream as 759397c5, not a crash fix: `cmd_set_buffer_exec`
+  # copies the `-b` name, or takes the copy `paste_get_top` makes when there is
+  # none, and freed it only on the delete-buffer and the error paths.
+  # `paste_set` and `paste_rename` take the name as a `const char *` and copy it
+  # themselves, so the command's copy is the command's to free -- and
+  # `set-buffer`, `set-buffer -n` and the empty-data case all returned without
+  # doing so, in 3.7b and still on master. The user names the buffer, so the
+  # user sizes each leak.
   patches = [
     ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch
     ./tmux-3.7b-0002-detach-clients-when-processing-destroy-unattached.patch
@@ -108,5 +117,6 @@ tmux.overrideAttrs (old: {
     ./tmux-3.7b-0006-free-client-exit-strings-when-losing-client.patch
     ./tmux-3.7b-0007-free-pane-visible-ranges-on-destroy.patch
     ./tmux-3.7b-0008-free-tree-mode-preview-format-trees.patch
+    ./tmux-3.7b-0009-free-set-buffer-name.patch
   ];
 })
