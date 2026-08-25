@@ -145,6 +145,23 @@ tmux.overrideAttrs (old: {
   # nothing observable changes - but the transpilation's unit tests call
   # `environ_push()` in a process that lives on, and its Rust carries the
   # matching fix, so the oracle does too.
+  #
+  # 0015, tmux 50d0348b ("Stop at the right end line when walking wrapped
+  # lines, GitHub issue 5479.", post-3.7b): the two regex searches walk a
+  # wrapped line's continuations while `pywrap <= endline`, so a
+  # `GRID_LINE_WRAPPED` flag on the *last* line of the grid sends them one line
+  # past the end -- they stringify a line that is not there and still add a
+  # screen width to `len`. `window_copy_cstrtocellpos()` sizes its `cells`
+  # array from that count while its fill loop stops at the real end, so the
+  # tail of the array is never written: 3.7b matches against uninitialised
+  # `d`/`dlen` and then frees uninitialised pointers. A cursor parked below the
+  # scroll region reaches that state -- `screen_write_linefeed()` flags the
+  # line wrapped before it works out where the cursor goes, and a cursor that
+  # is neither on `rlower` nor above the last row goes nowhere -- so text that
+  # wraps there leaves the flag dangling and the next regex search over that
+  # line kills the server. The transpilation carries the same fix in
+  # tmux-c2rs/src/window_copy.rs.
+
   patches = [
     ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch
     ./tmux-3.7b-0002-detach-clients-when-processing-destroy-unattached.patch
@@ -160,5 +177,6 @@ tmux.overrideAttrs (old: {
     ./tmux-3.7b-0012-free-if-shell-command-list.patch
     ./tmux-3.7b-0013-free-a-command-list-parsed-from-a-string.patch
     ./tmux-3.7b-0014-free-the-environ-array-setenv-replaces.patch
+    ./tmux-3.7b-0015-stop-at-the-right-end-line-when-walking-wrapped-lines.patch
   ];
 })
