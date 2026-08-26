@@ -560,10 +560,12 @@ mod tests {
 
         let state = server.state();
         assert!(state.borrow_mut().kill_session("0"));
-        assert!(server
-            .resolve_pane(PaneId(0))
-            .expect("resolve removed pane")
-            .is_none());
+        assert!(
+            server
+                .resolve_pane(PaneId(0))
+                .expect("resolve removed pane")
+                .is_none()
+        );
         assert_eq!(pane.last_lines(1).expect("cached handle").text, "three");
     }
 
@@ -571,9 +573,11 @@ mod tests {
     fn unknown_pane_does_not_resolve() {
         let server = Server::new().expect("native server");
         assert!(server.pane_ids().expect("pane ids").is_empty());
-        assert!(server
-            .resolve_pane(PaneId(99))
-            .expect("resolve pane")
-            .is_none());
+        assert!(
+            server
+                .resolve_pane(PaneId(99))
+                .expect("resolve pane")
+                .is_none()
+        );
     }
 }

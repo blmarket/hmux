@@ -154,7 +154,7 @@ impl<T> Future for Completion<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::{completion_pair, WakeFn};
+    use super::{WakeFn, completion_pair};
     use std::rc::Rc;
 
     #[test]

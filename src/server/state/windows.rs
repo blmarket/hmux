@@ -13,8 +13,8 @@ use super::layout::resize_panes_to_layout;
 use super::sizing::{DEFAULT_XPIXEL, DEFAULT_YPIXEL};
 use super::target::{parse_index_target, window_not_found};
 use super::{
-    fill_spawn_ids, now_micros, LayoutCell, Pane, PaneNode, RenderInvalidation,
-    ServerState, Session, Window, Winlink, ALERT_ACTIVITY, ALERT_BELL, ALERT_SILENCE,
+    ALERT_ACTIVITY, ALERT_BELL, ALERT_SILENCE, LayoutCell, Pane, PaneNode, RenderInvalidation,
+    ServerState, Session, Window, Winlink, fill_spawn_ids, now_micros,
 };
 use crate::server::options::{OptionSet, SessionHook, WindowHook};
 
@@ -540,7 +540,7 @@ impl ServerState {
                 return Err(io::Error::new(
                     io::ErrorKind::NotFound,
                     format!("can't find session: {session}"),
-                ))
+                ));
             }
         };
         let session_id = s.id;
@@ -1479,12 +1479,7 @@ impl ServerState {
     /// the hook and the user-visible notification follow.
     fn deliver_alert(&mut self, window_id: u32, bit: u8) -> bool {
         let (label, action_option, visual_option, hook) = match bit {
-            ALERT_BELL => (
-                "Bell",
-                "bell-action",
-                "visual-bell",
-                SessionHook::AlertBell,
-            ),
+            ALERT_BELL => ("Bell", "bell-action", "visual-bell", SessionHook::AlertBell),
             ALERT_ACTIVITY => (
                 "Activity",
                 "activity-action",
@@ -1931,11 +1926,7 @@ impl ServerState {
                 .find(|link| link.index == new_index)
                 .map(|link| link.id)
             {
-                self.notify_session_window(
-                    SessionHook::WindowUnlinked,
-                    dst_session_id,
-                    displaced,
-                );
+                self.notify_session_window(SessionHook::WindowUnlinked, dst_session_id, displaced);
             }
         }
         if source_set == destination_set {
@@ -1986,7 +1977,11 @@ impl ServerState {
                 .expect("moved window is present in the destination");
             self.select_session_window(dst_session, new_pos);
         }
-        self.notify_session_window(SessionHook::WindowUnlinked, src_session_id, source_window_id);
+        self.notify_session_window(
+            SessionHook::WindowUnlinked,
+            src_session_id,
+            source_window_id,
+        );
         if source_set != destination_set {
             let emptied = self
                 .sessions

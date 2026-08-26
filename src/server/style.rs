@@ -4,8 +4,8 @@
 //! module owns only cell presentation and transitions between presentations.
 
 use super::term::{
-    expand_capability, number_capability, string_capability, Capability, CapabilityParameter,
-    TerminalCapabilities,
+    Capability, CapabilityParameter, TerminalCapabilities, expand_capability, number_capability,
+    string_capability,
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -362,19 +362,20 @@ pub(crate) fn canonical_option_colour(value: &str) -> Option<String> {
     }
     for prefix in ["colour", "color"] {
         if value.len() >= prefix.len() && value[..prefix.len()].eq_ignore_ascii_case(prefix) {
-            let index = value[prefix.len()..].parse::<u16>().ok().filter(|n| *n < 256)?;
+            let index = value[prefix.len()..]
+                .parse::<u16>()
+                .ok()
+                .filter(|n| *n < 256)?;
             return Some(format!("colour{index}"));
         }
     }
-    let named = OPTION_COLOUR_NAMES
-        .iter()
-        .find(|(name, number)| {
-            value.eq_ignore_ascii_case(name)
+    let named = OPTION_COLOUR_NAMES.iter().find(|(name, number)| {
+        value.eq_ignore_ascii_case(name)
                 // `default` and `terminal` have no numeric spelling; the
                 // sixteen ANSI names do, and tmux compares those exactly rather
                 // than case-insensitively.
                 || (!matches!(number, 8 | 9) && value == number.to_string())
-        });
+    });
     if let Some((name, _)) = named {
         return Some((*name).to_string());
     }
@@ -735,12 +736,14 @@ fn write_capture_style(out: &mut Vec<u8>, old: &CellStyle, new: &CellStyle) {
 
 fn colour_codes(colour: Colour, prefix: u8) -> Vec<String> {
     match colour {
-        Colour::Default => vec![match prefix {
-            38 => "39",
-            48 => "49",
-            _ => "59",
-        }
-        .into()],
+        Colour::Default => vec![
+            match prefix {
+                38 => "39",
+                48 => "49",
+                _ => "59",
+            }
+            .into(),
+        ],
         Colour::Palette(index) if prefix != 58 && index < 8 => {
             vec![((if prefix == 48 { 40 } else { 30 }) + index).to_string()]
         }
@@ -1113,11 +1116,7 @@ fn colour_256_to_16(index: u8, bright: bool) -> u8 {
          8, 8, 8, 8, 7, 7, 7, 7, 7, 7,15,15,15,15,15,15,
     ];
     let mapped = MAP[usize::from(index)];
-    if bright {
-        mapped
-    } else {
-        mapped & 7
-    }
+    if bright { mapped } else { mapped & 7 }
 }
 
 #[cfg(test)]
@@ -1208,17 +1207,20 @@ mod tests {
         assert!(out.windows(6).any(|window| window == b"STRIKE"));
         assert!(out.windows(8).any(|window| window == b"OVERLINE"));
         assert!(out.windows(9).any(|window| window == b"UNDERLINE"));
-        assert!(out
-            .windows(20)
-            .any(|window| window == b"https://example.test"));
+        assert!(
+            out.windows(20)
+                .any(|window| window == b"https://example.test")
+        );
 
         let reduced = terminal(&["sgr0=\x1b[RESET", "colors=8", "setaf=\x1b[FG%p1%d"]);
         let mut reduced_out = Vec::new();
         TerminalStyleWriter::new(&reduced).transition(&mut reduced_out, &presentation);
         assert!(!reduced_out.windows(4).any(|window| window == b"BOLD"));
         assert!(!reduced_out.windows(6).any(|window| window == b"STRIKE"));
-        assert!(!reduced_out
-            .windows(20)
-            .any(|window| window == b"https://example.test"));
+        assert!(
+            !reduced_out
+                .windows(20)
+                .any(|window| window == b"https://example.test")
+        );
     }
 }

@@ -3,7 +3,7 @@
 use crate::integration::status::StatusHub;
 
 use super::super::command;
-use super::super::key::{basic_key_bytes, key_from_byte, parse_key_name, KeyCode};
+use super::super::key::{KeyCode, basic_key_bytes, key_from_byte, parse_key_name};
 use super::super::mouse::MouseEvent;
 use super::super::state::{ClientKey, PromptCompletion, PromptReply, SharedState};
 use super::copy_mode::{self, CopyModeAction};
@@ -215,8 +215,7 @@ pub(super) fn dispatch_key_binding(
             };
         }
         "display-message"
-            if !words.iter().any(|word| word == ";")
-                && !words.iter().any(|word| word == "-p") =>
+            if !words.iter().any(|word| word == ";") && !words.iter().any(|word| word == "-p") =>
         {
             let mut argv = words.clone();
             argv.insert(1, "-p".to_string());
@@ -242,11 +241,7 @@ pub(super) fn dispatch_key_binding(
                 explicit_duration,
             };
         }
-        "confirm-before" | "confirm"
-            if words
-                .last()
-                .is_some_and(|word| word == "kill-window") =>
-        {
+        "confirm-before" | "confirm" if words.last().is_some_and(|word| word == "kill-window") => {
             let name = state
                 .borrow_mut()
                 .active_window_name(target)
@@ -256,11 +251,7 @@ pub(super) fn dispatch_key_binding(
                 action: ConfirmAction::KillWindow,
             };
         }
-        "confirm-before" | "confirm"
-            if words
-                .last()
-                .is_some_and(|word| word == "kill-pane") =>
-        {
+        "confirm-before" | "confirm" if words.last().is_some_and(|word| word == "kill-pane") => {
             let idx = state.borrow_mut().active_pane_index(target).unwrap_or(0);
             return PrefixOutcome::Confirm {
                 prompt: format!("kill-pane {idx}? (y/n)"),

@@ -1,7 +1,7 @@
 //! Commands that act on the server as a whole.
 
 use super::*;
-use crate::server::state::{AclAccess, ACCESS_DENIED};
+use crate::server::state::{ACCESS_DENIED, AclAccess};
 
 #[derive(Clone, Debug)]
 pub(in crate::server) enum Command {

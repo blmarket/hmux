@@ -21,7 +21,7 @@ use crate::event_loop::{listener, pane, process, term_signal};
 use crate::integration::AgentObserver;
 use crate::platform::{CurrentPlatform, Platform};
 use crate::server::Server;
-use crate::tmux::codec::{split_nonblocking_stream_with_queue_limit, MAX_IMSGSIZE};
+use crate::tmux::codec::{MAX_IMSGSIZE, split_nonblocking_stream_with_queue_limit};
 use hmux_rt::{TaskHandle, TaskRuntime};
 
 const PROTOCOL_WRITE_QUEUE_LIMIT: usize = MAX_IMSGSIZE;

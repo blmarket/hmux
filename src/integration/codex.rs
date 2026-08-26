@@ -10,8 +10,8 @@ use std::ffi::{OsStr, OsString};
 use std::path::Path;
 
 use super::{
-    is_title_spinner, is_uuid, title_working_spinner, AgentDetector, AgentState, CursorEvidence,
-    Detection, SessionIdSource,
+    AgentDetector, AgentState, CursorEvidence, Detection, SessionIdSource, is_title_spinner,
+    is_uuid, title_working_spinner,
 };
 
 /// Recognizes OpenAI Codex panes.
@@ -241,8 +241,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        codex_headless_invocation, codex_program_name, detect, session_id_from_rollout_path,
-        AgentState, CursorEvidence, Detection,
+        AgentState, CursorEvidence, Detection, codex_headless_invocation, codex_program_name,
+        detect, session_id_from_rollout_path,
     };
 
     fn detect_without_cursor(screen: &str, title: Option<&str>) -> Detection {
@@ -278,8 +278,7 @@ mod tests {
 
     #[test]
     fn transcript_viewer_preserves_previous_state() {
-        let screen =
-            "›\n↑/↓ to scroll · pgup/pgdn to move · home/end to jump · q to quit · esc to edit prev";
+        let screen = "›\n↑/↓ to scroll · pgup/pgdn to move · home/end to jump · q to quit · esc to edit prev";
         assert_eq!(detect_without_cursor(screen, None), Detection::KeepPrevious);
     }
 
@@ -307,8 +306,7 @@ mod tests {
     fn title_outranks_transcript_viewer() {
         // A working title takes precedence even while the transcript viewer is
         // open (which would otherwise preserve the previous state).
-        let screen =
-            "›\n↑/↓ to scroll · pgup/pgdn to move · home/end to jump · q to quit · esc to edit prev";
+        let screen = "›\n↑/↓ to scroll · pgup/pgdn to move · home/end to jump · q to quit · esc to edit prev";
         assert_eq!(
             detect_without_cursor(screen, Some("⠿ Working (12s)")),
             Detection::State(AgentState::Working)

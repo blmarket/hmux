@@ -10,10 +10,10 @@ use super::state::{ClientRenderRegistry, RenderInvalidation, ServerState, Sessio
 #[cfg(test)]
 use super::style::CaptureStyleWriter;
 use super::style::{self, CellPresentation, CellStyle, Colour, TerminalStyleWriter, VisualToken};
-use super::term::{terminal_acs, TerminalCapabilities};
+use super::term::{TerminalCapabilities, terminal_acs};
 use crate::integration::status::{PaneAgents, StatusSnapshot};
 use hmux_rt::Interest;
-use hmux_rt::{sleep, AsyncFd, TaskHandle};
+use hmux_rt::{AsyncFd, TaskHandle, sleep};
 use hmux_vt::codepoint_width;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -27,8 +27,7 @@ use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
 const DEFAULT_STATUS_LEFT: &str = "[#{session_name}] ";
-const DEFAULT_STATUS_RIGHT: &str =
-    "#{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}\"#{=21:pane_title}\" %H:%M %d-%b-%y";
+const DEFAULT_STATUS_RIGHT: &str = "#{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}\"#{=21:pane_title}\" %H:%M %d-%b-%y";
 /// Every window reads as `index:emoji directory`, whatever it is running —
 /// `#{pane_state_emoji}` classifies an ordinary shell or command just as it
 /// classifies an agent, so there is nothing to branch on. The directory is the
@@ -47,8 +46,7 @@ const DEFAULT_STATUS_RIGHT: &str =
 /// the surrounding window style. Only the matching branch emits a directive:
 /// `bg=default` would punch a terminal-background hole in the status bar
 /// instead of leaving it whatever `status-style` painted.
-const DEFAULT_WINDOW_FORMAT: &str =
-    "#I:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default] #{?pane_current_path,#{b:pane_current_path},#{b:session_path}}#{?window_flags,#{window_flags}, }";
+const DEFAULT_WINDOW_FORMAT: &str = "#I:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default] #{?pane_current_path,#{b:pane_current_path},#{b:session_path}}#{?window_flags,#{window_flags}, }";
 const DEFAULT_PANE_FORMAT: &str = "#P:[#T]#{?pane_flags,#{pane_flags}, }";
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -1758,12 +1756,7 @@ impl format::FormatContext for StatusContext<'_> {
             format::FormatLoopKind::Window => {
                 let mut indices = (0..scoped_session.windows.len()).collect::<Vec<_>>();
                 indices.sort_by_key(|index| scoped_session.windows[*index].index);
-                super::command::sort_window_loop(
-                    self.state,
-                    scoped_session,
-                    &mut indices,
-                    flags,
-                );
+                super::command::sort_window_loop(self.state, scoped_session, &mut indices, flags);
                 let session = self
                     .state
                     .sessions()
@@ -2827,8 +2820,8 @@ mod tests {
     /// non-agent panes a state emoji of their own.
     #[test]
     fn default_window_label_shows_pane_state_and_worktree_name() {
-        use crate::integration::status::{AgentStatus, StatusSnapshot};
         use crate::integration::AgentState;
+        use crate::integration::status::{AgentStatus, StatusSnapshot};
         use crate::observability::v1::PaneId;
 
         let mut state = ServerState::with_test_session().expect("state");
@@ -2888,8 +2881,8 @@ mod tests {
 
     #[test]
     fn default_window_label_paints_the_agent_emoji_by_model() {
-        use crate::integration::status::{AgentStatus, StatusSnapshot};
         use crate::integration::AgentState;
+        use crate::integration::status::{AgentStatus, StatusSnapshot};
         use crate::observability::v1::PaneId;
 
         let state = ServerState::with_test_session().expect("state");
@@ -2938,8 +2931,8 @@ mod tests {
 
     #[test]
     fn configured_window_format_is_not_replaced_by_agent_label() {
-        use crate::integration::status::{AgentStatus, StatusSnapshot};
         use crate::integration::AgentState;
+        use crate::integration::status::{AgentStatus, StatusSnapshot};
         use crate::observability::v1::PaneId;
 
         let mut state = ServerState::with_test_session().expect("state");

@@ -8,11 +8,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::PathBuf;
 
-use super::sizing::{clamp_window_size, parse_size_pair, DEFAULT_XPIXEL, DEFAULT_YPIXEL};
+use super::sizing::{DEFAULT_XPIXEL, DEFAULT_YPIXEL, clamp_window_size, parse_size_pair};
 use super::{
-    fill_spec_spawn_ids, now_epoch, now_micros, pane_start_command, ExitEmpty, LayoutCell,
-    Notification, NotifyEvent, Pane, PaneNode, PaneSpec, RenderInvalidation, ServerState, Session,
-    Window, Winlink, ALERT_ACTIVITY,
+    ALERT_ACTIVITY, ExitEmpty, LayoutCell, Notification, NotifyEvent, Pane, PaneNode, PaneSpec,
+    RenderInvalidation, ServerState, Session, Window, Winlink, fill_spec_spawn_ids, now_epoch,
+    now_micros, pane_start_command,
 };
 use crate::server::options::{HookName, OptionSet, PaneHook, SessionHook, WindowHook};
 
@@ -556,7 +556,8 @@ impl ServerState {
             ("hook_session".to_string(), format!("${session_id}")),
             ("hook_session_name".to_string(), session.to_string()),
         ];
-        let control = matches!(hook, SessionHook::SessionClosed).then_some(NotifyEvent::SessionClosed);
+        let control =
+            matches!(hook, SessionHook::SessionClosed).then_some(NotifyEvent::SessionClosed);
         self.notify(hook.as_str(), None, vars, control);
     }
 
@@ -630,13 +631,18 @@ impl ServerState {
             ("hook_window".to_string(), format!("@{window_id}")),
             ("hook_window_name".to_string(), window_name),
         ];
-        let control =
-            matches!(hook, PaneHook::ModeChanged).then_some(NotifyEvent::PaneModeChanged { pane_id });
+        let control = matches!(hook, PaneHook::ModeChanged)
+            .then_some(NotifyEvent::PaneModeChanged { pane_id });
         self.notify(hook.as_str(), Some(format!("%{pane_id}")), vars, control);
     }
 
     /// tmux's `notify_client`: an event about one client.
-    pub(crate) fn notify_client(&mut self, hook: SessionHook, client: &str, session_id: Option<u32>) {
+    pub(crate) fn notify_client(
+        &mut self,
+        hook: SessionHook,
+        client: &str,
+        session_id: Option<u32>,
+    ) {
         let vars = vec![("hook_client".to_string(), client.to_string())];
         let control = match hook {
             SessionHook::ClientSessionChanged => Some(NotifyEvent::ClientSessionChanged {
@@ -716,7 +722,11 @@ impl ServerState {
                 }
                 Some((old_session, old_cols, old_rows)) => {
                     if old_session != session_id {
-                        self.notify_client(SessionHook::ClientSessionChanged, name, Some(*session_id));
+                        self.notify_client(
+                            SessionHook::ClientSessionChanged,
+                            name,
+                            Some(*session_id),
+                        );
                         self.take_session_for_client(*session_id);
                     }
                     // Only a size the client never announced reaches this;
@@ -761,7 +771,8 @@ impl ServerState {
     /// Whether any session currently has a client — tmux's attached-session
     /// scan in `server_update_socket`.
     pub(crate) fn any_session_attached(&self) -> bool {
-        self.client_renders.with_entries(|mut entries| entries.next().is_some())
+        self.client_renders
+            .with_entries(|mut entries| entries.next().is_some())
     }
 
     /// The sessions that currently have at least one client attached.

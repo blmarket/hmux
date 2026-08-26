@@ -1,6 +1,6 @@
 use super::{
-    buffers, clients, configuration, execution, keys, panes, server, sessions, windows,
-    ExecContext, SharedCommandExecution,
+    ExecContext, SharedCommandExecution, buffers, clients, configuration, execution, keys, panes,
+    server, sessions, windows,
 };
 
 /// Closed identity for every tmux command understood by the native server, with

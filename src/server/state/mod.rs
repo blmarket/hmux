@@ -36,17 +36,17 @@ mod sizing;
 mod target;
 mod windows;
 
-pub(crate) use acl::{AclAccess, AclJoin, ACCESS_DENIED};
-pub(crate) use connections::{ConnectionHandle, ConnectionRegistry, Eviction};
-pub(crate) use control_notify::{ControlRecord, NotifyEvent};
+pub(crate) use acl::{ACCESS_DENIED, AclAccess, AclJoin};
 pub(crate) use client::{
     ActiveCommandPrompt, ClientFlagState, ClientPromptAttachment, ClientPromptRegistry,
     ClientRenderAttachment, ClientRenderRegistry, ClientSnapshot, CommandPromptRequestResult,
     ControlStateSnapshot, PromptCompletion, PromptReply, RenderInvalidation, TerminalReply,
     TerminalRequest, TerminalRequestKind, ViewportClient,
 };
+pub(crate) use connections::{ConnectionHandle, ConnectionRegistry, Eviction};
+pub(crate) use control_notify::{ControlRecord, NotifyEvent};
 pub(crate) use copy::{
-    copy_search_segments, copy_selection_segments, CopySelectionMode, CopyState,
+    CopySelectionMode, CopyState, copy_search_segments, copy_selection_segments,
 };
 pub(crate) use hooks::Hookable;
 pub(crate) use jobs::{BackgroundJobRegistry, WaitOutcome, WaitRegistry};
@@ -56,7 +56,7 @@ pub(crate) use mode::{
     ModeView, ModeViewKeyResult,
 };
 pub(crate) use sizing::{
-    pane_slider, WindowResizeAdjust, WindowResizeRequest, WindowSize, WindowSizePolicy,
+    WindowResizeAdjust, WindowResizeRequest, WindowSize, WindowSizePolicy, pane_slider,
 };
 pub(crate) use target::Target;
 
@@ -1352,7 +1352,6 @@ impl ServerState {
             Some(_) | None => ExitEmpty::On,
         }
     }
-
 
     /// Record the pathname the server is listening on.
     pub fn set_socket_path(&mut self, path: impl Into<PathBuf>) {

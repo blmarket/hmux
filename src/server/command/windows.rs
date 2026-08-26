@@ -131,13 +131,17 @@ impl FindWindow {
         };
         let s = pattern;
         let filter = if c && n && t {
-            format!("#{{||:#{{C{suffix}:{s}}},#{{||:#{{m{suffix}:{star}{s}{star},#{{window_name}}}},#{{m{suffix}:{star}{s}{star},#{{pane_title}}}}}}}}")
+            format!(
+                "#{{||:#{{C{suffix}:{s}}},#{{||:#{{m{suffix}:{star}{s}{star},#{{window_name}}}},#{{m{suffix}:{star}{s}{star},#{{pane_title}}}}}}}}"
+            )
         } else if c && n {
             format!("#{{||:#{{C{suffix}:{s}}},#{{m{suffix}:{star}{s}{star},#{{window_name}}}}}}")
         } else if c && t {
             format!("#{{||:#{{C{suffix}:{s}}},#{{m{suffix}:{star}{s}{star},#{{pane_title}}}}}}")
         } else if n && t {
-            format!("#{{||:#{{m{suffix}:{star}{s}{star},#{{window_name}}}},#{{m{suffix}:{star}{s}{star},#{{pane_title}}}}}}")
+            format!(
+                "#{{||:#{{m{suffix}:{star}{s}{star},#{{window_name}}}},#{{m{suffix}:{star}{s}{star},#{{pane_title}}}}}}"
+            )
         } else if c {
             format!("#{{C{suffix}:{s}}}")
         } else if n {

@@ -31,14 +31,14 @@ use crate::server::state::{
     BackgroundJobRegistry, ClientPromptRegistry, CommandPromptRequestResult, PromptCompletion,
     WaitRegistry,
 };
-use crate::sync::{join, Completion};
+use crate::sync::{Completion, join};
 use hmux_rt::Interest;
-use hmux_rt::{sleep, AsyncFd, TaskHandle};
+use hmux_rt::{AsyncFd, TaskHandle, sleep};
 
 use super::execution::{self, RunShell, WaitFor, WaitForOutcome};
 use super::{
-    interaction_completion_result, io_error_message, shell_command, ClientContext, ClientFileWrite,
-    CommandResult, RunShellCompletion, SourceFileRead,
+    ClientContext, ClientFileWrite, CommandResult, RunShellCompletion, SourceFileRead,
+    interaction_completion_result, io_error_message, shell_command,
 };
 
 /// What a `wait-for` or an interactive prompt did before anything waits.
@@ -121,7 +121,7 @@ pub(crate) fn client_prompt(
     let result = match registry.request_command(target.as_deref(), tty_name.as_deref(), args, wait)
     {
         CommandPromptRequestResult::Waiting(completion) => {
-            return SuspensionStart::Waiting(SuspensionWait::Prompt(completion))
+            return SuspensionStart::Waiting(SuspensionWait::Prompt(completion));
         }
         CommandPromptRequestResult::Queued | CommandPromptRequestResult::Busy => {
             CommandResult::ok("")
@@ -265,7 +265,7 @@ async fn collect_shell(tasks: &TaskHandle, running: RunningShell) -> ShellOutput
                 break status.code().unwrap_or_else(|| {
                     std::os::unix::process::ExitStatusExt::signal(&status)
                         .map_or(0, |signal| 128 + signal)
-                })
+                });
             }
             Ok(None) => {}
             Err(_) => break 0,
@@ -694,7 +694,7 @@ fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{execution, RunShell, SuspensionStart, SuspensionWait, WaitFor};
+    use super::{RunShell, SuspensionStart, SuspensionWait, WaitFor, execution};
     use super::{if_shell, load_buffer, run_shell, save_buffer, source_file, wait_for};
     use crate::event_loop::test_driver::run_task_on_loop;
     use crate::server::command::CommandResult;

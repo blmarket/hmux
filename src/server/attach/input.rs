@@ -206,15 +206,20 @@ impl AttachSession {
     /// terminal and its version, which becomes `#{client_termtype}`.
     fn apply_terminal_version(&mut self, version: &str) {
         for name in ["iTerm2", "tmux", "XTerm", "mintty", "foot", "WezTerm"] {
-            let prefix = format!("{name}{}", if name == "XTerm" || name == "foot" { "(" } else { " " });
+            let prefix = format!(
+                "{name}{}",
+                if name == "XTerm" || name == "foot" {
+                    "("
+                } else {
+                    " "
+                }
+            );
             if version.starts_with(&prefix) {
                 self.tty.terminal.add_named_terminal_features(name);
                 break;
             }
         }
-        self.attachments
-            .render_attachment
-            .update_term_type(version);
+        self.attachments.render_attachment.update_term_type(version);
         self.publish_terminal();
     }
 

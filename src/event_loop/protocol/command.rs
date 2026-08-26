@@ -15,11 +15,11 @@ use std::rc::Rc;
 
 use crate::server::command::{self, ClientContext, CommandResult};
 use crate::server::state::Eviction;
-use crate::sync::{select, Either};
+use crate::sync::{Either, select};
 use crate::tmux::message::{Frame, Message};
 
 use super::wire::Wire;
-use super::{ClientRuntime, ProtocolCloseReason, OUTPUT_CHUNK};
+use super::{ClientRuntime, OUTPUT_CHUNK, ProtocolCloseReason};
 
 /// The stream number the client-file protocol uses, distinct from the stdout
 /// and stderr streams a response is written to.

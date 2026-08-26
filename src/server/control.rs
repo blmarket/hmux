@@ -105,8 +105,7 @@ impl EventControlClient {
         let session = match command::classify(args) {
             command::Intent::NewAttach => {
                 let mut state = state.borrow_mut();
-                let attaches_to_existing =
-                    command::existing_attach_target(args, &state).is_some();
+                let attaches_to_existing = command::existing_attach_target(args, &state).is_some();
                 let target = command::new_session_for_attach(args, &mut state, context)
                     .map_err(io::Error::other)?;
                 if attaches_to_existing {
@@ -567,11 +566,7 @@ impl EventControlClient {
     /// `server_client_set_session` does.
     fn apply_switch(&mut self, session_id: u32) -> io::Result<()> {
         let stable = format!("${session_id}");
-        let present = self
-            .state
-            .borrow_mut()
-            .control_snapshot(&stable)
-            .is_some();
+        let present = self.state.borrow_mut().control_snapshot(&stable).is_some();
         if present {
             self.replace_session(session_id, stable)?;
         }
@@ -719,9 +714,11 @@ impl EventControlClient {
                         .collect::<Vec<_>>(),
                 ),
                 Ok(_) => {}
-                Err(error) => self.command_queue.push_back_group([
-                    ControlQueueItem::ParseError(command::CommandResult::err(error)),
-                ]),
+                Err(error) => self
+                    .command_queue
+                    .push_back_group([ControlQueueItem::ParseError(command::CommandResult::err(
+                        error,
+                    ))]),
             }
         }
         Ok(())
@@ -986,9 +983,7 @@ impl EventControlClient {
             // commands to run: tmux drains the client's whole queue before the
             // global one fires, so `cmd1 ; cmd2` reads as both markers and then
             // both notifications rather than as two interleaved pairs.
-            if !self.command_queue.current_group_has_more()
-                && result.inserted_results.is_empty()
-            {
+            if !self.command_queue.current_group_has_more() && result.inserted_results.is_empty() {
                 self.drain_notifications()?;
             }
             self.pump_output()?;
@@ -1914,8 +1909,8 @@ mod tests {
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
 
-    use crate::integration::status::AgentStatus;
     use crate::integration::AgentState;
+    use crate::integration::status::AgentStatus;
     use crate::observability::v1::PaneId;
 
     use super::super::state::PaneSpec;

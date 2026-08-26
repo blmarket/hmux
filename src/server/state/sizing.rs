@@ -9,12 +9,12 @@
 use std::collections::BTreeSet;
 use std::io;
 
-use super::layout::{resize_panes_to_layout, WINDOW_MAXIMUM, WINDOW_MINIMUM};
-use crate::server::options::WindowHook;
+use super::layout::{WINDOW_MAXIMUM, WINDOW_MINIMUM, resize_panes_to_layout};
 use super::{
     ClientActionResult, PaneBorderStatus, PaneNode, PaneScrollbar, RenderInvalidation, ServerState,
     Session, ViewportClient,
 };
+use crate::server::options::WindowHook;
 
 /// How a window derives its size from the clients that can see it — the
 /// `window-size` option.

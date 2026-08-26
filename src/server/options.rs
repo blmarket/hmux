@@ -108,10 +108,7 @@ impl OptionSet {
             })
             .collect::<Vec<_>>();
         members.sort_unstable_by_key(|(index, _)| *index);
-        members
-            .into_iter()
-            .map(|(_, command)| command)
-            .collect()
+        members.into_iter().map(|(_, command)| command).collect()
     }
 
     pub(crate) fn append(&mut self, name: &str, value: &str) {
@@ -520,10 +517,7 @@ const OPTION_DEFAULTS: &[(&str, &str)] = &[
     ("session-status-style", "default"),
     ("set-clipboard", "external"),
     ("set-titles", "off"),
-    (
-        "set-titles-string",
-        "#S:#I:#W - \"#T\" #{session_alerts}",
-    ),
+    ("set-titles-string", "#S:#I:#W - \"#T\" #{session_alerts}"),
     ("silence-action", "other"),
     ("status", "on"),
     ("status-bg", "default"),
@@ -1451,11 +1445,7 @@ pub(crate) fn mode_keys_default() -> &'static str {
         .filter(|value| !value.is_empty())
         .or_else(|| std::env::var("EDITOR").ok())
         .unwrap_or_default();
-    if editor.contains("vi") {
-        "vi"
-    } else {
-        "emacs"
-    }
+    if editor.contains("vi") { "vi" } else { "emacs" }
 }
 
 /// Parse tmux's optional numeric `[N]` suffix.
@@ -1608,7 +1598,9 @@ mod tests {
         assert_eq!(option_default("status-left"), Some("[#{session_name}] "));
         assert_eq!(
             option_default("window-status-format"),
-            Some("#I:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default] #{?pane_current_path,#{b:pane_current_path},#{b:session_path}}#{?window_flags,#{window_flags}, }")
+            Some(
+                "#I:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default] #{?pane_current_path,#{b:pane_current_path},#{b:session_path}}#{?window_flags,#{window_flags}, }"
+            )
         );
     }
 

@@ -53,7 +53,7 @@ use super::cmd_send_keys::base64_encode;
 use super::command;
 use super::format;
 use super::input_keys::PaneKey;
-use super::key::{key_from_byte, parse_key_name, KeyBase, KeyCode, SpecialKey};
+use super::key::{KeyBase, KeyCode, SpecialKey, key_from_byte, parse_key_name};
 use super::latmon::LatMon;
 #[cfg(test)]
 use super::mouse::MouseButton;
@@ -71,14 +71,14 @@ pub(super) use actions::dispatch_control_client_keys;
 #[cfg(test)]
 use actions::dispatch_prefix_key;
 use actions::{
-    dispatch_key_binding, ActiveConfirm, ConfirmAction, ConfirmResolution, PrefixOutcome,
+    ActiveConfirm, ConfirmAction, ConfirmResolution, PrefixOutcome, dispatch_key_binding,
 };
 use copy_mode::CopyModeView;
 use keys::{ClientKeyState, KeyResolution, KeyTableSource, ServerKeyTables};
 pub(crate) use overlay::ActiveOverlay;
 use prompt::{
-    clip_prompt_display, render_prompt_completion, take_deferred_attach_command, CommandPrompt,
-    CommandPromptInput,
+    CommandPrompt, CommandPromptInput, clip_prompt_display, render_prompt_completion,
+    take_deferred_attach_command,
 };
 #[cfg(test)]
 use prompt::{prompt_input_width, render_prompt_input};
@@ -2615,81 +2615,81 @@ fn compose_frame_cached(
         _,
         _,
     ) = if let Some(view) = active_mode {
-            let selected_style = status::option_style_escape_for(
-                st,
-                target,
-                "mode-style",
-                "bg=yellow,fg=black",
-                terminal,
-            );
-            let preview = mode_preview_rows(st, status_cache, view, cols, pane_height, terminal);
-            (
-                render_mode_rows(
-                    view,
-                    cols as usize,
-                    pane_height as usize,
-                    &selected_style,
-                    &preview,
-                    || clock_rows(st, target, cols as usize, pane_height as usize, terminal),
-                )
+        let selected_style = status::option_style_escape_for(
+            st,
+            target,
+            "mode-style",
+            "bg=yellow,fg=black",
+            terminal,
+        );
+        let preview = mode_preview_rows(st, status_cache, view, cols, pane_height, terminal);
+        (
+            render_mode_rows(
+                view,
+                cols as usize,
+                pane_height as usize,
+                &selected_style,
+                &preview,
+                || clock_rows(st, target, cols as usize, pane_height as usize, terminal),
+            )
+            .into_iter()
+            .map(Cow::Owned)
+            .collect(),
+            Vec::new(),
+            false,
+            false,
+            usize::from(cols) * usize::from(pane_height) + 256,
+        )
+    } else if let Some(copy_view) = copy_view.as_ref() {
+        (
+            copy_view
+                .rows(pane_height)
                 .into_iter()
                 .map(Cow::Owned)
                 .collect(),
-                Vec::new(),
-                false,
-                false,
-                usize::from(cols) * usize::from(pane_height) + 256,
-            )
-        } else if let Some(copy_view) = copy_view.as_ref() {
-            (
-                copy_view
-                    .rows(pane_height)
+            copy_view.cursor(pane_height, cols),
+            true,
+            true,
+            copy_view.serialized_len() + 256,
+        )
+    } else {
+        // A window bigger than the client is painted through the client's
+        // own viewport: the pane is dumped at the window's height and then
+        // both the rows and the cursor are moved into the viewport's
+        // coordinates. Mode and copy-mode views are already composed at the
+        // client's width, so they are shown whole.
+        let view = client_name.and_then(|name| st.client_viewport(name));
+        let view = view.filter(|view| view.bigger);
+        let dump_rows = view.map_or(pane_height, |view| view.oy.saturating_add(view.sy));
+        let (vt, scroll) =
+            st.dump_active_pane_viewport_vt(target, scroll_offset, dump_rows as usize)?;
+        let capacity = vt.len() + 256;
+        pane_vt = vt;
+        let (pane_rows, cursor) = split_pane_vt(&pane_vt);
+        let (pane_rows, cursor) = match view {
+            Some(view) => (
+                pane_rows
                     .into_iter()
-                    .map(Cow::Owned)
+                    .skip(usize::from(view.oy))
+                    .map(|row| {
+                        Cow::Owned(clip_vt_row(row, usize::from(view.ox), usize::from(view.sx)))
+                    })
                     .collect(),
-                copy_view.cursor(pane_height, cols),
-                true,
-                true,
-                copy_view.serialized_len() + 256,
-            )
-        } else {
-            // A window bigger than the client is painted through the client's
-            // own viewport: the pane is dumped at the window's height and then
-            // both the rows and the cursor are moved into the viewport's
-            // coordinates. Mode and copy-mode views are already composed at the
-            // client's width, so they are shown whole.
-            let view = client_name.and_then(|name| st.client_viewport(name));
-            let view = view.filter(|view| view.bigger);
-            let dump_rows = view.map_or(pane_height, |view| view.oy.saturating_add(view.sy));
-            let (vt, scroll) =
-                st.dump_active_pane_viewport_vt(target, scroll_offset, dump_rows as usize)?;
-            let capacity = vt.len() + 256;
-            pane_vt = vt;
-            let (pane_rows, cursor) = split_pane_vt(&pane_vt);
-            let (pane_rows, cursor) = match view {
-                Some(view) => (
-                    pane_rows
-                        .into_iter()
-                        .skip(usize::from(view.oy))
-                        .map(|row| {
-                            Cow::Owned(clip_vt_row(row, usize::from(view.ox), usize::from(view.sx)))
-                        })
-                        .collect(),
-                    shift_cup(cursor, view.ox, view.oy),
-                ),
-                None => (
-                    pane_rows.into_iter().map(Cow::Borrowed).collect(),
-                    cursor.to_vec(),
-                ),
-            };
-            (
-                pane_rows,
-                cursor,
-                scroll == 0 && st.active_pane_cursor_visible(target).unwrap_or(true),
-                scroll == 0,
-                capacity,
-            )
+                shift_cup(cursor, view.ox, view.oy),
+            ),
+            None => (
+                pane_rows.into_iter().map(Cow::Borrowed).collect(),
+                cursor.to_vec(),
+            ),
         };
+        (
+            pane_rows,
+            cursor,
+            scroll == 0 && st.active_pane_cursor_visible(target).unwrap_or(true),
+            scroll == 0,
+            capacity,
+        )
+    };
     // The pane's DECTCEM state. The VT dump carries the cursor *position* but not
     // its *visibility*, so we query it and mirror it below. A TUI that hides the
     // cursor and paints its own (e.g. claude-code) must not leave the client's
@@ -3001,7 +3001,8 @@ fn same_row(previous: &[&[u8]], current: &[&[u8]]) -> bool {
     match (previous, current) {
         ([previous], [current]) => previous == current,
         _ => {
-            let length = |sections: &[&[u8]]| sections.iter().map(|bytes| bytes.len()).sum::<usize>();
+            let length =
+                |sections: &[&[u8]]| sections.iter().map(|bytes| bytes.len()).sum::<usize>();
             length(previous) == length(current)
                 && previous
                     .iter()
@@ -3058,11 +3059,13 @@ fn diff_rendered_frame(previous: &[u8], current: &[u8]) -> FrameDelta {
         .keys()
         .chain(current_rows.keys())
         .copied()
-        .filter(|row| match (previous_rows.get(row), current_rows.get(row)) {
-            (Some(previous), Some(current)) => !same_row(previous, current),
-            // A row only one of the frames paints at all has changed.
-            _ => true,
-        })
+        .filter(
+            |row| match (previous_rows.get(row), current_rows.get(row)) {
+                (Some(previous), Some(current)) => !same_row(previous, current),
+                // A row only one of the frames paints at all has changed.
+                _ => true,
+            },
+        )
         .collect::<BTreeSet<_>>();
 
     if previous_frame.prefix != current_frame.prefix {
@@ -4350,13 +4353,15 @@ mod tests {
             subscribed_active_identity(&subscribed_window);
         replace_active_pane_with_inert(&mut state.borrow_mut());
 
-        assert!(refresh_active_window_output_subscription(
-            &state.borrow_mut(),
-            "0",
-            &mut subscribed_window,
-            &mut subscription,
-        )
-        .expect("refresh respawned runtime"));
+        assert!(
+            refresh_active_window_output_subscription(
+                &state.borrow_mut(),
+                "0",
+                &mut subscribed_window,
+                &mut subscription,
+            )
+            .expect("refresh respawned runtime")
+        );
         let (pane_id, runtime_id) = subscribed_active_identity(&subscribed_window);
         assert_eq!(pane_id, original_pane_id);
         assert_ne!(runtime_id, original_runtime_id);
@@ -4382,13 +4387,15 @@ mod tests {
             )
             .expect("split inactive pane");
 
-        assert!(refresh_active_window_output_subscription(
-            &state.borrow_mut(),
-            "0",
-            &mut subscribed_window,
-            &mut subscription,
-        )
-        .expect("refresh split subscription"));
+        assert!(
+            refresh_active_window_output_subscription(
+                &state.borrow_mut(),
+                "0",
+                &mut subscribed_window,
+                &mut subscription,
+            )
+            .expect("refresh split subscription")
+        );
         assert_eq!(subscribed_window.panes.len(), 2);
         subscription.drain();
 
@@ -4497,10 +4504,11 @@ mod tests {
             let session = st.find("0").unwrap();
             let win = st.session_window(session, 0);
             assert_eq!(win.panes.len(), 2);
-            assert!(win
-                .panes
-                .iter()
-                .all(|p| p.pane.cols() < 80 || p.pane.rows() < 24));
+            assert!(
+                win.panes
+                    .iter()
+                    .all(|p| p.pane.cols() < 80 || p.pane.rows() < 24)
+            );
             let frame = compose_frame(&st, "0", 80, 25, 1, 0).expect("compose split");
             assert!(
                 frame

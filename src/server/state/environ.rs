@@ -12,11 +12,11 @@ use std::path::Path;
 use std::rc::Rc;
 
 use super::{
-    environment_entries, RenderInvalidation, ServerState, SpawnSession, DEFAULT_PATH,
-    PANE_ID_PLACEHOLDER, SESSION_ID_PLACEHOLDER,
+    DEFAULT_PATH, PANE_ID_PLACEHOLDER, RenderInvalidation, SESSION_ID_PLACEHOLDER, ServerState,
+    SpawnSession, environment_entries,
 };
 use crate::server::format::glob_match;
-use crate::server::options::{option_default, OptionsView};
+use crate::server::options::{OptionsView, option_default};
 
 impl ServerState {
     /// Set a global environment variable (`set-environment -g VAR VALUE`).

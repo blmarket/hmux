@@ -492,7 +492,7 @@ impl NonblockingFrameWriter for NonblockingImsgWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tmux::message::{msgtype, Frame, Message, PROTOCOL_VERSION};
+    use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION, msgtype};
     use std::io::Write as _;
 
     /// Decode a frame's bytes back into `(type, version, payload)` for

@@ -534,18 +534,15 @@ pub(super) fn move_copy_row(state: &mut CopyState, up: bool, vi: bool) {
 /// One vertical move, with the column tmux's `lastcx`/`lastsx` pair chooses:
 /// the recorded goal, or the end of the row moved to when the cursor was at
 /// the end of the row it left.
-fn move_copy_vertically(
-    state: &mut CopyState,
-    vi: bool,
-    move_rows: impl FnOnce(&mut CopyState),
-) {
+fn move_copy_vertically(state: &mut CopyState, vi: bool, move_rows: impl FnOnce(&mut CopyState)) {
     // tmux's `norectsel`: a rectangle selection is not bound to the text, so
     // the cursor keeps the column it is dragging the corner by.
     if state.selection.is_some() && state.rectangle {
         move_rows(state);
-        state.cursor.col = state
-            .desired_col
-            .min(copy_cursor_limit(&state.grid, state.cursor.row, vi));
+        state.cursor.col =
+            state
+                .desired_col
+                .min(copy_cursor_limit(&state.grid, state.cursor.row, vi));
         ensure_copy_cursor_visible(state);
         return;
     }

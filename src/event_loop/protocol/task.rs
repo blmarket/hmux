@@ -8,20 +8,20 @@
 use std::io;
 use std::os::fd::AsRawFd;
 
+use crate::server::Server;
 use crate::server::attach::ClientTty;
 use crate::server::command::{self as server_command, ClientContext, CommandResult};
 use crate::server::state::SharedState;
-use crate::sync::{select, Either};
-use crate::server::Server;
+use crate::sync::{Either, select};
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
 use crate::tmux::message::{Frame, Message};
 use hmux_rt::{JoinHandle, TaskHandle};
 
 use super::super::job::BackgroundRunner;
-use super::identify::{identify, Role};
+use super::identify::{Role, identify};
 use super::wire::Wire;
 use super::{
-    attach, command, control, ClientRuntime, ProtocolCloseReason, ProtocolKind, ProtocolStatus,
+    ClientRuntime, ProtocolCloseReason, ProtocolKind, ProtocolStatus, attach, command, control,
 };
 
 /// One running protocol client, from its owner's side.
@@ -184,7 +184,10 @@ async fn refuse_control_client(
             }
         }
     }
-    if let Err(reason) = wire.send(Frame::new(Message::Exit(Some(refusal.exit), None))).await {
+    if let Err(reason) = wire
+        .send(Frame::new(Message::Exit(Some(refusal.exit), None)))
+        .await
+    {
         return reason;
     }
     if let Err(reason) = wire.flush() {

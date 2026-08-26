@@ -23,7 +23,7 @@ use hmux_rt::TaskHandle;
 
 use super::job::BackgroundRunner;
 
-pub(crate) use task::{spawn, ProtocolHandle};
+pub(crate) use task::{ProtocolHandle, spawn};
 
 /// How much of one stream a single protocol frame carries.
 const OUTPUT_CHUNK: usize = 8 * 1024;

@@ -10,9 +10,9 @@
 use std::io;
 use std::os::fd::AsFd;
 
-use crate::sync::{select, Either};
+use crate::sync::{Either, select};
 use crate::tmux::codec::{ImsgReader, NonblockingImsgWriter};
-use crate::tmux::introspect::{log_frame, Direction};
+use crate::tmux::introspect::{Direction, log_frame};
 use crate::tmux::message::Frame;
 use crate::tmux::traits::NonblockingFrameWriter;
 use hmux_rt::{AsyncFd, Interest, TaskHandle};

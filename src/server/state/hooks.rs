@@ -2,7 +2,7 @@
 
 use crate::server::command::ExecutableCommand;
 use crate::server::options::{
-    set_hook_in, unset_hook_in, HookName, OptionSet, PaneHook, SessionHook, WindowHook,
+    HookName, OptionSet, PaneHook, SessionHook, WindowHook, set_hook_in, unset_hook_in,
 };
 
 use super::{PaneNode, Session, Window};

@@ -34,7 +34,8 @@ impl ServerState {
                 self.next_buffer_id += 1;
                 self.automatic_buffers.insert(n.clone());
                 self.buffer_created.insert(n.clone(), created);
-                self.buffers.insert(0, (n.clone(), Bytes::copy_from_slice(data)));
+                self.buffers
+                    .insert(0, (n.clone(), Bytes::copy_from_slice(data)));
                 self.notify_paste_buffer(&n, false);
                 self.enforce_buffer_limit();
             }

@@ -2,7 +2,7 @@
 
 use super::super::mouse::MouseEvent;
 use super::super::state::{
-    copy_search_segments, copy_selection_segments, CopyState, ServerState, SharedState,
+    CopyState, ServerState, SharedState, copy_search_segments, copy_selection_segments,
 };
 use super::super::term::TerminalCapabilities;
 use super::super::{format, options, status};

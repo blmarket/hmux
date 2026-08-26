@@ -214,7 +214,9 @@ mod tests {
         state.acl.clear();
         state.owner_uid = 1000;
         state.seed_server_acl();
-        let client = state.attach_test_client("0", 80, 24).expect("attach client");
+        let client = state
+            .attach_test_client("0", 80, 24)
+            .expect("attach client");
         client.set_peer_identity(Some(1001), "other".to_string());
         state.acl_allow(1001);
 
@@ -232,7 +234,9 @@ mod tests {
         state.acl.clear();
         state.owner_uid = 1000;
         state.seed_server_acl();
-        let client = state.attach_test_client("0", 80, 24).expect("attach client");
+        let client = state
+            .attach_test_client("0", 80, 24)
+            .expect("attach client");
         client.set_peer_identity(Some(1001), "other".to_string());
         state.acl_allow(1002);
         state.acl_set_access(1002, AclAccess::ReadOnly);
@@ -247,7 +251,9 @@ mod tests {
         state.acl.clear();
         state.owner_uid = 1000;
         state.seed_server_acl();
-        let client = state.attach_test_client("0", 80, 24).expect("attach client");
+        let client = state
+            .attach_test_client("0", 80, 24)
+            .expect("attach client");
         client.set_peer_identity(Some(1001), "other".to_string());
         state.acl_allow(1001);
         state.acl_evict(1001, ACCESS_DENIED);

@@ -29,12 +29,12 @@ pub(in crate::server) mod windows;
 pub(in crate::server) use clients::template_replace;
 pub(in crate::server) use identity::Command;
 
-pub(crate) use executable::{ExecutableCommand, LazyCommand};
 use executable::ParsedCommand;
+pub(crate) use executable::{ExecutableCommand, LazyCommand};
 
 /// The tests that drive a job the way a command would need to build one.
 #[cfg(test)]
-pub(crate) use execution::{run_shell_from_argv, RunShell};
+pub(crate) use execution::{RunShell, run_shell_from_argv};
 
 use args::ParsedArgs;
 
@@ -52,7 +52,7 @@ use crate::integration::status::PaneAgents;
 use crate::observability::v1::PaneId;
 
 use super::format::{self, Vars};
-use super::key::{format_key_name, parse_key_name, KeyBase, KeyCode, SpecialKey};
+use super::key::{KeyBase, KeyCode, SpecialKey, format_key_name, parse_key_name};
 use super::mouse::MouseEvent;
 use super::options::{self, OptionScope, OptionSet, OptionsView};
 use super::pane::PaneClass;
@@ -64,7 +64,7 @@ use super::state::{
     Target, WaitOutcome, WaitRegistry, WindowResizeAdjust, WindowResizeRequest, WindowSizePolicy,
 };
 use super::style::{CaptureStyleWriter, CellPresentation, Hyperlink, SgrDecoder};
-use crate::sync::{yield_now, Completion, WakeFn};
+use crate::sync::{Completion, WakeFn, yield_now};
 use hmux_rt::TaskHandle;
 use hmux_vt::{CaptureExtent, CellWidth, Grid, GridRow};
 use std::cell::Cell;
@@ -644,7 +644,8 @@ pub(crate) fn start_resumable_command_string_with_tail(
     };
     let mut compiled = ExecutableCommand::compile(line, &aliases).map_err(CommandResult::err)?;
     if !tail.is_empty() {
-        compiled.extend(ExecutableCommand::compile_argv(tail, &aliases).map_err(CommandResult::err)?);
+        compiled
+            .extend(ExecutableCommand::compile_argv(tail, &aliases).map_err(CommandResult::err)?);
     }
     Ok(ResumableCommandQueue::new(compiled, agents, context))
 }
@@ -1091,11 +1092,13 @@ impl ResumableCommandQueue {
     /// the queue text or an argv.
     fn new(command: ExecutableCommand, agents: &PaneAgents, context: &ClientContext) -> Self {
         let mut queue = queue::CommandQueue::new();
-        queue.push_back_group(command.into_commands().into_iter().map(|command| SharedQueueItem::Command {
-            command,
-            source: None,
-            source_depth: 0,
-            contributes_status: true,
+        queue.push_back_group(command.into_commands().into_iter().map(|command| {
+            SharedQueueItem::Command {
+                command,
+                source: None,
+                source_depth: 0,
+                contributes_status: true,
+            }
         }));
         Self {
             queue,
@@ -1335,11 +1338,13 @@ impl ResumableCommandQueue {
                     compiled
                 }
             };
-            planned.extend(compiled.into_commands().into_iter().map(|command| SharedQueueItem::Command {
-                command,
-                source: None,
-                source_depth: 0,
-                contributes_status: true,
+            planned.extend(compiled.into_commands().into_iter().map(|command| {
+                SharedQueueItem::Command {
+                    command,
+                    source: None,
+                    source_depth: 0,
+                    contributes_status: true,
+                }
             }));
         }
         Ok(planned)
@@ -1466,8 +1471,7 @@ impl ResumableCommandQueue {
                 state
             };
             let previous = install_command_target_context(&mut state, &self.context);
-            let commands =
-                hook_commands(hook, requested_target, &mut state, HookOrigin::Command);
+            let commands = hook_commands(hook, requested_target, &mut state, HookOrigin::Command);
             restore_command_target_context(&mut state, previous);
             let Some(commands) = commands else {
                 return Vec::new();
@@ -1982,11 +1986,7 @@ fn apply_list_sort<T>(
     }
     items.sort_by(|a, b| {
         let result = compare(order, a, b).then_with(|| name(a).cmp(&name(b)));
-        if reversed {
-            result.reverse()
-        } else {
-            result
-        }
+        if reversed { result.reverse() } else { result }
     });
 }
 
@@ -2289,12 +2289,7 @@ impl format::LoopSource for TreeLoops<'_> {
 }
 
 impl format::ScopedLoopSource for TreeLoops<'_> {
-    fn items_in_scope(
-        &self,
-        kind: format::FormatLoopKind,
-        flags: &str,
-        vars: &Vars,
-    ) -> Vec<Vars> {
+    fn items_in_scope(&self, kind: format::FormatLoopKind, flags: &str, vars: &Vars) -> Vec<Vars> {
         match kind {
             format::FormatLoopKind::Session => {
                 let marked = self.st.marked_pane();
@@ -2350,10 +2345,7 @@ impl format::ScopedLoopSource for TreeLoops<'_> {
 
 /// tmux's `#{L:…}` order: the client list's own order unless a flag names a
 /// key, with the client name breaking every tie.
-pub(super) fn sort_client_loop(
-    order: &mut [super::state::ClientSnapshot],
-    flags: &str,
-) {
+pub(super) fn sort_client_loop(order: &mut [super::state::ClientSnapshot], flags: &str) {
     if flags.contains('n') || flags.contains('t') {
         order.sort_by(|left, right| {
             let key = if flags.contains('n') {
@@ -4530,7 +4522,10 @@ mod tests {
         // The neighbouring path still expands, so the skip cannot be masking a
         // table that stopped being built at all.
         let named = run_str(&st, &["display-message", "-p", "#{session_name}"]);
-        assert_eq!(named.stdout, format!("{}\n", st.borrow().sessions()[0].name));
+        assert_eq!(
+            named.stdout,
+            format!("{}\n", st.borrow().sessions()[0].name)
+        );
     }
 
     /// A wake that counts how many times it fired.
@@ -4759,9 +4754,11 @@ mod tests {
             !fd_is_readable(attached_1.as_raw_fd()),
             "a mutation in another session must not wake this compositor"
         );
-        assert!(attached_0
-            .take()
-            .contains(super::super::state::RenderInvalidation::STATUS));
+        assert!(
+            attached_0
+                .take()
+                .contains(super::super::state::RenderInvalidation::STATUS)
+        );
     }
 
     #[test]
@@ -4781,9 +4778,11 @@ mod tests {
             fd_is_readable(attached.as_raw_fd()),
             "an idle attached client must wake to adopt the new interval"
         );
-        assert!(attached
-            .take()
-            .contains(super::super::state::RenderInvalidation::STATUS));
+        assert!(
+            attached
+                .take()
+                .contains(super::super::state::RenderInvalidation::STATUS)
+        );
     }
 
     #[test]
@@ -4862,8 +4861,8 @@ mod tests {
 
     #[test]
     fn list_panes_exposes_agent_format_vars() {
-        use crate::integration::status::AgentStatus;
         use crate::integration::AgentState;
+        use crate::integration::status::AgentStatus;
 
         let st = state();
         let mut agents = PaneAgents::new();
@@ -5745,7 +5744,7 @@ mod tests {
         let st = state();
         run_str(&st, &["new-window", "-t", "0:"]); // 0,1
         run_str(&st, &["new-window", "-t", "0:"]); // 0,1,2
-                                                   // -a -t 0:0 → desired index 1, occupied 1,2 (no gap) → shift up → 0,1,2,3.
+        // -a -t 0:0 → desired index 1, occupied 1,2 (no gap) → shift up → 0,1,2,3.
         let r = run_str(
             &st,
             &[
@@ -5770,7 +5769,7 @@ mod tests {
         run_str(&st, &["new-window", "-t", "0:"]); // 0,1
         run_str(&st, &["new-window", "-t", "0:"]); // 0,1,2
         run_str(&st, &["kill-window", "-t", "0:1"]); // 0,2
-                                                     // -a -t 0:0 → desired index 1 is free → no shuffle → 0,1,2.
+        // -a -t 0:0 → desired index 1 is free → no shuffle → 0,1,2.
         let r = run_str(&st, &["new-window", "-a", "-t", "0:0"]);
         assert_eq!(r.exit, 0, "stderr={:?}", r.stderr);
         let lw = run_str(&st, &["list-windows", "-t", "0", "-F", "#{window_index}"]);
@@ -5782,7 +5781,7 @@ mod tests {
         let st = state();
         run_str(&st, &["new-window", "-t", "0:"]); // 0,1
         run_str(&st, &["new-window", "-t", "0:"]); // 0,1,2
-                                                   // -b -t 0:1 → desired index 1 (the anchor's own) → shift 1,2 up → 0,1,2,3.
+        // -b -t 0:1 → desired index 1 (the anchor's own) → shift 1,2 up → 0,1,2,3.
         let r = run_str(
             &st,
             &[
@@ -5806,7 +5805,7 @@ mod tests {
         let st = state();
         run_str(&st, &["new-window", "-t", "0:"]); // 0,1 (active 1)
         run_str(&st, &["new-window", "-t", "0:"]); // 0,1,2 (active 2)
-                                                   // -a with no -t → anchor the active window (index 2) → new at 3.
+        // -a with no -t → anchor the active window (index 2) → new at 3.
         let r = run_str(&st, &["new-window", "-a"]);
         assert_eq!(r.exit, 0, "stderr={:?}", r.stderr);
         let lw = run_str(&st, &["list-windows", "-t", "0", "-F", "#{window_index}"]);
@@ -5830,7 +5829,7 @@ mod tests {
     fn new_window_after_missing_index_creates_there() {
         let st = state();
         run_str(&st, &["new-window", "-t", "0:"]); // 0,1
-                                                   // -a -t 0:5 where index 5 doesn't exist → tmux ignores -a, creates at 5.
+        // -a -t 0:5 where index 5 doesn't exist → tmux ignores -a, creates at 5.
         let r = run_str(
             &st,
             &[
@@ -5900,15 +5899,21 @@ mod tests {
     #[test]
     fn navigation_single_window_errors() {
         let st = state();
-        assert!(run_str(&st, &["next-window", "-t", "0"])
-            .stderr
-            .contains("no next window"));
-        assert!(run_str(&st, &["previous-window", "-t", "0"])
-            .stderr
-            .contains("no previous window"));
-        assert!(run_str(&st, &["last-window", "-t", "0"])
-            .stderr
-            .contains("no last window"));
+        assert!(
+            run_str(&st, &["next-window", "-t", "0"])
+                .stderr
+                .contains("no next window")
+        );
+        assert!(
+            run_str(&st, &["previous-window", "-t", "0"])
+                .stderr
+                .contains("no previous window")
+        );
+        assert!(
+            run_str(&st, &["last-window", "-t", "0"])
+                .stderr
+                .contains("no last window")
+        );
     }
 
     #[test]
@@ -6227,9 +6232,11 @@ mod tests {
             run_str(&st, &["show-environment", "-g", "FOO"]).stdout,
             "-FOO\n"
         );
-        assert!(run_str(&st, &["show-environment", "-g"])
-            .stdout
-            .contains("-FOO\n"));
+        assert!(
+            run_str(&st, &["show-environment", "-g"])
+                .stdout
+                .contains("-FOO\n")
+        );
 
         run_str(&st, &["set-environment", "-g", "FOO", "again"]);
         assert_eq!(
@@ -6422,13 +6429,25 @@ mod tests {
         run_str(&st, &["resize-pane", "-Z", "-t", "0.0"]);
         let dm = run_str(
             &st,
-            &["display-message", "-p", "-t", "0.0", "#{window_zoomed_flag}"],
+            &[
+                "display-message",
+                "-p",
+                "-t",
+                "0.0",
+                "#{window_zoomed_flag}",
+            ],
         );
         assert_eq!(dm.stdout, "1\n");
         assert_eq!(run_str(&st, &["kill-pane", "-a", "-t", "0.0"]).exit, 0);
         let dm_after = run_str(
             &st,
-            &["display-message", "-p", "-t", "0.0", "#{window_zoomed_flag}"],
+            &[
+                "display-message",
+                "-p",
+                "-t",
+                "0.0",
+                "#{window_zoomed_flag}",
+            ],
         );
         assert_eq!(dm_after.stdout, "0\n");
     }
@@ -6446,7 +6465,13 @@ mod tests {
         run_str(&st, &["resize-pane", "-Z", "-t", "0.0"]);
         let dm = run_str(
             &st,
-            &["display-message", "-p", "-t", "0.0", "#{window_zoomed_flag}"],
+            &[
+                "display-message",
+                "-p",
+                "-t",
+                "0.0",
+                "#{window_zoomed_flag}",
+            ],
         );
         assert_eq!(dm.stdout, "1\n");
         assert_eq!(
@@ -6455,7 +6480,13 @@ mod tests {
         );
         let dm_after = run_str(
             &st,
-            &["display-message", "-p", "-t", "0.0", "#{window_zoomed_flag}"],
+            &[
+                "display-message",
+                "-p",
+                "-t",
+                "0.0",
+                "#{window_zoomed_flag}",
+            ],
         );
         assert_eq!(dm_after.stdout, "0\n");
     }
@@ -6473,16 +6504,32 @@ mod tests {
         run_str(&st, &["resize-pane", "-Z", "-t", "0.0"]);
         let dm = run_str(
             &st,
-            &["display-message", "-p", "-t", "0.0", "#{window_zoomed_flag}"],
+            &[
+                "display-message",
+                "-p",
+                "-t",
+                "0.0",
+                "#{window_zoomed_flag}",
+            ],
         );
         assert_eq!(dm.stdout, "1\n");
         assert_eq!(
-            run_str(&st, &["switch-client", "-Z", "-c", "test-client", "-t", "0.1"]).exit,
+            run_str(
+                &st,
+                &["switch-client", "-Z", "-c", "test-client", "-t", "0.1"]
+            )
+            .exit,
             0
         );
         let dm_after = run_str(
             &st,
-            &["display-message", "-p", "-t", "0.0", "#{window_zoomed_flag}"],
+            &[
+                "display-message",
+                "-p",
+                "-t",
+                "0.0",
+                "#{window_zoomed_flag}",
+            ],
         );
         assert_eq!(dm_after.stdout, "1\n");
     }
@@ -6494,13 +6541,28 @@ mod tests {
         run_str(&st, &["resize-pane", "-Z", "-t", "0.0"]);
         let dm = run_str(
             &st,
-            &["display-message", "-p", "-t", "0.0", "#{window_zoomed_flag}"],
+            &[
+                "display-message",
+                "-p",
+                "-t",
+                "0.0",
+                "#{window_zoomed_flag}",
+            ],
         );
         assert_eq!(dm.stdout, "1\n");
-        assert_eq!(run_str(&st, &["resize-pane", "-t", "0.0", "-U", "1"]).exit, 0);
+        assert_eq!(
+            run_str(&st, &["resize-pane", "-t", "0.0", "-U", "1"]).exit,
+            0
+        );
         let dm_after = run_str(
             &st,
-            &["display-message", "-p", "-t", "0.0", "#{window_zoomed_flag}"],
+            &[
+                "display-message",
+                "-p",
+                "-t",
+                "0.0",
+                "#{window_zoomed_flag}",
+            ],
         );
         assert_eq!(dm_after.stdout, "0\n");
     }

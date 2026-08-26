@@ -853,7 +853,11 @@ impl ResolvedTerm {
     /// tmux's per-client feature set outlives one.
     pub(crate) fn add_reported_features(&mut self, names: &str) -> bool {
         let before = self.features;
-        for name in names.split(',').map(str::trim).filter(|name| !name.is_empty()) {
+        for name in names
+            .split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        {
             let Some(bit) = feature_bit(name) else {
                 continue;
             };

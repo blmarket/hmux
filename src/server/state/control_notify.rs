@@ -8,9 +8,8 @@
 //! decides per record what line, if any, it writes: the audience test is the
 //! last step, because tmux's emitters branch per client rather than per event.
 
-
-use super::client::RenderInvalidation;
 use super::ServerState;
+use super::client::RenderInvalidation;
 
 /// How many resolved notifications the log holds for clients that have not
 /// caught up. Records are a line's worth of identity each, so the bound is
@@ -255,9 +254,9 @@ impl ServerState {
                 line: self.control_layout_line(*window_id)?,
                 sessions: self.sessions_linking_window(*window_id),
             },
-            NotifyEvent::PaneModeChanged { pane_id } => ControlRecord::PaneModeChanged {
-                pane_id: *pane_id,
-            },
+            NotifyEvent::PaneModeChanged { pane_id } => {
+                ControlRecord::PaneModeChanged { pane_id: *pane_id }
+            }
             NotifyEvent::ClientSessionChanged { client } => {
                 let (session_id, session_name) = self.control_client_session(client)?;
                 ControlRecord::ClientSessionChanged {
@@ -269,21 +268,23 @@ impl ServerState {
             NotifyEvent::ClientDetached { client } => ControlRecord::ClientDetached {
                 client: client.clone(),
             },
-            NotifyEvent::PasteBufferChanged { name } => ControlRecord::PasteBufferChanged {
-                name: name.clone(),
-            },
-            NotifyEvent::PasteBufferDeleted { name } => ControlRecord::PasteBufferDeleted {
-                name: name.clone(),
-            },
+            NotifyEvent::PasteBufferChanged { name } => {
+                ControlRecord::PasteBufferChanged { name: name.clone() }
+            }
+            NotifyEvent::PasteBufferDeleted { name } => {
+                ControlRecord::PasteBufferDeleted { name: name.clone() }
+            }
         })
     }
 
     /// The session a named client is on when the event fires. tmux reads
     /// `cc->session` and returns early when the client has none.
     fn control_client_session(&self, client: &str) -> Option<(u32, String)> {
-        let session_id = self
-            .client_renders
-            .with_entries(|mut entries| entries.find(|entry| entry.name == client).map(|entry| entry.session_id))?;
+        let session_id = self.client_renders.with_entries(|mut entries| {
+            entries
+                .find(|entry| entry.name == client)
+                .map(|entry| entry.session_id)
+        })?;
         Some((session_id, self.session_by_id(session_id)?.name.clone()))
     }
 

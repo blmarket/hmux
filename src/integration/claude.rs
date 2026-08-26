@@ -21,8 +21,8 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use super::{
-    is_uuid, title_working_spinner, AgentDetector, AgentState, Detection, SessionEnvStamp,
-    SessionIdSource,
+    AgentDetector, AgentState, Detection, SessionEnvStamp, SessionIdSource, is_uuid,
+    title_working_spinner,
 };
 
 /// A resting-title marker: Claude sets `✳ …` (U+2733) at its idle prompt.
@@ -333,8 +333,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        claude_program_name, detect, project_slug, session_id_from_transcript_name, transcript_dir,
-        AgentState, Detection,
+        AgentState, Detection, claude_program_name, detect, project_slug,
+        session_id_from_transcript_name, transcript_dir,
     };
 
     #[test]

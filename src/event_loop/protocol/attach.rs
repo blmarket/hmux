@@ -21,11 +21,11 @@ use crate::server::attach::{
 };
 use crate::server::command::{self, ClientContext};
 use crate::server::state::SharedState;
-use crate::sync::{maybe, race, select, yield_now, Either, Notify, WakeFn};
-use crate::tmux::codec::{encode_bytes, MAX_IMSGSIZE};
+use crate::sync::{Either, Notify, WakeFn, maybe, race, select, yield_now};
+use crate::tmux::codec::{MAX_IMSGSIZE, encode_bytes};
 use crate::tmux::message::{Frame, Message};
 use crate::tmux::traits::NonblockingFrameReader;
-use hmux_rt::{sleep_until, AsyncFd, Interest, TaskHandle};
+use hmux_rt::{AsyncFd, Interest, TaskHandle, sleep_until};
 
 use super::wire::Wire;
 use super::{ClientRuntime, ProtocolCloseReason};
@@ -270,7 +270,7 @@ impl EventAttachClient {
                     return Some(StartedAttachCommand {
                         task,
                         continuation: request.continuation,
-                    })
+                    });
                 }
                 Err(result) => {
                     self.session
@@ -616,7 +616,7 @@ async fn wait(
             Either::First(Either::First(result)) => return Ok(Wake::Command(result)),
             Either::First(Either::Second(())) => return Ok(Wake::Status),
             Either::Second(Either::First(Either::First(()))) => {
-                return Ok(Wake::Ready(AttachWaitReady::default()))
+                return Ok(Wake::Ready(AttachWaitReady::default()));
             }
             Either::Second(Either::First(Either::Second((source, _)))) => {
                 let mut ready = AttachWaitReady::default();

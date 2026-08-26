@@ -22,7 +22,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
 
-use super::{is_braille, is_uuid, AgentDetector, AgentState, Detection, SessionIdSource};
+use super::{AgentDetector, AgentState, Detection, SessionIdSource, is_braille, is_uuid};
 
 /// Rows from the bottom of the screen tail that carry live UI. The composer,
 /// the status line and every dialog sit here; bounding the scan keeps an
@@ -230,8 +230,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        agy_headless_invocation, agy_program_name, detect, session_id_from_conversation_path,
-        AgentState, Detection,
+        AgentState, Detection, agy_headless_invocation, agy_program_name, detect,
+        session_id_from_conversation_path,
     };
 
     const RULE: &str = "────────────────────────────────────────";

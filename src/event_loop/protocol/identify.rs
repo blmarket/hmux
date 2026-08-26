@@ -9,7 +9,7 @@
 
 use crate::server::attach::ClientTty;
 use crate::server::command::{self, ClientContext, ClientKind};
-use crate::server::state::{AclJoin, SharedState, ACCESS_DENIED};
+use crate::server::state::{ACCESS_DENIED, AclJoin, SharedState};
 use crate::tmux::codec::encode_bytes;
 use crate::tmux::message::{Frame, Message, PROTOCOL_VERSION};
 

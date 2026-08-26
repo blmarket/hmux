@@ -7,8 +7,8 @@
 use std::io;
 
 use super::target::{
-    pane_not_found, pane_pos_in, session_not_found, unique, window_not_found, window_offset,
-    window_special, Target, TargetKind, TargetMiss, TargetParts, WindowMatch,
+    Target, TargetKind, TargetMiss, TargetParts, WindowMatch, pane_not_found, pane_pos_in,
+    session_not_found, unique, window_not_found, window_offset, window_special,
 };
 use super::{ServerState, Session};
 use crate::server::format::glob_match;

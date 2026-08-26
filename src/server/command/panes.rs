@@ -160,18 +160,9 @@ impl SplitWindow {
             Ok(size) => size,
             Err(error) => return error,
         };
-        let explicit_cwd = self
-            .cwd
-            .as_deref()
-            .map(|cwd| {
-                execution::spawn_start_directory(
-                    cwd,
-                    Some(&target),
-                    st,
-                    context,
-                    &PaneAgents::new(),
-                )
-            });
+        let explicit_cwd = self.cwd.as_deref().map(|cwd| {
+            execution::spawn_start_directory(cwd, Some(&target), st, context, &PaneAgents::new())
+        });
         let cwd = explicit_cwd.as_deref().or(context.cwd.as_deref());
         if self.empty && self.command.iter().any(|word| !word.is_empty()) {
             return CommandResult::err("command cannot be given for empty pane\n");
@@ -477,18 +468,9 @@ impl NewPane {
             Ok(value) => value,
             Err(error) => return error,
         };
-        let explicit_cwd = self
-            .cwd
-            .as_deref()
-            .map(|cwd| {
-                execution::spawn_start_directory(
-                    cwd,
-                    Some(&target),
-                    st,
-                    context,
-                    &PaneAgents::new(),
-                )
-            });
+        let explicit_cwd = self.cwd.as_deref().map(|cwd| {
+            execution::spawn_start_directory(cwd, Some(&target), st, context, &PaneAgents::new())
+        });
         let cwd = explicit_cwd.as_deref().or(context.cwd.as_deref());
         let shell = context
             .env("SHELL")
@@ -587,7 +569,7 @@ impl NewPane {
                     return CommandResult::err(format!(
                         "{}: -\n",
                         io_error_message(&io::Error::from_raw_os_error(*error))
-                    ))
+                    ));
                 }
                 None => {}
             }
@@ -911,7 +893,7 @@ impl SwapPane {
                             return CommandResult::err(format!(
                                 "{}\n",
                                 st.pane_target_error(&target)
-                            ))
+                            ));
                         }
                     };
                     // tmux's `window_push_zoom(w, 0, flag)` only remembers a
@@ -941,13 +923,13 @@ impl SwapPane {
                 let src = match st.resolve(&source) {
                     Some(resolved) => resolved,
                     None => {
-                        return CommandResult::err(format!("{}\n", st.pane_target_error(&source)))
+                        return CommandResult::err(format!("{}\n", st.pane_target_error(&source)));
                     }
                 };
                 let dst = match st.resolve(&target) {
                     Some(resolved) => resolved,
                     None => {
-                        return CommandResult::err(format!("{}\n", st.pane_target_error(&target)))
+                        return CommandResult::err(format!("{}\n", st.pane_target_error(&target)));
                     }
                 };
                 let src_zoomed = st.window(src.session, src.window).zoomed;
@@ -1206,18 +1188,9 @@ impl RespawnPane {
         // shell command line, several are an argv (tmux's `spawn_pane`).
         let argv =
             (!self.command.is_empty()).then(|| pane_command_argv(&self.command, st, Some(&target)));
-        let mut cwd = self
-            .cwd
-            .as_deref()
-            .map(|cwd| {
-                execution::spawn_start_directory(
-                    cwd,
-                    Some(&target),
-                    st,
-                    context,
-                    &PaneAgents::new(),
-                )
-            });
+        let mut cwd = self.cwd.as_deref().map(|cwd| {
+            execution::spawn_start_directory(cwd, Some(&target), st, context, &PaneAgents::new())
+        });
         // `-e` reaches the replacement the way a spawn's environment does. With no
         // command the saved spawn spec is materialized so the wrap has an argv to
         // carry, keeping its stored working directory.
@@ -1359,13 +1332,7 @@ impl PipePane {
             ))
         };
         let output = self.output || !self.input;
-        match st.pipe_pane(
-            &target,
-            command.as_deref(),
-            self.toggle,
-            self.input,
-            output,
-        ) {
+        match st.pipe_pane(&target, command.as_deref(), self.toggle, self.input, output) {
             Ok(()) => CommandResult::ok(""),
             Err(error) => CommandResult::err(format!("{error}\n")),
         }
@@ -1689,9 +1656,7 @@ impl ResizeWindow {
 /// still reports too large rather than invalid.
 fn strtonum(value: &str, min: i64, max: i64) -> Result<i64, &'static str> {
     let negative = value.starts_with('-');
-    let digits = value
-        .strip_prefix(['-', '+'])
-        .unwrap_or(value);
+    let digits = value.strip_prefix(['-', '+']).unwrap_or(value);
     if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err("invalid");
     }

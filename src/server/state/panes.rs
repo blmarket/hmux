@@ -10,15 +10,15 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use super::copy::{view_copy_state, CopyBacking};
-use super::layout::{resize_panes_to_layout, LayoutCell, PaneRect, SplitDirection};
+use super::copy::{CopyBacking, view_copy_state};
+use super::layout::{LayoutCell, PaneRect, SplitDirection, resize_panes_to_layout};
 use super::sizing::{DEFAULT_XPIXEL, DEFAULT_YPIXEL};
-use super::target::{pane_not_found, parse_index_target, split_pane_target, Target, TargetKind};
+use super::target::{Target, TargetKind, pane_not_found, parse_index_target, split_pane_target};
 use super::windows::LinkOrder;
 use super::{
-    cursor_style_parameter, fill_spawn_ids, fill_spec_spawn_ids, now_micros, theme_report,
-    ClientActionResult, PaneNode, PaneSpec, RenderInvalidation, ServerState,
-    TerminalReply, TerminalRequest, TerminalRequestKind, Window, Winlink, ALERT_ACTIVITY,
+    ALERT_ACTIVITY, ClientActionResult, PaneNode, PaneSpec, RenderInvalidation, ServerState,
+    TerminalReply, TerminalRequest, TerminalRequestKind, Window, Winlink, cursor_style_parameter,
+    fill_spawn_ids, fill_spec_spawn_ids, now_micros, theme_report,
 };
 use bytes::Bytes;
 use regex::RegexBuilder;
@@ -30,8 +30,8 @@ use crate::server::key::parse_key_name;
 use crate::server::mouse::TtyMouseMode;
 use crate::server::options::{OptionSet, OptionsView, PaneHook, WindowHook};
 use crate::server::pane::{
-    MouseTrackingMode, Pane, PaneClipboardEvent, PaneIo, PaneKeyState,
-    PaneOutputPolicy, PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
+    MouseTrackingMode, Pane, PaneClipboardEvent, PaneIo, PaneKeyState, PaneOutputPolicy,
+    PanePassthrough, PaneSpawnSpec, PassthroughPolicy,
 };
 use hmux_vt::MouseEvent;
 use hmux_vt::ScreenOptions;
@@ -910,11 +910,7 @@ impl ServerState {
         // everything after) up; otherwise it follows the target. For `-f` (fullsize),
         // tmux inserts at the head (with `-b`) or tail (without `-b`) of the window's panes.
         let insert_at = if full {
-            if before {
-                0
-            } else {
-                win.panes.len()
-            }
+            if before { 0 } else { win.panes.len() }
         } else if before {
             match pane_part {
                 Some(_) => t.pane,
@@ -2181,7 +2177,10 @@ impl ServerState {
         // expression is matched unanchored, and a pattern that fails to compile
         // makes the whole search report no match.
         let pattern = if regex {
-            match RegexBuilder::new(term).case_insensitive(ignore_case).build() {
+            match RegexBuilder::new(term)
+                .case_insensitive(ignore_case)
+                .build()
+            {
                 Ok(pattern) => Some(pattern),
                 Err(_) => return 0,
             }

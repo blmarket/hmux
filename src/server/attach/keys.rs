@@ -12,7 +12,7 @@
 use std::time::{Duration, Instant};
 
 use super::super::key::{KeyBase, KeyCode, SpecialKey};
-use super::super::state::{SharedState, DEFAULT_KEY_TABLE};
+use super::super::state::{DEFAULT_KEY_TABLE, SharedState};
 use super::copy_mode;
 
 /// The table the prefix key switches a client into.

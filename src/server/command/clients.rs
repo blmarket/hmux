@@ -99,7 +99,7 @@ async fn interactive(
     let (reply, completed) = match PromptReply::new() {
         Ok(pair) => pair,
         Err(error) => {
-            return SharedCommandExecution::completed(CommandResult::err(format!("{error}\n")))
+            return SharedCommandExecution::completed(CommandResult::err(format!("{error}\n")));
         }
     };
     let mut client = context.client().clone();
@@ -143,12 +143,12 @@ impl CommandPrompt {
                 Some(name) if !client_named(&state, name) => {
                     return SharedCommandExecution::completed(CommandResult::err(format!(
                         "can't find client: {name}\n"
-                    )))
+                    )));
                 }
                 None if state.client_snapshots().is_empty() => {
                     return SharedCommandExecution::completed(CommandResult::err(
                         "no current client\n",
-                    ))
+                    ));
                 }
                 _ => {}
             }
@@ -1747,13 +1747,13 @@ impl RefreshClient {
         let target_client = match state.resolve_target_client(target, client.tty_name.as_deref()) {
             Ok(target_client) => target_client,
             Err(ClientActionResult::NoCurrentClient) => {
-                return CommandResult::err("no current client\n")
+                return CommandResult::err("no current client\n");
             }
             Err(_) => {
                 return CommandResult::err(format!(
                     "can't find client: {}\n",
                     target.unwrap_or_default()
-                ))
+                ));
             }
         };
 
@@ -1921,7 +1921,7 @@ impl SwitchClient {
                     return CommandResult::err(format!(
                         "can't find client: {}\n",
                         self.client.as_deref().unwrap_or_default()
-                    ))
+                    ));
                 }
             }
         } else {
@@ -1974,20 +1974,19 @@ impl SwitchClient {
         state: &mut ServerState,
         client: &ClientContext,
     ) -> CommandResult {
-        let target = match state
-            .resolve_target_client(self.client.as_deref(), client.tty_name.as_deref())
-        {
-            Ok(target) => target,
-            Err(ClientActionResult::NoCurrentClient) => {
-                return CommandResult::err("no current client\n")
-            }
-            Err(_) => {
-                return CommandResult::err(format!(
-                    "can't find client: {}\n",
-                    self.client.as_deref().unwrap_or_default()
-                ))
-            }
-        };
+        let target =
+            match state.resolve_target_client(self.client.as_deref(), client.tty_name.as_deref()) {
+                Ok(target) => target,
+                Err(ClientActionResult::NoCurrentClient) => {
+                    return CommandResult::err("no current client\n");
+                }
+                Err(_) => {
+                    return CommandResult::err(format!(
+                        "can't find client: {}\n",
+                        self.client.as_deref().unwrap_or_default()
+                    ));
+                }
+            };
         if self.toggle_read_only {
             let _ =
                 state.toggle_client_read_only(self.client.as_deref(), client.tty_name.as_deref());
@@ -2022,9 +2021,7 @@ impl SwitchClient {
                 self.toggle_read_only,
                 |key, left, right| match key {
                     super::ListSortOrder::Index => left.id.cmp(&right.id),
-                    super::ListSortOrder::Creation => {
-                        left.created_epoch.cmp(&right.created_epoch)
-                    }
+                    super::ListSortOrder::Creation => left.created_epoch.cmp(&right.created_epoch),
                     super::ListSortOrder::Activity => {
                         right.activity_micros.cmp(&left.activity_micros)
                     }
@@ -2052,11 +2049,7 @@ impl SwitchClient {
             order_list[next].id
         };
         self.refresh_destination_environment(state, client, session_id);
-        match state.switch_client(
-            Some(&target.name),
-            client.tty_name.as_deref(),
-            session_id,
-        ) {
+        match state.switch_client(Some(&target.name), client.tty_name.as_deref(), session_id) {
             ClientActionResult::Queued => CommandResult::ok(""),
             ClientActionResult::NoCurrentClient => CommandResult::err("no current client\n"),
             ClientActionResult::TargetNotFound => CommandResult::err(format!(
@@ -2225,7 +2218,9 @@ impl DisplayMessage {
             format::expand_time_with_jobs_verbose(
                 message,
                 &vars,
-                loops.as_ref().map(|loops| loops as &dyn format::ScopedLoopSource),
+                loops
+                    .as_ref()
+                    .map(|loops| loops as &dyn format::ScopedLoopSource),
                 command_jobs(st),
                 Some(&ServerFormatTree(st)),
             )
@@ -2234,7 +2229,9 @@ impl DisplayMessage {
                 format::expand_time_with_jobs(
                     message,
                     &vars,
-                    loops.as_ref().map(|loops| loops as &dyn format::ScopedLoopSource),
+                    loops
+                        .as_ref()
+                        .map(|loops| loops as &dyn format::ScopedLoopSource),
                     command_jobs(st),
                     Some(&ServerFormatTree(st)),
                 ),

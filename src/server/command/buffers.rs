@@ -373,8 +373,7 @@ impl ListBuffers {
             Ok(order) => order,
             Err(error) => return error,
         };
-        let mut buffers: Vec<(usize, &(String, Bytes))> =
-            st.buffers().iter().enumerate().collect();
+        let mut buffers: Vec<(usize, &(String, Bytes))> = st.buffers().iter().enumerate().collect();
         apply_list_sort(
             &mut buffers,
             sort_order,
@@ -505,7 +504,12 @@ impl PasteBuffer {
         const PASTE_START: &[u8] = b"\x1b[200~";
         const PASTE_END: &[u8] = b"\x1b[201~";
         let mut bytes = Vec::with_capacity(
-            data.len() + if bracketed { PASTE_START.len() + PASTE_END.len() } else { 0 },
+            data.len()
+                + if bracketed {
+                    PASTE_START.len() + PASTE_END.len()
+                } else {
+                    0
+                },
         );
         if bracketed {
             bytes.extend_from_slice(PASTE_START);

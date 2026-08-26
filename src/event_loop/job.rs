@@ -14,12 +14,12 @@
 use std::rc::Rc;
 
 use crate::integration::status::StatusHub;
+use crate::server::Server;
 use crate::server::command::{
     self, BackgroundCommand, BackgroundCommandRequest, ClientContext, LazyCommand,
     PendingBackground,
 };
 use crate::server::state::SharedState;
-use crate::server::Server;
 use crate::sync::Notify;
 
 use hmux_rt::TaskHandle;

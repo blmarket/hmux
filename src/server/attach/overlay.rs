@@ -54,12 +54,15 @@ impl OverlayAnchor {
         let resolved = pane.and_then(|pane| state.resolve(&format!("%{pane}")));
         let rect = resolved
             .and_then(|resolved| {
-                pane.and_then(|pane| state.window(resolved.session, resolved.window).pane_rect(pane))
+                pane.and_then(|pane| {
+                    state
+                        .window(resolved.session, resolved.window)
+                        .pane_rect(pane)
+                })
             })
             .unwrap_or_default();
-        let window = resolved.map(|resolved| {
-            state.sessions()[resolved.session].windows[resolved.window].index
-        });
+        let window = resolved
+            .map(|resolved| state.sessions()[resolved.session].windows[resolved.window].index);
         Self {
             status_lines: status_height,
             status_top: status::at_top(&state, target),
@@ -80,7 +83,11 @@ impl OverlayAnchor {
     /// client of this size.
     fn vars(&self, cols: u16, rows: u16, width: u16, height: u16) -> format::Vars {
         let mut vars = format::Vars::new();
-        let top = if self.status_top { self.status_lines } else { 0 };
+        let top = if self.status_top {
+            self.status_lines
+        } else {
+            0
+        };
         vars.set("popup_width", width.to_string())
             .set("popup_height", height.to_string());
         let centre_x = i32::from(cols.saturating_sub(1)) / 2 - i32::from(width) / 2;
@@ -119,8 +126,8 @@ impl OverlayAnchor {
             }
         }
         let (ox, oy) = self.offset;
-        let pane_top = i32::from(top) + i32::from(self.pane.top) - i32::from(oy)
-            + i32::from(height);
+        let pane_top =
+            i32::from(top) + i32::from(self.pane.top) - i32::from(oy) + i32::from(height);
         vars.set(
             "popup_pane_top",
             if pane_top >= i32::from(rows) {
@@ -138,7 +145,9 @@ impl OverlayAnchor {
         );
         vars.set(
             "popup_pane_left",
-            (i32::from(self.pane.left) - i32::from(ox)).max(0).to_string(),
+            (i32::from(self.pane.left) - i32::from(ox))
+                .max(0)
+                .to_string(),
         );
         vars.set(
             "popup_pane_right",
@@ -272,33 +281,31 @@ struct PopupOverlay {
 /// the way tmux's `#{?buffer_name,Paste …,}` item is.
 fn popup_menu_items(paste: Option<&str>) -> Vec<super::super::state::MenuItem> {
     let paste = paste.map(|name| (format!("Paste {name}"), "p".to_owned()));
-    [
-        ("Close".to_owned(), "q".to_owned()),
-    ]
-    .into_iter()
-    .chain(paste)
-    .chain(
-    [
-        ("", ""),
-        ("Fill Space", "F"),
-        ("Centre", "C"),
-        ("", ""),
-        ("To Horizontal Pane", "h"),
-        ("To Vertical Pane", "v"),
-    ]
-    .into_iter()
-    .map(|(label, key)| (label.to_owned(), key.to_owned())),
-    )
-    .map(|(label, key)| super::super::state::MenuItem {
-        label,
-        key: key.clone(),
-        command: if key.is_empty() {
-            Vec::new()
-        } else {
-            vec![POPUP_MENU_MARKER.to_owned(), key]
-        },
-    })
-    .collect()
+    [("Close".to_owned(), "q".to_owned())]
+        .into_iter()
+        .chain(paste)
+        .chain(
+            [
+                ("", ""),
+                ("Fill Space", "F"),
+                ("Centre", "C"),
+                ("", ""),
+                ("To Horizontal Pane", "h"),
+                ("To Vertical Pane", "v"),
+            ]
+            .into_iter()
+            .map(|(label, key)| (label.to_owned(), key.to_owned())),
+        )
+        .map(|(label, key)| super::super::state::MenuItem {
+            label,
+            key: key.clone(),
+            command: if key.is_empty() {
+                Vec::new()
+            } else {
+                vec![POPUP_MENU_MARKER.to_owned(), key]
+            },
+        })
+        .collect()
 }
 
 /// The name of the buffer a paste would take, which is tmux's `paste_get_top`
@@ -1362,9 +1369,7 @@ impl DisplayPanesOverlay {
                 // The template was parsed before it reached the overlay, so the
                 // value goes in as it stands rather than in the escaped form a
                 // later parse would need.
-                .map(|word| {
-                    super::super::command::template_replace(word, &pane, false)
-                })
+                .map(|word| super::super::command::template_replace(word, &pane, false))
                 .collect()
         };
         OverlayInputOutcome::close(0, Some(command))
@@ -1496,7 +1501,14 @@ fn draw_overlay_box_with(
     if width < 2 || height < 2 {
         return;
     }
-    let [top_left, top_right, bottom_left, bottom_right, horizontal, vertical] = glyphs;
+    let [
+        top_left,
+        top_right,
+        bottom_left,
+        bottom_right,
+        horizontal,
+        vertical,
+    ] = glyphs;
     if horizontal.is_empty() {
         return;
     }

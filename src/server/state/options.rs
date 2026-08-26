@@ -10,7 +10,7 @@ use std::io;
 use super::target::pane_not_found;
 use super::{CustomizeOption, RenderInvalidation, ServerState};
 use crate::server::options::{
-    is_array_option, option_scope, parse_option_name, GlobalOptions, OptionScope, OptionsView,
+    GlobalOptions, OptionScope, OptionsView, is_array_option, option_scope, parse_option_name,
 };
 use hmux_vt::{set_codepoint_widths, set_variation_selector_always_wide};
 

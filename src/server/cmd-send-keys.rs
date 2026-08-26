@@ -15,10 +15,10 @@ use super::command::args::ParsedArgs;
 use super::command::{ClientContext, CommandResult};
 use super::format;
 use super::input_keys::{PaneKey, PaneKeyEncoding};
-use super::key::{parse_key_name, KeyBase, KeyCode, Modifiers, SpecialKey};
+use super::key::{KeyBase, KeyCode, Modifiers, SpecialKey, parse_key_name};
 use super::options;
 use super::state::{ClientKey, KeyBinding, ServerState};
-use hmux_vt::{encode_key_default_modes, Key, KeyEvent};
+use hmux_vt::{Key, KeyEvent, encode_key_default_modes};
 
 /// `send-keys [-FHKlMRX] [-c target-client] [-N repeat-count] [-t target-pane] [key ...]`.
 #[derive(Clone, Debug)]
@@ -712,7 +712,11 @@ fn route_mode_key(
     }
 }
 
-fn run_mode_bindings(state: &ServerState, target: &str, bindings: Vec<KeyBinding>) -> CommandResult {
+fn run_mode_bindings(
+    state: &ServerState,
+    target: &str,
+    bindings: Vec<KeyBinding>,
+) -> CommandResult {
     let mut output = CommandResult::ok("");
     for binding in bindings {
         let words = binding.command.argv();
@@ -933,7 +937,7 @@ fn current_target(state: &ServerState) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{encode_hex_key, encode_hex_literal, inject_client_string, repeat_count, SendKeys};
+    use super::{SendKeys, encode_hex_key, encode_hex_literal, inject_client_string, repeat_count};
     use crate::integration::status::PaneAgents;
     use crate::server::command::args::ParsedArgs;
     use crate::server::state::ServerState;

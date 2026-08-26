@@ -30,15 +30,15 @@ use libc::pid_t;
 use crate::observability::v1::{PaneObservability, PaneProcess, ScreenSource, ScreenTail};
 use crate::platform::{CurrentPlatform, ForkOutcome, OutputWakeup, Platform};
 use crate::server::input_keys::ExtendedKeys;
-use crate::sync::{join, Notify};
+use crate::sync::{Notify, join};
 use hmux_rt::Interest;
-use hmux_rt::{sleep, AsyncFd, TaskHandle};
+use hmux_rt::{AsyncFd, TaskHandle, sleep};
 use hmux_vt::StringEnd;
 use hmux_vt::{Terminal, TerminalEvent as VtEvent};
 
 use hmux_vt::MouseEvent;
 use hmux_vt::PaneScreen;
-use hmux_vt::{mode, CaptureExtent, Grid, GridDims, RowExtent, ScreenOptions, ScreenSnapshot};
+use hmux_vt::{CaptureExtent, Grid, GridDims, RowExtent, ScreenOptions, ScreenSnapshot, mode};
 pub(crate) use hmux_vt::{
     ClipboardEvent as PaneClipboardEvent, CursorShape as PaneCursorShape,
     OutputPolicy as PaneOutputPolicy, PassthroughPolicy,
@@ -476,8 +476,7 @@ impl PaneOutputPolicyCell {
             let mut palette = self.palette.borrow_mut();
             *palette = policy.palette;
         }
-        *self.control_colours.borrow_mut() =
-            (policy.control_foreground, policy.control_background);
+        *self.control_colours.borrow_mut() = (policy.control_foreground, policy.control_background);
     }
 }
 
@@ -558,9 +557,7 @@ struct ControlOutputJournal {
 impl ControlOutputJournal {
     /// The oldest offset the journal still holds.
     fn start(&self) -> u64 {
-        self.segments
-            .front()
-            .map_or(self.end, |(start, _)| *start)
+        self.segments.front().map_or(self.end, |(start, _)| *start)
     }
 
     /// The oldest offset a reader that asks for history is given. What the
@@ -2469,9 +2466,8 @@ impl PaneIo {
             self.read_buffer.reserve(PANE_READ_SIZE);
             let spare = self.read_buffer.spare_capacity_mut();
             let want = spare.len().min(PANE_READ_SIZE);
-            let read = unsafe {
-                libc::read(self.fd.as_raw_fd(), spare.as_mut_ptr() as *mut c_void, want)
-            };
+            let read =
+                unsafe { libc::read(self.fd.as_raw_fd(), spare.as_mut_ptr() as *mut c_void, want) };
             if read > 0 {
                 let read = read as usize;
                 consumed += read;
@@ -3628,7 +3624,8 @@ mod tests {
     #[test]
     fn pane_cursor_colour_query_uses_the_stored_colour_and_terminator() {
         let observation = inert_observation();
-        let (replies, queries) = observation.observe_output(Bytes::from_static(b"\x1b]12;#00ff00\x07\x1b]12;?\x07"));
+        let (replies, queries) =
+            observation.observe_output(Bytes::from_static(b"\x1b]12;#00ff00\x07\x1b]12;?\x07"));
         assert!(queries.is_empty(), "got forwarded queries: {queries:?}");
         assert_eq!(replies, vec![b"\x1b]12;rgb:0000/ffff/0000\x07".to_vec()]);
     }
@@ -3636,10 +3633,9 @@ mod tests {
     #[test]
     fn pane_colour_queries_answer_from_the_stored_foreground_and_background() {
         let observation = inert_observation();
-        let (replies, queries) = observation
-            .observe_output(Bytes::from_static(
-                b"\x1b]10;#ff0000\x07\x1b]11;#104e8b\x07\x1b]10;?\x07\x1b]11;?\x1b\\",
-            ));
+        let (replies, queries) = observation.observe_output(Bytes::from_static(
+            b"\x1b]10;#ff0000\x07\x1b]11;#104e8b\x07\x1b]10;?\x07\x1b]11;?\x1b\\",
+        ));
         assert!(queries.is_empty(), "got forwarded queries: {queries:?}");
         assert_eq!(
             replies,
@@ -3653,7 +3649,8 @@ mod tests {
     #[test]
     fn an_unset_background_question_still_goes_out_to_the_terminal() {
         let observation = inert_observation();
-        let (replies, queries) = observation.observe_output(Bytes::from_static(b"\x1b]10;?\x07\x1b]11;?\x07"));
+        let (replies, queries) =
+            observation.observe_output(Bytes::from_static(b"\x1b]10;?\x07\x1b]11;?\x07"));
         assert!(replies.is_empty(), "got pane replies: {replies:?}");
         assert_eq!(queries, vec![hmux_vt::BACKGROUND_COLOR_QUERY]);
     }

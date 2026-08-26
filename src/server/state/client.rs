@@ -18,14 +18,14 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 
 use super::{
-    now_epoch, now_micros, ClientAction, ClientActionResult, ClientKey, ClientMessage,
-    ClientMessageResult, MessageLogEntry, OverlayRequest, ServerState, DEFAULT_KEY_TABLE,
+    ClientAction, ClientActionResult, ClientKey, ClientMessage, ClientMessageResult,
+    DEFAULT_KEY_TABLE, MessageLogEntry, OverlayRequest, ServerState, now_epoch, now_micros,
 };
 use crate::platform::{CurrentPlatform, OutputWakeup, Platform};
 use crate::server::options::SessionHook;
 use crate::server::pane::NativePaneObservation;
 use crate::server::term::ResolvedTerm;
-use crate::sync::{completion_pair, Completion, CompletionSender};
+use crate::sync::{Completion, CompletionSender, completion_pair};
 
 /// Client-scoped `command-prompt -k` routing. This is an internal server
 /// capability, deliberately kept out of the public server trait.
@@ -1278,29 +1278,24 @@ impl ClientRenderRegistry {
             if entry.name != target_name {
                 let mut action = entry.slot.action.borrow_mut();
                 *action = Some(ClientAction::Detach {
-                exec: exec.map(str::to_owned),
-                hangup,
-            });
+                    exec: exec.map(str::to_owned),
+                    hangup,
+                });
                 let _ = entry.slot.wakeup.wake();
             }
         }
         ClientActionResult::Queued
     }
 
-    pub(super) fn detach_session_clients(
-        &self,
-        session_id: u32,
-        exec: Option<&str>,
-        hangup: bool,
-    ) {
+    pub(super) fn detach_session_clients(&self, session_id: u32, exec: Option<&str>, hangup: bool) {
         let inner = self.inner.borrow();
         for entry in inner.clients.values() {
             if entry.session_id == session_id {
                 let mut action = entry.slot.action.borrow_mut();
                 *action = Some(ClientAction::Detach {
-                exec: exec.map(str::to_owned),
-                hangup,
-            });
+                    exec: exec.map(str::to_owned),
+                    hangup,
+                });
                 let _ = entry.slot.wakeup.wake();
             }
         }
@@ -2328,12 +2323,7 @@ impl ServerState {
             .detach_all_other_clients(target, invoking_tty, exec, hangup)
     }
 
-    pub(crate) fn detach_session_clients(
-        &self,
-        session_id: u32,
-        exec: Option<&str>,
-        hangup: bool,
-    ) {
+    pub(crate) fn detach_session_clients(&self, session_id: u32, exec: Option<&str>, hangup: bool) {
         self.client_renders
             .detach_session_clients(session_id, exec, hangup);
     }
@@ -2524,7 +2514,6 @@ impl ServerState {
         }
     }
 
-
     /// tmux stamps `c->activity_time` alongside the session's whenever a key
     /// arrives; it is what orders `cmd_find_best_client`.
     pub(crate) fn touch_client_activity(&mut self, client: &str, session_id: u32) {
@@ -2614,5 +2603,4 @@ impl ServerState {
             windows,
         })
     }
-
 }

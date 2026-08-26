@@ -11,7 +11,7 @@ use super::super::state::{
 use super::super::term::TerminalCapabilities;
 use super::super::{command, format, status};
 use super::super::{options, registry};
-use super::{append_view_output, ActiveOverlay};
+use super::{ActiveOverlay, append_view_output};
 
 pub(crate) struct CommandPrompt {
     request: PromptRequest,

@@ -1123,10 +1123,7 @@ fn pi_lifecycle_and_session_are_published() {
                 Some("π - proj"),
                 "⠹ Working...\n────────\nAllow command?\n→ Yes\n  No\n↑↓ navigate  enter select  esc cancel\n────────",
             ),
-            frame(
-                Some("π - proj"),
-                "done\n────────\n \n────────\n/work/proj",
-            ),
+            frame(Some("π - proj"), "done\n────────\n \n────────\n/work/proj"),
         ],
     );
     let server = FakeServer { pane: pane.clone() };

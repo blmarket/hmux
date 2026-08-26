@@ -21,7 +21,7 @@ use std::ffi::{CStr, CString};
 
 use regex::RegexBuilder;
 
-use super::style::{parse_colour, Colour};
+use super::style::{Colour, parse_colour};
 use hmux_vt::codepoint_width;
 
 /// One variable's value: either materialized, or a deferred computation that
@@ -519,7 +519,12 @@ impl FormatContext for BasicContext<'_> {
                     FormatLoopKind::Pane => "pane_active",
                     // tmux's client loop has no active branch: every client
                     // expands the one body it was given.
-                    FormatLoopKind::Client => return FormatLoopItem { vars, active: false },
+                    FormatLoopKind::Client => {
+                        return FormatLoopItem {
+                            vars,
+                            active: false,
+                        };
+                    }
                 };
                 let active = vars.lookup(active_key).is_some_and(is_true);
                 FormatLoopItem { vars, active }
@@ -576,7 +581,9 @@ fn expand_with(template: &str, vars: &Vars, ls: Option<&dyn LoopSource>) -> Stri
         template,
         vars,
         &BasicContext {
-            loops: anchored.as_ref().map(|loops| loops as &dyn ScopedLoopSource),
+            loops: anchored
+                .as_ref()
+                .map(|loops| loops as &dyn ScopedLoopSource),
             jobs: None,
             tree: None,
         },
@@ -989,24 +996,35 @@ impl Expander<'_> {
                     let mut value = self.resolve_body(body, vars, depth);
                     for item in &items {
                         if let Some(ChainModifier::Substitute(step)) = chain_modifier(item) {
-                            value =
-                                substitute(&value, step.pattern, step.replacement, step.flags);
+                            value = substitute(&value, step.pattern, step.replacement, step.flags);
                         }
                     }
-                    let limit = items.iter().rev().find_map(|item| match chain_modifier(item) {
-                        Some(ChainModifier::Limit(limit)) => Some(limit),
-                        _ => None,
-                    });
+                    let limit = items
+                        .iter()
+                        .rev()
+                        .find_map(|item| match chain_modifier(item) {
+                            Some(ChainModifier::Limit(limit)) => Some(limit),
+                            _ => None,
+                        });
                     if let Some(limit) = limit {
-                        let limit = self.expand(limit, vars, depth).parse::<isize>().unwrap_or(0);
+                        let limit = self
+                            .expand(limit, vars, depth)
+                            .parse::<isize>()
+                            .unwrap_or(0);
                         value = truncate(&value, limit, None);
                     }
-                    let width = items.iter().rev().find_map(|item| match chain_modifier(item) {
-                        Some(ChainModifier::Width(width)) => Some(width),
-                        _ => None,
-                    });
+                    let width = items
+                        .iter()
+                        .rev()
+                        .find_map(|item| match chain_modifier(item) {
+                            Some(ChainModifier::Width(width)) => Some(width),
+                            _ => None,
+                        });
                     if let Some(width) = width {
-                        let width = self.expand(width, vars, depth).parse::<isize>().unwrap_or(0);
+                        let width = self
+                            .expand(width, vars, depth)
+                            .parse::<isize>()
+                            .unwrap_or(0);
                         value = pad(&value, width);
                     }
                     return value;

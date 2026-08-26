@@ -129,7 +129,7 @@ mod tests {
     use std::sync::Mutex;
 
     use super::super::ProcessSource;
-    use super::{last_model_in, ModelScan, SCAN_CHUNK};
+    use super::{ModelScan, SCAN_CHUNK, last_model_in};
 
     /// A [`ProcessSource`] serving only file contents, mutable between polls so
     /// tests can append to a "session file".

@@ -25,7 +25,7 @@ pub(crate) mod test_driver {
         PendingBackground, ResumableCommandQueue,
     };
     use crate::server::state::SharedState;
-    use crate::sync::{completion_pair, Completion, WakeFn};
+    use crate::sync::{Completion, WakeFn, completion_pair};
 
     use std::future::Future;
 
@@ -237,7 +237,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, Instant};
 
-    use crate::server::command::{suspend, ClientContext, ClientFileWrite};
+    use crate::server::command::{ClientContext, ClientFileWrite, suspend};
     use hmux_rt::{TaskHandle, TaskRuntime};
 
     const POLL_TIMEOUT: Duration = Duration::from_secs(1);

@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 
 use crate::server::pane::PaneIo;
 
-use crate::sync::{maybe, select, yield_now, Either, Notify};
-use hmux_rt::{sleep_until, AsyncFd, Interest, JoinHandle, Readiness, TaskHandle};
+use crate::sync::{Either, Notify, maybe, select, yield_now};
+use hmux_rt::{AsyncFd, Interest, JoinHandle, Readiness, TaskHandle, sleep_until};
 
 /// tmux's ground timer: how long `input.c` waits for the terminator of a
 /// string sequence before giving up on it and returning the parser to ground,

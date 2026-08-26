@@ -1738,7 +1738,9 @@ fn mode_view_action(view: &mut ModeView, key: &str) -> Option<ModeAction> {
                     index: swap_with,
                 }),
             ) = (
-                view.items.get(view.selected).and_then(|item| item.target.clone()),
+                view.items
+                    .get(view.selected)
+                    .and_then(|item| item.target.clone()),
                 view.items.get(other).and_then(|item| item.target.clone()),
             )
             else {

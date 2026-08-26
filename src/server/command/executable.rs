@@ -420,12 +420,16 @@ mod tests {
         // tmux's `cmd_list_all_have`: one command outside the read-only set
         // takes the whole line with it, and an empty line qualifies.
         assert!(compile("detach-client").expect("compiles").all_read_only());
-        assert!(compile("list-clients ; copy-mode")
-            .expect("compiles")
-            .all_read_only());
-        assert!(!compile("detach-client ; kill-window")
-            .expect("compiles")
-            .all_read_only());
+        assert!(
+            compile("list-clients ; copy-mode")
+                .expect("compiles")
+                .all_read_only()
+        );
+        assert!(
+            !compile("detach-client ; kill-window")
+                .expect("compiles")
+                .all_read_only()
+        );
         assert!(!compile("new-window").expect("compiles").all_read_only());
         assert!(compile("").expect("compiles").all_read_only());
     }
@@ -531,7 +535,10 @@ mod tests {
         let compiled = compile("neww -d ; lsw ; kill-pane").expect("compiles");
         let members = compiled.clone().split();
         assert_eq!(
-            members.iter().map(ExecutableCommand::print).collect::<Vec<_>>(),
+            members
+                .iter()
+                .map(ExecutableCommand::print)
+                .collect::<Vec<_>>(),
             ["new-window -d", "list-windows", "kill-pane"]
         );
         let mut rejoined = ExecutableCommand::compile("", &[]).expect("empty compiles");

@@ -265,8 +265,7 @@ fn apply_hook(
                 .set_hook(hook, index, append, body)
         }
         (options::AnyHook::Pane(hook), OptionTarget::Pane(target), None) => {
-            st.window_mut(target.session, target.window).panes[target.pane]
-                .unset_hook(hook, index)
+            st.window_mut(target.session, target.window).panes[target.pane].unset_hook(hook, index)
         }
         (hook, target, body) => {
             let store = target.local_mut(st);
@@ -580,10 +579,10 @@ impl SetOption {
                 match parse_option_number(&value) {
                     Err(()) => return CommandResult::err(format!("value is invalid: {value}\n")),
                     Ok(number) if number < min => {
-                        return CommandResult::err(format!("value is too small: {value}\n"))
+                        return CommandResult::err(format!("value is too small: {value}\n"));
                     }
                     Ok(number) if number > max => {
-                        return CommandResult::err(format!("value is too large: {value}\n"))
+                        return CommandResult::err(format!("value is too large: {value}\n"));
                     }
                     Ok(_) => {}
                 }
@@ -1145,10 +1144,10 @@ impl ShowHooks {
             let resolved = match resolve_hook_name(base) {
                 OptionArgumentResult::Resolved(resolved, _) => resolved.to_owned(),
                 OptionArgumentResult::Ambiguous => {
-                    return CommandResult::err(format!("ambiguous option: {hook}\n"))
+                    return CommandResult::err(format!("ambiguous option: {hook}\n"));
                 }
                 OptionArgumentResult::Invalid => {
-                    return CommandResult::err(format!("invalid option: {hook}\n"))
+                    return CommandResult::err(format!("invalid option: {hook}\n"));
                 }
             };
             let hook = match index {
@@ -1348,7 +1347,7 @@ impl ShowEnvironment {
                     return match self.target.as_deref() {
                         Some(target) => CommandResult::err(format!("no such session: {target}\n")),
                         None => CommandResult::err("no current session\n"),
-                    }
+                    };
                 }
             };
             return match requested {

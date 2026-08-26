@@ -1029,11 +1029,7 @@ fn split_axis_sized(size: u16, new_size: Option<u16>, before: bool) -> (u16, u16
     };
     let new = new.clamp(1, size.saturating_sub(2).max(1));
     let old = size.saturating_sub(new).saturating_sub(1).max(1);
-    if before {
-        (new, old)
-    } else {
-        (old, new)
-    }
+    if before { (new, old) } else { (old, new) }
 }
 
 /// The layout as a `select-layout`-consumable custom string: the dump body

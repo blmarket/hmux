@@ -8,9 +8,9 @@ use std::io;
 use std::path::PathBuf;
 
 use super::target::pane_not_found;
-use super::{KeyBinding, ServerState, DEFAULT_KEY_TABLE};
+use super::{DEFAULT_KEY_TABLE, KeyBinding, ServerState};
 use crate::server::command::ExecutableCommand;
-use crate::server::key::{parse_key_name, KeyCode};
+use crate::server::key::{KeyCode, parse_key_name};
 use crate::server::options::OptionsView;
 
 impl ServerState {
@@ -728,7 +728,10 @@ impl ServerState {
         for &(table, name, command) in DEFAULTS {
             let key =
                 parse_key_name(name).unwrap_or_else(|| panic!("invalid default key name: {name}"));
-            let command = command.iter().map(|word| (*word).to_string()).collect::<Vec<_>>();
+            let command = command
+                .iter()
+                .map(|word| (*word).to_string())
+                .collect::<Vec<_>>();
             self.bind_key(table, key, default_binding(&command), false, None);
         }
         // `MouseDown3Pane` is the one mouse default whose branch is itself a
@@ -755,7 +758,13 @@ impl ServerState {
                 "select-pane -t = ; send-keys -M".to_string(),
                 menu,
             ];
-            self.bind_key(DEFAULT_KEY_TABLE, key, default_binding(&command), false, None);
+            self.bind_key(
+                DEFAULT_KEY_TABLE,
+                key,
+                default_binding(&command),
+                false,
+                None,
+            );
         }
         for &(name, command) in ROOT_MOUSE_DEFAULTS {
             let key = parse_key_name(name)
@@ -765,7 +774,13 @@ impl ServerState {
                 .replace("{WINDOW_MENU}", DEFAULT_WINDOW_MENU)
                 .replace("{SESSION_MENU}", DEFAULT_SESSION_MENU);
             let command = crate::server::command::binding_words(&command);
-            self.bind_key(DEFAULT_KEY_TABLE, key, default_binding(&command), false, None);
+            self.bind_key(
+                DEFAULT_KEY_TABLE,
+                key,
+                default_binding(&command),
+                false,
+                None,
+            );
         }
         for index in 0..=9 {
             let key = parse_key_name(&index.to_string()).expect("digit key");

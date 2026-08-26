@@ -8,7 +8,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-use super::{is_braille, is_uuid, AgentDetector, AgentState, Detection, SessionIdSource};
+use super::{AgentDetector, AgentState, Detection, SessionIdSource, is_braille, is_uuid};
 
 /// Recognizes Pi coding-agent panes.
 pub(crate) struct PiDetector;
@@ -203,8 +203,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        detect, pi_headless_invocation, pi_program_name, pi_runtime_script, project_slug,
-        session_dir, session_id_from_file_name, AgentState, Detection,
+        AgentState, Detection, detect, pi_headless_invocation, pi_program_name, pi_runtime_script,
+        project_slug, session_dir, session_id_from_file_name,
     };
 
     #[test]

@@ -17,8 +17,8 @@ use std::time::Instant;
 use crate::server::attach::ClientTty;
 use crate::server::command::ClientContext;
 use crate::server::control::{ControlServing, EventControlClient, StartedControlCommand};
-use crate::sync::{maybe, race, select, yield_now, Either};
-use hmux_rt::{sleep_until, AsyncFd, Interest};
+use crate::sync::{Either, maybe, race, select, yield_now};
+use hmux_rt::{AsyncFd, Interest, sleep_until};
 
 use super::wire::Wire;
 use super::{ClientRuntime, ProtocolCloseReason};
@@ -282,7 +282,7 @@ async fn wait(
             Either::Second(Either::First(Either::First(()))) => return Ok(Ready::Output),
             Either::Second(Either::First(Either::Second(_))) => return Ok(Ready::State),
             Either::Second(Either::Second(Either::First((pane_id, _)))) => {
-                return Ok(Ready::Pane(pane_id))
+                return Ok(Ready::Pane(pane_id));
             }
             // The socket taking more is not the engine's business; it only
             // means the frames it has queued can move, including the ones held

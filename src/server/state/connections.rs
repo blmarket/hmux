@@ -123,7 +123,11 @@ impl ConnectionHandle {
 
 impl Drop for ConnectionHandle {
     fn drop(&mut self) {
-        self.registry.inner.borrow_mut().connections.remove(&self.id);
+        self.registry
+            .inner
+            .borrow_mut()
+            .connections
+            .remove(&self.id);
     }
 }
 
@@ -162,7 +166,10 @@ mod tests {
                 std::pin::pin!(yield_now()),
             )
             .await;
-            (evicted, matches!(bystander_ready, crate::sync::Either::Second(())))
+            (
+                evicted,
+                matches!(bystander_ready, crate::sync::Either::Second(())),
+            )
         });
         assert_eq!(observed.0, "access not allowed");
         assert!(observed.1, "a bystander's connection stayed parked");
