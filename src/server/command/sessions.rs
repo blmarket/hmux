@@ -508,10 +508,15 @@ impl RenameSession {
     fn execute(self, st: &mut ServerState) -> CommandResult {
         let from = self.target.or_else(|| current_target(st));
         match (from, self.new_name) {
-            (Some(from), Some(to)) => match st.rename_session(&from, &to) {
-                Ok(()) => CommandResult::ok(""),
-                Err(error) => CommandResult::err(format!("{error}\n")),
-            },
+            (Some(from), Some(to)) => {
+                if to.is_empty() || to.chars().any(|c| c.is_ascii_control()) {
+                    return CommandResult::err(format!("invalid session name: {to}\n"));
+                }
+                match st.rename_session(&from, &to) {
+                    Ok(()) => CommandResult::ok(""),
+                    Err(error) => CommandResult::err(format!("{error}\n")),
+                }
+            }
             (None, _) => CommandResult::err("no current target\n"),
             (_, None) => {
                 CommandResult::err("command rename-session: too few arguments (need at least 1)\n")

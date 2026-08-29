@@ -434,6 +434,9 @@ impl RenameWindow {
                     ),
                     None,
                 );
+                if expanded.is_empty() || expanded.chars().any(|c| c.is_ascii_control()) {
+                    return CommandResult::err(format!("invalid window name: {expanded}\n"));
+                }
                 match st.rename_window(&target, &expanded) {
                     Ok(()) => CommandResult::ok(""),
                     Err(error) => CommandResult::err(format!("{error}\n")),
