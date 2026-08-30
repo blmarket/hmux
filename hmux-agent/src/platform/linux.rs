@@ -11,10 +11,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use super::{ForkOutcome, OutputWakeup, Platform, ProcessInfo};
 
 /// The Linux platform implementation selected by the native server.
-pub(crate) struct Linux;
+pub struct Linux;
 
 /// A non-blocking `eventfd` used as a coalescing readiness notification.
-pub(crate) struct EventFd(OwnedFd);
+pub struct EventFd(OwnedFd);
 
 impl AsFd for EventFd {
     fn as_fd(&self) -> BorrowedFd<'_> {

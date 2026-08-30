@@ -147,12 +147,22 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "clap",
+ "hmux-agent",
  "hmux-rt",
  "hmux-vt",
  "libc",
  "regex",
  "terminfo",
  "thiserror",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "hmux-agent"
+version = "0.1.0"
+dependencies = [
+ "libc",
  "tracing",
  "tracing-subscriber",
 ]

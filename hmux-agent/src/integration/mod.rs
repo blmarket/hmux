@@ -304,7 +304,7 @@ impl AgentObserver {
     }
 
     /// Classify every observable pane once.
-    pub fn tick<O: ServerObservability>(&mut self, observability: &O) {
+    pub fn tick(&mut self, observability: &dyn ServerObservability) {
         poll(
             observability,
             &self.detectors,
@@ -415,8 +415,8 @@ struct SessionCandidate {
     correlated_polls: u32,
 }
 
-fn poll<O: ServerObservability>(
-    observability: &O,
+fn poll(
+    observability: &dyn ServerObservability,
     detectors: &[Box<dyn AgentDetector>],
     source: &dyn ProcessSource,
     hub: Option<&StatusHub>,

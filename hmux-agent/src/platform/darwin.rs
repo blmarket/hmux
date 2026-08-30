@@ -11,13 +11,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use super::{ForkOutcome, OutputWakeup, Platform, ProcessInfo};
 
 /// The macOS platform implementation selected by the native server.
-pub(crate) struct Darwin;
+pub struct Darwin;
 
 /// A non-blocking self-pipe used as a coalescing readiness notification.
 ///
 /// macOS has no `eventfd`, so the readable end stands in for it: any pending
 /// byte makes it readable, and draining every byte clears the notification.
-pub(crate) struct SelfPipe {
+pub struct SelfPipe {
     read: OwnedFd,
     write: OwnedFd,
 }

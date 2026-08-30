@@ -1,5 +1,5 @@
 [workspace]
-members = ["hmux-rt", "hmux-vt"]
+members = ["hmux-agent", "hmux-rt", "hmux-vt"]
 
 # A future that parks cx.waker() instead of cx.local_waker() hangs silently on
 # this runtime (see hmux-rt/README.md), and no type can express the
@@ -32,6 +32,7 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
+hmux-agent = { path = "hmux-agent" }
 hmux-rt = { path = "hmux-rt" }
 hmux-vt = { path = "hmux-vt" }
 bytes = "1"

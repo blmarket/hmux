@@ -1,17 +1,17 @@
-//! Private boundary for operations whose implementation differs by operating
+//! The boundary for operations whose implementation differs by operating
 //! system.
 
 #[cfg(target_os = "linux")]
 mod linux;
 
 #[cfg(target_os = "linux")]
-pub(crate) use linux::Linux as CurrentPlatform;
+pub use linux::Linux as CurrentPlatform;
 
 #[cfg(target_os = "macos")]
 mod darwin;
 
 #[cfg(target_os = "macos")]
-pub(crate) use darwin::Darwin as CurrentPlatform;
+pub use darwin::Darwin as CurrentPlatform;
 
 use std::ffi::OsString;
 use std::io;
@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 /// A coalescing, pollable indication that a pane's output state changed.
-pub(crate) trait OutputWakeup: AsFd + Send + Sync {
+pub trait OutputWakeup: AsFd + Send + Sync {
     /// Make the wakeup descriptor readable.
     ///
     /// Repeated calls may be coalesced into a single pending wakeup.
@@ -31,7 +31,7 @@ pub(crate) trait OutputWakeup: AsFd + Send + Sync {
 }
 
 /// The result of creating a pseudoterminal and forking the process.
-pub(crate) enum ForkOutcome {
+pub enum ForkOutcome {
     /// The parent retains the PTY master and tracks the new child.
     Parent { pid: libc::pid_t, master: OwnedFd },
     /// The child has the PTY slave connected to standard input, output, and
@@ -41,13 +41,13 @@ pub(crate) enum ForkOutcome {
 
 /// One process table record visible to the current platform.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ProcessInfo {
-    pub(crate) pid: u32,
-    pub(crate) ppid: u32,
+pub struct ProcessInfo {
+    pub pid: u32,
+    pub ppid: u32,
 }
 
 /// Compile-time contract implemented by each supported operating system.
-pub(crate) trait Platform {
+pub trait Platform {
     /// The platform's pollable pane-output wakeup primitive.
     type OutputWakeup: OutputWakeup;
 

@@ -75,20 +75,20 @@ struct StatusEvent {
 /// A coalescing, pollable notification for agent-status revision changes.
 /// Each attached client owns one so draining cannot consume another client's
 /// wakeup.
-pub(crate) struct StatusSubscription {
+pub struct StatusSubscription {
     event: Rc<StatusEvent>,
 }
 
 impl StatusSubscription {
-    pub(crate) fn as_fd(&self) -> BorrowedFd<'_> {
+    pub fn as_fd(&self) -> BorrowedFd<'_> {
         self.event.wakeup.as_fd()
     }
 
-    pub(crate) fn as_raw_fd(&self) -> RawFd {
+    pub fn as_raw_fd(&self) -> RawFd {
         self.as_fd().as_raw_fd()
     }
 
-    pub(crate) fn drain(&self) {
+    pub fn drain(&self) {
         let _ = self.event.wakeup.clear();
     }
 }
@@ -139,7 +139,7 @@ impl StatusHub {
     /// Subscribe to revision changes with a pollable, initially signalled
     /// descriptor. Initial readiness closes the race between registration and
     /// the subscriber's first snapshot.
-    pub(crate) fn subscribe(&self) -> io::Result<StatusSubscription> {
+    pub fn subscribe(&self) -> io::Result<StatusSubscription> {
         let event = Rc::new(StatusEvent {
             wakeup: CurrentPlatform::new_output_wakeup()?,
         });
