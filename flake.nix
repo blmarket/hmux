@@ -6,7 +6,11 @@
   inputs.rust-overlay.url = "github:oxalica/rust-overlay";
   inputs.rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
 
-  outputs = { self, nixpkgs, rust-overlay, ... }:
+  # A dev shell only. The shipped `hmux`, `agentmon` and `looper` come from the
+  # tmux-c2rs flake, which is what the public repository publishes; this tree
+  # borrows hmux-agent and hmux-rt from there by path, so it cannot build
+  # itself from its own flake root.
+  outputs = { nixpkgs, rust-overlay, ... }:
     let
       supportedSystems = [
         "aarch64-darwin"
@@ -19,7 +23,6 @@
         overlays = [ rust-overlay.overlays.default ];
       };
       tmux37bFor = pkgs: pkgs.callPackage ./nix/tmux.nix { };
-      agentmonFor = pkgs: pkgs.callPackage ./agentmon-tui/package.nix { };
       # The default profile already carries cargo, rustfmt, and clippy.
       rustNightlyFor = pkgs: pkgs.rust-bin.nightly.latest.default.override {
         extensions = [ "rust-src" ];
@@ -29,44 +32,15 @@
       packages = forAllSystems (system:
         let
           pkgs = pkgsFor system;
-          tmux37b = tmux37bFor pkgs;
-          agentmon = agentmonFor pkgs;
-          rustNightly = rustNightlyFor pkgs;
-          # Build hmux with the same nightly toolchain the dev shell uses.
-          rustPlatform = pkgs.makeRustPlatform {
-            cargo = rustNightly;
-            rustc = rustNightly;
-          };
-          hmux = rustPlatform.buildRustPackage {
-            pname = "hmux";
-            version = "0.1.0";
-            src = ./.;
-
-            cargoLock.lockFile = ./Cargo.lock;
-            buildInputs = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
-              pkgs.apple-sdk
-            ];
-          };
         in
         {
-          inherit agentmon hmux;
-          tmux = tmux37b;
-          default = hmux;
+          tmux = tmux37bFor pkgs;
         });
-
-      apps = forAllSystems (system: {
-        agentmon = {
-          type = "app";
-          program = "${self.packages.${system}.agentmon}/bin/agentmon";
-          meta.description = "Create and monitor coding-agent runs through hmux";
-        };
-      });
 
       devShells = forAllSystems (system:
         let
           pkgs = pkgsFor system;
           tmux37b = tmux37bFor pkgs;
-          agentmon = agentmonFor pkgs;
           rustNightly = rustNightlyFor pkgs;
         in
         {
@@ -75,7 +49,6 @@
               tmux37b
               rustNightly
               pkgs.cargo-nextest
-              agentmon # the `agentmon` dashboard and the `looper` loop runner
             ];
 
             RUST_SRC_PATH = "${rustNightly}/lib/rustlib/src/rust/library";

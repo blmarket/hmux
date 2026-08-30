@@ -1,8 +1,8 @@
 [workspace]
-members = ["hmux-agent", "hmux-rt", "hmux-vt"]
+members = ["hmux-vt"]
 
 # A future that parks cx.waker() instead of cx.local_waker() hangs silently on
-# this runtime (see hmux-rt/README.md), and no type can express the
+# this runtime (see the hmux-rt crate's README.md), and no type can express the
 # difference — this lint is the compile-time enforcement.
 #
 # The server state is an `Rc<RefCell<_>>` and the command queue is a task, so a
@@ -32,8 +32,8 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
-hmux-agent = { path = "hmux-agent" }
-hmux-rt = { path = "hmux-rt" }
+hmux-agent = { path = "../tmux-c2rs/hmux-agent" }
+hmux-rt = { path = "../tmux-c2rs/hmux-rt" }
 hmux-vt = { path = "hmux-vt" }
 bytes = "1"
 libc = "0.2"
