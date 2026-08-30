@@ -56,6 +56,9 @@ PRESETS = {
     "agy": Preset(
         agent="agy", model="gemini-3.7-flash", effort="high", provider="antigravity"
     ),
+    "claude": Preset(
+        agent="claude", model="claude-opus-5", effort="default", provider="claude"
+    ),
 }
 DEFAULT_PRESET = "codex"
 
