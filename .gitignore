@@ -1,3 +1,6 @@
-result
-target/
+/.build/
+/tools/
+/target/
 __pycache__/
+/result
+/target-cov/

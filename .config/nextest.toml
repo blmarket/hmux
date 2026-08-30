@@ -1,0 +1,44 @@
+# `make leak` runs this suite under LeakSanitizer, where a test that loses an
+# allocation fails on its own rather than being averaged into one report at
+# the end of the run. Every test gets its own process, which is also what
+# makes the suite safe to run in parallel at all: it reaches into the server's
+# process-wide state under a mutex, and one process per test removes the
+# sharing rather than serialising it.
+[profile.leak]
+# The tests below already lost allocations before the leak gate existed, and
+# they are excluded so that the gate answers the question that matters: has
+# anything *new* started leaking. They are a backlog, not an allowance —
+# take one off this list as it is fixed, and never add to it to make a run
+# go green. All of them are in-module unit tests. One `tests::test_coverage_*`
+# test is not on the list and does lose an allocation --
+# `test_coverage_cmd_display_message::input_on_a_session_less_client_starts_the_read_and_waits`,
+# which unwinds a pending read by hand rather than the way the server does,
+# so the input data the read's own callback frees is left behind. The rest of
+# that body is leak-clean and stays that way.
+default-filter = '''
+not (
+    test(=colour::tests::an_empty_pane_colours_option_leaves_no_default_table)
+    + test(=colour::tests::pane_colours_fill_the_default_table_by_index)
+    + test(=compat::recallocarray::tests::zero_sized_old_block_takes_the_reallocation_path)
+    + test(=grid::tests::an_emptied_line_keeps_no_cells_unless_the_background_is_set)
+    + test(=grid::tests::grids_compare_by_size_and_by_every_cell_of_the_screen)
+    + test(=layout_custom::tests::a_dump_that_does_not_fit_answers_nothing)
+    + test(=layout::tests::a_cell_can_be_turned_into_a_node_and_back_into_a_leaf)
+    + test(=names::tests::checking_an_unchanged_active_pane_does_nothing)
+    + test(=names::tests::checking_a_window_with_automatic_rename_off_does_nothing)
+    + test(=notify::tests::a_hook_is_named_in_the_log_when_the_log_is_on)
+    + test(=notify::tests::a_hook_the_session_does_not_carry_is_looked_for_on_the_pane)
+    + test(=notify::tests::an_empty_user_option_parses_to_a_command_list_with_nothing_in_it)
+    + test(=notify::tests::a_session_hook_inserts_one_item_per_command_in_it)
+    + test(=notify::tests::a_target_that_is_not_valid_any_more_is_found_from_nothing)
+    + test(=notify::tests::a_target_with_no_pane_looks_for_the_hook_on_the_window)
+    + test(=notify::tests::a_user_option_is_parsed_as_a_command_line_of_its_own)
+    + test(=options::tests::a_change_is_pushed_out_to_the_windows_panes_and_clients_it_reaches)
+    + test(=paste::tests::setting_a_buffer_reports_what_is_wrong_with_the_name)
+    + test(=resize::tests::a_zoomed_window_is_unzoomed_and_zoomed_again_around_the_resize)
+    + test(=tty_features::tests::a_capability_ending_in_an_at_sign_takes_the_capability_away)
+    + test(=tty_features::tests::a_feature_carrying_terminal_flags_hands_them_to_the_terminal)
+    + test(=tty_features::tests::a_feature_the_terminal_already_has_is_not_applied_again)
+    + test(=tty_features::tests::applying_a_feature_adds_its_capabilities_and_flags)
+)
+'''

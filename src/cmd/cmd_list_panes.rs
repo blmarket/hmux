@@ -1,0 +1,356 @@
+//! `list-panes`: the panes of one window, of a whole session under `-s`, or of
+//! every session in the server under `-a`, one line each through the format
+//! engine.
+//!
+//! The three walks nest: `-a` hands every session to the session walk, which
+//! hands every window of it to the window walk, which is the only one that
+//! prints. Which walk called decides the built-in template a line takes when
+//! `-F` gives none — pane alone, window and pane, or session, window and pane
+//! — and that is the whole of the [`Level`] the walks pass down. `-O` picks
+//! the order the panes come in and `-r` reverses it, `-f` filters lines by a
+//! format that has to expand to something true, and a `-O` value the sort
+//! module does not know is the command's one error.
+//!
+//! Quirks kept. The sort order is read twice from the same `-O`: once in exec,
+//! only to refuse an unknown one, and again in the window walk that actually
+//! sorts with it. And `line` is the *number* of panes the window holds, not
+//! the index of the pane being printed, so every line of one window carries
+//! the same value.
+//!
+//! The transpiled `switch (type)` had a fourth, empty arm that would have left
+//! the template null; the three walks pass one of exactly three values, which
+//! [`Level`] now says outright, so that arm is gone with the conversion.
+//!
+//! Coverage exemptions: none. The message-protocol, enumeration and sorting
+//! constants below are not this module's own, but
+//! `test_coverage_cmd_list_panes` reads and pins them through it, so they stay
+//! where the transpiler put them.
+use crate::arguments::{args_get, args_has};
+use crate::cmd::cmd_get_args;
+use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_print};
+use crate::fmt_args;
+use crate::format::{format_add, format_create, format_defaults, format_expand, format_true};
+use crate::session::{sessions_after, sessions_first};
+use crate::sort::{sort_get_panes_window, sort_order_from_string};
+pub use crate::types::*;
+use crate::window::{winlinks_after, winlinks_first};
+use ::core::ffi::{CStr, c_char};
+use ::core::ptr::null_mut;
+pub const MSG_READ_CANCEL: msgtype = 307;
+pub const MSG_WRITE_CLOSE: msgtype = 306;
+pub const MSG_WRITE_READY: msgtype = 305;
+pub const MSG_WRITE: msgtype = 304;
+pub const MSG_WRITE_OPEN: msgtype = 303;
+pub const MSG_READ_DONE: msgtype = 302;
+pub const MSG_READ: msgtype = 301;
+pub const MSG_READ_OPEN: msgtype = 300;
+pub const MSG_FLAGS: msgtype = 218;
+pub const MSG_EXEC: msgtype = 217;
+pub const MSG_WAKEUP: msgtype = 216;
+pub const MSG_UNLOCK: msgtype = 215;
+pub const MSG_SUSPEND: msgtype = 214;
+pub const MSG_OLDSTDOUT: msgtype = 213;
+pub const MSG_OLDSTDIN: msgtype = 212;
+pub const MSG_OLDSTDERR: msgtype = 211;
+pub const MSG_SHUTDOWN: msgtype = 210;
+pub const MSG_SHELL: msgtype = 209;
+pub const MSG_RESIZE: msgtype = 208;
+pub const MSG_READY: msgtype = 207;
+pub const MSG_LOCK: msgtype = 206;
+pub const MSG_EXITING: msgtype = 205;
+pub const MSG_EXITED: msgtype = 204;
+pub const MSG_EXIT: msgtype = 203;
+pub const MSG_DETACHKILL: msgtype = 202;
+pub const MSG_DETACH: msgtype = 201;
+pub const MSG_COMMAND: msgtype = 200;
+pub const MSG_IDENTIFY_TERMINFO: msgtype = 112;
+pub const MSG_IDENTIFY_LONGFLAGS: msgtype = 111;
+pub const MSG_IDENTIFY_STDOUT: msgtype = 110;
+pub const MSG_IDENTIFY_FEATURES: msgtype = 109;
+pub const MSG_IDENTIFY_CWD: msgtype = 108;
+pub const MSG_IDENTIFY_CLIENTPID: msgtype = 107;
+pub const MSG_IDENTIFY_DONE: msgtype = 106;
+pub const MSG_IDENTIFY_ENVIRON: msgtype = 105;
+pub const MSG_IDENTIFY_STDIN: msgtype = 104;
+pub const MSG_IDENTIFY_OLDCWD: msgtype = 103;
+pub const MSG_IDENTIFY_TTYNAME: msgtype = 102;
+pub const MSG_IDENTIFY_TERM: msgtype = 101;
+pub const MSG_IDENTIFY_FLAGS: msgtype = 100;
+pub const MSG_VERSION: msgtype = 12;
+pub const PANE_LINES_SPACES: pane_lines = 5;
+pub const PANE_LINES_NUMBER: pane_lines = 4;
+pub const PANE_LINES_SIMPLE: pane_lines = 3;
+pub const PANE_LINES_HEAVY: pane_lines = 2;
+pub const PANE_LINES_DOUBLE: pane_lines = 1;
+pub const PANE_LINES_SINGLE: pane_lines = 0;
+pub const PROGRESS_BAR_PAUSED: progress_bar_state = 4;
+pub const PROGRESS_BAR_INDETERMINATE: progress_bar_state = 3;
+pub const PROGRESS_BAR_ERROR: progress_bar_state = 2;
+pub const PROGRESS_BAR_NORMAL: progress_bar_state = 1;
+pub const PROGRESS_BAR_HIDDEN: progress_bar_state = 0;
+pub const SCREEN_CURSOR_BAR: screen_cursor_style = 3;
+pub const SCREEN_CURSOR_UNDERLINE: screen_cursor_style = 2;
+pub const SCREEN_CURSOR_BLOCK: screen_cursor_style = 1;
+pub const SCREEN_CURSOR_DEFAULT: screen_cursor_style = 0;
+pub const STYLE_DEFAULT_SET: style_default_type = 3;
+pub const STYLE_DEFAULT_POP: style_default_type = 2;
+pub const STYLE_DEFAULT_PUSH: style_default_type = 1;
+pub const STYLE_DEFAULT_BASE: style_default_type = 0;
+pub const STYLE_RANGE_CONTROL: style_range_type = 7;
+pub const STYLE_RANGE_USER: style_range_type = 6;
+pub const STYLE_RANGE_SESSION: style_range_type = 5;
+pub const STYLE_RANGE_WINDOW: style_range_type = 4;
+pub const STYLE_RANGE_PANE: style_range_type = 3;
+pub const STYLE_RANGE_RIGHT: style_range_type = 2;
+pub const STYLE_RANGE_LEFT: style_range_type = 1;
+pub const STYLE_RANGE_NONE: style_range_type = 0;
+pub const STYLE_LIST_RIGHT_MARKER: style_list = 4;
+pub const STYLE_LIST_LEFT_MARKER: style_list = 3;
+pub const STYLE_LIST_FOCUS: style_list = 2;
+pub const STYLE_LIST_ON: style_list = 1;
+pub const STYLE_LIST_OFF: style_list = 0;
+pub const STYLE_ALIGN_ABSOLUTE_CENTRE: style_align = 4;
+pub const STYLE_ALIGN_RIGHT: style_align = 3;
+pub const STYLE_ALIGN_CENTRE: style_align = 2;
+pub const STYLE_ALIGN_LEFT: style_align = 1;
+pub const STYLE_ALIGN_DEFAULT: style_align = 0;
+pub const THEME_DARK: client_theme = 2;
+pub const THEME_LIGHT: client_theme = 1;
+pub const THEME_UNKNOWN: client_theme = 0;
+pub const LAYOUT_WINDOWPANE: layout_type = 2;
+pub const LAYOUT_TOPBOTTOM: layout_type = 1;
+pub const LAYOUT_LEFTRIGHT: layout_type = 0;
+pub const PROMPT_TYPE_INVALID: prompt_type = 255;
+pub const PROMPT_TYPE_WINDOW_TARGET: prompt_type = 3;
+pub const PROMPT_TYPE_TARGET: prompt_type = 2;
+pub const PROMPT_TYPE_SEARCH: prompt_type = 1;
+pub const PROMPT_TYPE_COMMAND: prompt_type = 0;
+pub const PROMPT_COMMAND: client_prompt_mode = 1;
+pub const PROMPT_ENTRY: client_prompt_mode = 0;
+pub const CLIENT_EXIT_DETACH: client_exit_type = 2;
+pub const CLIENT_EXIT_SHUTDOWN: client_exit_type = 1;
+pub const CLIENT_EXIT_RETURN: client_exit_type = 0;
+pub const ARGS_PARSE_COMMANDS: args_parse_type = 3;
+pub const ARGS_PARSE_COMMANDS_OR_STRING: args_parse_type = 2;
+pub const ARGS_PARSE_STRING: args_parse_type = 1;
+pub const ARGS_PARSE_INVALID: args_parse_type = 0;
+pub const CMD_FIND_SESSION: cmd_find_type = 2;
+pub const CMD_FIND_WINDOW: cmd_find_type = 1;
+pub const CMD_FIND_PANE: cmd_find_type = 0;
+pub const CMD_RETURN_STOP: cmd_retval = 2;
+pub const CMD_RETURN_WAIT: cmd_retval = 1;
+pub const CMD_RETURN_NORMAL: cmd_retval = 0;
+pub const CMD_RETURN_ERROR: cmd_retval = -1;
+pub const SORT_END: sort_order = 8;
+pub const SORT_Z: sort_order = 7;
+pub const SORT_SIZE: sort_order = 6;
+pub const SORT_ORDER: sort_order = 5;
+pub const SORT_NAME: sort_order = 4;
+pub const SORT_MODIFIER: sort_order = 3;
+pub const SORT_INDEX: sort_order = 2;
+pub const SORT_CREATION: sort_order = 1;
+pub const SORT_ACTIVITY: sort_order = 0;
+pub const RB_NEGINF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
+pub const CMD_AFTERHOOK: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
+pub const FORMAT_NONE: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+pub(crate) static cmd_list_panes_entry: cmd_entry = cmd_entry {
+    name: c"list-panes",
+    alias: Some(c"lsp"),
+    args: args_parse_t {
+        template: c"aF:f:O:rst:",
+        lower: 0,
+        upper: 0,
+        cb: None,
+    },
+    usage: c"[-asr] [-F format] [-f filter] [-O order][-t target-window]",
+    source: cmd_entry_flag {
+        flag: 0,
+        type_0: CMD_FIND_PANE,
+        flags: 0,
+    },
+    target: cmd_entry_flag {
+        flag: b't' as c_char,
+        type_0: CMD_FIND_WINDOW,
+        flags: 0,
+    },
+    flags: CMD_AFTERHOOK,
+    exec: cmd_list_panes_exec,
+};
+
+/// Which of the three walks is printing, which is all a line needs to know to
+/// pick its built-in template.
+///
+/// The C carried this as a plain `int` and switched on it with no default arm,
+/// so a value beyond these three would have left the template null and handed
+/// that null to `format_expand`. Only [`cmd_list_panes_exec`],
+/// [`cmd_list_panes_server`] and [`cmd_list_panes_session`] ever say which
+/// walk is running, and between them they name exactly these three, which is
+/// why the empty arm the transpiler wrote out is not here.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Level {
+    /// One window's panes, named by pane index alone.
+    Window,
+    /// A session's windows, so a pane needs its window's index too.
+    Session,
+    /// Every session, so a pane needs its session's name as well.
+    Server,
+}
+
+impl Level {
+    /// The template a line takes when `-F` gives none.
+    fn template(self) -> &'static CStr {
+        match self {
+            Level::Window => {
+                c"#{pane_index}: [#{pane_width}x#{pane_height}#{?pane_floating_flag, #{pane_x}#,#{pane_y}#,#{pane_z}}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}"
+            }
+            Level::Session => {
+                c"#{window_index}.#{pane_index}: [#{pane_width}x#{pane_height}#{?pane_floating_flag, #{pane_x}#,#{pane_y}#,#{pane_z}}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}"
+            }
+            Level::Server => {
+                c"#{session_name}:#{window_index}.#{pane_index}: [#{pane_width}x#{pane_height}#{?pane_floating_flag, #{pane_x}#,#{pane_y}#,#{pane_z}}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}"
+            }
+        }
+    }
+}
+
+/// The text behind an option, as nothing when the option was not given.
+unsafe fn option(args: &args, flag: u8) -> Option<&'static CStr> {
+    let s = unsafe { args_get(args, flag) };
+    (!s.is_null()).then(|| unsafe { CStr::from_ptr(s) })
+}
+
+/// Whether `ft` passes `filter`: always when there is no filter, and otherwise
+/// when the filter expands to something the format engine counts as true.
+unsafe fn passes(ft: &mut format_tree, filter: Option<&CStr>) -> bool {
+    unsafe {
+        match filter {
+            None => true,
+            Some(filter) => {
+                let expanded = format_expand(&mut *ft, filter);
+                format_true(Some(&expanded)) != 0
+            }
+        }
+    }
+}
+
+/// Every session the server knows, in name order.
+fn each_session() -> impl Iterator<Item = *mut session> {
+    let mut current = null_mut::<session>();
+    let mut started = false;
+    ::core::iter::from_fn(move || unsafe {
+        current = if started {
+            sessions_after(current)
+        } else {
+            started = true;
+            sessions_first()
+        };
+        (!current.is_null()).then_some(current)
+    })
+}
+
+/// The winlinks of `s`, in index order.
+fn windows_of(s: *mut session) -> impl Iterator<Item = *mut winlink> {
+    let mut current = null_mut::<winlink>();
+    let mut started = false;
+    ::core::iter::from_fn(move || unsafe {
+        current = if started {
+            winlinks_after(current)
+        } else {
+            started = true;
+            winlinks_first(&raw mut (*s).windows)
+        };
+        (!current.is_null()).then_some(current)
+    })
+}
+
+unsafe fn sorted_panes(w: *mut window, sort_crit: &mut sort_criteria_t) -> Vec<*mut window_pane> {
+    unsafe { sort_get_panes_window(w, sort_crit) }
+}
+
+unsafe fn cmd_list_panes_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
+    unsafe {
+        let args = cmd_get_args(self_0);
+        let target = cmdq_get_target(item);
+
+        let order = sort_order_from_string(args_get(args, b'O'));
+        if order == SORT_END && args_has(args, b'O') != 0 {
+            cmdq_error(item, c"invalid sort order".as_ptr(), fmt_args![]);
+            return CMD_RETURN_ERROR;
+        }
+
+        if args_has(args, b'a') != 0 {
+            cmd_list_panes_server(self_0, item);
+        } else if args_has(args, b's') != 0 {
+            cmd_list_panes_session(self_0, (*target).session(), item, Level::Session);
+        } else {
+            cmd_list_panes_window(
+                self_0,
+                (*target).session(),
+                (*target).winlink(),
+                item,
+                Level::Window,
+            );
+        }
+        CMD_RETURN_NORMAL
+    }
+}
+
+unsafe fn cmd_list_panes_server(self_0: &cmd, item: *mut cmdq_item) {
+    unsafe {
+        for s in each_session() {
+            cmd_list_panes_session(self_0, s, item, Level::Server);
+        }
+    }
+}
+
+unsafe fn cmd_list_panes_session(
+    self_0: &cmd,
+    s: *mut session,
+    item: *mut cmdq_item,
+    level: Level,
+) {
+    unsafe {
+        for wl in windows_of(s) {
+            cmd_list_panes_window(self_0, s, wl, item, level);
+        }
+    }
+}
+
+unsafe fn cmd_list_panes_window(
+    self_0: &cmd,
+    s: *mut session,
+    wl: *mut winlink,
+    item: *mut cmdq_item,
+    level: Level,
+) {
+    unsafe {
+        let args = cmd_get_args(self_0);
+        let template = match option(args, b'F') {
+            Some(given) => given,
+            None => level.template(),
+        };
+        let filter = option(args, b'f');
+
+        let mut sort_crit = sort_criteria_t {
+            order: sort_order_from_string(args_get(args, b'O')),
+            reversed: args_has(args, b'r'),
+            order_seq: None,
+        };
+
+        let panes = sorted_panes((*wl).window(), &mut sort_crit);
+        let n = panes.len() as u_int;
+        for &wp in &panes {
+            let mut ft = format_create(cmdq_get_client(&*item), item, FORMAT_NONE, 0);
+            format_add(&mut ft, c"line", c"%u".as_ptr(), fmt_args![n]);
+            format_defaults(&mut ft, null_mut(), s, wl, wp);
+            if passes(&mut ft, filter) {
+                let line = format_expand(&mut ft, template);
+                cmdq_print(item, c"%s".as_ptr(), fmt_args![line.as_ptr()]);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/test_cmd_list_panes.rs"]
+mod tests;

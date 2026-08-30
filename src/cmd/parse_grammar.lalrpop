@@ -1,0 +1,173 @@
+use lalrpop_util::ParseError;
+
+use crate::cmd::parse::{
+    ElifResult, LexError, ParseArgument, ParseCommand, ParseState, Token, TokenText, concat,
+    prepend,
+};
+
+grammar(ps: &mut ParseState);
+
+extern {
+    type Location = usize;
+    type Error = LexError;
+
+    enum Token {
+        "\n"     => Token::Newline,
+        ";"      => Token::Semicolon,
+        "{"      => Token::OpenBrace,
+        "}"      => Token::CloseBrace,
+        "hidden" => Token::Hidden,
+        "if"     => Token::If,
+        "else"   => Token::Else,
+        "elif"   => Token::Elif,
+        "endif"  => Token::Endif,
+        "FORMAT" => Token::Format(<TokenText>),
+        "TOKEN"  => Token::Token(<TokenText>),
+        "EQUALS" => Token::Equals(<TokenText>),
+    }
+}
+
+// lines : /* empty */ | statements
+pub Lines: Vec<ParseCommand> = {
+    => Vec::new(),
+    <s:Statements> => s,
+};
+
+// statements : statement '\n' | statements statement '\n'
+Statements: Vec<ParseCommand> = {
+    <s:Statement> "\n" => s,
+    <l:Statements> <s:Statement> "\n" => concat(l, s),
+};
+
+// statement : /* empty */ | hidden_assignment | condition | commands
+Statement: Vec<ParseCommand> = {
+    => Vec::new(),
+    HiddenAssignment => Vec::new(),
+    <c:Condition> => ps.keep_if_active(c),
+    <c:Commands> => ps.keep_if_active(c),
+};
+
+// format : FORMAT | TOKEN
+Format: TokenText = {
+    <s:"FORMAT"> => s,
+    <s:"TOKEN"> => s,
+};
+
+// expanded : format
+Expanded: TokenText = <f:Format> => ps.expand_format(f);
+
+// optional_assignment : /* empty */ | assignment
+OptionalAssignment: () = {
+    => (),
+    Assignment => (),
+};
+
+// assignment : EQUALS
+Assignment: () = <s:"EQUALS"> =>? {
+    ps.put_environ(s, false).map_err(|error| ParseError::User { error })
+};
+
+// hidden_assignment : HIDDEN EQUALS
+HiddenAssignment: () = "hidden" <s:"EQUALS"> =>? {
+    ps.put_environ(s, true).map_err(|error| ParseError::User { error })
+};
+
+// if_open : IF expanded
+IfOpen: bool = "if" <e:Expanded> => ps.push_scope(&e);
+
+// if_else : ELSE
+IfElse: () = "else" => ps.invert_scope();
+
+// if_elif : ELIF expanded
+IfElif: bool = "elif" <e:Expanded> => ps.replace_scope(&e);
+
+// if_close : ENDIF
+IfClose: () = "endif" => ps.pop_scope();
+
+// condition : if_open '\n' statements [elif] [if_else '\n' statements] if_close
+Condition: Vec<ParseCommand> = {
+    <f:IfOpen> "\n" <t:Statements> IfClose =>
+        if f { t } else { Vec::new() },
+
+    <f:IfOpen> "\n" <t:Statements> IfElse "\n" <e:Statements> IfClose =>
+        if f { t } else { e },
+
+    <f:IfOpen> "\n" <t:Statements> <ei:ElifChain> IfClose =>
+        if f { t } else if ei.flag { ei.commands } else { Vec::new() },
+
+    <f:IfOpen> "\n" <t:Statements> <ei:ElifChain> IfElse "\n" <e:Statements> IfClose =>
+        if f { t } else if ei.flag { ei.commands } else { e },
+};
+
+// elif : if_elif '\n' statements | if_elif '\n' statements elif
+ElifChain: ElifResult = {
+    <f:IfElif> "\n" <t:Statements> =>
+        if f { ElifResult::taken(t) } else { ElifResult::skipped() },
+
+    <f:IfElif> "\n" <t:Statements> <n:ElifChain> =>
+        if f { ElifResult::taken(t) } else if n.flag { n } else { ElifResult::skipped() },
+};
+
+// commands : command | commands ';' | commands ';' condition1
+//          | commands ';' command | condition1
+Commands: Vec<ParseCommand> = {
+    <c:Command> => ps.start_commands(c),
+    <l:Commands> ";" => l,
+    <l:Commands> ";" <c:Condition1> => concat(l, c),
+    <l:Commands> ";" <c:Command> => ps.push_command(l, c),
+    <c:Condition1> => c,
+};
+
+// command : assignment | optional_assignment TOKEN [arguments]
+Command: ParseCommand = {
+    Assignment => ParseCommand::empty(ps.line()),
+
+    OptionalAssignment <t:"TOKEN"> =>
+        ParseCommand::new(ps.line(), t, Vec::new()),
+
+    OptionalAssignment <t:"TOKEN"> <a:Arguments> =>
+        ParseCommand::new(ps.line(), t, a),
+};
+
+// condition1 : if_open commands [elif1] [if_else commands] if_close
+Condition1: Vec<ParseCommand> = {
+    <f:IfOpen> <t:Commands> IfClose =>
+        if f { t } else { Vec::new() },
+
+    <f:IfOpen> <t:Commands> IfElse <e:Commands> IfClose =>
+        if f { t } else { e },
+
+    <f:IfOpen> <t:Commands> <ei:Elif1Chain> IfClose =>
+        if f { t } else if ei.flag { ei.commands } else { Vec::new() },
+
+    <f:IfOpen> <t:Commands> <ei:Elif1Chain> IfElse <e:Commands> IfClose =>
+        if f { t } else if ei.flag { ei.commands } else { e },
+};
+
+// elif1 : if_elif commands | if_elif commands elif1
+Elif1Chain: ElifResult = {
+    <f:IfElif> <t:Commands> =>
+        if f { ElifResult::taken(t) } else { ElifResult::skipped() },
+
+    <f:IfElif> <t:Commands> <n:Elif1Chain> =>
+        if f { ElifResult::taken(t) } else if n.flag { n } else { ElifResult::skipped() },
+};
+
+// arguments : argument | argument arguments
+Arguments: Vec<ParseArgument> = {
+    <a:Argument> => vec![a],
+    <a:Argument> <rest:Arguments> => prepend(a, rest),
+};
+
+// argument : TOKEN | EQUALS | '{' argument_statements
+Argument: ParseArgument = {
+    <t:"TOKEN"> => ParseArgument::String(t),
+    <t:"EQUALS"> => ParseArgument::String(t),
+    "{" <s:ArgumentStatements> => ParseArgument::Commands(s),
+};
+
+// argument_statements : statement '}' | statements statement '}'
+ArgumentStatements: Vec<ParseCommand> = {
+    <s:Statement> "}" => s,
+    <l:Statements> <s:Statement> "}" => concat(l, s),
+};

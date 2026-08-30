@@ -1,0 +1,52 @@
+From 108b09e0a670346f79ffd9e38d918eaa9d3951df Mon Sep 17 00:00:00 2001
+From: "Jeong, Heon" <blmarket@gmail.com>
+Date: Sun, 23 Aug 2026 17:03:22 -0700
+Subject: Fix memory leak when drawing tree mode preview
+
+window_tree_draw_session() and window_tree_draw_window() create a format
+tree for each window or pane they put in the preview and never free it.
+Every other format tree in the file is freed -- window_tree_draw_info()
+frees the one it expands its lines with, and so do the three build
+functions -- so only the two preview loops were missed.
+
+The preview is drawn on every key that moves the selection, so this grows
+for as long as tree mode is on screen, at one tree per previewed window
+or pane per draw. A server driven with 40 send-keys into a tree mode
+opened with -w exits under AddressSanitizer with
+
+    Direct leak of 10080 byte(s) in 60 object(s) allocated from:
+        #2 format_create format.c:4211
+        #3 window_tree_draw_window window-tree.c:764
+        #4 window_tree_draw window-tree.c:907
+        #5 mode_tree_draw mode-tree.c:1026
+        #6 window_tree_key window-tree.c:1559
+
+and the same for window_tree_draw_session with -s. None with this
+applied.
+
+Applies to 3.7b at a different offset: the label and vline calls upstream
+carry the grid cell and box-lines arguments 3.7b's do not, and the two
+loops are otherwise the same.
+---
+ window-tree.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/window-tree.c b/window-tree.c
+--- a/window-tree.c
++++ b/window-tree.c
+@@ -551,6 +551,7 @@ window_tree_draw_session(struct window_tree_modedata *data, struct session *s,
+ 			}
+ 			free(label);
+ 		}
++		format_free(ft);
+ 
+ 		if (loop != end - 1) {
+ 			screen_write_cursormove(ctx, cx + offset + width, cy,
+@@ -688,6 +689,7 @@ window_tree_draw_window(struct window_tree_modedata *data, struct session *s,
+ 			}
+ 			free(label);
+ 		}
++		format_free(ft);
+ 
+ 		if (loop != end - 1) {
+ 			screen_write_cursormove(ctx, cx + offset + width, cy,

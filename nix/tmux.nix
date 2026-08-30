@@ -22,9 +22,13 @@ tmux.overrideAttrs (old: {
     ++ [ "--disable-sixel" ];
 
   # Drop the patches nixpkgs' tmux carries; the oracle must be stock 3.7b plus
-  # only the crash fixes below. A crashed oracle answers nothing, so a
-  # conformance test that trips one of these tells us about tmux, not about
-  # hmux; every patch here has to stay this narrow.
+  # only what is below. Most of it is crash fixes: a crashed oracle answers
+  # nothing, so a conformance test that trips one tells us about tmux, not
+  # about hmux. The other reason a patch may stand here is that hmux or the
+  # transpilation has already stopped doing the thing, so that oracle and
+  # implementation agree and there is no lasting difference to describe.
+  # Nothing wider than those two belongs here: a patch that changes what the
+  # oracle *answers* would hide a real difference rather than settle one.
   #
   # 0001, tmux c515d8ca ("Do not crash looking for next or previous session.
   # GitHub issue 5344.", released in 3.7c): `server_destroy_session()` passed a
@@ -38,8 +42,141 @@ tmux.overrideAttrs (old: {
   # dangling session pointer. Calling `server_destroy_session()` first clears
   # those references. In 3.7b, `set -g destroy-unattached on` can kill the
   # server as a client detaches.
+  #
+  # 0003, tmux 97472e37 ("Return early if cannot construct cell.", post-3.7b):
+  # `layout_construct()` inserted the child cell without checking that
+  # `layout_construct_cell()` returned one, and the empty-slot cases
+  # (`,`/`}`/`]`/`>`/NUL) return success, so a custom layout with an empty
+  # slot - `select-layout` on `<csum>,80x24,0,0{,40x24,0,0}` and friends -
+  # linked a NULL cell and dereferenced it. In 3.7b this kills the server from
+  # a single client command. The transpilation reproduces the 3.7b crash
+  # faithfully; the matching Rust guard lives in tmux-c2rs.
+  #
+  # 0004, submitted upstream as 68d54cfb, not a crash fix: a pane's
+  # `border_status_line.expanded` holds the last expansion of
+  # `pane-border-format`, and the pane was freed without it -- in 3.7b, and
+  # still on master, where the drawing has moved to `window-border.c` and the
+  # teardown has split in two. `status.c` frees the client's own five copies of
+  # the same struct, so only the pane's was missed. `pane-border-format` is the
+  # user's to set, so each leak is as large as the user makes it. hmux frees
+  # it, and this keeps the oracle from being the only one of the two that does
+  # not; `tmux-c2rs/demo-expanded-mem.sh` measures either binary.
+  #
+  # 0005, submitted upstream as 9261bcd5, not a crash fix: `server_client_lost`
+  # frees every other string a client owns -- `title` among them -- and not
+  # `c->path`, which is freed only where `server_client_set_path` replaces it,
+  # so the last one a client held goes with it. The string is the active pane's
+  # OSC 7 path, which whatever runs in the pane sets and `input-buffer-size`
+  # lets reach a megabyte, so a program that writes to a terminal decides how
+  # much each lost client costs. `tmux-c2rs/demo-client-path-mem.sh` measures
+  # either binary.
+  #
+  # 0006, submitted upstream as 7b640f6a, not a crash fix, and the one patch
+  # here with no demo beside it: `server_client_check_exit` is the only place
+  # that frees `exit_session` and `exit_message`, and it returns at once on
+  # `CLIENT_DEAD`, which `server_client_lost` sets as its first statement. A
+  # client that goes away between being detached and the next pass through
+  # check_exit takes both with it. Reaching that window is a race the caller
+  # does not control, so it is argued from the code rather than measured.
+  # check_exit left the pointers dangling, so the free in `server_client_lost`
+  # needs the clearing hunk beside it or the ordinary path double-frees.
+  # Applies after 0005, whose `free(c->path)` is in its first hunk's context.
+  #
+  # 0007, submitted upstream as 27cd0bd0, not a crash fix: a pane that writes
+  # output makes the server work out which of its columns are not obscured, and
+  # the ranges builder grows the pane's own `struct visible_ranges r` through
+  # `server_client_ensure_ranges`. The three other owners of one free their
+  # array -- `tty_free`, `popup_free_cb` and `menu_free_cb` -- and the pane's
+  # was freed nowhere, in 3.7b and still on master, so every pane the server
+  # destroys loses one allocation. It is bounded, one block per pane sized by
+  # how many panes obscure it, but a long-lived server loses one every time a
+  # pane goes. Applies after 0004, which touches the same function further
+  # down.
+  #
+  # 0008, submitted upstream as 108b09e0, not a crash fix: tree mode's preview
+  # makes a `format_tree` for every window or pane it draws and freed none of
+  # them, in 3.7b and still on master, where every other format tree in
+  # `window-tree.c` is freed. The preview is redrawn on each key that moves the
+  # selection, so this grows while tree mode is on screen rather than being
+  # bounded like 0007.
+  #
+  # 0009, submitted upstream as 759397c5, not a crash fix: `cmd_set_buffer_exec`
+  # copies the `-b` name, or takes the copy `paste_get_top` makes when there is
+  # none, and freed it only on the delete-buffer and the error paths.
+  # `paste_set` and `paste_rename` take the name as a `const char *` and copy it
+  # themselves, so the command's copy is the command's to free -- and
+  # `set-buffer`, `set-buffer -n` and the empty-data case all returned without
+  # doing so, in 3.7b and still on master. The user names the buffer, so the
+  # user sizes each leak.
+  #
+  # 0010, submitted upstream as bfe2ee3e, not a crash fix: `format_draw` holds a
+  # collected item per screen from `screen_write_start` onwards, and the one
+  # exit that skips its `screen_write_stop` loop -- the "no terminating ]" case
+  # -- drops them all instead of handing them back to the free list, in 3.7b and
+  # still on master. The string is a user format and the draw happens on every
+  # redraw, so a format left unterminated leaks on each one.
+  #
+  # 0011, submitted upstream as 16e82a82, not a crash fix:
+  # `screen_write_collect_flush_line` writes out the visible part of each
+  # collected item and leaves the rest collected, so a line can still hold items
+  # when the screen is freed -- and `screen_write_free_list` freed the lines'
+  # text and the array and dropped those, in 3.7b and still on master. A
+  # zero-width screen shows it: `format_draw` sizes its screens by the length of
+  # the string, so an empty format gives each one a collected clear item and no
+  # column to write it in.
+  #
+  # 0012, submitted upstream as 1024707b, not a crash fix: `if-shell -F` queues
+  # the command list `args_make_commands_now` hands it and never gives its own
+  # reference back, though `load_cfg_from_buffer` and `cmd_confirm_before_exec`
+  # both free theirs after queuing, so a list given in braces was never freed --
+  # in 3.7b and still on master.
+  #
+  # 0013, submitted upstream as 7ba1db77, not a crash fix and the other half of
+  # 0012: `args_make_commands_now` takes a reference unconditionally, which is
+  # right for a command in braces -- prepare takes one and free gives it back --
+  # but one too many for a command parsed from a string, whose parse result
+  # already carries the caller's. `if-shell -F` and `confirm-before` therefore
+  # never free a command given as a string either, in 3.7b and on master.
+  #
+  # 0014, local fix, not upstream: `environ_push()` points the process
+  # `environ` at a freshly xcalloc'd empty array, and the first `setenv()`
+  # replaces it with an array libc allocates itself, orphaning ours. tmux only
+  # calls it between fork() and exec, so the loss is erased by the exec and
+  # nothing observable changes - but the transpilation's unit tests call
+  # `environ_push()` in a process that lives on, and its Rust carries the
+  # matching fix, so the oracle does too.
+  #
+  # 0015, tmux 50d0348b ("Stop at the right end line when walking wrapped
+  # lines, GitHub issue 5479.", post-3.7b): the two regex searches walk a
+  # wrapped line's continuations while `pywrap <= endline`, so a
+  # `GRID_LINE_WRAPPED` flag on the *last* line of the grid sends them one line
+  # past the end -- they stringify a line that is not there and still add a
+  # screen width to `len`. `window_copy_cstrtocellpos()` sizes its `cells`
+  # array from that count while its fill loop stops at the real end, so the
+  # tail of the array is never written: 3.7b matches against uninitialised
+  # `d`/`dlen` and then frees uninitialised pointers. A cursor parked below the
+  # scroll region reaches that state -- `screen_write_linefeed()` flags the
+  # line wrapped before it works out where the cursor goes, and a cursor that
+  # is neither on `rlower` nor above the last row goes nowhere -- so text that
+  # wraps there leaves the flag dangling and the next regex search over that
+  # line kills the server. The transpilation carries the same fix in
+  # tmux-c2rs/src/window_copy.rs.
+
   patches = [
     ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch
     ./tmux-3.7b-0002-detach-clients-when-processing-destroy-unattached.patch
+    ./tmux-3.7b-0003-do-not-crash-on-empty-custom-layout-slot.patch
+    ./tmux-3.7b-0004-free-pane-border-status-string-on-destroy.patch
+    ./tmux-3.7b-0005-free-client-path-when-losing-client.patch
+    ./tmux-3.7b-0006-free-client-exit-strings-when-losing-client.patch
+    ./tmux-3.7b-0007-free-pane-visible-ranges-on-destroy.patch
+    ./tmux-3.7b-0008-free-tree-mode-preview-format-trees.patch
+    ./tmux-3.7b-0009-free-set-buffer-name.patch
+    ./tmux-3.7b-0010-free-collected-items-when-style-is-not-terminated.patch
+    ./tmux-3.7b-0011-free-collected-items-left-on-a-screen.patch
+    ./tmux-3.7b-0012-free-if-shell-command-list.patch
+    ./tmux-3.7b-0013-free-a-command-list-parsed-from-a-string.patch
+    ./tmux-3.7b-0014-free-the-environ-array-setenv-replaces.patch
+    ./tmux-3.7b-0015-stop-at-the-right-end-line-when-walking-wrapped-lines.patch
   ];
 })

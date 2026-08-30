@@ -425,6 +425,66 @@ def test_main_plumbs_the_chosen_preset_into_the_config(
     ]
 
 
+def test_claude_preset_runs_opus_and_is_paced_by_claude_quota(
+    tmp_path: Path,
+) -> None:
+    preset = PRESETS["claude"]
+    service = FakeService("idle")
+    spent_claude = QuotaWindow(
+        provider="claude",
+        label="Claude weekly",
+        used_percent=100.0,
+        resets_at=NOW + timedelta(days=3.5),
+        window_seconds=WEEK,
+    )
+    quota_service = FakeQuotaService(
+        report(spent_claude), report(codex_window(0.0))
+    )
+    looper, lines, naps = build(
+        service,
+        quota_service,
+        tmp_path,
+        agent=preset.agent,
+        model=preset.model,
+        effort=preset.effort,
+        provider=preset.provider,
+        max_runs=1,
+    )
+
+    assert looper.run() == 0
+    # The spent Claude window holds the first poll back; a report without it
+    # leaves the loop unpaced and the run starts.
+    assert naps == [300.0]
+    assert any("over pace: Claude weekly" in line for line in lines)
+    assert service.splits[0]["agent"] == "claude"
+    assert service.splits[0]["model"] == "claude-opus-5"
+    assert service.splits[0]["effort"] == "default"
+
+
+def test_main_plumbs_the_claude_preset_into_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import looper as looper_module
+
+    monkeypatch.setattr("sys.stdin", _Stdin("Do the thing.\n"))
+    monkeypatch.setenv("TMUX_PANE", "%0")
+    monkeypatch.setattr(
+        looper_module,
+        "discover_context",
+        lambda **_kwargs: _FakeContext(tmp_path),
+    )
+    configs: list[LooperConfig] = []
+    monkeypatch.setattr(
+        looper_module, "Looper", lambda *args, **kwargs: _FakeLooper(configs, **kwargs)
+    )
+
+    assert main(["--preset", "claude"]) == 0
+    assert configs == [
+        LooperConfig(agent="claude", model="claude-opus-5", effort="default",
+                     provider="claude")
+    ]
+
+
 def test_main_rejects_a_preset_that_does_not_exist() -> None:
     with pytest.raises(SystemExit) as caught:
         main(["--preset", "nope"])

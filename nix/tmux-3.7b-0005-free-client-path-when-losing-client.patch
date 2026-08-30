@@ -1,0 +1,33 @@
+From 9261bcd51365fa6b31be86eb371b73358786e84f Mon Sep 17 00:00:00 2001
+From: "Jeong, Heon" <blmarket@gmail.com>
+Date: Sun, 23 Aug 2026 16:45:00 -0700
+Subject: Fix memory leak when losing client
+
+path field should be freed when losing a client. server_client_lost
+frees every other string the client owns, including title, which
+set-titles sets beside path in server_client_set_path; path itself is
+freed only where it is replaced, so the last one a client held goes with
+it.
+
+The pane decides how long that string is: it arrives as OSC 7 from
+whatever is running in the pane, and input-buffer-size lets that be a
+megabyte.
+
+Applies to 3.7b unchanged; server_client_lost frees title and cwd in the
+same place there.
+---
+ server-client.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/server-client.c b/server-client.c
+index 52886f01..640b7eb4 100644
+--- a/server-client.c
++++ b/server-client.c
+@@ -475,6 +475,7 @@ server_client_lost(struct client *c)
+ 	input_cancel_requests(c);
+
+ 	free(c->title);
++	free(c->path);
+ 	free((void *)c->cwd);
+
+ 	evtimer_del(&c->repeat_timer);

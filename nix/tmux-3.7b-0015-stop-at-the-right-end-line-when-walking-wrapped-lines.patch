@@ -1,0 +1,54 @@
+From 50d0348b648258f11d75ec751581220884ff32a3 Mon Sep 17 00:00:00 2001
+From: nicm <nicm>
+Date: Wed, 19 Aug 2026 19:55:04 +0000
+Subject: Stop at the right end line when walking wrapped lines, GitHub issue 5479.
+
+Rediffed against 3.7b, whose window-copy.c is the same file but for its
+$OpenBSD$ line and its line numbering. The two walks it narrows are
+identical to each other line for line, so upstream's own context is too
+short to tell them apart; this carries five lines of it instead of three.
+---
+ window-copy.c | 5 ++++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/window-copy.c b/window-copy.c
+--- a/window-copy.c
++++ b/window-copy.c
+@@ -3704,11 +3704,11 @@
+ 	buf = window_copy_stringify(gd, py, first, gd->sx, buf, &size);
+ 	len = gd->sx - first;
+ 	endline = gd->hsize + gd->sy - 1;
+ 	pywrap = py;
+ 	while (buf != NULL &&
+-	    pywrap <= endline &&
++	    pywrap < endline &&
+ 	    len < WINDOW_COPY_SEARCH_MAX_LINE) {
+ 		gl = grid_get_line(gd, pywrap);
+ 		if (~gl->flags & GRID_LINE_WRAPPED)
+ 			break;
+ 		pywrap++;
+@@ -3763,11 +3763,11 @@
+ 	buf = window_copy_stringify(gd, py, first, gd->sx, buf, &size);
+ 	len = gd->sx - first;
+ 	endline = gd->hsize + gd->sy - 1;
+ 	pywrap = py;
+ 	while (buf != NULL &&
+-	    pywrap <= endline &&
++	    pywrap < endline &&
+ 	    len < WINDOW_COPY_SEARCH_MAX_LINE) {
+ 		gl = grid_get_line(gd, pywrap);
+ 		if (~gl->flags & GRID_LINE_WRAPPED)
+ 			break;
+ 		pywrap++;
+@@ -3964,10 +3964,11 @@
+ 			gl = grid_peek_line(gd, pywrap);
+ 			if (gl == NULL)
+ 				break;
+ 		}
+ 	}
++	ncells = cell;
+ 
+ 	/* Locate starting cell. */
+ 	cell = 0;
+ 	len = strlen(str);
+ 	while (cell < ncells) {

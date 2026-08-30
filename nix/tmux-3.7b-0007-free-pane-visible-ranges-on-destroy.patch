@@ -1,0 +1,49 @@
+From 27cd0bd05d45cccb71bb1b8887c3c761d9397f9b Mon Sep 17 00:00:00 2001
+From: "Jeong, Heon" <blmarket@gmail.com>
+Date: Sun, 23 Aug 2026 16:55:25 -0700
+Subject: Fix memory leak when destroying pane
+
+r.ranges field should be freed when destroying pane. A pane that writes
+output makes the server work out which of its columns are not obscured,
+and the ranges builder grows the pane's own struct visible_ranges r
+through server_client_ensure_ranges(). The other owners of one give the
+array back -- tty_free() frees tty->r.ranges, popup_free_cb() frees
+pd->r.ranges and menu_free_cb() frees md->r.ranges -- but the pane's was
+never freed, so every pane the server destroys loses one allocation.
+
+A server that makes and destroys 20 panes, each printing a line, exits
+under AddressSanitizer with
+
+    Direct leak of 160 byte(s) in 20 object(s) allocated from:
+        #1 xrecallocarray xmalloc.c:80
+        #2 server_client_ensure_ranges server-client.c:160
+        #3 window_visible_ranges window-visible.c:91
+        #4 screen_write_collect_flush_line screen-write.c:2344
+        #5 screen_write_collect_flush screen-write.c:2444
+        #6 screen_write_stop screen-write.c:414
+        #7 input_parse_pane input.c:1038
+        #8 window_pane_read_callback window.c:1586
+
+one block per destroyed pane, and none with this applied.
+
+Ported to 3.7b: upstream splits the teardown into window_pane_destroy and
+window_pane_free and the free belongs to the latter; 3.7b has only
+window_pane_destroy. The builder is screen_redraw_get_visible_ranges()
+here rather than window_visible_ranges(), and it reaches
+server_client_ensure_ranges(&wp->r, ...) the same way.
+---
+ window.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/window.c b/window.c
+--- a/window.c
++++ b/window.c
+@@ -1108,6 +1108,8 @@ window_pane_destroy(struct window_pane *wp)
+ 
+ 	screen_free(&wp->base);
+ 
++	free(wp->r.ranges);
++
+ 	if (wp->pipe_fd != -1) {
+ 		bufferevent_free(wp->pipe_event);
+ 		close(wp->pipe_fd);

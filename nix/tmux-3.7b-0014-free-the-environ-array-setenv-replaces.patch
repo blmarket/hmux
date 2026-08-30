@@ -1,0 +1,55 @@
+From: "Jeong, Heon" <blmarket@gmail.com>
+Date: Sun, 23 Aug 2026 21:45:00 -0700
+Subject: Free the environ array setenv replaces
+
+environ_push() points the process environ at a freshly xcalloc'd empty
+array and then setenv()s each visible entry into it. libc did not
+allocate that array, so the first setenv() builds an array of its own
+and repoints environ at it, and the xcalloc'd one is left with nothing
+pointing to it. tmux only ever calls environ_push() between fork() and
+exec (job.c, spawn.c), where the loss is erased microseconds later by
+the exec, which is why it never mattered - but the allocation is lost
+all the same, and the transpilation's unit tests call environ_push() in
+a process that lives on.
+
+Keeping the pointer and giving the block back once environ no longer
+points at it is safe on either outcome: with no visible entries environ
+still points at our array and it is kept, and once any setenv() has
+replaced it the comparison sees the new array and frees ours.
+
+A harness that links the 3.7b environ.c, pushes one variable, and exits
+loses the block under AddressSanitizer:
+
+    Direct leak of 8 byte(s) in 1 object(s) allocated from:
+        #1 xcalloc xmalloc.c:47
+        #2 environ_push environ.c:219
+
+and none with this applied. Not fixed upstream as of master.
+---
+ environ.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/environ.c b/environ.c
+--- a/environ.c
++++ b/environ.c
+@@ -214,15 +214,18 @@
+ void
+ environ_push(struct environ *env)
+ {
+-	struct environ_entry	*envent;
++	struct environ_entry	 *envent;
++	char			**new_environ;
+ 
+-	environ = xcalloc(1, sizeof *environ);
++	new_environ = environ = xcalloc(1, sizeof *environ);
+ 	RB_FOREACH(envent, environ, env) {
+ 		if (envent->value != NULL &&
+ 		    *envent->name != '\0' &&
+ 		    (~envent->flags & ENVIRON_HIDDEN))
+ 			setenv(envent->name, envent->value, 1);
+ 	}
++	if (environ != new_environ)
++		free(new_environ);
+ }
+ 
+ /* Log the environment. */

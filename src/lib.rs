@@ -1,38 +1,180 @@
-//! hmux — a native tmux-compatible server.
-//!
-//! hmux binds its own unix socket and speaks tmux's imsg control protocol, so a
-//! stock `tmux attach -S hmux.sock` can use native hmux sessions and panes.
-//!
-//! Modules:
-//! - [`event_loop`] — readiness-driven event-loop engine.
-//! - [`server`] — shared tmux command, state, and terminal engine.
-//! - [`tmux`] — message layer, codec, server traits, and compatibility re-exports.
-//! - [`observability`] — versioned pane observation contracts.
-//! - [`integration`] — prototype consumers of optional runtime capabilities.
-//! - [`model`] — a terminal model for out-of-process test harnesses.
-//! - [`serve`] — listeners and connection lifecycle management.
-//!
-//! The pane tokenizer and the terminal emulation live in the `hmux-vt` crate;
-//! the async runtime layer (`AsyncFd`, reactor, timers, tasks) lives in the
-//! `hmux-rt` crate. The daemon consumes both only through those crates' public
-//! surfaces. The dataflow primitives composed over those leaves — completions,
-//! notifies, `select`/`join` — are the daemon's own, in [`sync`].
-
-// Leaves the daemon writes itself park non-`Send` wakers, the same contract
-// as `hmux-rt`.
+#![allow(dead_code)]
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(unused_assignments)]
+#![allow(unused_mut)]
+#![feature(extern_types)]
 #![feature(local_waker)]
 
-pub mod error;
-pub(crate) mod event_loop;
-pub mod integration;
-pub mod observability;
-#[allow(dead_code)]
-mod platform;
-pub mod serve;
-pub(crate) mod server;
-pub(crate) mod sync;
+#[macro_use]
+extern crate c2rust_bitfields;
+extern crate libc;
+
+pub mod alerts;
+pub mod arguments;
+pub mod cfg;
+pub mod client;
+pub mod cmd;
+pub mod compat;
+pub mod control;
+pub mod environ;
+pub mod ffi;
+pub mod file;
+pub mod fmt_engine;
+pub mod format;
+pub mod grid;
+pub mod input;
+pub mod job;
+pub mod key_bindings;
+pub mod layout;
+pub mod list;
+pub mod log;
+pub mod modes;
+pub mod names;
+pub mod notify;
+pub mod options;
+pub mod osdep_linux;
+pub mod overlay;
+pub mod paste;
+pub mod plugin;
+pub mod r#proc;
+pub mod reactor;
+pub mod regsub;
+pub mod resize;
+pub mod screen;
+pub mod server;
+pub mod session;
+pub mod sort;
+pub mod spawn;
+pub mod status;
+#[cfg(test)]
+pub mod tests {
+    pub mod test_coverage_alerts;
+    pub mod test_coverage_alpha;
+    pub mod test_coverage_auto_01;
+    pub mod test_coverage_auto_02;
+    pub mod test_coverage_auto_03;
+    pub mod test_coverage_auto_04;
+    pub mod test_coverage_auto_05;
+    pub mod test_coverage_auto_06;
+    pub mod test_coverage_auto_07;
+    pub mod test_coverage_auto_08;
+    pub mod test_coverage_auto_09;
+    pub mod test_coverage_auto_10;
+    pub mod test_coverage_auto_11;
+    pub mod test_coverage_auto_12;
+    pub mod test_coverage_auto_13;
+    pub mod test_coverage_auto_14;
+    pub mod test_coverage_auto_15;
+    pub mod test_coverage_auto_16;
+    pub mod test_coverage_auto_17;
+    pub mod test_coverage_auto_18;
+    pub mod test_coverage_auto_19;
+    pub mod test_coverage_auto_20;
+    pub mod test_coverage_auto_21;
+    pub mod test_coverage_auto_22;
+    pub mod test_coverage_auto_23;
+    pub mod test_coverage_auto_24;
+    pub mod test_coverage_auto_25;
+    pub mod test_coverage_auto_26;
+    pub mod test_coverage_auto_27;
+    pub mod test_coverage_auto_28;
+    pub mod test_coverage_auto_29;
+    pub mod test_coverage_client;
+    pub mod test_coverage_cmd;
+    pub mod test_coverage_cmd_attach_session;
+    pub mod test_coverage_cmd_bind_key;
+    pub mod test_coverage_cmd_break_pane;
+    pub mod test_coverage_cmd_capture_pane;
+    pub mod test_coverage_cmd_choose_tree;
+    pub mod test_coverage_cmd_command_prompt;
+    pub mod test_coverage_cmd_confirm_before;
+    pub mod test_coverage_cmd_copy_mode;
+    pub mod test_coverage_cmd_detach_client;
+    pub mod test_coverage_cmd_display_menu;
+    pub mod test_coverage_cmd_display_message;
+    pub mod test_coverage_cmd_display_panes;
+    pub mod test_coverage_cmd_find_window;
+    pub mod test_coverage_cmd_if_shell;
+    pub mod test_coverage_cmd_join_pane;
+    pub mod test_coverage_cmd_kill_pane;
+    pub mod test_coverage_cmd_kill_server;
+    pub mod test_coverage_cmd_kill_session;
+    pub mod test_coverage_cmd_kill_window;
+    pub mod test_coverage_cmd_list_buffers;
+    pub mod test_coverage_cmd_list_clients;
+    pub mod test_coverage_cmd_list_commands;
+    pub mod test_coverage_cmd_list_keys;
+    pub mod test_coverage_cmd_list_panes;
+    pub mod test_coverage_cmd_list_sessions;
+    pub mod test_coverage_cmd_list_windows;
+    pub mod test_coverage_cmd_load_buffer;
+    pub mod test_coverage_cmd_lock_server;
+    pub mod test_coverage_cmd_move_window;
+    pub mod test_coverage_cmd_new_session;
+    pub mod test_coverage_cmd_new_window;
+    pub mod test_coverage_cmd_paste_buffer;
+    pub mod test_coverage_cmd_pipe_pane;
+    pub mod test_coverage_cmd_refresh_client;
+    pub mod test_coverage_cmd_rename_session;
+    pub mod test_coverage_cmd_rename_window;
+    pub mod test_coverage_cmd_resize_pane;
+    pub mod test_coverage_cmd_resize_window;
+    pub mod test_coverage_cmd_respawn_pane;
+    pub mod test_coverage_cmd_respawn_window;
+    pub mod test_coverage_cmd_rotate_window;
+    pub mod test_coverage_cmd_run_shell;
+    pub mod test_coverage_cmd_save_buffer;
+    pub mod test_coverage_cmd_select_layout;
+    pub mod test_coverage_cmd_select_pane;
+    pub mod test_coverage_cmd_select_window;
+    pub mod test_coverage_cmd_send_keys;
+    pub mod test_coverage_cmd_server_access;
+    pub mod test_coverage_cmd_set_buffer;
+    pub mod test_coverage_cmd_set_environment;
+    pub mod test_coverage_cmd_set_option;
+    pub mod test_coverage_cmd_show_environment;
+    pub mod test_coverage_cmd_show_messages;
+    pub mod test_coverage_cmd_show_options;
+    pub mod test_coverage_cmd_show_prompt_history;
+    pub mod test_coverage_cmd_source_file;
+    pub mod test_coverage_cmd_split_window;
+    pub mod test_coverage_cmd_swap_pane;
+    pub mod test_coverage_cmd_swap_window;
+    pub mod test_coverage_cmd_switch_client;
+    pub mod test_coverage_cmd_unbind_key;
+    pub mod test_coverage_compat_systemd;
+    pub mod test_coverage_control_notify;
+    pub mod test_coverage_delta;
+    pub mod test_coverage_epsilon;
+    pub mod test_coverage_extra;
+    pub mod test_coverage_fdforkpty;
+    pub mod test_coverage_gamma;
+    pub mod test_coverage_htonll;
+    pub mod test_coverage_input;
+    pub mod test_coverage_key_bindings;
+    pub mod test_coverage_low;
+    pub mod test_coverage_main;
+    pub mod test_coverage_ntohll;
+    pub mod test_coverage_popup;
+    pub mod test_coverage_screen_redraw;
+    pub mod test_coverage_screen_write;
+    pub mod test_coverage_spawn;
+    pub mod test_coverage_status_prompt;
+    pub mod test_coverage_tty_draw;
+    pub mod test_coverage_tty_keys;
+    pub mod test_coverage_window_buffer;
+    pub mod test_coverage_window_client;
+    pub mod test_fixtures;
+    pub mod test_leak_regressions;
+} // mod tests
+pub mod style;
+pub mod terminfo;
+pub mod text;
 pub mod tmux;
-
-pub use error::{Error, Result};
-
-pub(crate) use hmux_vt::TMUX_VERSION;
+pub mod tree;
+pub mod tty;
+pub mod types;
+pub mod window;
+pub mod xmalloc;

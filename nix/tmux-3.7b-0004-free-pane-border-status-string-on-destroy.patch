@@ -1,0 +1,25 @@
+From 68d54cfbe644258a0132cceb2cb63743769e131d Mon Sep 17 00:00:00 2001
+From: "Jeong, Heon" <blmarket@gmail.com>
+Date: Sun, 23 Aug 2026 15:59:29 -0700
+Subject: Fix memory leak when destroying pane
+
+expaneded field should be freed when destroying pane.
+
+Ported to 3.7b: upstream splits the teardown into window_pane_destroy and
+window_pane_free, and the free belongs to the latter; 3.7b has only
+window_pane_destroy, which frees the ranges beside it in the same place.
+---
+ window.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/window.c b/window.c
+index 00ed1a07..c90a35f4 100644
+--- a/window.c
++++ b/window.c
+@@ -1130,6 +1130,7 @@ window_pane_destroy(struct window_pane *wp)
+ 	cmd_free_argv(wp->argc, wp->argv);
+ 	colour_palette_free(&wp->palette);
+ 	style_ranges_free(&wp->border_status_line.ranges);
++	free(wp->border_status_line.expanded);
+ 	free(wp);
+ }
