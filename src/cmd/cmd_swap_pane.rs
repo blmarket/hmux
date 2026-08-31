@@ -5,7 +5,7 @@ use crate::fmt_args;
 use crate::layout::layout_cell_set_pane;
 use crate::layout::layout_fix_panes;
 use crate::notify::notify_window;
-use crate::options::{options_load_pane_colours, options_ptr, options_set_parent};
+use crate::options::{options_load_pane_colours, options_set_parent};
 use crate::server::server_client_remove_pane;
 use crate::server::server_redraw_window;
 pub use crate::types::*;
@@ -205,6 +205,8 @@ unsafe fn cmd_swap_pane_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd_
                 cmdq_error(item, c"cannot swap floating panes".as_ptr(), fmt_args![]);
                 return CMD_RETURN_ERROR;
             }
+            let src_was_active = window_get_active(src_w) == src_wp;
+            let mut dst_was_active = window_get_active(dst_w) == dst_wp;
             server_client_remove_pane(src_wp);
             server_client_remove_pane(dst_wp);
             window_panes_swap(src_w, src_wp, dst_w, dst_wp);
@@ -232,14 +234,14 @@ unsafe fn cmd_swap_pane_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd_
             }
             window_pane_set_window(src_wp, dst_w);
             options_set_parent(
-                options_ptr(&(*src_wp).options),
-                options_ptr(&(*dst_w).options),
+                (*src_wp).options_ptr(),
+                (*dst_w).options_ptr(),
             );
             (*src_wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
             window_pane_set_window(dst_wp, src_w);
             options_set_parent(
-                options_ptr(&(*dst_wp).options),
-                options_ptr(&(*src_w).options),
+                (*dst_wp).options_ptr(),
+                (*src_w).options_ptr(),
             );
             (*dst_wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
             sx = (*src_wp).sx;
@@ -261,10 +263,11 @@ unsafe fn cmd_swap_pane_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd_
                     window_set_active_pane(src_w, tmp_wp, 1 as ::core::ffi::c_int);
                 }
             } else {
-                if window_get_active(src_w) == src_wp {
+                if src_was_active {
                     window_set_active_pane(src_w, dst_wp, 1 as ::core::ffi::c_int);
+                    dst_was_active |= src_w == dst_w;
                 }
-                if window_get_active(dst_w) == dst_wp {
+                if dst_was_active {
                     window_set_active_pane(dst_w, src_wp, 1 as ::core::ffi::c_int);
                 }
             }
@@ -272,11 +275,11 @@ unsafe fn cmd_swap_pane_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd_
                 window_pane_stack_remove(src_w, PaneStack::LastUsed, src_wp);
                 window_pane_stack_remove(dst_w, PaneStack::LastUsed, dst_wp);
                 options_load_pane_colours(
-                    options_ptr(&(*src_wp).options),
+                    (*src_wp).options_ptr(),
                     &raw mut (*src_wp).palette,
                 );
                 options_load_pane_colours(
-                    options_ptr(&(*dst_wp).options),
+                    (*dst_wp).options_ptr(),
                     &raw mut (*dst_wp).palette,
                 );
                 layout_fix_panes(src_w, ::core::ptr::null_mut::<window_pane>());

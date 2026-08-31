@@ -36,7 +36,7 @@ use crate::input::{
     GRID_LINE_START_OUTPUT, GRID_LINE_START_PROMPT, MODE_FOCUSON, input_init, input_parse_buffer,
     input_pending, input_reset, input_set_buffer_size,
 };
-use crate::options::{options_ptr, options_set_number};
+use crate::options::options_set_number;
 use crate::paste::{paste_buffer_data, paste_free, paste_get_top};
 use crate::reactor::Stream;
 use crate::screen::screen_grid_mut;
@@ -91,7 +91,7 @@ impl Parser {
                 crate::input::InputOwner::Pane((*wp).id),
                 bev.as_ref().map_or(Stream::NONE, |b| b.ptr()),
             ));
-            crate::input::ictx_opt(&(*wp).ictx).map_or(null_mut(), |i| i as *mut input_ctx)
+            crate::input::ictx_opt(&(*wp).ictx).unwrap_or(null_mut())
         };
         Parser {
             window,
@@ -227,13 +227,7 @@ fn tab_over_blank_space_writes_a_single_tab_cell() {
 #[test]
 fn bell_sets_the_window_alert_flag() {
     let mut p = Parser::new();
-    unsafe {
-        options_set_number(
-            options_ptr(&(*p.window.ptr()).options),
-            c"monitor-bell".as_ptr(),
-            0,
-        )
-    };
+    unsafe { options_set_number((*p.window.ptr()).options_ptr(), c"monitor-bell".as_ptr(), 0) };
     p.feed_str("\x07");
     assert_ne!(unsafe { (*p.window.ptr()).flags } & WINDOW_BELL, 0);
 }
@@ -648,7 +642,7 @@ fn osc_clipboard_write_stores_a_paste_buffer_when_allowed() {
     unsafe { options_set_number(global_options, c"set-clipboard".as_ptr(), 2) };
     p.feed_str("\x1b]52;c;aGVsbG8=\x07");
     let mut name: Option<CString> = None;
-    let top = unsafe { paste_get_top(&raw mut name) };
+    let top = unsafe { paste_get_top(Some(&mut name)) };
     assert!(!top.is_null());
     unsafe {
         assert_eq!(paste_buffer_data(&*top), b"hello");

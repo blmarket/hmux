@@ -100,8 +100,8 @@ pub fn attributes_tostring(attr: ::core::ffi::c_int) -> ::std::ffi::CString {
     ::std::ffi::CString::new(describe(attr)).expect("an attribute name has no interior NUL")
 }
 
-pub unsafe fn attributes_fromstring(str: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
-    unsafe { parse(::core::ffi::CStr::from_ptr(str).to_bytes()).unwrap_or(-1) }
+pub fn attributes_fromstring(s: &::core::ffi::CStr) -> ::core::ffi::c_int {
+    parse(s.to_bytes()).unwrap_or(-1)
 }
 
 #[cfg(test)]

@@ -1362,39 +1362,31 @@ unsafe fn tty_term_strip(s: *const ::core::ffi::c_char) -> CString {
 /// The next capability in a colon-separated override list, with `::` read as
 /// one colon, as the caller's own string. Answers nothing at the end of the
 /// list, or for a capability longer than the list format allows.
-unsafe fn tty_term_override_next(
-    mut s: *const ::core::ffi::c_char,
-    offset: &mut size_t,
-) -> Option<::std::ffi::CString> {
-    unsafe {
-        const LONGEST: usize = 8191;
-        let mut value = Vec::<u8>::new();
-        let mut at: size_t = *offset;
-        if *s.add(at) as ::core::ffi::c_int == '\0' as i32 {
+fn tty_term_override_next(s: &CStr, offset: &mut size_t) -> Option<CString> {
+    const LONGEST: usize = 8191;
+    let bytes = s.to_bytes();
+    let mut value = Vec::<u8>::new();
+    let mut at: size_t = *offset;
+    if at >= bytes.len() {
+        return None;
+    }
+    while at < bytes.len() {
+        if bytes[at] == b':' {
+            if bytes.get(at + 1) != Some(&b':') {
+                break;
+            }
+            value.push(b':');
+            at += 2;
+        } else {
+            value.push(bytes[at]);
+            at += 1;
+        }
+        if value.len() == LONGEST {
             return None;
         }
-        while *s.add(at) as ::core::ffi::c_int != '\0' as i32 {
-            if *s.add(at) as ::core::ffi::c_int == ':' as i32 {
-                if !(*s.add(at.wrapping_add(1 as size_t)) as ::core::ffi::c_int == ':' as i32) {
-                    break;
-                }
-                value.push(b':');
-                at = at.wrapping_add(2 as size_t);
-            } else {
-                value.push(*s.add(at) as u8);
-                at = at.wrapping_add(1);
-            }
-            if value.len() == LONGEST {
-                return None;
-            }
-        }
-        if *s.add(at) as ::core::ffi::c_int != '\0' as i32 {
-            *offset = at.wrapping_add(1 as size_t);
-        } else {
-            *offset = at;
-        }
-        Some(::std::ffi::CString::new(value).expect("a capability has no interior NUL"))
     }
+    *offset = if at < bytes.len() { at + 1 } else { at };
+    Some(CString::new(value).expect("a capability has no interior NUL"))
 }
 pub unsafe fn tty_term_apply(
     term: &mut tty_term,
@@ -1410,7 +1402,8 @@ pub unsafe fn tty_term_apply(
         let mut i: u_int = 0;
         let mut remove: ::core::ffi::c_int = 0;
         loop {
-            let Some(next) = tty_term_override_next(capabilities, &mut offset) else {
+            let Some(next) = tty_term_override_next(CStr::from_ptr(capabilities), &mut offset)
+            else {
                 break;
             };
             // The scan below writes a NUL over the `=` or the trailing `@`,
@@ -1427,14 +1420,7 @@ pub unsafe fn tty_term_apply(
                 cp = cp.offset(1);
                 *fresh0 = '\0' as i32 as ::core::ffi::c_char;
                 let encoded = CStr::from_ptr(cp);
-                let mut decoded = vec![0u8; encoded.to_bytes().len() + 1];
-                if strunvis(decoded.as_mut_ptr() as *mut ::core::ffi::c_char, cp)
-                    == -(1 as ::core::ffi::c_int)
-                {
-                    Some(encoded.to_owned())
-                } else {
-                    Some(CStr::from_ptr(decoded.as_ptr() as *const ::core::ffi::c_char).to_owned())
-                }
+                Some(strunvis(encoded).unwrap_or_else(|| encoded.to_owned()))
             } else if *s.add(strlen(s).wrapping_sub(1 as size_t)) as ::core::ffi::c_int
                 == '@' as i32
             {
@@ -1501,9 +1487,9 @@ pub unsafe fn tty_term_apply_overrides(term: &mut tty_term) {
         a = options_array_first(o);
         while !a.is_null() {
             ov = options_array_item_value(a);
-            s = (*ov).string();
+            s = (*ov).string().as_ptr();
             offset = 0 as size_t;
-            let first = tty_term_override_next(s, &mut offset);
+            let first = tty_term_override_next(CStr::from_ptr(s), &mut offset);
             if first
                 .as_ref()
                 .is_some_and(|first| fnmatch(first.as_ptr(), cstr_ptr(&term.name), 0) == 0)
@@ -1650,9 +1636,9 @@ pub unsafe fn tty_term_create(
         a = options_array_first(o);
         while !a.is_null() {
             ov = options_array_item_value(a);
-            s = (*ov).string();
+            s = (*ov).string().as_ptr();
             offset = 0 as size_t;
-            let first = tty_term_override_next(s, &mut offset);
+            let first = tty_term_override_next(CStr::from_ptr(s), &mut offset);
             if first
                 .as_ref()
                 .is_some_and(|first| fnmatch(first.as_ptr(), cstr_ptr(&(*term).name), 0) == 0)
@@ -1666,17 +1652,17 @@ pub unsafe fn tty_term_create(
             &*environ_ptr(&(*tty_client(tty)).environ),
             c"COLORTERM".as_ptr(),
         )
-        .map(|envent| environ_entry_value(envent));
+        .and_then(environ_entry_value);
         if let Some(colorterm) = colorterm {
             log_debug(
                 c"%s COLORTERM=%s".as_ptr(),
-                fmt_args![cstr_ptr(&(*tty_client(tty)).name), colorterm],
+                fmt_args![(*tty_client(tty)).name.as_deref(), colorterm],
             );
-            if strcasecmp(colorterm, c"truecolor".as_ptr()) == 0 as ::core::ffi::c_int
-                || strcasecmp(colorterm, c"24bit".as_ptr()) == 0 as ::core::ffi::c_int
+            if strcasecmp(colorterm.as_ptr(), c"truecolor".as_ptr()) == 0 as ::core::ffi::c_int
+                || strcasecmp(colorterm.as_ptr(), c"24bit".as_ptr()) == 0 as ::core::ffi::c_int
             {
                 tty_add_features(feat, c"RGB".as_ptr(), c",".as_ptr());
-            } else if !strstr(colorterm, c"256".as_ptr()).is_null() {
+            } else if !strstr(colorterm.as_ptr(), c"256".as_ptr()).is_null() {
                 tty_add_features(feat, c"256".as_ptr(), c",".as_ptr());
             }
         }
@@ -1743,7 +1729,7 @@ pub unsafe fn tty_term_free(mut term: Box<tty_term>) {
         let term_ptr = &raw mut *term;
         log_debug(
             c"removing term %s".as_ptr(),
-            fmt_args![cstr_ptr(&(*term_ptr).name)],
+            fmt_args![(*term_ptr).name.as_deref()],
         );
         let listed = tty_terms.queue();
         if let Some(at) = listed.iter().position(|one| one.term == term_ptr) {
@@ -1949,33 +1935,33 @@ pub unsafe fn tty_term_string_ss(
         CStr::from_ptr(s).to_owned()
     }
 }
-pub unsafe fn tty_term_number(term: &tty_term, mut code: tty_code_code) -> ::core::ffi::c_int {
-    unsafe {
-        if tty_term_has(term, code) == 0 {
-            return 0 as ::core::ffi::c_int;
-        }
-        let TtyCode::Number(value) = tty_term_code(term, code) else {
+pub fn tty_term_number(term: &tty_term, code: tty_code_code) -> ::core::ffi::c_int {
+    if tty_term_has(term, code) == 0 {
+        return 0 as ::core::ffi::c_int;
+    }
+    let TtyCode::Number(value) = tty_term_code(term, code) else {
+        unsafe {
             fatalx(
                 c"not a number: %d".as_ptr(),
                 fmt_args![code as ::core::ffi::c_uint],
             );
-        };
-        *value
-    }
-}
-pub unsafe fn tty_term_flag(term: &tty_term, mut code: tty_code_code) -> ::core::ffi::c_int {
-    unsafe {
-        if tty_term_has(term, code) == 0 {
-            return 0 as ::core::ffi::c_int;
         }
-        let TtyCode::Flag(value) = tty_term_code(term, code) else {
+    };
+    *value
+}
+pub fn tty_term_flag(term: &tty_term, code: tty_code_code) -> ::core::ffi::c_int {
+    if tty_term_has(term, code) == 0 {
+        return 0 as ::core::ffi::c_int;
+    }
+    let TtyCode::Flag(value) = tty_term_code(term, code) else {
+        unsafe {
             fatalx(
                 c"not a flag: %d".as_ptr(),
                 fmt_args![code as ::core::ffi::c_uint],
             );
-        };
-        *value
-    }
+        }
+    };
+    *value
 }
 /// How a capability reads: its number, its name and the value the terminal
 /// gave it, as the caller's own string.

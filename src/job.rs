@@ -163,10 +163,8 @@ pub const STDIN_FILENO: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const STDOUT_FILENO: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const STDERR_FILENO: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const O_RDWR: ::core::ffi::c_int = 0o2 as ::core::ffi::c_int;
-pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
-    unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };
-pub const _PATH_DEVNULL: [::core::ffi::c_char; 10] =
-    unsafe { ::core::mem::transmute::<[u8; 10], [::core::ffi::c_char; 10]>(*b"/dev/null\0") };
+pub const _PATH_BSHELL: &CStr = c"/bin/sh";
+pub const _PATH_DEVNULL: &CStr = c"/dev/null";
 pub const EV_READ: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const EV_WRITE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const JOB_NOWAIT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -192,8 +190,8 @@ pub fn job_find_by_id(id: u_int) -> *mut job {
 }
 
 /// What a job is called by, or nothing for a job that never started.
-pub unsafe fn job_id(job: *mut job) -> Option<u_int> {
-    unsafe { (!job.is_null()).then(|| (*job).id) }
+pub fn job_id(job: Option<&job>) -> Option<u_int> {
+    job.map(|job| job.id)
 }
 
 /// Every job on the list, newest first, as the borrowed pointers the walks
@@ -356,7 +354,7 @@ pub unsafe fn job_run(
                             }
                         }
                     }
-                    environ_push(&mut *env);
+                    environ_push(&env);
                     if !flags & JOB_PTY != 0 {
                         if dup2(out[1 as ::core::ffi::c_int as usize], STDIN_FILENO)
                             == -(1 as ::core::ffi::c_int)
@@ -480,7 +478,7 @@ pub unsafe fn job_run(
                         c"run job %p: %s, pid %ld".as_ptr(),
                         fmt_args![
                             job,
-                            cstr_ptr(&(*job).cmd),
+                            (*job).cmd.as_deref(),
                             (*job).pid as ::core::ffi::c_long
                         ],
                     );
@@ -506,7 +504,7 @@ pub unsafe fn job_transfer(
         let mut fd: ::core::ffi::c_int = (*job).fd;
         log_debug(
             c"transfer job %p: %s".as_ptr(),
-            fmt_args![job, cstr_ptr(&(*job).cmd)],
+            fmt_args![job, (*job).cmd.as_deref()],
         );
         let listed = take_job(job);
         if !pid.is_null() {
@@ -533,7 +531,7 @@ pub unsafe fn job_free(mut job: *mut job) {
     unsafe {
         log_debug(
             c"free job %p: %s".as_ptr(),
-            fmt_args![job, cstr_ptr(&(*job).cmd)],
+            fmt_args![job, (*job).cmd.as_deref()],
         );
         let listed = take_job(job);
         (*job).cmd = None;
@@ -599,7 +597,7 @@ unsafe fn job_write_callback(mut job: *mut job) {
             c"job write %p: %s, pid %ld, output left %zu".as_ptr(),
             fmt_args![
                 job,
-                cstr_ptr(&(*job).cmd),
+                (*job).cmd.as_deref(),
                 (*job).pid as ::core::ffi::c_long,
                 len
             ],
@@ -616,7 +614,7 @@ unsafe fn job_error_callback(mut job: *mut job) {
             c"job error %p: %s, pid %ld".as_ptr(),
             fmt_args![
                 job,
-                cstr_ptr(&(*job).cmd),
+                (*job).cmd.as_deref(),
                 (*job).pid as ::core::ffi::c_long
             ],
         );
@@ -651,7 +649,7 @@ pub fn job_check_died(mut pid: pid_t, mut status: ::core::ffi::c_int) {
             c"job died %p: %s, pid %ld".as_ptr(),
             fmt_args![
                 job,
-                cstr_ptr(&(*job).cmd),
+                (*job).cmd.as_deref(),
                 (*job).pid as ::core::ffi::c_long
             ],
         );
@@ -713,7 +711,7 @@ pub unsafe fn job_print_summary(mut item: *mut cmdq_item, mut blank: ::core::ffi
                 c"Job %u: %s [fd=%d, pid=%ld, status=%d]".as_ptr(),
                 fmt_args![
                     n,
-                    cstr_ptr(&(*job).cmd),
+                    (*job).cmd.as_deref(),
                     (*job).fd,
                     (*job).pid as ::core::ffi::c_long,
                     (*job).status

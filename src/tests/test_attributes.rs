@@ -6,7 +6,7 @@ fn tostring(attr: ::core::ffi::c_int) -> String {
 }
 
 fn fromstring(s: &CStr) -> ::core::ffi::c_int {
-    unsafe { attributes_fromstring(s.as_ptr()) }
+    attributes_fromstring(s)
 }
 
 const NAMED: [(&str, ::core::ffi::c_int); 15] = [

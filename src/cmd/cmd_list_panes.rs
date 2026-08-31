@@ -25,15 +25,15 @@
 //! constants below are not this module's own, but
 //! `test_coverage_cmd_list_panes` reads and pins them through it, so they stay
 //! where the transpiler put them.
-use crate::arguments::{args_get, args_has};
+use crate::arguments::{args_get, args_get_str, args_has};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_print};
 use crate::fmt_args;
 use crate::format::{format_add, format_create, format_defaults, format_expand, format_true};
-use crate::session::{sessions_after, sessions_first};
+use crate::session::session_owners;
 use crate::sort::{sort_get_panes_window, sort_order_from_string};
 pub use crate::types::*;
-use crate::window::{winlinks_after, winlinks_first};
+use crate::window::winlinks_in;
 use ::core::ffi::{CStr, c_char};
 use ::core::ptr::null_mut;
 pub const MSG_READ_CANCEL: msgtype = 307;
@@ -214,8 +214,8 @@ impl Level {
 }
 
 /// The text behind an option, as nothing when the option was not given.
-unsafe fn option(args: &args, flag: u8) -> Option<&'static CStr> {
-    let s = unsafe { args_get(args, flag) };
+unsafe fn option(args: &args, flag: u8) -> Option<&CStr> {
+    let s = args_get(args, flag);
     (!s.is_null()).then(|| unsafe { CStr::from_ptr(s) })
 }
 
@@ -233,34 +233,10 @@ unsafe fn passes(ft: &mut format_tree, filter: Option<&CStr>) -> bool {
     }
 }
 
-/// Every session the server knows, in name order.
-fn each_session() -> impl Iterator<Item = *mut session> {
-    let mut current = null_mut::<session>();
-    let mut started = false;
-    ::core::iter::from_fn(move || unsafe {
-        current = if started {
-            sessions_after(current)
-        } else {
-            started = true;
-            sessions_first()
-        };
-        (!current.is_null()).then_some(current)
-    })
-}
-
-/// The winlinks of `s`, in index order.
-fn windows_of(s: *mut session) -> impl Iterator<Item = *mut winlink> {
-    let mut current = null_mut::<winlink>();
-    let mut started = false;
-    ::core::iter::from_fn(move || unsafe {
-        current = if started {
-            winlinks_after(current)
-        } else {
-            started = true;
-            winlinks_first(&raw mut (*s).windows)
-        };
-        (!current.is_null()).then_some(current)
-    })
+/// Every session the server knows, in name order, walked by the handles that
+/// own them.
+fn each_session() -> impl Iterator<Item = SessionRef> {
+    session_owners().into_iter()
 }
 
 unsafe fn sorted_panes(w: *mut window, sort_crit: &mut sort_criteria_t) -> Vec<*mut window_pane> {
@@ -272,7 +248,7 @@ unsafe fn cmd_list_panes_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval 
         let args = cmd_get_args(self_0);
         let target = cmdq_get_target(item);
 
-        let order = sort_order_from_string(args_get(args, b'O'));
+        let order = sort_order_from_string(args_get_str(args, b'O'));
         if order == SORT_END && args_has(args, b'O') != 0 {
             cmdq_error(item, c"invalid sort order".as_ptr(), fmt_args![]);
             return CMD_RETURN_ERROR;
@@ -298,7 +274,7 @@ unsafe fn cmd_list_panes_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval 
 unsafe fn cmd_list_panes_server(self_0: &cmd, item: *mut cmdq_item) {
     unsafe {
         for s in each_session() {
-            cmd_list_panes_session(self_0, s, item, Level::Server);
+            cmd_list_panes_session(self_0, s.as_ptr(), item, Level::Server);
         }
     }
 }
@@ -310,7 +286,7 @@ unsafe fn cmd_list_panes_session(
     level: Level,
 ) {
     unsafe {
-        for wl in windows_of(s) {
+        for wl in winlinks_in(s) {
             cmd_list_panes_window(self_0, s, wl, item, level);
         }
     }
@@ -332,9 +308,9 @@ unsafe fn cmd_list_panes_window(
         let filter = option(args, b'f');
 
         let mut sort_crit = sort_criteria_t {
-            order: sort_order_from_string(args_get(args, b'O')),
+            order: sort_order_from_string(args_get_str(args, b'O')),
             reversed: args_has(args, b'r'),
-            order_seq: None,
+            ..Default::default()
         };
 
         let panes = sorted_panes((*wl).window(), &mut sort_crit);

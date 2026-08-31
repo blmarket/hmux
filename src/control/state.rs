@@ -221,11 +221,6 @@ pub const CONTROL_WRITE_MINIMUM: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
 pub const CONTROL_MAXIMUM_AGE: ::core::ffi::c_int = 300000 as ::core::ffi::c_int;
 pub const CONTROL_IGNORE_FLAGS: ::core::ffi::c_int =
     CLIENT_CONTROL_NOOUTPUT | CLIENT_UNATTACHEDFLAGS;
-unsafe fn control_free_sub(cs: *mut control_state, csub: *mut control_sub) {
-    unsafe {
-        (*cs).subs.remove((*csub).name.as_c_str());
-    }
-}
 /// Takes `cb` off `blocks`, the pane list that only points at it.
 unsafe fn control_unlink_block(blocks: *mut control_pane_blocks, cb: *mut control_block) {
     unsafe {
@@ -386,7 +381,7 @@ unsafe fn control_vwrite(mut c: *mut client, mut fmt: *const ::core::ffi::c_char
         let s = format_alloc(fmt, args);
         log_debug(
             c"%s: %s: writing line: %s".as_ptr(),
-            fmt_args![c"control_vwrite".as_ptr(), cstr_ptr(&(*c).name), s.as_ptr()],
+            fmt_args![c"control_vwrite".as_ptr(), (*c).name.as_deref(), s.as_ptr()],
         );
         (*cs)
             .write_event
@@ -415,8 +410,8 @@ pub unsafe fn control_write(
             c"%s: %s: storing line: %s".as_ptr(),
             fmt_args![
                 c"control_write".as_ptr(),
-                cstr_ptr(&(*c).name),
-                cstr_ptr(&cb.line)
+                (*c).name.as_deref(),
+                cb.line.as_deref()
             ],
         );
         (*cs).all_blocks.push(cb);
@@ -449,7 +444,7 @@ unsafe fn control_check_age(
             c"%s: %s: %%%u is %llu behind".as_ptr(),
             fmt_args![
                 c"control_check_age".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 (*wp).id,
                 age as ::core::ffi::c_ulonglong
             ],
@@ -509,7 +504,7 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
                     c"%s: %s: new output block of %zu for %%%u".as_ptr(),
                     fmt_args![
                         c"control_write_output".as_ptr(),
-                        cstr_ptr(&(*c).name),
+                        (*c).name.as_deref(),
                         (*cb).size,
                         (*wp).id
                     ],
@@ -519,7 +514,7 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
                         c"%s: %s: %%%u now pending".as_ptr(),
                         fmt_args![
                             c"control_write_output".as_ptr(),
-                            cstr_ptr(&(*c).name),
+                            (*c).name.as_deref(),
                             (*wp).id
                         ],
                     );
@@ -535,7 +530,7 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
             c"%s: %s: ignoring pane %%%u".as_ptr(),
             fmt_args![
                 c"control_write_output".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 (*wp).id
             ],
         );
@@ -606,7 +601,7 @@ unsafe fn control_read_callback(mut c: *mut client) {
                 c"%s: %s: %s".as_ptr(),
                 fmt_args![
                     c"control_read_callback".as_ptr(),
-                    cstr_ptr(&(*c).name),
+                    (*c).name.as_deref(),
                     line
                 ],
             );
@@ -661,7 +656,7 @@ unsafe fn control_flush_all_blocks(mut c: *mut client) {
                 c"%s: %s: flushing line: %s".as_ptr(),
                 fmt_args![
                     c"control_flush_all_blocks".as_ptr(),
-                    cstr_ptr(&(*c).name),
+                    (*c).name.as_deref(),
                     line
                 ],
             );
@@ -752,7 +747,7 @@ unsafe fn control_write_data(mut c: *mut client, mut message: Box<Buf>) {
             c"%s: %s: %.*s".as_ptr(),
             fmt_args![
                 c"control_write_data".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 data.len() as ::core::ffi::c_int,
                 data.as_ptr()
             ],
@@ -799,7 +794,7 @@ unsafe fn control_write_pending(
                     c"%s: %s: output block %zu (age %llu) for %%%u (used %zu/%zu)".as_ptr(),
                     fmt_args![
                         c"control_write_pending".as_ptr(),
-                        cstr_ptr(&(*c).name),
+                        (*c).name.as_deref(),
                         (*cb).size,
                         age as ::core::ffi::c_ulonglong,
                         (*cp).pane,
@@ -853,7 +848,7 @@ unsafe fn control_write_callback(mut c: *mut client) {
                 c"%s: %s: %zu bytes available, %u panes".as_ptr(),
                 fmt_args![
                     c"control_write_callback".as_ptr(),
-                    cstr_ptr(&(*c).name),
+                    (*c).name.as_deref(),
                     space,
                     (*cs).pending_count
                 ],
@@ -966,14 +961,7 @@ pub unsafe fn control_stop(mut c: *mut client) {
             (*cs).write_event.free();
         }
         (*cs).read_event.free();
-        let subs: Vec<*mut control_sub> = (*cs)
-            .subs
-            .values_mut()
-            .map(|csub| &raw mut **csub)
-            .collect();
-        for csub in subs {
-            control_free_sub(cs, csub);
-        }
+        (*cs).subs.clear();
         (*cs).subs_timer.disarm();
         control_reset_offsets(c);
         (*c).control_state = None;
@@ -1263,9 +1251,7 @@ pub unsafe fn control_add_sub(
     unsafe {
         let mut cs: *mut control_state = control_state_of(c);
         let mut tv = timeval::from_secs(1 as __time_t);
-        if let Some(csub) = (*cs).subs.get_mut(CStr::from_ptr(name)) {
-            control_free_sub(cs, &raw mut **csub);
-        }
+        (*cs).subs.remove(CStr::from_ptr(name));
         let csub = Box::new(control_sub {
             name: CStr::from_ptr(name).to_owned(),
             format: CStr::from_ptr(format).to_owned(),
@@ -1289,9 +1275,7 @@ pub unsafe fn control_add_sub(
 pub unsafe fn control_remove_sub(mut c: *mut client, mut name: *const ::core::ffi::c_char) {
     unsafe {
         let mut cs: *mut control_state = control_state_of(c);
-        if let Some(csub) = (*cs).subs.get_mut(CStr::from_ptr(name)) {
-            control_free_sub(cs, &raw mut **csub);
-        }
+        (*cs).subs.remove(CStr::from_ptr(name));
         if (*cs).subs.is_empty() {
             (*cs).subs_timer.disarm();
         }

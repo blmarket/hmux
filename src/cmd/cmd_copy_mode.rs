@@ -227,11 +227,10 @@ unsafe fn cmd_copy_mode_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
         }
 
         if args_has(args, b'M') != 0 {
-            let mut s: *mut session = null_mut();
-            wp = cmd_mouse_pane(&raw mut (*event).m, &raw mut s, null_mut());
-            if wp.is_null() {
+            let Some((s, _, mouse_wp)) = cmd_mouse_pane(&raw mut (*event).m) else {
                 return CMD_RETURN_NORMAL;
-            }
+            };
+            wp = mouse_wp;
             if c.is_null() || (*c).session != s {
                 return CMD_RETURN_NORMAL;
             }

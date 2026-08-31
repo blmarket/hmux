@@ -15,7 +15,7 @@ pub use store::{
     options_free, options_from_string, options_get_number, options_get_only_ptr,
     options_get_parent, options_get_ptr, options_get_string, options_is_array, options_is_string,
     options_load_pane_colours, options_match, options_name, options_next, options_owner,
-    options_parse_get, options_ptr, options_push_changes, options_remove_or_default,
+    options_parse, options_parse_get, options_ptr, options_push_changes, options_remove_or_default,
     options_scope_from_flags, options_scope_from_name, options_set_number, options_set_parent,
     options_set_string, options_string_to_style, options_table_entry, options_to_string,
 };

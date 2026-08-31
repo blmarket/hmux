@@ -1,4 +1,4 @@
-use crate::arguments::{args_get, args_has};
+use crate::arguments::{args_get, args_get_str, args_has};
 use crate::cmd::cmd_mouse_at;
 use crate::cmd::cmd_parse_and_append;
 use crate::cmd::cmdq_new_state;
@@ -7,7 +7,6 @@ use crate::ffi::{__ctype_tolower_loc, __ctype_toupper_loc, strcasestr, strlen, s
 use crate::format::format_draw;
 use crate::grid::grid_default_cell;
 use crate::list::foreach_owned;
-use crate::options::options_ptr;
 use crate::overlay::{menu_add_items, menu_display};
 use crate::overlay::{popup_display, popup_write};
 use crate::screen::{screen_free, screen_grid_ptr, screen_init, screen_resize};
@@ -21,6 +20,7 @@ use crate::server::{server_redraw_window, server_unzoom_window};
 use crate::status::{status_message_set, status_prompt_set};
 pub use crate::types::*;
 use crate::window::window_zoom;
+#[derive(Default)]
 #[repr(C)]
 pub struct mode_tree_item {
     /// What the tree names this item by. An id outlives nothing: a line or a
@@ -2279,7 +2279,7 @@ static mode_tree_help_start: [&::core::ffi::CStr; 20] = [
 static mode_tree_help_end: [&::core::ffi::CStr; 1] =
     [c"\r\x1B[1m  q, Escape \x1B[0m\x0Ex\x0F \x1B[0mExit mode\x1B[H"];
 pub const MODE_TREE_HELP_DEFAULT_WIDTH: ::core::ffi::c_int = 39 as ::core::ffi::c_int;
-unsafe fn mode_tree_is_lowercase(s: &CStr) -> ::core::ffi::c_int {
+fn mode_tree_is_lowercase(s: &CStr) -> ::core::ffi::c_int {
     for &byte in s.to_bytes() {
         if byte as ::core::ffi::c_int != tolower(byte as ::core::ffi::c_int) {
             return 0 as ::core::ffi::c_int;
@@ -2648,10 +2648,12 @@ pub unsafe fn mode_tree_get_current(mtd: &ModeTreeDataRef) -> ModeTreeItemData {
         (*line_item(mtd, (*mtd).current)).itemdata
     }
 }
-pub unsafe fn mode_tree_get_current_name(mtd: &ModeTreeDataRef) -> *const ::core::ffi::c_char {
+/// What the tree names the line the cursor is on, or nothing when the line
+/// has no name of its own.
+pub unsafe fn mode_tree_get_current_name(mtd: &ModeTreeDataRef) -> Option<&'static CStr> {
     unsafe {
         let mtd = mtd.as_ptr();
-        cstr_ptr(&(*line_item(mtd, (*mtd).current)).name)
+        (*line_item(mtd, (*mtd).current)).name.as_deref()
     }
 }
 pub unsafe fn mode_tree_expand_current(mtd: &ModeTreeDataRef) {
@@ -2809,8 +2811,7 @@ pub(crate) unsafe fn mode_tree_start(
     mut helpcb: mode_tree_help_cb,
     mut modedata: WindowModeData,
     menu: &'static [menu_item<'static>],
-    mut s: *mut *mut screen,
-) -> ModeTreeDataRef {
+) -> (ModeTreeDataRef, *mut screen) {
     unsafe {
         let mut mtd_ref = ModeTreeDataRef::new(mode_tree_data {
             zoomed: 0,
@@ -2857,7 +2858,7 @@ pub(crate) unsafe fn mode_tree_start(
             (*mtd).preview = MODE_TREE_PREVIEW_NORMAL as ::core::ffi::c_int;
         }
         (*mtd).sort_crit.order = if !args.is_null() {
-            sort_order_from_string(args_get(&*args, 'O' as i32 as u_char))
+            sort_order_from_string(args_get_str(&*args, 'O' as i32 as u_char))
         } else {
             SORT_NAME
         };
@@ -2877,8 +2878,8 @@ pub(crate) unsafe fn mode_tree_start(
             (*wp).sy,
             0 as ::core::ffi::c_int as u_int,
         );
-        *s = &raw mut (*mtd).screen;
-        mtd_ref
+        let s = &raw mut (*mtd).screen;
+        (mtd_ref, s)
     }
 }
 pub unsafe fn mode_tree_zoom(mtd: &ModeTreeDataRef, mut args: *mut args) {
@@ -3038,19 +3039,10 @@ pub unsafe fn mode_tree_add(
             id,
             parent: parent.as_ref().map(|parent| parent.id),
             itemdata,
-            line: 0,
-            key: 0,
-            keystr: None,
-            keylen: 0,
             tag,
             name: Some(name.to_owned()),
             text: text.map(CStr::to_owned),
-            expanded: 0,
-            tagged: 0,
-            draw_as_parent: 0,
-            no_tag: 0,
-            align: 0,
-            children: mode_tree_list::new(),
+            ..Default::default()
         });
         mti = &raw mut *item;
         saved = mode_tree_find_item(&raw mut (*mtd).saved, tag);
@@ -3112,7 +3104,7 @@ pub unsafe fn mode_tree_draw(mtd: &ModeTreeDataRef) {
         let mut s: *mut screen = &raw mut (*mtd).screen;
         let mut line: *mut mode_tree_line = ::core::ptr::null_mut::<mode_tree_line>();
         let mut mti: *mut mode_tree_item = ::core::ptr::null_mut::<mode_tree_item>();
-        let mut oo: *mut options = options_ptr(&(*(*wp).window).options);
+        let mut oo: *mut options = (*(*wp).window).options_ptr();
         let mut ctx = screen_write_ctx::default();
         let mut gc0 = grid_default_cell;
         let mut gc = grid_default_cell;
@@ -3190,7 +3182,7 @@ pub unsafe fn mode_tree_draw(mtd: &ModeTreeDataRef) {
                 let key = if (*mti).key != KEYC_NONE as ::core::ffi::c_ulong as key_code {
                     xasprintf(
                         c"(%s)%*s".as_ptr(),
-                        fmt_args![cstr_ptr(&(*mti).keystr), pad, c"".as_ptr()],
+                        fmt_args![(*mti).keystr.as_deref(), pad, c"".as_ptr()],
                     )
                 } else {
                     c"".to_owned()
@@ -3241,7 +3233,7 @@ pub unsafe fn mode_tree_draw(mtd: &ModeTreeDataRef) {
                         key.as_ptr(),
                         start.as_ptr(),
                         (*mti).align * *alignlen.as_mut_ptr().offset((*line).depth as isize),
-                        cstr_ptr(&(*mti).name),
+                        (*mti).name.as_deref(),
                         tag,
                         if (*mti).text.is_some() {
                             c": ".as_ptr()
@@ -3334,7 +3326,7 @@ pub unsafe fn mode_tree_draw(mtd: &ModeTreeDataRef) {
                     xasprintf(
                         c" %s (sort: %s%s)".as_ptr(),
                         fmt_args![
-                            cstr_ptr(&(*mti).name),
+                            (*mti).name.as_deref(),
                             sort_order_to_string((*mtd).sort_crit.order)
                                 .map_or(::core::ptr::null(), |name| name.as_ptr()),
                             if (*mtd).sort_crit.reversed != 0 {
@@ -3345,7 +3337,7 @@ pub unsafe fn mode_tree_draw(mtd: &ModeTreeDataRef) {
                         ],
                     )
                 } else {
-                    xasprintf(c" %s".as_ptr(), fmt_args![cstr_ptr(&(*mti).name)])
+                    xasprintf(c" %s".as_ptr(), fmt_args![(*mti).name.as_deref()])
                 };
                 if w.wrapping_sub(2 as u_int) as size_t >= strlen(text.as_ptr()) {
                     screen_write_cursormove(
@@ -3662,7 +3654,7 @@ unsafe fn mode_tree_display_menu(
             items = (*mtd).menu;
             xasprintf(
                 c"#[align=centre]%s".as_ptr(),
-                fmt_args![cstr_ptr(&(*mti).name)],
+                fmt_args![(*mti).name.as_deref()],
             )
         } else {
             items = &mode_tree_menu_items;

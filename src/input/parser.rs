@@ -12,9 +12,7 @@ use crate::list::{foreach_owned_safe, foreach_safe};
 use crate::log::{fatalx, log_debug};
 use crate::notify::notify_pane;
 use crate::options::options_get_only_ptr;
-use crate::options::{
-    options_get_number, options_ptr, options_remove_or_default, options_set_number,
-};
+use crate::options::{options_get_number, options_remove_or_default, options_set_number};
 use crate::paste::paste_add;
 use crate::paste::{paste_buffer_data, paste_get_top};
 use crate::reactor::Timer;
@@ -2317,8 +2315,8 @@ pub fn ictx_mut(value: &mut Option<InputCtxRef>) -> &mut input_ctx {
 }
 
 /// The parser an owner holds, if it has opened one.
-pub fn ictx_opt(value: &Option<InputCtxRef>) -> Option<&mut input_ctx> {
-    value.as_ref().map(|ictx| unsafe { &mut *ictx.as_ptr() })
+pub fn ictx_opt(value: &Option<InputCtxRef>) -> Option<*mut input_ctx> {
+    value.as_ref().map(InputCtxRef::as_ptr)
 }
 
 pub unsafe fn input_init(owner_of: InputOwner, mut bev: Stream) -> InputCtxRef {
@@ -3334,7 +3332,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                             };
                         } else {
                             if !(*ictx).pane().is_null() {
-                                oo = options_ptr(&(*(*ictx).pane()).options);
+                                oo = (*(*ictx).pane()).options_ptr();
                             } else {
                                 oo = global_w_options;
                             }
@@ -3708,7 +3706,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     0 as ::core::ffi::c_int,
                 );
                 if !(n == -(1 as ::core::ffi::c_int)) {
-                    screen_set_cursor_style(n as u_int, &raw mut (*s).cstyle, &raw mut (*s).mode);
+                    screen_set_cursor_style(n as u_int, &mut (*s).cstyle, &mut (*s).mode);
                     if n == 0 as ::core::ffi::c_int {
                         screen_write_mode_clear(&mut *sctx, MODE_CURSOR_BLINKING_SET);
                     }
@@ -3814,10 +3812,10 @@ unsafe fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx) {
                     screen_write_mode_clear(&mut *sctx, MODE_MOUSE_SGR);
                 }
                 47 | 1047 => {
-                    screen_write_alternateoff(&mut *sctx, gc, 0 as ::core::ffi::c_int);
+                    screen_write_alternateoff(&mut *sctx, &mut *gc, 0 as ::core::ffi::c_int);
                 }
                 1049 => {
-                    screen_write_alternateoff(&mut *sctx, gc, 1 as ::core::ffi::c_int);
+                    screen_write_alternateoff(&mut *sctx, &mut *gc, 1 as ::core::ffi::c_int);
                 }
                 2004 => {
                     screen_write_mode_clear(&mut *sctx, MODE_BRACKETPASTE);
@@ -3932,10 +3930,10 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
                     screen_write_mode_set(&mut *sctx, MODE_MOUSE_SGR);
                 }
                 47 | 1047 => {
-                    screen_write_alternateon(&mut *sctx, gc, 0 as ::core::ffi::c_int);
+                    screen_write_alternateon(&mut *sctx, &mut *gc, 0 as ::core::ffi::c_int);
                 }
                 1049 => {
-                    screen_write_alternateon(&mut *sctx, gc, 1 as ::core::ffi::c_int);
+                    screen_write_alternateon(&mut *sctx, &mut *gc, 1 as ::core::ffi::c_int);
                 }
                 2004 => {
                     screen_write_mode_set(&mut *sctx, MODE_BRACKETPASTE);
@@ -4603,7 +4601,7 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 }
             } else {
                 if !wp.is_null() {
-                    oo = options_ptr(&(*wp).options);
+                    oo = (*wp).options_ptr();
                 } else {
                     oo = global_w_options;
                 }
@@ -4647,7 +4645,7 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         if wp.is_null() {
             oo = global_w_options;
         } else {
-            oo = options_ptr(&(*wp).options);
+            oo = (*wp).options_ptr();
         }
         if (*ictx).flags & INPUT_DISCARD != 0 {
             log_debug(
@@ -4744,8 +4742,7 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
         match option {
             0 | 2 => {
                 if !wp.is_null()
-                    && options_get_number(options_ptr(&(*wp).options), c"allow-set-title".as_ptr())
-                        != 0
+                    && options_get_number((*wp).options_ptr(), c"allow-set-title".as_ptr()) != 0
                     && screen_set_title(
                         sctx.s,
                         p as *const ::core::ffi::c_char,
@@ -4834,7 +4831,7 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
             fmt_args![c"input_exit_apc".as_ptr(), (*ictx).input_buf.as_ptr()],
         );
         if !wp.is_null()
-            && options_get_number(options_ptr(&(*wp).options), c"allow-set-title".as_ptr()) != 0
+            && options_get_number((*wp).options_ptr(), c"allow-set-title".as_ptr()) != 0
             && screen_set_title(
                 sctx.s,
                 (*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char,
@@ -4866,11 +4863,7 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
         if (*ictx).flags & INPUT_DISCARD != 0 {
             return;
         }
-        if options_get_number(
-            options_ptr(&(*(*ictx).pane()).options),
-            c"allow-rename".as_ptr(),
-        ) == 0
-        {
+        if options_get_number((*(*ictx).pane()).options_ptr(), c"allow-rename".as_ptr()) == 0 {
             return;
         }
         log_debug(
@@ -4882,16 +4875,16 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
         }
         w = (*wp).window;
         if input_length(ictx) == 0 as size_t {
-            o = options_get_only_ptr(options_ptr(&(*w).options), c"automatic-rename".as_ptr());
+            o = options_get_only_ptr((*w).options_ptr(), c"automatic-rename".as_ptr());
             if !o.is_null() {
                 options_remove_or_default(o, -(1 as ::core::ffi::c_int), &mut None);
             }
-            if options_get_number(options_ptr(&(*w).options), c"automatic-rename".as_ptr()) == 0 {
+            if options_get_number((*w).options_ptr(), c"automatic-rename".as_ptr()) == 0 {
                 window_set_name(w, c"".as_ptr(), 1 as ::core::ffi::c_int);
             }
         } else {
             options_set_number(
-                options_ptr(&(*w).options),
+                (*w).options_ptr(),
                 c"automatic-rename".as_ptr(),
                 0 as ::core::ffi::c_longlong,
             );
@@ -4954,9 +4947,6 @@ unsafe fn input_osc_colour_reply(
     mut end_type: input_end_type,
 ) {
     unsafe {
-        let mut r: u_char = 0;
-        let mut g: u_char = 0;
-        let mut b: u_char = 0;
         let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         if c != -(1 as ::core::ffi::c_int) {
             c = colour_force_rgb(c);
@@ -4964,7 +4954,7 @@ unsafe fn input_osc_colour_reply(
         if c == -(1 as ::core::ffi::c_int) {
             return;
         }
-        colour_split_rgb(c, &raw mut r, &raw mut g, &raw mut b);
+        let (r, g, b) = colour_split_rgb(c);
         if end_type as ::core::ffi::c_uint
             == INPUT_END_BEL as ::core::ffi::c_int as ::core::ffi::c_uint
         {
@@ -5121,13 +5111,7 @@ unsafe fn input_osc_8(mut ictx: *mut input_ctx, p: &CStr) {
             let Some(hl) = hl else {
                 return;
             };
-            (*gc).link = hyperlinks_put(
-                hl,
-                uri,
-                id.as_ref()
-                    .map(|id| id.as_ptr())
-                    .unwrap_or(::core::ptr::null()),
-            );
+            (*gc).link = hyperlinks_put(hl, CStr::from_ptr(uri), id.as_deref());
             if id.is_none() {
                 log_debug(
                     c"hyperlink (anonymous) %s = %u".as_ptr(),
@@ -5409,7 +5393,7 @@ unsafe fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::core::ffi::c_
             return;
         }
         if state == 1 as ::core::ffi::c_int {
-            pb = paste_get_top(::core::ptr::null_mut());
+            pb = paste_get_top(None);
             if pb.is_null() {
                 return;
             }

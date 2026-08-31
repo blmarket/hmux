@@ -18,7 +18,7 @@ use crate::log::{fatal, fatalx, log_debug};
 use crate::notify::{notify_pane, notify_window};
 use crate::options::{
     options_create_boxed, options_free, options_get_number, options_get_string,
-    options_load_pane_colours, options_ptr,
+    options_load_pane_colours,
 };
 use crate::reactor::{Interest, Timer};
 use crate::screen::screen_write_stop_sync;
@@ -48,8 +48,10 @@ use crate::tree::GlobalTree;
 use crate::tty::{tty_default_colours, tty_update_window_offset};
 pub use crate::types::*;
 use crate::xmalloc::xasprintf;
+use ::core::cell::Cell;
 use ::core::ops::Bound;
 use ::std::ffi::CString;
+use ::std::thread::LocalKey;
 pub type ctype_mask = ::core::ffi::c_uint;
 pub const _ISalnum: ctype_mask = 8;
 pub const _ISpunct: ctype_mask = 4;
@@ -2208,9 +2210,21 @@ static WINDOW_HANDLES: GlobalTree<usize, WindowWeak> = GlobalTree::new();
 /// Every pane the server has, by id. A pane is reached through its id and
 /// nothing else, so [`window_pane_find_by_id`] is the only way in.
 static all_window_panes: GlobalTree<u_int, *mut window_pane> = GlobalTree::new();
-static mut next_window_pane_id: u_int = 0;
-static mut next_window_id: u_int = 0;
-static mut next_active_point: u_int = 0;
+thread_local! {
+    /// The id the next pane made is handed, never reused and never wound back.
+    static next_window_pane_id: Cell<u_int> = const { Cell::new(0) };
+    /// The id the next window made is handed.
+    static next_window_id: Cell<u_int> = const { Cell::new(0) };
+    /// The stamp the next pane to become active is marked with, which is what
+    /// orders the panes by how recently they were used.
+    static next_active_point: Cell<u_int> = const { Cell::new(0) };
+}
+
+/// Answers a counter's value and moves it on, which is what the post-increment
+/// the C reads these globals with does.
+fn next_id(counter: &'static LocalKey<Cell<u_int>>) -> u_int {
+    counter.replace(counter.get().wrapping_add(1))
+}
 
 pub(crate) fn register_window_handle(reference: &WindowRef) {
     WINDOW_HANDLES
@@ -2321,6 +2335,22 @@ pub unsafe fn winlinks_after(wl: *mut winlink) -> *mut winlink {
 /// The window before `wl` in the session it is linked into.
 pub unsafe fn winlinks_before(wl: *mut winlink) -> *mut winlink {
     unsafe { winlinks_prev(&raw mut (*(*wl).session()).windows, wl) }
+}
+
+/// The winlinks of `s`, in index order, each one read from the tree only when
+/// the walk reaches it.
+pub(crate) unsafe fn winlinks_in(s: *mut session) -> impl Iterator<Item = *mut winlink> {
+    let mut current = ::core::ptr::null_mut::<winlink>();
+    let mut started = false;
+    ::core::iter::from_fn(move || unsafe {
+        current = if started {
+            winlinks_after(current)
+        } else {
+            started = true;
+            winlinks_first(&raw mut (*s).windows)
+        };
+        (!current.is_null()).then_some(current)
+    })
 }
 
 pub unsafe fn winlink_find_by_window(wwl: *mut winlinks, w: *mut window) -> *mut winlink {
@@ -2588,8 +2618,7 @@ pub(crate) fn window_create(
         if ypixel == 0 as u_int {
             ypixel = DEFAULT_YPIXEL as u_int;
         }
-        let fresh0 = next_window_id;
-        next_window_id = next_window_id.wrapping_add(1);
+        let fresh0 = next_id(&next_window_id);
         let mut value = window {
             id: fresh0,
             latest: None,
@@ -2879,8 +2908,7 @@ pub unsafe fn window_set_active_pane(
         window_pane_stack_remove(w, PaneStack::LastUsed, wp);
         window_pane_stack_push(w, PaneStack::LastUsed, lastwp);
         window_set_active(w, wp);
-        let fresh1 = next_active_point;
-        next_active_point = next_active_point.wrapping_add(1);
+        let fresh1 = next_id(&next_active_point);
         (*window_get_active(w)).active_point = fresh1;
         (*window_get_active(w)).flags |= PANE_CHANGED;
         if options_get_number(global_options, c"focus-events".as_ptr()) != 0 {
@@ -2960,7 +2988,7 @@ pub unsafe fn window_get_active_at(
         let mut yoff: ::core::ffi::c_int = 0;
         let mut sx: u_int = 0;
         let mut sy: u_int = 0;
-        pane_status = options_get_number(options_ptr(&(*w).options), c"pane-border-status".as_ptr())
+        pane_status = options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr())
             as ::core::ffi::c_int;
         if pane_status == PANE_STATUS_TOP {
             wp = window_pane_stack_first(w, PaneStack::ZIndex);
@@ -3032,7 +3060,7 @@ pub unsafe fn window_find_string(
         let mut status: ::core::ffi::c_int = 0;
         x = (*w).sx.wrapping_div(2 as u_int);
         y = (*w).sy.wrapping_div(2 as u_int);
-        status = options_get_number(options_ptr(&(*w).options), c"pane-border-status".as_ptr())
+        status = options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr())
             as ::core::ffi::c_int;
         if status == PANE_STATUS_TOP {
             top = top.wrapping_add(1);
@@ -3253,7 +3281,7 @@ pub unsafe fn window_pane_at_index(mut w: *mut window, mut idx: u_int) -> *mut w
     unsafe {
         let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut n: u_int = 0;
-        n = options_get_number(options_ptr(&(*w).options), c"pane-base-index".as_ptr()) as u_int;
+        n = options_get_number((*w).options_ptr(), c"pane-base-index".as_ptr()) as u_int;
         wp = window_panes_first(w);
         while !wp.is_null() {
             if n == idx {
@@ -3303,8 +3331,7 @@ pub unsafe fn window_pane_index(mut wp: *mut window_pane) -> (::core::ffi::c_int
     unsafe {
         let mut w: *mut window = (*wp).window;
         let mut wq: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut i =
-            options_get_number(options_ptr(&(*w).options), c"pane-base-index".as_ptr()) as u_int;
+        let mut i = options_get_number((*w).options_ptr(), c"pane-base-index".as_ptr()) as u_int;
         wq = window_panes_first(w);
         while !wq.is_null() {
             if wp == wq {
@@ -3533,13 +3560,10 @@ unsafe fn window_pane_create(
             pid: 0,
             tty: [0; 32],
             status: 0,
-            dead_time: timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            },
+            dead_time: timeval::default(),
             fd: -1,
             event: Stream::NONE,
-            offset: window_pane_offset { used: 0 },
+            offset: window_pane_offset::default(),
             base_offset: 0,
             resize_queue: window_pane_resizes::new(),
             resize_timer: TimerHandle(0),
@@ -3554,14 +3578,11 @@ unsafe fn window_pane_create(
                 default_palette: None,
             },
             last_theme: 0,
-            border_status_line: style_line_entry {
-                expanded: None,
-                ranges: style_ranges::new(),
-            },
+            border_status_line: style_line_entry::default(),
             pipe_fd: -1,
             pipe_pid: 0,
             pipe_event: Stream::NONE,
-            pipe_offset: window_pane_offset { used: 0 },
+            pipe_offset: window_pane_offset::default(),
             shown: PaneScreen::Base,
             base: screen::default(),
             status_screen: screen::default(),
@@ -3576,17 +3597,13 @@ unsafe fn window_pane_create(
             control_bg: -1,
             control_fg: -1,
             scrollbar_style: style_default,
-            r: visible_ranges {
-                ranges: Vec::new(),
-                used: 0,
-            },
+            r: visible_ranges::default(),
         });
         wp = &mut *wp_box;
         window_pane_set_window(wp, w);
-        (*wp).options = Some(options_create_boxed(options_ptr(&(*w).options)));
+        (*wp).options = Some(options_create_boxed((*w).options_ptr()));
         (*wp).flags = PANE_STYLECHANGED;
-        let fresh2 = next_window_pane_id;
-        next_window_pane_id = next_window_pane_id.wrapping_add(1);
+        let fresh2 = next_id(&next_window_pane_id);
         (*wp).id = fresh2;
         pane_registry_add(wp);
         (*wp).fd = -(1 as ::core::ffi::c_int);
@@ -3595,12 +3612,9 @@ unsafe fn window_pane_create(
         (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
         (*wp).control_bg = -(1 as ::core::ffi::c_int);
         (*wp).control_fg = -(1 as ::core::ffi::c_int);
-        style_set_scrollbar_style_from_option(
-            &mut (*wp).scrollbar_style,
-            options_ptr(&(*wp).options),
-        );
+        style_set_scrollbar_style_from_option(&mut (*wp).scrollbar_style, (*wp).options_ptr());
         colour_palette_init(&raw mut (*wp).palette);
-        options_load_pane_colours(options_ptr(&(*wp).options), &raw mut (*wp).palette);
+        options_load_pane_colours((*wp).options_ptr(), &raw mut (*wp).palette);
         screen_init(&raw mut (*wp).base, sx, sy, hlimit);
         (*wp).shown = PaneScreen::Base;
         window_pane_default_cursor(wp);
@@ -3870,10 +3884,7 @@ unsafe fn window_pane_copy_paste(
                 && (*loop_0).fd != -(1 as ::core::ffi::c_int)
                 && !(*loop_0).flags & PANE_INPUTOFF != 0
                 && window_pane_visible(loop_0) != 0
-                && options_get_number(
-                    options_ptr(&(*loop_0).options),
-                    c"synchronize-panes".as_ptr(),
-                ) != 0
+                && options_get_number((*loop_0).options_ptr(), c"synchronize-panes".as_ptr()) != 0
             {
                 log_debug(
                     c"%s: %.*s".as_ptr(),
@@ -3900,10 +3911,7 @@ unsafe fn window_pane_copy_key(mut wp: *mut window_pane, mut key: key_code) {
                 && (*loop_0).fd != -(1 as ::core::ffi::c_int)
                 && !(*loop_0).flags & PANE_INPUTOFF != 0
                 && window_pane_visible(loop_0) != 0
-                && options_get_number(
-                    options_ptr(&(*loop_0).options),
-                    c"synchronize-panes".as_ptr(),
-                ) != 0
+                && options_get_number((*loop_0).options_ptr(), c"synchronize-panes".as_ptr()) != 0
             {
                 input_key_pane(loop_0, key, ::core::ptr::null_mut::<mouse_event>());
             }
@@ -3944,7 +3952,7 @@ pub unsafe fn window_pane_paste(
             ],
         );
         (*wp).event.write(buf as *const u8, len);
-        if options_get_number(options_ptr(&(*wp).options), c"synchronize-panes".as_ptr()) != 0 {
+        if options_get_number((*wp).options_ptr(), c"synchronize-panes".as_ptr()) != 0 {
             window_pane_copy_paste(wp, buf, len);
         }
     }
@@ -3996,7 +4004,7 @@ pub unsafe fn window_pane_key(
         {
             return 0 as ::core::ffi::c_int;
         }
-        if options_get_number(options_ptr(&(*wp).options), c"synchronize-panes".as_ptr()) != 0 {
+        if options_get_number((*wp).options_ptr(), c"synchronize-panes".as_ptr()) != 0 {
             window_pane_copy_key(wp, key);
         }
         0 as ::core::ffi::c_int
@@ -4024,18 +4032,7 @@ pub unsafe fn window_pane_search(
 ) -> u_int {
     unsafe {
         let mut s: *mut screen = &raw mut (*wp).base;
-        let mut r: regex_t = re_pattern_buffer {
-            buffer: ::core::ptr::null_mut::<re_dfa_t>(),
-            allocated: 0,
-            used: 0,
-            syntax: 0,
-            fastmap: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-            translate: ::core::ptr::null_mut::<::core::ffi::c_uchar>(),
-            re_nsub: 0,
-            can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor: [0;
-                1],
-            c2rust_padding: [0; 7],
-        };
+        let mut r: regex_t = regex_t::default();
         let mut new: Option<CString> = None;
         let mut i: u_int = 0;
         let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -4161,7 +4158,7 @@ pub unsafe fn window_pane_find_up(mut wp: *mut window_pane) -> *mut window_pane 
             return ::core::ptr::null_mut::<window_pane>();
         }
         w = (*wp).window;
-        status = options_get_number(options_ptr(&(*w).options), c"pane-border-status".as_ptr())
+        status = options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr())
             as ::core::ffi::c_int;
         (xoff, yoff, sx, sy) = window_pane_full_size_offset(wp);
         edge = yoff;
@@ -4222,7 +4219,7 @@ pub unsafe fn window_pane_find_down(mut wp: *mut window_pane) -> *mut window_pan
             return ::core::ptr::null_mut::<window_pane>();
         }
         w = (*wp).window;
-        status = options_get_number(options_ptr(&(*w).options), c"pane-border-status".as_ptr())
+        status = options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr())
             as ::core::ffi::c_int;
         (xoff, yoff, sx, sy) = window_pane_full_size_offset(wp);
         edge = yoff + sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
@@ -4494,10 +4491,8 @@ pub(crate) fn pane_registry_remove(id: u_int) {
 /// by hand is never given the same id as one the server makes.
 #[cfg(test)]
 pub(crate) fn window_pane_reserve_id(id: u_int) {
-    unsafe {
-        if next_window_pane_id <= id {
-            next_window_pane_id = id.wrapping_add(1);
-        }
+    if next_window_pane_id.get() <= id {
+        next_window_pane_id.set(id.wrapping_add(1));
     }
 }
 
@@ -4828,7 +4823,7 @@ pub unsafe fn window_pane_update_used_data(
 pub unsafe fn window_set_fill_character(mut w: *mut window) {
     unsafe {
         (*w).fill_character = None;
-        let value = options_get_string(options_ptr(&(*w).options), c"fill-character".as_ptr());
+        let value = options_get_string((*w).options_ptr(), c"fill-character".as_ptr());
         if *value as ::core::ffi::c_int != '\0' as i32 && utf8_isvalid(value) != 0 {
             let ud = utf8_fromcstr(value);
             if let Some(first) = ud.first()
@@ -4841,7 +4836,7 @@ pub unsafe fn window_set_fill_character(mut w: *mut window) {
 }
 pub unsafe fn window_pane_default_cursor(mut wp: *mut window_pane) {
     unsafe {
-        screen_set_default_cursor((*wp).screen(), options_ptr(&(*wp).options));
+        screen_set_default_cursor((*wp).screen(), (*wp).options_ptr());
     }
 }
 /// The mode the pane is showing, or null when it is on its own screen.
@@ -5050,7 +5045,7 @@ pub unsafe fn window_pane_border_status_get_range(
             return ::core::ptr::null_mut::<style_range>();
         }
         w = (*wp).window;
-        wo = options_ptr(&(*w).options);
+        wo = (*w).options_ptr();
         srs = &raw mut (*wp).border_status_line.ranges;
         pane_status = options_get_number(wo, c"pane-border-status".as_ptr()) as ::core::ffi::c_int;
         if pane_status == PANE_STATUS_TOP {

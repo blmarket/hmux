@@ -52,12 +52,8 @@ impl Argv {
         Argv { strings, ptrs }
     }
 
-    fn argc(&self) -> c_int {
-        self.ptrs.len() as c_int - 1
-    }
-
-    fn ptr(&self) -> *const *mut c_char {
-        self.ptrs.as_ptr()
+    fn slice(&mut self) -> &mut [*mut c_char] {
+        &mut self.ptrs
     }
 
     /// What the list holds now, which permutation may have reordered.
@@ -86,7 +82,7 @@ struct Run {
 /// empty `long` stands for no long options at all.
 fn drive(args: &[&str], options: &CStr, long: &[option_t], flags: c_int) -> Run {
     reset();
-    let argv = Argv::new(args);
+    let mut argv = Argv::new(args);
     let long_ptr = if long.is_empty() {
         null::<option_t>()
     } else {
@@ -97,8 +93,7 @@ fn drive(args: &[&str], options: &CStr, long: &[option_t], flags: c_int) -> Run 
     loop {
         let ret = unsafe {
             getopt_internal(
-                argv.argc(),
-                argv.ptr(),
+                argv.slice(),
                 options.as_ptr(),
                 long_ptr,
                 &raw mut idx,
@@ -136,10 +131,10 @@ fn drive(args: &[&str], options: &CStr, long: &[option_t], flags: c_int) -> Run 
 /// flags.
 fn getopt(args: &[&str], options: &CStr) -> Run {
     reset();
-    let argv = Argv::new(args);
+    let mut argv = Argv::new(args);
     let mut opts = Vec::new();
     loop {
-        let ret = unsafe { BSDgetopt(argv.argc(), argv.ptr(), options.as_ptr()) };
+        let ret = unsafe { BSDgetopt(argv.slice(), options.as_ptr()) };
         if ret == -1 {
             break;
         }
@@ -336,11 +331,10 @@ fn a_leading_plus_stops_at_the_first_argument() {
 fn a_null_option_string_reads_nothing() {
     let _guard = parser();
     reset();
-    let argv = Argv::new(&["tmux", "-2"]);
+    let mut argv = Argv::new(&["tmux", "-2"]);
     let answer = unsafe {
         getopt_internal(
-            argv.argc(),
-            argv.ptr(),
+            argv.slice(),
             null::<c_char>(),
             null::<option_t>(),
             null_mut::<c_int>(),

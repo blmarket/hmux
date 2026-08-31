@@ -542,6 +542,7 @@ async fn run_stream(task_handle: TaskHandle, id: usize, state: SharedStream, gen
     }
 }
 
+#[derive(Default)]
 struct BurstResult {
     bytes: usize,
     eof: bool,
@@ -550,12 +551,7 @@ struct BurstResult {
 }
 
 fn read_burst(state: &SharedStream, fd: c_int, generation: u64) -> BurstResult {
-    let mut result = BurstResult {
-        bytes: 0,
-        eof: false,
-        error: false,
-        budget_exhausted: false,
-    };
+    let mut result = BurstResult::default();
     for operation in 0..STREAM_IO_BUDGET {
         let read = {
             let mut state = state.borrow_mut();
@@ -591,12 +587,7 @@ fn read_burst(state: &SharedStream, fd: c_int, generation: u64) -> BurstResult {
 }
 
 fn write_burst(state: &SharedStream, id: usize, fd: c_int, generation: u64) -> BurstResult {
-    let mut result = BurstResult {
-        bytes: 0,
-        eof: false,
-        error: false,
-        budget_exhausted: false,
-    };
+    let mut result = BurstResult::default();
     for operation in 0..STREAM_IO_BUDGET {
         let write = {
             let mut state = state.borrow_mut();

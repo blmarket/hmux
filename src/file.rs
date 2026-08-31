@@ -1,4 +1,4 @@
-use crate::ffi::{__errno_location, close, dup, open, strcmp, strlen, strncmp};
+use crate::ffi::{__errno_location, close, dup, open, strcmp, strncmp};
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_buf};
 use crate::log::{fatalx, log_debug};
@@ -133,7 +133,7 @@ pub const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
 pub const CLIENT_ATTACHED: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
 pub const CLIENT_DEAD: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
 pub const CLIENT_CONTROL: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
-unsafe fn file_release_io(cf: &mut client_file) {
+fn file_release_io(cf: &mut client_file) {
     let event = ::core::mem::replace(&mut cf.event, Stream::NONE);
     event.free();
     if cf.fd != -(1 as ::core::ffi::c_int) {
@@ -143,11 +143,9 @@ unsafe fn file_release_io(cf: &mut client_file) {
 }
 impl Drop for client_file {
     fn drop(&mut self) {
-        unsafe {
-            file_release_io(self);
-            self.path = None;
-            self.client_ref = None;
-        }
+        file_release_io(self);
+        self.path = None;
+        self.client_ref = None;
     }
 }
 static mut file_next_stream: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
@@ -306,6 +304,17 @@ pub(crate) unsafe fn file_fire_done(cf: ClientFileRef) {
         });
     }
 }
+/// The path the file was opened under, which every path through
+/// [`file_read`] and [`file_write`] has set before it is read back.
+unsafe fn file_path(cf: *const client_file) -> &'static CStr {
+    unsafe {
+        (*cf)
+            .path
+            .as_deref()
+            .expect("the file was opened under a path")
+    }
+}
+
 pub(crate) unsafe fn file_fire_read(cf: &ClientFileRef) {
     unsafe {
         let cf = cf.as_ptr();
@@ -374,7 +383,7 @@ pub(crate) unsafe fn file_vprint(
         };
     }
 }
-pub(crate) unsafe fn file_print_buffer(mut c: *mut client, mut data: *const u8, mut size: size_t) {
+pub(crate) unsafe fn file_print_buffer(mut c: *mut client, data: &[u8]) {
     unsafe {
         let mut msg = msg_write_open::default();
         if file_can_print(c) == 0 {
@@ -382,20 +391,14 @@ pub(crate) unsafe fn file_print_buffer(mut c: *mut client, mut data: *const u8, 
         }
         if let Some(cf) = file_find_ref(&raw mut (*c).files, 1 as ::core::ffi::c_int) {
             let cf_ptr = cf.as_ptr();
-            (*cf_ptr)
-                .buffer
-                .as_mut()
-                .append(::core::slice::from_raw_parts(data, size));
+            (*cf_ptr).buffer.as_mut().append(data);
             file_push(cf);
         } else {
             let cf =
                 file_create_with_client(c, 1 as ::core::ffi::c_int, None, ClientFileData::None);
             let cf_ptr = cf.as_ptr();
             (*cf_ptr).path = Some(c"-".to_owned());
-            (*cf_ptr)
-                .buffer
-                .as_mut()
-                .append(::core::slice::from_raw_parts(data, size));
+            (*cf_ptr).buffer.as_mut().append(data);
             msg.stream = 1 as ::core::ffi::c_int;
             msg.fd = STDOUT_FILENO;
             msg.flags = 0 as ::core::ffi::c_int;
@@ -446,8 +449,7 @@ pub(crate) unsafe fn file_write(
     mut c: *mut client,
     mut path: *const ::core::ffi::c_char,
     mut flags: ::core::ffi::c_int,
-    mut bdata: *const u8,
-    mut bsize: size_t,
+    bdata: &[u8],
     mut cb: client_file_cb,
     mut cbdata: ClientFileData,
 ) {
@@ -484,18 +486,13 @@ pub(crate) unsafe fn file_write(
                     .create(true)
                     .append(append)
                     .truncate(!append)
-                    .open(OsStr::from_bytes(
-                        CStr::from_ptr(cstr_ptr(&(*cf).path)).to_bytes(),
-                    ));
+                    .open(OsStr::from_bytes(file_path(cf).to_bytes()));
                 match opened {
                     Err(err) => {
                         (*cf).error = err.raw_os_error().unwrap_or(EIO);
                     }
                     Ok(mut file) => {
-                        if file
-                            .write_all(::core::slice::from_raw_parts(bdata, bsize))
-                            .is_err()
-                        {
+                        if file.write_all(bdata).is_err() {
                             (*cf).error = EIO;
                         }
                     }
@@ -507,12 +504,10 @@ pub(crate) unsafe fn file_write(
         }
         let cf = cf_ref.as_ptr();
         if current_block == 9838574340342979941 {
-            (*cf)
-                .buffer
-                .as_mut()
-                .append(::core::slice::from_raw_parts(bdata, bsize));
-            msglen = strlen(cstr_ptr(&(*cf).path))
-                .wrapping_add(1 as size_t)
+            (*cf).buffer.as_mut().append(bdata);
+            let path = file_path(cf).to_bytes_with_nul();
+            msglen = path
+                .len()
                 .wrapping_add(::core::mem::size_of::<msg_write_open>() as size_t);
             if msglen > (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE) {
                 (*cf).error = E2BIG;
@@ -526,12 +521,7 @@ pub(crate) unsafe fn file_write(
                         flags,
                     },
                 );
-                ::core::ptr::copy_nonoverlapping(
-                    cstr_ptr(&(*cf).path) as *const u8,
-                    msg.as_mut_ptr()
-                        .add(::core::mem::size_of::<msg_write_open>()),
-                    msglen.wrapping_sub(::core::mem::size_of::<msg_write_open>() as size_t),
-                );
+                msg[::core::mem::size_of::<msg_write_open>()..].copy_from_slice(path);
                 if proc_send(
                     (*cf).peer,
                     MSG_WRITE_OPEN,
@@ -582,9 +572,7 @@ pub(crate) unsafe fn file_read(
             let cf = cf_ref.as_ptr();
             (*cf).path = Some(file_get_path(c, path));
             if c.is_null() || (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
-                match fs::read(OsStr::from_bytes(
-                    CStr::from_ptr(cstr_ptr(&(*cf).path)).to_bytes(),
-                )) {
+                match fs::read(OsStr::from_bytes(file_path(cf).to_bytes())) {
                     Ok(contents) => {
                         (*cf).buffer.as_mut().append(&contents);
                     }
@@ -599,8 +587,9 @@ pub(crate) unsafe fn file_read(
         }
         let cf = cf_ref.as_ptr();
         if current_block == 5418638204944806599 {
-            msglen = strlen(cstr_ptr(&(*cf).path))
-                .wrapping_add(1 as size_t)
+            let path = file_path(cf).to_bytes_with_nul();
+            msglen = path
+                .len()
                 .wrapping_add(::core::mem::size_of::<msg_read_open>() as size_t);
             if msglen > (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE) {
                 (*cf).error = E2BIG;
@@ -613,12 +602,7 @@ pub(crate) unsafe fn file_read(
                         fd,
                     },
                 );
-                ::core::ptr::copy_nonoverlapping(
-                    cstr_ptr(&(*cf).path) as *const u8,
-                    msg.as_mut_ptr()
-                        .add(::core::mem::size_of::<msg_read_open>()),
-                    msglen.wrapping_sub(::core::mem::size_of::<msg_read_open>() as size_t),
-                );
+                msg[::core::mem::size_of::<msg_read_open>()..].copy_from_slice(path);
                 if proc_send(
                     (*cf).peer,
                     MSG_READ_OPEN,

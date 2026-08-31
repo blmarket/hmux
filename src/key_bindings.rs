@@ -40,7 +40,7 @@ pub type key_bindings = ::std::collections::BTreeMap<key_code, ::std::boxed::Box
 /// The fields are the table's own; the walks over it are the
 /// `key_bindings_first`/`key_bindings_next` pairs and the accessors below.
 pub struct key_table {
-    name: Option<CString>,
+    name: CString,
     activity_time: timeval,
     key_bindings: key_bindings,
     default_key_bindings: key_bindings,
@@ -48,7 +48,7 @@ pub struct key_table {
 
 impl key_table {
     /// An empty table under `name`.
-    pub fn new(name: Option<CString>) -> key_table {
+    pub fn new(name: CString) -> key_table {
         key_table {
             name,
             activity_time: timeval {
@@ -63,8 +63,8 @@ impl key_table {
 
 /// The name the table is held under, which is what `#{client_key_table}` and
 /// `list-keys -T` show.
-pub unsafe fn key_table_name(kt: *const key_table) -> *const ::core::ffi::c_char {
-    unsafe { cstr_ptr(&(*kt).name) }
+pub unsafe fn key_table_name(kt: *const key_table) -> &'static CStr {
+    unsafe { &(*kt).name }
 }
 
 /// Whether the table has a default tree behind it, which is what decides
@@ -75,7 +75,7 @@ pub unsafe fn key_table_has_defaults(kt: *const key_table) -> bool {
 
 /// The table's name as a copy of its own, for a caller that keeps it after
 /// the walk that found the table is over.
-pub unsafe fn key_table_name_owned(kt: *const key_table) -> Option<CString> {
+pub unsafe fn key_table_name_owned(kt: *const key_table) -> CString {
     unsafe { (*kt).name.clone() }
 }
 
@@ -112,8 +112,8 @@ pub unsafe fn key_binding_flags(bd: *const key_binding) -> ::core::ffi::c_int {
 }
 
 /// The name of the table the binding was made in.
-pub unsafe fn key_binding_tablename(bd: *const key_binding) -> *const ::core::ffi::c_char {
-    unsafe { cstr_ptr(&(*bd).tablename) }
+pub unsafe fn key_binding_tablename(bd: *const key_binding) -> Option<&'static CStr> {
+    unsafe { (*bd).tablename.as_deref() }
 }
 
 /// The commands the key runs, as a borrowed view for running or printing
@@ -278,7 +278,7 @@ pub(crate) unsafe fn key_bindings_get_table_ref(
             return None;
         }
         let name_cstr = CStr::from_ptr(name).to_owned();
-        let table = KeyTableRef::new(key_table::new(Some(name_cstr.clone())));
+        let table = KeyTableRef::new(key_table::new(name_cstr.clone()));
         key_tables.map().insert(name_cstr, table.clone());
         Some(table)
     }
@@ -305,10 +305,7 @@ pub unsafe fn key_bindings_next_table(table: *mut key_table) -> *mut key_table {
     unsafe {
         key_tables
             .map()
-            .range::<CStr, _>((
-                Bound::Excluded(CStr::from_ptr(cstr_ptr(&(*table).name))),
-                Bound::Unbounded,
-            ))
+            .range::<CStr, _>((Bound::Excluded((*table).name.as_c_str()), Bound::Unbounded))
             .next()
             .map(|(_, table)| table.as_ptr())
             .unwrap_or(::core::ptr::null_mut::<key_table>())
@@ -388,7 +385,7 @@ pub(crate) unsafe fn key_bindings_add(
             } else {
                 None
             },
-            tablename: (*table).name.clone(),
+            tablename: Some((*table).name.clone()),
             flags: 0,
         });
         bd = &raw mut *bd_box;
@@ -433,9 +430,7 @@ pub unsafe fn key_bindings_remove(mut name: *const ::core::ffi::c_char, mut key:
         );
         let _ = (*table).key_bindings.remove(&(*bd).key);
         if (*table).key_bindings.is_empty() && !key_table_has_defaults(table) {
-            key_tables
-                .map()
-                .remove(CStr::from_ptr(cstr_ptr(&(*table).name)));
+            key_tables.map().remove((*table).name.as_c_str());
         }
     }
 }
@@ -467,11 +462,7 @@ pub unsafe fn key_bindings_remove_table(mut name: *const ::core::ffi::c_char) {
             return;
         };
         let table = table_ref.as_ptr();
-        if key_tables
-            .map()
-            .remove(CStr::from_ptr(cstr_ptr(&(*table).name)))
-            .is_some()
-        {
+        if key_tables.map().remove((*table).name.as_c_str()).is_some() {
             for c in client_walk() {
                 if (*c).keytable() == table {
                     server_client_set_key_table(c, ::core::ptr::null::<::core::ffi::c_char>());
@@ -885,19 +876,14 @@ pub unsafe fn key_bindings_dispatch(
         }
     }
 }
-pub unsafe fn key_bindings_has_repeat(
-    mut l: *mut *mut key_binding,
-    mut n: u_int,
-) -> ::core::ffi::c_int {
+
+/// Whether any binding in `l` repeats, which is what the `key_has_repeat`
+/// format reports. The C took the array and the count of it to scan; the
+/// slice carries both.
+pub unsafe fn key_bindings_has_repeat(l: &[*mut key_binding]) -> ::core::ffi::c_int {
     unsafe {
-        let mut i: u_int = 0;
-        i = 0 as u_int;
-        while i < n {
-            if (**l.offset(i as isize)).flags & KEY_BINDING_REPEAT != 0 {
-                return 1 as ::core::ffi::c_int;
-            }
-            i = i.wrapping_add(1);
-        }
-        0 as ::core::ffi::c_int
+        l.iter()
+            .any(|&bd| key_binding_flags(bd) & KEY_BINDING_REPEAT != 0)
+            as ::core::ffi::c_int
     }
 }

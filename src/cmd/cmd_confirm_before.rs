@@ -64,6 +64,7 @@ pub const PROMPT_SINGLE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 /// What the command leaves on the client while the question is up: the item
 /// waiting on the answer, if any, the command list to run once it is yes, the
 /// byte that means yes, and whether the carriage return means it too.
+#[derive(Default)]
 #[repr(C)]
 pub struct cmd_confirm_before_data {
     pub(crate) item: Option<CmdqItemWeak>,
@@ -98,7 +99,7 @@ pub(crate) static cmd_confirm_before_entry: cmd_entry = cmd_entry {
 
 /// How the parser is told to read the command the question is about: as a
 /// command list if it parses as one, and as a plain string otherwise.
-unsafe fn cmd_confirm_before_args_parse(
+fn cmd_confirm_before_args_parse(
     _args: &args,
     _idx: u_int,
     _cause: &mut Option<CString>,
@@ -156,12 +157,7 @@ unsafe fn cmd_confirm_before_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_ret
         let args = cmd_get_args(self_0);
         let wait = args_has(args, b'b') == 0;
 
-        let mut cdata = Box::new(cmd_confirm_before_data {
-            item: None,
-            cmdlist: None,
-            confirm_key: 0,
-            default_yes: 0,
-        });
+        let mut cdata = Box::<cmd_confirm_before_data>::default();
         let cdata_ptr = &raw mut *cdata;
         cdata.cmdlist = args_make_commands_now(self_0, item, 0 as u_int, 1);
         if cdata.cmdlist.is_none() {

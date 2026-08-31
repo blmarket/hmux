@@ -239,7 +239,7 @@ unsafe fn cmd_refresh_client_control_client_size(
                 c"%s: client %s window @%u: size %ux%u".as_ptr(),
                 fmt_args![
                     c"cmd_refresh_client_control_client_size".as_ptr(),
-                    cstr_ptr(&(*tc).name),
+                    (*tc).name.as_deref(),
                     w,
                     x,
                     y
@@ -260,7 +260,7 @@ unsafe fn cmd_refresh_client_control_client_size(
                     c"%s: client %s window @%u: no size".as_ptr(),
                     fmt_args![
                         c"cmd_refresh_client_control_client_size".as_ptr(),
-                        cstr_ptr(&(*tc).name),
+                        (*tc).name.as_deref(),
                         w
                     ],
                 );
@@ -445,14 +445,14 @@ unsafe fn cmd_refresh_client_exec(mut self_0: &cmd, mut item: *mut cmdq_item) ->
         if args_has(args, 'A' as i32 as u_char) != 0 {
             if !(!(*tc).flags & CLIENT_CONTROL as uint64_t != 0) {
                 for av in args_value_list(args, 'A' as i32 as u_char) {
-                    cmd_refresh_client_update_offset(tc, (*av).value.string());
+                    cmd_refresh_client_update_offset(tc, (*av).value.string().as_ptr());
                 }
                 return CMD_RETURN_NORMAL;
             }
         } else if args_has(args, 'B' as i32 as u_char) != 0 {
             if !(!(*tc).flags & CLIENT_CONTROL as uint64_t != 0) {
                 for av in args_value_list(args, 'B' as i32 as u_char) {
-                    cmd_refresh_client_update_subscription(tc, (*av).value.string());
+                    cmd_refresh_client_update_subscription(tc, (*av).value.string().as_ptr());
                 }
                 return CMD_RETURN_NORMAL;
             }

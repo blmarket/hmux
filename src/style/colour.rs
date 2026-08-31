@@ -878,18 +878,9 @@ pub fn colour_join_rgb(r: u_char, g: u_char, b: u_char) -> ::core::ffi::c_int {
     join_rgb(r, g, b)
 }
 
-pub unsafe fn colour_split_rgb(
-    c: ::core::ffi::c_int,
-    r: *mut u_char,
-    g: *mut u_char,
-    b: *mut u_char,
-) {
-    unsafe {
-        let (cr, cg, cb) = split_rgb(c);
-        *r = cr;
-        *g = cg;
-        *b = cb;
-    }
+/// The red, green and blue components of an RGB colour.
+pub fn colour_split_rgb(c: ::core::ffi::c_int) -> (u_char, u_char, u_char) {
+    split_rgb(c)
 }
 
 pub fn colour_force_rgb(c: ::core::ffi::c_int) -> ::core::ffi::c_int {

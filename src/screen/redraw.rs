@@ -9,7 +9,7 @@ use crate::format::{format_create, format_create_defaults, format_defaults, form
 use crate::grid::{grid_compare, grid_default_cell};
 use crate::log::log_debug;
 use crate::modes::window_copy_get_current_offset;
-use crate::options::{options_get_number, options_get_string, options_ptr};
+use crate::options::{options_get_number, options_get_string};
 use crate::server::server_client_get_pane;
 use crate::server::{marked_pane, server_is_marked};
 use crate::server::{server_client_ensure_ranges, server_client_ranges_is_empty};
@@ -386,10 +386,8 @@ pub const CELL_RIGHTJOIN: ::core::ffi::c_int = 10 as ::core::ffi::c_int;
 pub const CELL_JOIN: ::core::ffi::c_int = 11 as ::core::ffi::c_int;
 pub const CELL_OUTSIDE: ::core::ffi::c_int = 12 as ::core::ffi::c_int;
 pub const CELL_SCROLLBAR: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
-pub const CELL_BORDERS: [::core::ffi::c_char; 14] =
-    unsafe { ::core::mem::transmute::<[u8; 14], [::core::ffi::c_char; 14]>(*b" xqlkmjwvtun~\0") };
-pub const SIMPLE_BORDERS: [::core::ffi::c_char; 14] =
-    unsafe { ::core::mem::transmute::<[u8; 14], [::core::ffi::c_char; 14]>(*b" |-+++++++++.\0") };
+pub const CELL_BORDERS: [u8; 14] = *b" xqlkmjwvtun~\0";
+pub const SIMPLE_BORDERS: [u8; 14] = *b" |-+++++++++.\0";
 pub const PANE_BORDER_COLOUR: ::core::ffi::c_longlong = 1 as ::core::ffi::c_longlong;
 pub const PANE_BORDER_ARROWS: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const PANE_BORDER_BOTH: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
@@ -425,8 +423,7 @@ pub const START_ISOLATE: [::core::ffi::c_char; 4] =
     unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"\xE2\x81\xA6\0") };
 pub const END_ISOLATE: [::core::ffi::c_char; 4] =
     unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"\xE2\x81\xA9\0") };
-pub const BORDER_MARKERS: [::core::ffi::c_char; 7] =
-    unsafe { ::core::mem::transmute::<[u8; 7], [::core::ffi::c_char; 7]>(*b"  +,.-\0") };
+pub const BORDER_MARKERS: [u8; 7] = *b"  +,.-\0";
 pub(crate) unsafe fn screen_redraw_border_set(
     mut w: *mut window,
     mut wp: *mut window_pane,
@@ -446,10 +443,7 @@ pub(crate) unsafe fn screen_redraw_border_set(
             PANE_LINES_NUMBER => {
                 if cell_type == CELL_OUTSIDE {
                     (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-                    utf8_set(
-                        &mut (*gc).data,
-                        CELL_BORDERS[CELL_OUTSIDE as usize] as u_char,
-                    );
+                    utf8_set(&mut (*gc).data, CELL_BORDERS[CELL_OUTSIDE as usize]);
                 } else {
                     (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
                     if !wp.is_null() && {
@@ -469,18 +463,15 @@ pub(crate) unsafe fn screen_redraw_border_set(
             }
             PANE_LINES_DOUBLE => {
                 (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-                utf8_copy(&mut (*gc).data, &*tty_acs_double_borders(cell_type));
+                utf8_copy(&mut (*gc).data, tty_acs_double_borders(cell_type));
             }
             PANE_LINES_HEAVY => {
                 (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-                utf8_copy(&mut (*gc).data, &*tty_acs_heavy_borders(cell_type));
+                utf8_copy(&mut (*gc).data, tty_acs_heavy_borders(cell_type));
             }
             PANE_LINES_SIMPLE => {
                 (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-                utf8_set(
-                    &mut (*gc).data,
-                    SIMPLE_BORDERS[cell_type as usize] as u_char,
-                );
+                utf8_set(&mut (*gc).data, SIMPLE_BORDERS[cell_type as usize]);
             }
             PANE_LINES_SPACES => {
                 (*gc).attr = ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
@@ -488,7 +479,7 @@ pub(crate) unsafe fn screen_redraw_border_set(
             }
             _ => {
                 (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-                utf8_set(&mut (*gc).data, CELL_BORDERS[cell_type as usize] as u_char);
+                utf8_set(&mut (*gc).data, CELL_BORDERS[cell_type as usize]);
             }
         };
     }
@@ -525,7 +516,7 @@ pub(crate) unsafe fn screen_redraw_pane_border(
 ) -> screen_redraw_border_type {
     unsafe {
         let mut w: *mut window = (*wp).window;
-        let mut oo: *mut options = options_ptr(&(*w).options);
+        let mut oo: *mut options = (*w).options_ptr();
         let mut ex: ::core::ffi::c_int =
             ((*wp).xoff as u_int).wrapping_add((*wp).sx) as ::core::ffi::c_int;
         let mut ey: ::core::ffi::c_int =
@@ -1075,11 +1066,11 @@ unsafe fn screen_redraw_make_pane_status(
         }
         style_apply(
             &raw mut gc,
-            options_ptr(&(*wp).options),
+            (*wp).options_ptr(),
             border_option,
             Some(&mut ft),
         );
-        fmt = options_get_string(options_ptr(&(*wp).options), c"pane-border-format".as_ptr());
+        fmt = options_get_string((*wp).options_ptr(), c"pane-border-format".as_ptr());
         let expanded = format_expand_time(&mut ft, ::core::ffi::CStr::from_ptr(fmt));
         if (*wp).sx < 4 as u_int {
             width = 0 as u_int;
@@ -1175,7 +1166,7 @@ unsafe fn screen_redraw_draw_pane_status(ctx: &mut screen_redraw_ctx) {
             c"%s: %s @%u".as_ptr(),
             fmt_args![
                 c"screen_redraw_draw_pane_status".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 (*w).id
             ],
         );
@@ -1297,7 +1288,7 @@ unsafe fn screen_redraw_set_context(mut c: *mut client, ctx: &mut screen_redraw_
         let mut s: *mut session = (*c).session;
         let mut oo: *mut options = session_options(s);
         let mut w: *mut window = (*session_get_curw(s)).window();
-        let mut wo: *mut options = options_ptr(&(*w).options);
+        let mut wo: *mut options = (*w).options_ptr();
         let mut lines: u_int = 0;
         *ctx = screen_redraw_ctx::default();
         ctx.c = c;
@@ -1327,7 +1318,7 @@ unsafe fn screen_redraw_set_context(mut c: *mut client, ctx: &mut screen_redraw_
             c"%s: %s @%u ox=%u oy=%u sx=%u sy=%u %u/%d".as_ptr(),
             fmt_args![
                 c"screen_redraw_set_context".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 (*w).id,
                 ctx.ox,
                 ctx.oy,
@@ -1362,7 +1353,7 @@ pub unsafe fn screen_redraw_screen(mut c: *mut client) {
         if flags & (CLIENT_REDRAWWINDOW | CLIENT_REDRAWBORDERS) as uint64_t != 0 {
             log_debug(
                 c"%s: redrawing borders".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name)],
+                fmt_args![(*c).name.as_deref()],
             );
             screen_redraw_draw_borders(&mut ctx);
             if ctx.pane_status != PANE_STATUS_OFF {
@@ -1373,7 +1364,7 @@ pub unsafe fn screen_redraw_screen(mut c: *mut client) {
         if flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
             log_debug(
                 c"%s: redrawing panes".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name)],
+                fmt_args![(*c).name.as_deref()],
             );
             screen_redraw_draw_panes(&mut ctx);
             screen_redraw_draw_pane_scrollbars(&mut ctx);
@@ -1383,14 +1374,14 @@ pub unsafe fn screen_redraw_screen(mut c: *mut client) {
         {
             log_debug(
                 c"%s: redrawing status".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name)],
+                fmt_args![(*c).name.as_deref()],
             );
             screen_redraw_draw_status(&mut ctx);
         }
         if (*c).overlay().is_some() && flags & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
             log_debug(
                 c"%s: redrawing overlay".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name)],
+                fmt_args![(*c).name.as_deref()],
             );
             (*c).overlay()
                 .draw(c, (*c).current_overlay_data(), &mut ctx);
@@ -1464,12 +1455,7 @@ unsafe fn screen_redraw_draw_borders_style(
                 session_get_curw(s),
                 wp,
             );
-            style_apply(
-                gc,
-                options_ptr(&(*wp).options),
-                border_option,
-                Some(&mut ft),
-            );
+            style_apply(gc, (*wp).options_ptr(), border_option, Some(&mut ft));
             *flag = 1 as ::core::ffi::c_int;
         }
         *ngc = *gc;
@@ -1488,7 +1474,7 @@ unsafe fn screen_redraw_draw_border_arrows(
         let mut c: *mut client = ctx.c;
         let mut s: *mut session = (*c).session;
         let mut w: *mut window = (*session_get_curw(s)).window();
-        let mut oo: *mut options = options_ptr(&(*w).options);
+        let mut oo: *mut options = (*w).options_ptr();
         let mut x: u_int = (ctx.ox + i) as u_int;
         let mut y: u_int = (ctx.oy + j) as u_int;
         let mut value: ::core::ffi::c_int = 0;
@@ -1568,7 +1554,7 @@ unsafe fn screen_redraw_draw_border_arrows(
         }
         if arrows != 0 {
             (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-            utf8_set(&mut (*gc).data, BORDER_MARKERS[border as usize] as u_char);
+            utf8_set(&mut (*gc).data, BORDER_MARKERS[border as usize]);
         }
     }
 }
@@ -1577,7 +1563,7 @@ unsafe fn screen_redraw_draw_borders_cell(ctx: &mut screen_redraw_ctx, mut i: u_
         let mut c: *mut client = ctx.c;
         let mut s: *mut session = (*c).session;
         let mut w: *mut window = (*session_get_curw(s)).window();
-        let mut oo: *mut options = options_ptr(&(*w).options);
+        let mut oo: *mut options = (*w).options_ptr();
         let mut tty: *mut tty = &raw mut (*c).tty;
         let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut active: *mut window_pane = server_client_get_pane(c);
@@ -1692,7 +1678,7 @@ unsafe fn screen_redraw_draw_borders(ctx: &mut screen_redraw_ctx) {
             c"%s: %s @%u".as_ptr(),
             fmt_args![
                 c"screen_redraw_draw_borders".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 (*w).id
             ],
         );
@@ -1722,7 +1708,7 @@ unsafe fn screen_redraw_draw_panes(ctx: &mut screen_redraw_ctx) {
             c"%s: %s @%u".as_ptr(),
             fmt_args![
                 c"screen_redraw_draw_panes".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 (*w).id
             ],
         );
@@ -1747,7 +1733,7 @@ unsafe fn screen_redraw_draw_status(ctx: &mut screen_redraw_ctx) {
             c"%s: %s @%u".as_ptr(),
             fmt_args![
                 c"screen_redraw_draw_status".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 (*w).id
             ],
         );
@@ -1773,26 +1759,17 @@ unsafe fn screen_redraw_draw_status(ctx: &mut screen_redraw_ctx) {
         }
     }
 }
-pub unsafe fn screen_redraw_is_visible(
-    mut r: *mut visible_ranges,
-    mut px: u_int,
-) -> ::core::ffi::c_int {
-    unsafe {
-        let mut i: u_int = 0;
-        let mut ri: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
-        if r.is_null() {
-            return 1 as ::core::ffi::c_int;
-        }
-        i = 0 as u_int;
-        while i < (*r).used {
-            ri = (*r).ranges.as_mut_ptr().offset(i as isize);
-            if (*ri).nx != 0 as u_int && px >= (*ri).px && px < (*ri).px.wrapping_add((*ri).nx) {
-                return 1 as ::core::ffi::c_int;
-            }
-            i = i.wrapping_add(1);
-        }
-        0 as ::core::ffi::c_int
-    }
+/// Whether the column `px` shows through the ranges `r`. No ranges at all
+/// means nothing hides it; otherwise some range of real width has to cover
+/// it.
+pub fn screen_redraw_is_visible(r: Option<&visible_ranges>, px: u_int) -> bool {
+    let Some(r) = r else {
+        return true;
+    };
+    r.ranges
+        .iter()
+        .take(r.used as usize)
+        .any(|ri| ri.nx != 0 as u_int && px >= ri.px && px < ri.px.wrapping_add(ri.nx))
 }
 /// The ranges of the `width` cells at `px`,`py` of `base_wp` that no pane
 /// in front of it covers, written into `r`.
@@ -1991,7 +1968,7 @@ unsafe fn screen_redraw_draw_pane(ctx: &mut screen_redraw_ctx, mut wp: *mut wind
             c"%s: %s @%u %%%u".as_ptr(),
             fmt_args![
                 c"screen_redraw_draw_pane".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 (*w).id,
                 (*wp).id
             ],
@@ -2051,7 +2028,7 @@ unsafe fn screen_redraw_draw_pane(ctx: &mut screen_redraw_ctx, mut wp: *mut wind
                                     .as_ptr(),
                                 fmt_args![
                                     c"screen_redraw_draw_pane".as_ptr(),
-                                    cstr_ptr(&(*c).name),
+                                    (*c).name.as_deref(),
                                     (*wp).id,
                                     k,
                                     (*ri)
@@ -2097,7 +2074,7 @@ unsafe fn screen_redraw_draw_pane_scrollbars(ctx: &mut screen_redraw_ctx) {
             c"%s: %s @%u".as_ptr(),
             fmt_args![
                 c"screen_redraw_draw_pane_scrollbars".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 (*w).id
             ],
         );
@@ -2281,7 +2258,7 @@ unsafe fn screen_redraw_draw_scrollbar(
                     || wy < yoff - 1 as ::core::ffi::c_int
                     || py >= sy
                     || py < 0 as ::core::ffi::c_int
-                    || screen_redraw_is_visible(r, wx as u_int) == 0)
+                    || !screen_redraw_is_visible(r.as_ref(), wx as u_int))
                 {
                     tty_cursor(tty, px as u_int, py as u_int);
                     if sb_pos == PANE_SCROLLBARS_LEFT && i >= sb_w && i < sb_w.wrapping_add(sb_pad)

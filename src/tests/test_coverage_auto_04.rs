@@ -85,9 +85,7 @@ impl Ctx {
             colour_palette_init(&raw mut (*wp).palette);
             let ctx = input_init(crate::input::InputOwner::Pane((*wp).id), Stream::NONE);
             (*wp).ictx = Some(ctx);
-            crate::input::ictx_opt(&(*wp).ictx).map_or(::core::ptr::null_mut(), |i| {
-                i as *mut crate::types::input_ctx
-            })
+            crate::input::ictx_opt(&(*wp).ictx).unwrap_or(::core::ptr::null_mut())
         };
         Self {
             _window: window,

@@ -164,7 +164,7 @@ unsafe fn cmd_show_environment_print(
 ) {
     unsafe {
         let args: &args = cmd_get_args(self_0);
-        let name = environ_entry_name(envent);
+        let name = environ_entry_name(envent).as_ptr();
         let value = environ_entry_value(envent);
         if args_has(args, 'h' as i32 as u_char) == 0
             && environ_entry_flags(envent) & ENVIRON_HIDDEN != 0
@@ -177,15 +177,15 @@ unsafe fn cmd_show_environment_print(
             return;
         }
         if args_has(args, 's' as i32 as u_char) == 0 {
-            if !value.is_null() {
+            if value.is_some() {
                 cmdq_print(item, c"%s=%s".as_ptr(), fmt_args![name, value]);
             } else {
                 cmdq_print(item, c"-%s".as_ptr(), fmt_args![name]);
             }
             return;
         }
-        if !value.is_null() {
-            let escaped = cmd_show_environment_escape(CStr::from_ptr(value));
+        if let Some(value) = value {
+            let escaped = cmd_show_environment_escape(value);
             cmdq_print(
                 item,
                 c"%s=\"%s\"; export %s;".as_ptr(),

@@ -2,7 +2,7 @@ use super::*;
 use crate::layout::layout_cell_set_pane;
 use crate::layout::{
     LAYOUT_CELL_FLOATING, SPAWN_BEFORE, layout_assign_pane, layout_create_cell,
-    layout_floating_pane, layout_free, layout_init, layout_root_ptr, layout_split_pane,
+    layout_floating_pane, layout_free, layout_init, layout_split_pane,
 };
 use crate::tests::test_fixtures::{Pane, Window, globals};
 use crate::window::window_pane_of_id;
@@ -82,7 +82,7 @@ impl Layout {
 
     fn dump(&mut self) -> String {
         unsafe {
-            layout_dump(self.w(), layout_root_ptr(&(*self.w()).layout_root))
+            layout_dump(self.w(), (*self.w()).layout_root_ptr())
                 .expect("layout dump")
                 .to_string_lossy()
                 .into_owned()
@@ -135,7 +135,7 @@ fn guard() -> MutexGuard<'static, ()> {
 /// The checksum tmux writes in front of a layout.
 fn checksum(body: &str) -> String {
     let s = CString::new(body).expect("no NUL");
-    format!("{:04x}", unsafe { layout_checksum(s.as_ptr()) })
+    format!("{:04x}", layout_checksum(&s))
 }
 
 #[test]
@@ -187,12 +187,10 @@ fn floating_panes_are_dumped_in_angle_brackets() {
 #[test]
 fn the_checksum_turns_the_string_round_a_bit_at_a_time() {
     let _g = guard();
-    unsafe {
-        assert_eq!(layout_checksum(c"".as_ptr()), 0);
-        assert_eq!(layout_checksum(c"a".as_ptr()), 0x61);
-        assert_eq!(layout_checksum(c"ab".as_ptr()), 32914);
-        assert_eq!(layout_checksum(c"ba".as_ptr()), 146);
-    }
+    assert_eq!(layout_checksum(c""), 0);
+    assert_eq!(layout_checksum(c"a"), 0x61);
+    assert_eq!(layout_checksum(c"ab"), 32914);
+    assert_eq!(layout_checksum(c"ba"), 146);
     assert_eq!(checksum("80x24,0,0,1"), "b25e");
 }
 
@@ -374,7 +372,7 @@ fn the_bottom_right_cell_is_the_last_one_all_the_way_down() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = layout_root_ptr(&(*l.w()).layout_root);
+        let root = (*l.w()).layout_root_ptr();
         let found = layout_find_bottomright(root);
         assert_eq!(found, (*l.pane(2)).layout_cell);
         let leaf = (*l.pane(0)).layout_cell;
@@ -402,7 +400,7 @@ fn appending_stops_when_the_buffer_is_full() {
     let mut l = Layout::new(80, 24);
     unsafe {
         let mut buf: Vec<u8> = Vec::new();
-        let root = layout_root_ptr(&(*l.w()).layout_root);
+        let root = (*l.w()).layout_root_ptr();
         assert_eq!(layout_append(root, &mut buf, 0), -1);
         assert_eq!(layout_append(null_mut::<layout_cell>(), &mut buf, 8), 0);
         assert_eq!(layout_append(root, &mut buf, 8), -1);
@@ -415,7 +413,7 @@ fn appending_a_tree_stops_when_the_buffer_is_full() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = layout_root_ptr(&(*l.w()).layout_root);
+        let root = (*l.w()).layout_root_ptr();
         for len in [12, 14, 24, 26] {
             let mut buf: Vec<u8> = Vec::new();
             assert_eq!(layout_append(root, &mut buf, len), -1, "{len}");
@@ -428,7 +426,7 @@ fn a_dump_that_does_not_fit_answers_nothing() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        let root = layout_root_ptr(&(*l.w()).layout_root);
+        let root = (*l.w()).layout_root_ptr();
         (*root).sx = u_int::MAX;
         (*root).sy = u_int::MAX;
         (*root).xoff = c_int::MIN;
@@ -444,9 +442,9 @@ fn assigning_panes_walks_the_tree_in_order() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
         let w = l.w();
-        let root = layout_root_ptr(&(*w).layout_root);
+        let root = (*w).layout_root_ptr();
         let mut wp = window_panes_first(w);
-        layout_assign(w, &raw mut wp, root, LAYOUT_CELL_FLOATING);
+        layout_assign(w, &mut wp, root, LAYOUT_CELL_FLOATING);
         assert!(wp.is_null());
         assert_eq!(
             (*(*l.pane(0)).layout_cell).flags & LAYOUT_CELL_FLOATING,
@@ -454,7 +452,7 @@ fn assigning_panes_walks_the_tree_in_order() {
         );
         (*(*l.pane(0)).layout_cell).flags &= !LAYOUT_CELL_FLOATING;
         (*(*l.pane(1)).layout_cell).flags &= !LAYOUT_CELL_FLOATING;
-        layout_assign(w, &raw mut wp, null_mut::<layout_cell>(), 0);
+        layout_assign(w, &mut wp, null_mut::<layout_cell>(), 0);
     }
 }
 
@@ -464,10 +462,10 @@ fn a_cell_of_an_unknown_kind_is_walked_past() {
     let mut l = Layout::new(80, 24);
     unsafe {
         let w = l.w();
-        let root = layout_root_ptr(&(*w).layout_root);
+        let root = (*w).layout_root_ptr();
         (*root).type_0 = 99;
         let mut wp = window_panes_first(w);
-        layout_assign(w, &raw mut wp, root, 0);
+        layout_assign(w, &mut wp, root, 0);
         assert_eq!(wp, window_panes_first(w));
         assert_eq!(layout_check(root), 1);
         (*root).type_0 = LAYOUT_WINDOWPANE;
@@ -489,8 +487,8 @@ fn the_layout_string_is_read_back_as_bytes_the_parser_walked_over() {
     unsafe {
         let s = c"80x24,0,0,1";
         let mut p = s.as_ptr() as *const c_char;
-        let lc = layout_construct_cell(null_mut::<layout_cell>(), &raw mut p)
-            .expect("the cell was read");
+        let lc =
+            layout_construct_cell(null_mut::<layout_cell>(), &mut p).expect("the cell was read");
         assert_eq!(lc.sx, 80);
         assert_eq!(lc.sy, 24);
         assert_eq!(lc.xoff, 0);
@@ -500,13 +498,13 @@ fn the_layout_string_is_read_back_as_bytes_the_parser_walked_over() {
 
         let s = c"80x24,0,0,40x24,0,0,1";
         let mut p = s.as_ptr() as *const c_char;
-        let lc = layout_construct_cell(null_mut::<layout_cell>(), &raw mut p);
+        let lc = layout_construct_cell(null_mut::<layout_cell>(), &mut p);
         assert_eq!(CStr::from_ptr(p).to_str().unwrap(), ",40x24,0,0,1");
         crate::layout::layout_free_cell(null_mut(), lc);
 
         let s = c"80x24,0,0{";
         let mut p = s.as_ptr() as *const c_char;
-        let lc = layout_construct_cell(null_mut::<layout_cell>(), &raw mut p);
+        let lc = layout_construct_cell(null_mut::<layout_cell>(), &mut p);
         assert_eq!(CStr::from_ptr(p).to_str().unwrap(), "{");
         crate::layout::layout_free_cell(null_mut(), lc);
     }
@@ -576,7 +574,7 @@ fn appending_a_node_stops_when_the_bracket_will_not_fit() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = layout_root_ptr(&(*l.w()).layout_root);
+        let root = (*l.w()).layout_root_ptr();
         for len in [10, 11, 22, 23] {
             let mut buf: Vec<u8> = Vec::new();
             assert_eq!(layout_append(root, &mut buf, len), -1, "{len}");
@@ -633,7 +631,7 @@ fn too_many_floating_panes_dump_nothing() {
         }
         (*l.w()).z_index.clear();
         (*l.w()).z_index.extend(ids);
-        let root = layout_root_ptr(&(*l.w()).layout_root);
+        let root = (*l.w()).layout_root_ptr();
         assert!(layout_dump(l.w(), root).is_none());
         for mut lc in cells {
             lc.wp_id = None;

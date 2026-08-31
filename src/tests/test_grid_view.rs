@@ -19,16 +19,7 @@ impl Grid {
     /// Writes `s` from (px, py) of the screen, one cell per byte.
     fn write(&self, px: u_int, py: u_int, s: &str) {
         let gc = unsafe { grid_default_cell };
-        unsafe {
-            grid_view_set_cells(
-                &mut *self.ptr(),
-                px,
-                py,
-                &raw const gc,
-                s.as_ptr() as *const ::core::ffi::c_char,
-                s.len() as size_t,
-            )
-        };
+        unsafe { grid_view_set_cells(&mut *self.ptr(), px, py, &gc, s.as_bytes()) };
     }
 
     /// The text of one screen line.

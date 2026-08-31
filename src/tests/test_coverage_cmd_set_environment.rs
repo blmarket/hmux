@@ -104,11 +104,8 @@ unsafe fn hand_raw_name(item: &mut Item, raw: &'static CStr) {
 }
 
 /// The value of one entry, if it has one.
-unsafe fn value_seen(envent: *const environ_entry) -> Option<String> {
-    unsafe {
-        let value = environ_entry_value(envent);
-        (!value.is_null()).then(|| seen(value))
-    }
+fn value_seen(envent: &environ_entry) -> Option<String> {
+    environ_entry_value(envent).map(|value| value.to_string_lossy().into_owned())
 }
 
 /// Every entry of `env` in name order: name, value and flags.
@@ -117,7 +114,7 @@ unsafe fn dump(env: *mut environ_t) -> Vec<(String, Option<String>, c_int)> {
         environ_entries(&*env)
             .map(|envent| {
                 (
-                    seen(environ_entry_name(envent)),
+                    seen(environ_entry_name(envent).as_ptr()),
                     value_seen(envent),
                     environ_entry_flags(envent),
                 )

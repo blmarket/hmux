@@ -29,8 +29,8 @@ use crate::cmd::cmd_find_from_winlink;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_set_target_client;
 use crate::cmd::{CMD_RETURN_ERROR, CMD_RETURN_NORMAL};
-use crate::layout::{layout_free_cell, layout_root_ptr};
-use crate::options::{options_get_number, options_get_parent, options_ptr};
+use crate::layout::layout_free_cell;
+use crate::options::{options_get_number, options_get_parent};
 use crate::proc::PEER_BAD;
 use crate::server::{marked_pane, message_log, server_set_marked};
 use crate::session::session_get_curw;
@@ -459,26 +459,23 @@ fn breaking_the_active_pane_builds_it_a_window_and_selects_it() {
         );
 
         assert_eq!(
-            dump_cell(layout_root_ptr(&(*nw).layout_root)),
+            dump_cell((*nw).layout_root_ptr()),
             format!("%{} 80x24+0+0", (*moved).id)
         );
-        assert_eq!((*moved).layout_cell, layout_root_ptr(&(*nw).layout_root));
+        assert_eq!((*moved).layout_cell, (*nw).layout_root_ptr());
         assert_eq!(
             seen(cstr_ptr(&(*nw).name)),
             "sh",
             "the name comes from the pane's shell"
         );
         assert_eq!(
-            crate::options::options_get_number(
-                options_ptr(&(*nw).options),
-                c"automatic-rename".as_ptr()
-            ),
+            crate::options::options_get_number((*nw).options_ptr(), c"automatic-rename".as_ptr()),
             1,
             "a defaulted name leaves automatic renaming alone"
         );
         assert_eq!(
-            options_get_parent(options_ptr(&(*moved).options)),
-            options_ptr(&(*nw).options)
+            options_get_parent((*moved).options_ptr()),
+            (*nw).options_ptr()
         );
         assert!(window_get_latest(nw).is_null());
 
@@ -533,7 +530,7 @@ fn with_d_the_new_window_is_not_selected_and_n_names_it() {
         assert_eq!((*wl_new).window(), nw);
         assert_eq!(seen(cstr_ptr(&(*nw).name)), "mined");
         assert_eq!(
-            options_get_number(options_ptr(&(*nw).options), c"automatic-rename".as_ptr()),
+            options_get_number((*nw).options_ptr(), c"automatic-rename".as_ptr()),
             0,
             "-n switches automatic renaming off"
         );

@@ -21,7 +21,7 @@
 use crate::ffi::{__errno_location, calloc, free, getc, reallocarray};
 pub use crate::types::*;
 use ::core::ffi::{c_char, c_int, c_void};
-use ::core::ptr::null_mut;
+use ::core::ptr::{NonNull, null_mut};
 
 const BUFSIZ: c_int = 8192;
 const EOF: c_int = -1;
@@ -29,20 +29,18 @@ const EINVAL: c_int = 22;
 
 /// The one buffer every line is read into, which starts at `BUFSIZ` bytes and
 /// doubles whenever a line fills it.
-static mut BUFFER: Buffer = Buffer {
-    at: null_mut(),
-    size: 0,
-};
+static mut BUFFER: Buffer = Buffer { at: None, size: 0 };
 
 struct Buffer {
-    at: *mut c_char,
+    at: Option<NonNull<c_char>>,
     size: size_t,
 }
 
 impl Buffer {
     /// The bytes the buffer holds.
     fn bytes(&mut self) -> &mut [c_char] {
-        unsafe { ::core::slice::from_raw_parts_mut(self.at, self.size) }
+        let at = self.at.expect("an allocated buffer has storage");
+        unsafe { ::core::slice::from_raw_parts_mut(at.as_ptr(), self.size) }
     }
 
     /// Doubles the buffer, or answers nothing if it could not be doubled. One
@@ -50,16 +48,18 @@ impl Buffer {
     /// errno left standing, so that the next call starts again from nothing.
     fn double(&mut self) -> Option<()> {
         unsafe {
-            let bigger = reallocarray(self.at as *mut c_void, 2, self.size) as *mut c_char;
-            if bigger.is_null() {
+            let at = self.at.expect("an allocated buffer has storage");
+            let bigger =
+                NonNull::new(reallocarray(at.as_ptr().cast::<c_void>(), 2, self.size).cast());
+            let Some(bigger) = bigger else {
                 let refused = *__errno_location();
-                free(self.at as *mut c_void);
+                free(at.as_ptr().cast::<c_void>());
                 *__errno_location() = refused;
-                self.at = null_mut();
+                self.at = None;
                 self.size = 0;
                 return None;
-            }
-            self.at = bigger;
+            };
+            self.at = Some(bigger);
             self.size = self.size.wrapping_mul(2);
             Some(())
         }
@@ -71,11 +71,9 @@ impl Buffer {
 fn buffer() -> Option<&'static mut Buffer> {
     unsafe {
         let buffer = &mut BUFFER;
-        if buffer.at.is_null() {
-            buffer.at = calloc(1, BUFSIZ as size_t) as *mut c_char;
-            if buffer.at.is_null() {
-                return None;
-            }
+        if buffer.at.is_none() {
+            buffer.at = NonNull::new(calloc(1, BUFSIZ as size_t).cast());
+            buffer.at?;
             buffer.size = BUFSIZ as size_t;
         }
         Some(buffer)
@@ -85,12 +83,12 @@ fn buffer() -> Option<&'static mut Buffer> {
 /// The next line of `fp` in the shared buffer, its length written to `len`;
 /// nothing at all if the buffer could not be made or grown, and a null pointer
 /// with a length of zero at the end of the file.
-unsafe fn read_line(fp: *mut FILE, len: *mut size_t) -> Option<*mut c_char> {
+unsafe fn read_line(fp: NonNull<FILE>, len: &mut size_t) -> Option<*mut c_char> {
     unsafe {
         let buffer = buffer()?;
         let mut read: size_t = 0;
         loop {
-            let c = getc(fp);
+            let c = getc(fp.as_ptr());
             if c == EOF {
                 break;
             }
@@ -104,17 +102,21 @@ unsafe fn read_line(fp: *mut FILE, len: *mut size_t) -> Option<*mut c_char> {
             }
         }
         *len = read;
-        Some(if read != 0 { buffer.at } else { null_mut() })
+        Some(if read != 0 {
+            buffer.at.expect("an allocated buffer has storage").as_ptr()
+        } else {
+            null_mut()
+        })
     }
 }
 
 pub unsafe fn fgetln(fp: *mut FILE, len: *mut size_t) -> *mut c_char {
     unsafe {
-        if fp.is_null() || len.is_null() {
+        let (Some(fp), Some(mut len)) = (NonNull::new(fp), NonNull::new(len)) else {
             *__errno_location() = EINVAL;
             return null_mut();
-        }
-        read_line(fp, len).unwrap_or(null_mut())
+        };
+        read_line(fp, len.as_mut()).unwrap_or(null_mut())
     }
 }
 

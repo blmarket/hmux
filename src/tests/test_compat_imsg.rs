@@ -34,10 +34,8 @@ impl Link {
 
     /// Lets both ends pass descriptors.
     fn with_fdpass(mut self) -> Link {
-        unsafe {
-            imsgbuf_allow_fdpass(&mut self.write);
-            imsgbuf_allow_fdpass(&mut self.read);
-        }
+        imsgbuf_allow_fdpass(&mut self.write);
+        imsgbuf_allow_fdpass(&mut self.read);
         self
     }
 

@@ -27,7 +27,7 @@
 //!
 //! Coverage exemptions: none.
 
-use crate::arguments::{args_get, args_has};
+use crate::arguments::{args_get_str, args_has};
 use crate::cmd::queue::{cmdq_error, cmdq_get_target};
 use crate::cmd::{cmd_get_args, cmd_get_args_ptr, cmd_get_entry};
 use crate::fmt_args;
@@ -262,7 +262,7 @@ pub(crate) static cmd_customize_mode_entry: cmd_entry = cmd_entry {
 
 /// How the parser is told to read the template the three tree commands take:
 /// as a command list if it parses as one, and as a plain string otherwise.
-unsafe fn cmd_choose_tree_args_parse(
+fn cmd_choose_tree_args_parse(
     _args: &args,
     _idx: u_int,
     _cause: &mut Option<CString>,
@@ -298,8 +298,8 @@ fn cmd_choose_tree_mode(self_0: &cmd) -> Option<WindowMode> {
 /// Whether the `-O` the command carries names an order. A command with no `-O`
 /// is fine whatever the parse answered, which is what keeps `customize-mode`,
 /// whose template has no `O` at all, out of the refusal.
-unsafe fn cmd_choose_tree_order_is_known(args: &args) -> bool {
-    unsafe { sort_order_from_string(args_get(args, b'O')) != SORT_END || args_has(args, b'O') == 0 }
+fn cmd_choose_tree_order_is_known(args: &args) -> bool {
+    sort_order_from_string(args_get_str(args, b'O')) != SORT_END || args_has(args, b'O') == 0
 }
 
 unsafe fn cmd_choose_tree_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {

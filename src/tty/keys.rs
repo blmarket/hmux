@@ -1,8 +1,7 @@
 use super::driver::tty_client;
 use super::driver::{tty_invalidate, tty_set_size, tty_update_features};
 use crate::ffi::{
-    __b64_pton, __ctype_b_loc, memcmp, sscanf, strcspn, strlcpy, strlen, strncmp, strsep, strtol,
-    strtoul,
+    __b64_pton, __ctype_b_loc, sscanf, strcspn, strlcpy, strlen, strncmp, strsep, strtol, strtoul,
 };
 use crate::fmt_args;
 use crate::input::input_request_reply;
@@ -3694,7 +3693,7 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
                 ov = options_array_item_value(a);
                 tty_keys_add(
                     tty,
-                    (*ov).string(),
+                    (*ov).string().as_ptr(),
                     (KEYC_USER as ::core::ffi::c_ulong).wrapping_add(i as ::core::ffi::c_ulong)
                         as key_code,
                 );
@@ -3709,7 +3708,7 @@ pub unsafe fn tty_keys_free(mut tty: *mut tty) {
     }
 }
 /// The key `buf` starts with, and how many of its bytes that key took.
-unsafe fn tty_keys_find(tty: *mut tty, buf: &[u8]) -> Option<(&mut tty_key, size_t)> {
+unsafe fn tty_keys_find<'a>(tty: *mut tty, buf: &[u8]) -> Option<(&'a mut tty_key, size_t)> {
     unsafe {
         let mut size = 0 as size_t;
         let tk = tty_keys_find1((*tty).key_tree.as_deref_mut(), buf, &mut size)?;
@@ -3743,24 +3742,15 @@ unsafe fn tty_keys_find1<'a>(
         }
     }
 }
-unsafe fn tty_keys_partial_paste_end(buf: &[u8]) -> ::core::ffi::c_int {
-    unsafe {
-        let len = buf.len();
-        let buf = buf.as_ptr() as *const ::core::ffi::c_char;
-        static paste_end: [::core::ffi::c_char; 7] =
-            unsafe { ::core::mem::transmute::<[u8; 7], [::core::ffi::c_char; 7]>(*b"\x1B[201~\0") };
-        let mut paste_end_len: size_t = (::core::mem::size_of::<[::core::ffi::c_char; 7]>()
-            as size_t)
-            .wrapping_sub(1 as size_t);
-        if len == 0 as size_t || len >= paste_end_len {
-            return 0 as ::core::ffi::c_int;
-        }
-        (memcmp(
-            buf as *const ::core::ffi::c_void,
-            &raw const paste_end as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-            len,
-        ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int
+/// Whether `buf` is a strict, non-empty prefix of the bracketed paste end
+/// sequence, which is what asks the key reader to wait longer for the rest of
+/// it. A whole sequence is not partial, so an equal or longer `buf` is not one.
+fn tty_keys_partial_paste_end(buf: &[u8]) -> bool {
+    const PASTE_END: &[u8] = b"\x1B[201~";
+    if buf.is_empty() || buf.len() >= PASTE_END.len() {
+        return false;
     }
+    PASTE_END.starts_with(buf)
 }
 unsafe fn tty_keys_next1(
     mut tty: *mut tty,
@@ -3780,7 +3770,7 @@ unsafe fn tty_keys_next1(
         log_debug(
             c"%s: next key is %zu (%.*s) (expired=%d)".as_ptr(),
             fmt_args![
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 len,
                 len as ::core::ffi::c_int,
                 buf,
@@ -3796,7 +3786,7 @@ unsafe fn tty_keys_next1(
             while let Some(one) = tk1 {
                 log_debug(
                     c"%s: keys in list: %#llx".as_ptr(),
-                    fmt_args![cstr_ptr(&(*c).name), one.key],
+                    fmt_args![(*c).name.as_deref(), one.key],
                 );
                 tk1 = one.next.as_deref();
             }
@@ -3842,7 +3832,7 @@ unsafe fn tty_keys_next1(
             log_debug(
                 c"%s: UTF-8 key %.*s %#llx".as_ptr(),
                 fmt_args![
-                    cstr_ptr(&(*c).name),
+                    (*c).name.as_deref(),
                     ud.size as ::core::ffi::c_int,
                     &raw mut ud.data as *mut u_char,
                     *key
@@ -3947,7 +3937,7 @@ unsafe fn tty_keys_winsz(mut tty: *mut tty, buf: &[u8], size: &mut size_t) -> ::
         log_debug(
             c"%s: unrecognized window size sequence: %s".as_ptr(),
             fmt_args![
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 &raw mut tmp as *mut ::core::ffi::c_char
             ],
         );
@@ -3974,15 +3964,12 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
         if len == 0 as size_t {
             return 0 as ::core::ffi::c_int;
         }
+        let keys: &[u8] = ::core::slice::from_raw_parts(buf as *const u8, len);
         log_debug(
             c"%s: keys are %zu (%.*s)".as_ptr(),
-            fmt_args![cstr_ptr(&(*c).name), len, len as ::core::ffi::c_int, buf],
+            fmt_args![(*c).name.as_deref(), len, len as ::core::ffi::c_int, buf],
         );
-        match tty_keys_clipboard(
-            tty,
-            ::core::slice::from_raw_parts(buf as *const u8, len),
-            &mut size,
-        ) {
+        match tty_keys_clipboard(tty, keys, &mut size) {
             0 => {
                 key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                 current_block = 10299298647514879019;
@@ -3998,11 +3985,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
             }
         }
         if current_block == 1917311967535052937 {
-            match tty_keys_device_attributes(
-                tty,
-                ::core::slice::from_raw_parts(buf as *const u8, len),
-                &mut size,
-            ) {
+            match tty_keys_device_attributes(tty, keys, &mut size) {
                 0 => {
                     key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                     current_block = 10299298647514879019;
@@ -4021,11 +4004,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                 10299298647514879019 => {}
                 18394967961554547273 => {}
                 _ => {
-                    match tty_keys_device_attributes2(
-                        tty,
-                        ::core::slice::from_raw_parts(buf as *const u8, len),
-                        &mut size,
-                    ) {
+                    match tty_keys_device_attributes2(tty, keys, &mut size) {
                         0 => {
                             key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                             current_block = 10299298647514879019;
@@ -4044,11 +4023,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         10299298647514879019 => {}
                         18394967961554547273 => {}
                         _ => {
-                            match tty_keys_extended_device_attributes(
-                                tty,
-                                ::core::slice::from_raw_parts(buf as *const u8, len),
-                                &mut size,
-                            ) {
+                            match tty_keys_extended_device_attributes(tty, keys, &mut size) {
                                 0 => {
                                     key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                                     current_block = 10299298647514879019;
@@ -4069,7 +4044,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                 _ => {
                                     match tty_keys_colours(
                                         tty,
-                                        ::core::slice::from_raw_parts(buf as *const u8, len),
+                                        keys,
                                         &mut size,
                                         &mut (*tty).fg,
                                         &mut (*tty).bg,
@@ -4094,14 +4069,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                         10299298647514879019 => {}
                                         18394967961554547273 => {}
                                         _ => {
-                                            match tty_keys_palette(
-                                                tty,
-                                                ::core::slice::from_raw_parts(
-                                                    buf as *const u8,
-                                                    len,
-                                                ),
-                                                &mut size,
-                                            ) {
+                                            match tty_keys_palette(tty, keys, &mut size) {
                                                 0 => {
                                                     key = KEYC_UNKNOWN as ::core::ffi::c_ulong
                                                         as key_code;
@@ -4122,13 +4090,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                 18394967961554547273 => {}
                                                 _ => {
                                                     match tty_keys_mouse(
-                                                        tty,
-                                                        ::core::slice::from_raw_parts(
-                                                            buf as *const u8,
-                                                            len,
-                                                        ),
-                                                        &mut size,
-                                                        &raw mut m,
+                                                        tty, keys, &mut size, &raw mut m,
                                                     ) {
                                                         0 => {
                                                             key = KEYC_MOUSE as ::core::ffi::c_ulong
@@ -4145,7 +4107,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                                 c"%s: discard key %.*s %#llx"
                                                                     .as_ptr(),
                                                                 fmt_args![
-                                                                    cstr_ptr(&(*c).name),
+                                                                    (*c).name.as_deref(),
                                                                     size as ::core::ffi::c_int,
                                                                     buf,
                                                                     key
@@ -4171,10 +4133,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                         _ => {
                                                             match tty_keys_extended_key(
                                                                 tty,
-                                                                ::core::slice::from_raw_parts(
-                                                                    buf as *const u8,
-                                                                    len,
-                                                                ),
+                                                                keys,
                                                                 &mut size,
                                                                 &raw mut key,
                                                             ) {
@@ -4200,9 +4159,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                                 18394967961554547273 => {}
                                                                 _ => {
                                                                     match tty_keys_winsz(
-                                                                        tty,
-                                                                        ::core::slice::from_raw_parts(buf as *const u8, len),
-                                                                        &mut size,
+                                                                        tty, keys, &mut size,
                                                                     ) {
                                                                         0 => {
                                                                             current_block = 15803801955716491872;
@@ -4250,13 +4207,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
         loop {
             match current_block {
                 15385464967731526806 => {
-                    n = tty_keys_next1(
-                        tty,
-                        ::core::slice::from_raw_parts(buf as *const u8, len),
-                        &raw mut key,
-                        &mut size,
-                        expired,
-                    );
+                    n = tty_keys_next1(tty, keys, &raw mut key, &mut size, expired);
                     if n == 0 as ::core::ffi::c_int {
                         current_block = 10299298647514879019;
                         continue;
@@ -4266,16 +4217,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         continue;
                     }
                     if *buf as ::core::ffi::c_int == '\u{1b}' as i32 && len > 1 as size_t {
-                        n = tty_keys_next1(
-                            tty,
-                            ::core::slice::from_raw_parts(
-                                buf.offset(1 as ::core::ffi::c_int as isize) as *const u8,
-                                len.wrapping_sub(1 as size_t),
-                            ),
-                            &raw mut key,
-                            &mut size,
-                            expired,
-                        );
+                        n = tty_keys_next1(tty, &keys[1..], &raw mut key, &mut size, expired);
                         if n == 0 as ::core::ffi::c_int {
                             if key as ::core::ffi::c_ulonglong & KEYC_IMPLIED_META != 0 {
                                 key = '\u{1b}' as i32 as key_code;
@@ -4315,14 +4257,14 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         if key == bspace as key_code {
                             log_debug(
                                 c"%s: key %#llx is BSpace".as_ptr(),
-                                fmt_args![cstr_ptr(&(*c).name), key],
+                                fmt_args![(*c).name.as_deref(), key],
                             );
                             key = KEYC_BSPACE as ::core::ffi::c_ulong as key_code;
                         }
                         if key == bspace as ::core::ffi::c_ulonglong | KEYC_META {
                             log_debug(
                                 c"%s: key %#llx is M-BSpace".as_ptr(),
-                                fmt_args![cstr_ptr(&(*c).name), key],
+                                fmt_args![(*c).name.as_deref(), key],
                             );
                             key = (KEYC_BSPACE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
                                 | KEYC_META) as key_code;
@@ -4348,7 +4290,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                 10299298647514879019 => {
                     log_debug(
                         c"%s: complete key %.*s %#llx".as_ptr(),
-                        fmt_args![cstr_ptr(&(*c).name), size as ::core::ffi::c_int, buf, key],
+                        fmt_args![(*c).name.as_deref(), size as ::core::ffi::c_int, buf, key],
                     );
                     (*tty).key_timer.disarm();
                     (*tty).flags &= !TTY_TIMER;
@@ -4379,7 +4321,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                 _ => {
                     log_debug(
                         c"%s: partial key %.*s".as_ptr(),
-                        fmt_args![cstr_ptr(&(*c).name), len as ::core::ffi::c_int, buf],
+                        fmt_args![(*c).name.as_deref(), len as ::core::ffi::c_int, buf],
                     );
                     if (*tty).flags & TTY_TIMER != 0 {
                         if (*tty).key_timer.is_set() && !(*tty).key_timer.is_armed() {
@@ -4394,15 +4336,11 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         if delay == 0 as ::core::ffi::c_int {
                             delay = 1 as ::core::ffi::c_int;
                         }
-                        if (*tty).flags & TTY_BRACKETPASTE != 0
-                            && tty_keys_partial_paste_end(::core::slice::from_raw_parts(
-                                buf as *const u8,
-                                len,
-                            )) != 0
+                        if (*tty).flags & TTY_BRACKETPASTE != 0 && tty_keys_partial_paste_end(keys)
                         {
                             log_debug(
                                 c"%s: increasing delay (partial paste end)".as_ptr(),
-                                fmt_args![cstr_ptr(&(*c).name)],
+                                fmt_args![(*c).name.as_deref()],
                             );
                             if delay < 500 as ::core::ffi::c_int {
                                 delay = 500 as ::core::ffi::c_int;
@@ -4414,7 +4352,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         {
                             log_debug(
                                 c"%s: increasing delay (active query)".as_ptr(),
-                                fmt_args![cstr_ptr(&(*c).name)],
+                                fmt_args![(*c).name.as_deref()],
                             );
                             if delay < 500 as ::core::ffi::c_int {
                                 delay = 500 as ::core::ffi::c_int;
@@ -4582,7 +4520,7 @@ unsafe fn tty_keys_extended_key(
             log_debug(
                 c"%s: extended key %.*s is %llx (%s)".as_ptr(),
                 fmt_args![
-                    cstr_ptr(&(*c).name),
+                    (*c).name.as_deref(),
                     *size as ::core::ffi::c_int,
                     buf,
                     nkey,
@@ -4650,7 +4588,7 @@ unsafe fn tty_keys_mouse(
             }
             log_debug(
                 c"%s: mouse input: %.*s".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name), *size as ::core::ffi::c_int, buf],
+                fmt_args![(*c).name.as_deref(), *size as ::core::ffi::c_int, buf],
             );
             if b < MOUSE_PARAM_BTN_OFF as u_int
                 || x < MOUSE_PARAM_POS_OFF as u_int
@@ -4721,7 +4659,7 @@ unsafe fn tty_keys_mouse(
             }
             log_debug(
                 c"%s: mouse input (SGR): %.*s".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name), *size as ::core::ffi::c_int, buf],
+                fmt_args![(*c).name.as_deref(), *size as ::core::ffi::c_int, buf],
             );
             if x < 1 as u_int || y < 1 as u_int {
                 return -(2 as ::core::ffi::c_int);
@@ -4996,7 +4934,7 @@ unsafe fn tty_keys_device_attributes(
             while i < n {
                 log_debug(
                     c"%s: DA feature: %d".as_ptr(),
-                    fmt_args![cstr_ptr(&(*c).name), p[i as usize] as ::core::ffi::c_int],
+                    fmt_args![(*c).name.as_deref(), p[i as usize] as ::core::ffi::c_int],
                 );
                 if p[i as usize] as ::core::ffi::c_int == 4 as ::core::ffi::c_int {
                     tty_add_features(features, c"sixel".as_ptr(), c",".as_ptr());
@@ -5015,7 +4953,7 @@ unsafe fn tty_keys_device_attributes(
         }
         log_debug(
             c"%s: received primary DA %.*s".as_ptr(),
-            fmt_args![cstr_ptr(&(*c).name), *size as ::core::ffi::c_int, buf],
+            fmt_args![(*c).name.as_deref(), *size as ::core::ffi::c_int, buf],
         );
         tty_update_features(tty);
         (*tty).flags |= TTY_HAVEDA;
@@ -5150,7 +5088,7 @@ unsafe fn tty_keys_device_attributes2(
         }
         log_debug(
             c"%s: received secondary DA %.*s".as_ptr(),
-            fmt_args![cstr_ptr(&(*c).name), *size as ::core::ffi::c_int, buf],
+            fmt_args![(*c).name.as_deref(), *size as ::core::ffi::c_int, buf],
         );
         tty_update_features(tty);
         (*tty).flags |= TTY_HAVEDA2;
@@ -5270,7 +5208,7 @@ unsafe fn tty_keys_extended_device_attributes(
         }
         log_debug(
             c"%s: received extended DA %.*s".as_ptr(),
-            fmt_args![cstr_ptr(&(*c).name), *size as ::core::ffi::c_int, buf],
+            fmt_args![(*c).name.as_deref(), *size as ::core::ffi::c_int, buf],
         );
         (*c).term_type =
             Some(::std::ffi::CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char).to_owned());
@@ -5370,7 +5308,7 @@ pub unsafe fn tty_keys_colours(
             if !c.is_null() {
                 log_debug(
                     c"%s fg is %s".as_ptr(),
-                    fmt_args![cstr_ptr(&(*c).name), colour_tostring(n).as_c_str()],
+                    fmt_args![(*c).name.as_deref(), colour_tostring(n).as_c_str()],
                 );
             } else {
                 log_debug(
@@ -5384,7 +5322,7 @@ pub unsafe fn tty_keys_colours(
             if !c.is_null() {
                 log_debug(
                     c"%s bg is %s".as_ptr(),
-                    fmt_args![cstr_ptr(&(*c).name), colour_tostring(n).as_c_str()],
+                    fmt_args![(*c).name.as_deref(), colour_tostring(n).as_c_str()],
                 );
             } else {
                 log_debug(

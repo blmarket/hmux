@@ -934,10 +934,10 @@ fn the_alternate_screen_is_swapped_in_and_out() {
     w.write_at(0, 0, "main");
     w.flush();
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_write_alternateon(&mut *w.ptr(), &raw mut gc, 1) };
+    unsafe { screen_write_alternateon(&mut *w.ptr(), &mut gc, 1) };
     assert_eq!(w.lines(), ["", ""]);
     w.write_at(0, 0, "alt");
-    unsafe { screen_write_alternateoff(&mut *w.ptr(), &raw mut gc, 1) };
+    unsafe { screen_write_alternateoff(&mut *w.ptr(), &mut gc, 1) };
     assert_eq!(w.lines(), ["main", ""]);
 }
 
@@ -948,7 +948,7 @@ fn the_alternate_screen_is_only_swapped_out_when_it_was_in() {
     let mut w = Writer::new(4, 2, 100);
     w.write_at(0, 0, "main");
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_write_alternateoff(&mut *w.ptr(), &raw mut gc, 0) };
+    unsafe { screen_write_alternateoff(&mut *w.ptr(), &mut gc, 0) };
     assert_eq!(w.lines(), ["main", ""]);
 }
 
@@ -1630,11 +1630,7 @@ fn clearing_from_the_top_of_a_pane_scrolls_it_into_the_history() {
     let _guard = globals();
     let mut w = PaneWriter::new(4, 2);
     unsafe {
-        options_set_number(
-            options_ptr(&(*w.wp()).options),
-            c"scroll-on-clear".as_ptr(),
-            1,
-        );
+        options_set_number((*w.wp()).options_ptr(), c"scroll-on-clear".as_ptr(), 1);
     }
     w.puts("ab");
     w.move_to(0, 0);
@@ -1858,23 +1854,15 @@ fn a_pane_may_refuse_the_alternate_screen() {
     let mut gc = unsafe { grid_default_cell };
     w.puts("main");
     unsafe {
-        options_set_number(
-            options_ptr(&(*w.wp()).options),
-            c"alternate-screen".as_ptr(),
-            0,
-        );
-        screen_write_alternateon(&mut *w.ptr(), &raw mut gc, 0);
+        options_set_number((*w.wp()).options_ptr(), c"alternate-screen".as_ptr(), 0);
+        screen_write_alternateon(&mut *w.ptr(), &mut gc, 0);
         assert_eq!(w.lines()[0], "main");
-        screen_write_alternateoff(&mut *w.ptr(), &raw mut gc, 0);
+        screen_write_alternateoff(&mut *w.ptr(), &mut gc, 0);
         assert_eq!(w.lines()[0], "main");
-        options_set_number(
-            options_ptr(&(*w.wp()).options),
-            c"alternate-screen".as_ptr(),
-            1,
-        );
-        screen_write_alternateon(&mut *w.ptr(), &raw mut gc, 0);
+        options_set_number((*w.wp()).options_ptr(), c"alternate-screen".as_ptr(), 1);
+        screen_write_alternateon(&mut *w.ptr(), &mut gc, 0);
         assert_eq!(w.lines()[0], "");
-        screen_write_alternateoff(&mut *w.ptr(), &raw mut gc, 0);
+        screen_write_alternateoff(&mut *w.ptr(), &mut gc, 0);
         assert_eq!(w.lines()[0], "main");
     }
 }

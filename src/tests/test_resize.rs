@@ -1,5 +1,5 @@
 use super::*;
-use crate::layout::{LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, layout_root_ptr};
+use crate::layout::{LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM};
 use crate::layout::{layout_assign_pane, layout_free, layout_init, layout_split_pane};
 use crate::options::{options_set_number, options_set_string};
 use crate::server::server_client_add_client_window;
@@ -69,8 +69,8 @@ impl Win {
             (
                 (*w).sx,
                 (*w).sy,
-                (*layout_root_ptr(&(*w).layout_root)).sx,
-                (*layout_root_ptr(&(*w).layout_root)).sy,
+                (*(*w).layout_root_ptr()).sx,
+                (*(*w).layout_root_ptr()).sy,
             )
         }
     }
@@ -84,7 +84,7 @@ impl Drop for Win {
 
 /// What `ignore_client_size` answers, as the C's zero or one.
 unsafe fn ignores(c: *mut client) -> c_int {
-    unsafe { ignore_client_size(c) as c_int }
+    unsafe { ignore_client_size(&*c) as c_int }
 }
 
 /// What `clients_calculate_size` works out for `w` under `type_0`, and

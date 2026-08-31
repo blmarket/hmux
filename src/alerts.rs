@@ -33,7 +33,7 @@
 use crate::fmt_args;
 use crate::log::log_debug;
 use crate::notify::notify_winlink;
-use crate::options::{options_get_number, options_ptr};
+use crate::options::options_get_number;
 use crate::reactor;
 use crate::reactor::{Reactor, Timer};
 use crate::server::client_walk;
@@ -46,11 +46,8 @@ use crate::tree::GlobalQueue;
 use crate::tty::tty_putcode;
 pub use crate::types::*;
 use crate::window::winlinks_into;
-use crate::window::{
-    window_find_by_id_ref, window_ref_from_ptr, windows, winlinks_after, winlinks_first,
-};
+use crate::window::{window_find_by_id_ref, window_ref_from_ptr, windows, winlinks_in};
 use ::core::ffi::{CStr, c_int};
-use ::core::ptr::null_mut;
 
 pub const RB_NEGINF: c_int = -1;
 pub const EV_TIMEOUT: c_int = 0x1;
@@ -128,23 +125,8 @@ static SILENCE: Family = Family {
 };
 
 /// The winlinks that show `w`, in the order the window's own list holds them.
-fn showing(w: *mut window) -> impl Iterator<Item = *mut winlink> {
-    unsafe { winlinks_into(w) }
-}
-
-/// The winlinks of `s`, in index order.
-fn windows_of(s: *mut session) -> impl Iterator<Item = *mut winlink> {
-    let mut current = null_mut::<winlink>();
-    let mut started = false;
-    ::core::iter::from_fn(move || unsafe {
-        current = if started {
-            winlinks_after(current)
-        } else {
-            started = true;
-            winlinks_first(&raw mut (*s).windows)
-        };
-        (!current.is_null()).then_some(current)
-    })
+fn showing(w: &WindowRef) -> impl Iterator<Item = *mut winlink> {
+    unsafe { winlinks_into(w.as_ptr()) }
 }
 
 /// Every window the server knows, in id order.
@@ -155,14 +137,11 @@ fn each_window() -> impl Iterator<Item = WindowRef> {
 
 /// The silence timer expiring: nothing has been written to the window for
 /// `monitor-silence` seconds, so it is queued for a silence check.
-unsafe fn alerts_timer(w: *mut window) {
+unsafe fn alerts_timer(w_ref: &WindowRef) {
     unsafe {
-        let Some(w_ref) = window_ref_from_ptr(w) else {
-            return;
-        };
         let w = w_ref.as_ptr();
         log_debug(c"@%u alerts timer expired".as_ptr(), fmt_args![(*w).id]);
-        alerts_queue(w, WINDOW_SILENCE);
+        alerts_queue_window(w_ref, WINDOW_SILENCE);
     }
 }
 
@@ -174,8 +153,8 @@ unsafe fn alerts_callback() {
     unsafe {
         let mut queued = ::core::mem::take(alerts_list.queue());
         while let Some(w_ref) = queued.pop_front() {
+            let alerts = alerts_check_all(&w_ref);
             let w = w_ref.as_ptr();
-            let alerts = alerts_check_all(w);
             log_debug(
                 c"@%u alerts check, alerts %#x".as_ptr(),
                 fmt_args![(*w).id, alerts],
@@ -207,28 +186,29 @@ unsafe fn alerts_action_applies(wl: *mut winlink, name: &CStr) -> bool {
 }
 
 /// Checks every family against `w` and answers the window flags that applied.
-unsafe fn alerts_check_all(w: *mut window) -> c_int {
+unsafe fn alerts_check_all(w: &WindowRef) -> c_int {
     unsafe { alerts_check(w, &BELL) | alerts_check(w, &ACTIVITY) | alerts_check(w, &SILENCE) }
 }
 
 /// One family's check: with the flag standing and the option watched, every
-/// winlink showing `w` is marked and its hook raised, and the first one of
+/// winlink showing the window is marked and its hook raised, and the first of
 /// each session to get that far also puts a message on that session's clients.
 /// Answers the family's window flag, or zero if there was nothing to do.
-unsafe fn alerts_check(w: *mut window, family: &Family) -> c_int {
+unsafe fn alerts_check(w_ref: &WindowRef, family: &Family) -> c_int {
     unsafe {
+        let w = w_ref.as_ptr();
         if (*w).flags & family.window_flag == 0 {
             return 0;
         }
-        if options_get_number(options_ptr(&(*w).options), family.monitor.as_ptr()) == 0 {
+        if options_get_number((*w).options_ptr(), family.monitor.as_ptr()) == 0 {
             return 0;
         }
 
-        for wl in showing(w) {
+        for wl in showing(w_ref) {
             session_set_alerted((*wl).session(), false);
         }
 
-        for wl in showing(w) {
+        for wl in showing(w_ref) {
             if !family.again && (*wl).flags & family.winlink_flag != 0 {
                 continue;
             }
@@ -257,18 +237,21 @@ unsafe fn alerts_check(w: *mut window, family: &Family) -> c_int {
 /// Checks every window `s` shows, without waiting for the event loop.
 pub unsafe fn alerts_check_session(s: *mut session) {
     unsafe {
-        for wl in windows_of(s) {
-            alerts_check_all((*wl).window());
+        for wl in winlinks_in(s) {
+            if let Some(w_ref) = (*wl).window_handle() {
+                alerts_check_all(w_ref);
+            }
         }
     }
 }
 
-/// Whether any of the families in `flags` is watched on `w`.
-unsafe fn alerts_enabled(w: *mut window, flags: c_int) -> bool {
+/// Whether any of the families in `flags` is watched on the window.
+unsafe fn alerts_enabled(w_ref: &WindowRef, flags: c_int) -> bool {
     unsafe {
+        let w = w_ref.as_ptr();
         for family in [&BELL, &ACTIVITY, &SILENCE] {
             if flags & family.window_flag != 0
-                && options_get_number(options_ptr(&(*w).options), family.monitor.as_ptr()) != 0
+                && options_get_number((*w).options_ptr(), family.monitor.as_ptr()) != 0
             {
                 return true;
             }
@@ -282,22 +265,23 @@ unsafe fn alerts_enabled(w: *mut window, flags: c_int) -> bool {
 pub fn alerts_reset_all() {
     unsafe {
         for w_ref in each_window() {
-            alerts_reset(w_ref.as_ptr());
+            alerts_reset(&w_ref);
         }
     }
 }
 
-/// Drops `w`'s silence flag and arms its silence timer afresh, for as many
-/// seconds as `monitor-silence` asks; zero seconds leaves it unarmed.
-unsafe fn alerts_reset(w: *mut window) {
+/// Drops the window's silence flag and arms its silence timer afresh, for
+/// as many seconds as `monitor-silence` asks; zero seconds leaves it unarmed.
+unsafe fn alerts_reset(w_ref: &WindowRef) {
     unsafe {
+        let w = w_ref.as_ptr();
         if !(*w).alerts_timer.is_set() {
-            let w_weak = window_ref_from_ptr(w).map(|w_ref| w_ref.downgrade());
+            let w_weak = w_ref.downgrade();
             (*w).alerts_timer.set_callback(move || {
-                let Some(w_ref) = w_weak.as_ref().and_then(WindowWeak::upgrade) else {
+                let Some(w_ref) = w_weak.upgrade() else {
                     return;
                 };
-                alerts_timer(w_ref.as_ptr());
+                alerts_timer(&w_ref);
             });
         }
 
@@ -305,8 +289,7 @@ unsafe fn alerts_reset(w: *mut window) {
         (*w).alerts_timer.disarm();
 
         let tv = timeval {
-            tv_sec: options_get_number(options_ptr(&(*w).options), c"monitor-silence".as_ptr())
-                as __time_t,
+            tv_sec: options_get_number((*w).options_ptr(), c"monitor-silence".as_ptr()) as __time_t,
             tv_usec: 0,
         };
 
@@ -332,7 +315,18 @@ pub(crate) fn queued_windows() -> Vec<*mut window> {
 /// window on the queue the deferred check drains.
 pub unsafe fn alerts_queue(w: *mut window, flags: c_int) {
     unsafe {
-        alerts_reset(w);
+        let Some(w_ref) = window_ref_from_ptr(w) else {
+            return;
+        };
+        alerts_queue_window(&w_ref, flags);
+    }
+}
+
+/// The queueing itself, once the window is held rather than merely pointed at.
+unsafe fn alerts_queue_window(w_ref: &WindowRef, flags: c_int) {
+    unsafe {
+        let w = w_ref.as_ptr();
+        alerts_reset(w_ref);
 
         if (*w).flags & flags != flags {
             (*w).flags |= flags;
@@ -342,13 +336,10 @@ pub unsafe fn alerts_queue(w: *mut window, flags: c_int) {
             );
         }
 
-        if alerts_enabled(w, flags) {
+        if alerts_enabled(w_ref, flags) {
             if (*w).alerts_queued == 0 {
-                let Some(w_ref) = window_ref_from_ptr(w) else {
-                    return;
-                };
                 (*w).alerts_queued = 1;
-                alerts_list.queue().push_back(w_ref);
+                alerts_list.queue().push_back(w_ref.clone());
             }
 
             if alerts_fired == 0 {

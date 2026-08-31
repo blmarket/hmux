@@ -32,15 +32,8 @@ pub fn grid_view_set_padding(gd: &mut grid, px: u_int, py: u_int) {
     grid_set_padding(gd, px, view_y(gd, py))
 }
 
-pub unsafe fn grid_view_set_cells(
-    gd: &mut grid,
-    px: u_int,
-    py: u_int,
-    gc: *const grid_cell,
-    s: *const ::core::ffi::c_char,
-    slen: size_t,
-) {
-    unsafe { grid_set_cells(gd, px, view_y(gd, py), gc, s, slen) }
+pub fn grid_view_set_cells(gd: &mut grid, px: u_int, py: u_int, gc: &grid_cell, s: &[u8]) {
+    grid_set_cells(gd, px, view_y(gd, py), gc, s)
 }
 
 /// Scroll everything the screen holds into the history, then clear what is

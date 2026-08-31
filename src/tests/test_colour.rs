@@ -67,11 +67,7 @@ fn a_nearer_cube_colour_wins_over_the_grey_ramp() {
 fn rgb_components_join_and_split_back() {
     unsafe {
         assert_eq!(colour_join_rgb(0x12, 0x34, 0x56), 0x123456 | RGB);
-        let mut r: u_char = 0;
-        let mut g: u_char = 0;
-        let mut b: u_char = 0;
-        colour_split_rgb(0x123456 | RGB, &raw mut r, &raw mut g, &raw mut b);
-        assert_eq!((r, g, b), (0x12, 0x34, 0x56));
+        assert_eq!(colour_split_rgb(0x123456 | RGB), (0x12, 0x34, 0x56));
     }
 }
 

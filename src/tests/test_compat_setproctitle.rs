@@ -57,13 +57,10 @@ fn a_title_is_written_behind_the_name_of_the_program() {
     unsafe {
         setproctitle(c"%s".as_ptr(), fmt_args![c"a-title".as_ptr()]);
     }
-    let expected: String = format!(
-        "{}: a-title",
-        unsafe { CStr::from_ptr(getprogname()) }.to_string_lossy()
-    )
-    .chars()
-    .take(15)
-    .collect();
+    let expected: String = format!("{}: a-title", getprogname().to_string_lossy())
+        .chars()
+        .take(15)
+        .collect();
     assert_eq!(name.now(), expected);
 }
 
@@ -82,13 +79,10 @@ fn a_long_title_is_cut_down_twice() {
             ],
         );
     }
-    let expected: String = format!(
-        "{}: a-very-long-tit",
-        unsafe { CStr::from_ptr(getprogname()) }.to_string_lossy()
-    )
-    .chars()
-    .take(15)
-    .collect();
+    let expected: String = format!("{}: a-very-long-tit", getprogname().to_string_lossy())
+        .chars()
+        .take(15)
+        .collect();
     assert_eq!(name.now(), expected);
 }
 
@@ -140,7 +134,7 @@ fn a_name_that_did_not_fit_is_cut_back_to_its_last_space() {
     }
     let name = Name::new();
     assert_eq!(
-        unsafe { CStr::from_ptr(getprogname()) }.to_bytes(),
+        getprogname().to_bytes(),
         b"sp",
         "the child is not called what it was started as"
     );

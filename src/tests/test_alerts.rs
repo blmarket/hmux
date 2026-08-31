@@ -66,7 +66,7 @@ fn the_silence_timer_queues_the_window_it_was_armed_for() {
         drain();
         options_set_number(w.options(), c"monitor-silence".as_ptr(), 3);
 
-        alerts_timer(w.ptr());
+        alerts_timer(&w.reference());
 
         assert_eq!((*w.ptr()).flags & WINDOW_SILENCE, WINDOW_SILENCE);
         assert_eq!((*w.ptr()).alerts_queued, 1);

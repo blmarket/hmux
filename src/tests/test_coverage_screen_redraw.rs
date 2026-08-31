@@ -26,7 +26,7 @@
 
 use crate::grid::grid_default_cell;
 use crate::layout::LAYOUT_CELL_FLOATING;
-use crate::options::{options_ptr, options_set_number};
+use crate::options::options_set_number;
 use crate::screen::{
     BORDER_MARKERS, CELL_BORDERS, CELL_BOTTOMJOIN, CELL_BOTTOMLEFT, CELL_BOTTOMRIGHT, CELL_INSIDE,
     CELL_JOIN, CELL_LEFTJOIN, CELL_LEFTRIGHT, CELL_OUTSIDE, CELL_RIGHTJOIN, CELL_SCROLLBAR,
@@ -204,10 +204,6 @@ impl Ranges {
             },
         }
     }
-
-    fn ptr(&mut self) -> *mut visible_ranges {
-        &raw mut self.r
-    }
 }
 
 /// The border and cell constants name the twelve points of the redraw ring in
@@ -259,25 +255,19 @@ fn the_constants_name_the_border_ring_in_order() {
 #[test]
 fn the_glyph_tables_are_indexed_by_the_cells_they_draw() {
     for (i, ch) in b" xqlkmjwvtun~".iter().enumerate() {
-        assert_eq!(CELL_BORDERS[i] as u8, *ch);
-        assert_eq!(SIMPLE_BORDERS[i] as u8, b" |-+++++++++."[i]);
+        assert_eq!(CELL_BORDERS[i], *ch);
+        assert_eq!(SIMPLE_BORDERS[i], b" |-+++++++++."[i]);
     }
     for (i, ch) in b"  +,.-".iter().enumerate() {
-        assert_eq!(BORDER_MARKERS[i] as u8, *ch);
+        assert_eq!(BORDER_MARKERS[i], *ch);
     }
-    assert_eq!(CELL_BORDERS[CELL_OUTSIDE as usize] as u8, b'~');
-    assert_eq!(CELL_BORDERS[CELL_INSIDE as usize] as u8, b' ');
-    assert_eq!(CELL_BORDERS[CELL_JOIN as usize] as u8, b'n');
-    assert_eq!(SIMPLE_BORDERS[CELL_TOPBOTTOM as usize] as u8, b'|');
-    assert_eq!(SIMPLE_BORDERS[CELL_LEFTRIGHT as usize] as u8, b'-');
-    assert_eq!(
-        BORDER_MARKERS[SCREEN_REDRAW_BORDER_TOP as usize] as u8,
-        b'.'
-    );
-    assert_eq!(
-        BORDER_MARKERS[SCREEN_REDRAW_BORDER_BOTTOM as usize] as u8,
-        b'-'
-    );
+    assert_eq!(CELL_BORDERS[CELL_OUTSIDE as usize], b'~');
+    assert_eq!(CELL_BORDERS[CELL_INSIDE as usize], b' ');
+    assert_eq!(CELL_BORDERS[CELL_JOIN as usize], b'n');
+    assert_eq!(SIMPLE_BORDERS[CELL_TOPBOTTOM as usize], b'|');
+    assert_eq!(SIMPLE_BORDERS[CELL_LEFTRIGHT as usize], b'-');
+    assert_eq!(BORDER_MARKERS[SCREEN_REDRAW_BORDER_TOP as usize], b'.');
+    assert_eq!(BORDER_MARKERS[SCREEN_REDRAW_BORDER_BOTTOM as usize], b'-');
 }
 
 /// Every individual redraw bit the drawing code looks for lands in
@@ -326,21 +316,19 @@ fn the_isolate_markers_wrap_a_line_in_direction_codes() {
 /// stepped over however close the column sits to it.
 #[test]
 fn a_column_is_visible_only_where_a_range_of_width_covers_it() {
-    assert_eq!(unsafe { screen_redraw_is_visible(null_mut(), 0) }, 1);
+    assert!(screen_redraw_is_visible(None, 0));
 
-    let mut rs = Ranges::new(&[
+    let rs = Ranges::new(&[
         visible_range { px: 2, nx: 3 },
         visible_range { px: 9, nx: 0 },
     ]);
-    unsafe {
-        assert_eq!(screen_redraw_is_visible(rs.ptr(), 0), 0);
-        assert_eq!(screen_redraw_is_visible(rs.ptr(), 1), 0);
-        assert_eq!(screen_redraw_is_visible(rs.ptr(), 2), 1);
-        assert_eq!(screen_redraw_is_visible(rs.ptr(), 4), 1);
-        assert_eq!(screen_redraw_is_visible(rs.ptr(), 5), 0);
-        assert_eq!(screen_redraw_is_visible(rs.ptr(), 8), 0);
-        assert_eq!(screen_redraw_is_visible(rs.ptr(), 9), 0);
-    }
+    assert!(!screen_redraw_is_visible(Some(&rs.r), 0));
+    assert!(!screen_redraw_is_visible(Some(&rs.r), 1));
+    assert!(screen_redraw_is_visible(Some(&rs.r), 2));
+    assert!(screen_redraw_is_visible(Some(&rs.r), 4));
+    assert!(!screen_redraw_is_visible(Some(&rs.r), 5));
+    assert!(!screen_redraw_is_visible(Some(&rs.r), 8));
+    assert!(!screen_redraw_is_visible(Some(&rs.r), 9));
 }
 
 /// A request covering nothing — a row above the screen, no width at all, or a
@@ -485,13 +473,13 @@ fn plain_and_simple_lines_dress_cells_from_their_own_tables() {
         unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_SINGLE, t, &raw mut plain) };
         assert_eq!(plain.attr as c_int & GRID_ATTR_CHARSET, GRID_ATTR_CHARSET);
         assert_eq!(plain.attr as c_int & GRID_ATTR_REVERSE, GRID_ATTR_REVERSE);
-        assert_eq!(plain.data.data[0], CELL_BORDERS[t as usize] as u8);
+        assert_eq!(plain.data.data[0], CELL_BORDERS[t as usize]);
         assert_eq!((plain.data.size, plain.data.width), (1, 1));
 
         let mut simple = undressed(GRID_ATTR_CHARSET as u_short);
         unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_SIMPLE, t, &raw mut simple) };
         assert_eq!(simple.attr as c_int & GRID_ATTR_CHARSET, 0);
-        assert_eq!(simple.data.data[0], SIMPLE_BORDERS[t as usize] as u8);
+        assert_eq!(simple.data.data[0], SIMPLE_BORDERS[t as usize]);
     }
 }
 
@@ -521,13 +509,13 @@ fn double_heavy_and_space_lines_take_their_characters_whole() {
         let mut doubled = undressed(GRID_ATTR_CHARSET as u_short);
         unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_DOUBLE, t, &raw mut doubled) };
         assert_eq!(doubled.attr as c_int & GRID_ATTR_CHARSET, 0);
-        let want = unsafe { *tty_acs_double_borders(t) };
+        let want = *tty_acs_double_borders(t);
         expect_dressed_as(&doubled, want);
 
         let mut heavy = undressed(GRID_ATTR_CHARSET as u_short);
         unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_HEAVY, t, &raw mut heavy) };
         assert_eq!(heavy.attr as c_int & GRID_ATTR_CHARSET, 0);
-        let want = unsafe { *tty_acs_heavy_borders(t) };
+        let want = *tty_acs_heavy_borders(t);
         expect_dressed_as(&heavy, want);
 
         let mut spaced = undressed(GRID_ATTR_CHARSET as u_short);
@@ -568,11 +556,7 @@ fn numbered_lines_show_the_pane_index_or_a_star() {
         );
         assert_eq!(star.data.data[0], b'*');
 
-        options_set_number(
-            options_ptr(&(*p.w()).options),
-            c"pane-base-index".as_ptr(),
-            9,
-        );
+        options_set_number((*p.w()).options_ptr(), c"pane-base-index".as_ptr(), 9);
         let mut rebased = undressed(0);
         screen_redraw_border_set(
             p.w(),

@@ -160,7 +160,7 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> c
         for av in args_value_list(args, 'e' as i32 as u_char) {
             environ_put(
                 environ_ptr(&sc.environ),
-                (*av).value.string(),
+                (*av).value.string().as_ptr(),
                 0 as ::core::ffi::c_int,
             );
         }

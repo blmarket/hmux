@@ -3,7 +3,7 @@ use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_target};
 use crate::compat::strtonum;
 use crate::fmt_args;
-use crate::options::{options_ptr, options_set_number};
+use crate::options::options_set_number;
 use crate::resize::{default_window_size, recalculate_size};
 pub use crate::types::*;
 pub const MSG_READ_CANCEL: msgtype = 307;
@@ -223,7 +223,7 @@ unsafe fn cmd_resize_window_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> 
             );
         }
         options_set_number(
-            options_ptr(&(*w).options),
+            (*w).options_ptr(),
             c"window-size".as_ptr(),
             WINDOW_SIZE_MANUAL as ::core::ffi::c_longlong,
         );

@@ -1,7 +1,5 @@
 use super::*;
-use crate::tests::test_fixtures::{
-    Format, Item, Pane, Registry, Session, Window, globals, link, unlink,
-};
+use crate::tests::test_fixtures::{Format, Item, Pane, Registry, Session, Window, globals};
 
 #[test]
 fn option_is_the_flag_text_or_nothing() {
@@ -68,25 +66,9 @@ fn each_session_hands_over_every_registered_session_in_name_order() {
     registry.add_session(&mut ay);
 
     assert_eq!(
-        each_session().collect::<Vec<_>>(),
+        each_session().map(|s| s.as_ptr()).collect::<Vec<_>>(),
         vec![ay.ptr(), bee.ptr()]
     );
-}
-
-#[test]
-fn windows_of_hands_over_the_sessions_winlinks_in_index_order() {
-    let _guard = globals();
-    let mut s = Session::new(73, "walked");
-    let mut first = Window::new(74, "first", 80, 24);
-    let mut second = Window::new(75, "second", 80, 24);
-    assert_eq!(windows_of(s.ptr()).count(), 0);
-    let wl3 = link(&mut s, &mut second, 3);
-    let wl1 = link(&mut s, &mut first, 1);
-
-    assert_eq!(windows_of(s.ptr()).collect::<Vec<_>>(), vec![wl1, wl3]);
-
-    unlink(&mut s, wl1);
-    unlink(&mut s, wl3);
 }
 
 #[test]

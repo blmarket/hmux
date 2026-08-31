@@ -184,16 +184,6 @@ fn decode(src: &[u8]) -> Result<Vec<u8>, Vec<u8>> {
     Ok(out)
 }
 
-/// Write `out` and a terminator at `dst`, which must have room for both.
-unsafe fn store(dst: *mut ::core::ffi::c_char, out: &[u8]) {
-    unsafe {
-        for (i, &b) in out.iter().enumerate() {
-            *dst.add(i) = b as ::core::ffi::c_char;
-        }
-        *dst.add(out.len()) = 0;
-    }
-}
-
 /// Write as much of `out` as fits in the `sz` bytes at `dst`, in `strnunvis`'s
 /// style: the last byte of the buffer is always a terminator, and one also
 /// follows the copied bytes when they leave room for it.
@@ -241,22 +231,14 @@ pub unsafe fn unvis(
     }
 }
 
-pub unsafe fn strunvis(
-    dst: *mut ::core::ffi::c_char,
-    src: *const ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
-    unsafe {
-        match decode(::core::ffi::CStr::from_ptr(src).to_bytes()) {
-            Ok(out) => {
-                store(dst, &out);
-                out.len() as ::core::ffi::c_int
-            }
-            Err(partial) => {
-                store(dst, &partial);
-                -1
-            }
-        }
-    }
+/// The string `src` stands for, or nothing when it holds a sequence that is
+/// not valid. The C wrote the decoded bytes into a caller's buffer, terminated
+/// them and answered their count; the string here stops at the first NUL the
+/// escapes decode to, which is where reading that buffer back stopped.
+pub fn strunvis(src: &::core::ffi::CStr) -> Option<::std::ffi::CString> {
+    let out = decode(src.to_bytes()).ok()?;
+    let end = out.iter().position(|&b| b == 0).unwrap_or(out.len());
+    Some(::std::ffi::CString::new(&out[..end]).expect("the bytes stop at the first nul"))
 }
 
 pub unsafe fn strnunvis(

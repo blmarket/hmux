@@ -69,7 +69,7 @@ use crate::window::{
     window_panes_next, window_unzoom,
 };
 use crate::xmalloc::xasprintf;
-use ::core::ffi::{c_char, c_int, c_longlong, c_ulonglong};
+use ::core::ffi::{c_int, c_longlong, c_ulonglong};
 use ::core::ptr::null_mut;
 use ::std::ffi::CString;
 pub const MSG_READ_CANCEL: msgtype = 307;
@@ -181,6 +181,7 @@ pub const CMD_RETURN_ERROR: cmd_retval = -1;
 /// What the command leaves on the client while the numbers are up: the item
 /// waiting for a pane to be chosen, if any, and the prepared template the
 /// chosen pane's id is substituted into.
+#[derive(Default)]
 #[repr(C)]
 pub struct cmd_display_panes_data {
     pub(crate) item: Option<CmdqItemWeak>,
@@ -222,7 +223,7 @@ pub(crate) static cmd_display_panes_entry: cmd_entry = cmd_entry {
 
 /// How the parser is told to read the optional template: as a command list if
 /// it parses as one, and as a plain string otherwise.
-unsafe fn cmd_display_panes_args_parse(
+fn cmd_display_panes_args_parse(
     _args: &args,
     _idx: u_int,
     _cause: &mut Option<CString>,
@@ -302,8 +303,7 @@ unsafe fn cmd_display_panes_put(
                 tty_cursor(tty, j.wrapping_sub(ctx.ox as u_int), cy);
                 tty_putn(
                     tty,
-                    buf.as_ptr().add(j.wrapping_sub(ri.px) as usize) as *const c_char,
-                    1,
+                    ::core::slice::from_ref(&buf[j.wrapping_sub(ri.px) as usize]),
                     1,
                 );
                 j = j.wrapping_add(1);
@@ -414,7 +414,7 @@ unsafe fn cmd_display_panes_draw_pane(ctx: &mut screen_redraw_ctx, wp: *mut wind
             for j in 0..5 {
                 let mut i = px;
                 while i < px.wrapping_add(5) {
-                    if window_clock_table[idx][j as usize][i.wrapping_sub(px) as usize] != 0 {
+                    if window_clock_table[idx][j as usize][i.wrapping_sub(px) as usize] {
                         cmd_display_panes_put(
                             &mut *ctx,
                             wp,
@@ -480,7 +480,7 @@ pub(crate) unsafe fn cmd_display_panes_draw(
             c"%s: %s @%u".as_ptr(),
             fmt_args![
                 c"cmd_display_panes_draw".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 (*w).id
             ],
         );
@@ -610,10 +610,7 @@ unsafe fn cmd_display_panes_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retv
             None => return CMD_RETURN_ERROR,
         };
 
-        let mut cdata = Box::new(cmd_display_panes_data {
-            item: None,
-            state: None,
-        });
+        let mut cdata = Box::<cmd_display_panes_data>::default();
         if wait {
             cdata.item = cmdq_item_weak_from_ptr(item);
         }

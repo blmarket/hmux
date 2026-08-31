@@ -6,14 +6,14 @@ use crate::format::format_single_from_target;
 use crate::notify::notify_hook;
 use crate::options::{
     options_array_assign, options_array_clear, options_array_get, options_array_set, options_empty,
-    options_from_string, options_is_array, options_ptr, options_remove_or_default,
+    options_from_string, options_is_array, options_remove_or_default,
     options_scope_from_name, options_set_string, options_table_entry,
 };
 use crate::options::{options_get_only_ptr, options_get_ptr};
 use crate::options::{options_match, options_push_changes};
 pub use crate::types::*;
 use crate::window::{window_panes_first, window_panes_next};
-use ::std::ffi::CString;
+use ::std::ffi::{CStr, CString};
 pub const MSG_READ_CANCEL: msgtype = 307;
 pub const MSG_WRITE_CLOSE: msgtype = 306;
 pub const MSG_WRITE_READY: msgtype = 305;
@@ -246,13 +246,10 @@ unsafe fn cmd_set_option_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd
         if ::core::ptr::eq(cmd_get_entry(self_0), &cmd_set_hook_entry)
             && args_has(args, 'R' as i32 as u_char) != 0
         {
-            notify_hook(item, argument.as_ptr());
+            notify_hook(item, &argument);
             return CMD_RETURN_NORMAL;
         }
-        let name = options_match(argument.as_ptr(), &raw mut idx, &raw mut ambiguous);
-        let name_ptr = name
-            .as_ref()
-            .map_or(::core::ptr::null(), |name| name.as_ptr());
+        let name = options_match(&argument, &mut idx, &mut ambiguous);
         if name.is_none() {
             if args_has(args, 'q' as i32 as u_char) != 0 {
                 current_block = 11153144165560816752;
@@ -273,6 +270,8 @@ unsafe fn cmd_set_option_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd
                 current_block = 16446286653754202049;
             }
         } else {
+            let name = name.unwrap();
+            let name_ptr = name.as_ptr();
             if args_count(args) < 2 as u_int {
                 value = ::core::ptr::null::<::core::ffi::c_char>();
             } else {
@@ -285,8 +284,7 @@ unsafe fn cmd_set_option_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd
                 ));
                 value = expanded.as_ref().expect("just expanded").as_ptr();
             }
-            scope =
-                options_scope_from_name(args, window, name_ptr, target, &raw mut oo, &mut cause);
+            scope = options_scope_from_name(args, window, &name, target, &mut oo, &mut cause);
             if scope == OPTIONS_TABLE_NONE {
                 if args_has(args, 'q' as i32 as u_char) != 0 {
                     current_block = 11153144165560816752;
@@ -299,7 +297,7 @@ unsafe fn cmd_set_option_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd
                 o = options_get_only_ptr(oo, name_ptr);
                 parent = options_get_ptr(oo, name_ptr);
                 if idx != -(1 as ::core::ffi::c_int)
-                    && (*name_ptr as ::core::ffi::c_int == '@' as i32
+                    && (name.to_bytes().first() == Some(&b'@')
                         || options_is_array(parent) == 0)
                 {
                     cmdq_error(
@@ -352,7 +350,7 @@ unsafe fn cmd_set_option_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd
                                         break;
                                     }
                                     po = options_get_only_ptr(
-                                        options_ptr(&(*loop_0).options),
+                                        (*loop_0).options_ptr(),
                                         name_ptr,
                                     );
                                     if !po.is_null()
@@ -395,7 +393,7 @@ unsafe fn cmd_set_option_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd
                                         } else {
                                             current_block = 15462640364611497761;
                                         }
-                                    } else if *name_ptr as ::core::ffi::c_int == '@' as i32 {
+                                    } else if name.to_bytes().first() == Some(&b'@') {
                                         if value.is_null() {
                                             cmdq_error(item, c"empty value".as_ptr(), fmt_args![]);
                                             current_block = 16446286653754202049;
@@ -412,10 +410,11 @@ unsafe fn cmd_set_option_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd
                                     } else if idx == -(1 as ::core::ffi::c_int)
                                         && options_is_array(parent) == 0
                                     {
+                                        let parent_entry = options_table_entry(parent);
                                         error = options_from_string(
                                             oo,
-                                            options_table_entry(parent),
-                                            (*options_table_entry(parent)).name.as_ptr(),
+                                            parent_entry,
+                                            parent_entry.unwrap().name.as_ptr(),
                                             value,
                                             args_has(args, 'a' as i32 as u_char),
                                             &mut option_cause,
@@ -437,14 +436,20 @@ unsafe fn cmd_set_option_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd
                                         current_block = 16446286653754202049;
                                     } else {
                                         if o.is_null() {
-                                            o = options_empty(oo, options_table_entry(parent));
+                                            o = options_empty(
+                                                oo,
+                                                options_table_entry(parent).unwrap(),
+                                            );
                                         }
                                         if idx == -(1 as ::core::ffi::c_int) {
                                             if append == 0 {
                                                 options_array_clear(o);
                                             }
-                                            if options_array_assign(o, value, &mut array_cause)
-                                                != 0 as ::core::ffi::c_int
+                                            if options_array_assign(
+                                                o,
+                                                (!value.is_null()).then(|| CStr::from_ptr(value)),
+                                                &mut array_cause,
+                                            ) != 0 as ::core::ffi::c_int
                                             {
                                                 cmdq_error(
                                                     item,
@@ -479,7 +484,7 @@ unsafe fn cmd_set_option_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd
                                         16446286653754202049 => {}
                                         11153144165560816752 => {}
                                         _ => {
-                                            options_push_changes(name_ptr);
+                                            options_push_changes(&name);
                                             current_block = 11153144165560816752;
                                         }
                                     }

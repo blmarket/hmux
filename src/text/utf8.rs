@@ -2,8 +2,7 @@ use crate::compat::strtonum;
 use crate::compat::vis;
 use crate::compat::{utf8proc_mbtowc, utf8proc_wctomb, utf8proc_wcwidth};
 use crate::ffi::{
-    __ctype_b_loc, __ctype_get_mb_cur_max, __errno_location, mbtowc, strlen, strncmp, strtoull,
-    wctomb,
+    __ctype_b_loc, __ctype_get_mb_cur_max, __errno_location, mbtowc, strncmp, strtoull, wctomb,
 };
 use crate::fmt_args;
 use crate::log::{fatalx, log_debug};
@@ -258,13 +257,13 @@ fn utf8_is_alpha(b: u8) -> bool {
     class & _ISalpha != 0
 }
 
-/// The bytes of `data` as the index and data trees key them.
-unsafe fn utf8_stored_of(data: *const u_char, size: size_t) -> utf8_stored {
-    unsafe {
-        let mut bytes: [u8; 32] = [0; 32];
-        ::core::ptr::copy_nonoverlapping(data, bytes.as_mut_ptr(), size);
-        (size as u_char, bytes)
-    }
+/// The bytes of `data` as the index and data trees key them. A character is
+/// never longer than `UTF8_SIZE`, which is the width of the key, so the bytes
+/// past the character's own stay zero.
+fn utf8_stored_of(data: &[u8]) -> utf8_stored {
+    let mut bytes: [u8; 32] = [0; 32];
+    bytes[..data.len()].copy_from_slice(data);
+    (data.len() as u_char, bytes)
 }
 
 /// The width the cache holds for `wc`, or `None` when it has none.
@@ -308,13 +307,13 @@ unsafe fn utf8_parse_codepoint(
 /// Reads one `codepoint=width` line of the `codepoint-widths` option, which
 /// spells the codepoint either as `U+xxxx`, as a range of two of those, or as
 /// the character itself.
-unsafe fn utf8_add_to_width_cache(s: *const ::core::ffi::c_char) {
+unsafe fn utf8_add_to_width_cache(s: &CStr) {
     unsafe {
-        let text = ::core::ffi::CStr::from_ptr(s).to_bytes();
+        let text = s.to_bytes();
         let Some(at) = text.iter().position(|&b| b == b'=') else {
             return;
         };
-        let Ok(width) = strtonum(s.add(at + 1), 0, 2) else {
+        let Ok(width) = strtonum(s.as_ptr().add(at + 1), 0, 2) else {
             return;
         };
         let width = width as u_int;
@@ -365,7 +364,7 @@ unsafe fn utf8_add_to_width_cache(s: *const ::core::ffi::c_char) {
 
 /// Rebuilds the width cache from the built-in defaults, then applies each
 /// `codepoint-widths` spec the caller hands over, in order.
-pub fn utf8_update_width_cache(specs: impl IntoIterator<Item = *const ::core::ffi::c_char>) {
+pub fn utf8_update_width_cache(specs: impl IntoIterator<Item = CString>) {
     unsafe {
         {
             let cache = utf8_width_cache.map();
@@ -375,23 +374,23 @@ pub fn utf8_update_width_cache(specs: impl IntoIterator<Item = *const ::core::ff
             }
         }
         for spec in specs {
-            utf8_add_to_width_cache(spec);
+            utf8_add_to_width_cache(&spec);
         }
     }
 }
 
 /// The index the trees keep a character under, adding it if it is new, or
 /// `None` once every index has been handed out.
-unsafe fn utf8_put_item(data: *const u_char, size: size_t) -> Option<u_int> {
+unsafe fn utf8_put_item(data: &[u8]) -> Option<u_int> {
     unsafe {
-        let stored = utf8_stored_of(data, size);
+        let stored = utf8_stored_of(data);
         if let Some(&index) = utf8_data_tree.map().get(&stored) {
             log_debug(
                 c"%s: found %.*s = %u".as_ptr(),
                 fmt_args![
                     c"utf8_put_item".as_ptr(),
-                    size as ::core::ffi::c_int,
-                    data,
+                    data.len() as ::core::ffi::c_int,
+                    data.as_ptr(),
                     index
                 ],
             );
@@ -408,8 +407,8 @@ unsafe fn utf8_put_item(data: *const u_char, size: size_t) -> Option<u_int> {
             c"%s: added %.*s = %u".as_ptr(),
             fmt_args![
                 c"utf8_put_item".as_ptr(),
-                size as ::core::ffi::c_int,
-                data,
+                data.len() as ::core::ffi::c_int,
+                data.as_ptr(),
                 index
             ],
         );
@@ -434,7 +433,7 @@ pub unsafe fn utf8_from_data(ud: &utf8_data, uc: *mut utf8_char) -> utf8_state {
                     | ud.data[0] as utf8_char,
             )
         } else {
-            utf8_put_item(&raw const ud.data as *const u_char, ud.size as size_t)
+            utf8_put_item(utf8_bytes(ud))
         };
         if let Some(index) = index {
             *uc = (ud.size as utf8_char) << 24 | (ud.width as utf8_char + 1) << 29 | index;
@@ -522,10 +521,9 @@ pub fn utf8_copy(to: &mut utf8_data, from: &utf8_data) {
 /// when the cache has nothing for it.
 unsafe fn utf8_width(ud: &utf8_data) -> Result<::core::ffi::c_int, utf8_state> {
     unsafe {
-        let mut wc: wchar_t = 0;
-        if utf8_towc(ud, &raw mut wc) != UTF8_DONE {
+        let Some(wc) = utf8_towc(ud) else {
             return Err(UTF8_ERROR);
-        }
+        };
         if let Some(cached) = utf8_find_in_width_cache(wc) {
             let width = cached as ::core::ffi::c_int;
             log_debug(
@@ -546,13 +544,14 @@ unsafe fn utf8_width(ud: &utf8_data) -> Result<::core::ffi::c_int, utf8_state> {
     }
 }
 
-/// The codepoint a character stands for. `utf8proc_mbtowc` answers zero only
-/// for a null pointer, which the character's own bytes never are, so the
-/// transpiled check for that is gone.
-pub unsafe fn utf8_towc(ud: &utf8_data, wc: *mut wchar_t) -> utf8_state {
+/// The codepoint a character stands for, as nothing when its bytes are not
+/// one. `utf8proc_mbtowc` answers zero only for a null pointer, which the
+/// character's own bytes never are, so the transpiled check for that is gone.
+pub unsafe fn utf8_towc(ud: &utf8_data) -> Option<wchar_t> {
     unsafe {
+        let mut wc: wchar_t = 0;
         if utf8proc_mbtowc(
-            wc,
+            &raw mut wc,
             &raw const ud.data as *const u_char as *const ::core::ffi::c_char,
             ud.size as size_t,
         ) == -1
@@ -570,17 +569,17 @@ pub unsafe fn utf8_towc(ud: &utf8_data, wc: *mut wchar_t) -> utf8_state {
                 ::core::ptr::null::<::core::ffi::c_char>(),
                 __ctype_get_mb_cur_max(),
             );
-            return UTF8_ERROR;
+            return None;
         }
         log_debug(
             c"UTF-8 %.*s is U+%06X".as_ptr(),
             fmt_args![
                 ud.size as ::core::ffi::c_int,
                 &raw const ud.data as *const u_char,
-                *wc as u_int
+                wc as u_int
             ],
         );
-        UTF8_DONE
+        Some(wc)
     }
 }
 
@@ -700,27 +699,22 @@ pub unsafe fn utf8_strvis(
     }
 }
 
-pub unsafe fn utf8_stravis(src: *const ::core::ffi::c_char, flag: ::core::ffi::c_int) -> CString {
-    unsafe {
-        let srclen = strlen(src);
-        let mut buf: Vec<::core::ffi::c_char> = vec![0; 4 * (srclen as usize + 1)];
-        let len = utf8_strvis(buf.as_mut_ptr(), src, srclen, flag);
-        CString::from_vec_unchecked(
-            ::core::slice::from_raw_parts(buf.as_ptr() as *const u8, len as usize).to_vec(),
-        )
-    }
+/// The visible form of `src` up to its terminator.
+pub fn utf8_stravis(src: &CStr, flag: ::core::ffi::c_int) -> CString {
+    utf8_stravisx(src.to_bytes(), flag)
 }
 
-/// The visible form of the `srclen` bytes at `src`, which no escape leaves a
-/// NUL in however the source read.
-pub unsafe fn utf8_stravisx(
-    src: *const ::core::ffi::c_char,
-    srclen: size_t,
-    flag: ::core::ffi::c_int,
-) -> CString {
+/// The visible form of `src`, which no escape leaves a NUL in however the
+/// source read.
+pub fn utf8_stravisx(src: &[u8], flag: ::core::ffi::c_int) -> CString {
     unsafe {
-        let mut buf: Vec<::core::ffi::c_char> = vec![0; 4 * (srclen + 1)];
-        let len = utf8_strvis(buf.as_mut_ptr(), src, srclen, flag);
+        let mut buf: Vec<::core::ffi::c_char> = vec![0; 4 * (src.len() + 1)];
+        let len = utf8_strvis(
+            buf.as_mut_ptr(),
+            src.as_ptr() as *const ::core::ffi::c_char,
+            src.len() as size_t,
+            flag,
+        );
         CString::from_vec_unchecked(
             ::core::slice::from_raw_parts(buf.as_ptr() as *const u8, len as usize).to_vec(),
         )
@@ -851,7 +845,7 @@ pub fn utf8_padcstr(s: &CStr, width: u_int) -> CString {
     if n < width {
         out.resize(bytes.len() + (width - n) as usize, b' ');
     }
-    unsafe { CString::from_vec_unchecked(out) }
+    CString::new(out).expect("padding a C string cannot introduce NUL")
 }
 
 /// `s` padded on the left with spaces to `width` display columns, or a plain
@@ -864,7 +858,7 @@ pub fn utf8_rpadcstr(s: &CStr, width: u_int) -> CString {
     }
     let mut out = vec![b' '; (width - n) as usize];
     out.extend_from_slice(bytes);
-    unsafe { CString::from_vec_unchecked(out) }
+    CString::new(out).expect("padding a C string cannot introduce NUL")
 }
 
 pub unsafe fn utf8_cstrhas(s: *const ::core::ffi::c_char, ud: &utf8_data) -> ::core::ffi::c_int {

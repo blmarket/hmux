@@ -61,69 +61,36 @@ const TOSTRING_SIZE: usize = 256;
 
 /// The style every parse starts from: a plain space cell, no fill, no
 /// alignment and no range.
-pub static style_default: style = unsafe {
-    style {
-        gc: grid_cell {
-            data: utf8_data {
-                data: [
-                    ' ' as i32 as u_char,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                ],
-                have: 0 as u_char,
-                size: 1 as u_char,
-                width: 1 as u_char,
+pub static style_default: style = style {
+    gc: grid_cell {
+        data: utf8_data {
+            data: {
+                let mut data = [0 as u_char; 32];
+                data[0] = ' ' as i32 as u_char;
+                data
             },
-            attr: 0 as u_short,
-            flags: 0 as u_char,
-            fg: COLOUR_DEFAULT,
-            bg: COLOUR_DEFAULT,
-            us: 0 as c_int,
-            link: 0 as u_int,
+            have: 0 as u_char,
+            size: 1 as u_char,
+            width: 1 as u_char,
         },
-        ignore: 0 as c_int,
-        fill: COLOUR_DEFAULT,
-        align: STYLE_ALIGN_DEFAULT,
-        list: STYLE_LIST_OFF,
-        range_type: STYLE_RANGE_NONE,
-        range_argument: 0 as u_int,
-        range_string: ::core::mem::transmute::<[u8; RANGE_STRING_SIZE], [c_char; RANGE_STRING_SIZE]>(
-            *b"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-        ),
-        width: STYLE_WIDTH_DEFAULT,
-        width_percentage: 0 as c_int,
-        pad: STYLE_PAD_DEFAULT,
-        default_type: STYLE_DEFAULT_BASE,
-    }
+        attr: 0 as u_short,
+        flags: 0 as u_char,
+        fg: COLOUR_DEFAULT,
+        bg: COLOUR_DEFAULT,
+        us: 0 as c_int,
+        link: 0 as u_int,
+    },
+    ignore: 0 as c_int,
+    fill: COLOUR_DEFAULT,
+    align: STYLE_ALIGN_DEFAULT,
+    list: STYLE_LIST_OFF,
+    range_type: STYLE_RANGE_NONE,
+    range_argument: 0 as u_int,
+    range_string: [0 as c_char; RANGE_STRING_SIZE],
+    width: STYLE_WIDTH_DEFAULT,
+    width_percentage: 0 as c_int,
+    pad: STYLE_PAD_DEFAULT,
+    default_type: STYLE_DEFAULT_BASE,
 };
 
 /// Puts `s` in the style's room for a `range=user` argument, cut to fit the
@@ -180,12 +147,10 @@ fn style_colour(s: &[u8]) -> Result<c_int, ()> {
 
 /// The attribute bits `s` names, or an error when it names none.
 fn style_attributes(s: &[u8]) -> Result<c_int, ()> {
-    unsafe {
-        let text = CString::new(s).map_err(|_| ())?;
-        match attributes_fromstring(text.as_ptr()) {
-            -1 => Err(()),
-            value => Ok(value),
-        }
+    let text = CString::new(s).map_err(|_| ())?;
+    match attributes_fromstring(&text) {
+        -1 => Err(()),
+        value => Ok(value),
     }
 }
 
@@ -506,20 +471,18 @@ pub unsafe fn style_add(
                 FORMAT_NOJOBS,
             )),
         };
-        let mut sy = options_string_to_style(oo, name, Some(&mut *ft));
-        if sy.is_null() {
-            sy = (&raw const style_default).cast_mut();
+        let sy = options_string_to_style(oo, name, Some(&mut *ft));
+        let sy: &style = if sy.is_null() { &style_default } else { &*sy };
+        if sy.gc.fg != COLOUR_DEFAULT {
+            (*gc).fg = sy.gc.fg;
         }
-        if (*sy).gc.fg != COLOUR_DEFAULT {
-            (*gc).fg = (*sy).gc.fg;
+        if sy.gc.bg != COLOUR_DEFAULT {
+            (*gc).bg = sy.gc.bg;
         }
-        if (*sy).gc.bg != COLOUR_DEFAULT {
-            (*gc).bg = (*sy).gc.bg;
+        if sy.gc.us != COLOUR_DEFAULT {
+            (*gc).us = sy.gc.us;
         }
-        if (*sy).gc.us != COLOUR_DEFAULT {
-            (*gc).us = (*sy).gc.us;
-        }
-        (*gc).attr = ((*gc).attr as c_int | (*sy).gc.attr as c_int) as u_short;
+        (*gc).attr = ((*gc).attr as c_int | sy.gc.attr as c_int) as u_short;
     }
 }
 

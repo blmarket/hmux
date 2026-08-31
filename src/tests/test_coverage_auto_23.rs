@@ -4,8 +4,8 @@ use crate::layout::layout_cell_pane;
 use crate::layout::{
     LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, LAYOUT_WINDOWPANE, layout_assign_pane, layout_count_cells,
     layout_create_cell, layout_fix_offsets, layout_fix_panes, layout_fix_zindexes,
-    layout_free_cell, layout_make_leaf, layout_make_node, layout_resize, layout_root_ptr,
-    layout_search_by_border, layout_set_size, layout_split_pane,
+    layout_free_cell, layout_make_leaf, layout_make_node, layout_resize, layout_search_by_border,
+    layout_set_size, layout_split_pane,
 };
 use crate::tests::test_fixtures::{Layout, Pane, Window, globals};
 use ::core::ptr::null_mut;
@@ -78,26 +78,11 @@ fn layout_make_leaf_and_node_round_trip() {
 fn layout_count_cells_tracks_splits() {
     let _g = globals();
     let mut l = Layout::new(80, 24);
-    unsafe {
-        assert_eq!(
-            layout_count_cells(layout_root_ptr(&(*l.w()).layout_root)),
-            1
-        )
-    };
+    unsafe { assert_eq!(layout_count_cells((*l.w()).layout_root_ptr()), 1) };
     split(&mut l, 0, LAYOUT_LEFTRIGHT);
-    unsafe {
-        assert_eq!(
-            layout_count_cells(layout_root_ptr(&(*l.w()).layout_root)),
-            2
-        )
-    };
+    unsafe { assert_eq!(layout_count_cells((*l.w()).layout_root_ptr()), 2) };
     split(&mut l, 0, LAYOUT_TOPBOTTOM);
-    unsafe {
-        assert_eq!(
-            layout_count_cells(layout_root_ptr(&(*l.w()).layout_root)),
-            3
-        )
-    };
+    unsafe { assert_eq!(layout_count_cells((*l.w()).layout_root_ptr()), 3) };
     assert_eq!(
         l.dump(),
         "LR 80x24+0+0 [TB 40x24+0+0 [%1 40x12+0+0 | %3 40x11+0+13] | %2 39x24+41+0]"
@@ -121,7 +106,7 @@ fn layout_search_by_border_inside_vs_between() {
     let mut l = Layout::new(80, 24);
     split(&mut l, 0, LAYOUT_LEFTRIGHT);
     unsafe {
-        let root = layout_root_ptr(&(*l.w()).layout_root);
+        let root = (*l.w()).layout_root_ptr();
         // between panes at x=40 is the vertical border
         assert_eq!(
             layout_search_by_border(root, 40, 5),
@@ -163,7 +148,7 @@ fn layout_fix_zindexes_follows_left_to_right_depth_first() {
     split(&mut l, 0, LAYOUT_TOPBOTTOM);
     unsafe {
         (*l.w()).z_index.clear();
-        layout_fix_zindexes(l.w(), layout_root_ptr(&(*l.w()).layout_root));
+        layout_fix_zindexes(l.w(), (*l.w()).layout_root_ptr());
         let order: Vec<u32> = (*l.w()).z_index.clone();
         // left side top-bottom children first, then right pane
         assert_eq!(order, vec![1, 3, 2]);

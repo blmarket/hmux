@@ -1,7 +1,7 @@
 use super::*;
 use crate::cmd::cmd_find_from_winlink;
 use crate::reactor::Reactor;
-use crate::session::sessions;
+use crate::session::sessions_empty;
 use crate::session::{session_get_curw, session_set_cwd};
 use crate::tests::test_fixtures::{Item, Registry, Session, Window, ensure_reactor, globals, link};
 use crate::window::winlink_count;
@@ -67,10 +67,7 @@ fn with_a_a_window_the_session_holds_twice_is_killed_as_well() {
             (*w.ptr()).winlinks.is_empty(),
             "and the window is linked nowhere"
         );
-        assert!(
-            sessions.map().is_empty(),
-            "the emptied session was destroyed"
-        );
+        assert!(sessions_empty(), "the emptied session was destroyed");
     }
 }
 
@@ -111,6 +108,6 @@ fn with_a_the_other_windows_go_first_and_the_doubled_target_follows() {
             (*w.ptr()).winlinks.is_empty(),
             "and the doubled target followed it"
         );
-        assert!(sessions.map().is_empty());
+        assert!(sessions_empty());
     }
 }

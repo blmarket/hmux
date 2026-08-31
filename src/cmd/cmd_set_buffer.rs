@@ -192,7 +192,7 @@ unsafe fn cmd_set_buffer_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd
                     );
                     current_block = 8474116202651904133;
                 } else {
-                    pb = paste_get_top(&raw mut bufname);
+                    pb = paste_get_top(Some(&mut bufname));
                     current_block = 3640593987805443782;
                 }
             } else {
@@ -219,7 +219,7 @@ unsafe fn cmd_set_buffer_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd
                     );
                     current_block = 8474116202651904133;
                 } else {
-                    pb = paste_get_top(&raw mut bufname);
+                    pb = paste_get_top(Some(&mut bufname));
                     current_block = 15904375183555213903;
                 }
             } else {

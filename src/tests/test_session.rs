@@ -361,7 +361,10 @@ impl Linked {
                 .iter()
                 .map(|&idx| {
                     let wl = winlink_of(self.ptr(), Some(idx));
-                    seen(cstr_ptr(&(*(*wl).window()).name))
+                    (*(*wl).window())
+                        .name
+                        .as_deref()
+                        .map_or(String::new(), |name| name.to_string_lossy().into_owned())
                 })
                 .collect()
         }
@@ -692,7 +695,7 @@ fn an_attached_session_locks_after_the_time_it_is_given() {
     let mut fixture = Session::new(1, "locking");
     unsafe {
         let s = fixture.ptr();
-        options_set_number(options_ptr(&(*s).options), c"lock-after-time".as_ptr(), 60);
+        options_set_number((*s).options_ptr(), c"lock-after-time".as_ptr(), 60);
         session_update_activity(s, null_mut::<timeval>());
         assert!(!locking(s), "nobody is attached");
 
@@ -700,7 +703,7 @@ fn an_attached_session_locks_after_the_time_it_is_given() {
         session_update_activity(s, null_mut::<timeval>());
         assert!(locking(s));
 
-        options_set_number(options_ptr(&(*s).options), c"lock-after-time".as_ptr(), 0);
+        options_set_number((*s).options_ptr(), c"lock-after-time".as_ptr(), 0);
         session_update_activity(s, null_mut::<timeval>());
         assert!(!locking(s), "there is no time to lock after");
         (*s).attached = 0;
@@ -806,7 +809,7 @@ fn a_group_is_made_once_and_holds_each_session_once() {
         let sg = session_group_new(c"group".as_ptr());
         assert_eq!(session_group_new(c"group".as_ptr()), sg);
         assert_eq!(session_group_find(c"group".as_ptr()), sg);
-        assert_eq!(seen(session_group_name(sg)), "group");
+        assert_eq!(seen(session_group_name(sg).as_ptr()), "group");
         assert_eq!(session_group_count(sg), 0);
 
         session_group_add(sg, first.ptr());
@@ -931,7 +934,7 @@ fn renumbering_closes_the_gaps_between_the_windows() {
         assert_eq!(linked.current().as_deref(), Some("w2"));
         assert_eq!(linked.last(), ["w1"]);
 
-        options_set_number(options_ptr(&(*s).options), c"base-index".as_ptr(), 5);
+        options_set_number((*s).options_ptr(), c"base-index".as_ptr(), 5);
         session_renumber_windows(s);
         assert_eq!(linked.indexes(), [5, 6, 7]);
         assert_eq!(linked.current().as_deref(), Some("w2"));
@@ -976,11 +979,7 @@ fn the_history_limit_reaches_every_pane_of_the_session() {
         }
         assert_eq!((*gd).hsize, 20);
 
-        options_set_number(
-            options_ptr(&(*linked.ptr()).options),
-            c"history-limit".as_ptr(),
-            5,
-        );
+        options_set_number((*linked.ptr()).options_ptr(), c"history-limit".as_ptr(), 5);
         session_update_history(linked.ptr());
         assert_eq!((*gd).hlimit, 5);
         assert_eq!((*gd).hsize, 5);

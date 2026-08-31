@@ -23,7 +23,7 @@ the server is monitored and new runs go to session `0`.
 Run it from a pane inside hmux, in the worktree you want worked on:
 
 ```sh
-cat prompt.md | looper
+looper prompt.md          # or: cat prompt.md | looper
 ```
 
 `looper` splits its own window and gives the bottom three quarters to the
@@ -31,6 +31,13 @@ agent, keeping the top for its log. Each cycle waits for pacing, starts the
 agent on the prompt, ends the run once the agent is done, and commits whatever
 the run changed. `nix develop` puts `looper` on `$PATH`; from this directory
 `uv run looper` works too.
+
+A named prompt file is read again at the start of every run, so a prompt the
+agent rewrites — a checklist it ticks off, a plan it revises — steers the next
+run. It also stays where you put it: inside the worktree, its edits are
+committed along with the rest of the run. A piped prompt is spooled outside the
+worktree instead and is fixed for the life of the loop. Naming a file wins over
+anything on standard input.
 
 `--preset` chooses what runs. `codex` (the default) is codex with
 `gpt-5.6-luna` at effort `max`; `agy` is the Antigravity CLI with
@@ -50,7 +57,7 @@ starts, and only the agent's own provider gates it: a spent Claude
 subscription has no bearing on a codex loop.
 
 `-f` skips pacing altogether: quota is never consulted and the runs go back to
-back, so `cat prompt.md | looper -f -n 2` gives exactly two runs no matter what
+back, so `looper -f -n 2 prompt.md` gives exactly two runs no matter what
 the windows say.
 
 Two deliberate non-blockers: a window the provider left undated cannot be

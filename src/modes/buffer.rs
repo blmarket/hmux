@@ -2224,11 +2224,7 @@ unsafe fn window_buffer_add_item(
 ) -> *mut window_buffer_itemdata {
     unsafe {
         let items = &mut (*data).item_list;
-        items.push(Box::new(window_buffer_itemdata {
-            name: None,
-            order: 0,
-            size: 0,
-        }));
+        items.push(Box::new(window_buffer_itemdata::default()));
         &mut **items.last_mut().unwrap()
     }
 }
@@ -2251,9 +2247,9 @@ unsafe fn window_buffer_build(
         let l = sort_get_buffers(sort_crit);
         for pb_ptr in l {
             item = window_buffer_add_item(data);
-            (*item).name = Some(CStr::from_ptr(paste_buffer_name(pb_ptr)).to_owned());
+            (*item).name = Some(paste_buffer_name(&*pb_ptr).to_owned());
             (*item).size = paste_buffer_data(&*pb_ptr).len() as size_t;
-            (*item).order = paste_buffer_order(pb_ptr);
+            (*item).order = paste_buffer_order(&*pb_ptr);
         }
         if cmd_find_valid_state(&(*data).fs) != 0 {
             s = (*data).fs.session();
@@ -2514,7 +2510,7 @@ unsafe fn window_buffer_get_key(
         key
     }
 }
-unsafe fn window_buffer_sort(sort_crit: &mut sort_criteria_t) {
+fn window_buffer_sort(sort_crit: &mut sort_criteria_t) {
     sort_crit.order_seq = Some(&window_buffer_order_seq);
     if sort_crit.order == SORT_END {
         sort_crit.order = window_buffer_order_seq[0];
@@ -2543,7 +2539,6 @@ pub(crate) unsafe fn window_buffer_init(
 ) -> *mut screen {
     unsafe {
         let mut wp: *mut window_pane = wme.wp;
-        let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
         let data_ref = WindowBufferModeDataRef::new(window_buffer_modedata {
             wp_id: (*wp).id,
             fs: cmd_find_state::default(),
@@ -2576,7 +2571,7 @@ pub(crate) unsafe fn window_buffer_init(
         } else {
             (*data).command = Some(CStr::from_ptr(args_string(&*args, 0 as u_int)).to_owned());
         }
-        let mtd = mode_tree_start(
+        let (mtd, s) = mode_tree_start(
             wp,
             args,
             Some(window_buffer_build),
@@ -2590,7 +2585,6 @@ pub(crate) unsafe fn window_buffer_init(
             Some(window_buffer_help),
             WindowModeData::Buffer((*data).owner.clone().expect("the mode holds itself")),
             &window_buffer_menu_items,
-            &raw mut s,
         );
         (*data).data = Some(mtd.downgrade());
         wme.mode_tree_ref = Some(mtd);
@@ -2683,7 +2677,7 @@ unsafe fn window_buffer_edit_close_cb(mut buf: Vec<u8>, ed: Box<window_buffer_ed
             return;
         }
         pb = paste_get_name(cstr_ptr(&ed.name));
-        if pb.is_null() || paste_buffer_order(pb) != ed.order {
+        if pb.is_null() || paste_buffer_order(&*pb) != ed.order {
             drop(ed);
             return;
         }
@@ -2725,8 +2719,8 @@ unsafe fn window_buffer_start_edit(
         len = bytes.len() as size_t;
         let ed = Box::new(window_buffer_editdata {
             wp_id: (*(*data).pane()).id,
-            name: Some(CStr::from_ptr(paste_buffer_name(pb)).to_owned()),
-            order: paste_buffer_order(pb),
+            name: Some(paste_buffer_name(&*pb).to_owned()),
+            order: paste_buffer_order(&*pb),
         });
         popup_editor(c, buf, len, Some(window_buffer_edit_close_cb), ed);
     }

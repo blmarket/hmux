@@ -500,6 +500,53 @@ def test_main_refuses_to_start_without_a_prompt(
     assert "standard input" in capsys.readouterr().err
 
 
+def test_main_hands_the_named_prompt_file_to_every_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import looper as looper_module
+
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("Do the thing.\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.stdin", _Stdin("piped instead\n"))
+    monkeypatch.setenv("TMUX_PANE", "%0")
+    monkeypatch.setattr(
+        looper_module, "discover_context", lambda **_kwargs: _FakeContext(tmp_path)
+    )
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        looper_module,
+        "Looper",
+        lambda *args, **kwargs: _FakeLooper([], calls, **kwargs),
+    )
+
+    # The file itself is what the agent is started on, so a run rewriting it
+    # changes what the next run reads; the named file also wins over stdin.
+    assert main(["prompt.md"]) == 0
+    assert calls[0]["instruction_file"] == prompt.resolve()
+
+
+def test_main_refuses_a_prompt_file_it_cannot_read(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("sys.stdin", _Stdin("Do the thing.\n"))
+
+    assert main([str(tmp_path / "missing.md")]) == 2
+    assert "cannot read" in capsys.readouterr().err
+
+
+def test_main_refuses_an_empty_prompt_file(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("   \n", encoding="utf-8")
+
+    assert main([str(prompt)]) == 2
+    assert "is empty" in capsys.readouterr().err
+
+
 def test_main_refuses_to_start_outside_a_pane(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -533,8 +580,15 @@ class _FakeContext:
 
 
 class _FakeLooper:
-    def __init__(self, configs: list[LooperConfig], **kwargs: object) -> None:
+    def __init__(
+        self,
+        configs: list[LooperConfig],
+        calls: list[dict[str, object]] | None = None,
+        **kwargs: object,
+    ) -> None:
         configs.append(kwargs["config"])
+        if calls is not None:
+            calls.append(kwargs)
 
     def log(self, message: str) -> None:
         pass

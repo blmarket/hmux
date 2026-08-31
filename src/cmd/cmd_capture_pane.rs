@@ -386,7 +386,7 @@ unsafe fn cmd_capture_pane_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retva
                     cmdq_error(item, c"can't write to client".as_ptr(), fmt_args![]);
                     return CMD_RETURN_ERROR;
                 }
-                file_print_buffer(c, buf.as_ptr(), len);
+                file_print_buffer(c, &buf[..len as usize]);
                 file_print(c, c"\n".as_ptr(), fmt_args![]);
             }
         } else {

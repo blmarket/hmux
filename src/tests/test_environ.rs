@@ -48,11 +48,8 @@ fn restore_process_environment(saved: &[(CString, CString)]) {
 }
 
 /// The value of one entry, if it has one.
-unsafe fn value_seen(envent: *const environ_entry) -> Option<String> {
-    unsafe {
-        let value = environ_entry_value(envent);
-        (!value.is_null()).then(|| seen(value))
-    }
+fn value_seen(envent: &environ_entry) -> Option<String> {
+    environ_entry_value(envent).map(|value| value.to_string_lossy().into_owned())
 }
 
 /// Every entry of `env` in tree order: name, value and flags.
@@ -61,7 +58,7 @@ unsafe fn dump(env: *mut environ_t) -> Vec<(String, Option<String>, c_int)> {
         environ_entries(&*env)
             .map(|envent| {
                 (
-                    seen(environ_entry_name(envent)),
+                    seen(environ_entry_name(envent).as_ptr()),
                     value_seen(envent),
                     environ_entry_flags(envent),
                 )
@@ -289,7 +286,7 @@ fn pushing_sets_what_is_visible_and_named_and_has_a_value() {
         environ_clear(env.ptr(), c"C2RS_CLEARED".as_ptr());
 
         let saved = process_environment();
-        environ_push(env.ptr());
+        environ_push(&*env.ptr());
         let pushed = seen(getenv(c"C2RS_PUSHED".as_ptr()));
         let hidden = getenv(c"C2RS_HIDDEN".as_ptr());
         let cleared = getenv(c"C2RS_CLEARED".as_ptr());
@@ -309,7 +306,7 @@ fn logging_walks_every_entry_that_has_a_name_and_a_value() {
         set(env.ptr(), c"ONE", 0, c"1");
         set(env.ptr(), c"", 0, c"nameless");
         environ_clear(env.ptr(), c"CLEARED".as_ptr());
-        environ_log(env.ptr(), c"%s: ".as_ptr(), fmt_args![c"prefix".as_ptr()]);
+        environ_log(&*env.ptr(), c"%s: ".as_ptr(), fmt_args![c"prefix".as_ptr()]);
         assert_eq!(names(env.ptr()), ["", "CLEARED", "ONE"]);
     }
 }
@@ -319,8 +316,8 @@ fn a_session_environment_is_the_global_one_plus_the_terminal_and_tmux() {
     let _guard = globals();
     unsafe {
         set(global_environ, c"C2RS_GLOBAL", 0, c"global");
-        let saved = socket_path;
-        socket_path = c"/tmp/c2rs.sock".as_ptr();
+        let saved = socket_path.take();
+        socket_path = Some(c"/tmp/c2rs.sock".to_owned());
 
         let env = Environ::from_box(environ_for_session(null_mut::<session>(), 0));
         assert_eq!(value(env.ptr(), c"C2RS_GLOBAL"), Some("global".to_owned()));
@@ -349,8 +346,8 @@ fn a_session_environment_can_leave_the_terminal_out_and_takes_the_session_over()
     let _guard = globals();
     let mut s = Session::new(9, "envtest");
     unsafe {
-        let saved = socket_path;
-        socket_path = c"/tmp/c2rs.sock".as_ptr();
+        let saved = socket_path.take();
+        socket_path = Some(c"/tmp/c2rs.sock".to_owned());
         set(s.environ(), c"C2RS_SESSION", 0, c"session");
 
         let env = Environ::from_box(environ_for_session(s.ptr(), 1));

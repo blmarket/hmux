@@ -8,22 +8,17 @@ pub const TIOCGSID: ::core::ffi::c_int = 0x5429 as ::core::ffi::c_int;
 /// The command the foreground process group on `fd` was started with, read
 /// out of `/proc`, or nothing when there is no such group or it has no
 /// command line.
-pub unsafe fn osdep_get_name(
-    fd: ::core::ffi::c_int,
-    _tty: *mut ::core::ffi::c_char,
-) -> Option<CString> {
-    unsafe {
-        let pgrp: pid_t = tcgetpgrp(fd) as pid_t;
-        if pgrp == -(1 as ::core::ffi::c_int) {
-            return None;
-        }
-        let cmdline = fs::read(format!("/proc/{pgrp}/cmdline")).ok()?;
-        let argv0: Vec<u8> = cmdline.into_iter().take_while(|&byte| byte != 0).collect();
-        if argv0.is_empty() {
-            return None;
-        }
-        Some(CString::from_vec_unchecked(argv0))
+pub fn osdep_get_name(fd: ::core::ffi::c_int) -> Option<CString> {
+    let pgrp: pid_t = unsafe { tcgetpgrp(fd) } as pid_t;
+    if pgrp == -(1 as ::core::ffi::c_int) {
+        return None;
     }
+    let cmdline = fs::read(format!("/proc/{pgrp}/cmdline")).ok()?;
+    let argv0: Vec<u8> = cmdline.into_iter().take_while(|&byte| byte != 0).collect();
+    if argv0.is_empty() {
+        return None;
+    }
+    CString::new(argv0).ok()
 }
 pub fn osdep_get_cwd(mut fd: ::core::ffi::c_int) -> Option<CString> {
     unsafe {

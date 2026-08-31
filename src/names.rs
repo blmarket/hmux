@@ -1,9 +1,9 @@
 use crate::cmd::cmd_stringify_argv;
-use crate::ffi::{__ctype_b_loc, __xpg_basename, gettimeofday, strcmp};
+use crate::ffi::{__ctype_b_loc, gettimeofday};
 use crate::fmt_args;
 use crate::format::{format_create, format_defaults_pane, format_defaults_window, format_expand};
 use crate::log::log_debug;
-use crate::options::{options_get_number, options_get_string, options_ptr};
+use crate::options::{options_get_number, options_get_string};
 use crate::reactor::Timer;
 use crate::server::{server_redraw_window_borders, server_status_window};
 use crate::tmux::clean_name;
@@ -19,14 +19,8 @@ pub const NAME_INTERVAL: ::core::ffi::c_int = 500000 as ::core::ffi::c_int;
 pub const PANE_CHANGED: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
 pub const FORMAT_WINDOW: ::core::ffi::c_uint = 0x40000000 as ::core::ffi::c_uint;
 
-unsafe fn name_time_callback(w: *mut window) {
-    unsafe {
-        let Some(w_ref) = window_ref_from_ptr(w) else {
-            return;
-        };
-        let w = w_ref.as_ptr();
-        log_debug(c"@%u name timer expired".as_ptr(), fmt_args![(*w).id]);
-    }
+fn name_time_callback(w: &window) {
+    unsafe { log_debug(c"@%u name timer expired".as_ptr(), fmt_args![w.id]) };
 }
 
 /// Microseconds still owed to the automatic-rename interval that started at
@@ -44,8 +38,8 @@ fn interval_left(since: timeval, now: timeval) -> ::core::ffi::c_int {
     (NAME_INTERVAL as __suseconds_t - usec) as ::core::ffi::c_int
 }
 
-unsafe fn name_time_expired(w: *mut window, tv: *mut timeval) -> ::core::ffi::c_int {
-    unsafe { interval_left((*w).name_time, *tv) }
+fn name_time_expired(w: &window, now: timeval) -> ::core::ffi::c_int {
+    interval_left(w.name_time, now)
 }
 
 /// Drives the automatic-rename timer and the rename itself. Its whole body is
@@ -58,7 +52,7 @@ pub unsafe fn check_window_name(w: *mut window) {
         if window_get_active(w).is_null() {
             return;
         }
-        if options_get_number(options_ptr(&(*w).options), c"automatic-rename".as_ptr()) == 0 {
+        if options_get_number((*w).options_ptr(), c"automatic-rename".as_ptr()) == 0 {
             return;
         }
         if !(*window_get_active(w)).flags & PANE_CHANGED != 0 {
@@ -67,7 +61,7 @@ pub unsafe fn check_window_name(w: *mut window) {
         }
         log_debug(c"@%u active pane changed".as_ptr(), fmt_args![(*w).id]);
         gettimeofday(&raw mut tv, ::core::ptr::null_mut());
-        let left = name_time_expired(w, &raw mut tv);
+        let left = name_time_expired(&*w, tv);
         if left != 0 {
             if !(*w).name_event.is_set() {
                 let w_weak = window_ref_from_ptr(w).map(|w_ref| w_ref.downgrade());
@@ -75,7 +69,7 @@ pub unsafe fn check_window_name(w: *mut window) {
                     let Some(w_ref) = w_weak.as_ref().and_then(WindowWeak::upgrade) else {
                         return;
                     };
-                    name_time_callback(w_ref.as_ptr());
+                    name_time_callback(&*w_ref.as_ptr());
                 });
             }
             if !(*w).name_event.is_armed() {
@@ -97,10 +91,10 @@ pub unsafe fn check_window_name(w: *mut window) {
         (*w).name_event.disarm();
         (*window_get_active(w)).flags &= !PANE_CHANGED;
         let name = format_window_name(w);
-        if strcmp(name.as_ptr(), cstr_ptr(&(*w).name)) != 0 {
+        if (*w).name.as_deref() != Some(name.as_c_str()) {
             log_debug(
                 c"@%u new name %s (was %s)".as_ptr(),
-                fmt_args![(*w).id, name.as_ptr(), cstr_ptr(&(*w).name)],
+                fmt_args![(*w).id, name.as_ptr(), (*w).name.as_deref()],
             );
             window_set_name(w, name.as_ptr(), 1);
             server_redraw_window_borders(w);
@@ -108,7 +102,7 @@ pub unsafe fn check_window_name(w: *mut window) {
         } else {
             log_debug(
                 c"@%u name not changed (still %s)".as_ptr(),
-                fmt_args![(*w).id, cstr_ptr(&(*w).name)],
+                fmt_args![(*w).id, (*w).name.as_deref()],
             );
         }
     }
@@ -121,9 +115,9 @@ pub unsafe fn default_window_name(w: *mut window) -> CString {
         }
         let cmd = cmd_stringify_argv(&(*window_get_active(w)).argv);
         if !cmd.as_bytes().is_empty() {
-            parse_window_name(cmd.as_ptr())
+            parse_window_name(&cmd)
         } else {
-            parse_window_name(cstr_ptr(&(*window_get_active(w)).shell))
+            parse_window_name((*window_get_active(w)).shell.as_deref().unwrap_or(c""))
         }
     }
 }
@@ -140,10 +134,7 @@ unsafe fn format_window_name(w: *mut window) -> CString {
         );
         format_defaults_window(&mut ft, w);
         format_defaults_pane(&mut ft, window_get_active(w));
-        let fmt = options_get_string(
-            options_ptr(&(*w).options),
-            c"automatic-rename-format".as_ptr(),
-        );
+        let fmt = options_get_string((*w).options_ptr(), c"automatic-rename-format".as_ptr());
         format_expand(&mut ft, ::core::ffi::CStr::from_ptr(fmt))
     }
 }
@@ -182,20 +173,27 @@ fn trim_name(input: &[u8]) -> &[u8] {
     name
 }
 
-pub unsafe fn parse_window_name(in_0: *const ::core::ffi::c_char) -> CString {
-    unsafe {
-        let trimmed = trim_name(::core::ffi::CStr::from_ptr(in_0).to_bytes());
-        let mut copy: Vec<::core::ffi::c_char> = trimmed
-            .iter()
-            .map(|&b| b as ::core::ffi::c_char)
-            .chain(::core::iter::once(0))
-            .collect();
-        let mut name = copy.as_mut_ptr();
-        if *name == b'/' as ::core::ffi::c_char {
-            name = __xpg_basename(name);
-        }
-        clean_name(name, 0).unwrap_or_default()
+/// The last component of `path`, the way `basename` reads one: trailing
+/// slashes are no part of the name, and a path of nothing but slashes names
+/// the root itself.
+fn basename_of(path: &[u8]) -> &[u8] {
+    let Some(last) = path.iter().rposition(|&b| b != b'/') else {
+        return b"/";
+    };
+    let start = path[..last]
+        .iter()
+        .rposition(|&b| b == b'/')
+        .map_or(0, |at| at + 1);
+    &path[start..last + 1]
+}
+
+pub fn parse_window_name(in_0: &::core::ffi::CStr) -> CString {
+    let mut name = trim_name(in_0.to_bytes());
+    if name.first() == Some(&b'/') {
+        name = basename_of(name);
     }
+    let name = unsafe { CString::from_vec_unchecked(name.to_vec()) };
+    unsafe { clean_name(name.as_ptr(), 0).unwrap_or_default() }
 }
 
 #[cfg(test)]

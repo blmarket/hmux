@@ -119,7 +119,7 @@ fn entry(name: &CStr) -> Box<notify_entry> {
     unsafe {
         Box::new(notify_entry {
             name: Some(name.to_owned()),
-            fs: empty_state(),
+            fs: cmd_find_state::default(),
             formats: format_create(null_mut(), null_mut(), 0, FORMAT_NOJOBS),
             client_ref: None,
             session_ref: None,
@@ -134,7 +134,7 @@ fn entry(name: &CStr) -> Box<notify_entry> {
 fn a_hook_with_no_commands_behind_it_inserts_nothing() {
     let mut world = World::new();
     unsafe {
-        notify_hook(world.item(), c"window-linked".as_ptr());
+        notify_hook(world.item(), c"window-linked");
     }
     assert!(world.inserted().is_empty());
 }
@@ -143,7 +143,7 @@ fn a_hook_with_no_commands_behind_it_inserts_nothing() {
 fn a_name_that_is_not_a_hook_at_all_inserts_nothing() {
     let mut world = World::new();
     unsafe {
-        notify_hook(world.item(), c"not-a-hook".as_ptr());
+        notify_hook(world.item(), c"not-a-hook");
     }
     assert!(world.inserted().is_empty());
 }
@@ -162,7 +162,7 @@ fn a_session_hook_inserts_one_item_per_command_in_it() {
             options_array_set(o, 1, c"display-message second".as_ptr(), 0, &mut cause),
             0
         );
-        notify_hook(world.item(), c"window-linked".as_ptr());
+        notify_hook(world.item(), c"window-linked");
     }
     assert_eq!(
         world.inserted(),
@@ -180,7 +180,7 @@ fn a_hook_the_session_does_not_carry_is_looked_for_on_the_pane() {
             options_array_set(o, 0, c"display-message pane".as_ptr(), 0, &mut cause),
             0
         );
-        notify_hook(world.item(), c"pane-mode-changed".as_ptr());
+        notify_hook(world.item(), c"pane-mode-changed");
     }
     assert_eq!(world.inserted(), vec!["display-message".to_string()]);
 }
@@ -195,7 +195,7 @@ fn a_target_with_no_pane_looks_for_the_hook_on_the_window() {
             options_array_set(o, 0, c"display-message window".as_ptr(), 0, &mut cause),
             0
         );
-        notify_hook(world.item(), c"pane-mode-changed".as_ptr());
+        notify_hook(world.item(), c"pane-mode-changed");
     }
     assert_eq!(world.inserted(), vec!["display-message".to_string()]);
 }
@@ -211,7 +211,7 @@ fn a_user_option_is_parsed_as_a_command_line_of_its_own() {
             c"%s".as_ptr(),
             fmt_args![c"display-message user".as_ptr()],
         );
-        notify_hook(world.item(), c"@hook".as_ptr());
+        notify_hook(world.item(), c"@hook");
     }
     assert_eq!(world.inserted(), vec!["display-message".to_string()]);
 }
@@ -227,7 +227,7 @@ fn a_user_option_that_is_not_a_command_line_inserts_nothing() {
             c"%s".as_ptr(),
             fmt_args![c"no-such-command".as_ptr()],
         );
-        notify_hook(world.item(), c"@hook".as_ptr());
+        notify_hook(world.item(), c"@hook");
     }
     assert_eq!(world.inserted(), Vec::<String>::new(), "invalid");
 }
@@ -243,7 +243,7 @@ fn an_empty_user_option_parses_to_a_command_list_with_nothing_in_it() {
             c"%s".as_ptr(),
             fmt_args![c"".as_ptr()],
         );
-        notify_hook(world.item(), c"@hook".as_ptr());
+        notify_hook(world.item(), c"@hook");
     }
     assert_eq!(world.inserted(), vec!["cmdq_empty_command".to_string()]);
 }
@@ -260,7 +260,7 @@ fn a_hook_is_named_in_the_log_when_the_log_is_on() {
             options_array_set(o, 0, c"display-message logged".as_ptr(), 0, &mut cause),
             0
         );
-        notify_hook(world.item(), c"window-linked".as_ptr());
+        notify_hook(world.item(), c"window-linked");
     }
     assert_eq!(world.inserted(), vec!["display-message".to_string()]);
 }
@@ -277,11 +277,11 @@ fn a_target_that_is_not_valid_any_more_is_found_from_nothing() {
         let o = options_get_ptr(world.session.options(), c"window-linked".as_ptr());
         let mut cause: Option<CString> = None;
         options_array_set(o, 0, c"display-message valid".as_ptr(), 0, &mut cause);
-        notify_hook(world.item(), c"window-linked".as_ptr());
+        notify_hook(world.item(), c"window-linked");
         assert_eq!(world.inserted(), vec!["display-message".to_string()]);
 
         (*target).set_pane(null_mut::<window_pane>());
-        notify_hook(world.item(), c"window-linked".as_ptr());
+        notify_hook(world.item(), c"window-linked");
         assert_eq!(world.inserted().len(), 2);
     }
 }
@@ -291,7 +291,7 @@ fn a_hook_with_no_command_list_behind_it_leaves_the_item_where_it_was() {
     let mut world = World::new();
     let mut ne = notify_entry {
         name: Some(c"window-linked".to_owned()),
-        fs: empty_state(),
+        fs: cmd_find_state::default(),
         formats: unsafe { format_create(null_mut(), null_mut(), 0, FORMAT_NOJOBS) },
         client_ref: None,
         session_ref: None,
@@ -302,7 +302,7 @@ fn a_hook_with_no_command_list_behind_it_leaves_the_item_where_it_was() {
     unsafe {
         let state = cmdq_new_state(&raw mut ne.fs, null_mut(), STATE_NOHOOKS);
         assert_eq!(
-            notify_insert_one_hook(world.item(), &raw mut ne, None, &state),
+            notify_insert_one_hook(world.item(), &ne, None, &state),
             world.item()
         );
     }
@@ -396,7 +396,7 @@ fn a_hook_with_no_session_anywhere_is_looked_for_in_the_global_options() {
     let _guard = globals();
     let mut item = Item::new();
     unsafe {
-        notify_hook(item.ptr(), c"window-linked".as_ptr());
+        notify_hook(item.ptr(), c"window-linked");
         // Nothing was queued: an item off a queue is one cmdq_insert_after
         // could not have put anything after.
         assert!((*item.ptr()).queue.is_null());

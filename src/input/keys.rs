@@ -12,7 +12,6 @@ use ::core::ffi::{CStr, c_char, c_int};
 use ::std::collections::BTreeMap;
 use ::std::ffi::CString;
 
-pub const UTF8_DONE: utf8_state = 1;
 
 pub const C0_ESC: key_code = 27;
 pub const C0_CR: key_code = 13;
@@ -316,11 +315,10 @@ fn input_key_extended(bev: Stream, mut key: key_code) -> c_int {
             && key & KEYC_MASK_KEY > 0x7f
         {
             let mut ud = utf8_data::default();
-            let mut wc: wchar_t = 0;
             utf8_to_data((key & KEYC_MASK_KEY) as utf8_char, &mut ud);
-            if utf8_towc(&ud, &raw mut wc) != UTF8_DONE {
+            let Some(wc) = utf8_towc(&ud) else {
                 return -1;
-            }
+            };
             key = wc as key_code;
         } else {
             key &= KEYC_MASK_KEY;

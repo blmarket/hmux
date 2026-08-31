@@ -1,10 +1,9 @@
 use super::table::{options_other_names, options_table};
 use crate::alerts::alerts_reset_all;
 use crate::arguments::{args_get, args_has};
-use crate::cmd::cmd_list_print;
-use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
+use crate::cmd::{CMD_PARSE_SUCCESS, cmd_list_print, cmd_parse_from_string};
 use crate::compat::strtonum;
-use crate::ffi::{fnmatch, sscanf, strstr};
+use crate::ffi::{fnmatch, strstr};
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};
 use crate::format::format_expand;
@@ -16,7 +15,7 @@ use crate::resize::recalculate_sizes;
 use crate::server::client_walk;
 use crate::server::server_client_set_key_table;
 use crate::server::server_redraw_client;
-use crate::session::{session_options, session_update_history, sessions_after, sessions_first};
+use crate::session::{session_options, session_owners, session_update_history};
 use crate::status::{status_timer_start_all, status_update_cache};
 use crate::style::{colour_fromstring, colour_palette_from_defaults, colour_tostring};
 use crate::style::{style_parse, style_set, style_set_scrollbar_style_from_option};
@@ -83,7 +82,7 @@ pub struct options_entry {
     /// The set that holds this entry. A borrow, not an owning edge: the set
     /// holds its entries by value, so an entry never outlives it.
     pub owner: *mut options,
-    pub name: Option<CString>,
+    pub name: CString,
     pub(crate) tableentry: Option<&'static options_table_entry_t>,
     pub value: options_value,
     pub array: options_array,
@@ -104,8 +103,8 @@ fn table() -> &'static [options_table_entry_t] {
 }
 
 /// The choices a choice option accepts. Only ever asked of one that has them.
-unsafe fn choices_of(oe: *const options_table_entry_t) -> &'static [&'static CStr] {
-    unsafe { (*oe).choices.expect("a choice option lists its choices") }
+fn choices_of(oe: &options_table_entry_t) -> &'static [&'static CStr] {
+    oe.choices.expect("a choice option lists its choices")
 }
 
 /// A table string as the raw pointer the older calls still take.
@@ -114,14 +113,11 @@ fn cstr_or_null(value: Option<&'static CStr>) -> *const c_char {
 }
 
 /// The name an option used to be spelled, mapped to the one it has now.
-unsafe fn options_map_name(name: *const c_char) -> *const c_char {
-    unsafe {
-        let wanted = CStr::from_ptr(name);
-        options_other_names
-            .iter()
-            .find(|map| map.from == wanted)
-            .map_or(name, |map| map.to.as_ptr())
-    }
+fn options_map_name(name: &CStr) -> &CStr {
+    options_other_names
+        .iter()
+        .find(|map| map.from == name)
+        .map_or(name, |map| map.to)
 }
 
 /// The table entry the parent set has for `s`, which is what an option added
@@ -129,7 +125,7 @@ unsafe fn options_map_name(name: *const c_char) -> *const c_char {
 unsafe fn options_parent_table_entry(
     oo: *mut options,
     s: *const c_char,
-) -> *const options_table_entry_t {
+) -> &'static options_table_entry_t {
     unsafe {
         if (*oo).parent.is_null() {
             fatalx(c"no parent options for %s".as_ptr(), fmt_args![s]);
@@ -137,8 +133,7 @@ unsafe fn options_parent_table_entry(
         let Some(o) = options_get((*oo).parent, s) else {
             fatalx(c"%s not in parent options".as_ptr(), fmt_args![s]);
         };
-        o.tableentry
-            .map_or(::core::ptr::null(), |oe| oe as *const options_table_entry_t)
+        o.tableentry.expect("parent option has a table entry")
     }
 }
 
@@ -214,7 +209,7 @@ unsafe fn options_value_to_string(
                 _ => choices_of(table_of(o))[(*ov).number() as usize].to_owned(),
             };
         }
-        CStr::from_ptr((*ov).string()).to_owned()
+        (*ov).string().to_owned()
     }
 }
 
@@ -269,10 +264,7 @@ pub unsafe fn options_next(o: *mut options_entry) -> *mut options_entry {
     unsafe {
         (*(*o).owner)
             .tree
-            .range::<CStr, _>((
-                Bound::Excluded(CStr::from_ptr(cstr_ptr(&(*o).name))),
-                Bound::Unbounded,
-            ))
+            .range::<CStr, _>((Bound::Excluded((*o).name.as_c_str()), Bound::Unbounded))
             .next()
             .map(|(_, o)| &raw const **o as *mut options_entry)
             .unwrap_or(null_mut::<options_entry>())
@@ -297,7 +289,7 @@ pub unsafe fn options_get_only_ptr(oo: *mut options, name: *const c_char) -> *mu
         }
         (*oo)
             .tree
-            .get(CStr::from_ptr(options_map_name(name)))
+            .get(options_map_name(CStr::from_ptr(name)))
             .map(|o| &raw const **o as *mut options_entry)
             .unwrap_or(null_mut::<options_entry>())
     }
@@ -330,11 +322,11 @@ pub unsafe fn options_get_ptr(mut oo: *mut options, name: *const c_char) -> *mut
 /// Adds `oe` to the set with no value in it yet.
 pub unsafe fn options_empty(
     oo: *mut options,
-    oe: *const options_table_entry_t,
+    oe: &'static options_table_entry_t,
 ) -> *mut options_entry {
     unsafe {
-        let o = options_add(oo, (*oe).name.as_ptr());
-        (*o).tableentry = oe.as_ref();
+        let o = options_add(oo, oe.name.as_ptr());
+        (*o).tableentry = Some(oe);
         o
     }
 }
@@ -342,14 +334,14 @@ pub unsafe fn options_empty(
 /// Adds `oe` to the set with the value the table gives it.
 pub unsafe fn options_default(
     oo: *mut options,
-    oe: *const options_table_entry_t,
+    oe: &'static options_table_entry_t,
 ) -> *mut options_entry {
     unsafe {
         let o = options_empty(oo, oe);
         let ov = &raw mut (*o).value;
-        if (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-            let Some(default_arr) = (*oe).default_arr else {
-                options_array_assign(o, cstr_or_null((*oe).default_str), &mut None);
+        if oe.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
+            let Some(default_arr) = oe.default_arr else {
+                options_array_assign(o, oe.default_str, &mut None);
                 return o;
             };
             for (i, value) in default_arr.iter().enumerate() {
@@ -357,13 +349,13 @@ pub unsafe fn options_default(
             }
             return o;
         }
-        match (*oe).type_0 {
+        match oe.type_0 {
             OPTIONS_TABLE_STRING => {
-                *ov = options_value::String((*oe).default_str.unwrap_or(c"").to_owned());
+                *ov = options_value::String(oe.default_str.unwrap_or(c"").to_owned());
             }
             OPTIONS_TABLE_COMMAND => {
                 let mut pr = cmd_parse_from_string(
-                    cstr_or_null((*oe).default_str),
+                    cstr_or_null(oe.default_str),
                     null_mut::<cmd_parse_input>(),
                 );
                 if pr.status == CMD_PARSE_SUCCESS {
@@ -376,7 +368,7 @@ pub unsafe fn options_default(
                 }
             }
             _ => {
-                *ov = options_value::Number((*oe).default_num);
+                *ov = options_value::Number(oe.default_num);
             }
         }
         o
@@ -384,25 +376,25 @@ pub unsafe fn options_default(
 }
 
 /// The value the table gives `oe`, as the text a user would have written.
-pub unsafe fn options_default_to_string(oe: *const options_table_entry_t) -> CString {
+pub fn options_default_to_string(oe: &options_table_entry_t) -> CString {
     unsafe {
-        match (*oe).type_0 {
+        match oe.type_0 {
             OPTIONS_TABLE_STRING | OPTIONS_TABLE_COMMAND => {
-                (*oe).default_str.unwrap_or(c"").to_owned()
+                oe.default_str.unwrap_or(c"").to_owned()
             }
-            OPTIONS_TABLE_NUMBER => xasprintf(c"%lld".as_ptr(), fmt_args![(*oe).default_num]),
+            OPTIONS_TABLE_NUMBER => xasprintf(c"%lld".as_ptr(), fmt_args![oe.default_num]),
             OPTIONS_TABLE_KEY => {
-                CStr::from_ptr(key_string_lookup_key((*oe).default_num as key_code, 0)).to_owned()
+                CStr::from_ptr(key_string_lookup_key(oe.default_num as key_code, 0)).to_owned()
             }
-            OPTIONS_TABLE_COLOUR => colour_tostring((*oe).default_num as c_int),
+            OPTIONS_TABLE_COLOUR => colour_tostring(oe.default_num as c_int),
             OPTIONS_TABLE_FLAG => {
-                if (*oe).default_num != 0 {
+                if oe.default_num != 0 {
                     c"on".to_owned()
                 } else {
                     c"off".to_owned()
                 }
             }
-            OPTIONS_TABLE_CHOICE => choices_of(oe)[(*oe).default_num as usize].to_owned(),
+            OPTIONS_TABLE_CHOICE => choices_of(oe)[oe.default_num as usize].to_owned(),
             _ => fatalx(c"unknown option type".as_ptr(), fmt_args![]),
         }
     }
@@ -417,7 +409,7 @@ unsafe fn options_add(oo: *mut options, name: *const c_char) -> *mut options_ent
         }
         let mut o = Box::new(options_entry {
             owner: oo,
-            name: Some(CStr::from_ptr(name).to_owned()),
+            name: CStr::from_ptr(name).to_owned(),
             tableentry: None,
             value: options_value::None,
             array: options_array::new(),
@@ -439,23 +431,21 @@ unsafe fn options_remove(o: *mut options_entry) {
         } else {
             options_value_free(o, &raw mut (*o).value);
         }
-        (*oo).tree.remove(CStr::from_ptr(cstr_ptr(&(*o).name)));
+        (*oo).tree.remove((*o).name.as_c_str());
     }
 }
 
-pub unsafe fn options_name(o: *mut options_entry) -> *const c_char {
-    unsafe { cstr_ptr(&(*o).name) }
+/// The name the entry is filed under.
+pub unsafe fn options_name(o: *mut options_entry) -> &'static CStr {
+    unsafe { &(*o).name }
 }
 
 pub unsafe fn options_owner(o: *mut options_entry) -> *mut options {
     unsafe { (*o).owner }
 }
 
-pub unsafe fn options_table_entry(o: *mut options_entry) -> *const options_table_entry_t {
-    unsafe {
-        (*o).tableentry
-            .map_or(::core::ptr::null(), |oe| oe as *const options_table_entry_t)
-    }
+pub unsafe fn options_table_entry(o: *mut options_entry) -> Option<&'static options_table_entry_t> {
+    unsafe { if o.is_null() { None } else { (*o).tableentry } }
 }
 
 /// The table entry an option was made from. Only ever asked of one that has
@@ -477,14 +467,11 @@ unsafe fn options_array_item(o: *mut options_entry, idx: u_int) -> *mut options_
 /// Makes room for a value of an array option at `idx`.
 unsafe fn options_array_new(o: *mut options_entry, idx: u_int) -> *mut options_array_item_t {
     unsafe {
-        (*o).array.insert(
-            idx,
-            options_array_item_t {
-                index: idx,
-                value: ::core::mem::zeroed(),
-            },
-        );
-        options_array_item(o, idx)
+        let a = (*o).array.entry(idx).or_insert(options_array_item_t {
+            index: idx,
+            value: options_value::default(),
+        });
+        &raw mut *a
     }
 }
 
@@ -601,12 +588,15 @@ pub unsafe fn options_array_set(
 /// names. An option whose separator is empty takes the string as one value.
 pub unsafe fn options_array_assign(
     o: *mut options_entry,
-    s: *const c_char,
+    s: Option<&CStr>,
     cause: &mut Option<CString>,
 ) -> c_int {
     unsafe {
         let separators = table_of(o).separator.unwrap_or(c" ,").to_bytes();
-        let bytes = CStr::from_ptr(s).to_bytes();
+        let Some(s) = s else {
+            return 0;
+        };
+        let bytes = s.to_bytes();
         if bytes.is_empty() {
             return 0;
         }
@@ -625,7 +615,7 @@ pub unsafe fn options_array_assign(
 
         if separators.is_empty() {
             let i = first_free(o);
-            return options_array_set(o, i, s, 0, cause);
+            return options_array_set(o, i, s.as_ptr(), 0, cause);
         }
 
         for next in bytes.split(|byte| separators.contains(byte)) {
@@ -683,15 +673,14 @@ pub(crate) unsafe fn options_array_item_command(
 }
 
 /// The `codepoint-widths` specs held in `oo`, in array order, for
-/// [`utf8_update_width_cache`] to apply. The pointers stay valid only until
-/// the option is next changed.
-pub unsafe fn options_codepoint_widths(oo: *mut options) -> Vec<*const c_char> {
+/// [`utf8_update_width_cache`] to apply.
+pub unsafe fn options_codepoint_widths(oo: *mut options) -> Vec<CString> {
     unsafe {
         let o = options_get_ptr(oo, c"codepoint-widths".as_ptr());
         let mut a = options_array_first(o);
         let mut specs = Vec::new();
         while !a.is_null() {
-            specs.push((*options_array_item_value(a)).string());
+            specs.push((*options_array_item_value(a)).string().to_owned());
             a = options_array_next(o, a);
         }
         specs
@@ -770,45 +759,40 @@ pub unsafe fn options_to_string(o: *mut options_entry, idx: c_int, numeric: c_in
 
 /// The option name out of `name`, with the index in brackets after it read
 /// into `idx`, which is -1 when there is none. Null if it is not a name.
-pub unsafe fn options_parse(name: *const c_char, idx: *mut c_int) -> Option<CString> {
-    unsafe {
-        let bytes = CStr::from_ptr(name).to_bytes();
-        if bytes.is_empty() {
-            return None;
-        }
-        let Some(open) = bytes.iter().position(|&byte| byte == b'[') else {
-            if !idx.is_null() {
-                *idx = -1;
-            }
-            return CString::new(bytes).ok();
-        };
-        let close = bytes[open + 1..]
-            .iter()
-            .position(|&byte| byte == b']')
-            .map(|at| open + 1 + at);
-        let Some(close) = close else {
-            return None;
-        };
-        if close + 1 != bytes.len() || !bytes[close - 1].is_ascii_digit() {
-            return None;
-        }
-        let mut parsed_idx: c_int = 0;
-        if sscanf(name.add(open), c"[%d]".as_ptr(), &raw mut parsed_idx) != 1 || parsed_idx < 0 {
-            return None;
-        }
-        if !idx.is_null() {
-            *idx = parsed_idx;
-        }
-        CString::new(&bytes[..open]).ok()
+pub fn options_parse(name: &CStr, idx: &mut c_int) -> Option<CString> {
+    let bytes = name.to_bytes();
+    if bytes.is_empty() {
+        return None;
     }
+    let Some(open) = bytes.iter().position(|&byte| byte == b'[') else {
+        *idx = -1;
+        return CString::new(bytes).ok();
+    };
+    let close = bytes[open + 1..]
+        .iter()
+        .position(|&byte| byte == b']')
+        .map(|at| open + 1 + at);
+    let Some(close) = close else {
+        return None;
+    };
+    if close + 1 != bytes.len() || !bytes[close - 1].is_ascii_digit() {
+        return None;
+    }
+    let index_str = ::core::str::from_utf8(&bytes[open + 1..close]).ok()?;
+    let parsed_idx = index_str.parse::<c_int>().ok()?;
+    if parsed_idx < 0 {
+        return None;
+    }
+    *idx = parsed_idx;
+    CString::new(&bytes[..open]).ok()
 }
 
 /// The option `s` names, with its index read into `idx`. `only` looks in this
 /// set alone rather than in the sets above it too.
 pub unsafe fn options_parse_get(
     oo: *mut options,
-    s: *const c_char,
-    idx: *mut c_int,
+    s: &CStr,
+    idx: &mut c_int,
     only: c_int,
 ) -> *mut options_entry {
     unsafe {
@@ -826,43 +810,35 @@ pub unsafe fn options_parse_get(
 /// The whole name of the option `s` is the start of, with its index read into
 /// `idx`. Null if no option matches, or if more than one does, which sets
 /// `ambiguous`. A user option is its own whole name.
-pub unsafe fn options_match(
-    s: *const c_char,
-    idx: *mut c_int,
-    ambiguous: *mut c_int,
-) -> Option<CString> {
-    unsafe {
-        let parsed = options_parse(s, idx)?;
-        if parsed.as_bytes().first() == Some(&b'@') {
+pub fn options_match(s: &CStr, idx: &mut c_int, ambiguous: &mut c_int) -> Option<CString> {
+    let parsed = options_parse(s, idx)?;
+    if parsed.as_bytes().first() == Some(&b'@') {
+        *ambiguous = 0;
+        return Some(parsed);
+    }
+
+    let name = options_map_name(&parsed).to_bytes().to_vec();
+
+    let mut found = None;
+    for oe in table() {
+        let entry = oe.name.to_bytes();
+        if entry == name {
+            found = Some(oe);
+            break;
+        }
+        if entry.starts_with(&name) {
+            if found.is_some() {
+                *ambiguous = 1;
+                return None;
+            }
+            found = Some(oe);
+        }
+    }
+    match found {
+        Some(oe) => Some(oe.name.to_owned()),
+        None => {
             *ambiguous = 0;
-            return Some(parsed);
-        }
-
-        let name = CStr::from_ptr(options_map_name(parsed.as_ptr()))
-            .to_bytes()
-            .to_vec();
-
-        let mut found = None;
-        for oe in table() {
-            let entry = oe.name.to_bytes();
-            if entry == name {
-                found = Some(oe);
-                break;
-            }
-            if entry.starts_with(&name) {
-                if found.is_some() {
-                    *ambiguous = 1;
-                    return None;
-                }
-                found = Some(oe);
-            }
-        }
-        match found {
-            Some(oe) => Some(oe.name.to_owned()),
-            None => {
-                *ambiguous = 0;
-                None
-            }
+            None
         }
     }
 }
@@ -871,10 +847,10 @@ pub unsafe fn options_match(
 /// works it out.
 pub unsafe fn options_match_get(
     oo: *mut options,
-    s: *const c_char,
-    idx: *mut c_int,
+    s: &CStr,
+    idx: &mut c_int,
     only: c_int,
-    ambiguous: *mut c_int,
+    ambiguous: &mut c_int,
 ) -> *mut options_entry {
     unsafe {
         let Some(name) = options_match(s, idx, ambiguous) else {
@@ -898,7 +874,7 @@ pub unsafe fn options_get_string(oo: *mut options, name: *const c_char) -> *cons
         if !is_string(&*o) {
             fatalx(c"option %s is not a string".as_ptr(), fmt_args![name]);
         }
-        o.value.string()
+        o.value.string().as_ptr()
     }
 }
 
@@ -958,13 +934,11 @@ pub unsafe fn options_set_string(
              * A user option has no table entry to name a separator, and the
              * one a table entry names is empty when it has none.
              */
-            let mut separator = c"".as_ptr();
-            if *name != b'@' as c_char {
-                separator = cstr_or_null(table_of(o).separator);
-                if separator.is_null() {
-                    separator = c"".as_ptr();
-                }
-            }
+            let separator = if *name == b'@' as c_char {
+                c""
+            } else {
+                table_of(o).separator.unwrap_or(c"")
+            };
 
             xasprintf(
                 c"%s%s%s".as_ptr(),
@@ -1034,7 +1008,7 @@ pub(crate) unsafe fn options_set_command(
 unsafe fn options_window_scope(
     args: &args,
     fs: *mut cmd_find_state,
-    oo: *mut *mut options,
+    oo: &mut *mut options,
     cause: &mut Option<CString>,
 ) -> c_int {
     unsafe {
@@ -1052,7 +1026,7 @@ unsafe fn options_window_scope(
             }
             return OPTIONS_TABLE_NONE;
         }
-        *oo = options_ptr(&(*(*wl).window()).options);
+        *oo = (*(*wl).window()).options_ptr();
         OPTIONS_TABLE_WINDOW
     }
 }
@@ -1066,18 +1040,20 @@ unsafe fn options_window_scope(
 pub unsafe fn options_scope_from_name(
     args: &args,
     window: c_int,
-    name: *const c_char,
+    name: &CStr,
     fs: *mut cmd_find_state,
-    oo: *mut *mut options,
+    oo: &mut *mut options,
     cause: &mut Option<CString>,
 ) -> c_int {
     unsafe {
-        if *name == b'@' as c_char {
+        if name.to_bytes().first() == Some(&b'@') {
             return options_scope_from_flags(args, window, fs, oo, cause);
         }
-        let wanted = CStr::from_ptr(name);
-        let Some(oe) = table().iter().find(|oe| oe.name == wanted) else {
-            *cause = Some(xasprintf(c"unknown option: %s".as_ptr(), fmt_args![name]));
+        let Some(oe) = table().iter().find(|oe| oe.name == name) else {
+            *cause = Some(xasprintf(
+                c"unknown option: %s".as_ptr(),
+                fmt_args![name.as_ptr()],
+            ));
             return OPTIONS_TABLE_NONE;
         };
 
@@ -1120,7 +1096,7 @@ pub unsafe fn options_scope_from_name(
                     }
                     return OPTIONS_TABLE_NONE;
                 }
-                *oo = options_ptr(&(*wp).options);
+                *oo = (*wp).options_ptr();
                 OPTIONS_TABLE_PANE
             }
             _ => options_window_scope(args, fs, oo, cause),
@@ -1133,7 +1109,7 @@ pub unsafe fn options_scope_from_flags(
     args: &args,
     window: c_int,
     fs: *mut cmd_find_state,
-    oo: *mut *mut options,
+    oo: &mut *mut options,
     cause: &mut Option<CString>,
 ) -> c_int {
     unsafe {
@@ -1152,7 +1128,7 @@ pub unsafe fn options_scope_from_flags(
                 }
                 return OPTIONS_TABLE_NONE;
             }
-            *oo = options_ptr(&(*wp).options);
+            *oo = (*wp).options_ptr();
             return OPTIONS_TABLE_PANE;
         }
         if window != 0 || args_has(args, b'w') != 0 {
@@ -1195,7 +1171,7 @@ pub unsafe fn options_string_to_style(
             return &raw mut (*o).style;
         }
 
-        let s = (*o).value.string();
+        let s = (*o).value.string().as_ptr();
         log_debug(
             c"%s: %s is '%s'".as_ptr(),
             fmt_args![c"options_string_to_style".as_ptr(), name, s],
@@ -1226,22 +1202,22 @@ pub unsafe fn options_string_to_style(
 /// Whether a value is one the table would let the option hold: a shell that
 /// can be run, a value the entry's pattern matches, and a style that parses.
 unsafe fn options_from_string_check(
-    oe: *const options_table_entry_t,
+    oe: Option<&options_table_entry_t>,
     value: *const c_char,
     cause: &mut Option<CString>,
 ) -> c_int {
     unsafe {
-        if oe.is_null() {
+        let Some(oe) = oe else {
             return 0;
-        }
-        if (*oe).name == c"default-shell" && checkshell(value) == 0 {
+        };
+        if oe.name == c"default-shell" && checkshell(value) == 0 {
             *cause = Some(xasprintf(
                 c"not a suitable shell: %s".as_ptr(),
                 fmt_args![value],
             ));
             return -1;
         }
-        if let Some(pattern) = (*oe).pattern
+        if let Some(pattern) = oe.pattern
             && fnmatch(pattern.as_ptr(), value, 0) != 0
         {
             *cause = Some(xasprintf(
@@ -1250,7 +1226,7 @@ unsafe fn options_from_string_check(
             ));
             return -1;
         }
-        if (*oe).flags & OPTIONS_TABLE_IS_STYLE != 0 && strstr(value, c"#{".as_ptr()).is_null() {
+        if oe.flags & OPTIONS_TABLE_IS_STYLE != 0 && strstr(value, c"#{".as_ptr()).is_null() {
             let mut sy = style::default();
             if style_parse(
                 &mut sy,
@@ -1299,20 +1275,22 @@ unsafe fn options_from_string_flag(
 
 /// Which of an option's choices `value` is, or -1 if it is none of them.
 pub unsafe fn options_find_choice(
-    oe: *const options_table_entry_t,
-    value: *const c_char,
+    oe: &options_table_entry_t,
+    value: &CStr,
     cause: &mut Option<CString>,
 ) -> c_int {
     unsafe {
-        let wanted = CStr::from_ptr(value);
         let mut choice = -1;
         for (n, name) in choices_of(oe).iter().enumerate() {
-            if *name == wanted {
+            if *name == value {
                 choice = n as c_int;
             }
         }
         if choice == -1 {
-            *cause = Some(xasprintf(c"unknown value: %s".as_ptr(), fmt_args![value]));
+            *cause = Some(xasprintf(
+                c"unknown value: %s".as_ptr(),
+                fmt_args![value.as_ptr()],
+            ));
             return -1;
         }
         choice
@@ -1322,7 +1300,7 @@ pub unsafe fn options_find_choice(
 /// Sets a choice option. No value at all turns over the first two choices and
 /// leaves any other where it is.
 unsafe fn options_from_string_choice(
-    oe: *const options_table_entry_t,
+    oe: &options_table_entry_t,
     oo: *mut options,
     name: *const c_char,
     value: *const c_char,
@@ -1337,7 +1315,7 @@ unsafe fn options_from_string_choice(
                 choice
             }
         } else {
-            let choice = options_find_choice(oe, value, cause);
+            let choice = options_find_choice(oe, CStr::from_ptr(value), cause);
             if choice < 0 {
                 return -1;
             }
@@ -1353,28 +1331,28 @@ unsafe fn options_from_string_choice(
 /// leaves the option with what it had.
 pub unsafe fn options_from_string(
     oo: *mut options,
-    oe: *const options_table_entry_t,
+    oe: Option<&options_table_entry_t>,
     name: *const c_char,
     value: *const c_char,
     append: c_int,
     cause: &mut Option<CString>,
 ) -> c_int {
     unsafe {
-        let type_0 = if oe.is_null() {
+        let type_0 = if let Some(oe) = oe {
+            if value.is_null()
+                && oe.type_0 != OPTIONS_TABLE_FLAG
+                && oe.type_0 != OPTIONS_TABLE_CHOICE
+            {
+                *cause = Some(xasprintf(c"empty value".as_ptr(), fmt_args![]));
+                return -1;
+            }
+            oe.type_0
+        } else {
             if *name != b'@' as c_char {
                 *cause = Some(xasprintf(c"bad option name".as_ptr(), fmt_args![]));
                 return -1;
             }
             OPTIONS_TABLE_STRING
-        } else {
-            if value.is_null()
-                && (*oe).type_0 != OPTIONS_TABLE_FLAG
-                && (*oe).type_0 != OPTIONS_TABLE_CHOICE
-            {
-                *cause = Some(xasprintf(c"empty value".as_ptr(), fmt_args![]));
-                return -1;
-            }
-            (*oe).type_0
         };
 
         match type_0 {
@@ -1389,17 +1367,16 @@ pub unsafe fn options_from_string(
                 0
             }
             OPTIONS_TABLE_NUMBER => {
-                let Ok(number) = strtonum(
-                    value,
-                    (*oe).minimum as c_longlong,
-                    (*oe).maximum as c_longlong,
-                )
-                .inspect_err(|errstr| {
-                    *cause = Some(xasprintf(
-                        c"value is %s: %s".as_ptr(),
-                        fmt_args![errstr.as_ptr(), value],
-                    ));
-                }) else {
+                let oe = oe.unwrap();
+                let Ok(number) =
+                    strtonum(value, oe.minimum as c_longlong, oe.maximum as c_longlong)
+                        .inspect_err(|errstr| {
+                            *cause = Some(xasprintf(
+                                c"value is %s: %s".as_ptr(),
+                                fmt_args![errstr.as_ptr(), value],
+                            ));
+                        })
+                else {
                     return -1;
                 };
                 options_set_number(oo, name, number);
@@ -1424,7 +1401,7 @@ pub unsafe fn options_from_string(
                 0
             }
             OPTIONS_TABLE_FLAG => options_from_string_flag(oo, name, value, cause),
-            OPTIONS_TABLE_CHOICE => options_from_string_choice(oe, oo, name, value, cause),
+            OPTIONS_TABLE_CHOICE => options_from_string_choice(oe.unwrap(), oo, name, value, cause),
             _ => {
                 let mut pr = cmd_parse_from_string(value, null_mut::<cmd_parse_input>());
                 if pr.status != CMD_PARSE_SUCCESS {
@@ -1444,107 +1421,95 @@ fn each_window() -> impl Iterator<Item = WindowRef> {
     ids.into_iter().filter_map(window_find_by_id_ref)
 }
 
-/// The sessions the server has, in name order.
-fn each_session() -> impl Iterator<Item = *mut session> {
-    let mut current = null_mut::<session>();
-    let mut started = false;
-    ::core::iter::from_fn(move || unsafe {
-        current = if started {
-            sessions_after(current)
-        } else {
-            started = true;
-            sessions_first()
-        };
-        (!current.is_null()).then_some(current)
-    })
+/// The sessions the server has, in name order, walked by the handles that own
+/// them.
+fn each_session() -> impl Iterator<Item = SessionRef> {
+    session_owners().into_iter()
 }
 
 /// Tells whatever an option reaches that it has changed. Every option ends by
 /// having the status caches, the window sizes and the attached clients brought
 /// up to date, whether or not it is one of the names below.
-pub unsafe fn options_push_changes(name: *const c_char) {
+pub unsafe fn options_push_changes(name: &CStr) {
     unsafe {
         log_debug(
             c"%s: %s".as_ptr(),
-            fmt_args![c"options_push_changes".as_ptr(), name],
+            fmt_args![c"options_push_changes".as_ptr(), name.as_ptr()],
         );
-        let named = CStr::from_ptr(name);
 
-        if named == c"automatic-rename" {
+        if name == c"automatic-rename" {
             for w_ref in each_window() {
                 let w = w_ref.as_ptr();
                 if !window_get_active(w).is_null()
-                    && options_get_number(options_ptr(&(*w).options), name) != 0
+                    && options_get_number((*w).options_ptr(), name.as_ptr()) != 0
                 {
                     (*window_get_active(w)).flags |= PANE_CHANGED;
                 }
             }
         }
-        if named == c"cursor-colour" || named == c"cursor-style" {
+        if name == c"cursor-colour" || name == c"cursor-style" {
             for wp in pane_walk() {
                 window_pane_default_cursor(wp);
             }
         }
-        if named == c"fill-character" {
+        if name == c"fill-character" {
             for w_ref in each_window() {
                 let w = w_ref.as_ptr();
                 window_set_fill_character(w);
             }
         }
-        if named == c"key-table" {
+        if name == c"key-table" {
             for c in client_walk() {
                 server_client_set_key_table(c, null::<c_char>());
             }
         }
-        if named == c"user-keys" {
+        if name == c"user-keys" {
             for c in client_walk() {
                 if (*c).tty.flags & TTY_OPENED != 0 {
                     tty_keys_build(&raw mut (*c).tty);
                 }
             }
         }
-        if named == c"status" || named == c"status-interval" {
+        if name == c"status" || name == c"status-interval" {
             status_timer_start_all();
         }
-        if named == c"monitor-silence" {
+        if name == c"monitor-silence" {
             alerts_reset_all();
         }
-        if named == c"window-style" || named == c"window-active-style" {
+        if name == c"window-style" || name == c"window-active-style" {
             for wp in pane_walk() {
                 (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
             }
         }
-        if *name == b'@' as c_char {
+        if name.to_bytes().first() == Some(&b'@') {
             for wp in pane_walk() {
                 (*wp).flags |= PANE_STYLECHANGED;
             }
         }
-        if named == c"pane-colours" {
+        if name == c"pane-colours" {
             for wp in pane_walk() {
-                options_load_pane_colours(options_ptr(&(*wp).options), &raw mut (*wp).palette);
+                options_load_pane_colours((*wp).options_ptr(), &raw mut (*wp).palette);
             }
         }
-        if named == c"pane-border-status"
-            || named == c"pane-scrollbars"
-            || named == c"pane-scrollbars-position"
+        if name == c"pane-border-status"
+            || name == c"pane-scrollbars"
+            || name == c"pane-scrollbars-position"
         {
             for w_ref in each_window() {
                 let w = w_ref.as_ptr();
                 (*w).sb =
-                    options_get_number(options_ptr(&(*w).options), c"pane-scrollbars".as_ptr())
+                    options_get_number((*w).options_ptr(), c"pane-scrollbars".as_ptr()) as c_int;
+                (*w).sb_pos =
+                    options_get_number((*w).options_ptr(), c"pane-scrollbars-position".as_ptr())
                         as c_int;
-                (*w).sb_pos = options_get_number(
-                    options_ptr(&(*w).options),
-                    c"pane-scrollbars-position".as_ptr(),
-                ) as c_int;
                 layout_fix_panes(w, null_mut::<window_pane>());
             }
         }
-        if named == c"pane-scrollbars-style" {
+        if name == c"pane-scrollbars-style" {
             for wp in pane_walk() {
                 style_set_scrollbar_style_from_option(
                     &mut (*wp).scrollbar_style,
-                    options_ptr(&(*wp).options),
+                    (*wp).options_ptr(),
                 );
             }
             for w_ref in each_window() {
@@ -1552,20 +1517,20 @@ pub unsafe fn options_push_changes(name: *const c_char) {
                 layout_fix_panes(w, null_mut::<window_pane>());
             }
         }
-        if named == c"codepoint-widths" {
+        if name == c"codepoint-widths" {
             utf8_update_width_cache(options_codepoint_widths(global_options));
         }
-        if named == c"input-buffer-size" {
-            input_set_buffer_size(options_get_number(global_options, name) as size_t);
+        if name == c"input-buffer-size" {
+            input_set_buffer_size(options_get_number(global_options, name.as_ptr()) as size_t);
         }
-        if named == c"history-limit" {
+        if name == c"history-limit" {
             for s in each_session() {
-                session_update_history(s);
+                session_update_history(s.as_ptr());
             }
         }
 
         for s in each_session() {
-            status_update_cache(s);
+            status_update_cache(s.as_ptr());
         }
         recalculate_sizes();
         for c in client_walk() {

@@ -4,21 +4,12 @@ use ::core::ffi::CStr;
 
 /// What `tty_acs_get` answers for `ch`, or `None` if it has no translation.
 unsafe fn get(tty: *mut tty, ch: u8) -> Option<String> {
-    unsafe {
-        let p = tty_acs_get(tty, ch);
-        if p.is_null() { None } else { Some(seen(p)) }
-    }
+    unsafe { tty_acs_get(tty, ch).map(|s| seen(s.as_ptr())) }
 }
 
 /// What `tty_acs_reverse_get` answers for the whole of `s`.
 fn reverse(s: &CStr) -> ::core::ffi::c_int {
-    unsafe {
-        tty_acs_reverse_get(
-            ::core::ptr::null_mut::<tty>(),
-            s.as_ptr(),
-            s.to_bytes().len() as size_t,
-        )
-    }
+    tty_acs_reverse_get(s.to_bytes())
 }
 
 #[test]
@@ -96,8 +87,8 @@ fn a_terminal_that_needs_acs_reads_its_own_translations() {
         assert_eq!(get(t.ptr(), b'q'), Some("-".to_string()));
         assert_eq!(get(t.ptr(), b'x'), None);
         assert_eq!(
-            tty_acs_get(t.ptr(), b'q'),
-            &raw const t.term().acs[b'q' as usize][0]
+            tty_acs_get(t.ptr(), b'q').map(CStr::as_ptr),
+            Some(&raw const t.term().acs[b'q' as usize][0])
         );
     }
 }
@@ -152,39 +143,39 @@ fn a_border_cell_carries_the_character_and_nothing_else() {
 fn the_border_tables_answer_one_character_per_cell_type() {
     unsafe {
         assert_eq!(
-            seen((*tty_acs_double_borders(0)).data.as_ptr() as *const ::core::ffi::c_char),
+            seen(tty_acs_double_borders(0).data.as_ptr() as *const ::core::ffi::c_char),
             ""
         );
-        assert_eq!((*tty_acs_double_borders(0)).size, 0);
+        assert_eq!(tty_acs_double_borders(0).size, 0);
         assert_eq!(
-            seen((*tty_acs_double_borders(1)).data.as_ptr() as *const ::core::ffi::c_char),
+            seen(tty_acs_double_borders(1).data.as_ptr() as *const ::core::ffi::c_char),
             "\u{2551}"
         );
         assert_eq!(
-            seen((*tty_acs_double_borders(12)).data.as_ptr() as *const ::core::ffi::c_char),
+            seen(tty_acs_double_borders(12).data.as_ptr() as *const ::core::ffi::c_char),
             "\u{00b7}"
         );
-        assert_eq!((*tty_acs_double_borders(12)).size, 2);
+        assert_eq!(tty_acs_double_borders(12).size, 2);
         assert_eq!(
-            seen((*tty_acs_heavy_borders(1)).data.as_ptr() as *const ::core::ffi::c_char),
+            seen(tty_acs_heavy_borders(1).data.as_ptr() as *const ::core::ffi::c_char),
             "\u{2503}"
         );
         assert_eq!(
-            seen((*tty_acs_heavy_borders(12)).data.as_ptr() as *const ::core::ffi::c_char),
+            seen(tty_acs_heavy_borders(12).data.as_ptr() as *const ::core::ffi::c_char),
             "\u{00b7}"
         );
         assert_eq!(
-            seen((*tty_acs_rounded_borders(3)).data.as_ptr() as *const ::core::ffi::c_char),
+            seen(tty_acs_rounded_borders(3).data.as_ptr() as *const ::core::ffi::c_char),
             "\u{256d}"
         );
         assert_eq!(
-            seen((*tty_acs_rounded_borders(12)).data.as_ptr() as *const ::core::ffi::c_char),
+            seen(tty_acs_rounded_borders(12).data.as_ptr() as *const ::core::ffi::c_char),
             "\u{00b7}"
         );
         for i in 1..13 {
-            assert_eq!((*tty_acs_double_borders(i)).width, 1);
-            assert_eq!((*tty_acs_heavy_borders(i)).width, 1);
-            assert_eq!((*tty_acs_rounded_borders(i)).width, 1);
+            assert_eq!(tty_acs_double_borders(i).width, 1);
+            assert_eq!(tty_acs_heavy_borders(i).width, 1);
+            assert_eq!(tty_acs_rounded_borders(i).width, 1);
         }
     }
 }

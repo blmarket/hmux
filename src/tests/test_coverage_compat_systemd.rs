@@ -37,7 +37,7 @@ use crate::compat::{
     systemd_create_socket, systemd_job_watch, systemd_move_to_new_cgroup,
 };
 use crate::types::*;
-use ::core::ffi::{CStr, c_char, c_int, c_void};
+use ::core::ffi::{CStr, c_char, c_int};
 use ::core::ptr::{null, null_mut};
 use ::std::ffi::CString;
 
@@ -199,7 +199,7 @@ fn job_removed_handler_answers_zero_when_the_watch_has_no_path() {
             done: 7,
         };
         let mut err = SD_BUS_ERROR_NULL;
-        let r = job_removed_handler(null_mut(), &raw mut watch as *mut c_void, &raw mut err);
+        let r = job_removed_handler(null_mut(), &raw mut watch, &raw mut err);
         assert_eq!(r, 0);
         assert_eq!(watch.done, 7, "a pathless watch must stay untouched");
     }

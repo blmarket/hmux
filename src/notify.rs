@@ -24,7 +24,6 @@ use crate::log::{log_debug, log_get_level};
 use crate::options::options_get_ptr;
 use crate::options::{
     options_array_first, options_array_item_command, options_array_next, options_get_string,
-    options_ptr,
 };
 use crate::server::client_ref_from_ptr;
 use crate::session::{
@@ -77,23 +76,11 @@ impl notify_entry {
     }
 }
 
-/// A cleared target state, the way `cmd_find_clear_state` leaves one.
-fn empty_state() -> cmd_find_state {
-    cmd_find_state {
-        flags: 0,
-        s_ref: None,
-        wl_idx: None,
-        w_ref: None,
-        wp_id: None,
-        idx: 0,
-    }
-}
-
 /// Puts the commands of one hook on the queue behind `item`, and answers the
 /// item the next one should go behind.
 unsafe fn notify_insert_one_hook(
     item: *mut cmdq_item,
-    ne: *mut notify_entry,
+    ne: &notify_entry,
     cmdlist: Option<&CmdListRef>,
     state: &CmdqStateRef,
 ) -> *mut cmdq_item {
@@ -107,7 +94,7 @@ unsafe fn notify_insert_one_hook(
                 c"%s: hook %s is: %s".as_ptr(),
                 fmt_args![
                     c"notify_insert_one_hook".as_ptr(),
-                    cstr_ptr(&(*ne).name),
+                    ne.name.as_deref(),
                     s.as_ptr()
                 ],
             );
@@ -123,20 +110,20 @@ unsafe fn notify_insert_one_hook(
 /// the window the target names, which is how a hook set at a narrower scope
 /// wins. A name beginning with `@` is a user option holding one command line
 /// rather than an array of them.
-unsafe fn notify_insert_hook(mut item: *mut cmdq_item, ne: *mut notify_entry) {
+unsafe fn notify_insert_hook(mut item: *mut cmdq_item, ne: &mut notify_entry) {
     unsafe {
-        let name_ptr = cstr_ptr(&(*ne).name);
+        let name_ptr = cstr_ptr(&ne.name);
         log_debug(
             c"%s: inserting hook %s".as_ptr(),
             fmt_args![c"notify_insert_hook".as_ptr(), name_ptr],
         );
 
-        let mut fs = empty_state();
+        let mut fs = cmd_find_state::default();
         cmd_find_clear_state(&mut fs, 0);
-        if cmd_find_empty_state(&(*ne).fs) != 0 || cmd_find_valid_state(&(*ne).fs) == 0 {
+        if cmd_find_empty_state(&ne.fs) != 0 || cmd_find_valid_state(&ne.fs) == 0 {
             cmd_find_from_nothing(&mut fs, 0);
         } else {
-            cmd_find_copy_state(&mut fs, &(*ne).fs);
+            cmd_find_copy_state(&mut fs, &ne.fs);
         }
 
         let mut oo = if fs.session().is_null() {
@@ -146,11 +133,11 @@ unsafe fn notify_insert_hook(mut item: *mut cmdq_item, ne: *mut notify_entry) {
         };
         let mut o = options_get_ptr(oo, name_ptr);
         if o.is_null() && !fs.pane().is_null() {
-            oo = options_ptr(&(*fs.pane()).options);
+            oo = (*fs.pane()).options_ptr();
             o = options_get_ptr(oo, name_ptr);
         }
         if o.is_null() && !fs.winlink().is_null() {
-            oo = options_ptr(&(*(*fs.winlink()).window()).options);
+            oo = (*(*fs.winlink()).window()).options_ptr();
             o = options_get_ptr(oo, name_ptr);
         }
         if o.is_null() {
@@ -162,9 +149,9 @@ unsafe fn notify_insert_hook(mut item: *mut cmdq_item, ne: *mut notify_entry) {
         }
 
         let state = cmdq_new_state(&raw mut fs, null_mut::<key_event>(), CMDQ_STATE_NOHOOKS);
-        cmdq_add_formats(state.as_ptr(), &mut *(*ne).formats.as_mut());
+        cmdq_add_formats(state.as_ptr(), &mut ne.formats);
 
-        if (*ne)
+        if ne
             .name
             .as_deref()
             .is_some_and(|n| n.to_bytes().starts_with(b"@"))
@@ -197,49 +184,38 @@ unsafe fn notify_insert_hook(mut item: *mut cmdq_item, ne: *mut notify_entry) {
 /// everything the entry was holding.
 unsafe fn notify_callback(item: *mut cmdq_item, data: CmdqCallbackData) -> cmd_retval {
     unsafe {
-        let CmdqCallbackData::NotifyEntry(ne) = data else {
+        let CmdqCallbackData::NotifyEntry(mut ne) = data else {
             return CMD_RETURN_ERROR;
         };
-        let ne_ptr = ne.as_ref() as *const notify_entry as *mut notify_entry;
         log_debug(
             c"%s: %s".as_ptr(),
-            fmt_args![c"notify_callback".as_ptr(), cstr_ptr(&(*ne_ptr).name)],
+            fmt_args![c"notify_callback".as_ptr(), ne.name.as_deref()],
         );
 
-        match (*ne_ptr).name.as_deref().map(|s| s.to_bytes()) {
-            Some(b"pane-mode-changed") => control_notify_pane_mode_changed((*ne_ptr).pane),
-            Some(b"window-layout-changed") => {
-                control_notify_window_layout_changed((*ne_ptr).window())
-            }
-            Some(b"window-pane-changed") => control_notify_window_pane_changed((*ne_ptr).window()),
-            Some(b"window-unlinked") => {
-                control_notify_window_unlinked((*ne_ptr).session(), (*ne_ptr).window())
-            }
-            Some(b"window-linked") => {
-                control_notify_window_linked((*ne_ptr).session(), (*ne_ptr).window())
-            }
-            Some(b"window-renamed") => control_notify_window_renamed((*ne_ptr).window()),
-            Some(b"client-session-changed") => {
-                control_notify_client_session_changed((*ne_ptr).client())
-            }
-            Some(b"client-detached") => control_notify_client_detached((*ne_ptr).client()),
-            Some(b"session-renamed") => control_notify_session_renamed((*ne_ptr).session()),
-            Some(b"session-created") => control_notify_session_created((*ne_ptr).session()),
-            Some(b"session-closed") => control_notify_session_closed((*ne_ptr).session()),
-            Some(b"session-window-changed") => {
-                control_notify_session_window_changed((*ne_ptr).session())
-            }
+        match ne.name.as_deref().map(|s| s.to_bytes()) {
+            Some(b"pane-mode-changed") => control_notify_pane_mode_changed(ne.pane),
+            Some(b"window-layout-changed") => control_notify_window_layout_changed(ne.window()),
+            Some(b"window-pane-changed") => control_notify_window_pane_changed(ne.window()),
+            Some(b"window-unlinked") => control_notify_window_unlinked(ne.session(), ne.window()),
+            Some(b"window-linked") => control_notify_window_linked(ne.session(), ne.window()),
+            Some(b"window-renamed") => control_notify_window_renamed(ne.window()),
+            Some(b"client-session-changed") => control_notify_client_session_changed(ne.client()),
+            Some(b"client-detached") => control_notify_client_detached(ne.client()),
+            Some(b"session-renamed") => control_notify_session_renamed(ne.session()),
+            Some(b"session-created") => control_notify_session_created(ne.session()),
+            Some(b"session-closed") => control_notify_session_closed(ne.session()),
+            Some(b"session-window-changed") => control_notify_session_window_changed(ne.session()),
             Some(b"paste-buffer-changed") => {
-                control_notify_paste_buffer_changed(cstr_ptr(&(*ne_ptr).pbname))
+                control_notify_paste_buffer_changed(ne.pbname.as_deref())
             }
             Some(b"paste-buffer-deleted") => {
-                control_notify_paste_buffer_deleted(cstr_ptr(&(*ne_ptr).pbname))
+                control_notify_paste_buffer_deleted(ne.pbname.as_deref())
             }
             _ => {}
         }
-        crate::plugin::note_notification((*ne_ptr).name.as_deref(), (*ne_ptr).pane);
+        crate::plugin::note_notification(ne.name.as_deref(), ne.pane);
 
-        notify_insert_hook(item, ne_ptr);
+        notify_insert_hook(item, &mut ne);
         CMD_RETURN_NORMAL
     }
 }
@@ -249,7 +225,7 @@ unsafe fn notify_callback(item: *mut cmdq_item, data: CmdqCallbackData) -> cmd_r
 /// gets to it. A command that asked for no hooks raises nothing.
 unsafe fn notify_add(
     name: *const c_char,
-    fs: *mut cmd_find_state,
+    fs: &cmd_find_state,
     c: *mut client,
     s: *mut session,
     w: *mut window,
@@ -284,7 +260,7 @@ unsafe fn notify_add(
             } else {
                 Some(CStr::from_ptr(name).to_owned())
             },
-            fs: empty_state(),
+            fs: cmd_find_state::default(),
             formats: format_create(null_mut(), null_mut(), 0, FORMAT_NOJOBS),
             client_ref: client_ref_from_ptr(c),
             session_ref,
@@ -296,31 +272,25 @@ unsafe fn notify_add(
                 Some(CStr::from_ptr(pbname).to_owned())
             },
         });
-        let ne_ptr = ne.as_mut() as *mut notify_entry;
 
-        format_add(
-            &mut *(*ne_ptr).formats.as_mut(),
-            c"hook",
-            c"%s".as_ptr(),
-            fmt_args![name],
-        );
+        format_add(&mut ne.formats, c"hook", c"%s".as_ptr(), fmt_args![name]);
         if !c.is_null() {
             format_add(
-                &mut *(*ne_ptr).formats.as_mut(),
+                &mut ne.formats,
                 c"hook_client",
                 c"%s".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name)],
+                fmt_args![(*c).name.as_deref()],
             );
         }
         if !s.is_null() {
             format_add(
-                &mut *(*ne_ptr).formats.as_mut(),
+                &mut ne.formats,
                 c"hook_session",
                 c"$%u".as_ptr(),
                 fmt_args![session_id(s)],
             );
             format_add(
-                &mut *(*ne_ptr).formats.as_mut(),
+                &mut ne.formats,
                 c"hook_session_name",
                 c"%s".as_ptr(),
                 fmt_args![session_name(s)],
@@ -328,41 +298,41 @@ unsafe fn notify_add(
         }
         if !w.is_null() {
             format_add(
-                &mut *(*ne_ptr).formats.as_mut(),
+                &mut ne.formats,
                 c"hook_window",
                 c"@%u".as_ptr(),
                 fmt_args![(*w).id],
             );
             format_add(
-                &mut *(*ne_ptr).formats.as_mut(),
+                &mut ne.formats,
                 c"hook_window_name",
                 c"%s".as_ptr(),
-                fmt_args![cstr_ptr(&(*w).name)],
+                fmt_args![(*w).name.as_deref()],
             );
         }
         if !wp.is_null() {
             format_add(
-                &mut *(*ne_ptr).formats.as_mut(),
+                &mut ne.formats,
                 c"hook_pane",
                 c"%%%d".as_ptr(),
                 fmt_args![(*wp).id],
             );
             format_add(
-                &mut *(*ne_ptr).formats.as_mut(),
+                &mut ne.formats,
                 c"hook_window",
                 c"@%u".as_ptr(),
                 fmt_args![(*(*wp).window).id],
             );
             format_add(
-                &mut *(*ne_ptr).formats.as_mut(),
+                &mut ne.formats,
                 c"hook_window_name",
                 c"%s".as_ptr(),
-                fmt_args![cstr_ptr(&(*(*wp).window).name)],
+                fmt_args![(*(*wp).window).name.as_deref()],
             );
         }
-        format_log_debug(&mut *(*ne_ptr).formats.as_mut(), c"notify_add");
+        format_log_debug(&mut ne.formats, c"notify_add");
 
-        cmd_find_copy_state(&mut (*ne_ptr).fs, &*fs);
+        cmd_find_copy_state(&mut ne.fs, fs);
 
         cmdq_append(
             null_mut::<client>(),
@@ -378,16 +348,12 @@ unsafe fn notify_add(
 /// Runs the hook `name` for the command `item` is running, without going
 /// through the queue: the entry lives on the stack and nothing takes a
 /// reference on it.
-pub unsafe fn notify_hook(item: *mut cmdq_item, name: *const c_char) {
+pub unsafe fn notify_hook(item: *mut cmdq_item, name: &CStr) {
     unsafe {
         let target = cmdq_get_target(item);
         let mut ne = notify_entry {
-            name: if name.is_null() {
-                None
-            } else {
-                Some(CStr::from_ptr(name).to_owned())
-            },
-            fs: empty_state(),
+            name: Some(name.to_owned()),
+            fs: cmd_find_state::default(),
             formats: format_create(null_mut(), null_mut(), 0, FORMAT_NOJOBS),
             client_ref: None,
             session_ref: None,
@@ -401,24 +367,24 @@ pub unsafe fn notify_hook(item: *mut cmdq_item, name: *const c_char) {
         };
         cmd_find_copy_state(&mut ne.fs, &*target);
         format_add(
-            &mut *ne.formats.as_mut(),
+            &mut ne.formats,
             c"hook",
             c"%s".as_ptr(),
-            fmt_args![name],
+            fmt_args![name.as_ptr()],
         );
-        format_log_debug(&mut *ne.formats.as_mut(), c"notify_hook");
-        notify_insert_hook(item, &raw mut ne);
+        format_log_debug(&mut ne.formats, c"notify_hook");
+        notify_insert_hook(item, &mut ne);
     }
 }
 
 /// Raises `name` against a client.
 pub unsafe fn notify_client(name: *const c_char, c: *mut client) {
     unsafe {
-        let mut fs = empty_state();
+        let mut fs = cmd_find_state::default();
         cmd_find_from_client(&mut fs, c, 0);
         notify_add(
             name,
-            &raw mut fs,
+            &fs,
             c,
             null_mut::<session>(),
             null_mut::<window>(),
@@ -432,7 +398,7 @@ pub unsafe fn notify_client(name: *const c_char, c: *mut client) {
 /// its own, so one is found from nothing.
 pub unsafe fn notify_session(name: *const c_char, s: *mut session) {
     unsafe {
-        let mut fs = empty_state();
+        let mut fs = cmd_find_state::default();
         if session_alive(s) != 0 {
             cmd_find_from_session(&mut fs, s, 0);
         } else {
@@ -440,7 +406,7 @@ pub unsafe fn notify_session(name: *const c_char, s: *mut session) {
         }
         notify_add(
             name,
-            &raw mut fs,
+            &fs,
             null_mut::<client>(),
             s,
             null_mut::<window>(),
@@ -453,11 +419,11 @@ pub unsafe fn notify_session(name: *const c_char, s: *mut session) {
 /// Raises `name` against a window in a session.
 pub unsafe fn notify_winlink(name: *const c_char, wl: *mut winlink) {
     unsafe {
-        let mut fs = empty_state();
+        let mut fs = cmd_find_state::default();
         cmd_find_from_winlink(&mut fs, wl, 0);
         notify_add(
             name,
-            &raw mut fs,
+            &fs,
             null_mut::<client>(),
             (*wl).session(),
             (*wl).window(),
@@ -470,11 +436,11 @@ pub unsafe fn notify_winlink(name: *const c_char, wl: *mut winlink) {
 /// Raises `name` against a window that a session no longer has to be showing.
 pub unsafe fn notify_session_window(name: *const c_char, s: *mut session, w: *mut window) {
     unsafe {
-        let mut fs = empty_state();
+        let mut fs = cmd_find_state::default();
         cmd_find_from_session_window(&mut fs, s, w, 0);
         notify_add(
             name,
-            &raw mut fs,
+            &fs,
             null_mut::<client>(),
             s,
             w,
@@ -487,11 +453,11 @@ pub unsafe fn notify_session_window(name: *const c_char, s: *mut session, w: *mu
 /// Raises `name` against a window.
 pub unsafe fn notify_window(name: *const c_char, w: *mut window) {
     unsafe {
-        let mut fs = empty_state();
+        let mut fs = cmd_find_state::default();
         cmd_find_from_window(&mut fs, w, 0);
         notify_add(
             name,
-            &raw mut fs,
+            &fs,
             null_mut::<client>(),
             null_mut::<session>(),
             w,
@@ -504,11 +470,11 @@ pub unsafe fn notify_window(name: *const c_char, w: *mut window) {
 /// Raises `name` against a pane.
 pub unsafe fn notify_pane(name: *const c_char, wp: *mut window_pane) {
     unsafe {
-        let mut fs = empty_state();
+        let mut fs = cmd_find_state::default();
         cmd_find_from_pane(&mut fs, wp, 0);
         notify_add(
             name,
-            &raw mut fs,
+            &fs,
             null_mut::<client>(),
             null_mut::<session>(),
             null_mut::<window>(),
@@ -521,7 +487,7 @@ pub unsafe fn notify_pane(name: *const c_char, wp: *mut window_pane) {
 /// Raises the paste-buffer notification for `pbname`, against no target at all.
 pub unsafe fn notify_paste_buffer(pbname: *const c_char, deleted: c_int) {
     unsafe {
-        let mut fs = empty_state();
+        let mut fs = cmd_find_state::default();
         cmd_find_clear_state(&mut fs, 0);
         let name = if deleted != 0 {
             c"paste-buffer-deleted"
@@ -530,7 +496,7 @@ pub unsafe fn notify_paste_buffer(pbname: *const c_char, deleted: c_int) {
         };
         notify_add(
             name.as_ptr(),
-            &raw mut fs,
+            &fs,
             null_mut::<client>(),
             null_mut::<session>(),
             null_mut::<window>(),

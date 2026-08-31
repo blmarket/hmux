@@ -122,6 +122,7 @@ pub const CMD_RETURN_STOP: cmd_retval = 2;
 pub const CMD_RETURN_WAIT: cmd_retval = 1;
 pub const CMD_RETURN_NORMAL: cmd_retval = 0;
 pub const CMD_RETURN_ERROR: cmd_retval = -1;
+#[derive(Default)]
 #[repr(C)]
 pub struct cmd_if_shell_data {
     pub cmd_if: Option<Box<args_command_state>>,
@@ -181,7 +182,7 @@ pub(crate) static cmd_if_shell_entry: cmd_entry = {
         exec: cmd_if_shell_exec,
     }
 };
-unsafe fn cmd_if_shell_args_parse(
+fn cmd_if_shell_args_parse(
     _args: &args,
     mut idx: u_int,
     _cause: &mut Option<CString>,
@@ -195,12 +196,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd_r
     unsafe {
         let args: &args = cmd_get_args(self_0);
         let mut target: *mut cmd_find_state = cmdq_get_target(item);
-        let mut cdata = Box::new(cmd_if_shell_data {
-            cmd_if: None,
-            cmd_else: None,
-            client_ref: None,
-            item: None,
-        });
+        let mut cdata = Box::<cmd_if_shell_data>::default();
         let mut tc: *mut client = cmdq_get_target_client(&*item);
         let mut s: *mut session = (*target).session();
         let mut cmdlist: Option<CmdListRef> = None;

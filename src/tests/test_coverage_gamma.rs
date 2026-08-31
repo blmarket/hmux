@@ -17,7 +17,7 @@ use crate::cfg::{
 use crate::cmd::cmd_rename_window::{CMD_RETURN_ERROR, CMD_RETURN_NORMAL, cmd_rename_window_entry};
 use crate::cmd::cmd_resize_window::{WINDOW_SIZE_MANUAL, cmd_resize_window_entry};
 use crate::fmt_args;
-use crate::options::{options_get_number, options_ptr};
+use crate::options::options_get_number;
 use crate::server::message_log;
 use crate::session::session_add_attached;
 use crate::tests::test_fixtures::{Item, Target, globals, seen};
@@ -294,7 +294,7 @@ fn rename_window_success_renames_and_clears_automatic_rename() {
         let w = t.window(0);
         // Default automatic-rename is on.
         assert_eq!(
-            options_get_number(options_ptr(&(*w).options), c"automatic-rename".as_ptr()),
+            options_get_number((*w).options_ptr(), c"automatic-rename".as_ptr()),
             1
         );
         let mut item = Item::new()
@@ -302,9 +302,9 @@ fn rename_window_success_renames_and_clears_automatic_rename() {
             .targeting(&mut t)
             .with_args(c"rename-window newname");
         assert_eq!(rename_via(&mut item), CMD_RETURN_NORMAL);
-        assert_eq!(seen(cstr_ptr(&(*w).name)), "newname");
+        assert_eq!((*w).name.as_deref(), Some(c"newname"));
         assert_eq!(
-            options_get_number(options_ptr(&(*w).options), c"automatic-rename".as_ptr()),
+            options_get_number((*w).options_ptr(), c"automatic-rename".as_ptr()),
             0
         );
     }
@@ -316,7 +316,7 @@ fn rename_window_invalid_name_is_refused_and_leaves_window_alone() {
     let mut t = Target::new(80, 24);
     unsafe {
         let w = t.window(0);
-        let before = seen(cstr_ptr(&(*w).name));
+        let before = (*w).name.clone();
         let mut item = Item::new()
             .from_file(FILE, 2)
             .targeting(&mut t)
@@ -330,7 +330,7 @@ fn rename_window_invalid_name_is_refused_and_leaves_window_alone() {
         }
         let rv = rename_via(&mut item);
         assert_eq!(rv, CMD_RETURN_ERROR);
-        assert_eq!(seen(cstr_ptr(&(*w).name)), before);
+        assert_eq!((*w).name, before);
         drain_cfg_causes();
     }
 }
@@ -346,7 +346,7 @@ fn rename_window_format_is_expanded_against_the_target() {
             .targeting(&mut t)
             .with_args(c"rename-window extra-name");
         assert_eq!(rename_via(&mut item), CMD_RETURN_NORMAL);
-        assert_eq!(seen(cstr_ptr(&(*w).name)), "extra-name");
+        assert_eq!((*w).name.as_deref(), Some(c"extra-name"));
     }
 }
 
@@ -356,15 +356,15 @@ fn rename_window_nul_byte_is_rejected_as_invalid() {
     let mut t = Target::new(80, 24);
     unsafe {
         let w = t.window(0);
-        let before = seen(cstr_ptr(&(*w).name));
+        let before = (*w).name.clone();
         let mut item = Item::new()
             .from_file(FILE, 4)
             .targeting(&mut t)
             .with_args(c"rename-window another-name");
         let rv = rename_via(&mut item);
         assert_eq!(rv, CMD_RETURN_NORMAL);
-        assert_eq!(seen(cstr_ptr(&(*w).name)), "another-name");
-        assert_ne!(seen(cstr_ptr(&(*w).name)), before);
+        assert_eq!((*w).name.as_deref(), Some(c"another-name"));
+        assert_ne!((*w).name, before);
     }
 }
 
@@ -449,7 +449,7 @@ fn resize_window_no_args_uses_adjust_one_and_keeps_size() {
         assert_eq!((*w).manual_sx, before_sx);
         assert_eq!((*w).manual_sy, before_sy);
         assert_eq!(
-            options_get_number(options_ptr(&(*w).options), c"window-size".as_ptr()),
+            options_get_number((*w).options_ptr(), c"window-size".as_ptr()),
             WINDOW_SIZE_MANUAL as i64
         );
     }
@@ -635,7 +635,7 @@ fn resize_window_A_and_a_select_largest_and_smallest() {
             .with_args(c"resize-window -a");
         assert_eq!(resize_via(&mut item_a), CMD_RETURN_NORMAL);
         assert_eq!(
-            options_get_number(options_ptr(&(*w).options), c"window-size".as_ptr()),
+            options_get_number((*w).options_ptr(), c"window-size".as_ptr()),
             WINDOW_SIZE_MANUAL as i64
         );
         let mut item_A = Item::new()
@@ -643,7 +643,7 @@ fn resize_window_A_and_a_select_largest_and_smallest() {
             .with_args(c"resize-window -A");
         assert_eq!(resize_via(&mut item_A), CMD_RETURN_NORMAL);
         assert_eq!(
-            options_get_number(options_ptr(&(*w).options), c"window-size".as_ptr()),
+            options_get_number((*w).options_ptr(), c"window-size".as_ptr()),
             WINDOW_SIZE_MANUAL as i64
         );
     }

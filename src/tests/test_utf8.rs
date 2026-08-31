@@ -77,33 +77,29 @@ unsafe fn taken(p: *mut c_char) -> Vec<u8> {
 
 #[test]
 fn only_a_lead_byte_opens_a_character() {
-    unsafe {
-        let mut ud = utf8_data::default();
-        assert_eq!(utf8_open(&mut ud, b'A'), UTF8_ERROR);
-        assert_eq!(utf8_open(&mut ud, 0x80), UTF8_ERROR);
-        assert_eq!(utf8_open(&mut ud, 0xc1), UTF8_ERROR);
-        assert_eq!(utf8_open(&mut ud, 0xf5), UTF8_ERROR);
-        assert_eq!(utf8_open(&mut ud, 0xff), UTF8_ERROR);
-    }
+    let mut ud = utf8_data::default();
+    assert_eq!(utf8_open(&mut ud, b'A'), UTF8_ERROR);
+    assert_eq!(utf8_open(&mut ud, 0x80), UTF8_ERROR);
+    assert_eq!(utf8_open(&mut ud, 0xc1), UTF8_ERROR);
+    assert_eq!(utf8_open(&mut ud, 0xf5), UTF8_ERROR);
+    assert_eq!(utf8_open(&mut ud, 0xff), UTF8_ERROR);
 }
 
 #[test]
 fn a_lead_byte_says_how_many_bytes_are_still_to_come() {
-    unsafe {
-        for (lead, size) in [
-            (0xc2u8, 2 as u_char),
-            (0xdf, 2),
-            (0xe0, 3),
-            (0xef, 3),
-            (0xf0, 4),
-            (0xf4, 4),
-        ] {
-            let mut ud = utf8_data::default();
-            assert_eq!(utf8_open(&mut ud, lead), UTF8_MORE);
-            assert_eq!(ud.size, size);
-            assert_eq!(ud.have, 1);
-            assert_eq!(ud.data[0], lead);
-        }
+    for (lead, size) in [
+        (0xc2u8, 2 as u_char),
+        (0xdf, 2),
+        (0xe0, 3),
+        (0xef, 3),
+        (0xf0, 4),
+        (0xf4, 4),
+    ] {
+        let mut ud = utf8_data::default();
+        assert_eq!(utf8_open(&mut ud, lead), UTF8_MORE);
+        assert_eq!(ud.size, size);
+        assert_eq!(ud.have, 1);
+        assert_eq!(ud.data[0], lead);
     }
 }
 
@@ -165,9 +161,8 @@ fn the_width_is_not_worked_out_while_the_cache_is_being_filled() {
 fn a_character_and_its_codepoint_convert_both_ways() {
     let _guard = exclusive();
     unsafe {
-        let mut wc: wchar_t = 0;
         let ud = filled("é".as_bytes(), 1);
-        assert_eq!(utf8_towc(&ud, &raw mut wc), UTF8_DONE);
+        let wc = utf8_towc(&ud).expect("é is a codepoint");
         assert_eq!(wc, 0xe9);
 
         let mut back = utf8_data::default();
@@ -181,16 +176,14 @@ fn a_character_and_its_codepoint_convert_both_ways() {
 fn a_character_that_is_not_utf8_has_no_codepoint() {
     let _guard = exclusive();
     unsafe {
-        let mut wc: wchar_t = 0;
         let ud = filled(b"\xff\xfe", 1);
-        assert_eq!(utf8_towc(&ud, &raw mut wc), UTF8_ERROR);
+        assert_eq!(utf8_towc(&ud), None);
 
         let nul = utf8_data {
             size: 1,
             ..utf8_data::default()
         };
-        assert_eq!(utf8_towc(&nul, &raw mut wc), UTF8_DONE);
-        assert_eq!(wc, 0);
+        assert_eq!(utf8_towc(&nul), Some(0));
     }
 }
 
@@ -245,16 +238,16 @@ fn a_width_given_again_takes_the_place_of_the_one_before_it() {
 fn the_width_cache_takes_codepoints_and_ranges_of_them() {
     let _guard = exclusive();
     unsafe {
-        utf8_add_to_width_cache(c"U+41=2".as_ptr());
+        utf8_add_to_width_cache(c"U+41=2");
         assert_eq!(utf8_find_in_width_cache(0x41).unwrap(), 2);
 
-        utf8_add_to_width_cache(c"U+61-U+63=0".as_ptr());
+        utf8_add_to_width_cache(c"U+61-U+63=0");
         for wc in 0x61..=0x63 {
             assert_eq!(utf8_find_in_width_cache(wc).unwrap(), 0);
         }
         assert!(utf8_find_in_width_cache(0x64).is_none());
 
-        utf8_add_to_width_cache(c"\xc3\xa9=2".as_ptr());
+        utf8_add_to_width_cache(c"\xc3\xa9=2");
         assert_eq!(utf8_find_in_width_cache(0xe9).unwrap(), 2);
     }
 }
@@ -280,7 +273,7 @@ fn the_width_cache_turns_down_what_it_cannot_read() {
             c"ab=1",
             c"\xed\xa0\x80=1",
         ] {
-            utf8_add_to_width_cache(spec.as_ptr());
+            utf8_add_to_width_cache(spec);
             assert!(
                 utf8_width_cache.map().is_empty(),
                 "{spec:?} went into the cache"
@@ -423,29 +416,25 @@ fn the_last_index_is_where_the_trees_stop_taking_characters() {
 
 #[test]
 fn one_byte_makes_its_own_character() {
-    unsafe {
-        assert_eq!(utf8_build_one(b'A'), 0x41000041);
-        let mut ud = utf8_data::default();
-        ud.data[5] = b'x';
-        utf8_set(&mut ud, b'A');
-        assert_eq!((ud.have, ud.size, ud.width), (1, 1, 1));
-        assert_eq!(ud.data[0], b'A');
-        assert_eq!(ud.data[5], 0);
-    }
+    assert_eq!(utf8_build_one(b'A'), 0x41000041);
+    let mut ud = utf8_data::default();
+    ud.data[5] = b'x';
+    utf8_set(&mut ud, b'A');
+    assert_eq!((ud.have, ud.size, ud.width), (1, 1, 1));
+    assert_eq!(ud.data[0], b'A');
+    assert_eq!(ud.data[5], 0);
 }
 
 #[test]
 fn copying_a_character_clears_what_is_past_its_end() {
-    unsafe {
-        let from = filled(b"\xc3\xa9", 1);
-        let mut to = utf8_data {
-            data: [b'x'; 32],
-            ..utf8_data::default()
-        };
-        utf8_copy(&mut to, &from);
-        assert_eq!(to.data, from.data);
-        assert_eq!((to.have, to.size, to.width), (2, 2, 1));
-    }
+    let from = filled(b"\xc3\xa9", 1);
+    let mut to = utf8_data {
+        data: [b'x'; 32],
+        ..utf8_data::default()
+    };
+    utf8_copy(&mut to, &from);
+    assert_eq!(to.data, from.data);
+    assert_eq!((to.have, to.size, to.width), (2, 2, 1));
 }
 
 #[test]
@@ -590,11 +579,9 @@ fn a_dollar_is_escaped_inside_double_quotes_when_it_would_expand() {
 #[test]
 fn the_visible_form_is_allocated_to_fit() {
     let _guard = exclusive();
-    unsafe {
-        let dst = utf8_stravis(c"a\xff".as_ptr(), VIS_OCTAL);
-        assert_eq!(dst.as_bytes(), b"a\\377");
+    let dst = utf8_stravis(c"a\xff", VIS_OCTAL);
+    assert_eq!(dst.as_bytes(), b"a\\377");
 
-        let dst = utf8_stravisx(c"ab".as_ptr(), 1 as size_t, VIS_OCTAL);
-        assert_eq!(dst.as_bytes(), b"a");
-    }
+    let dst = utf8_stravisx(b"a", VIS_OCTAL);
+    assert_eq!(dst.as_bytes(), b"a");
 }

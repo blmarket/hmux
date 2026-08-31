@@ -156,55 +156,52 @@ pub fn server_acl_user_allow(uid: uid_t) {
 pub fn server_acl_user_deny(uid: uid_t) {
     server_acl_entries.map().remove(&uid);
 }
-pub fn server_acl_user_allow_write(mut uid: uid_t) {
-    unsafe {
-        let mut user: *mut server_acl_user = ::core::ptr::null_mut::<server_acl_user>();
-        user = server_acl_user_find(uid);
-        if user.is_null() {
-            return;
+/// Turns the read-only bit on or off for `uid`, both on its entry and on the
+/// clients that entry has already let in, or does nothing when the server
+/// holds no entry for `uid`.
+fn server_acl_set_readonly(uid: uid_t, readonly: bool) {
+    match server_acl_entries.map().get_mut(&uid) {
+        None => return,
+        Some(user) => {
+            if readonly {
+                user.flags |= SERVER_ACL_READONLY;
+            } else {
+                user.flags &= !SERVER_ACL_READONLY;
+            }
         }
-        (*user).flags &= !SERVER_ACL_READONLY;
-        for c in client_walk() {
-            uid = proc_get_peer_uid(peer_ptr(&(*c).peer));
-            if uid != -(1 as ::core::ffi::c_int) as uid_t && uid == (*user).uid {
+    }
+    for c in client_walk() {
+        unsafe {
+            let peer = proc_get_peer_uid(peer_ptr(&(*c).peer));
+            if peer == -(1 as ::core::ffi::c_int) as uid_t || peer != uid {
+                continue;
+            }
+            if readonly {
+                (*c).flags |= CLIENT_READONLY as uint64_t;
+            } else {
                 (*c).flags &= !CLIENT_READONLY as uint64_t;
             }
         }
     }
 }
-pub fn server_acl_user_deny_write(mut uid: uid_t) {
-    unsafe {
-        let mut user: *mut server_acl_user = ::core::ptr::null_mut::<server_acl_user>();
-        user = server_acl_user_find(uid);
-        if user.is_null() {
-            return;
-        }
-        (*user).flags |= SERVER_ACL_READONLY;
-        for c in client_walk() {
-            uid = proc_get_peer_uid(peer_ptr(&(*c).peer));
-            if uid != -(1 as ::core::ffi::c_int) as uid_t && uid == (*user).uid {
-                (*c).flags |= CLIENT_READONLY as uint64_t;
-            }
-        }
-    }
+pub fn server_acl_user_allow_write(uid: uid_t) {
+    server_acl_set_readonly(uid, false);
 }
-pub unsafe fn server_acl_join(mut c: *mut client) -> ::core::ffi::c_int {
-    unsafe {
-        let mut user: *mut server_acl_user = ::core::ptr::null_mut::<server_acl_user>();
-        let mut uid: uid_t = 0;
-        uid = proc_get_peer_uid(peer_ptr(&(*c).peer));
-        if uid == -(1 as ::core::ffi::c_int) as uid_t {
-            return 0 as ::core::ffi::c_int;
-        }
-        user = server_acl_user_find(uid);
-        if user.is_null() {
-            return 0 as ::core::ffi::c_int;
-        }
-        if (*user).flags & SERVER_ACL_READONLY != 0 {
-            (*c).flags |= CLIENT_READONLY as uint64_t;
-        }
-        1 as ::core::ffi::c_int
+pub fn server_acl_user_deny_write(uid: uid_t) {
+    server_acl_set_readonly(uid, true);
+}
+pub unsafe fn server_acl_join(c: *mut client) -> ::core::ffi::c_int {
+    let uid = unsafe { proc_get_peer_uid(peer_ptr(&(*c).peer)) };
+    if uid == -(1 as ::core::ffi::c_int) as uid_t {
+        return 0 as ::core::ffi::c_int;
     }
+    let Some(user) = server_acl_entries.map().get(&uid) else {
+        return 0 as ::core::ffi::c_int;
+    };
+    if user.flags & SERVER_ACL_READONLY != 0 {
+        unsafe { (*c).flags |= CLIENT_READONLY as uint64_t };
+    }
+    1 as ::core::ffi::c_int
 }
 pub unsafe fn server_acl_get_uid(mut user: *mut server_acl_user) -> uid_t {
     unsafe { (*user).uid }

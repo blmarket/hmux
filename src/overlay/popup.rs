@@ -18,9 +18,7 @@ use crate::job::{
 use crate::layout::{layout_assign_pane, layout_split_pane};
 use crate::log::fatalx;
 use crate::modes::window_buffer_editdata;
-use crate::options::{
-    options_get_number, options_get_string, options_load_pane_colours, options_ptr,
-};
+use crate::options::{options_get_number, options_get_string, options_load_pane_colours};
 use crate::paste::{paste_buffer_data, paste_get_top};
 use crate::screen::{
     screen_free, screen_init, screen_resize, screen_set_default_cursor, screen_set_title,
@@ -2194,10 +2192,8 @@ pub const TOP: popup_border = 3;
 pub const RIGHT: popup_border = 2;
 pub const LEFT: popup_border = 1;
 pub const SIGHUP: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
-    unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };
-pub const _PATH_TMP: [::core::ffi::c_char; 6] =
-    unsafe { ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"/tmp/\0") };
+pub const _PATH_BSHELL: &CStr = c"/bin/sh";
+pub const _PATH_TMP: &CStr = c"/tmp/";
 pub const KEYC_CTRL: ::core::ffi::c_ulonglong = 0x200000000000 as ::core::ffi::c_ulonglong;
 pub const KEYC_MASK_TYPE: ::core::ffi::c_ulonglong = 0xff00000000 as ::core::ffi::c_ulonglong;
 pub const KEYC_MASK_KEY: ::core::ffi::c_ulonglong = 0xffffffffff as ::core::ffi::c_ulonglong;
@@ -2383,7 +2379,7 @@ unsafe fn popup_reapply_styles(mut pd: *mut popup_data) {
         if s.is_null() {
             return;
         }
-        o = options_ptr(&(*(*session_get_curw(s)).window()).options);
+        o = (*(*session_get_curw(s)).window()).options_ptr();
         let mut ft = format_create_defaults(
             ::core::ptr::null_mut::<cmdq_item>(),
             c,
@@ -2802,7 +2798,7 @@ unsafe fn popup_menu_done(
         server_redraw_client((*pd).client());
         match key {
             112 => {
-                pb = paste_get_top(::core::ptr::null_mut());
+                pb = paste_get_top(None);
                 if !pb.is_null() {
                     let bytes = paste_buffer_data(&*pb);
                     job_get_event((*pd).job()).write(bytes.as_ptr(), bytes.len());
@@ -3313,9 +3309,9 @@ pub unsafe fn popup_display(
         let mut o: *mut options = ::core::ptr::null_mut::<options>();
         let mut sytmp = style_default;
         if !s.is_null() {
-            o = options_ptr(&(*(*session_get_curw(s)).window()).options);
+            o = (*(*session_get_curw(s)).window()).options_ptr();
         } else {
-            o = options_ptr(&(*(*session_get_curw((*c).session)).window()).options);
+            o = (*(*session_get_curw((*c).session)).window()).options_ptr();
         }
         if lines as ::core::ffi::c_int == BOX_LINES_DEFAULT as ::core::ffi::c_int {
             lines = options_get_number(o, c"popup-border-lines".as_ptr()) as box_lines;
@@ -3337,57 +3333,15 @@ pub unsafe fn popup_display(
             return -(1 as ::core::ffi::c_int);
         }
         let pd_box: PopupDataRef = PopupDataRef::new(popup_data {
-            owner: None,
-            client_ref: None,
-            item: None,
-            flags: 0,
-            title: None,
-            style: None,
-            border_style: None,
             border_cell: grid_default_cell,
             border_lines: BOX_LINES_NONE,
-            s: screen::default(),
             defaults: grid_default_cell,
             palette: colour_palette {
                 fg: 8,
                 bg: 8,
-                palette: None,
-                default_palette: None,
+                ..colour_palette::default()
             },
-            r: visible_ranges {
-                ranges: Vec::new(),
-                used: 0,
-            },
-            or: [
-                visible_ranges {
-                    ranges: Vec::new(),
-                    used: 0,
-                },
-                visible_ranges {
-                    ranges: Vec::new(),
-                    used: 0,
-                },
-            ],
-            job_id: None,
-            ictx: None,
-            status: 0,
-            close_cb: None,
-            md: None,
-            close: 0,
-            px: 0,
-            py: 0,
-            sx: 0,
-            sy: 0,
-            ppx: 0,
-            ppy: 0,
-            psx: 0,
-            psy: 0,
-            dragging: OFF,
-            dx: 0,
-            dy: 0,
-            lx: 0,
-            ly: 0,
-            lb: 0,
+            ..popup_data::default()
         });
         let pd = pd_box.as_ptr();
         (*pd).item = cmdq_item_weak_from_ptr(item);
@@ -3458,7 +3412,7 @@ pub unsafe fn popup_display(
                 Stream::NONE,
             ));
         } else {
-            (*pd).job_id = job_id(job_run(
+            let job = job_run(
                 shellcmd,
                 argv,
                 env,
@@ -3471,7 +3425,8 @@ pub unsafe fn popup_display(
                 JOB_NOWAIT | JOB_PTY | JOB_KEEPWRITE | JOB_DEFAULTSHELL,
                 jx as ::core::ffi::c_int,
                 jy as ::core::ffi::c_int,
-            ));
+            );
+            (*pd).job_id = job_id(job.as_ref());
             if (*pd).job().is_null() {
                 popup_free_resources(pd_box);
                 return -(1 as ::core::ffi::c_int);

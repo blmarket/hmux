@@ -1,54 +1,23 @@
 use super::*;
 use hmux_rt::TaskRuntime;
-use std::ffi::c_void;
 use std::io::Write as _;
 use std::os::fd::AsRawFd as _;
 use std::os::unix::net::UnixStream;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// The libevent flag a timer callback was handed, which the registry no
-/// longer passes on and these callbacks ignore.
-const EV_TIMEOUT: c_short = 0x1;
-
-unsafe fn count_timer(_fd: c_int, _events: c_short, argument: *mut c_void) {
-    unsafe {
-        (&*argument.cast::<AtomicUsize>()).fetch_add(1, Ordering::SeqCst);
-    }
-}
-
-unsafe fn count_io(_fd: c_int, _events: c_short, argument: *mut c_void) {
-    unsafe {
-        (&*argument.cast::<AtomicUsize>()).fetch_add(1, Ordering::SeqCst);
-    }
-}
-
-unsafe fn read_one(fd: c_int, _events: c_short, argument: *mut c_void) {
+fn read_one(fd: c_int, calls: &AtomicUsize) {
     unsafe {
         let mut byte = 0;
         assert_eq!(libc::read(fd, (&raw mut byte).cast(), 1), 1);
-        (&*argument.cast::<AtomicUsize>()).fetch_add(1, Ordering::SeqCst);
     }
+    calls.fetch_add(1, Ordering::SeqCst);
 }
 
 struct DisableContext {
     control: RuntimeControl,
     id: std::cell::Cell<usize>,
     calls: AtomicUsize,
-}
-
-unsafe fn disable_from_callback(_fd: c_int, _events: c_short, argument: *mut c_void) {
-    unsafe {
-        let context = &*argument.cast::<DisableContext>();
-        if context.calls.fetch_add(1, Ordering::SeqCst) == 0 {
-            context.control.disable_io(context.id.get());
-        }
-    }
-}
-
-unsafe fn count_signal(_signo: c_int, _events: c_short, argument: *mut c_void) {
-    unsafe {
-        (&*argument.cast::<AtomicUsize>()).fetch_add(1, Ordering::SeqCst);
-    }
 }
 
 fn drive(runtime: &mut TaskRuntime) {
@@ -58,36 +27,15 @@ fn drive(runtime: &mut TaskRuntime) {
 }
 
 #[test]
-fn timer_fires_once_and_can_be_rearmed() {
-    let mut runtime = TaskRuntime::new().expect("runtime");
-    let control = RuntimeControl::new();
-    control.set_task_handle(runtime.handle());
-    let calls = AtomicUsize::new(0);
-    let argument = (&calls as *const AtomicUsize).cast_mut().cast::<c_void>();
-    let id = control.allocate_timer(move || unsafe {
-        count_timer(-1, EV_TIMEOUT, argument);
-    });
-
-    control.arm_timer(id, timeval::from_secs(0));
-    drive(&mut runtime);
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
-    assert!(!control.is_timer_armed(id));
-
-    control.arm_timer(id, timeval::from_secs(0));
-    drive(&mut runtime);
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
-}
-
-#[test]
 fn disarming_a_timer_cancels_its_pending_task() {
     let mut runtime = TaskRuntime::new().expect("runtime");
     let control = RuntimeControl::new();
     let handle = runtime.handle();
     control.set_task_handle(handle.clone());
-    let calls = AtomicUsize::new(0);
-    let argument = (&calls as *const AtomicUsize).cast_mut().cast::<c_void>();
-    let id = control.allocate_timer(move || unsafe {
-        count_timer(-1, EV_TIMEOUT, argument);
+    let calls = Rc::new(AtomicUsize::new(0));
+    let callback_calls = Rc::clone(&calls);
+    let id = control.allocate_timer(move || {
+        callback_calls.fetch_add(1, Ordering::SeqCst);
     });
 
     control.arm_timer(id, timeval::from_secs(60));
@@ -125,10 +73,12 @@ fn one_shot_io_disables_before_reentrant_callback_work() {
     let (source, mut peer) = UnixStream::pair().expect("socket pair");
     source.set_nonblocking(true).expect("nonblocking source");
     peer.set_nonblocking(true).expect("nonblocking peer");
-    let calls = AtomicUsize::new(0);
+    let calls = Rc::new(AtomicUsize::new(0));
+    let callback_calls = Rc::clone(&calls);
     let id = control.allocate_io(source.as_raw_fd(), Interest::Read, WatchMode::Once, {
-        let argument = (&calls as *const AtomicUsize).cast_mut().cast::<c_void>();
-        move |fd, events| unsafe { count_io(fd, events, argument) }
+        move |_fd, _events| {
+            callback_calls.fetch_add(1, Ordering::SeqCst);
+        }
     });
     control.enable_io(id);
     drive(&mut runtime);
@@ -141,31 +91,6 @@ fn one_shot_io_disables_before_reentrant_callback_work() {
 }
 
 #[test]
-fn persistent_io_rearms_after_a_callback_consumes_part_of_the_input() {
-    let mut runtime = TaskRuntime::new().expect("runtime");
-    let control = RuntimeControl::new();
-    control.set_task_handle(runtime.handle());
-    let (source, mut peer) = UnixStream::pair().expect("socket pair");
-    source.set_nonblocking(true).expect("nonblocking source");
-    peer.set_nonblocking(true).expect("nonblocking peer");
-    let calls = AtomicUsize::new(0);
-    let id = control.allocate_io(source.as_raw_fd(), Interest::Read, WatchMode::Persistent, {
-        let argument = (&calls as *const AtomicUsize).cast_mut().cast::<c_void>();
-        move |fd, events| unsafe { read_one(fd, events, argument) }
-    });
-    control.enable_io(id);
-    drive(&mut runtime);
-
-    peer.write_all(b"a").expect("first byte");
-    drive(&mut runtime);
-    peer.write_all(b"b").expect("second byte");
-    drive(&mut runtime);
-
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
-    control.disable_io(id);
-}
-
-#[test]
 fn persistent_io_can_disable_itself_without_a_second_callback() {
     let mut runtime = TaskRuntime::new().expect("runtime");
     let control = RuntimeControl::new();
@@ -173,16 +98,22 @@ fn persistent_io_can_disable_itself_without_a_second_callback() {
     let (source, mut peer) = UnixStream::pair().expect("socket pair");
     source.set_nonblocking(true).expect("nonblocking source");
     peer.set_nonblocking(true).expect("nonblocking peer");
-    let context = DisableContext {
+    let context = Rc::new(DisableContext {
         control: control.clone(),
         id: std::cell::Cell::new(0),
         calls: AtomicUsize::new(0),
-    };
+    });
+    let callback_context = Rc::downgrade(&context);
     let id = control.allocate_io(source.as_raw_fd(), Interest::Read, WatchMode::Persistent, {
-        let argument = (&context as *const DisableContext)
-            .cast_mut()
-            .cast::<c_void>();
-        move |fd, events| unsafe { disable_from_callback(fd, events, argument) }
+        move |_fd, _events| {
+            if let Some(callback_context) = callback_context.upgrade() {
+                if callback_context.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    callback_context
+                        .control
+                        .disable_io(callback_context.id.get());
+                }
+            }
+        }
     });
     context.id.set(id);
     control.enable_io(id);
@@ -196,41 +127,18 @@ fn persistent_io_can_disable_itself_without_a_second_callback() {
 }
 
 #[test]
-fn signal_watch_delivers_and_unwatch_is_immediate() {
-    let mut runtime = TaskRuntime::new().expect("runtime");
-    let control = RuntimeControl::new();
-    control.set_task_handle(runtime.handle());
-    let signal = libc::SIGRTMIN() + 7;
-    let calls = AtomicUsize::new(0);
-    let id = control.watch_signal(signal, {
-        let argument = (&calls as *const AtomicUsize).cast_mut().cast::<c_void>();
-        move |signo, events| unsafe { count_signal(signo, events, argument) }
-    });
-    drive(&mut runtime);
-
-    assert_eq!(unsafe { libc::raise(signal) }, 0);
-    drive(&mut runtime);
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
-
-    control.unwatch_signal(id);
-    assert_eq!(unsafe { libc::raise(signal) }, 0);
-    drive(&mut runtime);
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
-}
-
-#[test]
 fn setting_a_timer_again_retires_the_previous_slot() {
     let mut runtime = TaskRuntime::new().expect("runtime");
     let control = current_control();
     control.set_task_handle(runtime.handle());
     let before = control.slot_counts().0;
-    let calls = AtomicUsize::new(0);
-    let argument = (&calls as *const AtomicUsize).cast_mut().cast::<c_void>();
+    let calls = Rc::new(AtomicUsize::new(0));
 
     let mut timer = TimerHandle::ZERO;
     for _ in 0..8 {
-        timer.set_callback(move || unsafe {
-            count_timer(-1, EV_TIMEOUT, argument);
+        let callback_calls = Rc::clone(&calls);
+        timer.set_callback(move || {
+            callback_calls.fetch_add(1, Ordering::SeqCst);
         });
         timer.disarm();
     }
@@ -251,17 +159,17 @@ fn setting_a_watch_again_retires_the_previous_slot() {
     control.set_task_handle(runtime.handle());
     let before = control.slot_counts().1;
     let (left, mut right) = UnixStream::pair().expect("pair");
-    let calls = AtomicUsize::new(0);
-    let argument = (&calls as *const AtomicUsize).cast_mut().cast::<c_void>();
+    let calls = Rc::new(AtomicUsize::new(0));
 
     let mut watch = IoHandle::ZERO;
     for _ in 0..8 {
+        let callback_calls = Rc::clone(&calls);
         watch.disable();
         watch.set_callback(
             left.as_raw_fd(),
             Interest::Read,
             WatchMode::Once,
-            move |fd, events| unsafe { read_one(fd, events, argument) },
+            move |fd, _events| read_one(fd, &callback_calls),
         );
         watch.enable();
     }
@@ -282,13 +190,13 @@ fn watching_a_signal_again_retires_the_previous_slot() {
     control.set_task_handle(runtime.handle());
     let before = control.slot_counts().2;
     let signal = libc::SIGRTMIN() + 8;
-    let calls = AtomicUsize::new(0);
-    let argument = (&calls as *const AtomicUsize).cast_mut().cast::<c_void>();
+    let calls = Rc::new(AtomicUsize::new(0));
 
     let mut watch = SignalHandle::ZERO;
     for _ in 0..8 {
-        watch.set_callback(signal, move |signo, events| unsafe {
-            count_signal(signo, events, argument)
+        let callback_calls = Rc::clone(&calls);
+        watch.set_callback(signal, move |_signo, _events| {
+            callback_calls.fetch_add(1, Ordering::SeqCst);
         });
     }
     assert_eq!(control.slot_counts().2, before + 1);

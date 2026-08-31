@@ -11,7 +11,7 @@
 //! Coverage exemptions: none. The enumeration and message-protocol constants
 //! below are not this module's own, but the tests pin their values through
 //! it, so they stay where the transpiler put them.
-use crate::arguments::{args_get, args_has};
+use crate::arguments::{args_get, args_get_str, args_has};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
 use crate::fmt_args;
@@ -169,8 +169,8 @@ pub(crate) static cmd_list_sessions_entry: cmd_entry = cmd_entry {
 };
 
 /// The text behind an option, as nothing when the option was not given.
-unsafe fn option(args: &args, flag: u8) -> Option<&'static CStr> {
-    let s = unsafe { args_get(args, flag) };
+unsafe fn option(args: &args, flag: u8) -> Option<&CStr> {
+    let s = args_get(args, flag);
     if s.is_null() {
         None
     } else {
@@ -208,9 +208,8 @@ unsafe fn cmd_list_sessions_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retv
         let filter = option(args, b'f');
 
         let mut sort_crit = sort_criteria_t {
-            order: sort_order_from_string(args_get(args, b'O')),
-            reversed: 0,
-            order_seq: None,
+            order: sort_order_from_string(args_get_str(args, b'O')),
+            ..Default::default()
         };
         if sort_crit.order == SORT_END && args_has(args, b'O') != 0 {
             cmdq_error(item, c"invalid sort order".as_ptr(), fmt_args![]);

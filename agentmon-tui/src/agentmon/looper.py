@@ -1,9 +1,12 @@
 """Headless loop runner: re-run one prompt for as long as pacing allows.
 
-`looper` is started from a pane inside hmux, usually as `cat prompt | looper`.
-It splits its own window and hands the bottom half to a coding agent, then
-repeats one cycle: wait until quota pacing allows a run, start the agent on the
-prompt, end the run once the agent goes idle, and commit whatever it changed.
+`looper` is started from a pane inside hmux, either as `looper prompt.md` or as
+`cat prompt.md | looper`. It splits its own window and hands the bottom half to
+a coding agent, then repeats one cycle: wait until quota pacing allows a run,
+start the agent on the prompt, end the run once the agent goes idle, and commit
+whatever it changed. A named prompt file is read again at the start of every
+run, so a prompt the agent rewrites takes effect on the next one; a piped
+prompt is fixed for the life of the loop.
 
 `--preset` picks which agent runs, with its model and effort; the presets are
 named in `PRESETS`.
@@ -352,7 +355,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="looper",
         description="Re-run one prompt in a split hmux pane while quota pacing allows.",
-        epilog="The prompt is read from standard input: cat prompt.md | looper",
+        epilog="The prompt comes from PROMPT, or from standard input when no "
+               "file is named: cat prompt.md | looper",
+    )
+    parser.add_argument(
+        "prompt_file",
+        nargs="?",
+        metavar="PROMPT",
+        help="file holding the prompt, re-read before every run "
+             "(default: standard input)",
     )
     parser.add_argument("--socket", help="hmux socket path (otherwise auto-detected)")
     parser.add_argument("--tmux", default="tmux", help="tmux-compatible client")
@@ -397,10 +408,25 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
 
-    prompt = "" if sys.stdin.isatty() else sys.stdin.read()
+    # A named file is handed to the agent as it is, so every run picks up the
+    # prompt as it stands then; standard input can only be read the once.
+    prompt_file = Path(args.prompt_file).expanduser() if args.prompt_file else None
+    if prompt_file is not None:
+        try:
+            prompt = prompt_file.read_text(encoding="utf-8")
+        except OSError as exc:
+            print(f"looper: cannot read {prompt_file}: {exc}", file=sys.stderr)
+            return 2
+    else:
+        prompt = "" if sys.stdin.isatty() else sys.stdin.read()
     if not prompt.strip():
+        where = (
+            f"{prompt_file} is empty"
+            if prompt_file is not None
+            else "no prompt on standard input"
+        )
         print(
-            "looper: no prompt on standard input; try `cat prompt.md | looper`",
+            f"looper: {where}; try `looper prompt.md` or `cat prompt.md | looper`",
             file=sys.stderr,
         )
         return 2
@@ -437,11 +463,16 @@ def main(argv: list[str] | None = None) -> int:
         devshell=args.devshell,
         ignore_pacing=args.force,
     )
-    # The prompt is kept outside the worktree so auto-commit never picks it up.
-    directory = Path(tempfile.mkdtemp(prefix="looper-"))
+    # A piped prompt is spooled outside the worktree so auto-commit never picks
+    # it up; a named one stays where the user put it, changes and all.
+    directory: Path | None = None
     try:
-        instruction_file = directory / "prompt.md"
-        instruction_file.write_text(prompt, encoding="utf-8")
+        if prompt_file is not None:
+            instruction_file = prompt_file.resolve()
+        else:
+            directory = Path(tempfile.mkdtemp(prefix="looper-"))
+            instruction_file = directory / "prompt.md"
+            instruction_file.write_text(prompt, encoding="utf-8")
         looper = Looper(
             context.service(),
             worktree=context.repository.root,
@@ -452,6 +483,8 @@ def main(argv: list[str] | None = None) -> int:
         looper.log(
             f"looping in {context.repository.root} on {context.repository.branch}"
         )
+        if prompt_file is not None:
+            looper.log(f"prompt: {instruction_file} (re-read before every run)")
         return looper.run()
     except KeyboardInterrupt:
         print("\nlooper: stopped; any running agent pane was left alone")
@@ -460,7 +493,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"looper: {exc}", file=sys.stderr)
         return 1
     finally:
-        shutil.rmtree(directory, ignore_errors=True)
+        if directory is not None:
+            shutil.rmtree(directory, ignore_errors=True)
 
 
 if __name__ == "__main__":  # pragma: no cover

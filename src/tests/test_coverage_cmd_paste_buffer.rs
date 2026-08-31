@@ -34,7 +34,7 @@ use crate::tests::test_fixtures::{Item, Paste, StreamBuffer, Target, globals};
 use crate::types::*;
 use crate::window::PANE_EXITED;
 use ::core::ffi::{CStr, c_char};
-use ::core::ptr::{null, null_mut};
+use ::core::ptr::null;
 
 /// Where the tests' items claim to come from, which is what `cmdq_error`
 /// reports them under.
@@ -89,7 +89,7 @@ unsafe fn add_automatic(data: &str) {
 /// The bytes of the newest automatic buffer, which `paste_get_top` answers.
 unsafe fn automatic_bytes() -> Vec<u8> {
     unsafe {
-        let pb = paste_get_top(null_mut());
+        let pb = paste_get_top(None);
         assert!(!pb.is_null(), "no top buffer");
         paste_buffer_data(&*pb).to_vec()
     }

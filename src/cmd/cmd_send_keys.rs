@@ -2304,11 +2304,12 @@ unsafe fn cmd_send_keys_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd_
             return CMD_RETURN_NORMAL;
         }
         if args_has(args, 'M' as i32 as u_char) != 0 {
-            wp = cmd_mouse_pane(m, &raw mut s, ::core::ptr::null_mut::<*mut winlink>());
-            if wp.is_null() {
+            let Some((mouse_s, _, mouse_wp)) = cmd_mouse_pane(m) else {
                 cmdq_error(item, c"no mouse target".as_ptr(), fmt_args![]);
                 return CMD_RETURN_ERROR;
-            }
+            };
+            s = mouse_s;
+            wp = mouse_wp;
             window_pane_key(wp, tc, s, wl, (*m).key, m);
             return CMD_RETURN_NORMAL;
         }

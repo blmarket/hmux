@@ -50,7 +50,6 @@ use crate::cmd::cmd_choose_tree::{
     cmd_choose_tree_entry, cmd_customize_mode_entry,
 };
 use crate::modes::{mode_tree_expand_current, mode_tree_get_current};
-use crate::options::options_ptr;
 use crate::paste::paste_is_empty;
 use crate::server::server_client_how_many;
 use crate::session::session_options;
@@ -142,8 +141,8 @@ impl ChainedOptions {
     /// Chains `target`'s three sets onto the global trees.
     fn over(target: &mut Target) -> ChainedOptions {
         unsafe {
-            let pane = options_ptr(&(*target.pane(0)).options);
-            let window = options_ptr(&(*target.window(0)).options);
+            let pane = (*target.pane(0)).options_ptr();
+            let window = (*target.window(0)).options_ptr();
             let session = session_options(target.session());
             (*pane).parent = window;
             (*window).parent = crate::tmux::global_w_options;

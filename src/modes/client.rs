@@ -2418,7 +2418,7 @@ unsafe fn window_client_get_key(
         key
     }
 }
-unsafe fn window_client_sort(sort_crit: &mut sort_criteria_t) {
+fn window_client_sort(sort_crit: &mut sort_criteria_t) {
     sort_crit.order_seq = Some(&window_client_order_seq);
     if sort_crit.order == SORT_END {
         sort_crit.order = window_client_order_seq[0];
@@ -2448,7 +2448,6 @@ pub(crate) unsafe fn window_client_init(
 ) -> *mut screen {
     unsafe {
         let mut wp: *mut window_pane = wme.wp;
-        let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
         let data_ref = WindowClientModeDataRef::new(window_client_modedata {
             wp_id: (*wp).id,
             data: None,
@@ -2479,7 +2478,7 @@ pub(crate) unsafe fn window_client_init(
         } else {
             (*data).command = Some(CStr::from_ptr(args_string(&*args, 0 as u_int)).to_owned());
         }
-        let mtd = mode_tree_start(
+        let (mtd, s) = mode_tree_start(
             wp,
             args,
             Some(window_client_build),
@@ -2493,7 +2492,6 @@ pub(crate) unsafe fn window_client_init(
             Some(window_client_help),
             WindowModeData::Client((*data).owner.clone().expect("the mode holds itself")),
             &window_client_menu_items,
-            &raw mut s,
         );
         (*data).data = Some(mtd.downgrade());
         wme.mode_tree_ref = Some(mtd);

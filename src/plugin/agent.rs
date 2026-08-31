@@ -265,35 +265,20 @@ mod tests {
         assert_eq!(AgentState::Unknown.emoji(), "");
     }
 
-    /// A pane the observer has published nothing for reads as empty metadata
-    /// in a `none` state, which is the answer `PROTOCOL.md` fixes for a pane
-    /// with no agent in it.
+    /// `pane_state_emoji` is the one variable that reaches past [`Host`] into
+    /// the server's own pane tree, for the half of it that reports what a
+    /// non-agent pane is running. A pane the server has never heard of is
+    /// dead, and that lookup is what needs the guard here; the rest of the
+    /// contract is covered through the trait alone.
     #[test]
-    fn a_pane_without_an_agent_reads_as_none() {
+    fn a_pane_the_server_does_not_have_is_dead() {
         let _guard = globals();
         let plugin = AgentPlugin::new();
-        let pane = PaneId(u_int::MAX);
 
-        assert_eq!(plugin.resolve(pane, "pane_agent").as_deref(), Some(""));
         assert_eq!(
-            plugin.resolve(pane, "pane_agent_state").as_deref(),
-            Some("none")
-        );
-        assert_eq!(plugin.resolve(pane, "pane_agent_pid").as_deref(), Some(""));
-        assert_eq!(
-            plugin.resolve(pane, "pane_agent_session_id").as_deref(),
-            Some("")
-        );
-        assert_eq!(
-            plugin.resolve(pane, "pane_agent_model").as_deref(),
-            Some("")
-        );
-        // No such pane, so nothing is running in it.
-        assert_eq!(
-            plugin.resolve(pane, "pane_state_emoji").as_deref(),
+            plugin.resolve(PaneId(u_int::MAX), "pane_state_emoji").as_deref(),
             Some(PaneClass::Dead.emoji())
         );
-        assert_eq!(plugin.resolve(pane, "window_name"), None);
     }
 
     /// The variables the plugin claims are exactly the ones it answers for; a

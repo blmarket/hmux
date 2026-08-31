@@ -6,9 +6,9 @@ use crate::fmt_args;
 use crate::grid::grid_remove_history;
 use crate::layout::{
     layout_fix_panes, layout_resize_layout, layout_resize_pane, layout_resize_pane_to,
-    layout_root_ptr, layout_search_by_border, layout_set_size,
+    layout_search_by_border, layout_set_size,
 };
-use crate::options::{options_get_number, options_ptr};
+use crate::options::options_get_number;
 use crate::screen::screen_grid_ptr;
 use crate::server::{server_redraw_window, server_redraw_window_borders, server_unzoom_window};
 pub use crate::types::*;
@@ -240,7 +240,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
                 cmdq_error(item, c"height %s".as_ptr(), fmt_args![cause.as_ptr()]);
                 return CMD_RETURN_ERROR;
             }
-            status = options_get_number(options_ptr(&(*w).options), c"pane-border-status".as_ptr())
+            status = options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr())
                 as ::core::ffi::c_int;
             match status {
                 PANE_STATUS_TOP => {
@@ -304,12 +304,12 @@ unsafe fn cmd_resize_pane_mouse_update(_self_0: &cmd, mut item: *mut cmdq_item) 
         if (*event).m.valid == 0 {
             return CMD_RETURN_NORMAL;
         }
-        wp = cmd_mouse_pane(
-            &raw mut (*event).m,
-            &raw mut s,
-            ::core::ptr::null_mut::<*mut winlink>(),
-        );
-        if wp.is_null() || c.is_null() || (*c).session != s {
+        let Some((mouse_s, _, mouse_wp)) = cmd_mouse_pane(&raw mut (*event).m) else {
+            return CMD_RETURN_NORMAL;
+        };
+        s = mouse_s;
+        wp = mouse_wp;
+        if c.is_null() || (*c).session != s {
             return CMD_RETURN_NORMAL;
         }
         if window_pane_is_floating(wp) == 0 {
@@ -343,11 +343,12 @@ unsafe fn cmd_resize_pane_mouse_update_floating(mut c: *mut client, mut m: *mut 
         let mut new_xoff: ::core::ffi::c_int = 0;
         let mut new_yoff: ::core::ffi::c_int = 0;
         let mut resizes: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        wp = cmd_mouse_pane(m, ::core::ptr::null_mut::<*mut session>(), &raw mut wl);
-        if wp.is_null() {
+        let Some((_, mouse_wl, mouse_wp)) = cmd_mouse_pane(m) else {
             (*c).tty.mouse_drag_update = None;
             return;
-        }
+        };
+        wl = mouse_wl;
+        wp = mouse_wp;
         w = (*wl).window();
         lc = (*wp).layout_cell;
         sx = (*wp).sx as ::core::ffi::c_int;
@@ -485,7 +486,7 @@ unsafe fn cmd_resize_pane_mouse_update_tiled(mut c: *mut client, mut m: *mut mou
         let mut j: u_int = 0;
         let mut resizes: u_int = 0 as u_int;
         let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
-        wl = cmd_mouse_window(m, ::core::ptr::null_mut::<*mut session>());
+        wl = cmd_mouse_window(m).map_or(::core::ptr::null_mut::<winlink>(), |(_, wl)| wl);
         if wl.is_null() {
             (*c).tty.mouse_drag_update = None;
             return;
@@ -511,7 +512,7 @@ unsafe fn cmd_resize_pane_mouse_update_tiled(mut c: *mut client, mut m: *mut mou
                 .wrapping_div(::core::mem::size_of::<*mut layout_cell>() as usize)
         {
             lc = layout_search_by_border(
-                layout_root_ptr(&(*w).layout_root),
+                (*w).layout_root_ptr(),
                 lx.wrapping_add(offsets[i as usize][0 as ::core::ffi::c_int as usize] as u_int),
                 ly.wrapping_add(offsets[i as usize][1 as ::core::ffi::c_int as usize] as u_int),
             );

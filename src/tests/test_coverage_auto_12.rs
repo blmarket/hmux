@@ -22,7 +22,7 @@ use ::core::ptr::null_mut;
 unsafe fn dump_names(env: *mut crate::environ::environ_t) -> Vec<String> {
     unsafe {
         crate::environ::environ_entries(&*env)
-            .map(|envent| seen(environ_entry_name(envent)))
+            .map(|envent| seen(environ_entry_name(envent).as_ptr()))
             .collect()
     }
 }
@@ -33,9 +33,8 @@ unsafe fn value_of(
 ) -> Option<String> {
     unsafe {
         environ_find(&*env, name.as_ptr())
-            .map(|e| environ_entry_value(e))
-            .filter(|value| !value.is_null())
-            .map(|value| seen(value))
+            .and_then(environ_entry_value)
+            .map(|value| value.to_string_lossy().into_owned())
     }
 }
 
@@ -227,8 +226,8 @@ fn environ_unset_idempotent_and_removes_entry() {
 fn environ_for_session_sets_tmux_and_defaults() {
     let _guard = globals();
     unsafe {
-        let saved = socket_path;
-        socket_path = c"/tmp/c2rs-auto12.sock".as_ptr();
+        let saved = socket_path.take();
+        socket_path = Some(c"/tmp/c2rs-auto12.sock".to_owned());
         // ensure global has a marker so we can see it copied
         set(global_environ, c"C2RS_AUTO12_GLOBAL", 0, c"globalval");
 
@@ -266,8 +265,8 @@ fn environ_for_session_with_session_overrides_global() {
     let _guard = globals();
     let mut s = Session::new(42, "auto12");
     unsafe {
-        let saved = socket_path;
-        socket_path = c"/tmp/c2rs-auto12b.sock".as_ptr();
+        let saved = socket_path.take();
+        socket_path = Some(c"/tmp/c2rs-auto12b.sock".to_owned());
         set(s.environ(), c"C2RS_S_VAR", 0, c"sessval");
         set(global_environ, c"C2RS_S_VAR", 0, c"globalval");
 

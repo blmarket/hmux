@@ -15,10 +15,5 @@ fn main() {
         .map(|arg| arg.as_mut_ptr() as *mut ::core::ffi::c_char)
         .chain(::core::iter::once(::core::ptr::null_mut()))
         .collect();
-    unsafe {
-        ::std::process::exit(::tmux_c2rs::tmux::main_0(
-            (args_ptrs.len() - 1) as ::core::ffi::c_int,
-            args_ptrs.as_mut_ptr(),
-        ) as i32)
-    }
+    unsafe { ::std::process::exit(::tmux_c2rs::tmux::main_0(&mut args_ptrs) as i32) }
 }

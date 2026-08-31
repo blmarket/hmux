@@ -42,7 +42,7 @@ use crate::tests::test_fixtures::{
     Clients, Registry, Session, Window, globals, link, seen, unlink_all, zeroed_term,
 };
 use crate::window::{WINLINK_VISITED, winlink_find_by_index, winlink_find_by_window};
-use ::core::ffi::{CStr, c_char, c_int};
+use ::core::ffi::{CStr, c_int};
 use ::core::ptr::{null, null_mut};
 
 /// The alert flag `alerts_queue` leaves on a winlink; renumbering carries it
@@ -95,21 +95,19 @@ fn sort_order_to_string_names_each_order_and_answers_null_for_end() {
 
 #[test]
 fn sort_order_from_string_parses_the_names_and_their_aliases() {
-    unsafe {
-        assert_eq!(sort_order_from_string(c"activity".as_ptr()), SORT_ACTIVITY);
-        assert_eq!(sort_order_from_string(c"ACTIVITY".as_ptr()), SORT_ACTIVITY);
-        assert_eq!(sort_order_from_string(c"Creation".as_ptr()), SORT_CREATION);
-        assert_eq!(sort_order_from_string(c"index".as_ptr()), SORT_INDEX);
-        assert_eq!(sort_order_from_string(c"key".as_ptr()), SORT_INDEX);
-        assert_eq!(sort_order_from_string(c"modifier".as_ptr()), SORT_MODIFIER);
-        assert_eq!(sort_order_from_string(c"name".as_ptr()), SORT_NAME);
-        assert_eq!(sort_order_from_string(c"title".as_ptr()), SORT_NAME);
-        assert_eq!(sort_order_from_string(c"order".as_ptr()), SORT_ORDER);
-        assert_eq!(sort_order_from_string(c"size".as_ptr()), SORT_SIZE);
-        assert_eq!(sort_order_from_string(c"z".as_ptr()), SORT_Z);
-        assert_eq!(sort_order_from_string(c"no-such-order".as_ptr()), SORT_END);
-        assert_eq!(sort_order_from_string(null::<c_char>()), SORT_END);
-    }
+    assert_eq!(sort_order_from_string(Some(c"activity")), SORT_ACTIVITY);
+    assert_eq!(sort_order_from_string(Some(c"ACTIVITY")), SORT_ACTIVITY);
+    assert_eq!(sort_order_from_string(Some(c"Creation")), SORT_CREATION);
+    assert_eq!(sort_order_from_string(Some(c"index")), SORT_INDEX);
+    assert_eq!(sort_order_from_string(Some(c"key")), SORT_INDEX);
+    assert_eq!(sort_order_from_string(Some(c"modifier")), SORT_MODIFIER);
+    assert_eq!(sort_order_from_string(Some(c"name")), SORT_NAME);
+    assert_eq!(sort_order_from_string(Some(c"title")), SORT_NAME);
+    assert_eq!(sort_order_from_string(Some(c"order")), SORT_ORDER);
+    assert_eq!(sort_order_from_string(Some(c"size")), SORT_SIZE);
+    assert_eq!(sort_order_from_string(Some(c"z")), SORT_Z);
+    assert_eq!(sort_order_from_string(Some(c"no-such-order")), SORT_END);
+    assert_eq!(sort_order_from_string(None), SORT_END);
 }
 
 #[test]
@@ -222,7 +220,10 @@ fn sort_get_buffers_orders_the_buffer_store_by_its_criteria() {
         // names share their prefix, so they come out oldest first.
         let mut c = crit(SORT_NAME, 0);
         let l = sort_get_buffers(&c);
-        let names: Vec<String> = l.iter().map(|pb| seen(paste_buffer_name(*pb))).collect();
+        let names: Vec<String> = l
+            .iter()
+            .map(|pb| paste_buffer_name(&**pb).to_string_lossy().into_owned())
+            .collect();
         let mut sorted = names.clone();
         sorted.sort();
         assert_eq!(names, sorted);
@@ -231,20 +232,20 @@ fn sort_get_buffers_orders_the_buffer_store_by_its_criteria() {
         // is reversed, which makes it oldest first.
         let mut c = crit(SORT_ORDER, 0);
         let l = sort_get_buffers(&c);
-        let orders: Vec<u32> = l.iter().map(|pb| paste_buffer_order(*pb)).collect();
+        let orders: Vec<u32> = l.iter().map(|pb| paste_buffer_order(&**pb)).collect();
         let mut newest_first = orders.clone();
         newest_first.reverse();
         assert_ne!(orders, newest_first);
         let mut c = crit(SORT_ORDER, 1);
         let l = sort_get_buffers(&c);
-        let reversed: Vec<u32> = l.iter().map(|pb| paste_buffer_order(*pb)).collect();
+        let reversed: Vec<u32> = l.iter().map(|pb| paste_buffer_order(&**pb)).collect();
         assert_eq!(reversed, newest_first);
 
         // An unusable criterion sorts nothing at all.
         let mut c = crit(SORT_END, 0);
         let l = sort_get_buffers(&c);
         assert_eq!(l.len(), 3);
-        let untouched: Vec<u32> = l.iter().map(|pb| paste_buffer_order(*pb)).collect();
+        let untouched: Vec<u32> = l.iter().map(|pb| paste_buffer_order(&**pb)).collect();
         assert_eq!(untouched, orders);
 
         empty_the_store();

@@ -17,7 +17,6 @@ use crate::modes::{
     WINDOW_COPY_SEARCH_MAX_LINE, WINDOW_COPY_SEARCH_TIMEOUT, WINDOW_COPY_SEARCHDOWN,
     WINDOW_COPY_SEARCHUP, window_copy_get_current_offset,
 };
-use crate::options::options_ptr;
 use crate::tests::test_fixtures::{Pane, Target, Window, globals, zeroed};
 use crate::types::WindowMode;
 use crate::window::window_get_active;
@@ -164,7 +163,7 @@ fn window_pane_index_respects_pane_base_index() {
 
         // change base to 1
         crate::options::options_set_number(
-            options_ptr(&(*w.ptr()).options),
+            (*w.ptr()).options_ptr(),
             c"pane-base-index".as_ptr(),
             1,
         );

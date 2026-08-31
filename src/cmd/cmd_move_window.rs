@@ -200,14 +200,7 @@ unsafe fn resolve(
     flags: c_int,
 ) -> Option<cmd_find_state> {
     unsafe {
-        let mut target = cmd_find_state {
-            flags: 0,
-            s_ref: None,
-            wl_idx: None,
-            w_ref: None,
-            wp_id: None,
-            idx: 0,
-        };
+        let mut target = cmd_find_state::default();
         (cmd_find_target(&mut target, item, tflag, type_0, flags) == 0).then_some(target)
     }
 }

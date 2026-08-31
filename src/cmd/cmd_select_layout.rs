@@ -4,7 +4,7 @@ use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
 use crate::layout::layout_set_lookup;
 use crate::layout::{layout_dump, layout_parse};
-use crate::layout::{layout_root_ptr, layout_spread_out};
+use crate::layout::layout_spread_out;
 use crate::layout::{layout_set_next, layout_set_previous, layout_set_select};
 use crate::notify::notify_window;
 use crate::resize::recalculate_sizes;
@@ -217,7 +217,7 @@ unsafe fn cmd_select_layout_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> 
             previous = 1 as ::core::ffi::c_int;
         }
         oldlayout = (*w).old_layout.take();
-        (*w).old_layout = layout_dump(w, layout_root_ptr(&(*w).layout_root));
+        (*w).old_layout = layout_dump(w, (*w).layout_root_ptr());
         if next != 0 || previous != 0 {
             if next != 0 {
                 layout_set_next(w);
@@ -238,7 +238,7 @@ unsafe fn cmd_select_layout_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> 
                 if layoutname.is_null() {
                     layout = (*w).lastlayout;
                 } else {
-                    layout = layout_set_lookup(layoutname);
+                    layout = layout_set_lookup(::core::ffi::CStr::from_ptr(layoutname));
                 }
                 if layout != -(1 as ::core::ffi::c_int) {
                     layout_set_select(w, layout as u_int);

@@ -1,4 +1,4 @@
-use crate::ffi::{environ, fnmatch, free, getpid, setenv};
+use crate::ffi::{environ, fnmatch, getpid, setenv};
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};
 use crate::log::log_debug;
@@ -10,8 +10,7 @@ use crate::session::{session_environ, session_id};
 use crate::tmux::getversion;
 use crate::tmux::{global_environ, global_options, socket_path};
 pub use crate::types::*;
-use crate::xmalloc::xcalloc;
-use ::core::ffi::{CStr, c_char, c_int, c_void};
+use ::core::ffi::{CStr, c_char, c_int};
 use ::std::ffi::CString;
 /// One environment variable: the name it is filed under, the value it carries
 /// if it has been given one, and whether it is hidden.
@@ -36,51 +35,32 @@ pub const RB_RED: c_int = 1 as c_int;
 pub const RB_NEGINF: c_int = -(1 as c_int);
 pub const ENVIRON_HIDDEN: c_int = 0x1 as c_int;
 
-/// The name an entry is filed under.
-unsafe fn name_of(envent: *mut environ_entry) -> &'static CStr {
-    unsafe { (*envent).name.as_c_str() }
-}
-
 /// The name the entry is filed under.
-pub unsafe fn environ_entry_name(envent: *const environ_entry) -> *const c_char {
-    unsafe { (*envent).name.as_ptr() }
+pub fn environ_entry_name(envent: &environ_entry) -> &CStr {
+    envent.name.as_c_str()
 }
 
 /// The value the entry carries, or null when it has been set to none, which
 /// is how an entry says the variable is to be taken out of a child's
 /// environment rather than given to it.
-pub unsafe fn environ_entry_value(envent: *const environ_entry) -> *const c_char {
-    unsafe { cstr_ptr(&(*envent).value) }
+pub fn environ_entry_value(envent: &environ_entry) -> Option<&CStr> {
+    envent.value.as_deref()
 }
 
 /// The entry's flags, of which `ENVIRON_HIDDEN` is the only one.
-pub unsafe fn environ_entry_flags(envent: *const environ_entry) -> c_int {
-    unsafe { (*envent).flags }
+pub fn environ_entry_flags(envent: &environ_entry) -> c_int {
+    envent.flags
 }
 
-/// Every entry of `env` in name order. The pointers are read in one go, so
-/// nothing may be put into the same environment while they are in use.
-fn entries(env: *mut environ_t) -> impl Iterator<Item = *mut environ_entry> {
-    let all: Vec<*mut environ_entry> =
-        unsafe { (*env).values_mut().map(|envent| &raw mut *envent).collect() };
-    all.into_iter()
-}
-
-/// A new entry for `name` with no value yet, put into the tree.
-unsafe fn environ_add(
-    env: *mut environ_t,
-    name: *const c_char,
-    flags: c_int,
-) -> *mut environ_entry {
-    unsafe {
-        let name = CStr::from_ptr(name).to_owned();
-        let envent = (*env).entry(name.clone()).or_insert(environ_entry {
-            name,
+/// The entry `name` is filed under, put into the tree with no value yet and
+/// the flags given when the set does not hold one already.
+fn environ_add<'a>(env: &'a mut environ_t, name: &CStr, flags: c_int) -> &'a mut environ_entry {
+    env.entry(name.to_owned())
+        .or_insert_with_key(|name| environ_entry {
+            name: name.clone(),
             value: None,
             flags,
-        });
-        &raw mut *envent
-    }
+        })
 }
 
 /// The environment a struct carries, or null if it carries none.
@@ -106,19 +86,28 @@ pub unsafe fn environ_free(env: *mut environ_t) {
 
 /// The entries a set holds, in name order. The walk borrows the set, since
 /// adding to it while walking would move the entries about.
+/// The process environment as the C library holds it, one `NAME=value` string
+/// at a time. The walk ends at the array's null terminator.
+pub fn environ_process() -> impl Iterator<Item = &'static CStr> {
+    (0..).map_while(|i| unsafe {
+        let var = *environ.add(i);
+        (!var.is_null()).then(|| CStr::from_ptr(var))
+    })
+}
+
 pub fn environ_entries(env: &environ_t) -> impl Iterator<Item = &environ_entry> {
     env.values()
 }
 
 pub unsafe fn environ_copy(srcenv: *mut environ_t, dstenv: *mut environ_t) {
     unsafe {
-        for envent in entries(srcenv) {
-            match &(*envent).value {
-                None => environ_clear(dstenv, (*envent).name.as_ptr()),
+        for envent in environ_entries(&*srcenv) {
+            match &envent.value {
+                None => environ_clear(dstenv, envent.name.as_ptr()),
                 Some(value) => environ_set(
                     dstenv,
-                    (*envent).name.as_ptr(),
-                    (*envent).flags,
+                    envent.name.as_ptr(),
+                    envent.flags,
                     c"%s".as_ptr(),
                     fmt_args![value.as_ptr()],
                 ),
@@ -132,14 +121,6 @@ pub unsafe fn environ_find(env: &environ_t, name: *const c_char) -> Option<&envi
     unsafe { env.get(CStr::from_ptr(name)) }
 }
 
-/// The same entry, to write the value the set is being given.
-pub unsafe fn environ_find_mut(
-    env: &mut environ_t,
-    name: *const c_char,
-) -> Option<&mut environ_entry> {
-    unsafe { env.get_mut(CStr::from_ptr(name)) }
-}
-
 pub unsafe fn environ_set(
     env: *mut environ_t,
     name: *const c_char,
@@ -148,25 +129,15 @@ pub unsafe fn environ_set(
     args: &[FmtArg],
 ) {
     unsafe {
-        let mut envent = match environ_find_mut(&mut *env, name) {
-            Some(envent) => {
-                envent.flags = flags;
-                &raw mut *envent
-            }
-            None => environ_add(env, name, flags),
-        };
-        (*envent).value = Some(format_alloc(fmt, args));
+        let envent = environ_add(&mut *env, CStr::from_ptr(name), flags);
+        envent.flags = flags;
+        envent.value = Some(format_alloc(fmt, args));
     }
 }
 
 pub unsafe fn environ_clear(env: *mut environ_t, name: *const c_char) {
     unsafe {
-        match environ_find_mut(&mut *env, name) {
-            Some(envent) => envent.value = None,
-            None => {
-                environ_add(env, name, 0 as c_int);
-            }
-        }
+        environ_add(&mut *env, CStr::from_ptr(name), 0 as c_int).value = None;
     }
 }
 
@@ -204,55 +175,55 @@ pub unsafe fn environ_update(oo: *mut options, src: *mut environ_t, dst: *mut en
         while !a.is_null() {
             let ov = options_array_item_value(a);
             let mut found = false;
-            for envent in entries(src) {
-                if fnmatch((*ov).string(), (*envent).name.as_ptr(), 0 as c_int) == 0 as c_int {
+            for envent in environ_entries(&*src) {
+                if fnmatch((*ov).string().as_ptr(), envent.name.as_ptr(), 0 as c_int) == 0 as c_int
+                {
                     environ_set(
                         dst,
-                        (*envent).name.as_ptr(),
+                        envent.name.as_ptr(),
                         0 as c_int,
                         c"%s".as_ptr(),
-                        fmt_args![cstr_ptr(&(*envent).value)],
+                        fmt_args![envent.value.as_deref()],
                     );
                     found = true;
                 }
             }
             if !found {
-                environ_clear(dst, (*ov).string());
+                environ_clear(dst, (*ov).string().as_ptr());
             }
             a = options_array_next(o, a);
         }
     }
 }
 
-pub unsafe fn environ_push(env: *mut environ_t) {
+pub unsafe fn environ_push(env: &environ_t) {
+    // The empty environment the first `setenv` grows from. The C library
+    // allocates its own array the moment it has an entry to store, so this one
+    // is never handed back and never has to be freed.
+    static mut EMPTY_ENVIRON: [*mut c_char; 1] = [::core::ptr::null_mut()];
     unsafe {
-        let new_environ = xcalloc(1 as size_t, ::core::mem::size_of::<*mut c_char>() as size_t)
-            as *mut *mut c_char;
-        environ = new_environ;
-        for envent in entries(env) {
-            if let Some(value) = &(*envent).value
-                && !name_of(envent).is_empty()
-                && (*envent).flags & ENVIRON_HIDDEN == 0
+        environ = (&raw mut EMPTY_ENVIRON).cast::<*mut c_char>();
+        for envent in environ_entries(env) {
+            if let Some(value) = &envent.value
+                && !environ_entry_name(envent).is_empty()
+                && envent.flags & ENVIRON_HIDDEN == 0
             {
-                setenv((*envent).name.as_ptr(), value.as_ptr(), 1 as c_int);
+                setenv(envent.name.as_ptr(), value.as_ptr(), 1 as c_int);
             }
-        }
-        if environ != new_environ {
-            free(new_environ as *mut c_void);
         }
     }
 }
 
-pub unsafe fn environ_log(env: *mut environ_t, fmt: *const c_char, args: &[FmtArg]) {
+pub unsafe fn environ_log(env: &environ_t, fmt: *const c_char, args: &[FmtArg]) {
     unsafe {
         let prefix = format_alloc(fmt, args);
-        for envent in entries(env) {
-            if let Some(value) = &(*envent).value
-                && !name_of(envent).is_empty()
+        for envent in environ_entries(env) {
+            if let Some(value) = &envent.value
+                && !environ_entry_name(envent).is_empty()
             {
                 log_debug(
                     c"%s%s=%s".as_ptr(),
-                    fmt_args![prefix.as_ptr(), (*envent).name.as_ptr(), value.as_ptr()],
+                    fmt_args![prefix.as_ptr(), envent.name.as_ptr(), value.as_ptr()],
                 );
             }
         }
@@ -310,7 +281,7 @@ pub unsafe fn environ_for_session(s: *mut session, no_TERM: c_int) -> Box<enviro
             c"TMUX".as_ptr(),
             0 as c_int,
             c"%s,%ld,%d".as_ptr(),
-            fmt_args![socket_path, getpid() as ::core::ffi::c_long, idx],
+            fmt_args![socket_path.as_deref(), getpid() as ::core::ffi::c_long, idx],
         );
         env
     }

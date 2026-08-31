@@ -412,7 +412,7 @@ fn setting_a_cell_past_the_end_of_the_grid_does_nothing() {
     let g = Grid::new(10, 2, 0);
     let gc = ascii(b'a');
     unsafe { grid_set_cell(&mut *g.ptr(), 0, 2, &gc) };
-    unsafe { grid_set_cells(&mut *g.ptr(), 0, 2, &raw const gc, c"abc".as_ptr(), 3) };
+    unsafe { grid_set_cells(&mut *g.ptr(), 0, 2, &gc, b"abc") };
     assert_eq!(g.line(0).cellsize() as usize, 0);
     assert_eq!(g.line(1).cellsize() as usize, 0);
 }
@@ -423,7 +423,7 @@ fn a_run_of_cells_shares_one_style() {
     let g = Grid::new(10, 1, 0);
     let mut gc = ascii(b'?');
     gc.fg = 3;
-    unsafe { grid_set_cells(&mut *g.ptr(), 2, 0, &raw const gc, c"abc".as_ptr(), 3) };
+    unsafe { grid_set_cells(&mut *g.ptr(), 2, 0, &gc, b"abc") };
     assert_eq!(g.line(0).cellused, 5);
     assert_eq!(text_of(&g.cell(2, 0)), "a");
     assert_eq!(text_of(&g.cell(4, 0)), "c");
@@ -437,7 +437,7 @@ fn a_run_of_extended_cells_keeps_one_byte_each() {
     let g = Grid::new(10, 1, 0);
     let mut gc = ascii(b'?');
     gc.us = 2;
-    unsafe { grid_set_cells(&mut *g.ptr(), 0, 0, &raw const gc, c"xyz".as_ptr(), 3) };
+    unsafe { grid_set_cells(&mut *g.ptr(), 0, 0, &gc, b"xyz") };
     assert_eq!(g.text(0), "xyz");
     assert_eq!(g.cell(1, 0).us, 2);
     assert_eq!(g.line(0).extdsize() as usize, 3);
@@ -1025,8 +1025,8 @@ impl Screen {
         unsafe {
             hyperlinks_put(
                 self.0.hyperlinks_ref().expect("a hyperlink store"),
-                uri.as_ptr(),
-                id.as_ptr(),
+                uri,
+                Some(id),
             )
         }
     }
@@ -1486,10 +1486,10 @@ fn a_cell_can_be_looked_for_in_a_set_of_characters() {
     let _guard = globals();
     let g = Grid::new(10, 1, 0);
     g.write(0, 0, "ab");
-    assert_eq!(unsafe { grid_in_set(&*g.ptr(), 0, 0, c"xa".as_ptr()) }, 1);
-    assert_eq!(unsafe { grid_in_set(&*g.ptr(), 1, 0, c"xa".as_ptr()) }, 0);
+    assert_eq!(unsafe { grid_in_set(&*g.ptr(), 0, 0, c"xa") }, 1);
+    assert_eq!(unsafe { grid_in_set(&*g.ptr(), 1, 0, c"xa") }, 0);
     unsafe { grid_set_padding(&mut *g.ptr(), 2, 0) };
-    assert_eq!(unsafe { grid_in_set(&*g.ptr(), 2, 0, c"xa".as_ptr()) }, 0);
+    assert_eq!(unsafe { grid_in_set(&*g.ptr(), 2, 0, c"xa") }, 0);
 }
 
 #[test]
@@ -1502,14 +1502,14 @@ fn a_tab_in_the_set_matches_the_rest_of_a_tab_cell() {
     for px in 1..4 {
         unsafe { grid_set_padding(&mut *g.ptr(), px, 0) };
     }
-    assert_eq!(unsafe { grid_in_set(&*g.ptr(), 0, 0, c" \t".as_ptr()) }, 4);
+    assert_eq!(unsafe { grid_in_set(&*g.ptr(), 0, 0, c" \t") }, 4);
     assert_eq!(
-        unsafe { grid_in_set(&*g.ptr(), 2, 0, c" \t".as_ptr()) },
+        unsafe { grid_in_set(&*g.ptr(), 2, 0, c" \t") },
         2,
         "two of the four columns are still to come"
     );
     assert_eq!(
-        unsafe { grid_in_set(&*g.ptr(), 1, 0, c" ".as_ptr()) },
+        unsafe { grid_in_set(&*g.ptr(), 1, 0, c" ") },
         0,
         "without a tab in the set the padding is just padding"
     );
@@ -1521,9 +1521,9 @@ fn padding_with_no_tab_in_front_of_it_is_not_a_tab() {
     let g = Grid::new(10, 1, 0);
     g.write(0, 0, "a");
     unsafe { grid_set_padding(&mut *g.ptr(), 1, 0) };
-    assert_eq!(unsafe { grid_in_set(&*g.ptr(), 1, 0, c" \t".as_ptr()) }, 0);
+    assert_eq!(unsafe { grid_in_set(&*g.ptr(), 1, 0, c" \t") }, 0);
     assert_eq!(
-        unsafe { grid_in_set(&*g.ptr(), 0, 0, c" \t".as_ptr()) },
+        unsafe { grid_in_set(&*g.ptr(), 0, 0, c" \t") },
         0,
         "the cell itself is not a tab either"
     );
@@ -1816,5 +1816,5 @@ fn padding_at_the_start_of_a_line_walks_off_the_front() {
     let _guard = globals();
     let g = Grid::new(10, 1, 0);
     unsafe { grid_set_padding(&mut *g.ptr(), 0, 0) };
-    assert_eq!(unsafe { grid_in_set(&*g.ptr(), 0, 0, c" \t".as_ptr()) }, 0);
+    assert_eq!(unsafe { grid_in_set(&*g.ptr(), 0, 0, c" \t") }, 0);
 }

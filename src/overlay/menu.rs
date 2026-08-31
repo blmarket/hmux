@@ -9,7 +9,7 @@ use crate::fmt_args;
 use crate::format::{format_create_defaults, format_single, format_single_from_state};
 use crate::format::{format_trim_right, format_width};
 use crate::grid::grid_default_cell;
-use crate::options::{options_get_number, options_ptr};
+use crate::options::options_get_number;
 use crate::screen::{screen_free, screen_grid_ptr, screen_init};
 use crate::screen::{
     screen_write_box, screen_write_clearscreen, screen_write_menu, screen_write_start,
@@ -2313,7 +2313,7 @@ unsafe fn menu_reapply_styles(mut md: *mut menu_data, mut c: *mut client) {
         if s.is_null() {
             return;
         }
-        o = options_ptr(&(*(*session_get_curw(s)).window()).options);
+        o = (*(*session_get_curw(s)).window()).options_ptr();
         let mut ft = format_create_defaults(
             ::core::ptr::null_mut::<cmdq_item>(),
             c,
@@ -4064,8 +4064,7 @@ pub unsafe fn menu_prepare(
     unsafe {
         let mut choice: ::core::ffi::c_int = 0;
         let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut o: *mut options =
-            options_ptr(&(*(*session_get_curw((*c).session)).window()).options);
+        let mut o: *mut options = (*(*session_get_curw((*c).session)).window()).options_ptr();
         if (*c).tty.sx < menu.width.wrapping_add(4 as u_int)
             || (*c).tty.sy < (menu.items.len() as u_int).wrapping_add(2 as u_int)
         {

@@ -1006,7 +1006,7 @@ pub type uint64_t = __uint64_t;
 pub type mode_tree_build_cb = Option<
     unsafe fn(WindowModeData, &sort_criteria_t, &mut uint64_t, *const ::core::ffi::c_char) -> (),
 >;
-pub type mode_tree_height_cb = Option<unsafe fn(&mut mode_tree_data, u_int) -> u_int>;
+pub type mode_tree_height_cb = Option<fn(&mut mode_tree_data, u_int) -> u_int>;
 /// The help a mode shows: its own lines, the least width they need, and the
 /// word `%1` stands for in every line.
 pub type mode_tree_help_cb = Option<
@@ -1025,7 +1025,7 @@ pub type mode_tree_search_cb = Option<
         ::core::ffi::c_int,
     ) -> ::core::ffi::c_int,
 >;
-pub type mode_tree_sort_cb = Option<unsafe fn(&mut sort_criteria_t) -> ()>;
+pub type mode_tree_sort_cb = Option<fn(&mut sort_criteria_t) -> ()>;
 pub type mode_tree_swap_cb =
     Option<unsafe fn(ModeTreeItemData, ModeTreeItemData, &sort_criteria_t) -> ::core::ffi::c_int>;
 #[derive(Copy, Clone)]
@@ -1106,11 +1106,12 @@ impl options_value {
         }
     }
 
-    /// The string the value holds, or null when it holds something else.
-    pub fn string(&self) -> *const ::core::ffi::c_char {
+    /// The string the value holds, which every caller of this has already
+    /// established it is.
+    pub fn string(&self) -> &::core::ffi::CStr {
         match self {
-            options_value::String(string) => string.as_ptr(),
-            _ => ::core::ptr::null(),
+            options_value::String(string) => string,
+            _ => panic!("not a string option"),
         }
     }
 
@@ -1174,6 +1175,25 @@ pub struct re_pattern_buffer {
     pub can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor: [u8; 1],
     #[bitfield(padding)]
     pub c2rust_padding: [u8; 7],
+}
+/// The pattern buffer `regcomp` expects to be handed, which is the all-zero
+/// one: the compile fills in every field it uses. `Default` cannot be derived
+/// because `buffer` points at an extern type.
+impl Default for re_pattern_buffer {
+    fn default() -> Self {
+        Self {
+            buffer: ::core::ptr::null_mut(),
+            allocated: 0,
+            used: 0,
+            syntax: 0,
+            fastmap: ::core::ptr::null_mut(),
+            translate: ::core::ptr::null_mut(),
+            re_nsub: 0,
+            can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor: [0;
+                1],
+            c2rust_padding: [0; 7],
+        }
+    }
 }
 pub type regex_t = re_pattern_buffer;
 pub type regoff_t = ::core::ffi::c_int;
@@ -1379,7 +1399,7 @@ pub struct cmd_command_prompt_prompt {
     pub input: Option<::std::ffi::CString>,
     pub prompt: Option<::std::ffi::CString>,
 }
-#[derive(Clone)]
+#[derive(Clone, Default)]
 #[repr(C)]
 pub struct window_buffer_itemdata {
     pub name: Option<::std::ffi::CString>,
@@ -1549,6 +1569,12 @@ impl winlink {
             .as_ref()
             .map_or(::core::ptr::null_mut(), WindowRef::as_ptr)
     }
+
+    /// The handle on the window this link points at, borrowed for as long as
+    /// the link is, or nothing while the link holds none.
+    pub(crate) fn window_handle(&self) -> Option<&WindowRef> {
+        self.window_ref.as_ref()
+    }
 }
 #[derive(Default)]
 #[repr(C)]
@@ -1594,6 +1620,24 @@ pub struct window {
     /// The sessions' links to this window, in the order they were made. A
     /// link belongs to its session, not to the window.
     pub(crate) winlinks: window_winlinks,
+}
+impl window {
+    /// The window's own option set, or null for a window that carries none.
+    pub(crate) fn options_ptr(&self) -> *mut options {
+        crate::options::options_ptr(&self.options)
+    }
+
+    /// The root cell of the window's layout, or null for a window that has
+    /// none.
+    pub(crate) fn layout_root_ptr(&self) -> *mut layout_cell {
+        crate::layout::layout_root_ptr(&self.layout_root)
+    }
+
+    /// The root cell of the layout the window had before a pane in it was
+    /// zoomed, or null for a window that is not zoomed.
+    pub(crate) fn saved_layout_root_ptr(&self) -> *mut layout_cell {
+        crate::layout::layout_root_ptr(&self.saved_layout_root)
+    }
 }
 #[derive(Default)]
 #[repr(C)]
@@ -1667,6 +1711,11 @@ pub enum PaneScreen {
 }
 
 impl window_pane {
+    /// The pane's own option set, or null for a pane that carries none.
+    pub(crate) fn options_ptr(&self) -> *mut options {
+        crate::options::options_ptr(&self.options)
+    }
+
     /// The screen the pane is showing. A pane showing a mode falls back to
     /// its own screen when the mode list has run out.
     pub fn screen(&self) -> *mut screen {
@@ -1767,9 +1816,10 @@ pub(crate) enum WindowModeState {
     Tree(WindowTreeModeDataRef),
     Customize(WindowCustomizeModeDataRef),
 }
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 #[repr(C)]
 pub enum ModeTreeItemData {
+    #[default]
     None,
     Buffer(*mut window_buffer_itemdata),
     Client(*mut window_client_itemdata),
@@ -2636,12 +2686,10 @@ pub struct cmd_parse_input {
 }
 
 impl cmd_parse_input {
-    /// The file the command line came from, as a C string, or null when it
-    /// came from none.
-    pub fn file(&self) -> *const ::core::ffi::c_char {
-        self.file
-            .as_ref()
-            .map_or(::core::ptr::null(), |file| file.as_ptr())
+    /// The file the command line came from, or nothing when it came from
+    /// none.
+    pub fn file(&self) -> Option<&::core::ffi::CStr> {
+        self.file.as_deref()
     }
 
     /// The client the parse is for, or null when it is for none.
@@ -2679,7 +2727,7 @@ pub enum TtyCtxArg {
     Pane(*mut window_pane),
     Popup(*mut popup_data),
 }
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct tty_ctx {
     pub s: *mut screen,
@@ -2706,38 +2754,6 @@ pub struct tty_ctx {
     pub woy: u_int,
     pub wsx: u_int,
     pub wsy: u_int,
-}
-impl Default for tty_ctx {
-    /// A context that names no screen and no pane, as the C left on the stack
-    /// before filling it in.
-    fn default() -> tty_ctx {
-        tty_ctx {
-            s: ::core::ptr::null_mut(),
-            redraw_cb: None,
-            set_client_cb: None,
-            arg: TtyCtxArg::default(),
-            cell: ::core::ptr::null(),
-            flags: 0,
-            value: TtyCtxValue::None,
-            ocx: 0,
-            ocy: 0,
-            orupper: 0,
-            orlower: 0,
-            xoff: 0,
-            yoff: 0,
-            rxoff: 0,
-            ryoff: 0,
-            sx: 0,
-            sy: 0,
-            bg: 0,
-            defaults: grid_cell::default(),
-            palette: ::core::ptr::null_mut(),
-            wox: 0,
-            woy: 0,
-            wsx: 0,
-            wsy: 0,
-        }
-    }
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -2791,9 +2807,11 @@ pub enum ArgsValue {
 }
 
 impl ArgsValue {
-    pub fn string(&self) -> *const ::core::ffi::c_char {
+    /// The string the value holds, which every caller of this has already
+    /// established it is.
+    pub fn string(&self) -> &::core::ffi::CStr {
         match self {
-            ArgsValue::String(string) => string.as_ptr(),
+            ArgsValue::String(string) => string,
             _ => panic!("not a string argument"),
         }
     }

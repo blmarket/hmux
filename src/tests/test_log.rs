@@ -63,10 +63,8 @@ struct Log;
 
 impl Log {
     fn new() -> Log {
-        unsafe {
-            log_close();
-            log_level = 0;
-        }
+        log_close();
+        log_level.store(0, Ordering::Relaxed);
         let log = Log;
         log.forget();
         log
@@ -104,10 +102,8 @@ impl Log {
 
 impl Drop for Log {
     fn drop(&mut self) {
-        unsafe {
-            log_close();
-            log_level = 0;
-        }
+        log_close();
+        log_level.store(0, Ordering::Relaxed);
         self.forget();
     }
 }

@@ -140,10 +140,8 @@ pub const SIG_SETMASK: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const STDIN_FILENO: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const STDOUT_FILENO: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const STDERR_FILENO: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
-    unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };
-pub const _PATH_DEVNULL: [::core::ffi::c_char; 10] =
-    unsafe { ::core::mem::transmute::<[u8; 10], [::core::ffi::c_char; 10]>(*b"/dev/null\0") };
+pub const _PATH_BSHELL: &::core::ffi::CStr = c"/bin/sh";
+pub const _PATH_DEVNULL: &::core::ffi::CStr = c"/dev/null";
 pub const EV_READ: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const EV_WRITE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const CMD_AFTERHOOK: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;

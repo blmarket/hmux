@@ -25,11 +25,10 @@ use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_get_target;
 use crate::server::{server_destroy_session, server_redraw_session};
 use crate::session::group_walk;
-use crate::session::{session_destroy, session_group_contains, sessions_after, sessions_first};
+use crate::session::{session_destroy, session_group_contains, session_owners};
 pub use crate::types::*;
-use crate::window::{winlinks_after, winlinks_first};
+use crate::window::winlinks_in;
 use ::core::ffi::{c_char, c_int};
-use ::core::ptr::null_mut;
 pub const MSG_EXEC: msgtype = 217;
 pub const MSG_SHUTDOWN: msgtype = 210;
 pub const MSG_EXIT: msgtype = 203;
@@ -138,33 +137,11 @@ pub(crate) static cmd_kill_session_entry: cmd_entry = cmd_entry {
     exec: cmd_kill_session_exec,
 };
 
-/// The winlinks of `s`, in index order.
-fn windows_of(s: *mut session) -> impl Iterator<Item = *mut winlink> {
-    let mut current = null_mut::<winlink>();
-    let mut started = false;
-    ::core::iter::from_fn(move || unsafe {
-        current = if started {
-            winlinks_after(current)
-        } else {
-            started = true;
-            winlinks_first(&raw mut (*s).windows)
-        };
-        (!current.is_null()).then_some(current)
-    })
-}
-
-/// Every session the server knows, in name order, each one's successor read
-/// before the walk hands it over so that destroying it does not lose the rest
-/// of the tree.
-fn each_session() -> impl Iterator<Item = *mut session> {
-    let mut next = sessions_first();
-    ::core::iter::from_fn(move || unsafe {
-        let current = next;
-        (!current.is_null()).then(|| {
-            next = sessions_after(current);
-            current
-        })
-    })
+/// Every session the server knows, in name order, walked by the handles that
+/// own them, so that destroying one neither loses the rest of the tree nor
+/// leaves the walk holding a session that has been given up.
+fn each_session() -> impl Iterator<Item = SessionRef> {
+    session_owners().into_iter()
 }
 
 /// The sessions of `sg`, in the order its list holds them, walked the way
@@ -199,14 +176,14 @@ unsafe fn cmd_kill_session_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retva
         let s = (*cmdq_get_target(item)).session();
 
         if args_has(args, b'C') != 0 {
-            for wl in windows_of(s) {
+            for wl in winlinks_in(s) {
                 (*(*wl).window()).flags &= !WINDOW_ALERTFLAGS;
                 (*wl).flags &= !WINLINK_ALERTFLAGS;
             }
             server_redraw_session(s);
         } else if args_has(args, b'a') != 0 {
-            for sloop in each_session().filter(|&sloop| sloop != s) {
-                destroy(sloop);
+            for sloop in each_session().filter(|sloop| sloop.as_ptr() != s) {
+                destroy(sloop.as_ptr());
             }
         } else if let Some(sg) = asked_group(args, s) {
             for sloop in members_of(sg) {

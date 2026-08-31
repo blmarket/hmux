@@ -83,7 +83,7 @@ impl Binding {
 }
 
 /// The key table the binding goes into.
-unsafe fn table_name<'a>(args: &args) -> &'a CStr {
+unsafe fn table_name(args: &args) -> &CStr {
     unsafe {
         if args_has(args, b'T') != 0 {
             CStr::from_ptr(args_get(args, b'T'))
@@ -125,7 +125,7 @@ unsafe fn binding_of(args: *mut args, count: u_int) -> Result<Binding, CString> 
     }
 }
 
-unsafe fn cmd_bind_key_args_parse(
+fn cmd_bind_key_args_parse(
     _args: &args,
     _idx: u_int,
     _cause: &mut Option<CString>,

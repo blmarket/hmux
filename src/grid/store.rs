@@ -1,12 +1,11 @@
 use super::links::hyperlinks_get;
-use crate::ffi::strchr;
 use crate::fmt_args;
 use crate::log::{fatalx, log_debug};
 use crate::server::current_time;
 use crate::style::colour_split_rgb;
 use crate::text::{utf8_build_one, utf8_cstrhas, utf8_from_data, utf8_set, utf8_to_data};
 pub use crate::types::*;
-use ::core::ffi::{CStr, c_char, c_int};
+use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
 pub const UINT_MAX: ::core::ffi::c_uint = u_int::MAX;
 pub const COLOUR_FLAG_256: ::core::ffi::c_int = 0x1000000 as ::core::ffi::c_int;
@@ -582,35 +581,23 @@ pub fn grid_set_padding(gd: &mut grid, px: u_int, py: u_int) {
 }
 
 /// Write a run of cells that share one style, one byte of `s` each.
-pub unsafe fn grid_set_cells(
-    gd: &mut grid,
-    px: u_int,
-    py: u_int,
-    gc: *const grid_cell,
-    s: *const c_char,
-    slen: size_t,
-) {
-    unsafe {
-        let gc = &*gc;
-        if !grid_check_y(gd, c"grid_set_cells", py) {
-            return;
-        }
-        let slen = slen as u_int;
-        let used = px.wrapping_add(slen);
-        grid_expand_line(gd, py, used, 8);
-        let gl = line_at_mut(gd, py);
-        if used > gl.cellused {
-            gl.cellused = used;
-        }
-        let s = ::core::slice::from_raw_parts(s as *const u_char, slen as usize);
-        for (i, &byte) in s.iter().enumerate() {
-            let at = px + i as u_int;
-            if grid_need_extended_cell(&gl.celldata()[at as usize], gc) {
-                let extd = grid_extended_cell(gl, at, gc);
-                gl.extddata_mut()[extd as usize].data = utf8_build_one(byte);
-            } else {
-                grid_store_cell(&mut gl.celldata_mut()[at as usize], gc, byte);
-            }
+pub fn grid_set_cells(gd: &mut grid, px: u_int, py: u_int, gc: &grid_cell, s: &[u8]) {
+    if !grid_check_y(gd, c"grid_set_cells", py) {
+        return;
+    }
+    let used = px.wrapping_add(s.len() as u_int);
+    grid_expand_line(gd, py, used, 8);
+    let gl = line_at_mut(gd, py);
+    if used > gl.cellused {
+        gl.cellused = used;
+    }
+    for (i, &byte) in s.iter().enumerate() {
+        let at = px + i as u_int;
+        if grid_need_extended_cell(&gl.celldata()[at as usize], gc) {
+            let extd = grid_extended_cell(gl, at, gc);
+            gl.extddata_mut()[extd as usize].data = utf8_build_one(byte);
+        } else {
+            grid_store_cell(&mut gl.celldata_mut()[at as usize], gc, byte);
         }
     }
 }
@@ -769,8 +756,7 @@ impl Values {
 
     /// The three parts of an RGB colour, after the code that introduces one.
     fn rgb(code: c_int, colour: c_int) -> Values {
-        let (mut r, mut g, mut b) = (0, 0, 0);
-        unsafe { colour_split_rgb(colour, &raw mut r, &raw mut g, &raw mut b) };
+        let (r, g, b) = colour_split_rgb(colour);
         Values::of(&[code, 2, r as c_int, g as c_int, b as c_int])
     }
 }
@@ -1503,39 +1489,36 @@ pub fn grid_line_length(gd: &grid, py: u_int) -> u_int {
 
 /// Whether the character at a position is in a set, and for a tab how many of
 /// its columns are still to come.
-pub unsafe fn grid_in_set(gd: &grid, px: u_int, py: u_int, set: *const c_char) -> c_int {
-    unsafe {
-        let mut gc = scratch_cell();
-        gc = grid_get_cell(gd, px, py);
-        if !strchr(set, '\t' as c_int).is_null() {
-            if gc.flags as c_int & GRID_FLAG_PADDING != 0 {
-                /*
-                 * Walk back to the cell the padding belongs to. Padding at
-                 * the start of a line walks off the front, where the read of
-                 * a cell that far out answers with the default cell.
-                 */
-                let mut pxx = px;
-                let mut tmp_gc = scratch_cell();
-                loop {
-                    pxx = pxx.wrapping_sub(1);
-                    tmp_gc = grid_get_cell(gd, pxx, py);
-                    if !(pxx > 0 && tmp_gc.flags as c_int & GRID_FLAG_PADDING != 0) {
-                        break;
-                    }
-                }
-                if tmp_gc.flags as c_int & GRID_FLAG_TAB != 0 {
-                    return (tmp_gc.data.width as u_int).wrapping_sub(px.wrapping_sub(pxx))
-                        as c_int;
-                }
-            } else if gc.flags as c_int & GRID_FLAG_TAB != 0 {
-                return gc.data.width as c_int;
-            }
-        }
+pub fn grid_in_set(gd: &grid, px: u_int, py: u_int, set: &CStr) -> c_int {
+    let mut gc = scratch_cell();
+    gc = grid_get_cell(gd, px, py);
+    if set.to_bytes().contains(&b'\t') {
         if gc.flags as c_int & GRID_FLAG_PADDING != 0 {
-            return 0;
+            /*
+             * Walk back to the cell the padding belongs to. Padding at
+             * the start of a line walks off the front, where the read of
+             * a cell that far out answers with the default cell.
+             */
+            let mut pxx = px;
+            let mut tmp_gc = scratch_cell();
+            loop {
+                pxx = pxx.wrapping_sub(1);
+                tmp_gc = grid_get_cell(gd, pxx, py);
+                if !(pxx > 0 && tmp_gc.flags as c_int & GRID_FLAG_PADDING != 0) {
+                    break;
+                }
+            }
+            if tmp_gc.flags as c_int & GRID_FLAG_TAB != 0 {
+                return (tmp_gc.data.width as u_int).wrapping_sub(px.wrapping_sub(pxx)) as c_int;
+            }
+        } else if gc.flags as c_int & GRID_FLAG_TAB != 0 {
+            return gc.data.width as c_int;
         }
-        utf8_cstrhas(set, &gc.data)
     }
+    if gc.flags as c_int & GRID_FLAG_PADDING != 0 {
+        return 0;
+    }
+    unsafe { utf8_cstrhas(set.as_ptr(), &gc.data) }
 }
 
 #[cfg(test)]

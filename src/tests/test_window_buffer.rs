@@ -38,7 +38,7 @@ unsafe fn editing(name: &::core::ffi::CStr) -> Box<window_buffer_editdata> {
         Box::new(window_buffer_editdata {
             wp_id: u_int::MAX,
             name: Some(name.to_owned()),
-            order: paste_buffer_order(pb),
+            order: paste_buffer_order(&*pb),
         })
     }
 }

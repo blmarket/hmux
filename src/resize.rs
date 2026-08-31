@@ -1,16 +1,16 @@
 use crate::ffi::sscanf;
 use crate::fmt_args;
-use crate::layout::{layout_resize, layout_root_ptr};
+use crate::layout::layout_resize;
 use crate::log::log_debug;
 use crate::notify::notify_window;
-use crate::options::{options_get_number, options_get_string, options_ptr};
+use crate::options::{options_get_number, options_get_string};
 use crate::server::client_walk;
 use crate::server::server_client_get_client_window;
 use crate::server::server_redraw_window;
 use crate::session::{
     session_add_attached, session_clear_attached, session_get_curw, session_options,
 };
-use crate::session::{session_has, sessions_after, sessions_first};
+use crate::session::{session_has, session_owners};
 use crate::status::{status_line_size, status_update_cache};
 use crate::tmux::global_w_options;
 use crate::tty::tty_update_window_offset;
@@ -42,19 +42,10 @@ pub const CLIENT_WINDOWSIZECHANGED: uint64_t = 0x400000000;
 pub const CLIENT_UNATTACHEDFLAGS: c_int = CLIENT_DEAD | CLIENT_SUSPENDED | CLIENT_EXIT;
 pub const CLIENT_NOSIZEFLAGS: c_int = CLIENT_DEAD | CLIENT_SUSPENDED | CLIENT_EXIT;
 
-/// The sessions in the server's tree, in name order.
-fn each_session() -> impl Iterator<Item = *mut session> {
-    let mut current = null_mut::<session>();
-    let mut started = false;
-    ::core::iter::from_fn(move || unsafe {
-        current = if started {
-            sessions_after(current)
-        } else {
-            started = true;
-            sessions_first()
-        };
-        (!current.is_null()).then_some(current)
-    })
+/// The sessions in the server's tree, in name order, walked by the handles
+/// that own them.
+fn each_session() -> impl Iterator<Item = SessionRef> {
+    session_owners().into_iter()
 }
 
 /// The windows in the server's tree, in id order.
@@ -87,8 +78,8 @@ pub unsafe fn resize_window(
         }
 
         layout_resize(w, sx, sy);
-        sx = sx.max((*layout_root_ptr(&(*w).layout_root)).sx);
-        sy = sy.max((*layout_root_ptr(&(*w).layout_root)).sy);
+        sx = sx.max((*(*w).layout_root_ptr()).sx);
+        sy = sy.max((*(*w).layout_root_ptr()).sy);
         window_resize(w, sx, sy, xpixel, ypixel);
         log_debug(
             c"%s: @%u resized to %ux%u; layout %ux%u".as_ptr(),
@@ -97,8 +88,8 @@ pub unsafe fn resize_window(
                 (*w).id,
                 sx,
                 sy,
-                (*layout_root_ptr(&(*w).layout_root)).sx,
-                (*layout_root_ptr(&(*w).layout_root)).sy
+                (*(*w).layout_root_ptr()).sx,
+                (*(*w).layout_root_ptr()).sy
             ],
         );
 
@@ -118,27 +109,25 @@ pub unsafe fn resize_window(
 /// session, it is on its way out, it was told to ignore its own size while some
 /// other client was not, or it is a control client that has not reported a size
 /// yet.
-unsafe fn ignore_client_size(c: *mut client) -> bool {
-    unsafe {
-        if (*c).session.is_null() {
-            return true;
-        }
-        if (*c).flags & CLIENT_NOSIZEFLAGS as uint64_t != 0 {
-            return true;
-        }
-        if (*c).flags & CLIENT_IGNORESIZE as uint64_t != 0
-            && client_walk().any(|loop_0| {
-                !(*loop_0).session.is_null()
-                    && (*loop_0).flags & CLIENT_NOSIZEFLAGS as uint64_t == 0
-                    && (*loop_0).flags & CLIENT_IGNORESIZE as uint64_t == 0
-            })
-        {
-            return true;
-        }
-        (*c).flags & CLIENT_CONTROL as uint64_t != 0
-            && (*c).flags & CLIENT_SIZECHANGED as uint64_t == 0
-            && (*c).flags & CLIENT_WINDOWSIZECHANGED == 0
+fn ignore_client_size(c: &client) -> bool {
+    if c.session.is_null() {
+        return true;
     }
+    if c.flags & CLIENT_NOSIZEFLAGS as uint64_t != 0 {
+        return true;
+    }
+    if c.flags & CLIENT_IGNORESIZE as uint64_t != 0
+        && client_walk().any(|loop_0| unsafe {
+            !(*loop_0).session.is_null()
+                && (*loop_0).flags & CLIENT_NOSIZEFLAGS as uint64_t == 0
+                && (*loop_0).flags & CLIENT_IGNORESIZE as uint64_t == 0
+        })
+    {
+        return true;
+    }
+    c.flags & CLIENT_CONTROL as uint64_t != 0
+        && c.flags & CLIENT_SIZECHANGED as uint64_t == 0
+        && c.flags & CLIENT_WINDOWSIZECHANGED == 0
 }
 
 /// How many clients have a say in `w`'s size, counted no further than two,
@@ -146,7 +135,7 @@ unsafe fn ignore_client_size(c: *mut client) -> bool {
 unsafe fn clients_with_window(w: *mut window) -> u_int {
     unsafe {
         client_walk()
-            .filter(|c| !ignore_client_size(*c) && session_has((**c).session, w) != 0)
+            .filter(|c| !ignore_client_size(&**c) && session_has((**c).session, w) != 0)
             .take(2)
             .count() as u_int
     }
@@ -162,6 +151,7 @@ type skip_client = unsafe fn(&client, c_int, c_int, *mut session, *mut window) -
 /// `UINT_MAX` for the smallest and the latest — and the caller writes them out
 /// all the same before looking for a size of its own, which is what the C's
 /// out-parameters did.
+#[derive(Default)]
 struct client_size {
     found: bool,
     sx: u_int,
@@ -179,13 +169,7 @@ unsafe fn clients_calculate_size(
     skip_client: skip_client,
 ) -> client_size {
     unsafe {
-        let mut size = client_size {
-            found: false,
-            sx: 0,
-            sy: 0,
-            xpixel: 0,
-            ypixel: 0,
-        };
+        let mut size = client_size::default();
         if type_0 == WINDOW_SIZE_LARGEST {
             size.sx = 0;
             size.sy = 0;
@@ -208,12 +192,12 @@ unsafe fn clients_calculate_size(
 
         if type_0 != WINDOW_SIZE_MANUAL {
             for loop_0 in client_walk() {
-                if loop_0 != c && ignore_client_size(loop_0) {
+                if loop_0 != c && ignore_client_size(&*loop_0) {
                     log_debug(
                         c"%s: ignoring %s (1)".as_ptr(),
                         fmt_args![
                             c"clients_calculate_size".as_ptr(),
-                            cstr_ptr(&(*loop_0).name)
+                            (*loop_0).name.as_deref()
                         ],
                     );
                 } else if loop_0 != c && skip_client(&*loop_0, type_0, current, s, w) {
@@ -221,7 +205,7 @@ unsafe fn clients_calculate_size(
                         c"%s: skipping %s (1)".as_ptr(),
                         fmt_args![
                             c"clients_calculate_size".as_ptr(),
-                            cstr_ptr(&(*loop_0).name)
+                            (*loop_0).name.as_deref()
                         ],
                     );
                 } else if type_0 == WINDOW_SIZE_LATEST && n > 1 && loop_0 != window_get_latest(w) {
@@ -229,7 +213,7 @@ unsafe fn clients_calculate_size(
                         c"%s: %s is not latest".as_ptr(),
                         fmt_args![
                             c"clients_calculate_size".as_ptr(),
-                            cstr_ptr(&(*loop_0).name)
+                            (*loop_0).name.as_deref()
                         ],
                     );
                 } else {
@@ -261,7 +245,7 @@ unsafe fn clients_calculate_size(
                         c"%s: after %s (%ux%u), size is %ux%u".as_ptr(),
                         fmt_args![
                             c"clients_calculate_size".as_ptr(),
-                            cstr_ptr(&(*loop_0).name),
+                            (*loop_0).name.as_deref(),
                             cx,
                             cy,
                             size.sx,
@@ -275,7 +259,7 @@ unsafe fn clients_calculate_size(
 
         if !w.is_null() {
             for loop_0 in client_walk() {
-                if loop_0 != c && ignore_client_size(loop_0) {
+                if loop_0 != c && ignore_client_size(&*loop_0) {
                     continue;
                 }
                 if loop_0 != c && skip_client(&*loop_0, type_0, current, s, w) {
@@ -292,7 +276,7 @@ unsafe fn clients_calculate_size(
                     c"%s: %s size for @%u is %ux%u".as_ptr(),
                     fmt_args![
                         c"clients_calculate_size".as_ptr(),
-                        cstr_ptr(&(*loop_0).name),
+                        (*loop_0).name.as_deref(),
                         (*w).id,
                         (*cw).sx,
                         (*cw).sy
@@ -392,7 +376,7 @@ pub unsafe fn default_window_size(
         if type_0 == -1 {
             type_0 = options_get_number(global_w_options, c"window-size".as_ptr()) as c_int;
         }
-        if type_0 == WINDOW_SIZE_LATEST && !c.is_null() && !ignore_client_size(c) {
+        if type_0 == WINDOW_SIZE_LATEST && !c.is_null() && !ignore_client_size(&*c) {
             sx = (*c).tty.sx;
             sy = (*c).tty.sy.wrapping_sub(status_line_size(c));
             xpixel = (*c).tty.xpixel;
@@ -403,7 +387,7 @@ pub unsafe fn default_window_size(
                     c"default_window_size".as_ptr(),
                     sx,
                     sy,
-                    cstr_ptr(&(*c).name)
+                    (*c).name.as_deref()
                 ],
             );
         } else {
@@ -470,10 +454,9 @@ pub unsafe fn recalculate_size(w: *mut window, now: c_int) {
             fmt_args![c"recalculate_size".as_ptr(), (*w).id, (*w).sx, (*w).sy],
         );
 
-        let type_0 =
-            options_get_number(options_ptr(&(*w).options), c"window-size".as_ptr()) as c_int;
+        let type_0 = options_get_number((*w).options_ptr(), c"window-size".as_ptr()) as c_int;
         let current =
-            options_get_number(options_ptr(&(*w).options), c"aggressive-resize".as_ptr()) as c_int;
+            options_get_number((*w).options_ptr(), c"aggressive-resize".as_ptr()) as c_int;
         let size = clients_calculate_size(
             type_0,
             current,
@@ -533,7 +516,8 @@ pub fn recalculate_sizes() {
 /// session has attached and deciding which clients have room for a status line.
 pub fn recalculate_sizes_now(now: c_int) {
     unsafe {
-        for s in each_session() {
+        for s_ref in each_session() {
+            let s = s_ref.as_ptr();
             session_clear_attached(s);
             status_update_cache(s);
         }
@@ -542,7 +526,7 @@ pub fn recalculate_sizes_now(now: c_int) {
             if !s.is_null() && (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t == 0 {
                 session_add_attached(s);
             }
-            if !ignore_client_size(c) {
+            if !ignore_client_size(&*c) {
                 if (*c).tty.sy <= (*s).statuslines || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
                     (*c).flags |= CLIENT_STATUSOFF as uint64_t;
                 } else {

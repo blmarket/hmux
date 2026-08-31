@@ -38,9 +38,7 @@ use crate::cmd::cmd_select_layout::{
 };
 use crate::cmd::cmdq_set_target_client;
 use crate::cmd::{CMD_PARSE_ERROR, CMD_PARSE_SUCCESS, cmd_parse_from_string};
-use crate::layout::{
-    layout_assign_pane, layout_free, layout_init, layout_root_ptr, layout_split_pane,
-};
+use crate::layout::{layout_assign_pane, layout_free, layout_init, layout_split_pane};
 use crate::proc::PEER_BAD;
 use crate::server::message_log;
 use crate::tests::test_fixtures::{
@@ -139,7 +137,7 @@ unsafe fn server_messages() -> Vec<String> {
 
 /// The layout tree of `w` as one line, in the fixtures' own grammar.
 unsafe fn tree(w: *mut window) -> String {
-    unsafe { dump_cell(layout_root_ptr(&(*w).layout_root)) }
+    unsafe { dump_cell((*w).layout_root_ptr()) }
 }
 
 /// The dump string currently stored on the window, without taking it.

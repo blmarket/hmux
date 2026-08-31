@@ -30,11 +30,8 @@ fn decode(input: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
-fn strunvis_call(src: &CStr) -> (c_int, Vec<u8>) {
-    let mut dst = vec![0u8 as c_char; src.count_bytes() + 8];
-    let n = unsafe { strunvis(dst.as_mut_ptr(), src.as_ptr()) };
-    let bytes = unsafe { CStr::from_ptr(dst.as_ptr()).to_bytes().to_vec() };
-    (n, bytes)
+fn strunvis_call(src: &CStr) -> Option<Vec<u8>> {
+    strunvis(src).map(|out| out.into_bytes())
 }
 
 fn strnunvis_call(src: &CStr, sz: usize) -> (ssize_t, Vec<u8>) {
@@ -143,24 +140,30 @@ fn an_unknown_state_resets_to_ground_and_fails() {
 }
 
 #[test]
-fn strunvis_decodes_and_returns_the_length() {
-    assert_eq!(strunvis_call(c"abc"), (3, b"abc".to_vec()));
-    assert_eq!(strunvis_call(c""), (0, b"".to_vec()));
-    assert_eq!(strunvis_call(c"a\\nb"), (3, b"a\nb".to_vec()));
-    assert_eq!(strunvis_call(c"\\101\\102"), (2, b"AB".to_vec()));
-    assert_eq!(strunvis_call(c"\\1x"), (2, b"\x01x".to_vec()));
-    assert_eq!(strunvis_call(c"a\\$b"), (2, b"ab".to_vec()));
+fn strunvis_decodes_the_whole_string() {
+    assert_eq!(strunvis_call(c"abc"), Some(b"abc".to_vec()));
+    assert_eq!(strunvis_call(c""), Some(b"".to_vec()));
+    assert_eq!(strunvis_call(c"a\\nb"), Some(b"a\nb".to_vec()));
+    assert_eq!(strunvis_call(c"\\101\\102"), Some(b"AB".to_vec()));
+    assert_eq!(strunvis_call(c"\\1x"), Some(b"\x01x".to_vec()));
+    assert_eq!(strunvis_call(c"a\\$b"), Some(b"ab".to_vec()));
 }
 
 #[test]
 fn strunvis_flushes_a_pending_octal_escape_at_the_end() {
-    assert_eq!(strunvis_call(c"\\1"), (1, b"\x01".to_vec()));
-    assert_eq!(strunvis_call(c"a\\12"), (2, b"a\n".to_vec()));
+    assert_eq!(strunvis_call(c"\\1"), Some(b"\x01".to_vec()));
+    assert_eq!(strunvis_call(c"a\\12"), Some(b"a\n".to_vec()));
 }
 
 #[test]
 fn strunvis_reports_a_syntax_error() {
-    assert_eq!(strunvis_call(c"a\\z"), (-1, b"a".to_vec()));
+    assert_eq!(strunvis_call(c"a\\z"), None);
+}
+
+#[test]
+fn strunvis_stops_at_a_decoded_nul() {
+    assert_eq!(strunvis_call(c"a\\0b"), Some(b"a".to_vec()));
+    assert_eq!(strunvis_call(c"\\000x"), Some(b"".to_vec()));
 }
 
 #[test]

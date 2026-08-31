@@ -118,6 +118,7 @@ pub const CMD_RETURN_STOP: cmd_retval = 2;
 pub const CMD_RETURN_WAIT: cmd_retval = 1;
 pub const CMD_RETURN_NORMAL: cmd_retval = 0;
 pub const CMD_RETURN_ERROR: cmd_retval = -1;
+#[derive(Default)]
 #[repr(C)]
 pub struct cmd_load_buffer_data {
     pub(crate) client_ref: Option<ClientRef>,
@@ -223,11 +224,7 @@ unsafe fn cmd_load_buffer_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
     unsafe {
         let args: &args = cmd_get_args(self_0);
         let mut tc: *mut client = cmdq_get_target_client(&*item);
-        let mut cdata = Box::new(cmd_load_buffer_data {
-            client_ref: None,
-            item: None,
-            name: None,
-        });
+        let mut cdata = Box::<cmd_load_buffer_data>::default();
         let cdata_ptr = cdata.as_mut() as *mut cmd_load_buffer_data;
         let mut bufname: *const ::core::ffi::c_char = args_get(args, 'b' as i32 as u_char);
         (*cdata_ptr).item = cmdq_item_weak_from_ptr(item);

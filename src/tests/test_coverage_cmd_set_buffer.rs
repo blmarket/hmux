@@ -115,7 +115,7 @@ unsafe fn add_automatic(data: &str) {
 /// The bytes of the newest automatic buffer, which `paste_get_top` answers.
 unsafe fn top_bytes() -> Vec<u8> {
     unsafe {
-        let pb = paste_get_top(null_mut());
+        let pb = paste_get_top(None);
         assert!(!pb.is_null(), "no automatic buffer on top");
         paste_buffer_data(&*pb).to_vec()
     }
@@ -372,7 +372,7 @@ fn deleting_takes_a_named_buffer_or_the_newest_automatic_one() {
         let mut last = item(c"deleteb", 16);
         assert_eq!(run(delete_entry(), &mut last), CMD_RETURN_NORMAL);
         assert!(
-            paste_get_top(null_mut()).is_null(),
+            paste_get_top(None).is_null(),
             "no automatic buffers are left"
         );
     }
@@ -401,7 +401,7 @@ fn renaming_moves_the_named_or_newest_automatic_buffer() {
             "without -b the rename takes the newest automatic buffer"
         );
         assert!(
-            paste_get_top(null_mut()).is_null(),
+            paste_get_top(None).is_null(),
             "a renamed buffer stops being automatic"
         );
     }

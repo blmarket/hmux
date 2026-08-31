@@ -3,7 +3,7 @@ use crate::fmt_args;
 use crate::list::foreach_owned;
 use crate::log::{fatalx, log_debug};
 use crate::notify::notify_window;
-use crate::options::{options_get_number, options_ptr};
+use crate::options::options_get_number;
 pub use crate::types::*;
 use crate::window::window_get_active;
 use crate::window::window_pane_of_id;
@@ -427,7 +427,7 @@ unsafe fn layout_fix_offsets1(lc: *mut layout_cell) {
 
 pub unsafe fn layout_fix_offsets(w: *mut window) {
     unsafe {
-        let lc = layout_root_ptr(&(*w).layout_root);
+        let lc = (*w).layout_root_ptr();
         if floating(lc) {
             return;
         }
@@ -441,7 +441,7 @@ pub unsafe fn layout_fix_offsets(w: *mut window) {
 /// top-to-bottom node above it, skipping any floating cells at the edge.
 unsafe fn layout_cell_is_top(w: *mut window, mut lc: *mut layout_cell) -> c_int {
     unsafe {
-        while lc != layout_root_ptr(&(*w).layout_root) {
+        while lc != (*w).layout_root_ptr() {
             let next = (*lc).parent;
             if next.is_null() {
                 return 0;
@@ -461,7 +461,7 @@ unsafe fn layout_cell_is_top(w: *mut window, mut lc: *mut layout_cell) -> c_int 
 /// Whether `lc` is at the very bottom of the window. See [`layout_cell_is_top`].
 unsafe fn layout_cell_is_bottom(w: *mut window, mut lc: *mut layout_cell) -> c_int {
     unsafe {
-        while lc != layout_root_ptr(&(*w).layout_root) {
+        while lc != (*w).layout_root_ptr() {
             let next = (*lc).parent;
             if next.is_null() {
                 return 0;
@@ -505,7 +505,7 @@ unsafe fn layout_add_horizontal_border(
 pub unsafe fn layout_fix_panes(w: *mut window, skip: *mut window_pane) {
     unsafe {
         let status =
-            options_get_number(options_ptr(&(*w).options), c"pane-border-status".as_ptr()) as c_int;
+            options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr()) as c_int;
         let mut wp = window_panes_first(w);
         while !wp.is_null() {
             let lc = (*wp).layout_cell;
@@ -575,7 +575,7 @@ unsafe fn layout_resize_check(w: *mut window, lc: *mut layout_cell, type_0: layo
     unsafe {
         let sb_style = &raw mut (*window_get_active(w)).scrollbar_style;
         let status =
-            options_get_number(options_ptr(&(*w).options), c"pane-border-status".as_ptr()) as c_int;
+            options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr()) as c_int;
 
         if (*lc).type_0 == LAYOUT_WINDOWPANE {
             let (available, minimum) = if type_0 == LAYOUT_LEFTRIGHT {
@@ -727,7 +727,7 @@ pub unsafe fn layout_destroy_cell(
 pub unsafe fn layout_init(w: *mut window, wp: *mut window_pane) {
     unsafe {
         (*w).layout_root = Some(layout_create_cell(null_mut::<layout_cell>()));
-        let lc = layout_root_ptr(&(*w).layout_root);
+        let lc = (*w).layout_root_ptr();
         layout_set_size(lc, (*w).sx, (*w).sy, 0, 0);
         layout_make_leaf(lc, wp);
         layout_fix_panes(w, null_mut::<window_pane>());
@@ -742,7 +742,7 @@ pub unsafe fn layout_free(w: *mut window) {
 /// allow.
 pub unsafe fn layout_resize(w: *mut window, sx: u_int, sy: u_int) {
     unsafe {
-        let lc = layout_root_ptr(&(*w).layout_root);
+        let lc = (*w).layout_root_ptr();
         if (*lc).type_0 == LAYOUT_WINDOWPANE && floating(lc) {
             return;
         }
@@ -1162,12 +1162,12 @@ pub unsafe fn layout_split_pane(
         let mut resize_first = false;
 
         let lc = if full_size != 0 {
-            layout_root_ptr(&(*w).layout_root)
+            (*w).layout_root_ptr()
         } else {
             (*wp).layout_cell
         };
         let status =
-            options_get_number(options_ptr(&(*w).options), c"pane-border-status".as_ptr()) as c_int;
+            options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr()) as c_int;
 
         let sx = (*lc).sx;
         let sy = (*lc).sy;
@@ -1323,7 +1323,7 @@ pub unsafe fn layout_floating_pane(
     oy: c_int,
 ) -> *mut layout_cell {
     unsafe {
-        let lc = layout_root_ptr(&(*w).layout_root);
+        let lc = (*w).layout_root_ptr();
         let lcparent = if (*lc).type_0 == LAYOUT_WINDOWPANE {
             let mut node = layout_create_cell(null_mut::<layout_cell>());
             let lcparent = &raw mut *node;
@@ -1337,7 +1337,7 @@ pub unsafe fn layout_floating_pane(
             insert_head(&raw mut (*lcparent).cells, only);
             lcparent
         } else {
-            layout_root_ptr(&(*w).layout_root)
+            (*w).layout_root_ptr()
         };
 
         let new = layout_create_cell(lcparent);
@@ -1357,7 +1357,7 @@ pub unsafe fn layout_close_pane(wp: *mut window_pane) {
         }
         layout_destroy_cell(w, (*wp).layout_cell, &mut (*w).layout_root);
         (*wp).layout_cell = null_mut::<layout_cell>();
-        if !layout_root_ptr(&(*w).layout_root).is_null() {
+        if !(*w).layout_root_ptr().is_null() {
             layout_fix_offsets(w);
             layout_fix_panes(w, null_mut::<window_pane>());
         }
@@ -1379,7 +1379,7 @@ pub unsafe fn layout_spread_cell(w: *mut window, parent: *mut layout_cell) -> c_
             _ => return 0,
         };
         let status =
-            options_get_number(options_ptr(&(*w).options), c"pane-border-status".as_ptr()) as c_int;
+            options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr()) as c_int;
 
         let size = if leftright {
             (*parent).sx

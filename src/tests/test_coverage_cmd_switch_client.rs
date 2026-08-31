@@ -515,7 +515,7 @@ fn switch_client_key_table_branch() {
 
         let mut item_good = item_as(&raw mut *c, c"switch-client -T root");
         assert_eq!(run(&mut item_good), CMD_RETURN_NORMAL);
-        assert_eq!(seen(key_table_name((*c).keytable())), "root");
+        assert_eq!(key_table_name((*c).keytable()), c"root");
     }
 }
 

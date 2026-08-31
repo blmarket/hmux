@@ -222,7 +222,7 @@ unsafe fn cmd_show_options_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> c
         window = (::core::ptr::eq(cmd_get_entry(self_0), &cmd_show_window_options_entry))
             as ::core::ffi::c_int;
         if args_count(args) == 0 as u_int {
-            scope = options_scope_from_flags(args, window, target, &raw mut oo, &mut cause);
+            scope = options_scope_from_flags(args, window, target, &mut oo, &mut cause);
             if scope == OPTIONS_TABLE_NONE {
                 if args_has(args, 'q' as i32 as u_char) != 0 {
                     return CMD_RETURN_NORMAL;
@@ -237,10 +237,7 @@ unsafe fn cmd_show_options_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> c
             item,
             ::core::ffi::CStr::from_ptr(args_string(args, 0 as u_int)),
         );
-        let name = options_match(argument.as_ptr(), &raw mut idx, &raw mut ambiguous);
-        let name_ptr = name
-            .as_ref()
-            .map_or(::core::ptr::null(), |name| name.as_ptr());
+        let name = options_match(&argument, &mut idx, &mut ambiguous);
         if name.is_none() {
             if args_has(args, 'q' as i32 as u_char) != 0 {
                 current_block = 14351605340212681318;
@@ -261,8 +258,8 @@ unsafe fn cmd_show_options_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> c
                 current_block = 648366277789593999;
             }
         } else {
-            scope =
-                options_scope_from_name(args, window, name_ptr, target, &raw mut oo, &mut cause);
+            let name = name.unwrap();
+            scope = options_scope_from_name(args, window, &name, target, &mut oo, &mut cause);
             if scope == OPTIONS_TABLE_NONE {
                 if args_has(args, 'q' as i32 as u_char) != 0 {
                     current_block = 14351605340212681318;
@@ -272,9 +269,9 @@ unsafe fn cmd_show_options_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> c
                     current_block = 648366277789593999;
                 }
             } else {
-                o = options_get_only_ptr(oo, name_ptr);
+                o = options_get_only_ptr(oo, name.as_ptr());
                 if args_has(args, 'A' as i32 as u_char) != 0 && o.is_null() {
-                    o = options_get_ptr(oo, name_ptr);
+                    o = options_get_ptr(oo, name.as_ptr());
                     parent = 1 as ::core::ffi::c_int;
                 } else {
                     parent = 0 as ::core::ffi::c_int;
@@ -282,7 +279,7 @@ unsafe fn cmd_show_options_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> c
                 if !o.is_null() {
                     cmd_show_options_print(self_0, item, o, idx, parent);
                     current_block = 14351605340212681318;
-                } else if *name_ptr as ::core::ffi::c_int == '@' as i32 {
+                } else if name.to_bytes().first() == Some(&b'@') {
                     if args_has(args, 'q' as i32 as u_char) != 0 {
                         current_block = 14351605340212681318;
                     } else {
@@ -314,7 +311,7 @@ unsafe fn cmd_show_options_print(
     unsafe {
         let args: &args = cmd_get_args(self_0);
         let mut a: *mut options_array_item_t = ::core::ptr::null_mut::<options_array_item_t>();
-        let mut name: *const ::core::ffi::c_char = options_name(o);
+        let mut name: *const ::core::ffi::c_char = options_name(o).as_ptr();
         let _tmp = if idx != -(1 as ::core::ffi::c_int) {
             let tmp = xasprintf(c"%s[%d]".as_ptr(), fmt_args![name, idx]);
             name = tmp.as_ptr();
@@ -361,7 +358,6 @@ unsafe fn cmd_show_options_all(
 ) -> cmd_retval {
     unsafe {
         let args: &args = cmd_get_args(self_0);
-        let mut oe: *const options_table_entry_t = ::core::ptr::null::<options_table_entry_t>();
         let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
         let mut a: *mut options_array_item_t = ::core::ptr::null_mut::<options_array_item_t>();
         let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -370,7 +366,7 @@ unsafe fn cmd_show_options_all(
         if !::core::ptr::eq(cmd_get_entry(self_0), &cmd_show_hooks_entry) {
             o = options_first(oo);
             while !o.is_null() {
-                if options_table_entry(o).is_null() {
+                if options_table_entry(o).is_none() {
                     cmd_show_options_print(
                         self_0,
                         item,
@@ -383,21 +379,20 @@ unsafe fn cmd_show_options_all(
             }
         }
         let mut current_block_28: u64;
-        for entry in &options_table {
-            oe = entry;
-            if !(!(*oe).scope & scope != 0)
+        for oe in &options_table {
+            if !(!oe.scope & scope != 0)
                 && !(!::core::ptr::eq(cmd_get_entry(self_0), &cmd_show_hooks_entry)
                     && args_has(args, 'H' as i32 as u_char) == 0
-                    && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0
+                    && oe.flags & OPTIONS_TABLE_IS_HOOK != 0
                     || ::core::ptr::eq(cmd_get_entry(self_0), &cmd_show_hooks_entry)
-                        && !(*oe).flags & OPTIONS_TABLE_IS_HOOK != 0)
+                        && !oe.flags & OPTIONS_TABLE_IS_HOOK != 0)
             {
-                o = options_get_only_ptr(oo, (*oe).name.as_ptr());
+                o = options_get_only_ptr(oo, oe.name.as_ptr());
                 if o.is_null() {
                     if args_has(args, 'A' as i32 as u_char) == 0 {
                         current_block_28 = 11812396948646013369;
                     } else {
-                        o = options_get_ptr(oo, (*oe).name.as_ptr());
+                        o = options_get_ptr(oo, oe.name.as_ptr());
                         if o.is_null() {
                             current_block_28 = 11812396948646013369;
                         } else {
@@ -424,7 +419,7 @@ unsafe fn cmd_show_options_all(
                             a = options_array_first(o);
                             if a.is_null() {
                                 if args_has(args, 'v' as i32 as u_char) == 0 {
-                                    name = options_name(o);
+                                    name = options_name(o).as_ptr();
                                     if parent != 0 {
                                         cmdq_print(item, c"%s*".as_ptr(), fmt_args![name]);
                                     } else {
@@ -448,7 +443,6 @@ unsafe fn cmd_show_options_all(
                     }
                 }
             }
-            oe = oe.offset(1);
         }
         CMD_RETURN_NORMAL
     }

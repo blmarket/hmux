@@ -4,11 +4,12 @@ use crate::cmd::cmd_pack_argv;
 use crate::cmd::cmd_parse_from_arguments;
 use crate::compat::imsgbuf_flush;
 use crate::compat::systemd_activated;
+use crate::environ::environ_process;
 use crate::ffi::{
     __errno_location, cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, close,
-    closefrom, connect, dup, environ, execl, fflush, flock, fprintf, getenv, getpid, getppid,
-    isatty, kill, open, printf, setenv, sigaction, sigemptyset, socket, stderr, stdout, strerror,
-    strlcpy, strlen, strsignal, system, tcgetattr, tcsetattr, ttyname, waitpid,
+    closefrom, connect, dup, execl, fflush, flock, fprintf, getenv, getpid, getppid, isatty, kill,
+    open, printf, setenv, sigaction, sigemptyset, socket, stderr, stdout, strerror, strlcpy,
+    strlen, strsignal, system, tcgetattr, tcsetattr, ttyname, waitpid,
 };
 use crate::file::{
     file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
@@ -432,7 +433,7 @@ pub unsafe fn client_main(
         let mut saved_tio: termios = ::core::mem::zeroed();
         let mut size: size_t = 0;
         let argc = argv.len() as ::core::ffi::c_int;
-        if !shell_command.is_null() {
+        if shell_command.is_some() {
             msg = MSG_SHELL;
             flags |= CLIENT_STARTSERVER as uint64_t;
         } else if argv.is_empty() {
@@ -467,16 +468,30 @@ pub unsafe fn client_main(
         if systemd_activated() != 0 {
             fd = server_start(client_proc, flags, base, 0 as ::core::ffi::c_int, None);
         } else {
-            fd = client_connect(base, socket_path, client_flags);
+            fd = client_connect(
+                base,
+                socket_path
+                    .as_deref()
+                    .map_or(::core::ptr::null(), CStr::as_ptr),
+                client_flags,
+            );
         }
         if fd == -(1 as ::core::ffi::c_int) {
             if *__errno_location() == ECONNREFUSED {
-                fprintf(stderr, c"no server running on %s\n".as_ptr(), socket_path);
+                fprintf(
+                    stderr,
+                    c"no server running on %s\n".as_ptr(),
+                    socket_path
+                        .as_deref()
+                        .map_or(::core::ptr::null(), CStr::as_ptr),
+                );
             } else {
                 fprintf(
                     stderr,
                     c"error connecting to %s (%s)\n".as_ptr(),
-                    socket_path,
+                    socket_path
+                        .as_deref()
+                        .map_or(::core::ptr::null(), CStr::as_ptr),
                     strerror(*__errno_location()),
                 );
             }
@@ -589,14 +604,7 @@ pub unsafe fn client_main(
             }
             let execshell = &raw const client_execshell;
             let execcmd = &raw const client_execcmd;
-            client_exec(
-                (*execshell)
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
-                (*execcmd)
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
-            );
+            client_exec((*execshell).as_deref(), (*execcmd).as_deref());
         }
         setblocking(STDIN_FILENO, 1 as ::core::ffi::c_int);
         setblocking(STDOUT_FILENO, 1 as ::core::ffi::c_int);
@@ -655,9 +663,6 @@ unsafe fn client_send_identify(
     mut feat: ::core::ffi::c_int,
 ) {
     unsafe {
-        let mut ss: *mut *mut ::core::ffi::c_char =
-            ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-        let mut sslen: size_t = 0;
         let mut fd: ::core::ffi::c_int = 0;
         let mut flags: uint64_t = client_flags;
         let mut pid: pid_t = 0;
@@ -742,19 +747,17 @@ unsafe fn client_send_identify(
             &raw mut pid as *const u8,
             ::core::mem::size_of::<pid_t>() as size_t,
         );
-        ss = environ;
-        while !(*ss).is_null() {
-            sslen = strlen(*ss).wrapping_add(1 as size_t);
+        for var in environ_process() {
+            let sslen = var.to_bytes_with_nul().len() as size_t;
             if !(sslen > (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE)) {
                 proc_send(
                     client_peer,
                     MSG_IDENTIFY_ENVIRON,
                     -(1 as ::core::ffi::c_int),
-                    *ss as *const u8,
+                    var.as_ptr() as *const u8,
                     sslen,
                 );
             }
-            ss = ss.offset(1);
         }
         proc_send(
             client_peer,
@@ -765,12 +768,10 @@ unsafe fn client_send_identify(
         );
     }
 }
-unsafe fn client_exec(
-    mut shell: *const ::core::ffi::c_char,
-    mut shellcmd: *const ::core::ffi::c_char,
-) -> ! {
+unsafe fn client_exec(shell: Option<&CStr>, shellcmd: Option<&CStr>) -> ! {
     unsafe {
         log_debug(c"shell %s, command %s".as_ptr(), fmt_args![shell, shellcmd]);
+        let shell = shell.map_or(::core::ptr::null(), CStr::as_ptr);
         let argv0 = shell_argv0(
             shell,
             (client_flags & CLIENT_LOGIN as uint64_t != 0) as ::core::ffi::c_int,
@@ -785,7 +786,7 @@ unsafe fn client_exec(
             shell,
             argv0.as_ptr() as *mut ::core::ffi::c_char,
             c"-c".as_ptr(),
-            shellcmd,
+            shellcmd.map_or(::core::ptr::null(), CStr::as_ptr),
             ::core::ptr::null_mut::<::core::ffi::c_char>(),
         );
         fatal(c"execl failed".as_ptr(), fmt_args![]);
@@ -999,7 +1000,7 @@ pub(crate) unsafe fn client_dispatch_wait(mut imsg: *mut imsg) {
                 {
                     fatalx(c"bad MSG_SHELL string".as_ptr(), fmt_args![]);
                 }
-                client_exec(data, shell_command);
+                client_exec(Some(CStr::from_ptr(data)), shell_command.as_deref());
             }
             MSG_DETACH | MSG_DETACHKILL => {
                 proc_send(

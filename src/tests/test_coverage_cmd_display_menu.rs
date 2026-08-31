@@ -274,10 +274,7 @@ fn the_border_flag_and_limit_constants_keep_their_values() {
     }
     assert_eq!(__INT_MAX__, 2147483647);
     assert_eq!(UINT_MAX, 4294967295);
-    assert_eq!(
-        _PATH_BSHELL.iter().map(|c| *c as u8).collect::<Vec<u8>>(),
-        b"/bin/sh\0".to_vec()
-    );
+    assert_eq!(_PATH_BSHELL.to_bytes_with_nul(), b"/bin/sh\0");
 }
 
 #[test]

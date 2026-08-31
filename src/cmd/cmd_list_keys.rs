@@ -35,7 +35,7 @@
 //! prompt, sorting and mouse-key constants below are not this module's own,
 //! but the tests pin their values through it, so they stay where the
 //! transpiler put them.
-use crate::arguments::{args_get, args_has, args_string};
+use crate::arguments::{args_get, args_get_str, args_has, args_string};
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
 use crate::cmd::{cmd_get_args, cmd_list_print};
 use crate::fmt_args;
@@ -264,7 +264,7 @@ unsafe fn cmd_list_keys_get_width(l: &[*mut key_binding]) -> u_int {
 unsafe fn cmd_list_keys_get_table_width(l: &[*mut key_binding]) -> u_int {
     unsafe {
         l.iter()
-            .map(|&bd| utf8_cstrwidth(key_binding_tablename(bd)))
+            .map(|&bd| key_binding_tablename(bd).map_or(0, |name| utf8_cstrwidth(name.as_ptr())))
             .max()
             .unwrap_or(0)
     }
@@ -380,9 +380,8 @@ unsafe fn cmd_list_keys_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
         }
 
         let mut sort_crit = sort_criteria_t {
-            order: sort_order_from_string(args_get(args, b'O')),
-            reversed: 0,
-            order_seq: None,
+            order: sort_order_from_string(args_get_str(args, b'O')),
+            ..Default::default()
         };
         if sort_crit.order == SORT_END && args_has(args, b'O') != 0 {
             cmdq_error(item, c"invalid sort order".as_ptr(), fmt_args![]);
@@ -443,7 +442,7 @@ unsafe fn cmd_list_keys_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
             &mut ft,
             c"key_has_repeat",
             c"%d".as_ptr(),
-            fmt_args![key_bindings_has_repeat(l.as_mut_ptr(), n)],
+            fmt_args![key_bindings_has_repeat(&l[..n as usize])],
         );
         format_add(
             &mut ft,

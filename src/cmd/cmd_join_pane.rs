@@ -28,7 +28,7 @@ use crate::cmd::queue::{cmdq_error, cmdq_get_current, cmdq_get_source, cmdq_get_
 use crate::fmt_args;
 use crate::layout::{layout_assign_pane, layout_close_pane, layout_get_tiled_cell};
 use crate::notify::notify_window;
-use crate::options::{options_load_pane_colours, options_ptr, options_set_parent};
+use crate::options::{options_load_pane_colours, options_set_parent};
 use crate::resize::recalculate_sizes;
 use crate::server::server_client_remove_pane;
 use crate::server::{
@@ -146,14 +146,14 @@ unsafe fn cmd_join_pane_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
 
         window_pane_set_window(src_wp, dst_w);
         options_set_parent(
-            options_ptr(&(*src_wp).options),
-            options_ptr(&(*dst_w).options),
+            (*src_wp).options_ptr(),
+            (*dst_w).options_ptr(),
         );
         (*src_wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         window_panes_insert_after(dst_w, dst_wp, pane);
         window_pane_zindex_insert_after(dst_w, dst_wp, src_wp);
         layout_assign_pane(lc, src_wp, 0);
-        options_load_pane_colours(options_ptr(&(*src_wp).options), &raw mut (*src_wp).palette);
+        options_load_pane_colours((*src_wp).options_ptr(), &raw mut (*src_wp).palette);
 
         recalculate_sizes();
 

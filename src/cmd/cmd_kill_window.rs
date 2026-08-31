@@ -27,9 +27,8 @@ use crate::resize::recalculate_sizes;
 use crate::server::{server_kill_window, server_renumber_all, server_unlink_window};
 use crate::session::session_is_linked;
 pub use crate::types::*;
-use crate::window::{winlinks_after, winlinks_before, winlinks_first};
+use crate::window::{winlinks_after, winlinks_before, winlinks_in};
 use ::core::ffi::c_char;
-use ::core::ptr::null_mut;
 pub const MSG_READ_CANCEL: msgtype = 307;
 pub const MSG_WRITE_CLOSE: msgtype = 306;
 pub const MSG_WRITE_READY: msgtype = 305;
@@ -183,33 +182,18 @@ pub(crate) static cmd_unlink_window_entry: cmd_entry = cmd_entry {
     exec: cmd_kill_window_exec,
 };
 
-/// The winlinks of `s`, in index order.
-fn windows_of(s: *mut session) -> impl Iterator<Item = *mut winlink> {
-    let mut current = null_mut::<winlink>();
-    let mut started = false;
-    ::core::iter::from_fn(move || unsafe {
-        current = if started {
-            winlinks_after(current)
-        } else {
-            started = true;
-            winlinks_first(&raw mut (*s).windows)
-        };
-        (!current.is_null()).then_some(current)
-    })
-}
-
 /// The first winlink of `s` carrying a window other than `w`, which is the one
 /// the `-a` walk gives up next. Reading only the first is what makes the walk
 /// start again after every kill: `server_kill_window` detaches its window from
 /// every session that holds it, so the tree behind the winlink just answered is
 /// no longer the tree that was walked.
 unsafe fn first_other(s: *mut session, w: *mut window) -> Option<*mut winlink> {
-    windows_of(s).find(|&wl| unsafe { (*wl).window() != w })
+    unsafe { winlinks_in(s) }.find(|&wl| unsafe { (*wl).window() != w })
 }
 
 /// How many of `s`'s winlinks carry `w`.
 unsafe fn times_linked(s: *mut session, w: *mut window) -> usize {
-    windows_of(s)
+    unsafe { winlinks_in(s) }
         .filter(|&wl| unsafe { (*wl).window() == w })
         .count()
 }

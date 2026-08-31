@@ -39,8 +39,8 @@ use crate::cmd::cmd_resize_window::{
 };
 use crate::cmd::cmdq_set_target_client;
 use crate::cmd::{CMD_PARSE_ERROR, CMD_PARSE_SUCCESS, cmd_parse_from_string};
-use crate::layout::{layout_free, layout_init, layout_root_ptr};
-use crate::options::{options_get_number, options_ptr};
+use crate::layout::{layout_free, layout_init};
+use crate::options::options_get_number;
 use crate::proc::PEER_BAD;
 use crate::server::message_log;
 use crate::tests::test_fixtures::{
@@ -144,12 +144,7 @@ unsafe fn window_size(w: *mut window) -> (u_int, u_int) {
 
 /// The size of the window's layout tree.
 unsafe fn layout_size(w: *mut window) -> (u_int, u_int) {
-    unsafe {
-        (
-            (*layout_root_ptr(&(*w).layout_root)).sx,
-            (*layout_root_ptr(&(*w).layout_root)).sy,
-        )
-    }
+    unsafe { ((*(*w).layout_root_ptr()).sx, (*(*w).layout_root_ptr()).sy) }
 }
 
 /// The manual sizes pinned on the window.
@@ -159,7 +154,7 @@ unsafe fn manual_size(w: *mut window) -> (u_int, u_int) {
 
 /// The window's `window-size` option.
 unsafe fn window_size_option(w: *mut window) -> i64 {
-    unsafe { options_get_number(options_ptr(&(*w).options), c"window-size".as_ptr()) }
+    unsafe { options_get_number((*w).options_ptr(), c"window-size".as_ptr()) }
 }
 
 /// A window whose single pane hangs off a real layout tree, because the hook

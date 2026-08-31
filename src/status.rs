@@ -3,7 +3,7 @@ use crate::cmd::cmd_table;
 use crate::cmd::{cmd_command_prompt_callback, cmd_command_prompt_free};
 use crate::cmd::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_valid_state};
 use crate::cmd::{cmdq_append, cmdq_get_callback1, cmdq_get_client};
-use crate::ffi::{strchr, strcmp, strerror, strlen, strncmp, strsep};
+use crate::ffi::{strchr, strcmp, strerror, strlen, strncmp};
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};
 use crate::format::format_draw;
@@ -44,9 +44,7 @@ use crate::screen::{
 use crate::server::client_walk;
 use crate::server::server_add_message;
 use crate::server::{client_ref_from_ptr, server_client_clear_overlay};
-use crate::session::{
-    session_find, session_id, session_name, session_options, sessions_after, sessions_first,
-};
+use crate::session::{session_find, session_id, session_name, session_options, session_owners};
 use crate::style::style_apply;
 use crate::style::{style_ranges_free, style_ranges_get_range, style_ranges_init};
 use crate::text::key_string_lookup_key;
@@ -2242,28 +2240,24 @@ fn status_prompt_find_history_file() -> Option<CString> {
         ))
     }
 }
-unsafe fn status_prompt_add_typed_history(mut line: *mut ::core::ffi::c_char) {
-    unsafe {
-        let mut typestr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-        let mut type_0: prompt_type = PROMPT_TYPE_INVALID;
-        typestr = strsep(&raw mut line, c":".as_ptr());
-        if !line.is_null() {
-            type_0 = status_prompt_type(CStr::from_ptr(typestr));
-        }
-        if type_0 as ::core::ffi::c_uint
-            == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            if !line.is_null() {
-                line = line.offset(-1);
-                *line = ':' as i32 as ::core::ffi::c_char;
+fn status_prompt_add_typed_history(line: &[u8]) {
+    let line = match line.iter().position(|&byte| byte == b'\0') {
+        Some(end) => &line[..end],
+        None => line,
+    };
+    let (entry, type_0) = match line.iter().position(|&byte| byte == b':') {
+        Some(colon) => {
+            let typestr = CString::new(&line[..colon]).expect("a C string has no interior NUL");
+            match status_prompt_type(&typestr) {
+                PROMPT_TYPE_INVALID => (line, PROMPT_TYPE_COMMAND),
+                type_0 => (&line[colon + 1..], type_0),
             }
-            status_prompt_add_history(
-                CStr::from_ptr(typestr),
-                PROMPT_TYPE_COMMAND as ::core::ffi::c_int as u_int,
-            );
-        } else {
-            status_prompt_add_history(CStr::from_ptr(line), type_0 as u_int);
-        };
+        }
+        None => (line, PROMPT_TYPE_COMMAND),
+    };
+    let entry = CString::new(entry).expect("a C string has no interior NUL");
+    unsafe {
+        status_prompt_add_history(&entry, type_0 as u_int);
     }
 }
 pub fn status_prompt_load_history() {
@@ -2289,9 +2283,7 @@ pub fn status_prompt_load_history() {
             }
         };
         for line in contents.split_inclusive(|&byte| byte == b'\n') {
-            let mut line = line.strip_suffix(b"\n").unwrap_or(line).to_vec();
-            line.push(b'\0');
-            status_prompt_add_typed_history(line.as_mut_ptr() as *mut ::core::ffi::c_char);
+            status_prompt_add_typed_history(line.strip_suffix(b"\n").unwrap_or(line));
         }
     }
 }
@@ -2438,7 +2430,6 @@ pub unsafe fn status_get_range(mut c: *mut client, mut x: u_int, mut y: u_int) -
 }
 unsafe fn status_push_screen(mut c: *mut client) -> StatusScreenRef {
     unsafe {
-        let mut sl: *mut status_line = &raw mut (*c).status;
         if let Some(reference) = (*c).message_overlay.as_ref() {
             return reference.clone();
         }
@@ -2452,20 +2443,15 @@ unsafe fn status_push_screen(mut c: *mut client) -> StatusScreenRef {
             status_line_size(c),
             0 as u_int,
         );
-        (*sl).active = StatusActive::Overlay(reference.downgrade());
+        (*c).status.active = StatusActive::Overlay(reference.downgrade());
         reference
     }
 }
-unsafe fn status_pop_screen(mut c: *mut client, slot: *mut Option<StatusScreenRef>) {
-    unsafe {
-        let mut sl: *mut status_line = &raw mut (*c).status;
-        let reset_active = (*slot)
-            .as_ref()
-            .is_some_and(|reference| reference.is_unique());
-        if reset_active {
-            (*sl).active = StatusActive::Own;
-        }
-        *slot = None;
+/// Gives up the overlay screen `taken` out of one of the client's slots. `sl`
+/// draws its own screen again once the slot that let go was the last owner.
+fn status_pop_screen(sl: &mut status_line, taken: Option<StatusScreenRef>) {
+    if taken.as_ref().is_some_and(StatusScreenRef::is_unique) {
+        sl.active = StatusActive::Own;
     }
 }
 pub unsafe fn status_init(mut c: *mut client) {
@@ -2596,7 +2582,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
                     }
                 } else {
                     sle = &raw mut (*sl).entries[i as usize];
-                    let expanded = format_expand_time(&mut ft, CStr::from_ptr((*ov).string()));
+                    let expanded = format_expand_time(&mut ft, (*ov).string());
                     if force == 0 && (*sle).expanded.as_deref() == Some(expanded.as_c_str()) {
                     } else {
                         changed = 1 as ::core::ffi::c_int;
@@ -2659,7 +2645,7 @@ pub unsafe fn status_message_set(
         (*c).message_string = Some(s.clone());
         server_add_message(
             c"%s message: %s".as_ptr(),
-            fmt_args![cstr_ptr(&(*c).name), s.as_ptr()],
+            fmt_args![(*c).name.as_deref(), s.as_ptr()],
         );
         if delay == -(1 as ::core::ffi::c_int) {
             delay = options_get_number(session_options((*c).session), c"display-time".as_ptr())
@@ -2694,7 +2680,7 @@ pub unsafe fn status_message_clear(mut c: *mut client) {
             (*c).tty.flags &= !(TTY_NOCURSOR | TTY_FREEZE);
         }
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong | CLIENT_ALLREDRAWFLAGS) as uint64_t;
-        status_pop_screen(c, &raw mut (*c).message_overlay);
+        status_pop_screen(&mut (*c).status, (*c).message_overlay.take());
     }
 }
 unsafe fn status_message_callback(c: *mut client) {
@@ -2794,7 +2780,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
                 &mut ft,
                 c"message",
                 c"%s".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).message_string)],
+                fmt_args![(*c).message_string.as_deref()],
             );
         }
         format_add(
@@ -3058,7 +3044,7 @@ pub unsafe fn status_prompt_clear(mut c: *mut client) {
         (*c).prompt_saved = None;
         (*c).tty.flags &= !(TTY_NOCURSOR | TTY_FREEZE);
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong | CLIENT_ALLREDRAWFLAGS) as uint64_t;
-        status_pop_screen(c, &raw mut (*c).prompt_overlay);
+        status_pop_screen(&mut (*c).status, (*c).prompt_overlay.take());
     }
 }
 pub unsafe fn status_prompt_update(mut c: *mut client, msg: &CStr, input: Option<&CStr>) {
@@ -3213,8 +3199,8 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         }
         screen_set_cursor_style(
             n,
-            &raw mut (*(*sl).active()).default_cstyle,
-            &raw mut (*(*sl).active()).default_mode,
+            &mut (*(*sl).active()).default_cstyle,
+            &mut (*(*sl).active()).default_mode,
         );
         promptline = status_prompt_line_at(c);
         if promptline > lines.wrapping_sub(1 as u_int) {
@@ -3582,7 +3568,7 @@ unsafe fn status_prompt_paste(mut c: *mut client) -> ::core::ffi::c_int {
         let pasted: ::std::borrow::Cow<[utf8_data]> = if let Some(saved) = saved {
             ::std::borrow::Cow::Borrowed(saved.as_slice())
         } else {
-            pb = paste_get_top(::core::ptr::null_mut());
+            pb = paste_get_top(None);
             if pb.is_null() {
                 return 0 as ::core::ffi::c_int;
             }
@@ -11769,24 +11755,12 @@ unsafe fn status_prompt_complete_list(s: &CStr, mut at_start: ::core::ffi::c_int
     unsafe {
         let s = s.as_ptr();
         let mut list: Vec<CString> = Vec::new();
-        let mut layout: *mut *const ::core::ffi::c_char =
-            ::core::ptr::null_mut::<*const ::core::ffi::c_char>();
         let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut slen: size_t = strlen(s);
         let mut valuelen: size_t = 0;
         let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
         let mut a: *mut options_array_item_t = ::core::ptr::null_mut::<options_array_item_t>();
-        let mut layouts: [*const ::core::ffi::c_char; 8] = [
-            c"even-horizontal".as_ptr(),
-            c"even-vertical".as_ptr(),
-            c"main-horizontal".as_ptr(),
-            c"main-horizontal-mirrored".as_ptr(),
-            c"main-vertical".as_ptr(),
-            c"main-vertical-mirrored".as_ptr(),
-            c"tiled".as_ptr(),
-            ::core::ptr::null::<::core::ffi::c_char>(),
-        ];
         for cmdent in cmd_table {
             if strncmp(cmdent.name.as_ptr(), s, slen) == 0 as ::core::ffi::c_int {
                 status_prompt_add_list(&mut list, cmdent.name);
@@ -11801,7 +11775,7 @@ unsafe fn status_prompt_complete_list(s: &CStr, mut at_start: ::core::ffi::c_int
         if !o.is_null() {
             a = options_array_first(o);
             while !a.is_null() {
-                value = (*options_array_item_value(a)).string();
+                value = (*options_array_item_value(a)).string().as_ptr();
                 cp = strchr(value, '=' as i32);
                 if !cp.is_null() {
                     valuelen = cp.offset_from(value) as ::core::ffi::c_long as size_t;
@@ -11824,12 +11798,19 @@ unsafe fn status_prompt_complete_list(s: &CStr, mut at_start: ::core::ffi::c_int
                 status_prompt_add_list(&mut list, oe.name);
             }
         }
-        layout = &raw mut layouts as *mut *const ::core::ffi::c_char;
-        while !(*layout).is_null() {
-            if strncmp(*layout, s, slen) == 0 as ::core::ffi::c_int {
-                status_prompt_add_list(&mut list, CStr::from_ptr(*layout));
+        let layouts: [&CStr; 7] = [
+            c"even-horizontal",
+            c"even-vertical",
+            c"main-horizontal",
+            c"main-horizontal-mirrored",
+            c"main-vertical",
+            c"main-vertical-mirrored",
+            c"tiled",
+        ];
+        for layout in layouts {
+            if strncmp(layout.as_ptr(), s, slen) == 0 as ::core::ffi::c_int {
+                status_prompt_add_list(&mut list, layout);
             }
-            layout = layout.offset(1);
         }
         list
     }
@@ -12028,7 +12009,7 @@ unsafe fn status_prompt_complete_window_menu(
                     (
                         xasprintf(
                             c"%d (%s)".as_ptr(),
-                            fmt_args![(*wl).idx, cstr_ptr(&(*(*wl).window()).name)],
+                            fmt_args![(*wl).idx, (*(*wl).window()).name.as_deref()],
                         ),
                         xasprintf(c"%d".as_ptr(), fmt_args![(*wl).idx]),
                     )
@@ -12039,7 +12020,7 @@ unsafe fn status_prompt_complete_window_menu(
                             fmt_args![
                                 session_name(s),
                                 (*wl).idx,
-                                cstr_ptr(&(*(*wl).window()).name)
+                                (*(*wl).window()).name.as_deref()
                             ],
                         ),
                         xasprintf(c"%s:%d".as_ptr(), fmt_args![session_name(s), (*wl).idx]),
@@ -12135,10 +12116,9 @@ unsafe fn status_prompt_complete_session(
 ) -> Option<CString> {
     unsafe {
         let s = s.as_ptr();
-        let mut loop_0: *mut session = ::core::ptr::null_mut::<session>();
         let mut out: Option<CString> = None;
-        loop_0 = sessions_first();
-        while !loop_0.is_null() {
+        for s_ref in session_owners() {
+            let loop_0 = s_ref.as_ptr();
             if *s as ::core::ffi::c_int == '\0' as i32
                 || strncmp(session_name(loop_0), s, strlen(s)) == 0 as ::core::ffi::c_int
             {
@@ -12155,7 +12135,6 @@ unsafe fn status_prompt_complete_session(
                     list.push(xasprintf(c"$%s:".as_ptr(), fmt_args![n.as_ptr()]));
                 }
             }
-            loop_0 = sessions_after(loop_0);
         }
         out = status_prompt_complete_prefix(list);
         if let Some(prefix) = &out

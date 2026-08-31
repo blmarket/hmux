@@ -201,15 +201,14 @@ static mut parse_state: cmd_parse_state = cmd_parse_state {
     error: None,
 };
 unsafe fn cmd_parse_get_error(
-    mut file: *const ::core::ffi::c_char,
-    mut line: u_int,
-    mut error: *const ::core::ffi::c_char,
+    file: Option<&::core::ffi::CStr>,
+    line: u_int,
+    error: *const ::core::ffi::c_char,
 ) -> ::std::ffi::CString {
     unsafe {
-        if file.is_null() {
-            ::std::ffi::CStr::from_ptr(error).to_owned()
-        } else {
-            xasprintf(c"%s:%u: %s".as_ptr(), fmt_args![file, line, error])
+        match file {
+            None => ::std::ffi::CStr::from_ptr(error).to_owned(),
+            Some(file) => xasprintf(c"%s:%u: %s".as_ptr(), fmt_args![file, line, error]),
         }
     }
 }
@@ -976,10 +975,11 @@ pub unsafe fn cmd_parse_from_arguments(
         while i < count {
             end = 0 as ::core::ffi::c_int;
             if matches!(&(*values.offset(i as isize)).value, ArgsValue::String(_)) {
-                let mut copy =
-                    ::std::ffi::CStr::from_ptr((*values.offset(i as isize)).value.string())
-                        .to_bytes()
-                        .to_vec();
+                let mut copy = (*values.offset(i as isize))
+                    .value
+                    .string()
+                    .to_bytes()
+                    .to_vec();
                 let mut size = copy.len();
                 if size != 0 && copy[size - 1] as ::core::ffi::c_int == ';' as i32 {
                     size -= 1;
@@ -1453,7 +1453,6 @@ unsafe fn yylex_token_variable(buf: &mut Vec<u8>) -> ::core::ffi::c_int {
         let mut brackets: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut name: [::core::ffi::c_char; 1024] = [0; 1024];
         let mut namelen: size_t = 0 as size_t;
-        let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         ch = yylex_getc();
         if ch == EOF {
             return 0 as ::core::ffi::c_int;
@@ -1498,8 +1497,7 @@ unsafe fn yylex_token_variable(buf: &mut Vec<u8>) -> ::core::ffi::c_int {
         }
         name[namelen as usize] = '\0' as i32 as ::core::ffi::c_char;
         envent = environ_find(&*global_environ, &raw mut name as *mut ::core::ffi::c_char);
-        if envent.is_some_and(|envent| !environ_entry_value(envent).is_null()) {
-            value = environ_entry_value(envent.expect("the entry just looked at"));
+        if let Some(value) = envent.and_then(environ_entry_value) {
             log_debug(
                 c"%s: %s -> %s".as_ptr(),
                 fmt_args![
@@ -1508,7 +1506,7 @@ unsafe fn yylex_token_variable(buf: &mut Vec<u8>) -> ::core::ffi::c_int {
                     value
                 ],
             );
-            buf.extend_from_slice(::std::ffi::CStr::from_ptr(value).to_bytes());
+            buf.extend_from_slice(value.to_bytes());
         }
         1 as ::core::ffi::c_int
     }
@@ -1542,11 +1540,11 @@ unsafe fn yylex_token_tilde(buf: &mut Vec<u8>) -> ::core::ffi::c_int {
         name[namelen as usize] = '\0' as i32 as ::core::ffi::c_char;
         if *(&raw mut name as *mut ::core::ffi::c_char) as ::core::ffi::c_int == '\0' as i32 {
             envent = environ_find(&*global_environ, c"HOME".as_ptr());
-            if envent.is_some_and(|envent| {
-                !environ_entry_value(envent).is_null()
-                    && *environ_entry_value(envent) as ::core::ffi::c_int != '\0' as i32
-            }) {
-                home = environ_entry_value(envent.expect("the entry just looked at"));
+            if let Some(value) = envent
+                .and_then(environ_entry_value)
+                .filter(|value| !value.is_empty())
+            {
+                home = value.as_ptr();
             } else {
                 pw = getpwuid(getuid());
                 if !pw.is_null() {

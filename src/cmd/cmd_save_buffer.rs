@@ -198,7 +198,7 @@ unsafe fn cmd_save_buffer_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
         let mut flags: ::core::ffi::c_int = 0;
         let mut bufname: *const ::core::ffi::c_char = args_get(args, 'b' as i32 as u_char);
         if bufname.is_null() {
-            pb = paste_get_top(::core::ptr::null_mut());
+            pb = paste_get_top(None);
             if pb.is_null() {
                 cmdq_error(item, c"no buffers".as_ptr(), fmt_args![]);
                 return CMD_RETURN_ERROR;
@@ -234,8 +234,7 @@ unsafe fn cmd_save_buffer_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
             cmdq_get_client(&*item),
             path.as_ptr(),
             flags,
-            bufdata.as_ptr(),
-            bufdata.len(),
+            bufdata,
             Some(cmd_save_buffer_done),
             ClientFileData::SaveBuffer(item),
         );

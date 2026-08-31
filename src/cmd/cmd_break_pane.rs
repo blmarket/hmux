@@ -36,7 +36,7 @@ use crate::format::format_single;
 use crate::layout::{layout_close_pane, layout_init};
 use crate::names::default_window_name;
 use crate::options::{
-    options_get_number, options_load_pane_colours, options_ptr, options_set_number,
+    options_get_number, options_load_pane_colours, options_set_number,
     options_set_parent,
 };
 use crate::server::server_client_remove_pane;
@@ -160,7 +160,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval 
             }
             if !name.is_null() {
                 window_set_name(w, name, 0);
-                options_set_number(options_ptr(&(*w).options), c"automatic-rename".as_ptr(), 0);
+                options_set_number((*w).options_ptr(), c"automatic-rename".as_ptr(), 0);
             }
             server_unlink_window(src_s, wl);
             wl = winlink_find_by_window(&raw mut (*dst_s).windows, w);
@@ -179,7 +179,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval 
             w_ref = Some(window_create((*w).sx, (*w).sy, (*w).xpixel, (*w).ypixel));
             w = w_ref.as_ref().unwrap().as_ptr();
             window_pane_set_window_ref(wp, w_ref.as_ref());
-            options_set_parent(options_ptr(&(*wp).options), options_ptr(&(*w).options));
+            options_set_parent((*wp).options_ptr(), (*w).options_ptr());
             (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
             window_panes_insert_head(w, pane);
             window_pane_zindex_insert_head(w, wp);
@@ -191,12 +191,12 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval 
                 window_set_name(w, newname.as_ptr(), 0);
             } else {
                 window_set_name(w, name, 0);
-                options_set_number(options_ptr(&(*w).options), c"automatic-rename".as_ptr(), 0);
+                options_set_number((*w).options_ptr(), c"automatic-rename".as_ptr(), 0);
             }
 
             layout_init(w, wp);
             (*wp).flags |= PANE_CHANGED;
-            options_load_pane_colours(options_ptr(&(*wp).options), &raw mut (*wp).palette);
+            options_load_pane_colours((*wp).options_ptr(), &raw mut (*wp).palette);
 
             if idx == -1 {
                 idx = (-1 - options_get_number(session_options(dst_s), c"base-index".as_ptr()))

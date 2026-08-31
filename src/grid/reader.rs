@@ -1,6 +1,6 @@
 use super::store::{grid_get_cell, grid_in_set, grid_line_length, grid_peek_line};
 pub use crate::types::*;
-use ::core::ffi::{CStr, c_char, c_int};
+use ::core::ffi::{CStr, c_int};
 pub const GRID_FLAG_PADDING: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const GRID_FLAG_TAB: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
 pub const GRID_LINE_WRAPPED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -43,7 +43,7 @@ fn walk_end(gr: &mut grid_reader<'_>) -> u_int {
 /// What the set says about the cell under the cursor: zero when the cell is
 /// not in it, and for a tab the number of its columns still to come.
 fn in_set(gr: &mut grid_reader<'_>, set: &CStr) -> c_int {
-    unsafe { grid_reader_in_set(gr, set.as_ptr()) }
+    grid_reader_in_set(gr, set)
 }
 
 /// Move the cursor back off any padding it is sitting on.
@@ -159,8 +159,8 @@ fn grid_reader_handle_wrap(gr: &mut grid_reader<'_>, xx: &mut u_int, yy: u_int) 
     true
 }
 
-pub unsafe fn grid_reader_in_set(gr: &mut grid_reader<'_>, set: *const c_char) -> c_int {
-    unsafe { grid_in_set(gr.gd, gr.cx, gr.cy, set) }
+pub fn grid_reader_in_set(gr: &mut grid_reader<'_>, set: &CStr) -> c_int {
+    grid_in_set(gr.gd, gr.cx, gr.cy, set)
 }
 
 /// Move the cursor to the start of the next word.
@@ -173,27 +173,23 @@ pub unsafe fn grid_reader_in_set(gr: &mut grid_reader<'_>, set: *const c_char) -
 /// non-whitespace character, skip over subsequent characters that are neither
 /// whitespace nor separators. Then, skip over whitespace (if any) until the
 /// next non-whitespace character.
-pub unsafe fn grid_reader_cursor_next_word(gr: &mut grid_reader<'_>, separators: *const c_char) {
-    unsafe {
-        let separators = CStr::from_ptr(separators);
+pub fn grid_reader_cursor_next_word(gr: &mut grid_reader<'_>, separators: &CStr) {
+    /* Do not break up wrapped words. */
+    let mut xx = walk_end(gr);
+    let yy = bottom(gr);
 
-        /* Do not break up wrapped words. */
-        let mut xx = walk_end(gr);
-        let yy = bottom(gr);
-
-        if !grid_reader_handle_wrap(gr, &mut xx, yy) {
-            return;
+    if !grid_reader_handle_wrap(gr, &mut xx, yy) {
+        return;
+    }
+    if in_set(gr, WHITESPACE) == 0 {
+        skip_word(gr, separators, &mut xx, yy);
+    }
+    while grid_reader_handle_wrap(gr, &mut xx, yy) {
+        let width = in_set(gr, WHITESPACE) as u_int;
+        if width == 0 {
+            break;
         }
-        if in_set(gr, WHITESPACE) == 0 {
-            skip_word(gr, separators, &mut xx, yy);
-        }
-        while grid_reader_handle_wrap(gr, &mut xx, yy) {
-            let width = in_set(gr, WHITESPACE) as u_int;
-            if width == 0 {
-                break;
-            }
-            gr.cx += width;
-        }
+        gr.cx += width;
     }
 }
 
@@ -225,95 +221,85 @@ fn skip_word(gr: &mut grid_reader<'_>, separators: &CStr, xx: &mut u_int, yy: u_
 /// character. If that character is a separator, treat subsequent separators as
 /// a word, and continue moving until the first non-separator. Otherwise,
 /// continue moving until the first separator or whitespace.
-pub unsafe fn grid_reader_cursor_next_word_end(
-    gr: &mut grid_reader<'_>,
-    separators: *const c_char,
-) {
-    unsafe {
-        let separators = CStr::from_ptr(separators);
+pub fn grid_reader_cursor_next_word_end(gr: &mut grid_reader<'_>, separators: &CStr) {
+    /* Do not break up wrapped words. */
+    let mut xx = walk_end(gr);
+    let yy = bottom(gr);
 
-        /* Do not break up wrapped words. */
-        let mut xx = walk_end(gr);
-        let yy = bottom(gr);
-
-        while grid_reader_handle_wrap(gr, &mut xx, yy) {
-            if in_set(gr, WHITESPACE) != 0 {
-                gr.cx += 1;
-                continue;
-            }
-            skip_word(gr, separators, &mut xx, yy);
-            return;
+    while grid_reader_handle_wrap(gr, &mut xx, yy) {
+        if in_set(gr, WHITESPACE) != 0 {
+            gr.cx += 1;
+            continue;
         }
+        skip_word(gr, separators, &mut xx, yy);
+        return;
     }
 }
 
 /// Move the cursor to the previous place where a word begins.
-pub unsafe fn grid_reader_cursor_previous_word(
+pub fn grid_reader_cursor_previous_word(
     gr: &mut grid_reader<'_>,
-    separators: *const c_char,
+    separators: &CStr,
     already: c_int,
     stop_at_eol: c_int,
 ) {
-    unsafe {
-        let separators = CStr::from_ptr(separators);
-        let word_is_letters;
+    let word_is_letters;
 
-        /* Move back to the previous word character. */
-        if already != 0 || in_set(gr, WHITESPACE) != 0 {
-            loop {
-                if gr.cx > 0 {
-                    gr.cx -= 1;
-                    if in_set(gr, WHITESPACE) == 0 {
-                        word_is_letters = (in_set(gr, separators) == 0) as c_int;
-                        break;
-                    }
-                    continue;
-                }
-                if gr.cy == 0 {
-                    return;
-                }
-                grid_reader_cursor_up(gr);
-                grid_reader_cursor_end_of_line(gr, 0, 0);
-
-                /* Stop if separator at EOL. */
-                if stop_at_eol != 0 && gr.cx > 0 {
-                    let oldx = gr.cx;
-                    gr.cx -= 1;
-                    let at_eol = in_set(gr, WHITESPACE) != 0;
-                    gr.cx = oldx;
-                    if at_eol {
-                        word_is_letters = 0;
-                        break;
-                    }
-                }
-            }
-        } else {
-            word_is_letters = (in_set(gr, separators) == 0) as c_int;
-        }
-
-        /* Move back to the beginning of this word. */
-        let mut oldx;
-        let mut oldy;
+    /* Move back to the previous word character. */
+    if already != 0 || in_set(gr, WHITESPACE) != 0 {
         loop {
-            oldx = gr.cx;
-            oldy = gr.cy;
-            if gr.cx == 0 {
-                if gr.cy == 0 || !wrapped(gr, gr.cy - 1) {
-                    break;
-                }
-                grid_reader_cursor_up(gr);
-                grid_reader_cursor_end_of_line(gr, 0, 1);
-            }
             if gr.cx > 0 {
                 gr.cx -= 1;
+                if in_set(gr, WHITESPACE) == 0 {
+                    word_is_letters = (in_set(gr, separators) == 0) as c_int;
+                    break;
+                }
+                continue;
             }
-            if in_set(gr, WHITESPACE) != 0 || word_is_letters == in_set(gr, separators) {
-                break;
+            if gr.cy == 0 {
+                return;
+            }
+            grid_reader_cursor_up(gr);
+            grid_reader_cursor_end_of_line(gr, 0, 0);
+
+            /* Stop if separator at EOL. */
+            if stop_at_eol != 0 && gr.cx > 0 {
+                let oldx = gr.cx;
+                gr.cx -= 1;
+                let at_eol = in_set(gr, WHITESPACE) != 0;
+                gr.cx = oldx;
+                if at_eol {
+                    word_is_letters = 0;
+                    break;
+                }
             }
         }
-        gr.cx = oldx;
-        gr.cy = oldy;
+    } else {
+        word_is_letters = (in_set(gr, separators) == 0) as c_int;
     }
+
+    /* Move back to the beginning of this word. */
+    let mut oldx;
+    let mut oldy;
+    loop {
+        oldx = gr.cx;
+        oldy = gr.cy;
+        if gr.cx == 0 {
+            if gr.cy == 0 || !wrapped(gr, gr.cy - 1) {
+                break;
+            }
+            grid_reader_cursor_up(gr);
+            grid_reader_cursor_end_of_line(gr, 0, 1);
+        }
+        if gr.cx > 0 {
+            gr.cx -= 1;
+        }
+        if in_set(gr, WHITESPACE) != 0 || word_is_letters == in_set(gr, separators) {
+            break;
+        }
+    }
+    gr.cx = oldx;
+    gr.cy = oldy;
 }
 
 /// Whether the character in a cell is the one being jumped to.

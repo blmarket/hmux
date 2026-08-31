@@ -11,10 +11,9 @@ use crate::fmt_args;
 use crate::format::format_single_from_target;
 use crate::log::{fatalx, log_debug};
 use crate::server::client_ref_from_ptr;
-use crate::text::utf8_stravis;
+use crate::text::utf8_stravisx;
 pub use crate::types::*;
 use crate::xmalloc::xasprintf;
-use ::core::ops::Bound;
 use ::std::ffi::CStr;
 use ::std::ffi::CString;
 pub type ctype_mask = ::core::ffi::c_uint;
@@ -94,31 +93,24 @@ fn value_list(
 }
 
 /// The entry a flag has in the arguments, if it has one.
-unsafe fn args_find(args: &args, flag: u_char) -> *mut args_entry {
-    args.tree
-        .get(&flag)
-        .map(|entry| entry.as_ref() as *const args_entry as *mut args_entry)
-        .unwrap_or(::core::ptr::null_mut::<args_entry>())
+fn args_find(args: &args, flag: u_char) -> Option<&args_entry> {
+    args.tree.get(&flag).map(|entry| entry.as_ref())
 }
 
 /// The last value given for a flag, if it was given any.
-unsafe fn args_last_value(args: &args, flag: u_char) -> Option<*mut args_value_t> {
-    unsafe {
-        let entry = non_null(args_find(args, flag))?;
-        value_list(&(*entry).values).last()
-    }
+fn args_last_value(args: &args, flag: u_char) -> Option<&args_value_t> {
+    Some(args_find(args, flag)?.values.last()?.as_ref())
 }
 
 /// The string of the last value given for a flag, when there is one and it is
 /// a string.
-unsafe fn args_last_string(args: &args, flag: u_char) -> Option<*const ::core::ffi::c_char> {
-    unsafe {
-        let value = args_last_value(args, flag)?;
-        let ArgsValue::String(string) = &(*value).value else {
-            return None;
-        };
-        Some(string.as_ptr())
-    }
+fn args_last_string(args: &args, flag: u_char) -> Option<&CStr> {
+    let entry = args.tree.get(&flag)?;
+    let value = entry.values.last()?;
+    let ArgsValue::String(string) = &value.value else {
+        return None;
+    };
+    Some(string)
 }
 
 /// Whether `b` is `isalnum` under the process's current locale, which is what
@@ -141,11 +133,11 @@ unsafe fn args_copy_value(to: *mut args_value_t, from: *const args_value_t) {
     }
 }
 
-fn args_value_type_to_string(value: &ArgsValue) -> *const ::core::ffi::c_char {
+fn args_value_type_to_string(value: &ArgsValue) -> &'static CStr {
     match value {
-        ArgsValue::None => c"NONE".as_ptr(),
-        ArgsValue::String(_) => c"STRING".as_ptr(),
-        ArgsValue::Commands { .. } => c"COMMANDS".as_ptr(),
+        ArgsValue::None => c"NONE",
+        ArgsValue::String(_) => c"STRING",
+        ArgsValue::Commands { .. } => c"COMMANDS",
     }
 }
 
@@ -665,7 +657,7 @@ pub unsafe fn args_escape(s: *const ::core::ffi::c_char) -> CString {
         if quotes == Quotes::Double {
             flags |= VIS_DQ;
         }
-        let escaped = utf8_stravis(s, flags);
+        let escaped = utf8_stravisx(text, flags);
         let visible = escaped.as_bytes();
         let tilde = visible.first() == Some(&b'~');
         let mut result: Vec<u8> = Vec::new();
@@ -694,12 +686,10 @@ pub unsafe fn args_escape(s: *const ::core::ffi::c_char) -> CString {
     }
 }
 
-pub unsafe fn args_has(args: &args, flag: u_char) -> ::core::ffi::c_int {
-    unsafe {
-        match non_null(args_find(args, flag)) {
-            Some(entry) => (*entry).count as ::core::ffi::c_int,
-            None => 0,
-        }
+pub fn args_has(args: &args, flag: u_char) -> ::core::ffi::c_int {
+    match args_find(args, flag) {
+        Some(entry) => entry.count as ::core::ffi::c_int,
+        None => 0,
     }
 }
 
@@ -710,88 +700,53 @@ pub unsafe fn args_set(
     flags: ::core::ffi::c_int,
 ) {
     unsafe {
-        let entry = match non_null(args_find(&*args, flag)) {
-            Some(entry) => {
-                (*entry).count += 1;
-                entry
-            }
-            None => {
-                let mut entry = Box::new(args_entry {
-                    flag,
-                    values: Vec::new(),
-                    count: 1,
-                    flags,
-                });
-                let entry_ptr = entry.as_mut() as *mut args_entry;
-                (*args).tree.insert(flag, entry);
-                entry_ptr
-            }
-        };
-        let Some(mut value) = value else {
+        let entry = (*args).tree.entry(flag).or_insert_with(|| {
+            Box::new(args_entry {
+                flag,
+                values: Vec::new(),
+                count: 0,
+                flags,
+            })
+        });
+        entry.count += 1;
+        let Some(value) = value else {
             return;
         };
         if matches!(&value.value, ArgsValue::None) {
             return;
         }
-        (*entry).values.push(value);
+        entry.values.push(value);
     }
 }
 
 /// The last string value given for `flag`, borrowed from the arguments.
-pub unsafe fn args_get_str(args: &args, flag: u_char) -> Option<&::core::ffi::CStr> {
-    unsafe {
-        match args_last_value(args, flag) {
-            Some(value) => match &(*value).value {
-                ArgsValue::String(string) => Some(string.as_c_str()),
-                ArgsValue::None | ArgsValue::Commands { .. } => None,
-            },
-            None => None,
-        }
+pub fn args_get_str(args: &args, flag: u_char) -> Option<&::core::ffi::CStr> {
+    match args_last_value(args, flag) {
+        Some(value) => match &value.value {
+            ArgsValue::String(string) => Some(string.as_c_str()),
+            ArgsValue::None | ArgsValue::Commands { .. } => None,
+        },
+        None => None,
     }
 }
 
-pub unsafe fn args_get(args: &args, flag: u_char) -> *const ::core::ffi::c_char {
-    unsafe {
-        match args_last_value(args, flag) {
-            Some(value) => match &(*value).value {
-                ArgsValue::String(string) => string.as_ptr(),
-                ArgsValue::None | ArgsValue::Commands { .. } => {
-                    ::core::ptr::null::<::core::ffi::c_char>()
-                }
-            },
-            None => ::core::ptr::null::<::core::ffi::c_char>(),
-        }
+pub fn args_get(args: &args, flag: u_char) -> *const ::core::ffi::c_char {
+    match args_last_value(args, flag) {
+        Some(value) => match &value.value {
+            ArgsValue::String(string) => string.as_ptr(),
+            ArgsValue::None | ArgsValue::Commands { .. } => {
+                ::core::ptr::null::<::core::ffi::c_char>()
+            }
+        },
+        None => ::core::ptr::null::<::core::ffi::c_char>(),
     }
 }
 
-pub unsafe fn args_first(args: *mut args, entry: *mut *mut args_entry) -> u_char {
-    unsafe {
-        *entry = (*args)
-            .tree
-            .values()
-            .next()
-            .map(|entry| entry.as_ref() as *const args_entry as *mut args_entry)
-            .unwrap_or(::core::ptr::null_mut::<args_entry>());
-        match non_null(*entry) {
-            Some(entry) => (*entry).flag,
-            None => 0,
-        }
-    }
-}
-
-pub unsafe fn args_next(args: *mut args, entry: *mut *mut args_entry) -> u_char {
-    unsafe {
-        *entry = (*args)
-            .tree
-            .range((Bound::Excluded((**entry).flag), Bound::Unbounded))
-            .next()
-            .map(|(_, entry)| entry.as_ref() as *const args_entry as *mut args_entry)
-            .unwrap_or(::core::ptr::null_mut::<args_entry>());
-        match non_null(*entry) {
-            Some(entry) => (*entry).flag,
-            None => 0,
-        }
-    }
+/// The flags the arguments carry, in flag order. This is the walk the C's
+/// `args_first` and `args_next` pair did through a cursor entry the caller
+/// held for them.
+pub fn args_flags(args: &args) -> impl Iterator<Item = u_char> + '_ {
+    args.tree.values().map(|entry| entry.flag)
 }
 
 pub fn args_count(args: &args) -> u_int {
@@ -895,7 +850,7 @@ pub unsafe fn args_make_commands_prepare(
         };
         log_debug(
             c"%s: %s".as_ptr(),
-            fmt_args![c"args_make_commands_prepare".as_ptr(), cstr_ptr(&state.cmd)],
+            fmt_args![c"args_make_commands_prepare".as_ptr(), state.cmd.as_deref()],
         );
         if wait != 0 {
             state.pi.item = item;
@@ -982,54 +937,45 @@ pub unsafe fn args_make_commands_get_command(state: &args_command_state) -> CStr
 }
 
 /// Every value given for a flag, in the order they were given.
-pub unsafe fn args_value_list(args: &args, flag: u_char) -> Vec<*mut args_value_t> {
-    unsafe {
-        match non_null(args_find(args, flag)) {
-            Some(entry) => value_list(&(*entry).values).collect(),
-            None => Vec::new(),
-        }
+pub fn args_value_list(args: &args, flag: u_char) -> Vec<*mut args_value_t> {
+    match args_find(args, flag) {
+        Some(entry) => value_list(&entry.values).collect(),
+        None => Vec::new(),
     }
 }
 
 /// The number a string holds, or the `strtonum` message saying why it is not
 /// one. The message is one of that module's own static strings.
-unsafe fn number(
-    s: *const ::core::ffi::c_char,
+fn number(
+    s: &CStr,
     minval: ::core::ffi::c_longlong,
     maxval: ::core::ffi::c_longlong,
-) -> Result<::core::ffi::c_longlong, *const ::core::ffi::c_char> {
-    unsafe { strtonum(s, minval, maxval).map_err(::core::ffi::CStr::as_ptr) }
+) -> Result<::core::ffi::c_longlong, &'static CStr> {
+    unsafe { strtonum(s.as_ptr(), minval, maxval) }
 }
 
 /// Reports why an argument was not the number that was wanted.
-unsafe fn no_number(
-    cause: &mut Option<CString>,
-    errstr: *const ::core::ffi::c_char,
-) -> ::core::ffi::c_longlong {
-    unsafe {
-        *cause = Some(CStr::from_ptr(errstr).to_owned());
-        0
-    }
+fn no_number(cause: &mut Option<CString>, errstr: &CStr) -> ::core::ffi::c_longlong {
+    *cause = Some(errstr.to_owned());
+    0
 }
 
-pub unsafe fn args_strtonum(
+pub fn args_strtonum(
     args: &args,
     flag: u_char,
     minval: ::core::ffi::c_longlong,
     maxval: ::core::ffi::c_longlong,
     cause: &mut Option<CString>,
 ) -> ::core::ffi::c_longlong {
-    unsafe {
-        let Some(value) = args_last_string(args, flag) else {
-            return no_number(cause, c"missing".as_ptr());
-        };
-        match number(value, minval, maxval) {
-            Ok(ll) => {
-                *cause = None;
-                ll
-            }
-            Err(errstr) => no_number(cause, errstr),
+    let Some(value) = args_last_string(args, flag) else {
+        return no_number(cause, c"missing");
+    };
+    match number(value, minval, maxval) {
+        Ok(ll) => {
+            *cause = None;
+            ll
         }
+        Err(errstr) => no_number(cause, errstr),
     }
 }
 
@@ -1043,10 +989,10 @@ pub unsafe fn args_strtonum_and_expand(
 ) -> ::core::ffi::c_longlong {
     unsafe {
         let Some(value) = args_last_string(args, flag) else {
-            return no_number(cause, c"missing".as_ptr());
+            return no_number(cause, c"missing");
         };
-        let formatted = format_single_from_target(item, CStr::from_ptr(value));
-        let result = number(formatted.as_ptr(), minval, maxval);
+        let formatted = format_single_from_target(item, value);
+        let result = number(&formatted, minval, maxval);
         match result {
             Ok(ll) => {
                 *cause = None;
@@ -1066,14 +1012,14 @@ pub unsafe fn args_percentage(
     cause: &mut Option<CString>,
 ) -> ::core::ffi::c_longlong {
     unsafe {
-        let Some(entry) = non_null(args_find(args, flag)) else {
-            return no_number(cause, c"missing".as_ptr());
+        let Some(entry) = args_find(args, flag) else {
+            return no_number(cause, c"missing");
         };
-        let Some(value) = value_list(&(*entry).values).last() else {
-            return no_number(cause, c"empty".as_ptr());
+        let Some(value) = entry.values.last() else {
+            return no_number(cause, c"empty");
         };
-        let ArgsValue::String(string) = &(*value).value else {
-            return no_number(cause, c"missing".as_ptr());
+        let ArgsValue::String(string) = &value.value else {
+            return no_number(cause, c"missing");
         };
         args_string_percentage(string.as_ptr(), minval, maxval, curval, cause)
     }
@@ -1086,24 +1032,22 @@ fn percentage_of(text: &[u8]) -> Option<&[u8]> {
 
 /// The share of `curval` a percentage stands for, checked against the range
 /// the caller allows.
-unsafe fn share_of(
+fn share_of(
     percent: ::core::ffi::c_longlong,
     minval: ::core::ffi::c_longlong,
     maxval: ::core::ffi::c_longlong,
     curval: ::core::ffi::c_longlong,
     cause: &mut Option<CString>,
 ) -> ::core::ffi::c_longlong {
-    unsafe {
-        let ll = curval * percent / 100;
-        if ll < minval {
-            return no_number(cause, c"too small".as_ptr());
-        }
-        if ll > maxval {
-            return no_number(cause, c"too large".as_ptr());
-        }
-        *cause = None;
-        ll
+    let ll = curval * percent / 100;
+    if ll < minval {
+        return no_number(cause, c"too small");
     }
+    if ll > maxval {
+        return no_number(cause, c"too large");
+    }
+    *cause = None;
+    ll
 }
 
 pub unsafe fn args_string_percentage(
@@ -1114,9 +1058,10 @@ pub unsafe fn args_string_percentage(
     cause: &mut Option<CString>,
 ) -> ::core::ffi::c_longlong {
     unsafe {
-        let text = ::core::ffi::CStr::from_ptr(value).to_bytes();
+        let value = CStr::from_ptr(value);
+        let text = value.to_bytes();
         if text.is_empty() {
-            return no_number(cause, c"empty".as_ptr());
+            return no_number(cause, c"empty");
         }
         let Some(percent) = percentage_of(text) else {
             return match number(value, minval, maxval) {
@@ -1128,7 +1073,7 @@ pub unsafe fn args_string_percentage(
             };
         };
         let copy = copy_of(percent);
-        let result = number(copy.as_ptr(), 0, 100);
+        let result = number(&copy, 0, 100);
         match result {
             Ok(percent) => share_of(percent, minval, maxval, curval, cause),
             Err(errstr) => no_number(cause, errstr),
@@ -1148,10 +1093,11 @@ pub unsafe fn args_string_percentage_and_expand(
     cause: &mut Option<CString>,
 ) -> ::core::ffi::c_longlong {
     unsafe {
-        let text = ::core::ffi::CStr::from_ptr(value).to_bytes();
+        let value = CStr::from_ptr(value);
+        let text = value.to_bytes();
         let Some(percent) = percentage_of(text) else {
-            let formatted = format_single_from_target(item, CStr::from_ptr(value));
-            let result = number(formatted.as_ptr(), minval, maxval);
+            let formatted = format_single_from_target(item, value);
+            let result = number(&formatted, minval, maxval);
             return match result {
                 Ok(ll) => {
                     *cause = None;
@@ -1162,7 +1108,7 @@ pub unsafe fn args_string_percentage_and_expand(
         };
         let copy = copy_of(percent);
         let formatted = format_single_from_target(item, &copy);
-        let result = number(formatted.as_ptr(), 0, 100);
+        let result = number(&formatted, 0, 100);
         match result {
             Ok(percent) => share_of(percent, minval, maxval, curval, cause),
             Err(errstr) => no_number(cause, errstr),
@@ -1180,14 +1126,14 @@ pub unsafe fn args_percentage_and_expand(
     cause: &mut Option<CString>,
 ) -> ::core::ffi::c_longlong {
     unsafe {
-        let Some(entry) = non_null(args_find(args, flag)) else {
-            return no_number(cause, c"missing".as_ptr());
+        let Some(entry) = args_find(args, flag) else {
+            return no_number(cause, c"missing");
         };
-        let Some(value) = value_list(&(*entry).values).last() else {
-            return no_number(cause, c"empty".as_ptr());
+        let Some(value) = entry.values.last() else {
+            return no_number(cause, c"empty");
         };
-        let ArgsValue::String(string) = &(*value).value else {
-            return no_number(cause, c"missing".as_ptr());
+        let ArgsValue::String(string) = &value.value else {
+            return no_number(cause, c"missing");
         };
         args_string_percentage_and_expand(string.as_ptr(), minval, maxval, curval, item, cause)
     }

@@ -188,7 +188,7 @@ fn grid_set_cells_and_padding_round_trip() {
         let mut gc = grid_default_cell;
         gc.fg = 2;
         // set_cells writes run of bytes sharing one style
-        grid_set_cells(&mut *g.ptr(), 0, 0, &raw const gc, c"hello".as_ptr(), 5);
+        grid_set_cells(&mut *g.ptr(), 0, 0, &gc, b"hello");
         assert_eq!(line_text(g.ptr(), 0), "hello");
         let mut out = grid_default_cell;
         out = grid_get_cell(&*g.ptr(), 2, 0);

@@ -3,7 +3,7 @@ use super::cells::{
     layout_destroy_cell, layout_fix_offsets, layout_fix_panes, layout_fix_zindexes,
     layout_free_cell, layout_make_leaf, layout_print_cell, layout_root_ptr,
 };
-use crate::ffi::{__ctype_b_loc, sscanf};
+use crate::ffi::sscanf;
 use crate::fmt_args;
 use crate::list::foreach_owned;
 use crate::notify::notify_window;
@@ -15,20 +15,16 @@ use crate::window::{
     window_panes_first, window_panes_next, window_resize,
 };
 use crate::xmalloc::xasprintf;
-use ::core::ffi::{c_char, c_int};
+use ::core::ffi::{CStr, c_char, c_int};
 use ::core::ptr::null_mut;
 use ::std::ffi::CString;
-
-pub type ctype_mask = ::core::ffi::c_uint;
-pub const _ISdigit: ctype_mask = 2048;
 
 /// How much of `layout_dump`'s buffer one cell may need.
 const CELL_MAX: usize = 64;
 
-/// Whether `b` is one of the digits the layout string is built out of, read
-/// through the C library's locale table the way the C did.
+/// Whether `b` is one of the digits the layout string is built out of.
 fn digit(b: c_char) -> bool {
-    unsafe { *(*__ctype_b_loc()).offset(b as u_char as isize) as c_int & _ISdigit as c_int != 0 }
+    (b as u_char).is_ascii_digit()
 }
 
 /// The bottom-right leaf under `lc`, which is the one a layout with more cells
@@ -43,17 +39,15 @@ unsafe fn layout_find_bottomright(lc: *mut layout_cell) -> *mut layout_cell {
 }
 
 /// The checksum tmux writes in front of a layout: a sixteen-bit value rotated
-/// right one bit per character, with the character added in.
-unsafe fn layout_checksum(mut layout: *const c_char) -> u_short {
-    unsafe {
-        let mut csum: u_short = 0;
-        while *layout != 0 {
-            csum = ((csum as c_int >> 1) + ((csum as c_int & 1) << 15)) as u_short;
-            csum = (csum as c_int + *layout as c_int) as u_short;
-            layout = layout.offset(1);
-        }
-        csum
+/// right one bit per character, with the character added in as the signed
+/// value the C's `char` carried.
+fn layout_checksum(layout: &CStr) -> u_short {
+    let mut csum: u_short = 0;
+    for &b in layout.to_bytes() {
+        csum = ((csum as c_int >> 1) + ((csum as c_int & 1) << 15)) as u_short;
+        csum = (csum as c_int + b as c_char as c_int) as u_short;
     }
+    csum
 }
 
 /// The layout of `root` as the string `select-layout` takes, or `None` when it
@@ -96,7 +90,7 @@ pub unsafe fn layout_dump(w: *mut window, root: *mut layout_cell) -> Option<CStr
         let text = CString::new(buf).expect("a layout has no NUL");
         Some(xasprintf(
             c"%04hx,%s".as_ptr(),
-            fmt_args![layout_checksum(text.as_ptr()) as c_int, text.as_ptr()],
+            fmt_args![layout_checksum(&text) as c_int, text.as_ptr()],
         ))
     }
 }
@@ -203,11 +197,11 @@ pub unsafe fn layout_parse(w: *mut window, mut layout: *const c_char) -> Result<
             return Err(c"invalid layout".to_owned());
         }
         layout = layout.offset(n as isize);
-        if csum != layout_checksum(layout) {
+        if csum != layout_checksum(CStr::from_ptr(layout)) {
             return Err(c"invalid layout".to_owned());
         }
 
-        let Some(tiled_lc) = layout_construct(null_mut::<layout_cell>(), &raw mut layout) else {
+        let Some(tiled_lc) = layout_construct(null_mut::<layout_cell>(), &mut layout) else {
             return Err(c"invalid layout".to_owned());
         };
 
@@ -284,7 +278,7 @@ unsafe fn layout_apply(
         (*w).layout_root = tree.take();
 
         let mut wp = window_panes_first(w);
-        layout_assign(w, &raw mut wp, tiled_lc, 0);
+        layout_assign(w, &mut wp, tiled_lc, 0);
 
         (*w).z_index.clear();
         layout_fix_zindexes(w, tiled_lc);
@@ -301,7 +295,7 @@ unsafe fn layout_apply(
 /// window's pane list as it goes.
 unsafe fn layout_assign(
     w: *mut window,
-    wp: *mut *mut window_pane,
+    wp: &mut *mut window_pane,
     lc: *mut layout_cell,
     flags: c_int,
 ) {
@@ -335,7 +329,7 @@ unsafe fn layout_assign(
 /// literal `x`.
 unsafe fn layout_construct_cell(
     lcparent: *mut layout_cell,
-    layout: *mut *const c_char,
+    layout: &mut *const c_char,
 ) -> Option<Box<layout_cell>> {
     unsafe {
         let mut sx: u_int = 0;
@@ -408,7 +402,7 @@ unsafe fn layout_construct_cell(
 /// patched oracle and tmux master (commit 97472e37).
 unsafe fn layout_construct(
     lcparent: *mut layout_cell,
-    layout: *mut *const c_char,
+    layout: &mut *const c_char,
 ) -> Option<Box<layout_cell>> {
     unsafe {
         let mut lc = layout_construct_cell(lcparent, layout)?;

@@ -7,7 +7,7 @@ use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
 use crate::format::format_single_from_target;
 use crate::notify::notify_pane;
-use crate::options::{options_get_string, options_ptr, options_set_string};
+use crate::options::{options_get_string, options_set_string};
 use crate::screen::screen_set_title;
 use crate::server::client_walk;
 use crate::server::{marked_pane, server_is_marked, server_set_marked};
@@ -225,7 +225,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
         let mut activewp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut lastwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut markedwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut oo: *mut options = options_ptr(&(*wp).options);
+        let mut oo: *mut options = (*wp).options_ptr();
         let mut style: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
         if entry == &raw const cmd_last_pane_entry || args_has(args, 'l' as i32 as u_char) != 0 {

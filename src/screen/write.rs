@@ -18,7 +18,7 @@ use crate::grid::{
 };
 use crate::layout::layout_fix_panes;
 use crate::log::{fatalx, log_debug, log_get_level};
-use crate::options::{options_get_number, options_ptr};
+use crate::options::options_get_number;
 use crate::reactor::Timer;
 use crate::server::server_redraw_window_borders;
 use crate::session::session_get_curw;
@@ -111,12 +111,9 @@ pub const CELL_BOTTOMLEFT: c_int = 5;
 pub const CELL_BOTTOMRIGHT: c_int = 6;
 pub const CELL_LEFTJOIN: c_int = 9;
 pub const CELL_RIGHTJOIN: c_int = 10;
-pub const CELL_BORDERS: [c_char; 14] =
-    unsafe { ::core::mem::transmute::<[u8; 14], [c_char; 14]>(*b" xqlkmjwvtun~\0") };
-pub const SIMPLE_BORDERS: [c_char; 14] =
-    unsafe { ::core::mem::transmute::<[u8; 14], [c_char; 14]>(*b" |-+++++++++.\0") };
-pub const PADDED_BORDERS: [c_char; 14] =
-    unsafe { ::core::mem::transmute::<[u8; 14], [c_char; 14]>(*b"             \0") };
+pub const CELL_BORDERS: [u8; 14] = *b" xqlkmjwvtun~\0";
+pub const SIMPLE_BORDERS: [u8; 14] = *b" |-+++++++++.\0";
+pub const PADDED_BORDERS: [u8; 14] = *b"             \0";
 pub const GRID_HISTORY: c_int = 0x1;
 pub const SCREEN_WRITE_SYNC: c_int = 0x1;
 pub const SCREEN_WRITE_OBSCURED: c_int = 0x2;
@@ -813,7 +810,6 @@ pub unsafe fn screen_write_fast_copy(
                 nx,
                 &mut ranges,
             );
-            let r = &raw mut ranges;
             let mut xx = px;
             while xx < px.wrapping_add(nx) {
                 let gl = grid_get_line(&mut *gd, yy);
@@ -826,7 +822,7 @@ pub unsafe fn screen_write_fast_copy(
                     break;
                 }
                 grid_view_set_cell(screen_grid_mut(&mut *s), (*s).cx, (*s).cy, &gc);
-                if screen_redraw_is_visible(r, (xoff as u_int).wrapping_add((*s).cx)) == 0 {
+                if !screen_redraw_is_visible(Some(&ranges), (xoff as u_int).wrapping_add((*s).cx)) {
                     break;
                 }
                 ttyctx.cell = &raw mut gc;
@@ -846,31 +842,29 @@ pub unsafe fn screen_write_fast_copy(
 
 /// Puts the character a border of `lines` draws for `cell_type` into `gc`.
 fn screen_write_box_border_set(lines: box_lines, cell_type: c_int, gc: &mut grid_cell) {
-    unsafe {
-        let acs = match lines {
-            BOX_LINES_DOUBLE => Some(tty_acs_double_borders(cell_type)),
-            BOX_LINES_HEAVY => Some(tty_acs_heavy_borders(cell_type)),
-            BOX_LINES_ROUNDED => Some(tty_acs_rounded_borders(cell_type)),
-            _ => None,
-        };
-        if let Some(acs) = acs {
-            gc.attr = (gc.attr as c_int & !GRID_ATTR_CHARSET) as u_short;
-            utf8_copy(&mut gc.data, &*acs);
+    let acs = match lines {
+        BOX_LINES_DOUBLE => Some(tty_acs_double_borders(cell_type)),
+        BOX_LINES_HEAVY => Some(tty_acs_heavy_borders(cell_type)),
+        BOX_LINES_ROUNDED => Some(tty_acs_rounded_borders(cell_type)),
+        _ => None,
+    };
+    if let Some(acs) = acs {
+        gc.attr = (gc.attr as c_int & !GRID_ATTR_CHARSET) as u_short;
+        utf8_copy(&mut gc.data, acs);
+        return;
+    }
+    let table = match lines {
+        BOX_LINES_SIMPLE => &SIMPLE_BORDERS,
+        BOX_LINES_PADDED => &PADDED_BORDERS,
+        BOX_LINES_SINGLE | BOX_LINES_DEFAULT => {
+            gc.attr = (gc.attr as c_int | GRID_ATTR_CHARSET) as u_short;
+            utf8_set(&mut gc.data, CELL_BORDERS[cell_type as usize]);
             return;
         }
-        let table = match lines {
-            BOX_LINES_SIMPLE => &SIMPLE_BORDERS,
-            BOX_LINES_PADDED => &PADDED_BORDERS,
-            BOX_LINES_SINGLE | BOX_LINES_DEFAULT => {
-                gc.attr = (gc.attr as c_int | GRID_ATTR_CHARSET) as u_short;
-                utf8_set(&mut gc.data, CELL_BORDERS[cell_type as usize] as u_char);
-                return;
-            }
-            _ => return,
-        };
-        gc.attr = (gc.attr as c_int & !GRID_ATTR_CHARSET) as u_short;
-        utf8_set(&mut gc.data, table[cell_type as usize] as u_char);
-    }
+        _ => return,
+    };
+    gc.attr = (gc.attr as c_int & !GRID_ATTR_CHARSET) as u_short;
+    utf8_set(&mut gc.data, table[cell_type as usize]);
 }
 /// Draws one edge of a box: a corner or join, the middle of the line and the
 /// other corner or join.
@@ -1907,7 +1901,7 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, bg: u_in
             && (*s).cy == 0
             && (*gd).flags & GRID_HISTORY != 0
             && !ctx.wp.is_null()
-            && options_get_number(options_ptr(&(*ctx.wp).options), c"scroll-on-clear".as_ptr()) != 0
+            && options_get_number((*ctx.wp).options_ptr(), c"scroll-on-clear".as_ptr()) != 0
         {
             grid_view_clear_history(&mut *gd, bg);
         } else {
@@ -2003,7 +1997,7 @@ pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, bg: u_int) {
         ttyctx.bg = bg;
         if (*screen_grid_ptr(s)).flags & GRID_HISTORY != 0
             && !ctx.wp.is_null()
-            && options_get_number(options_ptr(&(*ctx.wp).options), c"scroll-on-clear".as_ptr()) != 0
+            && options_get_number((*ctx.wp).options_ptr(), c"scroll-on-clear".as_ptr()) != 0
         {
             grid_view_clear_history(screen_grid_mut(&mut *s), bg);
         } else {
@@ -2052,7 +2046,8 @@ unsafe fn line_text<'a>(cl: *mut screen_write_cline) -> &'a mut [u8] {
 
 /// Cuts what is already collected on line `y` out of the way of `used`
 /// columns from `x`, and answers the item the new one is to go in front of,
-/// or null for the end of the line.
+/// or [`CITEM_NONE`] for the end of the line, along with whether any item
+/// given up whole started the line wrapped.
 ///
 /// An item given up whole is read back after it has gone to the free list:
 /// the free only relinks it, so the wrapped flag it carried is still there
@@ -2063,16 +2058,16 @@ unsafe fn screen_write_collect_trim(
     y: u_int,
     x: u_int,
     used: u_int,
-    wrapped: *mut c_int,
-) -> CItem {
+) -> (CItem, bool) {
     unsafe {
+        let mut wrapped = false;
         let cl: *mut screen_write_cline = &raw mut write_list(&mut *ctx.s)[y as usize];
         let items = &raw mut (*cl).items;
         let sx = x;
         let ex = x.wrapping_add(used).wrapping_sub(1);
         let name = c"screen_write_collect_trim".as_ptr();
         if (*items).is_empty() {
-            return CITEM_NONE;
+            return (CITEM_NONE, wrapped);
         }
         for ci in citem_list(items) {
             let csx = citem(ci).x;
@@ -2087,7 +2082,7 @@ unsafe fn screen_write_collect_trim(
                     c"%s: %p %u-%u after %u-%u".as_ptr(),
                     fmt_args![name, ci, csx, cex, sx, ex],
                 );
-                return ci;
+                return (ci, wrapped);
             } else if csx >= sx && cex <= ex {
                 log_debug(
                     c"%s: %p %u-%u inside %u-%u".as_ptr(),
@@ -2095,8 +2090,8 @@ unsafe fn screen_write_collect_trim(
                 );
                 citem_remove(items, ci);
                 screen_write_free_citem(ci);
-                if csx == 0 && citem(ci).wrapped != 0 && !wrapped.is_null() {
-                    *wrapped = 1;
+                if csx == 0 && citem(ci).wrapped != 0 {
+                    wrapped = true;
                 }
             } else if csx < sx && cex >= sx && cex <= ex {
                 log_debug(
@@ -2129,7 +2124,7 @@ unsafe fn screen_write_collect_trim(
                         citem(ci).x.wrapping_add(citem(ci).used).wrapping_add(1)
                     ],
                 );
-                return ci;
+                return (ci, wrapped);
             } else {
                 log_debug(
                     c"%s: %p %u-%u under %u-%u".as_ptr(),
@@ -2156,10 +2151,10 @@ unsafe fn screen_write_collect_trim(
                         ci2
                     ],
                 );
-                return ci2;
+                return (ci2, wrapped);
             }
         }
-        CITEM_NONE
+        (CITEM_NONE, wrapped)
     }
 }
 
@@ -2419,13 +2414,11 @@ unsafe fn screen_write_collect_insert(ctx: &mut screen_write_ctx, ci: CItem) {
         let s: *mut screen = ctx.s;
         let cy = (*s).cy as usize;
         let items = &raw mut write_list(&mut *s)[cy].items;
-        let before = screen_write_collect_trim(
-            &mut *ctx,
-            (*s).cy,
-            citem(ci).x,
-            citem(ci).used,
-            &raw mut citem(ci).wrapped,
-        );
+        let (before, wrapped) =
+            screen_write_collect_trim(&mut *ctx, (*s).cy, citem(ci).x, citem(ci).used);
+        if wrapped {
+            citem(ci).wrapped = 1;
+        }
         if before == CITEM_NONE {
             citem_insert_tail(items, ci);
         } else {
@@ -2519,9 +2512,8 @@ pub unsafe fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
             screen_grid_mut(&mut *s),
             (*s).cx,
             (*s).cy,
-            &raw mut citem(ci).gc,
-            line_text(cl)[citem(ci).x as usize..].as_ptr() as *const c_char,
-            citem(ci).used as size_t,
+            &citem(ci).gc,
+            &line_text(cl)[citem(ci).x as usize..][..citem(ci).used as usize],
         );
         if bci != CITEM_NONE {
             screen_write_collect_insert(&mut *ctx, bci);
@@ -2789,12 +2781,12 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: *const grid_cell)
         let mut ttyctx = tty_ctx::default();
         let mut force_wide = false;
         let mut zero_width = false;
-        if utf8_is_hangul_filler(ud) != 0 {
+        if utf8_is_hangul_filler(&*ud) {
             return 1;
         }
-        if utf8_is_zwj(ud) != 0 {
+        if utf8_is_zwj(&*ud) {
             zero_width = true;
-        } else if utf8_is_vs(ud) != 0 {
+        } else if utf8_is_vs(&*ud) {
             zero_width = true;
             if options_get_number(oo, c"variation-selector-always-wide".as_ptr()) != 0 {
                 force_wide = true;
@@ -2826,15 +2818,15 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: *const grid_cell)
             return zero_width as c_int;
         }
         if !zero_width {
-            match hanguljamo_check_state(&raw mut last.data, ud) {
+            match hanguljamo_check_state(&last.data, &*ud) {
                 HANGULJAMO_STATE_NOT_COMPOSABLE => return 1,
                 HANGULJAMO_STATE_CHOSEONG => return 0,
                 HANGULJAMO_STATE_NOT_HANGULJAMO => {
-                    if utf8_should_combine(&raw mut last.data, ud) != 0 {
+                    if utf8_should_combine(&last.data, &*ud) {
                         force_wide = true;
-                    } else if utf8_should_combine(ud, &raw mut last.data) != 0 {
+                    } else if utf8_should_combine(&*ud, &last.data) {
                         force_wide = true;
-                    } else if utf8_has_zwj(&raw mut last.data) == 0 {
+                    } else if !utf8_has_zwj(&last.data) {
                         return 0;
                     }
                 }
@@ -3013,7 +3005,7 @@ pub unsafe fn screen_write_rawstring(
 /// redraw the change needs.
 unsafe fn screen_write_alternate(
     ctx: &mut screen_write_ctx,
-    gc: *mut grid_cell,
+    gc: &mut grid_cell,
     cursor: c_int,
     on: bool,
     from: *const c_char,
@@ -3022,7 +3014,7 @@ unsafe fn screen_write_alternate(
         let mut ttyctx = tty_ctx::default();
         let wp: *mut window_pane = ctx.wp;
         if !wp.is_null()
-            && options_get_number(options_ptr(&(*wp).options), c"alternate-screen".as_ptr()) == 0
+            && options_get_number((*wp).options_ptr(), c"alternate-screen".as_ptr()) == 0
         {
             return;
         }
@@ -3030,7 +3022,7 @@ unsafe fn screen_write_alternate(
         if on {
             screen_alternate_on(ctx.s, gc, cursor);
         } else {
-            screen_alternate_off(ctx.s, gc, cursor);
+            screen_alternate_off(ctx.s, Some(gc), cursor);
         }
         if !wp.is_null() {
             layout_fix_panes((*wp).window, null_mut::<window_pane>());
@@ -3044,7 +3036,7 @@ unsafe fn screen_write_alternate(
 }
 pub unsafe fn screen_write_alternateon(
     ctx: &mut screen_write_ctx,
-    gc: *mut grid_cell,
+    gc: &mut grid_cell,
     cursor: c_int,
 ) {
     unsafe {
@@ -3059,7 +3051,7 @@ pub unsafe fn screen_write_alternateon(
 }
 pub unsafe fn screen_write_alternateoff(
     ctx: &mut screen_write_ctx,
-    gc: *mut grid_cell,
+    gc: &mut grid_cell,
     cursor: c_int,
 ) {
     unsafe {

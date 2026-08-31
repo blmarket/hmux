@@ -35,7 +35,7 @@ use crate::text::utf8_stravisx;
 pub use crate::types::*;
 use crate::window::window_pane_exited;
 use ::core::ffi::{CStr, c_char, c_int};
-use ::core::ptr::{null, null_mut};
+use ::core::ptr::null;
 pub const MSG_READ_CANCEL: msgtype = 307;
 pub const MSG_READ_DONE: msgtype = 302;
 pub const MSG_READ: msgtype = 301;
@@ -101,11 +101,7 @@ unsafe fn write_bytes(wp: *mut window_pane, bytes: &[u8]) {
 /// the pane.
 unsafe fn cmd_paste_buffer_paste(wp: *mut window_pane, buf: &[u8]) {
     unsafe {
-        let visible = utf8_stravisx(
-            buf.as_ptr() as *const c_char,
-            buf.len(),
-            VIS_SAFE | VIS_NOSLASH,
-        );
+        let visible = utf8_stravisx(buf, VIS_SAFE | VIS_NOSLASH);
         let bytes = visible.as_bytes();
         (*wp).event.write(bytes.as_ptr(), bytes.len());
     }
@@ -125,7 +121,7 @@ unsafe fn send_line(wp: *mut window_pane, line: &[u8], raw: bool) {
 
 /// The separator that follows every newline-closed line: `-s`'s text when it
 /// was given, a newline under `-r`, and a carriage return otherwise.
-unsafe fn separator(args: &args) -> &'static CStr {
+unsafe fn separator(args: &args) -> &CStr {
     unsafe {
         let sepstr = args_get(args, b's');
         if !sepstr.is_null() {
@@ -155,7 +151,7 @@ unsafe fn wanted_buffer(args: &args, item: *mut cmdq_item) -> Result<*mut paste_
             null()
         };
         if bufname.is_null() {
-            return Ok(paste_get_top(null_mut()));
+            return Ok(paste_get_top(None));
         }
         let pb = paste_get_name(bufname);
         if pb.is_null() {

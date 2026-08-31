@@ -513,7 +513,7 @@ fn the_c_flag_rewrites_the_sessions_working_directory() {
         let _wired = wire_up(c);
 
         let sp = t.session();
-        let orig = ::core::ffi::CStr::from_ptr(session_cwd(sp)).to_owned();
+        let orig = session_cwd(sp).unwrap().to_owned();
         session_set_cwd(sp, c"/attach-fixture".to_owned());
 
         let mut item = Item::new();
@@ -531,7 +531,7 @@ fn the_c_flag_rewrites_the_sessions_working_directory() {
             null(),
         );
         assert_eq!(rv, CMD_RETURN_NORMAL);
-        assert_eq!(seen(session_cwd(sp)), "/tmp/0");
+        assert_eq!(session_cwd(sp), Some(c"/tmp/0"));
 
         session_set_cwd(sp, orig);
     }
@@ -690,7 +690,7 @@ fn switching_without_E_applies_the_update_environment_list() {
         assert_eq!((*c).session, f.two());
         let envent = environ_find(&*f.two.environ(), c"DISPLAY".as_ptr())
             .expect("DISPLAY was not carried over");
-        assert_eq!(seen(environ_entry_value(envent)), "unix:10");
+        assert_eq!(environ_entry_value(envent), Some(c"unix:10"));
     }
 }
 
@@ -762,7 +762,7 @@ fn exec_attaches_through_the_parsed_arguments() {
         (*other).session = t.session();
 
         let sp = t.session();
-        let orig = ::core::ffi::CStr::from_ptr(session_cwd(sp)).to_owned();
+        let orig = session_cwd(sp).unwrap().to_owned();
         session_set_cwd(sp, c"/attach-fixture".to_owned());
 
         let mut item = Item::new().with_args(c"attach-session -d -r -f ignore-size -c /tmp -t 0");
@@ -779,7 +779,7 @@ fn exec_attaches_through_the_parsed_arguments() {
             (CLIENT_READONLY | CLIENT_IGNORESIZE) as u64
         );
         assert_eq!((*other).exit_msgtype, MSG_DETACH);
-        assert_eq!(seen(session_cwd(sp)), "/tmp");
+        assert_eq!(session_cwd(sp), Some(c"/tmp"));
 
         session_set_cwd(sp, orig);
     }

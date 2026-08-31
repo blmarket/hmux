@@ -7,10 +7,7 @@ const REG_ICASE: c_int = 1 << 1;
 /// What `regsub` makes of `text`, or `None` when the pattern does not
 /// compile.
 fn sub(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<String> {
-    unsafe {
-        regsub(pattern.as_ptr(), with.as_ptr(), text.as_ptr(), flags)
-            .map(|value| value.to_string_lossy().into_owned())
-    }
+    regsub(pattern, with, text, flags).map(|value| value.to_string_lossy().into_owned())
 }
 
 /// The same, for the extended syntax every caller asks for.

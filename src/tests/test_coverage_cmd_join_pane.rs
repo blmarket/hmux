@@ -37,9 +37,9 @@ use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::layout::layout_cell_pane;
 use crate::layout::{
     LAYOUT_CELL_FLOATING, LAYOUT_TOPBOTTOM, layout_assign_pane, layout_free, layout_init,
-    layout_root_ptr, layout_split_pane,
+    layout_split_pane,
 };
-use crate::options::{options_get_parent, options_ptr};
+use crate::options::options_get_parent;
 use crate::proc::PEER_BAD;
 use crate::server::{marked_pane, message_log, server_clear_marked, server_set_marked};
 use crate::session::session_get_curw;
@@ -410,7 +410,7 @@ fn joining_a_pane_to_itself_is_refused_and_touches_nothing() {
         assert_eq!(window_get_active(w0), panes[0]);
         assert_eq!((*panes[0]).window, w0);
         assert_eq!(
-            options_get_parent(options_ptr(&(*panes[0]).options)),
+            options_get_parent((*panes[0]).options_ptr()),
             null_mut::<options>(),
             "no reparenting happened"
         );
@@ -553,7 +553,7 @@ fn joining_below_the_target_moves_activates_and_selects_it() {
         assert_eq!((*moved).layout_cell, (*pane_at(w_dst, 1)).layout_cell);
 
         assert_eq!(
-            dump_cell(layout_root_ptr(&(*w_dst).layout_root)),
+            dump_cell((*w_dst).layout_root_ptr()),
             format!(
                 "TB 80x24+0+0 [%{} 80x12+0+0 | %{} 80x11+0+13]",
                 (*kept).id,
@@ -578,8 +578,8 @@ fn joining_below_the_target_moves_activates_and_selects_it() {
         );
 
         assert_eq!(
-            options_get_parent(options_ptr(&(*moved).options)),
-            options_ptr(&(*w_dst).options),
+            options_get_parent((*moved).options_ptr()),
+            (*w_dst).options_ptr(),
             "the pane now inherits the destination window's options"
         );
         assert_eq!(
@@ -665,8 +665,8 @@ fn with_d_the_destination_keeps_its_active_pane_and_current_alone() {
         assert_eq!((*cur).pane(), bwp);
 
         assert_eq!(
-            options_get_parent(options_ptr(&(*moved).options)),
-            options_ptr(&(*w_dst).options)
+            options_get_parent((*moved).options_ptr()),
+            (*w_dst).options_ptr()
         );
 
         assert_eq!(window_count_panes(w_src, 1), 1);
@@ -707,7 +707,7 @@ fn before_flips_which_half_the_joined_pane_takes_but_still_lands_behind() {
         assert_eq!(z_at(w_dst, 1), moved);
 
         assert_eq!(
-            dump_cell(layout_root_ptr(&(*w_dst).layout_root)),
+            dump_cell((*w_dst).layout_root_ptr()),
             format!(
                 "LR 80x24+0+0 [%{} 40x24+0+0 | %{} 39x24+41+0]",
                 (*moved).id,
@@ -821,8 +821,8 @@ fn moving_across_sessions_follows_the_destination_session() {
         assert_eq!((*moved).window, w_dst);
         assert_eq!(window_get_active(w_dst), moved);
         assert_eq!(
-            options_get_parent(options_ptr(&(*moved).options)),
-            options_ptr(&(*w_dst).options)
+            options_get_parent((*moved).options_ptr()),
+            (*w_dst).options_ptr()
         );
 
         assert_eq!(
@@ -907,8 +907,8 @@ fn a_source_window_without_a_layout_tree_still_gives_up_its_pane() {
         assert_eq!((*kept).sy, 12);
         assert_eq!((*moved).sy, 11);
         assert_eq!(
-            options_get_parent(options_ptr(&(*moved).options)),
-            options_ptr(&(*w_dst).options)
+            options_get_parent((*moved).options_ptr()),
+            (*w_dst).options_ptr()
         );
     }
 }

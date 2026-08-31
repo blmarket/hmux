@@ -163,7 +163,7 @@ pane variables of `../PROTOCOL.md` §2 —
 `#{pane_agent_session_id}`, `#{pane_agent_model}`, `#{pane_state_emoji}` — by
 polling every pane at 200 ms. The detection is not in this crate: detectors,
 session-id and model resolution, process probing and the pane classifier live
-in `hmux/hmux-agent`, which the hmux daemon hosts through the same contract, so
+in `hmux-agent`, which the hmux daemon hosts through the same contract, so
 both servers classify a pane with one implementation rather than two that
 drift. What is here is the wiring: the `ServerObservability` implementation over
 `window_pane`, the tick, and the redraw.

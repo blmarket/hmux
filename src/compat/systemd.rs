@@ -9,7 +9,6 @@ pub use crate::types::*;
 use crate::xmalloc::xasprintf;
 use ::std::ffi::{CStr, CString};
 
-static mut SYSTEMD_SOCKET_PATH: Option<CString> = None;
 unsafe extern "C" {
     pub type sd_bus;
     pub type sd_bus_message;
@@ -60,7 +59,7 @@ unsafe extern "C" {
         interface: *const ::core::ffi::c_char,
         member: *const ::core::ffi::c_char,
         callback: sd_bus_message_handler_t,
-        userdata: *mut ::core::ffi::c_void,
+        userdata: *mut systemd_job_watch,
     ) -> ::core::ffi::c_int;
     fn sd_bus_error_free(e: *mut sd_bus_error);
 }
@@ -74,7 +73,7 @@ pub struct sd_bus_error {
 pub type sd_bus_message_handler_t = Option<
     unsafe extern "C" fn(
         *mut sd_bus_message,
-        *mut ::core::ffi::c_void,
+        *mut systemd_job_watch,
         *mut sd_bus_error,
     ) -> ::core::ffi::c_int,
 >;
@@ -144,14 +143,9 @@ pub unsafe fn systemd_create_socket(
                 &raw mut addrlen,
             ) == -(1 as ::core::ffi::c_int))
             {
-                let socket_path_owner = &raw mut SYSTEMD_SOCKET_PATH;
-                *socket_path_owner = Some(
+                socket_path = Some(
                     CStr::from_ptr(&raw mut sa.sun_path as *mut ::core::ffi::c_char).to_owned(),
                 );
-                socket_path = match &*socket_path_owner {
-                    Some(path) => path.as_ptr(),
-                    None => unreachable!(),
-                };
                 return fd;
             }
         } else {
@@ -166,11 +160,11 @@ pub unsafe fn systemd_create_socket(
 }
 pub(crate) unsafe extern "C" fn job_removed_handler(
     mut m: *mut sd_bus_message,
-    mut userdata: *mut ::core::ffi::c_void,
+    mut userdata: *mut systemd_job_watch,
     _ret_error: *mut sd_bus_error,
 ) -> ::core::ffi::c_int {
     unsafe {
-        let mut watch: *mut systemd_job_watch = userdata as *mut systemd_job_watch;
+        let mut watch = userdata;
         let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut id: uint32_t = 0;
         let mut r: ::core::ffi::c_int = 0;
@@ -221,7 +215,7 @@ pub unsafe fn systemd_move_to_new_cgroup(cause: &mut Option<CString>) -> ::core:
                 c"org.freedesktop.systemd1.Manager".as_ptr(),
                 c"JobRemoved".as_ptr(),
                 Some(job_removed_handler),
-                &raw mut watch as *mut ::core::ffi::c_void,
+                &raw mut watch,
             );
             if r < 0 as ::core::ffi::c_int {
                 *cause = Some(xasprintf(

@@ -313,8 +313,8 @@ fn the_enumerated_constants_keep_their_upstream_orderings() {
 
 #[test]
 fn the_shell_search_path_and_system_constants_are_the_upstream_ones() {
-    let shell: Vec<u8> = _PATH_BSHELL.iter().map(|&b| b as u8).collect();
-    let defpath: Vec<u8> = _PATH_DEFPATH.iter().map(|&b| b as u8).collect();
+    let shell = _PATH_BSHELL.to_bytes_with_nul();
+    let defpath = _PATH_DEFPATH.to_bytes_with_nul();
     assert_eq!(shell.len(), b"/bin/sh\0".len());
     assert_eq!(shell, b"/bin/sh\0");
     assert_eq!(defpath.len(), b"/usr/bin:/bin\0".len());

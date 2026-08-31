@@ -1,18 +1,18 @@
 use super::cells::{
     LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, PANE_MINIMUM, insert_new_tail, last, layout_create_cell,
     layout_fix_offsets, layout_fix_panes, layout_free, layout_make_leaf, layout_make_node,
-    layout_print_cell, layout_resize_adjust, layout_root_ptr, layout_set_size, layout_spread_cell,
+    layout_print_cell, layout_resize_adjust, layout_set_size, layout_spread_cell,
 };
 use crate::arguments::args_string_percentage;
 use crate::notify::notify_window;
-use crate::options::{options_get_number, options_get_string, options_ptr};
+use crate::options::{options_get_number, options_get_string};
 use crate::server::server_redraw_window;
 pub use crate::types::*;
 use crate::window::{
     window_count_panes, window_pane_is_floating, window_panes_first, window_panes_next,
     window_resize,
 };
-use ::core::ffi::{CStr, c_char, c_int, c_longlong};
+use ::core::ffi::{CStr, c_int, c_longlong};
 use ::core::ptr::null_mut;
 
 /// The narrowest a pane may be, as the sizes here count.
@@ -108,23 +108,21 @@ unsafe fn next_tiled(wp: *mut window_pane) -> *mut window_pane {
 /// The layout number `name` names, or -1 when it names none or more than one.
 /// A whole name is looked for first, so a name that is also the front of a
 /// longer one is that layout rather than an ambiguity.
-pub unsafe fn layout_set_lookup(name: *const c_char) -> c_int {
-    unsafe {
-        let name = CStr::from_ptr(name).to_bytes();
-        if let Some(i) = layout_sets.iter().position(|e| e.name.to_bytes() == name) {
-            return i as c_int;
-        }
-        let mut matched = -1;
-        for (i, entry) in layout_sets.iter().enumerate() {
-            if entry.name.to_bytes().starts_with(name) {
-                if matched != -1 {
-                    return -1;
-                }
-                matched = i as c_int;
-            }
-        }
-        matched
+pub fn layout_set_lookup(name: &CStr) -> c_int {
+    let name = name.to_bytes();
+    if let Some(i) = layout_sets.iter().position(|e| e.name.to_bytes() == name) {
+        return i as c_int;
     }
+    let mut matched = -1;
+    for (i, entry) in layout_sets.iter().enumerate() {
+        if entry.name.to_bytes().starts_with(name) {
+            if matched != -1 {
+                return -1;
+            }
+            matched = i as c_int;
+        }
+    }
+    matched
 }
 
 /// The last layout there is.
@@ -177,7 +175,7 @@ unsafe fn finish(w: *mut window, lc: *mut layout_cell, name: &CStr) {
     unsafe {
         layout_fix_offsets(w);
         layout_fix_panes(w, null_mut::<window_pane>());
-        layout_print_cell(layout_root_ptr(&(*w).layout_root), name.as_ptr(), 1);
+        layout_print_cell((*w).layout_root_ptr(), name.as_ptr(), 1);
         window_resize(w, (*lc).sx, (*lc).sy, -1, -1);
         notify_window(c"window-layout-changed".as_ptr(), w);
         server_redraw_window(w);
@@ -189,18 +187,14 @@ unsafe fn finish(w: *mut window, lc: *mut layout_cell, name: &CStr) {
 /// grows to fit rather than squeezing them.
 unsafe fn layout_set_even(w: *mut window, type_0: layout_type) {
     unsafe {
-        layout_print_cell(
-            layout_root_ptr(&(*w).layout_root),
-            c"layout_set_even".as_ptr(),
-            1,
-        );
+        layout_print_cell((*w).layout_root_ptr(), c"layout_set_even".as_ptr(), 1);
         let n = window_count_panes(w, 0);
         if n <= 1 {
             return;
         }
         layout_free(w);
         (*w).layout_root = Some(layout_create_cell(null_mut::<layout_cell>()));
-        let lc = layout_root_ptr(&(*w).layout_root);
+        let lc = (*w).layout_root_ptr();
         let needed = n.wrapping_mul(MINIMUM + 1).wrapping_sub(1);
         let (sx, sy) = if type_0 == LAYOUT_LEFTRIGHT {
             (needed.max((*w).sx), (*w).sy)
@@ -285,7 +279,7 @@ static VERTICAL: Axis = Axis {
 unsafe fn main_size(w: *mut window, axis: &Axis, along: u_int) -> (u_int, u_int) {
     unsafe {
         let mut cause = None;
-        let s = options_get_string(options_ptr(&(*w).options), axis.main_option.as_ptr());
+        let s = options_get_string((*w).options_ptr(), axis.main_option.as_ptr());
         let mut main =
             args_string_percentage(s, 0, along as c_longlong, along as c_longlong, &mut cause)
                 as u_int;
@@ -300,7 +294,7 @@ unsafe fn main_size(w: *mut window, axis: &Axis, along: u_int) -> (u_int, u_int)
             };
             return (main, MINIMUM);
         }
-        let s = options_get_string(options_ptr(&(*w).options), axis.other_option.as_ptr());
+        let s = options_get_string((*w).options_ptr(), axis.other_option.as_ptr());
         let mut other =
             args_string_percentage(s, 0, along as c_longlong, along as c_longlong, &mut cause)
                 as u_int;
@@ -362,7 +356,7 @@ unsafe fn other_cells(
 /// mirrored form is the same layout with the other panes written first.
 unsafe fn layout_set_main(w: *mut window, axis: &Axis, mirrored: bool, name: &CStr) {
     unsafe {
-        layout_print_cell(layout_root_ptr(&(*w).layout_root), name.as_ptr(), 1);
+        layout_print_cell((*w).layout_root_ptr(), name.as_ptr(), 1);
         let n = window_count_panes(w, 0);
         if n <= 1 {
             return;
@@ -379,7 +373,7 @@ unsafe fn layout_set_main(w: *mut window, axis: &Axis, mirrored: bool, name: &CS
 
         layout_free(w);
         (*w).layout_root = Some(layout_create_cell(null_mut::<layout_cell>()));
-        let lc = layout_root_ptr(&(*w).layout_root);
+        let lc = (*w).layout_root_ptr();
         let (sx, sy) = axis.size(main.wrapping_add(other).wrapping_add(1), across);
         layout_set_size(lc, sx, sy, 0, 0);
         layout_make_node(w, lc, axis.root);
@@ -419,19 +413,13 @@ unsafe fn layout_set_main_v_mirrored(w: *mut window) {
 /// pane of the last row.
 unsafe fn layout_set_tiled(w: *mut window) {
     unsafe {
-        layout_print_cell(
-            layout_root_ptr(&(*w).layout_root),
-            c"layout_set_tiled".as_ptr(),
-            1,
-        );
+        layout_print_cell((*w).layout_root_ptr(), c"layout_set_tiled".as_ptr(), 1);
         let n = window_count_panes(w, 0);
         if n <= 1 {
             return;
         }
-        let max_columns = options_get_number(
-            options_ptr(&(*w).options),
-            c"tiled-layout-max-columns".as_ptr(),
-        ) as u_int;
+        let max_columns =
+            options_get_number((*w).options_ptr(), c"tiled-layout-max-columns".as_ptr()) as u_int;
         let mut columns: u_int = 1;
         let mut rows: u_int = 1;
         while rows.wrapping_mul(columns) < n {
@@ -453,7 +441,7 @@ unsafe fn layout_set_tiled(w: *mut window) {
 
         layout_free(w);
         (*w).layout_root = Some(layout_create_cell(null_mut::<layout_cell>()));
-        let lc = layout_root_ptr(&(*w).layout_root);
+        let lc = (*w).layout_root_ptr();
         let sx = width
             .wrapping_add(1)
             .wrapping_mul(columns)

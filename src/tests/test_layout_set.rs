@@ -19,7 +19,7 @@ fn build(n: usize, sx: u_int, sy: u_int) -> Layout {
 /// Arranges the window into the layout `name` and answers the tree.
 fn set(l: &mut Layout, name: &CStr) -> String {
     unsafe {
-        let i = layout_set_lookup(name.as_ptr());
+        let i = layout_set_lookup(name);
         assert!(i >= 0, "{name:?} is a layout");
         assert_eq!(layout_set_select(l.w(), i as u_int), i as u_int);
         assert_eq!((*l.w()).lastlayout, i);
@@ -32,7 +32,7 @@ fn option(l: &mut Layout, name: &CStr, value: &str) {
     let value = CString::new(value).expect("no NUL");
     unsafe {
         options_set_string(
-            options_ptr(&(*l.w()).options),
+            (*l.w()).options_ptr(),
             name.as_ptr(),
             0,
             c"%s".as_ptr(),
@@ -42,7 +42,7 @@ fn option(l: &mut Layout, name: &CStr, value: &str) {
 }
 
 fn lookup(name: &CStr) -> c_int {
-    unsafe { layout_set_lookup(name.as_ptr()) }
+    layout_set_lookup(name)
 }
 
 #[test]
@@ -348,7 +348,7 @@ fn a_tiled_layout_keeps_to_the_column_limit() {
     option(&mut l, c"main-pane-height", "24");
     unsafe {
         options_set_number(
-            options_ptr(&(*l.w()).options),
+            (*l.w()).options_ptr(),
             c"tiled-layout-max-columns".as_ptr(),
             2,
         )
@@ -360,7 +360,7 @@ fn a_tiled_layout_keeps_to_the_column_limit() {
     let mut l = build(3, 80, 24);
     unsafe {
         options_set_number(
-            options_ptr(&(*l.w()).options),
+            (*l.w()).options_ptr(),
             c"tiled-layout-max-columns".as_ptr(),
             1,
         )

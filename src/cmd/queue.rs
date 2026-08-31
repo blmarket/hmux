@@ -1,5 +1,5 @@
 use crate::arguments::{
-    args_count, args_first, args_get, args_next, args_print, args_string, args_value_list,
+    args_count, args_flags, args_get, args_print, args_string, args_value_list,
 };
 use crate::cfg::cfg_add_cause;
 use crate::cfg::cfg_finished;
@@ -2325,7 +2325,7 @@ unsafe fn cmdq_name(mut c: *mut client) -> ::std::ffi::CString {
             return c"<global>".to_owned();
         }
         if (*c).name.is_some() {
-            format_alloc(c"<%s>".as_ptr(), fmt_args![cstr_ptr(&(*c).name)])
+            format_alloc(c"<%s>".as_ptr(), fmt_args![(*c).name.as_deref()])
         } else {
             format_alloc(c"<%p>".as_ptr(), fmt_args![c])
         }
@@ -2364,10 +2364,12 @@ pub fn cmdq_free(queue: Box<cmdq_list>) {
         }
     }
 }
-pub unsafe fn cmdq_get_name(item: &cmdq_item) -> *const ::core::ffi::c_char {
-    cstr_ptr(&item.name)
+/// The name the item was queued under, or nothing before it has been given
+/// one.
+pub fn cmdq_get_name(item: &cmdq_item) -> Option<&::core::ffi::CStr> {
+    item.name.as_deref()
 }
-pub unsafe fn cmdq_get_client(item: &cmdq_item) -> *mut client {
+pub fn cmdq_get_client(item: &cmdq_item) -> *mut client {
     item.client
         .as_ref()
         .map_or(::core::ptr::null_mut::<client>(), ClientRef::as_ptr)
@@ -2379,13 +2381,13 @@ pub unsafe fn cmdq_set_target_client(item: *mut cmdq_item, tc: *mut client) {
     }
 }
 
-pub unsafe fn cmdq_get_target_client(item: &cmdq_item) -> *mut client {
+pub fn cmdq_get_target_client(item: &cmdq_item) -> *mut client {
     item.target_client
         .as_ref()
         .and_then(ClientWeak::upgrade)
         .map_or(::core::ptr::null_mut(), |c| c.as_ptr())
 }
-pub unsafe fn cmdq_get_state(item: &cmdq_item) -> *mut cmdq_state {
+pub fn cmdq_get_state(item: &cmdq_item) -> *mut cmdq_state {
     (*item).state()
 }
 
@@ -2530,7 +2532,7 @@ pub unsafe fn cmdq_append(mut c: *mut client, items: cmdq_items) -> *mut cmdq_it
                 fmt_args![
                     c"cmdq_append".as_ptr(),
                     cmdq_name(c).as_c_str(),
-                    cstr_ptr(&item.item().name)
+                    item.item().name.as_deref()
                 ],
             );
             (*queue).list.push_back(item);
@@ -2554,8 +2556,8 @@ pub unsafe fn cmdq_insert_after(mut after: *mut cmdq_item, items: cmdq_items) ->
                 fmt_args![
                     c"cmdq_insert_after".as_ptr(),
                     cmdq_name(c).as_c_str(),
-                    cstr_ptr(&item.item().name),
-                    cstr_ptr(&(*after).name)
+                    item.item().name.as_deref(),
+                    (*after).name.as_deref()
                 ],
             );
             let at = cmdq_position(queue, after).expect("the anchor is on this queue");
@@ -2577,9 +2579,7 @@ pub unsafe fn cmdq_insert_hook(
         let mut cmd: *mut cmd = (*item).cmd();
         let args_0: &args = cmd_get_args(&*cmd);
         let args_ptr = cmd_get_args_ptr(&*cmd);
-        let mut ae: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
         let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-        let mut flag: ::core::ffi::c_char = 0;
         let mut i: u_int = 0;
         let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let new_state = cmdq_new_state(current, &raw mut (*state).event, CMDQ_STATE_NOHOOKS);
@@ -2626,8 +2626,7 @@ pub unsafe fn cmdq_insert_hook(
             );
             i = i.wrapping_add(1);
         }
-        flag = args_first(args_ptr, &raw mut ae) as ::core::ffi::c_char;
-        while flag as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
+        for flag in args_flags(args_0).map(|flag| flag as ::core::ffi::c_char) {
             value = args_get(args_0, flag as u_char);
             if value.is_null() {
                 let tmp = xasprintf(
@@ -2661,7 +2660,6 @@ pub unsafe fn cmdq_insert_hook(
                 );
                 i = i.wrapping_add(1);
             }
-            flag = args_next(args_ptr, &raw mut ae) as ::core::ffi::c_char;
         }
         a = options_array_first(o);
         while !a.is_null() {
@@ -2757,7 +2755,7 @@ pub(crate) unsafe fn cmdq_get_command(
                 c"%s: %s group %u".as_ptr(),
                 fmt_args![
                     c"cmdq_get_command".as_ptr(),
-                    cstr_ptr(&new.item().name),
+                    new.item().name.as_deref(),
                     new.item().group
                 ],
             );
@@ -2818,12 +2816,12 @@ unsafe fn cmdq_add_message(mut item: *mut cmdq_item) {
                 key = key_string_lookup_key((*state).event.key, 0 as ::core::ffi::c_int);
                 server_add_message(
                     c"%s%s key %s: %s".as_ptr(),
-                    fmt_args![cstr_ptr(&(*c).name), cstr_ptr(&user), key, tmp.as_ptr()],
+                    fmt_args![(*c).name.as_deref(), user.as_deref(), key, tmp.as_ptr()],
                 );
             } else {
                 server_add_message(
                     c"%s%s command: %s".as_ptr(),
-                    fmt_args![cstr_ptr(&(*c).name), cstr_ptr(&user), tmp.as_ptr()],
+                    fmt_args![(*c).name.as_deref(), user.as_deref(), tmp.as_ptr()],
                 );
             }
         } else {
@@ -3073,7 +3071,7 @@ pub unsafe fn cmdq_next(mut c: *mut client) -> u_int {
                 fmt_args![
                     c"cmdq_next".as_ptr(),
                     name,
-                    cstr_ptr(&(*item).name),
+                    (*item).name.as_deref(),
                     if is_command { 0u32 } else { 1u32 },
                     (*item).flags
                 ],
@@ -3196,7 +3194,7 @@ pub unsafe fn cmdq_error(
         } else if (*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             server_add_message(
                 c"%s message: %s".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name), msg.as_ptr()],
+                fmt_args![(*c).name.as_deref(), msg.as_ptr()],
             );
             if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {
                 msg = utf8_sanitize(msg.as_ptr());

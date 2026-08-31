@@ -53,9 +53,9 @@ fn server_create_socket_too_long_path_returns_error() {
     let _guard = globals();
     let long = "a".repeat(200);
     let cs = ::std::ffi::CString::new(long).unwrap();
-    let saved = unsafe { socket_path };
+    let saved = unsafe { socket_path.take() };
     unsafe {
-        socket_path = cs.as_ptr();
+        socket_path = Some(cs.clone());
         let mut cause = None;
         let fd = server_create_socket(0, &mut cause);
         assert_eq!(fd, -1);
@@ -71,9 +71,9 @@ fn server_create_socket_success_and_cleanup() {
     let _ = ::std::fs::create_dir_all(&dir);
     let sock = dir.join("sock");
     let cs = ::std::ffi::CString::new(sock.to_str().unwrap()).unwrap();
-    let saved = unsafe { socket_path };
+    let saved = unsafe { socket_path.take() };
     unsafe {
-        socket_path = cs.as_ptr();
+        socket_path = Some(cs.clone());
         let mut cause = None;
         let fd = server_create_socket(0, &mut cause);
         if fd >= 0 {
@@ -249,15 +249,7 @@ fn file_write_and_read_through_the_direct_filesystem_path() {
     let cs = ::std::ffi::CString::new(path.to_str().unwrap()).unwrap();
     let data = b"hello file\n";
     unsafe {
-        crate::file::file_write(
-            null_mut(),
-            cs.as_ptr(),
-            0,
-            data.as_ptr(),
-            data.len() as size_t,
-            None,
-            ClientFileData::None,
-        );
+        crate::file::file_write(null_mut(), cs.as_ptr(), 0, data, None, ClientFileData::None);
         crate::reactor::current().run_once();
         // file_write via null client takes the direct fopen branch – may succeed or set error,
         // either way the lines are covered.

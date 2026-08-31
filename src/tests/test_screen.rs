@@ -7,7 +7,7 @@ use crate::options::options_set_number;
 use crate::screen::screen_grid_ptr;
 use crate::tests::test_fixtures::globals;
 use crate::tmux::global_w_options;
-use ::core::ffi::{CStr, c_char, c_int};
+use ::core::ffi::{CStr, c_int};
 use ::core::ptr::null_mut;
 
 /// A screen that frees itself at the end of the test.
@@ -165,7 +165,7 @@ fn a_reset_comes_out_of_the_alternate_screen() {
     s.write(0, 0, "main");
     let mut gc = unsafe { grid_default_cell };
     unsafe {
-        screen_alternate_on(s.ptr(), &raw mut gc, 1);
+        screen_alternate_on(s.ptr(), &gc, 1);
         screen_reinit(s.ptr());
     }
     assert!(s.saved_grid.is_none());
@@ -214,7 +214,7 @@ fn each_cursor_style_is_a_shape_and_a_blink() {
     let mut cstyle = SCREEN_CURSOR_BLOCK;
     let mut mode = MODE_CURSOR_BLINKING;
     let mut set = |style: u_int| {
-        unsafe { screen_set_cursor_style(style, &raw mut cstyle, &raw mut mode) };
+        screen_set_cursor_style(style, &mut cstyle, &mut mode);
         (cstyle, mode & MODE_CURSOR_BLINKING != 0)
     };
     assert_eq!(set(1), (SCREEN_CURSOR_BLOCK, true));
@@ -676,7 +676,7 @@ fn the_alternate_screen_puts_the_first_one_aside() {
     let mut gc = unsafe { grid_default_cell };
     gc.fg = 5;
 
-    unsafe { screen_alternate_on(s.ptr(), &raw mut gc, 1) };
+    unsafe { screen_alternate_on(s.ptr(), &gc, 1) };
     assert!(s.saved_grid.is_some());
     assert_eq!(s.text(0), "", "the alternate screen starts empty");
     assert_eq!(unsafe { (*s.grid()).flags } & GRID_HISTORY, 0);
@@ -684,11 +684,11 @@ fn the_alternate_screen_puts_the_first_one_aside() {
 
     s.write(0, 0, "alt");
     s.0.cx = 3;
-    unsafe { screen_alternate_on(s.ptr(), &raw mut gc, 1) };
+    unsafe { screen_alternate_on(s.ptr(), &gc, 1) };
     assert_eq!(s.text(0), "alt", "a second call does nothing");
 
     let mut restored = unsafe { grid_default_cell };
-    unsafe { screen_alternate_off(s.ptr(), &raw mut restored, 1) };
+    unsafe { screen_alternate_off(s.ptr(), Some(&mut restored), 1) };
     assert!(s.saved_grid.is_none());
     assert_eq!(s.text(0), "main");
     assert_eq!((s.cx, s.cy), (4, 0));
@@ -702,7 +702,7 @@ fn leaving_an_alternate_screen_that_was_never_entered_only_clamps_the_cursor() {
     let mut s = Screen::new(10, 3, 0);
     s.0.cx = 20;
     s.0.cy = 20;
-    unsafe { screen_alternate_off(s.ptr(), null_mut(), 1) };
+    unsafe { screen_alternate_off(s.ptr(), None, 1) };
     assert_eq!((s.cx, s.cy), (9, 2));
 }
 
@@ -711,11 +711,11 @@ fn an_alternate_screen_can_be_left_without_taking_the_cursor_back() {
     let _guard = globals();
     let mut s = Screen::new(10, 3, 0);
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_alternate_on(s.ptr(), &raw mut gc, 0) };
+    unsafe { screen_alternate_on(s.ptr(), &gc, 0) };
     assert_eq!((s.saved_cx, s.saved_cy), (UINT_MAX, UINT_MAX));
     s.0.cx = 2;
     s.0.cy = 1;
-    unsafe { screen_alternate_off(s.ptr(), null_mut(), 1) };
+    unsafe { screen_alternate_off(s.ptr(), None, 1) };
     assert_eq!((s.cx, s.cy), (2, 1), "there was no cursor to come back to");
 }
 
@@ -739,7 +739,7 @@ fn freeing_a_screen_frees_what_it_put_aside() {
     let mut gc = unsafe { grid_default_cell };
     unsafe {
         screen_write_make_list(s.ptr());
-        screen_alternate_on(s.ptr(), &raw mut gc, 1);
+        screen_alternate_on(s.ptr(), &gc, 1);
         screen_set_title(s.ptr(), c"one".as_ptr(), 0);
         screen_push_title(s.ptr());
         screen_push_title(s.ptr());
@@ -847,10 +847,10 @@ fn the_cursor_is_clamped_when_the_alternate_screen_is_left() {
     let _guard = globals();
     let mut s = Screen::new(10, 3, 0);
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_alternate_on(s.ptr(), &raw mut gc, 0) };
+    unsafe { screen_alternate_on(s.ptr(), &gc, 0) };
     s.0.cx = 20;
     s.0.cy = 20;
-    unsafe { screen_alternate_off(s.ptr(), null_mut(), 0) };
+    unsafe { screen_alternate_off(s.ptr(), None, 0) };
     assert_eq!((s.cx, s.cy), (9, 2));
 }
 
@@ -859,16 +859,7 @@ fn long_line(n: u_int) -> Screen {
     let mut s = Screen::new(n + 10, 2, 0);
     let gc = unsafe { grid_default_cell };
     let text = vec![b'a'; n as usize];
-    unsafe {
-        grid_set_cells(
-            &mut *s.grid(),
-            0,
-            0,
-            &raw const gc,
-            text.as_ptr() as *const c_char,
-            text.len() as size_t,
-        )
-    };
+    unsafe { grid_set_cells(&mut *s.grid(), 0, 0, &gc, &text) };
     s
 }
 

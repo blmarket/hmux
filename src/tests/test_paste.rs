@@ -1,6 +1,6 @@
 use super::*;
 use crate::options::options_set_number;
-use crate::tests::test_fixtures::{globals, seen};
+use crate::tests::test_fixtures::globals;
 use ::core::ffi::c_char;
 use ::core::ptr::{null, null_mut};
 use ::std::ffi::CString;
@@ -37,7 +37,7 @@ fn names() -> Vec<String> {
         let mut out = Vec::new();
         let mut pb = paste_walk(null_mut::<paste_buffer>());
         while !pb.is_null() {
-            out.push(seen(paste_buffer_name(pb)));
+            out.push(paste_buffer_name(&*pb).to_string_lossy().into_owned());
             pb = paste_walk(pb);
         }
         out
@@ -72,7 +72,7 @@ fn an_empty_store_answers_nothing() {
     unsafe {
         assert_eq!(paste_is_empty(), 1);
         assert!(paste_walk(null_mut::<paste_buffer>()).is_null());
-        assert!(paste_get_top(null_mut()).is_null());
+        assert!(paste_get_top(None).is_null());
         assert!(paste_get_name(null::<c_char>()).is_null());
         assert!(paste_get_name(c"".as_ptr()).is_null());
         assert!(paste_get_name(c"buffer0".as_ptr()).is_null());
@@ -90,12 +90,12 @@ fn an_added_buffer_is_named_after_the_prefix_and_the_running_index() {
 
         let first = paste_get_name(c"buffer0".as_ptr());
         assert_eq!(contents(first), ("one".to_string(), 3));
-        assert_eq!(paste_buffer_order(first), 0);
-        assert_ne!(paste_buffer_created(first), 0);
+        assert_eq!(paste_buffer_order(&*first), 0);
+        assert_ne!(paste_buffer_created(&*first), 0);
         assert_eq!((*first).automatic, 1);
 
         let second = paste_get_name(c"my1".as_ptr());
-        assert_eq!(paste_buffer_order(second), 1);
+        assert_eq!(paste_buffer_order(&*second), 1);
         assert_eq!({ paste_num_automatic }, 2);
     }
 }
@@ -141,16 +141,16 @@ fn the_top_buffer_is_the_newest_automatic_one() {
         assert_eq!(names(), vec!["kept", "buffer0"]);
 
         let mut name: Option<CString> = None;
-        let top = paste_get_top(&raw mut name);
-        assert_eq!(seen(paste_buffer_name(top)), "buffer0");
+        let top = paste_get_top(Some(&mut name));
+        assert_eq!(paste_buffer_name(&*top).to_string_lossy(), "buffer0");
         assert_eq!(name.as_ref().unwrap().to_string_lossy(), "buffer0");
         assert_eq!(
-            seen(paste_buffer_name(paste_get_top(null_mut()))),
+            paste_buffer_name(&*paste_get_top(None)).to_string_lossy(),
             "buffer0"
         );
 
         paste_free(top);
-        assert!(paste_get_top(null_mut()).is_null());
+        assert!(paste_get_top(None).is_null());
     }
 }
 
@@ -251,10 +251,10 @@ fn renaming_a_buffer_makes_it_one_the_user_named() {
         assert!(paste_rename(c"buffer0".as_ptr(), c"mine".as_ptr()).is_ok());
         assert!(paste_get_name(c"buffer0".as_ptr()).is_null());
         let pb = paste_get_name(c"mine".as_ptr());
-        assert_eq!(seen(paste_buffer_name(pb)), "mine");
-        assert_eq!(paste_buffer_automatic(pb), 0);
+        assert_eq!(paste_buffer_name(&*pb).to_string_lossy(), "mine");
+        assert_eq!(paste_buffer_automatic(&*pb), 0);
         assert_eq!({ paste_num_automatic }, 0);
-        assert_eq!(paste_buffer_order(pb), 0);
+        assert_eq!(paste_buffer_order(&*pb), 0);
     }
 }
 
@@ -277,7 +277,7 @@ fn renaming_a_buffer_to_its_own_name_leaves_it_automatic() {
         paste_add(null::<c_char>(), data("one"));
         assert!(paste_rename(c"buffer0".as_ptr(), c"buffer0".as_ptr()).is_ok());
         let pb = paste_get_name(c"buffer0".as_ptr());
-        assert_eq!(paste_buffer_automatic(pb), 1);
+        assert_eq!(paste_buffer_automatic(&*pb), 1);
         assert_eq!({ paste_num_automatic }, 1);
     }
 }
@@ -337,13 +337,13 @@ fn setting_a_buffer_of_a_name_already_there_replaces_it() {
     let _guard = store();
     unsafe {
         assert!(paste_set(data("first"), c"one".as_ptr()).is_ok());
-        let before = paste_buffer_order(paste_get_name(c"one".as_ptr()));
+        let before = paste_buffer_order(&*paste_get_name(c"one".as_ptr()));
         assert!(paste_set(data("second"), c"one".as_ptr()).is_ok());
         assert_eq!(names(), vec!["one"]);
         let pb = paste_get_name(c"one".as_ptr());
         assert_eq!(contents(pb), ("second".to_string(), 6));
-        assert_eq!(paste_buffer_order(pb), before + 1);
-        assert_eq!(paste_buffer_automatic(pb), 0);
+        assert_eq!(paste_buffer_order(&*pb), before + 1);
+        assert_eq!(paste_buffer_automatic(&*pb), 0);
     }
 }
 
@@ -364,7 +364,7 @@ fn replacing_a_buffer_swaps_its_data_and_keeps_its_name() {
         let pb = paste_get_name(c"buffer0".as_ptr());
         paste_replace(pb, data("longer"));
         assert_eq!(contents(pb), ("longer".to_string(), 6));
-        assert_eq!(seen(paste_buffer_name(pb)), "buffer0");
+        assert_eq!(paste_buffer_name(&*pb).to_string_lossy(), "buffer0");
     }
 }
 
@@ -374,7 +374,7 @@ fn a_sample_escapes_what_it_shows() {
     unsafe {
         paste_add(null::<c_char>(), data("a\tb\nc"));
         let pb = paste_get_name(c"buffer0".as_ptr());
-        assert_eq!(paste_make_sample(pb).to_string_lossy(), "a\\tb\\nc");
+        assert_eq!(paste_make_sample(&*pb).to_string_lossy(), "a\\tb\\nc");
     }
 }
 
@@ -385,7 +385,7 @@ fn a_sample_of_more_than_two_hundred_bytes_ends_in_dots() {
         let long = "x".repeat(250);
         paste_add(null::<c_char>(), data(&long));
         let pb = paste_get_name(c"buffer0".as_ptr());
-        let sample = paste_make_sample(pb).to_string_lossy().into_owned();
+        let sample = paste_make_sample(&*pb).to_string_lossy().into_owned();
         assert_eq!(sample.len(), 203);
         assert_eq!(&sample[..200], &long[..200]);
         assert_eq!(&sample[200..], "...");
@@ -401,7 +401,7 @@ fn a_sample_that_grows_past_two_hundred_when_escaped_ends_in_dots_too() {
         let raw = "\x01".repeat(60);
         paste_add(null::<c_char>(), data(&raw));
         let pb = paste_get_name(c"buffer0".as_ptr());
-        let sample = paste_make_sample(pb).to_string_lossy().into_owned();
+        let sample = paste_make_sample(&*pb).to_string_lossy().into_owned();
         assert_eq!(sample.len(), 203);
         assert_eq!(&sample[..8], "\\001\\001");
         assert_eq!(&sample[200..], "...");
@@ -441,7 +441,7 @@ fn the_two_trees_stay_sorted_as_buffers_come_and_go() {
                 let c = CString::new(name.clone()).expect("no NUL");
                 let pb = paste_get_name(c.as_ptr());
                 assert!(!pb.is_null(), "{name} is not in the name tree");
-                orders.push(paste_buffer_order(pb));
+                orders.push(paste_buffer_order(&*pb));
             }
             let mut sorted = orders.clone();
             sorted.sort_by(|a, b| b.cmp(a));

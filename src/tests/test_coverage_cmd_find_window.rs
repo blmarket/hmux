@@ -54,7 +54,6 @@ use crate::cmd::cmd_find_window::{
 use crate::cmd::cmdq_get_current;
 use crate::cmd::{CMD_PARSE_ERROR, CMD_PARSE_SUCCESS, cmd_parse_from_string};
 use crate::modes::mode_tree_data;
-use crate::options::options_ptr;
 use crate::session::session_options;
 use crate::tests::test_fixtures::{
     Item, Pane, Registry, Session, Target, Window, globals, link, seen, unlink,
@@ -132,8 +131,8 @@ impl ChainedOptions {
     /// Chains `target`'s three sets onto the global trees.
     fn over(target: &mut Target) -> ChainedOptions {
         unsafe {
-            let pane = options_ptr(&(*target.pane(0)).options);
-            let window = options_ptr(&(*target.window(0)).options);
+            let pane = (*target.pane(0)).options_ptr();
+            let window = (*target.window(0)).options_ptr();
             let session = session_options(target.session());
             (*pane).parent = window;
             (*window).parent = crate::tmux::global_w_options;

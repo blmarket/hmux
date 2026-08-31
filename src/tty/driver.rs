@@ -10,7 +10,7 @@ use crate::grid::grid_cells_equal;
 use crate::grid::grid_default_cell;
 use crate::grid::hyperlinks_get;
 use crate::log::{fatal, fatalx, log_debug, log_get_level};
-use crate::options::{options_get_number, options_get_string, options_ptr};
+use crate::options::{options_get_number, options_get_string};
 use crate::reactor::{Interest, IoWatch, Timer, WatchMode};
 use crate::screen::screen_mode_to_string;
 use crate::server::client_get_pan_window;
@@ -585,7 +585,7 @@ pub unsafe fn tty_resize(mut tty: *mut tty) {
             c"%s: %s now %ux%u (%ux%u)".as_ptr(),
             fmt_args![
                 c"tty_resize".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 sx,
                 sy,
                 xpixel,
@@ -650,7 +650,7 @@ unsafe fn tty_timer_callback(tty: *mut tty) {
         let mut tv = timeval::from_usecs(TTY_BLOCK_INTERVAL as __suseconds_t);
         log_debug(
             c"%s: %zu discarded".as_ptr(),
-            fmt_args![cstr_ptr(&(*c).name), (*tty).discarded],
+            fmt_args![(*c).name.as_deref(), (*tty).discarded],
         );
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong | CLIENT_ALLREDRAWFLAGS) as uint64_t;
         (*c).discarded = (*c).discarded.wrapping_add((*tty).discarded);
@@ -688,7 +688,7 @@ unsafe fn tty_block_maybe(mut tty: *mut tty) -> ::core::ffi::c_int {
         (*tty).flags |= TTY_BLOCK;
         log_debug(
             c"%s: can't keep up, %zu discarded".as_ptr(),
-            fmt_args![cstr_ptr(&(*c).name), size],
+            fmt_args![(*c).name.as_deref(), size],
         );
         (*tty).out.as_mut().unwrap().drain(size);
         (*c).discarded = (*c).discarded.wrapping_add(size);
@@ -710,7 +710,7 @@ unsafe fn tty_write_callback(tty: *mut tty) {
         }
         log_debug(
             c"%s: wrote %d bytes (of %zu)".as_ptr(),
-            fmt_args![cstr_ptr(&(*c).name), nwrite, size],
+            fmt_args![(*c).name.as_deref(), nwrite, size],
         );
         if (*c).redraw > 0 as size_t {
             if nwrite as size_t >= (*c).redraw {
@@ -720,7 +720,7 @@ unsafe fn tty_write_callback(tty: *mut tty) {
             }
             log_debug(
                 c"%s: waiting for redraw, %zu bytes left".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name), (*c).redraw],
+                fmt_args![(*c).name.as_deref(), (*c).redraw],
             );
         } else if tty_block_maybe(tty) != 0 {
             return;
@@ -781,7 +781,7 @@ unsafe fn tty_start_timer_callback(tty: *mut tty) {
         let mut c: *mut client = tty_client(tty);
         log_debug(
             c"%s: start timer fired".as_ptr(),
-            fmt_args![cstr_ptr(&(*c).name)],
+            fmt_args![(*c).name.as_deref()],
         );
         if (*tty).flags & (TTY_HAVEDA | TTY_HAVEDA2 | TTY_HAVEXDA) == 0 as ::core::ffi::c_int {
             tty_update_features(tty);
@@ -796,7 +796,7 @@ unsafe fn tty_start_start_timer(mut tty: *mut tty) {
         let mut tv = timeval::from_secs(TTY_QUERY_TIMEOUT as __time_t);
         log_debug(
             c"%s: start timer started".as_ptr(),
-            fmt_args![cstr_ptr(&(*c).name)],
+            fmt_args![(*c).name.as_deref()],
         );
         (*tty).start_timer.disarm();
         (*tty).start_timer.arm(tv);
@@ -826,13 +826,13 @@ pub unsafe fn tty_start_tty(mut tty: *mut tty) {
         if tty_acs_needed(tty) != 0 {
             log_debug(
                 c"%s: using capabilities for ACS".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name)],
+                fmt_args![(*c).name.as_deref()],
             );
             tty_putcode(tty, TTYC_ENACS);
         } else {
             log_debug(
                 c"%s: using UTF-8 for ACS".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name)],
+                fmt_args![(*c).name.as_deref()],
             );
         }
         tty_putcode(tty, TTYC_CNORM);
@@ -891,14 +891,14 @@ pub unsafe fn tty_repeat_requests(mut tty: *mut tty, mut force: ::core::ffi::c_i
         if force == 0 && n <= TTY_REQUEST_LIMIT as u_int {
             log_debug(
                 c"%s: not repeating requests (%u seconds)".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name), n],
+                fmt_args![(*c).name.as_deref(), n],
             );
             return;
         }
         log_debug(
             c"%s: %srepeating requests (%u seconds)".as_ptr(),
             fmt_args![
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 if force != 0 {
                     c"(force) ".as_ptr()
                 } else {
@@ -1140,25 +1140,26 @@ pub unsafe fn tty_putcode_ss(
         }
     }
 }
-unsafe fn tty_add(mut tty: *mut tty, mut buf: *const ::core::ffi::c_char, mut len: size_t) {
+unsafe fn tty_add(mut tty: *mut tty, buf: &[u8]) {
     unsafe {
         let mut c: *mut client = tty_client(tty);
+        let len = buf.len();
         if (*tty).flags & TTY_BLOCK != 0 {
             (*tty).discarded = (*tty).discarded.wrapping_add(len);
             return;
         }
-        (*tty)
-            .out
-            .as_mut()
-            .unwrap()
-            .append(::core::slice::from_raw_parts(buf.cast::<u8>(), len));
+        (*tty).out.as_mut().unwrap().append(buf);
         log_debug(
             c"%s: %.*s".as_ptr(),
-            fmt_args![cstr_ptr(&(*c).name), len as ::core::ffi::c_int, buf],
+            fmt_args![
+                (*c).name.as_deref(),
+                len as ::core::ffi::c_int,
+                buf.as_ptr().cast::<::core::ffi::c_char>()
+            ],
         );
         (*c).written = (*c).written.wrapping_add(len);
         if tty_log_fd != -(1 as ::core::ffi::c_int) {
-            write(tty_log_fd, buf as *const ::core::ffi::c_void, len);
+            write(tty_log_fd, buf.as_ptr().cast::<::core::ffi::c_void>(), len);
         }
         if (*tty).flags & TTY_STARTED != 0 {
             (*tty).event_out.enable();
@@ -1168,13 +1169,12 @@ unsafe fn tty_add(mut tty: *mut tty, mut buf: *const ::core::ffi::c_char, mut le
 pub unsafe fn tty_puts(mut tty: *mut tty, mut s: *const ::core::ffi::c_char) {
     unsafe {
         if *s as ::core::ffi::c_int != '\0' as i32 {
-            tty_add(tty, s, strlen(s));
+            tty_add(tty, ::core::ffi::CStr::from_ptr(s).to_bytes());
         }
     }
 }
 pub unsafe fn tty_putc(mut tty: *mut tty, mut ch: u_char) {
     unsafe {
-        let mut acs: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         if tty_term_of(&*tty).flags & TERM_NOAM != 0
             && ch as ::core::ffi::c_int >= 0x20 as ::core::ffi::c_int
             && ch as ::core::ffi::c_int != 0x7f as ::core::ffi::c_int
@@ -1183,15 +1183,12 @@ pub unsafe fn tty_putc(mut tty: *mut tty, mut ch: u_char) {
         {
             return;
         }
-        if (*tty).cell.attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0 {
-            acs = tty_acs_get(tty, ch);
-            if !acs.is_null() {
-                tty_add(tty, acs, strlen(acs));
-            } else {
-                tty_add(tty, &raw mut ch as *const ::core::ffi::c_char, 1 as size_t);
-            }
+        if (*tty).cell.attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0
+            && let Some(acs) = tty_acs_get(tty, ch)
+        {
+            tty_add(tty, acs.to_bytes());
         } else {
-            tty_add(tty, &raw mut ch as *const ::core::ffi::c_char, 1 as size_t);
+            tty_add(tty, ::core::slice::from_ref(&ch));
         }
         if ch as ::core::ffi::c_int >= 0x20 as ::core::ffi::c_int
             && ch as ::core::ffi::c_int != 0x7f as ::core::ffi::c_int
@@ -1215,20 +1212,22 @@ pub unsafe fn tty_putc(mut tty: *mut tty, mut ch: u_char) {
         }
     }
 }
-pub unsafe fn tty_putn(
-    mut tty: *mut tty,
-    mut buf: *const ::core::ffi::c_char,
-    mut len: size_t,
-    mut width: u_int,
-) {
+/// Writes `buf` and moves the cursor on by `width` columns.
+///
+/// A terminal that does not wrap keeps the last column of the last line
+/// clear, so the run is cut short of it. The cut can only shorten the run:
+/// it is reached with the cursor inside the line, where the columns left of
+/// the last one are fewer than the bytes that would have run past them.
+pub unsafe fn tty_putn(mut tty: *mut tty, buf: &[u8], mut width: u_int) {
     unsafe {
+        let mut len = buf.len();
         if tty_term_of(&*tty).flags & TERM_NOAM != 0
             && (*tty).cy == (*tty).sy.wrapping_sub(1 as u_int)
             && ((*tty).cx as size_t).wrapping_add(len) >= (*tty).sx as size_t
         {
-            len = (*tty).sx.wrapping_sub((*tty).cx).wrapping_sub(1 as u_int) as size_t;
+            len = len.min((*tty).sx.wrapping_sub((*tty).cx).wrapping_sub(1 as u_int) as size_t);
         }
-        tty_add(tty, buf, len);
+        tty_add(tty, &buf[..len]);
         if (*tty).cx.wrapping_add(width) > (*tty).sx {
             (*tty).cx = (*tty).cx.wrapping_add(width).wrapping_sub((*tty).sx);
             if (*tty).cx <= (*tty).sx {
@@ -1283,9 +1282,6 @@ pub unsafe fn tty_set_path(mut tty: *mut tty, mut title: *const ::core::ffi::c_c
 }
 unsafe fn tty_force_cursor_colour(mut tty: *mut tty, mut c: ::core::ffi::c_int) {
     unsafe {
-        let mut r: u_char = 0;
-        let mut g: u_char = 0;
-        let mut b: u_char = 0;
         if c != -(1 as ::core::ffi::c_int) {
             c = colour_force_rgb(c);
         }
@@ -1295,7 +1291,7 @@ unsafe fn tty_force_cursor_colour(mut tty: *mut tty, mut c: ::core::ffi::c_int) 
         if c == -(1 as ::core::ffi::c_int) {
             tty_putcode(tty, TTYC_CR);
         } else {
-            colour_split_rgb(c, &raw mut r, &raw mut g, &raw mut b);
+            let (r, g, b) = colour_split_rgb(c);
             let s = xasprintf(
                 c"rgb:%02hhx/%02hhx/%02hhx".as_ptr(),
                 fmt_args![
@@ -1428,13 +1424,13 @@ pub unsafe fn tty_update_mode(mut tty: *mut tty, mut mode: ::core::ffi::c_int, m
             log_debug(
                 c"%s: current mode %s".as_ptr(),
                 fmt_args![
-                    cstr_ptr(&(*c).name),
+                    (*c).name.as_deref(),
                     screen_mode_to_string((*tty).mode).as_c_str()
                 ],
             );
             log_debug(
                 c"%s: setting mode %s".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name), screen_mode_to_string(mode).as_c_str()],
+                fmt_args![(*c).name.as_deref(), screen_mode_to_string(mode).as_c_str()],
             );
         }
         if changed & ALL_MOUSE_MODES != 0 && tty_term_has(term, TTYC_KMOUS) != 0 {
@@ -1479,29 +1475,17 @@ unsafe fn tty_emulate_repeat(
 }
 pub unsafe fn tty_repeat_space(mut tty: *mut tty, mut n: u_int) {
     unsafe {
-        static mut s: [::core::ffi::c_char; 500] = [0; 500];
-        if *(&raw mut s as *mut ::core::ffi::c_char) as ::core::ffi::c_int != ' ' as i32 {
-            s = [' ' as ::core::ffi::c_char; 500];
+        static mut s: [u_char; 500] = [0; 500];
+        let spaces = &mut *(&raw mut s);
+        if spaces[0] as ::core::ffi::c_int != ' ' as i32 {
+            spaces.fill(' ' as i32 as u_char);
         }
-        while n as usize > ::core::mem::size_of::<[::core::ffi::c_char; 500]>() as usize {
-            tty_putn(
-                tty,
-                &raw mut s as *const ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 500]>() as size_t,
-                ::core::mem::size_of::<[::core::ffi::c_char; 500]>() as u_int,
-            );
-            n = (n as ::core::ffi::c_ulong).wrapping_sub(::core::mem::size_of::<
-                [::core::ffi::c_char; 500],
-            >() as usize
-                as ::core::ffi::c_ulong) as u_int as u_int;
+        while n as usize > spaces.len() {
+            tty_putn(tty, spaces, spaces.len() as u_int);
+            n = n.wrapping_sub(spaces.len() as u_int);
         }
         if n != 0 as u_int {
-            tty_putn(
-                tty,
-                &raw mut s as *const ::core::ffi::c_char,
-                n as size_t,
-                n,
-            );
+            tty_putn(tty, &spaces[..n as usize], n);
         }
     }
 }
@@ -1614,7 +1598,7 @@ pub unsafe fn tty_update_client_offset(mut c: *mut client) {
             c"%s: %s offset has changed (%u,%u %ux%u -> %u,%u %ux%u)".as_ptr(),
             fmt_args![
                 c"tty_update_client_offset".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 (*c).tty.oox,
                 (*c).tty.ooy,
                 (*c).tty.osx,
@@ -1632,7 +1616,7 @@ pub unsafe fn tty_update_client_offset(mut c: *mut client) {
         (*c).flags |= (CLIENT_REDRAWWINDOW | CLIENT_REDRAWSTATUS) as uint64_t;
     }
 }
-unsafe fn tty_large_region(_tty: *mut tty, ctx: &tty_ctx) -> ::core::ffi::c_int {
+fn tty_large_region(ctx: &tty_ctx) -> ::core::ffi::c_int {
     (ctx.orlower.wrapping_sub(ctx.orupper) >= ctx.sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int
 }
 pub unsafe fn tty_fake_bce(
@@ -1656,10 +1640,10 @@ unsafe fn tty_redraw_region(mut tty: *mut tty, ctx: &tty_ctx) {
     unsafe {
         let mut c: *mut client = tty_client(tty);
         let mut i: u_int = 0;
-        if tty_large_region(tty, ctx) != 0 || ctx.flags & TTY_CTX_PANE_OBSCURED != 0 {
+        if tty_large_region(ctx) != 0 || ctx.flags & TTY_CTX_PANE_OBSCURED != 0 {
             log_debug(
                 c"%s: %s large region redraw".as_ptr(),
-                fmt_args![c"tty_redraw_region".as_ptr(), cstr_ptr(&(*c).name)],
+                fmt_args![c"tty_redraw_region".as_ptr(), (*c).name.as_deref()],
             );
             ctx.redraw_cb.expect("non-null function pointer")(ctx);
             return;
@@ -1668,7 +1652,7 @@ unsafe fn tty_redraw_region(mut tty: *mut tty, ctx: &tty_ctx) {
             c"%s: %s small region redraw (%u-%u)".as_ptr(),
             fmt_args![
                 c"tty_redraw_region".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 ctx.orupper,
                 ctx.orlower
             ],
@@ -1680,8 +1664,7 @@ unsafe fn tty_redraw_region(mut tty: *mut tty, ctx: &tty_ctx) {
         }
     }
 }
-unsafe fn tty_is_visible(
-    _tty: *mut tty,
+fn tty_is_visible(
     ctx: &tty_ctx,
     mut px: u_int,
     mut py: u_int,
@@ -1703,7 +1686,6 @@ unsafe fn tty_is_visible(
     1 as ::core::ffi::c_int
 }
 unsafe fn tty_clamp_line(
-    mut tty: *mut tty,
     ctx: &tty_ctx,
     mut px: u_int,
     mut py: u_int,
@@ -1716,7 +1698,7 @@ unsafe fn tty_clamp_line(
 
         let mut xoff: ::core::ffi::c_int =
             (ctx.rxoff as u_int).wrapping_add(px) as ::core::ffi::c_int;
-        if tty_is_visible(tty, ctx, px, py, nx, 1 as u_int) == 0 {
+        if tty_is_visible(ctx, px, py, nx, 1 as u_int) == 0 {
             return None;
         }
         let ry: u_int = (ctx.yoff as u_int).wrapping_add(py).wrapping_sub(ctx.woy);
@@ -1765,7 +1747,7 @@ unsafe fn tty_clear_line(
         let mut i: u_int = 0;
         log_debug(
             c"%s: %s, %u at %u,%u".as_ptr(),
-            fmt_args![c"tty_clear_line".as_ptr(), cstr_ptr(&(*c).name), nx, px, py],
+            fmt_args![c"tty_clear_line".as_ptr(), (*c).name.as_deref(), nx, px, py],
         );
         if nx == 0 as u_int {
             return;
@@ -1819,14 +1801,14 @@ unsafe fn tty_clear_pane_line(
             c"%s: %s, %u at %u,%u".as_ptr(),
             fmt_args![
                 c"tty_clear_pane_line".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 nx,
                 px,
                 py
             ],
         );
         if let Some((_clamped_l, clamped_x, clamped_rx, clamped_ry)) =
-            tty_clamp_line(tty, ctx, px, py, nx)
+            tty_clamp_line(ctx, px, py, nx)
         {
             (x, rx, ry) = (clamped_x, clamped_rx, clamped_ry);
             r = tty_check_overlay_range(tty, x, ry, rx);
@@ -1842,7 +1824,6 @@ unsafe fn tty_clear_pane_line(
     }
 }
 unsafe fn tty_clamp_area(
-    mut tty: *mut tty,
     ctx: &tty_ctx,
     mut px: u_int,
     mut py: u_int,
@@ -1858,7 +1839,7 @@ unsafe fn tty_clamp_area(
         let ry: u_int;
         let mut xoff: u_int = (ctx.rxoff as u_int).wrapping_add(px);
         let mut yoff: u_int = (ctx.ryoff as u_int).wrapping_add(py);
-        if tty_is_visible(tty, ctx, px, py, nx, ny) == 0 {
+        if tty_is_visible(ctx, px, py, nx, ny) == 0 {
             return None;
         }
         if xoff >= ctx.wox && xoff.wrapping_add(nx) <= ctx.wox.wrapping_add(ctx.wsx) {
@@ -1927,7 +1908,7 @@ unsafe fn tty_clear_area(
             c"%s: %s, %u,%u at %u,%u".as_ptr(),
             fmt_args![
                 c"tty_clear_area".as_ptr(),
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 nx,
                 ny,
                 px,
@@ -2007,7 +1988,7 @@ unsafe fn tty_clear_pane_area(
         let mut rx: u_int = 0;
         let mut ry: u_int = 0;
         if let Some((_clamped_i, _clamped_j, clamped_x, clamped_y, clamped_rx, clamped_ry)) =
-            tty_clamp_area(tty, ctx, px, py, nx, ny)
+            tty_clamp_area(ctx, px, py, nx, ny)
         {
             (x, y, rx, ry) = (clamped_x, clamped_y, clamped_rx, clamped_ry);
             tty_clear_area(tty, ctx, y, ry, x, rx, bg);
@@ -2029,7 +2010,7 @@ unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, mut py: u_int) {
             c"%s: %s %u".as_ptr(),
             fmt_args![
                 c"tty_draw_pane".as_ptr(),
-                cstr_ptr(&(*tty_client(tty)).name),
+                (*tty_client(tty)).name.as_deref(),
                 py
             ],
         );
@@ -2061,7 +2042,7 @@ unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, mut py: u_int) {
             return;
         }
         if let Some((clamped_i, clamped_x, clamped_rx, clamped_ry)) =
-            tty_clamp_line(tty, ctx, 0 as u_int, py, nx)
+            tty_clamp_line(ctx, 0 as u_int, py, nx)
         {
             (i, x, rx, ry) = (clamped_i, clamped_x, clamped_rx, clamped_ry);
             r = tty_check_overlay_range(tty, x, ry, rx);
@@ -2096,7 +2077,7 @@ pub unsafe fn tty_cmd_redrawline(mut tty: *mut tty, ctx: &tty_ctx) {
         let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
         let mut rr: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
         if let Some((clamped_i, clamped_x, clamped_rx, clamped_ry)) =
-            tty_clamp_line(tty, ctx, ctx.ocx, ctx.ocy, tty_ctx_num(ctx))
+            tty_clamp_line(ctx, ctx.ocx, ctx.ocy, tty_ctx_num(ctx))
         {
             (i, x, rx, ry) = (clamped_i, clamped_x, clamped_rx, clamped_ry);
             r = tty_check_overlay_range(tty, x, ry, rx);
@@ -2141,11 +2122,7 @@ pub unsafe fn tty_check_codeset(mut tty: *mut tty, mut gc: *const grid_cell) -> 
             return *gc;
         }
         new = *gc;
-        c = tty_acs_reverse_get(
-            tty,
-            &raw const (*gc).data.data as *const u_char as *const ::core::ffi::c_char,
-            (*gc).data.size as size_t,
-        );
+        c = tty_acs_reverse_get(&(*gc).data.data[..(*gc).data.size as usize]);
         if c != -(1 as ::core::ffi::c_int) {
             utf8_set(&mut new.data, c as u_char);
             new.attr = (new.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
@@ -2211,7 +2188,7 @@ pub unsafe fn tty_sync_start(mut tty: *mut tty) {
         if tty_term_has(tty_term_of(&*tty), TTYC_SYNC) != 0 {
             log_debug(
                 c"%s sync start".as_ptr(),
-                fmt_args![cstr_ptr(&(*tty_client(tty)).name)],
+                fmt_args![(*tty_client(tty)).name.as_deref()],
             );
             tty_putcode_i(tty, TTYC_SYNC, 1 as ::core::ffi::c_int);
         }
@@ -2229,7 +2206,7 @@ pub unsafe fn tty_sync_end(mut tty: *mut tty) {
         if tty_term_has(tty_term_of(&*tty), TTYC_SYNC) != 0 {
             log_debug(
                 c"%s sync end".as_ptr(),
-                fmt_args![cstr_ptr(&(*tty_client(tty)).name)],
+                fmt_args![(*tty_client(tty)).name.as_deref()],
             );
             tty_putcode_i(tty, TTYC_SYNC, 2 as ::core::ffi::c_int);
         }
@@ -2666,7 +2643,7 @@ pub unsafe fn tty_cmd_cell(mut tty: *mut tty, ctx: &tty_ctx) {
         py = (ctx.yoff as u_int)
             .wrapping_add(ctx.ocy)
             .wrapping_sub(ctx.woy);
-        if tty_is_visible(tty, ctx, ctx.ocx, ctx.ocy, 1 as u_int, 1 as u_int) == 0 {
+        if tty_is_visible(ctx, ctx.ocx, ctx.ocy, 1 as u_int, 1 as u_int) == 0 {
             return;
         }
         if (*gcp).data.width as ::core::ffi::c_int == 1 as ::core::ffi::c_int
@@ -2731,9 +2708,9 @@ pub unsafe fn tty_cmd_cells(mut tty: *mut tty, ctx: &tty_ctx) {
         let mut py: u_int = 0;
         let mut cx: u_int = 0;
         let data = tty_ctx_bytes(ctx);
-        let mut cp: *const ::core::ffi::c_char = data.data;
-        let mut n: size_t = data.size;
-        if tty_is_visible(tty, ctx, ctx.ocx, ctx.ocy, n as u_int, 1 as u_int) == 0 {
+        let cells = ::core::slice::from_raw_parts(data.data.cast::<u8>(), data.size);
+        let mut n: size_t = cells.len();
+        if tty_is_visible(ctx, ctx.ocx, ctx.ocy, n as u_int, 1 as u_int) == 0 {
             return;
         }
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
@@ -2780,13 +2757,8 @@ pub unsafe fn tty_cmd_cells(mut tty: *mut tty, ctx: &tty_ctx) {
                     .wrapping_sub(ctx.xoff as u_int)
                     .wrapping_add(ctx.wox);
                 tty_cursor_pane_unless_wrap(tty, ctx, cx, ctx.ocy);
-                tty_putn(
-                    tty,
-                    cp.offset((*ri).px as isize).offset(-(px as isize))
-                        as *const ::core::ffi::c_char,
-                    (*ri).nx as size_t,
-                    (*ri).nx,
-                );
+                let at = (*ri).px.wrapping_sub(px) as usize;
+                tty_putn(tty, &cells[at..at + (*ri).nx as usize], (*ri).nx);
             }
             i = i.wrapping_add(1);
         }
@@ -2838,7 +2810,11 @@ pub unsafe fn tty_set_selection(
 pub unsafe fn tty_cmd_rawstring(mut tty: *mut tty, ctx: &tty_ctx) {
     unsafe {
         (*tty).flags |= TTY_NOBLOCK;
-        tty_add(tty, tty_ctx_bytes(ctx).data, tty_ctx_bytes(ctx).size);
+        let data = tty_ctx_bytes(ctx);
+        tty_add(
+            tty,
+            ::core::slice::from_raw_parts(data.data.cast::<u8>(), data.size),
+        );
         tty_invalidate(tty);
     }
 }
@@ -2891,8 +2867,7 @@ pub unsafe fn tty_cell(
         }
         tty_putn(
             tty,
-            &raw const (*gcp).data.data as *const u_char as *const ::core::ffi::c_char,
-            (*gcp).data.size as size_t,
+            &(*gcp).data.data[..(*gcp).data.size as usize],
             (*gcp).data.width as u_int,
         );
     }
@@ -3382,9 +3357,6 @@ unsafe fn tty_check_fg(
     mut gc: *mut grid_cell,
 ) {
     unsafe {
-        let mut r: u_char = 0;
-        let mut g: u_char = 0;
-        let mut b: u_char = 0;
         let mut colours: u_int = 0;
         let mut c: ::core::ffi::c_int = 0;
         if !((*gc).flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
@@ -3404,7 +3376,7 @@ unsafe fn tty_check_fg(
             if tty_term_of(&*tty).flags & TERM_RGBCOLOURS != 0 {
                 return;
             }
-            colour_split_rgb((*gc).fg, &raw mut r, &raw mut g, &raw mut b);
+            let (r, g, b) = colour_split_rgb((*gc).fg);
             (*gc).fg = colour_find_rgb(r, g, b);
         }
         if tty_term_of(&*tty).flags & TERM_256COLOURS != 0 {
@@ -3445,9 +3417,6 @@ unsafe fn tty_check_bg(
     mut gc: *mut grid_cell,
 ) {
     unsafe {
-        let mut r: u_char = 0;
-        let mut g: u_char = 0;
-        let mut b: u_char = 0;
         let mut colours: u_int = 0;
         let mut c: ::core::ffi::c_int = 0;
         if !((*gc).flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
@@ -3460,7 +3429,7 @@ unsafe fn tty_check_bg(
             if tty_term_of(&*tty).flags & TERM_RGBCOLOURS != 0 {
                 return;
             }
-            colour_split_rgb((*gc).bg, &raw mut r, &raw mut g, &raw mut b);
+            let (r, g, b) = colour_split_rgb((*gc).bg);
             (*gc).bg = colour_find_rgb(r, g, b);
         }
         if tty_term_of(&*tty).flags & TERM_256COLOURS != 0 {
@@ -3574,9 +3543,6 @@ unsafe fn tty_colours_us(mut tty: *mut tty, mut gc: *const grid_cell) {
     unsafe {
         let mut tc: *mut grid_cell = &raw mut (*tty).cell;
         let mut c: u_int = 0;
-        let mut r: u_char = 0;
-        let mut g: u_char = 0;
-        let mut b: u_char = 0;
         if (*gc).us == 8 as ::core::ffi::c_int || (*gc).us == 9 as ::core::ffi::c_int {
             tty_putcode(tty, TTYC_OL);
         } else {
@@ -3592,7 +3558,7 @@ unsafe fn tty_colours_us(mut tty: *mut tty, mut gc: *const grid_cell) {
                 );
                 return;
             }
-            colour_split_rgb((*gc).us, &raw mut r, &raw mut g, &raw mut b);
+            let (r, g, b) = colour_split_rgb((*gc).us);
             c = (65536 as ::core::ffi::c_int * r as ::core::ffi::c_int
                 + 256 as ::core::ffi::c_int * g as ::core::ffi::c_int
                 + b as ::core::ffi::c_int) as u_int;
@@ -3613,9 +3579,6 @@ unsafe fn tty_try_colour(
     mut type_0: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     unsafe {
-        let mut r: u_char = 0;
-        let mut g: u_char = 0;
-        let mut b: u_char = 0;
         if colour & COLOUR_FLAG_256 != 0 {
             if *type_0 as ::core::ffi::c_int == '3' as i32
                 && tty_term_has(tty_term_of(&*tty), TTYC_SETAF) != 0
@@ -3627,12 +3590,7 @@ unsafe fn tty_try_colour(
             return 0 as ::core::ffi::c_int;
         }
         if colour & COLOUR_FLAG_RGB != 0 {
-            colour_split_rgb(
-                colour & 0xffffff as ::core::ffi::c_int,
-                &raw mut r,
-                &raw mut g,
-                &raw mut b,
-            );
+            let (r, g, b) = colour_split_rgb(colour & 0xffffff as ::core::ffi::c_int);
             if *type_0 as ::core::ffi::c_int == '3' as i32
                 && tty_term_has(tty_term_of(&*tty), TTYC_SETRGBF) != 0
             {
@@ -3666,7 +3624,7 @@ unsafe fn tty_window_default_style(mut gc: *mut grid_cell, mut wp: *mut window_p
 }
 unsafe fn tty_style_changed(mut wp: *mut window_pane) {
     unsafe {
-        let mut oo: *mut options = options_ptr(&(*wp).options);
+        let mut oo: *mut options = (*wp).options_ptr();
         log_debug(c"%%%u: style changed".as_ptr(), fmt_args![(*wp).id]);
         (*wp).flags &= !PANE_STYLECHANGED;
         let mut ft = format_create(

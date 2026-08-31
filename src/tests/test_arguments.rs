@@ -415,22 +415,18 @@ fn an_argument_of_an_unknown_kind_is_counted_but_left_empty() {
 
 #[test]
 fn the_type_names_are_what_the_log_prints() {
-    unsafe {
-        assert_eq!(seen(args_value_type_to_string(&ArgsValue::None)), "NONE");
-        assert_eq!(
-            seen(args_value_type_to_string(&ArgsValue::String(
-                CString::default()
-            ))),
-            "STRING"
-        );
-        assert_eq!(
-            seen(args_value_type_to_string(&ArgsValue::Commands {
-                cmdlist: None,
-                cached: None,
-            })),
-            "COMMANDS"
-        );
-    }
+    assert_eq!(args_value_type_to_string(&ArgsValue::None), c"NONE");
+    assert_eq!(
+        args_value_type_to_string(&ArgsValue::String(CString::default())),
+        c"STRING"
+    );
+    assert_eq!(
+        args_value_type_to_string(&ArgsValue::Commands {
+            cmdlist: None,
+            cached: None,
+        }),
+        c"COMMANDS"
+    );
 }
 
 #[test]
@@ -470,8 +466,8 @@ fn the_values_of_a_flag_come_back_in_order() {
         args_set(args, b'a', string_value(c"two"), 0);
         let values = args_value_list(&*args, b'a');
         assert_eq!(values.len(), 2);
-        assert_eq!(seen((*values[0]).value.string()), "one");
-        assert_eq!(seen((*values[1]).value.string()), "two");
+        assert_eq!((*values[0]).value.string(), c"one");
+        assert_eq!((*values[1]).value.string(), c"two");
         args_free(Box::from_raw(args));
     }
 }
@@ -492,20 +488,12 @@ fn a_value_of_no_type_is_thrown_away_by_args_set() {
 fn the_flags_are_walked_in_order() {
     unsafe {
         let args = Box::into_raw(args_create());
-        let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-        assert_eq!(args_first(args, &raw mut entry), 0);
-        assert!(entry.is_null());
+        assert_eq!(args_flags(&*args).next(), None);
         for flag in *b"cab" {
             args_set(args, flag, None, 0);
         }
-        let mut walked = Vec::new();
-        let mut flag = args_first(args, &raw mut entry);
-        while flag != 0 {
-            walked.push(flag);
-            flag = args_next(args, &raw mut entry);
-        }
+        let walked: Vec<u_char> = args_flags(&*args).collect();
         assert_eq!(walked, [b'a', b'b', b'c']);
-        assert!(entry.is_null());
         args_free(Box::from_raw(args));
     }
 }
@@ -1043,7 +1031,7 @@ fn a_prepared_command_can_be_expanded_first() {
         );
         assert_eq!(state.cmd.as_deref(), Some(c"display-message 3"));
         assert_eq!(state.pi.item, runner.item());
-        assert_eq!(seen(state.pi.file()), "args.conf");
+        assert_eq!(state.pi.file(), Some(c"args.conf"));
         assert_eq!(state.pi.line, 7);
     }
 }

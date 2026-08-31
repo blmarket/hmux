@@ -1,9 +1,8 @@
 use crate::types::wchar_t;
-use super::utf8::{UTF8_DONE, utf8_data, utf8_towc};
+use super::utf8::{utf8_data, utf8_towc};
 
 /// How far a hangul jamo sequence has been read.
 pub type hanguljamo_state = ::core::ffi::c_uint;
-use ::core::ffi::c_int;
 
 pub const HANGULJAMO_STATE_NOT_COMPOSABLE: hanguljamo_state = 3;
 pub const HANGULJAMO_STATE_COMPOSABLE: hanguljamo_state = 2;
@@ -29,31 +28,27 @@ fn bytes(ud: &utf8_data) -> &[u8] {
 
 /// The codepoint a character stands for, or nothing when it is not one.
 fn towc(ud: &utf8_data) -> Option<wchar_t> {
-    let mut wc: wchar_t = 0;
-    if unsafe { utf8_towc(ud, &raw mut wc) } != UTF8_DONE {
-        return None;
-    }
-    Some(wc)
+    unsafe { utf8_towc(ud) }
 }
 
 /// Whether the character ends with a zero-width joiner.
-pub unsafe fn utf8_has_zwj(ud: *const utf8_data) -> c_int {
-    unsafe { bytes(&*ud).ends_with(ZWJ) as c_int }
+pub fn utf8_has_zwj(ud: &utf8_data) -> bool {
+    bytes(ud).ends_with(ZWJ)
 }
 
 /// Whether the character is nothing but a zero-width joiner.
-pub unsafe fn utf8_is_zwj(ud: *const utf8_data) -> c_int {
-    unsafe { (bytes(&*ud) == ZWJ) as c_int }
+pub fn utf8_is_zwj(ud: &utf8_data) -> bool {
+    bytes(ud) == ZWJ
 }
 
 /// Whether the character is nothing but a variation selector.
-pub unsafe fn utf8_is_vs(ud: *const utf8_data) -> c_int {
-    unsafe { (bytes(&*ud) == VARIATION_SELECTOR) as c_int }
+pub fn utf8_is_vs(ud: &utf8_data) -> bool {
+    bytes(ud) == VARIATION_SELECTOR
 }
 
 /// Whether the character is nothing but a Hangul filler.
-pub unsafe fn utf8_is_hangul_filler(ud: *const utf8_data) -> c_int {
-    unsafe { (bytes(&*ud) == HANGUL_FILLER) as c_int }
+pub fn utf8_is_hangul_filler(ud: &utf8_data) -> bool {
+    bytes(ud) == HANGUL_FILLER
 }
 
 /// How many regional indicators the character holds. Every byte offset is
@@ -152,7 +147,7 @@ fn takes_skin_tone(a: wchar_t) -> bool {
 /// already a finished flag, and an emoji that takes a skin tone written after
 /// the tone itself. The list is read against what is being *added* and the
 /// tone against what is already there, so the pair only joins in that order.
-fn should_combine(with: &utf8_data, add: &utf8_data) -> bool {
+pub fn utf8_should_combine(with: &utf8_data, add: &utf8_data) -> bool {
     let Some(w) = towc(with) else {
         return false;
     };
@@ -163,10 +158,6 @@ fn should_combine(with: &utf8_data, add: &utf8_data) -> bool {
         return regional_count(with) == 1 && regional_count(add) == 1;
     }
     takes_skin_tone(a) && SKIN_TONE.contains(&w)
-}
-
-pub unsafe fn utf8_should_combine(with: *const utf8_data, add: *const utf8_data) -> c_int {
-    unsafe { should_combine(&*with, &*add) as c_int }
 }
 
 /// Which part of a Hangul syllable a jamo is.
@@ -207,12 +198,12 @@ fn jamo(s: &[u8]) -> Option<Jamo> {
     }
 }
 
-/// Where `ud` stands in a Hangul syllable that ends with `previous`: it starts
+/// Where `ud` stands in a Hangul syllable that ends with `p_ud`: it starts
 /// one, it joins the one already there, it is a jamo that joins nothing, or it
 /// is no jamo at all. The jamo already there is read out of the *last* three
-/// bytes of `previous`, so a character built up from several joins still
+/// bytes of `p_ud`, so a character built up from several joins still
 /// composes.
-fn check_state(previous: &utf8_data, ud: &utf8_data) -> hanguljamo_state {
+pub fn hanguljamo_check_state(p_ud: &utf8_data, ud: &utf8_data) -> hanguljamo_state {
     let s = bytes(ud);
     if s.len() != 3 {
         return HANGULJAMO_STATE_NOT_HANGULJAMO;
@@ -223,7 +214,7 @@ fn check_state(previous: &utf8_data, ud: &utf8_data) -> hanguljamo_state {
         Some(Jamo::Jungseong) => Jamo::Choseong,
         Some(Jamo::Jongseong) => Jamo::Jungseong,
     };
-    let p = bytes(previous);
+    let p = bytes(p_ud);
     if p.len() < 3 {
         return HANGULJAMO_STATE_NOT_COMPOSABLE;
     }
@@ -231,13 +222,6 @@ fn check_state(previous: &utf8_data, ud: &utf8_data) -> hanguljamo_state {
         return HANGULJAMO_STATE_COMPOSABLE;
     }
     HANGULJAMO_STATE_NOT_COMPOSABLE
-}
-
-pub unsafe fn hanguljamo_check_state(
-    p_ud: *const utf8_data,
-    ud: *const utf8_data,
-) -> hanguljamo_state {
-    unsafe { check_state(&*p_ud, &*ud) }
 }
 
 #[cfg(test)]

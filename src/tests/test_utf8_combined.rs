@@ -32,66 +32,52 @@ fn both(first: &[u8], second: &[u8]) -> utf8_data {
 
 #[test]
 fn a_joiner_at_the_end_is_found() {
-    unsafe {
-        assert_eq!(utf8_has_zwj(&ud(b"ab")), 0);
-        assert_eq!(utf8_has_zwj(&ud(ZWJ)), 1);
-        assert_eq!(utf8_has_zwj(&both(HAND, ZWJ)), 1);
-        assert_eq!(utf8_has_zwj(&both(ZWJ, HAND)), 0);
-    }
+    assert!(!utf8_has_zwj(&ud(b"ab")));
+    assert!(utf8_has_zwj(&ud(ZWJ)));
+    assert!(utf8_has_zwj(&both(HAND, ZWJ)));
+    assert!(!utf8_has_zwj(&both(ZWJ, HAND)));
 }
 
 #[test]
 fn a_character_that_is_only_a_joiner_is_found() {
-    unsafe {
-        assert_eq!(utf8_is_zwj(&ud(ZWJ)), 1);
-        assert_eq!(utf8_is_zwj(&both(HAND, ZWJ)), 0);
-        assert_eq!(utf8_is_zwj(&ud(FILLER)), 0);
-    }
+    assert!(utf8_is_zwj(&ud(ZWJ)));
+    assert!(!utf8_is_zwj(&both(HAND, ZWJ)));
+    assert!(!utf8_is_zwj(&ud(FILLER)));
 }
 
 #[test]
 fn a_variation_selector_is_found() {
-    unsafe {
-        assert_eq!(utf8_is_vs(&ud(VS16)), 1);
-        assert_eq!(utf8_is_vs(&ud(b"ab")), 0);
-        assert_eq!(utf8_is_vs(&ud(ZWJ)), 0);
-    }
+    assert!(utf8_is_vs(&ud(VS16)));
+    assert!(!utf8_is_vs(&ud(b"ab")));
+    assert!(!utf8_is_vs(&ud(ZWJ)));
 }
 
 #[test]
 fn a_hangul_filler_is_found() {
-    unsafe {
-        assert_eq!(utf8_is_hangul_filler(&ud(FILLER)), 1);
-        assert_eq!(utf8_is_hangul_filler(&ud(b"ab")), 0);
-        assert_eq!(utf8_is_hangul_filler(&ud(ZWJ)), 0);
-    }
+    assert!(utf8_is_hangul_filler(&ud(FILLER)));
+    assert!(!utf8_is_hangul_filler(&ud(b"ab")));
+    assert!(!utf8_is_hangul_filler(&ud(ZWJ)));
 }
 
 #[test]
 fn a_character_that_does_not_decode_never_combines() {
     let _guard = globals();
-    unsafe {
-        assert_eq!(utf8_should_combine(&ud(&[0x80]), &ud(HAND)), 0);
-        assert_eq!(utf8_should_combine(&ud(TONE), &ud(&[0x80])), 0);
-    }
+    assert!(!utf8_should_combine(&ud(&[0x80]), &ud(HAND)));
+    assert!(!utf8_should_combine(&ud(TONE), &ud(&[0x80])));
 }
 
 #[test]
 fn two_regional_indicators_make_a_flag() {
     let _guard = globals();
-    unsafe {
-        assert_eq!(utf8_should_combine(&ud(RI_U), &ud(RI_S)), 1);
-    }
+    assert!(utf8_should_combine(&ud(RI_U), &ud(RI_S)));
 }
 
 /// A flag is two indicators and no more: neither side may already be one.
 #[test]
 fn a_finished_flag_takes_no_more_indicators() {
     let _guard = globals();
-    unsafe {
-        assert_eq!(utf8_should_combine(&both(RI_U, RI_S), &ud(RI_S)), 0);
-        assert_eq!(utf8_should_combine(&ud(RI_U), &both(RI_S, RI_U)), 0);
-    }
+    assert!(!utf8_should_combine(&both(RI_U, RI_S), &ud(RI_S)));
+    assert!(!utf8_should_combine(&ud(RI_U), &both(RI_S, RI_U)));
 }
 
 /// The emoji list is read against what is being *added*, and the skin tone
@@ -100,17 +86,15 @@ fn a_finished_flag_takes_no_more_indicators() {
 #[test]
 fn a_skin_tone_in_front_of_a_hand_combines() {
     let _guard = globals();
-    unsafe {
-        assert_eq!(utf8_should_combine(&ud(TONE), &ud(HAND)), 1);
-        assert_eq!(utf8_should_combine(&ud(HAND), &ud(TONE)), 0);
-        assert_eq!(utf8_should_combine(&ud(TONE), &ud(FACE)), 0);
-        assert_eq!(utf8_should_combine(&ud(HAND), &ud(HAND)), 0);
-    }
+    assert!(utf8_should_combine(&ud(TONE), &ud(HAND)));
+    assert!(!utf8_should_combine(&ud(HAND), &ud(TONE)));
+    assert!(!utf8_should_combine(&ud(TONE), &ud(FACE)));
+    assert!(!utf8_should_combine(&ud(HAND), &ud(HAND)));
 }
 
 /// What `hanguljamo_check_state` makes of `ud` written after `p_ud`.
 fn state(previous: &[u8], next: &[u8]) -> hanguljamo_state {
-    unsafe { hanguljamo_check_state(&ud(previous), &ud(next)) }
+    hanguljamo_check_state(&ud(previous), &ud(next))
 }
 
 #[test]
@@ -210,9 +194,7 @@ fn a_trailing_consonant_composes_only_after_a_vowel() {
 #[test]
 fn the_last_three_bytes_of_what_is_there_are_what_is_read() {
     assert_eq!(
-        unsafe {
-            hanguljamo_check_state(&both(HAND, &[0xe1, 0x84, 0x80]), &ud(&[0xe1, 0x85, 0xa1]))
-        },
+        hanguljamo_check_state(&both(HAND, &[0xe1, 0x84, 0x80]), &ud(&[0xe1, 0x85, 0xa1])),
         HANGULJAMO_STATE_COMPOSABLE
     );
 }

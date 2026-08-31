@@ -13,7 +13,7 @@ use crate::environ::{environ_create_box, environ_ptr, environ_put};
 use crate::fmt_args;
 use crate::format::format_single;
 use crate::layout::{layout_close_pane, layout_get_floating_cell, layout_get_tiled_cell};
-use crate::options::{options_ptr, options_set_number, options_set_string};
+use crate::options::{options_set_number, options_set_string};
 use crate::server::server_client_remove_pane;
 use crate::server::{server_redraw_session, server_redraw_window};
 use crate::spawn::spawn_pane;
@@ -281,7 +281,7 @@ unsafe fn cmd_split_window_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> c
         for av in args_value_list(args, 'e' as i32 as u_char) {
             environ_put(
                 environ_ptr(&sc.environ),
-                (*av).value.string(),
+                (*av).value.string().as_ptr(),
                 0 as ::core::ffi::c_int,
             );
         }
@@ -308,7 +308,7 @@ unsafe fn cmd_split_window_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> c
         style = args_get(args, 's' as i32 as u_char);
         if !style.is_null() {
             if options_set_string(
-                options_ptr(&(*new_wp).options),
+                (*new_wp).options_ptr(),
                 c"window-style".as_ptr(),
                 0 as ::core::ffi::c_int,
                 c"%s".as_ptr(),
@@ -320,7 +320,7 @@ unsafe fn cmd_split_window_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> c
                 return CMD_RETURN_ERROR;
             }
             options_set_string(
-                options_ptr(&(*new_wp).options),
+                (*new_wp).options_ptr(),
                 c"window-active-style".as_ptr(),
                 0 as ::core::ffi::c_int,
                 c"%s".as_ptr(),
@@ -331,7 +331,7 @@ unsafe fn cmd_split_window_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> c
         style = args_get(args, 'S' as i32 as u_char);
         if !style.is_null()
             && options_set_string(
-                options_ptr(&(*new_wp).options),
+                (*new_wp).options_ptr(),
                 c"pane-active-border-style".as_ptr(),
                 0 as ::core::ffi::c_int,
                 c"%s".as_ptr(),
@@ -349,7 +349,7 @@ unsafe fn cmd_split_window_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> c
         style = args_get(args, 'R' as i32 as u_char);
         if !style.is_null()
             && options_set_string(
-                options_ptr(&(*new_wp).options),
+                (*new_wp).options_ptr(),
                 c"pane-border-style".as_ptr(),
                 0 as ::core::ffi::c_int,
                 c"%s".as_ptr(),
@@ -366,13 +366,13 @@ unsafe fn cmd_split_window_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> c
         }
         if args_has(args, 'k' as i32 as u_char) != 0 || args_has(args, 'm' as i32 as u_char) != 0 {
             options_set_number(
-                options_ptr(&(*new_wp).options),
+                (*new_wp).options_ptr(),
                 c"remain-on-exit".as_ptr(),
                 3 as ::core::ffi::c_longlong,
             );
             if args_has(args, 'm' as i32 as u_char) != 0 {
                 options_set_string(
-                    options_ptr(&(*new_wp).options),
+                    (*new_wp).options_ptr(),
                     c"remain-on-exit-format".as_ptr(),
                     0 as ::core::ffi::c_int,
                     c"%s".as_ptr(),

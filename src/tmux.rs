@@ -5,12 +5,12 @@ use crate::compat::getprogname;
 use crate::compat::getptmfd;
 use crate::compat::{BSDoptarg, BSDoptind};
 use crate::environ::{
-    environ_create_box, environ_entry_value, environ_find, environ_put, environ_set, environ_t,
+    environ_create_box, environ_entry_value, environ_find, environ_process, environ_put,
+    environ_set, environ_t,
 };
 use crate::ffi::{
-    access, environ, err, errx, exit, fcntl, fprintf, getcwd, getenv, getpwuid, getuid,
-    nl_langinfo, printf, setlocale, stderr, stdout, strcasecmp, strcasestr, strcmp, strerror,
-    strrchr, strstr, tzset,
+    access, err, errx, exit, fcntl, fprintf, getcwd, getenv, getpwuid, getuid, nl_langinfo, printf,
+    setlocale, stderr, stdout, strcasecmp, strcasestr, strcmp, strerror, strrchr, strstr, tzset,
 };
 use crate::fmt_args;
 use crate::log::{log_add_level, log_debug};
@@ -433,8 +433,7 @@ pub const S_IRWXU: ::core::ffi::c_int = __S_IREAD | __S_IWRITE | __S_IEXEC;
 pub const LC_CTYPE: ::core::ffi::c_int = __LC_CTYPE;
 pub const LC_TIME: ::core::ffi::c_int = __LC_TIME;
 pub const X_OK: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
-    unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };
+pub const _PATH_BSHELL: &CStr = c"/bin/sh";
 pub const VIS_OCTAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const VIS_CSTYLE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const VIS_TAB: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
@@ -503,33 +502,36 @@ pub static mut start_time: timeval = timeval {
     tv_sec: 0,
     tv_usec: 0,
 };
-pub static mut socket_path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+/// The socket the client talks to the server over, which is what `-S` and
+/// `-L` between them decide.
+pub static mut socket_path: Option<CString> = None;
 pub static mut ptm_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-pub static mut shell_command: *const ::core::ffi::c_char =
-    ::core::ptr::null::<::core::ffi::c_char>();
+/// The command `-c` was given, which the client asks the server to run in a
+/// shell instead of attaching.
+pub static mut shell_command: Option<CString> = None;
 fn usage(mut status: ::core::ffi::c_int) -> ! {
     unsafe {
         fprintf(
         if status != 0 { stderr } else { stdout },
         c"usage: %s [-2CDhlNuVv] [-c shell-command] [-f file] [-L socket-name]\n            [-S socket-path] [-T features] [command [flags]]\n".as_ptr(),
-        getprogname(),
+        getprogname().as_ptr(),
     );
         exit(status);
     }
 }
-fn getshell() -> *const ::core::ffi::c_char {
+/// The shell `default-shell` starts out as: the one `SHELL` names, else the
+/// one the password entry gives, else `/bin/sh`.
+fn getshell() -> CString {
     unsafe {
-        let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-        let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        shell = getenv(c"SHELL".as_ptr());
+        let shell = getenv(c"SHELL".as_ptr());
         if checkshell(shell) != 0 {
-            return shell;
+            return CStr::from_ptr(shell).to_owned();
         }
-        pw = getpwuid(getuid());
+        let pw = getpwuid(getuid());
         if !pw.is_null() && checkshell((*pw).pw_shell) != 0 {
-            return (*pw).pw_shell;
+            return CStr::from_ptr((*pw).pw_shell).to_owned();
         }
-        c"/bin/sh".as_ptr()
+        c"/bin/sh".to_owned()
     }
 }
 pub unsafe fn checkshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
@@ -556,7 +558,7 @@ unsafe fn areshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::c_int 
         } else {
             ptr = shell;
         }
-        progname = getprogname();
+        progname = getprogname().as_ptr();
         if *progname as ::core::ffi::c_int == '-' as i32 {
             progname = progname.offset(1);
         }
@@ -584,13 +586,13 @@ unsafe fn expand_path(
             let slash = path[1..].iter().position(|&byte| byte == b'/');
             let name_end = slash.map_or(path.len(), |at| at + 1);
             let name = CString::new(&path[1..name_end]).expect("a C string has no interior NUL");
-            let Some(value) = environ_find(&*global_environ, name.as_ptr()) else {
+            let Some(value) =
+                environ_find(&*global_environ, name.as_ptr()).and_then(environ_entry_value)
+            else {
                 return None;
             };
             let suffix = slash.map_or(&[][..], |at| &path[at + 1..]);
-            let mut expanded = CStr::from_ptr(environ_entry_value(value))
-                .to_bytes()
-                .to_vec();
+            let mut expanded = value.to_bytes().to_vec();
             expanded.extend_from_slice(suffix);
             return Some(CString::new(expanded).expect("a C string has no interior NUL"));
         }
@@ -645,13 +647,10 @@ unsafe fn expand_paths(
         paths
     }
 }
-unsafe fn make_label(mut label: *const ::core::ffi::c_char) -> Result<CString, CString> {
+fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
     unsafe {
-        let mut uid: uid_t = 0;
-        if label.is_null() {
-            label = c"default".as_ptr();
-        }
-        uid = getuid() as uid_t;
+        let label = label.unwrap_or(c"default");
+        let uid = getuid() as uid_t;
         let paths = expand_paths(c"$TMUX_TMPDIR:/tmp/".as_ptr(), 0 as ::core::ffi::c_int);
         let Some(first) = paths.first() else {
             return Err(xasprintf(c"no suitable socket path".as_ptr(), fmt_args![]));
@@ -693,7 +692,7 @@ unsafe fn make_label(mut label: *const ::core::ffi::c_char) -> Result<CString, C
         } else {
             Ok(xasprintf(
                 c"%s/%s".as_ptr(),
-                fmt_args![base.as_ptr(), label],
+                fmt_args![base.as_ptr(), label.as_ptr()],
             ))
         }
     }
@@ -757,7 +756,7 @@ pub unsafe fn clean_name(
         }
         let copy = CString::from_vec_unchecked(copy);
         Some(utf8_stravis(
-            copy.as_ptr(),
+            &copy,
             VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
         ))
     }
@@ -828,25 +827,22 @@ pub fn find_home() -> Option<&'static CStr> {
         )
     }
 }
-pub fn getversion() -> *const ::core::ffi::c_char {
-    c"3.7b".as_ptr()
+pub fn getversion() -> &'static CStr {
+    c"3.7b"
 }
-pub unsafe fn main_0(
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *mut ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+/// The whole of `main`. `argv` runs one past the arguments, the last slot
+/// holding the null terminator the option parser reads.
+pub unsafe fn main_0(argv: &mut [*mut ::core::ffi::c_char]) -> ::core::ffi::c_int {
     unsafe {
+        let mut argc = argv.len() as ::core::ffi::c_int - 1;
         let mut path: Option<CString> = None;
         let mut label: Option<CString> = None;
-        let mut var: *mut *mut ::core::ffi::c_char =
-            ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
         let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut opt: ::core::ffi::c_int = 0;
         let mut keys: ::core::ffi::c_int = 0;
         let mut feat: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut fflag: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut flags: uint64_t = 0 as uint64_t;
-        let mut oe: *const options_table_entry_t = ::core::ptr::null::<options_table_entry_t>();
         if setlocale(LC_CTYPE, c"en_US.UTF-8".as_ptr()).is_null()
             && setlocale(LC_CTYPE, c"C.UTF-8".as_ptr()).is_null()
         {
@@ -869,14 +865,12 @@ pub unsafe fn main_0(
         }
         setlocale(LC_TIME, c"".as_ptr());
         tzset();
-        if **argv as ::core::ffi::c_int == '-' as i32 {
+        if *argv[0] as ::core::ffi::c_int == '-' as i32 {
             flags = CLIENT_LOGIN as uint64_t;
         }
         global_options_create();
-        var = environ;
-        while !(*var).is_null() {
-            environ_put(global_environ, *var, 0 as ::core::ffi::c_int);
-            var = var.offset(1);
+        for var in environ_process() {
+            environ_put(global_environ, var.as_ptr(), 0 as ::core::ffi::c_int);
         }
         if let Some(cwd) = find_cwd() {
             environ_set(
@@ -889,7 +883,7 @@ pub unsafe fn main_0(
         }
         cfg_files = expand_paths(TMUX_CONF.as_ptr(), 1 as ::core::ffi::c_int);
         loop {
-            opt = BSDgetopt(argc, argv, c"2c:CDdf:hlL:NqS:T:uUvV".as_ptr());
+            opt = BSDgetopt(argv, c"2c:CDdf:hlL:NqS:T:uUvV".as_ptr());
             if !(opt != -(1 as ::core::ffi::c_int)) {
                 break;
             }
@@ -898,7 +892,7 @@ pub unsafe fn main_0(
                     tty_add_features(&raw mut feat, c"256".as_ptr(), c":,".as_ptr());
                 }
                 99 => {
-                    shell_command = BSDoptarg;
+                    shell_command = Some(CStr::from_ptr(BSDoptarg).to_owned());
                 }
                 68 => {
                     flags |= CLIENT_NOFORK as uint64_t;
@@ -922,7 +916,7 @@ pub unsafe fn main_0(
                     usage(0 as ::core::ffi::c_int);
                 }
                 86 => {
-                    printf(c"tmux %s\n".as_ptr(), getversion());
+                    printf(c"tmux %s\n".as_ptr(), getversion().as_ptr());
                     exit(0 as ::core::ffi::c_int);
                 }
                 108 => {
@@ -953,8 +947,8 @@ pub unsafe fn main_0(
             }
         }
         argc -= BSDoptind;
-        argv = argv.offset(BSDoptind as isize);
-        if !shell_command.is_null() && argc != 0 as ::core::ffi::c_int {
+        let argv = &argv[BSDoptind as usize..];
+        if shell_command.is_some() && argc != 0 as ::core::ffi::c_int {
             usage(1 as ::core::ffi::c_int);
         }
         if flags & CLIENT_NOFORK as uint64_t != 0 && argc != 0 as ::core::ffi::c_int {
@@ -983,25 +977,24 @@ pub unsafe fn main_0(
                 flags |= CLIENT_UTF8 as uint64_t;
             }
         }
-        for entry in &options_table {
-            oe = entry;
-            if (*oe).scope & OPTIONS_TABLE_SERVER != 0 {
+        for oe in &options_table {
+            if oe.scope & OPTIONS_TABLE_SERVER != 0 {
                 options_default(global_options, oe);
             }
-            if (*oe).scope & OPTIONS_TABLE_SESSION != 0 {
+            if oe.scope & OPTIONS_TABLE_SESSION != 0 {
                 options_default(global_s_options, oe);
             }
-            if (*oe).scope & OPTIONS_TABLE_WINDOW != 0 {
+            if oe.scope & OPTIONS_TABLE_WINDOW != 0 {
                 options_default(global_w_options, oe);
             }
-            oe = oe.offset(1);
         }
+        let shell = getshell();
         options_set_string(
             global_s_options,
             c"default-shell".as_ptr(),
             0 as ::core::ffi::c_int,
             c"%s".as_ptr(),
-            fmt_args![getshell()],
+            fmt_args![shell.as_c_str()],
         );
         s = getenv(c"VISUAL".as_ptr());
         if !s.is_null() || {
@@ -1050,11 +1043,7 @@ pub unsafe fn main_0(
             }
         }
         if path.is_none() {
-            match make_label(
-                label
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
-            ) {
+            match make_label(label.as_deref()) {
                 Ok(value) => path = Some(value),
                 Err(cause) => {
                     fprintf(stderr, c"%s\n".as_ptr(), cause.as_ptr());
@@ -1063,9 +1052,10 @@ pub unsafe fn main_0(
             }
             flags |= CLIENT_DEFAULTSOCKET as uint64_t;
         }
-        socket_path = path.as_ref().expect("socket path was selected").as_ptr();
-        let client_argv: Vec<CString> = (0..argc)
-            .map(|i| CStr::from_ptr(*argv.offset(i as isize)).to_owned())
+        socket_path = Some(path.expect("socket path was selected"));
+        let client_argv: Vec<CString> = argv[..argc as usize]
+            .iter()
+            .map(|arg| CStr::from_ptr(*arg).to_owned())
             .collect();
         let status = client_main(osdep_event_init(), &client_argv, flags, feat);
         crate::reactor::shutdown();

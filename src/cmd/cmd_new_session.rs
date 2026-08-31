@@ -336,7 +336,7 @@ unsafe fn cmd_new_session_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
                         sg = session_group_contains(groupwith);
                     }
                     if !sg.is_null() {
-                        prefix = Some(CStr::from_ptr(session_group_name(sg)).to_owned());
+                        prefix = Some(session_group_name(sg).to_owned());
                         current_block = 6717214610478484138;
                     } else if !groupwith.is_null() {
                         prefix = Some(CStr::from_ptr(session_name(groupwith)).to_owned());
@@ -605,7 +605,7 @@ unsafe fn cmd_new_session_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
                                                         ) {
                                                             environ_put(
                                                                 environ_ptr(&env),
-                                                                (*av).value.string(),
+                                                                (*av).value.string().as_ptr(),
                                                                 0 as ::core::ffi::c_int,
                                                             );
                                                         }

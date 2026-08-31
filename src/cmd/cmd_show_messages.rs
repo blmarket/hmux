@@ -407,8 +407,8 @@ unsafe fn cmd_show_messages_terminals(
                     c"Terminal %u: %s for %s, flags=0x%x:".as_ptr(),
                     fmt_args![
                         n,
-                        cstr_ptr(&(*term).name),
-                        cstr_ptr(&term_name(listed)),
+                        (*term).name.as_deref(),
+                        term_name(listed).as_deref(),
                         (*term).flags
                     ],
                 );

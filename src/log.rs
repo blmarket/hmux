@@ -28,6 +28,7 @@ use crate::fmt_engine::{FmtArg, format_alloc};
 pub use crate::types::*;
 use ::core::ffi::{CStr, c_char, c_int, c_long, c_longlong};
 use ::core::ptr::null_mut;
+use ::core::sync::atomic::{AtomicI32, Ordering};
 
 pub const _IOLBF: c_int = 1;
 pub const VIS_OCTAL: c_int = 0x1;
@@ -46,16 +47,14 @@ static mut log_file: *mut FILE = null_mut();
 /// How much is logged: nothing at all at zero, everything above it. Only the
 /// guards in front of the calls that build a message read it past that, so the
 /// levels above one are the callers' to tell apart.
-static mut log_level: c_int = 0;
+static log_level: AtomicI32 = AtomicI32::new(0);
 
 pub fn log_add_level() {
-    unsafe {
-        log_level += 1;
-    }
+    log_level.fetch_add(1, Ordering::Relaxed);
 }
 
 pub fn log_get_level() -> c_int {
-    unsafe { log_level }
+    log_level.load(Ordering::Relaxed)
 }
 
 /// Puts the debug level back where a test found it. What the level changes is
@@ -64,13 +63,10 @@ pub fn log_get_level() -> c_int {
 /// only this module's own tests do.
 #[cfg(test)]
 pub(crate) fn log_with_level<T>(level: c_int, body: impl FnOnce() -> T) -> T {
-    unsafe {
-        let was = log_level;
-        log_level = level;
-        let answer = body();
-        log_level = was;
-        answer
-    }
+    let was = log_level.swap(level, Ordering::Relaxed);
+    let answer = body();
+    log_level.store(was, Ordering::Relaxed);
+    answer
 }
 
 /// Opens the log for `name`, in a file named after it and this process. A level
@@ -78,7 +74,7 @@ pub(crate) fn log_with_level<T>(level: c_int, body: impl FnOnce() -> T) -> T {
 /// without saying so.
 pub unsafe fn log_open(name: *const c_char) {
     unsafe {
-        if log_level == 0 {
+        if log_level.load(Ordering::Relaxed) == 0 {
             return;
         }
         log_close();
@@ -97,13 +93,13 @@ pub unsafe fn log_open(name: *const c_char) {
 /// the log itself on either side of it.
 pub unsafe fn log_toggle(name: *const c_char) {
     unsafe {
-        if log_level == 0 {
-            log_level = 1;
+        if log_level.load(Ordering::Relaxed) == 0 {
+            log_level.store(1, Ordering::Relaxed);
             log_open(name);
             log_debug(c"log opened".as_ptr(), fmt_args![]);
         } else {
             log_debug(c"log closed".as_ptr(), fmt_args![]);
-            log_level = 0;
+            log_level.store(0, Ordering::Relaxed);
             log_close();
         }
     }
@@ -128,10 +124,7 @@ unsafe fn log_vwrite(msg: *const c_char, args: &[FmtArg], prefix: &CStr) {
         }
         let built = format_alloc(msg, args);
         let escaped = stravis(built.as_ptr(), ESCAPING);
-        let mut tv = timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        };
+        let mut tv = timeval::default();
         gettimeofday(&raw mut tv, null_mut());
         if fprintf(
             log_file,

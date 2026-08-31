@@ -280,7 +280,7 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> *mut tmuxproc 
         let mut tp: *mut tmuxproc = ::core::ptr::null_mut::<tmuxproc>();
         let mut u: utsname = ::core::mem::zeroed();
         log_open(name);
-        setproctitle(c"%s (%s)".as_ptr(), fmt_args![name, socket_path]);
+        setproctitle(c"%s (%s)".as_ptr(), fmt_args![name, socket_path.as_deref()]);
         if uname(&raw mut u) < 0 as ::core::ffi::c_int {
             u = ::core::mem::zeroed();
         }
@@ -290,7 +290,7 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> *mut tmuxproc 
                 name,
                 getpid() as ::core::ffi::c_long,
                 getversion(),
-                socket_path,
+                socket_path.as_deref(),
                 PROTOCOL_VERSION
             ],
         );
@@ -312,16 +312,7 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> *mut tmuxproc 
         );
         let mut tp_box = Box::new(tmuxproc {
             name: Some(CStr::from_ptr(name).to_owned()),
-            exit: 0,
-            signalcb: None,
-            ev_sigint: SignalHandle(0),
-            ev_sighup: SignalHandle(0),
-            ev_sigchld: SignalHandle(0),
-            ev_sigcont: SignalHandle(0),
-            ev_sigterm: SignalHandle(0),
-            ev_sigusr1: SignalHandle(0),
-            ev_sigusr2: SignalHandle(0),
-            ev_sigwinch: SignalHandle(0),
+            ..tmuxproc::default()
         });
         tp = &raw mut *tp_box;
         procs.queue().push_back(tp_box);
@@ -333,7 +324,7 @@ pub unsafe fn proc_loop(
     mut loopcb: Option<unsafe fn() -> ::core::ffi::c_int>,
 ) {
     unsafe {
-        log_debug(c"%s loop enter".as_ptr(), fmt_args![cstr_ptr(&(*tp).name)]);
+        log_debug(c"%s loop enter".as_ptr(), fmt_args![(*tp).name.as_deref()]);
         loop {
             reactor::current().run_once();
             if !((*tp).exit == 0
@@ -342,7 +333,7 @@ pub unsafe fn proc_loop(
                 break;
             }
         }
-        log_debug(c"%s loop exit".as_ptr(), fmt_args![cstr_ptr(&(*tp).name)]);
+        log_debug(c"%s loop exit".as_ptr(), fmt_args![(*tp).name.as_deref()]);
     }
 }
 /// Asks the loop to stop. Whoever owns a peer flushes it first; the process
@@ -535,7 +526,7 @@ pub unsafe fn proc_add_peer(
             .set_callback(fd, Interest::Read, WatchMode::Once, move |_, events| {
                 proc_event_cb(events, peer)
             });
-        if getpeereid(fd, &raw mut (*peer).uid, &raw mut gid) != 0 as ::core::ffi::c_int {
+        if getpeereid(fd, &mut (*peer).uid, &mut gid) != 0 as ::core::ffi::c_int {
             (*peer).uid = -(1 as ::core::ffi::c_int) as uid_t;
         }
         log_debug(

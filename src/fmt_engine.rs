@@ -91,6 +91,13 @@ impl From<&::core::ffi::CStr> for FmtArg {
     }
 }
 
+/// A missing C string prints as the null `%s` the C call would have passed.
+impl From<Option<&::core::ffi::CStr>> for FmtArg {
+    fn from(v: Option<&::core::ffi::CStr>) -> Self {
+        FmtArg::Ptr(v.map_or(::core::ptr::null(), |s| s.as_ptr() as *const u8))
+    }
+}
+
 /// Builds the argument slice a format-taking function wants.
 ///
 /// ```ignore
@@ -106,8 +113,9 @@ macro_rules! fmt_args {
     };
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Default)]
 enum Len {
+    #[default]
     Default,
     Char,
     Short,
@@ -119,6 +127,7 @@ enum Len {
     LongDouble,
 }
 
+#[derive(Default)]
 struct Spec {
     minus: bool,
     plus: bool,
@@ -129,22 +138,6 @@ struct Spec {
     prec: Option<usize>,
     len: Len,
     conv: u8,
-}
-
-impl Spec {
-    fn new() -> Self {
-        Spec {
-            minus: false,
-            plus: false,
-            space: false,
-            hash: false,
-            zero: false,
-            width: 0,
-            prec: None,
-            len: Len::Default,
-            conv: 0,
-        }
-    }
 }
 
 /// Reads the next argument, or `None` past the end of the slice.
@@ -399,7 +392,7 @@ pub unsafe fn format_append(out: &mut Vec<u8>, fmt: *const c_char, args: &[FmtAr
 
             let start = p;
             p = p.add(1);
-            let mut spec = Spec::new();
+            let mut spec = Spec::default();
 
             loop {
                 match *p {

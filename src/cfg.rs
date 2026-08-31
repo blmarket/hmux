@@ -149,7 +149,7 @@ static mut cfg_causes: Vec<CString> = Vec::new();
 static mut cfg_item: Option<CmdqItemWeak> = None;
 pub static mut cfg_quiet: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub static mut cfg_files: Vec<CString> = Vec::new();
-unsafe fn cfg_client_done(_item: *mut cmdq_item, _data: CmdqCallbackData) -> cmd_retval {
+fn cfg_client_done(_item: *mut cmdq_item, _data: CmdqCallbackData) -> cmd_retval {
     unsafe {
         if cfg_finished == 0 {
             return CMD_RETURN_WAIT;
@@ -157,7 +157,7 @@ unsafe fn cfg_client_done(_item: *mut cmdq_item, _data: CmdqCallbackData) -> cmd
         CMD_RETURN_NORMAL
     }
 }
-unsafe fn cfg_done(_item: *mut cmdq_item, _data: CmdqCallbackData) -> cmd_retval {
+fn cfg_done(_item: *mut cmdq_item, _data: CmdqCallbackData) -> cmd_retval {
     unsafe {
         if cfg_finished != 0 {
             return CMD_RETURN_NORMAL;

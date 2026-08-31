@@ -116,7 +116,7 @@ fn an_argument_with_an_interior_nul_is_rejected_before_any_forwarding() {
 
 #[test]
 fn the_entry_point_forwards_to_a_real_main_with_the_expected_shape() {
-    type entry_t = unsafe fn(c_int, *mut *mut c_char) -> c_int;
+    type entry_t = unsafe fn(&mut [*mut c_char]) -> c_int;
     let entry: entry_t = crate::tmux::main_0;
     assert_ne!(entry as usize, 0);
     let again: entry_t = crate::tmux::main_0;

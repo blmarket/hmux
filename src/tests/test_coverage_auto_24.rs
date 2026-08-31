@@ -10,7 +10,6 @@ use crate::options::{
 };
 use crate::options::{options_get_only_ptr, options_get_ptr};
 use crate::tests::test_fixtures::{Options, globals, seen};
-use crate::types::cstr_ptr;
 use ::core::ptr::null_mut;
 
 // ---------------------------------------------------------------------------
@@ -29,7 +28,7 @@ fn options_get_falls_back_to_parent_while_get_only_does_not() {
         // but get walks to parent
         let o = options_get_ptr(child.ptr(), c"status".as_ptr());
         assert!(!o.is_null());
-        assert_eq!(seen(cstr_ptr(&(*o).name)), "status");
+        assert_eq!((*o).name, c"status".to_owned());
         // get_only on unknown returns null, get also null when no parent has it
         assert!(options_get_only_ptr(child.ptr(), c"nonsuch".as_ptr()).is_null());
         assert!(options_get_ptr(child.ptr(), c"nonsuch".as_ptr()).is_null());

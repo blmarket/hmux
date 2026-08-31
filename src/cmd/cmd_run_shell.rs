@@ -210,17 +210,15 @@ pub(crate) static cmd_run_shell_entry: cmd_entry = {
         exec: cmd_run_shell_exec,
     }
 };
-unsafe fn cmd_run_shell_args_parse(
+fn cmd_run_shell_args_parse(
     args: &args,
     _idx: u_int,
     _cause: &mut Option<CString>,
 ) -> args_parse_type {
-    unsafe {
-        if args_has(args, 'C' as i32 as u_char) != 0 {
-            return ARGS_PARSE_COMMANDS_OR_STRING;
-        }
-        ARGS_PARSE_STRING
+    if args_has(args, 'C' as i32 as u_char) != 0 {
+        return ARGS_PARSE_COMMANDS_OR_STRING;
     }
+    ARGS_PARSE_STRING
 }
 unsafe fn cmd_run_shell_print(mut job: *mut job, mut msg: *const ::core::ffi::c_char) {
     unsafe {
@@ -413,7 +411,7 @@ unsafe fn cmd_run_shell_timer(data: *mut cmd_run_shell_data) {
                     cmdq_error(
                         item.as_ptr(),
                         c"failed to run command: %s".as_ptr(),
-                        fmt_args![cstr_ptr(&cmd_for_error)],
+                        fmt_args![cmd_for_error.as_deref()],
                     );
                     cmdq_continue(item.as_ptr());
                 } else {
@@ -424,7 +422,7 @@ unsafe fn cmd_run_shell_timer(data: *mut cmd_run_shell_data) {
                         0 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                         c"failed to run command: %s".as_ptr(),
-                        fmt_args![cstr_ptr(&cmd_for_error)],
+                        fmt_args![cmd_for_error.as_deref()],
                     );
                 }
             }

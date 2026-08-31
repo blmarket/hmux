@@ -43,7 +43,7 @@ fn checkshell_accepts_an_executable_absolute_path() {
 #[test]
 fn checkshell_refuses_its_own_program() {
     unsafe {
-        let prog = CStr::from_ptr(getprogname());
+        let prog = getprogname();
         let prog_bytes = prog.to_bytes();
         let prog_name = prog_bytes
             .rsplit(|&b| b == b'/')
@@ -145,9 +145,7 @@ fn shell_argv0_builds_login_and_plain_names() {
 
 #[test]
 fn getversion_is_three_seven_b() {
-    unsafe {
-        assert_eq!(CStr::from_ptr(getversion()).to_str().unwrap(), "3.7b");
-    }
+    assert_eq!(getversion().to_str().unwrap(), "3.7b");
 }
 
 #[test]

@@ -5,7 +5,7 @@
   inputs.rust-overlay.url = "github:oxalica/rust-overlay";
   inputs.rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
 
-  outputs = { nixpkgs, rust-overlay, ... }:
+  outputs = { self, nixpkgs, rust-overlay, ... }:
     let
       supportedSystems = [
         "aarch64-darwin"
@@ -22,6 +22,7 @@
         extensions = [ "rust-src" "rust-analyzer" "llvm-tools-preview" ];
       };
       tmux37bFor = pkgs: pkgs.callPackage ./nix/tmux.nix { };
+      agentmonFor = pkgs: pkgs.callPackage ./agentmon-tui/package.nix { };
       cargoLlvmCovFor = pkgs: pkgs.callPackage ./nix/cargo-llvm-cov.nix { };
       c2rustFor = pkgs: pkgs.callPackage ./nix/c2rust.nix {
         rustStable = rustStableFor pkgs;
@@ -31,11 +32,65 @@
       packages = forAllSystems (system:
         let
           pkgs = pkgsFor system;
+          rustNightly = rustNightlyFor pkgs;
+          # Build with the same nightly toolchain the dev shell uses; the crate
+          # needs `extern_types` and `local_waker`.
+          rustPlatform = pkgs.makeRustPlatform {
+            cargo = rustNightly;
+            rustc = rustNightly;
+          };
+          # The server ships as `hmux`. The crate's [[bin]] keeps tmux's own
+          # name because that is what the conformance harness drives it as, so
+          # the rename happens here rather than in the manifest.
+          hmux = rustPlatform.buildRustPackage {
+            pname = "hmux";
+            version = "0.0.0";
+            src = ./.;
+
+            cargoLock.lockFile = ./Cargo.lock;
+
+            # build.rs links these unconditionally, which is also why this
+            # package is Linux-only.
+            buildInputs = [
+              pkgs.ncurses
+              pkgs.utf8proc
+              pkgs.libutempter
+              pkgs.systemd
+            ];
+
+            # The unit tests reach into the server's process-wide state and
+            # need a process each; `make unit-c2rs` is where they run.
+            doCheck = false;
+
+            postInstall = ''
+              mv $out/bin/tmux $out/bin/hmux
+            '';
+
+            meta.mainProgram = "hmux";
+          };
         in
         {
+          agentmon = agentmonFor pkgs;
           c2rust = c2rustFor pkgs;
           tmux = tmux37bFor pkgs;
+        }
+        // nixpkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.isLinux) {
+          inherit hmux;
+          default = hmux;
         });
+
+      apps = forAllSystems (system: {
+        agentmon = {
+          type = "app";
+          program = "${self.packages.${system}.agentmon}/bin/agentmon";
+          meta.description = "Create and monitor coding-agent runs through hmux";
+        };
+        looper = {
+          type = "app";
+          program = "${self.packages.${system}.agentmon}/bin/looper";
+          meta.description = "Run a coding agent in a loop through hmux";
+        };
+      });
 
       devShells = forAllSystems (system:
         let
@@ -46,6 +101,7 @@
           rustNightly = rustNightlyFor pkgs;
           c2rust = c2rustFor pkgs;
           cargoLlvmCov = cargoLlvmCovFor pkgs;
+          agentmon = agentmonFor pkgs;
         in
         {
           default = pkgs.mkShell ({
@@ -67,6 +123,7 @@
               tmux37b
               rustNightly
               c2rust
+              agentmon # the `agentmon` dashboard and the `looper` loop runner
               pkgs.cargo-nextest
               cargoLlvmCov
               pkgs.gnumake

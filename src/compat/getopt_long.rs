@@ -207,12 +207,11 @@ unsafe fn parse_long_options(
 /// Reads the next option out of the argument list, answering -1 once there is
 /// nothing left to read.
 ///
-/// The argument list is taken one past `nargc` because that slot holds the
+/// The argument list runs one past its arguments because that slot holds the
 /// null terminator every `argv` carries, and a long option whose argument is
 /// missing reads it to find out.
 unsafe fn getopt_internal(
-    nargc: c_int,
-    nargv: *const *mut c_char,
+    nargv: &mut [*mut c_char],
     mut options: *const c_char,
     long_options: *const option_t,
     idx: *mut c_int,
@@ -223,8 +222,7 @@ unsafe fn getopt_internal(
         if options.is_null() {
             return -1;
         }
-        let nargv =
-            ::core::slice::from_raw_parts_mut(nargv as *mut *mut c_char, nargc as usize + 1);
+        let nargc = nargv.len() as c_int - 1;
         if BSDoptind == 0 {
             BSDoptreset = 1;
             BSDoptind = BSDoptreset;
@@ -385,17 +383,8 @@ unsafe fn getopt_internal(
 }
 
 /// Reads the next short option out of the argument list.
-pub unsafe fn BSDgetopt(nargc: c_int, nargv: *const *mut c_char, options: *const c_char) -> c_int {
-    unsafe {
-        getopt_internal(
-            nargc,
-            nargv,
-            options,
-            null::<option_t>(),
-            null_mut::<c_int>(),
-            0,
-        )
-    }
+pub unsafe fn BSDgetopt(nargv: &mut [*mut c_char], options: *const c_char) -> c_int {
+    unsafe { getopt_internal(nargv, options, null::<option_t>(), null_mut::<c_int>(), 0) }
 }
 
 #[cfg(test)]

@@ -170,9 +170,9 @@ impl Default for screen {
 }
 
 impl screen {
-    /// A screen of `sx` by `sy` carrying `hlimit` lines of history. Every
-    /// field starts zeroed, as the transpiled `xcalloc` left it, and then the
-    /// ones a new screen names for itself are set.
+    /// A screen of `sx` by `sy` carrying `hlimit` lines of history. It starts
+    /// as the empty screen and names only the fields a new screen differs on,
+    /// then resets itself the way the C `screen_init` did.
     ///
     /// # Safety
     ///
@@ -180,20 +180,14 @@ impl screen {
     /// `extended-keys` from it.
     pub fn new(sx: u_int, sy: u_int, hlimit: u_int) -> screen {
         unsafe {
-            let mut s = screen::default();
-            s.grid = Some(grid_create(sx, sy, hlimit));
-            s.saved_grid = None;
-            s.title = Some(c"".to_owned());
-            s.titles = None;
-            s.path = None;
-            s.cstyle = SCREEN_CURSOR_DEFAULT;
-            s.default_cstyle = SCREEN_CURSOR_DEFAULT;
-            s.mode = MODE_CURSOR;
-            s.default_mode = 0;
-            s.ccolour = -1;
-            s.default_ccolour = -1;
-            s.sel = None;
-            s.hyperlinks = None;
+            let mut s = screen {
+                grid: Some(grid_create(sx, sy, hlimit)),
+                title: Some(c"".to_owned()),
+                mode: MODE_CURSOR,
+                ccolour: -1,
+                default_ccolour: -1,
+                ..screen::default()
+            };
             screen_reinit(&raw mut s);
             s
         }
@@ -237,7 +231,7 @@ pub unsafe fn screen_reinit(s: *mut screen) {
         }
 
         if (*s).saved_grid.is_some() {
-            screen_alternate_off(s, null_mut(), 0);
+            screen_alternate_off(s, None, 0);
         }
         (*s).saved_cx = UINT_MAX;
         (*s).saved_cy = UINT_MAX;
@@ -304,35 +298,33 @@ pub unsafe fn screen_set_default_cursor(s: *mut screen, oo: *mut options) {
         (*s).default_mode = 0;
         screen_set_cursor_style(
             style,
-            &raw mut (*s).default_cstyle,
-            &raw mut (*s).default_mode,
+            &mut (*s).default_cstyle,
+            &mut (*s).default_mode,
         );
     }
 }
 
 /// Turn a cursor style number into a shape and whether it blinks.
-pub unsafe fn screen_set_cursor_style(
+pub fn screen_set_cursor_style(
     style: u_int,
-    cstyle: *mut screen_cursor_style,
-    mode: *mut c_int,
+    cstyle: &mut screen_cursor_style,
+    mode: &mut c_int,
 ) {
-    unsafe {
-        let (shape, blinking) = match style {
-            0 => (SCREEN_CURSOR_DEFAULT, None),
-            1 => (SCREEN_CURSOR_BLOCK, Some(true)),
-            2 => (SCREEN_CURSOR_BLOCK, Some(false)),
-            3 => (SCREEN_CURSOR_UNDERLINE, Some(true)),
-            4 => (SCREEN_CURSOR_UNDERLINE, Some(false)),
-            5 => (SCREEN_CURSOR_BAR, Some(true)),
-            6 => (SCREEN_CURSOR_BAR, Some(false)),
-            _ => return,
-        };
-        *cstyle = shape;
-        match blinking {
-            Some(true) => *mode |= MODE_CURSOR_BLINKING,
-            Some(false) => *mode &= !MODE_CURSOR_BLINKING,
-            None => {}
-        }
+    let (shape, blinking) = match style {
+        0 => (SCREEN_CURSOR_DEFAULT, None),
+        1 => (SCREEN_CURSOR_BLOCK, Some(true)),
+        2 => (SCREEN_CURSOR_BLOCK, Some(false)),
+        3 => (SCREEN_CURSOR_UNDERLINE, Some(true)),
+        4 => (SCREEN_CURSOR_UNDERLINE, Some(false)),
+        5 => (SCREEN_CURSOR_BAR, Some(true)),
+        6 => (SCREEN_CURSOR_BAR, Some(false)),
+        _ => return,
+    };
+    *cstyle = shape;
+    match blinking {
+        Some(true) => *mode |= MODE_CURSOR_BLINKING,
+        Some(false) => *mode &= !MODE_CURSOR_BLINKING,
+        None => {}
     }
 }
 
@@ -777,7 +769,7 @@ unsafe fn screen_reflow(
 }
 
 /// Put the screen aside and start on an empty one.
-pub unsafe fn screen_alternate_on(s: *mut screen, gc: *mut grid_cell, cursor: c_int) {
+pub unsafe fn screen_alternate_on(s: *mut screen, gc: &grid_cell, cursor: c_int) {
     unsafe {
         if (*s).saved_grid.is_some() {
             return;
@@ -803,7 +795,7 @@ pub unsafe fn screen_alternate_on(s: *mut screen, gc: *mut grid_cell, cursor: c_
 }
 
 /// Take the screen that was put aside back.
-pub unsafe fn screen_alternate_off(s: *mut screen, gc: *mut grid_cell, cursor: c_int) {
+pub unsafe fn screen_alternate_off(s: *mut screen, gc: Option<&mut grid_cell>, cursor: c_int) {
     unsafe {
         let gd = screen_grid_ptr(s);
         let sx = (*gd).sx;
@@ -824,7 +816,7 @@ pub unsafe fn screen_alternate_off(s: *mut screen, gc: *mut grid_cell, cursor: c
         if cursor != 0 && (*s).saved_cx != UINT_MAX && (*s).saved_cy != UINT_MAX {
             (*s).cx = (*s).saved_cx;
             (*s).cy = (*s).saved_cy;
-            if !gc.is_null() {
+            if let Some(gc) = gc {
                 *gc = (*s).saved_cell;
             }
         }

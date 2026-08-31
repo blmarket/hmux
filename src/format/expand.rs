@@ -25,13 +25,12 @@ use crate::grid::{
 use crate::job::{job_find_by_id, job_free, job_get_data, job_get_event, job_id, job_run};
 use crate::key_bindings::key_table_name;
 use crate::layout::layout_dump;
-use crate::layout::layout_root_ptr;
 use crate::log::{log_debug, log_get_level};
 use crate::modes::{window_copy_get_hyperlink, window_copy_get_line, window_copy_get_word};
 use crate::names::parse_window_name;
 use crate::options::{
     options_first, options_get_number, options_get_string, options_name, options_next,
-    options_parse_get, options_ptr, options_to_string,
+    options_parse_get, options_to_string,
 };
 use crate::osdep_linux::{osdep_get_cwd, osdep_get_name};
 use crate::paste::{
@@ -58,7 +57,7 @@ use crate::session::{
 use crate::session::{
     next_session_id, session_alive, session_group_attached_count, session_group_contains,
     session_group_count, session_group_name, session_groups_after, session_groups_first,
-    sessions_after, sessions_first,
+    session_owners,
 };
 use crate::sort::{
     sort_get_clients, sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
@@ -179,6 +178,7 @@ pub const STYLE_ALIGN_RIGHT: style_align = 3;
 pub const STYLE_ALIGN_CENTRE: style_align = 2;
 pub const STYLE_ALIGN_LEFT: style_align = 1;
 pub const STYLE_ALIGN_DEFAULT: style_align = 0;
+#[derive(Default)]
 #[repr(C)]
 pub struct format_tree {
     pub type_0: format_type,
@@ -315,12 +315,8 @@ impl format_tree {
     /// Records `pb` as the buffer the tree draws on.
     pub(crate) fn set_buffer(&mut self, pb: *mut paste_buffer) {
         self.pb_name = unsafe {
-            pb.as_ref().map(|pb| {
-                ::std::ffi::CStr::from_ptr(crate::paste::paste_buffer_name(
-                    pb as *const paste_buffer as *mut paste_buffer,
-                ))
-                .to_owned()
-            })
+            pb.as_ref()
+                .map(|pb| crate::paste::paste_buffer_name(pb).to_owned())
         };
     }
 
@@ -643,7 +639,7 @@ unsafe fn format_job_update(mut job: *mut job) {
                 c"format_job_update".as_ptr(),
                 fj,
                 (*fj).cmd.as_ptr(),
-                cstr_ptr(&(*fj).out)
+                (*fj).out.as_deref()
             ],
         );
         t = time(::core::ptr::null_mut::<time_t>());
@@ -755,7 +751,7 @@ unsafe fn format_job_get(es: &mut format_expand_state, cmd: &CStr) -> CString {
             (*fj).job_id = None;
         }
         if force != 0 || (*fj).job_id.is_none() && (*fj).last != t {
-            (*fj).job_id = job_id(job_run(
+            let job = job_run(
                 expanded.as_ptr(),
                 &[],
                 ::core::ptr::null_mut::<environ_t>(),
@@ -768,7 +764,8 @@ unsafe fn format_job_get(es: &mut format_expand_state, cmd: &CStr) -> CString {
                 JOB_NOWAIT,
                 -(1 as ::core::ffi::c_int),
                 -(1 as ::core::ffi::c_int),
-            ));
+            );
+            (*fj).job_id = job_id(job.as_ref());
             if (*fj).job_id.is_none() {
                 (*fj).out = Some(format_alloc(
                     c"<'%s' didn't start>".as_ptr(),
@@ -910,7 +907,7 @@ unsafe fn format_cb_session_attached_list(ft: &format_tree) -> Option<CString> {
                 format_buf(
                     &mut buffer,
                     c"%s".as_ptr(),
-                    fmt_args![cstr_ptr(&(*loop_0).name)],
+                    fmt_args![(*loop_0).name.as_deref()],
                 );
             }
         }
@@ -1118,7 +1115,7 @@ unsafe fn format_cb_window_active_clients_list(ft: &format_tree) -> Option<CStri
                 format_buf(
                     &mut buffer,
                     c"%s".as_ptr(),
-                    fmt_args![cstr_ptr(&(*loop_0).name)],
+                    fmt_args![(*loop_0).name.as_deref()],
                 );
             }
         }
@@ -1131,10 +1128,10 @@ unsafe fn format_cb_window_layout(ft: &format_tree) -> Option<CString> {
         if w.is_null() {
             return None;
         }
-        if !layout_root_ptr(&(*w).saved_layout_root).is_null() {
-            return layout_dump(w, layout_root_ptr(&(*w).saved_layout_root));
+        if !(*w).saved_layout_root_ptr().is_null() {
+            return layout_dump(w, (*w).saved_layout_root_ptr());
         }
-        layout_dump(w, layout_root_ptr(&(*w).layout_root))
+        layout_dump(w, (*w).layout_root_ptr())
     }
 }
 unsafe fn format_cb_window_visible_layout(ft: &format_tree) -> Option<CString> {
@@ -1143,7 +1140,7 @@ unsafe fn format_cb_window_visible_layout(ft: &format_tree) -> Option<CString> {
         if w.is_null() {
             return None;
         }
-        layout_dump(w, layout_root_ptr(&(*w).layout_root))
+        layout_dump(w, (*w).layout_root_ptr())
     }
 }
 unsafe fn format_cb_start_command(ft: &format_tree) -> Option<CString> {
@@ -1174,18 +1171,17 @@ unsafe fn format_cb_current_command(ft: &format_tree) -> Option<CString> {
         if wp.is_null() || (*wp).shell.is_none() {
             return None;
         }
-        let cmd = osdep_get_name((*wp).fd, &raw mut (*wp).tty as *mut ::core::ffi::c_char)
-            .filter(|cmd| !cmd.as_bytes().is_empty());
+        let cmd = osdep_get_name((*wp).fd).filter(|cmd| !cmd.as_bytes().is_empty());
         let Some(cmd) = cmd else {
             let command = cmd_stringify_argv(&(*wp).argv);
             if command.as_bytes().is_empty() {
-                let value = parse_window_name(cstr_ptr(&(*wp).shell));
+                let value = parse_window_name((*wp).shell.as_deref().unwrap_or(c""));
                 return Some(format_callback_copy(&value));
             }
-            let value = parse_window_name(command.as_ptr());
+            let value = parse_window_name(&command);
             return Some(format_callback_copy(&value));
         };
-        let value = parse_window_name(cmd.as_ptr());
+        let value = parse_window_name(&cmd);
         Some(format_callback_copy(&value))
     }
 }
@@ -1381,7 +1377,7 @@ unsafe fn format_cb_session_group_attached_list(ft: &format_tree) -> Option<CStr
                         format_buf(
                             &mut buffer,
                             c"%s".as_ptr(),
-                            fmt_args![cstr_ptr(&(*loop_0).name)],
+                            fmt_args![(*loop_0).name.as_deref()],
                         );
                     }
                 }
@@ -1411,7 +1407,7 @@ unsafe fn format_cb_pane_at_top(ft: &format_tree) -> Option<CString> {
             return None;
         }
         w = (*wp).window;
-        status = options_get_number(options_ptr(&(*w).options), c"pane-border-status".as_ptr())
+        status = options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr())
             as ::core::ffi::c_int;
         if status == PANE_STATUS_TOP {
             flag = ((*wp).yoff == 1 as ::core::ffi::c_int) as ::core::ffi::c_int;
@@ -1432,7 +1428,7 @@ unsafe fn format_cb_pane_at_bottom(ft: &format_tree) -> Option<CString> {
             return None;
         }
         w = (*wp).window;
-        status = options_get_number(options_ptr(&(*w).options), c"pane-border-status".as_ptr())
+        status = options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr())
             as ::core::ffi::c_int;
         if status == PANE_STATUS_BOTTOM {
             flag = ((*wp).yoff + (*wp).sy as ::core::ffi::c_int
@@ -1481,7 +1477,6 @@ unsafe fn format_cb_cursor_colour(ft: &format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_mouse_word(ft: &format_tree) -> Option<CString> {
     unsafe {
-        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
         let mut x: u_int = 0;
         let mut y: u_int = 0;
@@ -1489,14 +1484,9 @@ unsafe fn format_cb_mouse_word(ft: &format_tree) -> Option<CString> {
             return None;
         }
         let mut m = ft.m;
-        wp = cmd_mouse_pane(
-            &raw mut m,
-            ::core::ptr::null_mut::<*mut session>(),
-            ::core::ptr::null_mut::<*mut winlink>(),
-        );
-        if wp.is_null() {
+        let Some((_, _, wp)) = cmd_mouse_pane(&raw mut m) else {
             return None;
-        }
+        };
         if match cmd_mouse_at(wp, &raw mut m, 0 as ::core::ffi::c_int) {
             Some((at_x, at_y)) => {
                 (x, y) = (at_x, at_y);
@@ -1518,7 +1508,6 @@ unsafe fn format_cb_mouse_word(ft: &format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_mouse_hyperlink(ft: &format_tree) -> Option<CString> {
     unsafe {
-        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
         let mut x: u_int = 0;
         let mut y: u_int = 0;
@@ -1526,14 +1515,9 @@ unsafe fn format_cb_mouse_hyperlink(ft: &format_tree) -> Option<CString> {
             return None;
         }
         let mut m = ft.m;
-        wp = cmd_mouse_pane(
-            &raw mut m,
-            ::core::ptr::null_mut::<*mut session>(),
-            ::core::ptr::null_mut::<*mut winlink>(),
-        );
-        if wp.is_null() {
+        let Some((_, _, wp)) = cmd_mouse_pane(&raw mut m) else {
             return None;
-        }
+        };
         if match cmd_mouse_at(wp, &raw mut m, 0 as ::core::ffi::c_int) {
             Some((at_x, at_y)) => {
                 (x, y) = (at_x, at_y);
@@ -1555,21 +1539,15 @@ unsafe fn format_cb_mouse_hyperlink(ft: &format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_mouse_line(ft: &format_tree) -> Option<CString> {
     unsafe {
-        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
         let mut y: u_int = 0;
         if ft.m.valid == 0 {
             return None;
         }
         let mut m = ft.m;
-        wp = cmd_mouse_pane(
-            &raw mut m,
-            ::core::ptr::null_mut::<*mut session>(),
-            ::core::ptr::null_mut::<*mut winlink>(),
-        );
-        if wp.is_null() {
+        let Some((_, _, wp)) = cmd_mouse_pane(&raw mut m) else {
             return None;
-        }
+        };
         if match cmd_mouse_at(wp, &raw mut m, 0 as ::core::ffi::c_int) {
             Some((at_x, at_y)) => {
                 (_, y) = (at_x, at_y);
@@ -1710,9 +1688,7 @@ unsafe fn format_cb_bracket_paste_flag(ft: &format_tree) -> Option<CString> {
 unsafe fn format_cb_buffer_name(ft: &format_tree) -> Option<CString> {
     unsafe {
         if !(*ft).buffer().is_null() {
-            return Some(format_callback_copy(CStr::from_ptr(paste_buffer_name(
-                (*ft).buffer(),
-            ))));
+            return Some(format_callback_copy(paste_buffer_name(&*(*ft).buffer())));
         }
         None
     }
@@ -1720,7 +1696,7 @@ unsafe fn format_cb_buffer_name(ft: &format_tree) -> Option<CString> {
 unsafe fn format_cb_buffer_sample(ft: &format_tree) -> Option<CString> {
     unsafe {
         if !(*ft).buffer().is_null() {
-            return Some(paste_make_sample((*ft).buffer()));
+            return Some(paste_make_sample(&*(*ft).buffer()));
         }
         None
     }
@@ -1813,9 +1789,9 @@ unsafe fn format_cb_client_height(ft: &format_tree) -> Option<CString> {
 unsafe fn format_cb_client_key_table(ft: &format_tree) -> Option<CString> {
     unsafe {
         if !(*ft).drawn_client().is_null() {
-            return Some(format_callback_copy(CStr::from_ptr(key_table_name(
+            return Some(format_callback_copy(key_table_name(
                 (*(*ft).drawn_client()).keytable(),
-            ))));
+            )));
         }
         None
     }
@@ -1857,9 +1833,7 @@ unsafe fn format_cb_client_prefix(ft: &format_tree) -> Option<CString> {
         let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         if !(*ft).drawn_client().is_null() {
             name = server_client_get_key_table((*ft).drawn_client());
-            if strcmp(key_table_name((*(*ft).drawn_client()).keytable()), name)
-                == 0 as ::core::ffi::c_int
-            {
+            if key_table_name((*(*ft).drawn_client()).keytable()) == CStr::from_ptr(name) {
                 return Some(format_callback_copy(c"0"));
             }
             return Some(format_callback_copy(c"1"));
@@ -2204,11 +2178,8 @@ unsafe fn format_cb_mouse_pane(ft: &format_tree) -> Option<CString> {
         let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         if ft.m.valid != 0 {
             let mut m = ft.m;
-            wp = cmd_mouse_pane(
-                &raw mut m,
-                ::core::ptr::null_mut::<*mut session>(),
-                ::core::ptr::null_mut::<*mut winlink>(),
-            );
+            wp = cmd_mouse_pane(&raw mut m)
+                .map_or(::core::ptr::null_mut::<window_pane>(), |(_, _, wp)| wp);
             if !wp.is_null() {
                 return Some(format_printf(c"%%%u".as_ptr(), fmt_args![(*wp).id]));
             }
@@ -2258,11 +2229,8 @@ unsafe fn format_cb_mouse_x(ft: &format_tree) -> Option<CString> {
             return None;
         }
         let mut m = ft.m;
-        wp = cmd_mouse_pane(
-            &raw mut m,
-            ::core::ptr::null_mut::<*mut session>(),
-            ::core::ptr::null_mut::<*mut winlink>(),
-        );
+        wp = cmd_mouse_pane(&raw mut m)
+            .map_or(::core::ptr::null_mut::<window_pane>(), |(_, _, wp)| wp);
         if !wp.is_null()
             && match cmd_mouse_at(wp, &raw mut m, 0 as ::core::ffi::c_int) {
                 Some((at_x, at_y)) => {
@@ -2293,11 +2261,8 @@ unsafe fn format_cb_mouse_y(ft: &format_tree) -> Option<CString> {
             return None;
         }
         let mut m = ft.m;
-        wp = cmd_mouse_pane(
-            &raw mut m,
-            ::core::ptr::null_mut::<*mut session>(),
-            ::core::ptr::null_mut::<*mut winlink>(),
-        );
+        wp = cmd_mouse_pane(&raw mut m)
+            .map_or(::core::ptr::null_mut::<window_pane>(), |(_, _, wp)| wp);
         if !wp.is_null()
             && match cmd_mouse_at(wp, &raw mut m, 0 as ::core::ffi::c_int) {
                 Some((at_x, at_y)) => {
@@ -2698,10 +2663,7 @@ unsafe fn format_cb_pane_search_string(ft: &format_tree) -> Option<CString> {
 unsafe fn format_cb_pane_synchronized(ft: &format_tree) -> Option<CString> {
     unsafe {
         if !(*ft).pane().is_null() {
-            if options_get_number(
-                options_ptr(&(*(*ft).pane()).options),
-                c"synchronize-panes".as_ptr(),
-            ) != 0
+            if options_get_number((*(*ft).pane()).options_ptr(), c"synchronize-panes".as_ptr()) != 0
             {
                 return Some(format_callback_copy(c"1"));
             }
@@ -2817,13 +2779,7 @@ unsafe fn format_cb_scroll_region_upper(ft: &format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_server_sessions(_ft: &format_tree) -> Option<CString> {
     unsafe {
-        let mut s: *mut session = ::core::ptr::null_mut::<session>();
-        let mut n: u_int = 0 as u_int;
-        s = sessions_first();
-        while !s.is_null() {
-            n = n.wrapping_add(1);
-            s = sessions_after(s);
-        }
+        let n = session_owners().len() as u_int;
         Some(format_printf(c"%u".as_ptr(), fmt_args![n]))
     }
 }
@@ -2909,7 +2865,7 @@ unsafe fn format_cb_session_group(ft: &format_tree) -> Option<CString> {
             sg = session_group_contains((*ft).session());
             !sg.is_null()
         } {
-            return Some(format_callback_copy(CStr::from_ptr(session_group_name(sg))));
+            return Some(format_callback_copy(session_group_name(sg)));
         }
         None
     }
@@ -3016,9 +2972,7 @@ unsafe fn format_cb_session_name(ft: &format_tree) -> Option<CString> {
 unsafe fn format_cb_session_path(ft: &format_tree) -> Option<CString> {
     unsafe {
         if !(*ft).session().is_null() {
-            return Some(format_callback_copy(CStr::from_ptr(session_cwd(
-                (*ft).session(),
-            ))));
+            return session_cwd((*ft).session()).map(format_callback_copy);
         }
         None
     }
@@ -3035,10 +2989,10 @@ unsafe fn format_cb_session_windows(ft: &format_tree) -> Option<CString> {
     }
 }
 unsafe fn format_cb_socket_path(_ft: &format_tree) -> Option<CString> {
-    unsafe { Some(format_callback_copy(CStr::from_ptr(socket_path))) }
+    unsafe { socket_path.as_deref().map(format_callback_copy) }
 }
-unsafe fn format_cb_version(_ft: &format_tree) -> Option<CString> {
-    unsafe { Some(format_callback_copy(CStr::from_ptr(getversion()))) }
+fn format_cb_version(_ft: &format_tree) -> Option<CString> {
+    Some(format_callback_copy(getversion()))
 }
 fn format_cb_sixel_support(_ft: &format_tree) -> Option<CString> {
     Some(format_callback_copy(c"0"))
@@ -3208,11 +3162,10 @@ unsafe fn format_cb_window_last_flag(ft: &format_tree) -> Option<CString> {
 unsafe fn format_cb_window_linked(ft: &format_tree) -> Option<CString> {
     unsafe {
         let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-        let mut s: *mut session = ::core::ptr::null_mut::<session>();
         let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         if !(*ft).winlink().is_null() {
-            s = sessions_first();
-            while !s.is_null() {
+            for s_ref in session_owners() {
+                let s = s_ref.as_ptr();
                 wl = winlinks_first(&raw mut (*s).windows);
                 while !wl.is_null() {
                     if (*wl).window() == (*(*ft).winlink()).window() {
@@ -3223,7 +3176,6 @@ unsafe fn format_cb_window_linked(ft: &format_tree) -> Option<CString> {
                     }
                     wl = winlinks_after(wl);
                 }
-                s = sessions_after(s);
             }
             return Some(format_callback_copy(c"0"));
         }
@@ -3250,14 +3202,13 @@ unsafe fn format_cb_window_linked_sessions(ft: &format_tree) -> Option<CString> 
             }
             sg = session_groups_after(sg);
         }
-        s = sessions_first();
-        while !s.is_null() {
+        for s_ref in session_owners() {
+            let s = s_ref.as_ptr();
             if session_group_contains(s).is_null()
                 && !winlink_find_by_window(&raw mut (*s).windows, w).is_null()
             {
                 n = n.wrapping_add(1);
             }
-            s = sessions_after(s);
         }
         Some(format_printf(c"%u".as_ptr(), fmt_args![n]))
     }
@@ -3278,7 +3229,7 @@ unsafe fn format_cb_window_name(ft: &format_tree) -> Option<CString> {
         if !(*ft).window().is_null() {
             return Some(format_printf(
                 c"%s".as_ptr(),
-                fmt_args![cstr_ptr(&(*(*ft).window()).name)],
+                fmt_args![(*(*ft).window()).name.as_deref()],
             ));
         }
         None
@@ -3390,7 +3341,7 @@ unsafe fn format_cb_buffer_created(ft: &format_tree) -> Option<timeval> {
     unsafe {
         if !(*ft).buffer().is_null() {
             return Some(timeval {
-                tv_sec: paste_buffer_created((*ft).buffer()) as __time_t,
+                tv_sec: paste_buffer_created(&*(*ft).buffer()) as __time_t,
                 tv_usec: 0 as __suseconds_t,
             });
         }
@@ -4306,24 +4257,12 @@ pub unsafe fn format_create(
 ) -> Box<format_tree> {
     unsafe {
         let mut ft = Box::new(format_tree {
-            type_0: FORMAT_TYPE_UNKNOWN,
-            c_ref: None,
-            s_ref: None,
-            wl_ref: None,
-            w_ref: None,
-            wp_id: None,
-            pb_name: None,
-            item_ref: None,
-            client_ref: None,
-            flags: 0,
-            tag: 0,
-            m: mouse_event::default(),
-            tree: format_entry_tree::new(),
+            client_ref: client_ref_from_ptr(c),
+            flags,
+            tag: tag as u_int,
+            ..Default::default()
         });
-        ft.client_ref = client_ref_from_ptr(c);
         ft.set_item(item);
-        ft.tag = tag as u_int;
-        ft.flags = flags;
         if !item.is_null() {
             format_create_add_item(&mut ft, item);
         }
@@ -4554,51 +4493,36 @@ unsafe fn format_find(
         let mut s: [::core::ffi::c_char; 512] = [0; 512];
         let mut t: time_t = 0 as time_t;
         let mut tm = tm::default();
-        o = options_parse_get(
-            global_options,
-            key.as_ptr(),
-            &raw mut idx,
-            0 as ::core::ffi::c_int,
-        );
+        o = options_parse_get(global_options, key, &mut idx, 0 as ::core::ffi::c_int);
         if o.is_null() && !(*ft).pane().is_null() {
             o = options_parse_get(
-                options_ptr(&(*(*ft).pane()).options),
-                key.as_ptr(),
-                &raw mut idx,
+                (*(*ft).pane()).options_ptr(),
+                key,
+                &mut idx,
                 0 as ::core::ffi::c_int,
             );
         }
         if o.is_null() && !(*ft).window().is_null() {
             o = options_parse_get(
-                options_ptr(&(*(*ft).window()).options),
-                key.as_ptr(),
-                &raw mut idx,
+                (*(*ft).window()).options_ptr(),
+                key,
+                &mut idx,
                 0 as ::core::ffi::c_int,
             );
         }
         if o.is_null() {
-            o = options_parse_get(
-                global_w_options,
-                key.as_ptr(),
-                &raw mut idx,
-                0 as ::core::ffi::c_int,
-            );
+            o = options_parse_get(global_w_options, key, &mut idx, 0 as ::core::ffi::c_int);
         }
         if o.is_null() && !(*ft).session().is_null() {
             o = options_parse_get(
                 session_options((*ft).session()),
-                key.as_ptr(),
-                &raw mut idx,
+                key,
+                &mut idx,
                 0 as ::core::ffi::c_int,
             );
         }
         if o.is_null() {
-            o = options_parse_get(
-                global_s_options,
-                key.as_ptr(),
-                &raw mut idx,
-                0 as ::core::ffi::c_int,
-            );
+            o = options_parse_get(global_s_options, key, &mut idx, 0 as ::core::ffi::c_int);
         }
         if !o.is_null() {
             let option = options_to_string(o, idx, 1 as ::core::ffi::c_int);
@@ -4637,9 +4561,8 @@ unsafe fn format_find(
                         if envent.is_none() {
                             envent = environ_find(&*global_environ, key.as_ptr());
                         }
-                        if envent.is_some_and(|envent| !environ_entry_value(envent).is_null()) {
-                            let envent = envent.expect("the entry just looked at");
-                            found = Some(CStr::from_ptr(environ_entry_value(envent)).to_owned());
+                        if let Some(value) = envent.and_then(environ_entry_value) {
+                            found = Some(value.to_owned());
                             current_block = 9836515120145841630;
                         } else {
                             current_block = 17184638872671510253;
@@ -5051,18 +4974,7 @@ unsafe fn format_match(fm: &format_modifier, pattern: &CStr, text: &CStr) -> CSt
         let pattern = pattern.as_ptr();
         let text = text.as_ptr();
         let mut s: *const ::core::ffi::c_char = c"".as_ptr();
-        let mut r: regex_t = re_pattern_buffer {
-            buffer: ::core::ptr::null_mut::<re_dfa_t>(),
-            allocated: 0,
-            used: 0,
-            syntax: 0,
-            fastmap: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-            translate: ::core::ptr::null_mut::<::core::ffi::c_uchar>(),
-            re_nsub: 0,
-            can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor: [0;
-                1],
-            c2rust_padding: [0; 7],
-        };
+        let mut r: regex_t = regex_t::default();
         let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         if (fm.argv.len() as ::core::ffi::c_int) >= 1 as ::core::ffi::c_int {
             s = fm.argv[0].as_ptr();
@@ -5099,18 +5011,13 @@ unsafe fn format_match(fm: &format_modifier, pattern: &CStr, text: &CStr) -> CSt
     }
 }
 unsafe fn format_sub(fm: &format_modifier, text: &CStr, pattern: &CStr, with: &CStr) -> CString {
-    unsafe {
-        let text = text.as_ptr();
-        let pattern = pattern.as_ptr();
-        let with = with.as_ptr();
-        let mut flags: ::core::ffi::c_int = REG_EXTENDED;
-        if (fm.argv.len() as ::core::ffi::c_int) >= 3 as ::core::ffi::c_int
-            && !strchr(fm.argv[2].as_ptr(), 'i' as i32).is_null()
-        {
-            flags |= REG_ICASE;
-        }
-        regsub(pattern, with, text, flags).unwrap_or_else(|| CStr::from_ptr(text).to_owned())
+    let mut flags: ::core::ffi::c_int = REG_EXTENDED;
+    if (fm.argv.len() as ::core::ffi::c_int) >= 3 as ::core::ffi::c_int
+        && !unsafe { strchr(fm.argv[2].as_ptr(), 'i' as i32) }.is_null()
+    {
+        flags |= REG_ICASE;
     }
+    regsub(pattern, with, text, flags).unwrap_or_else(|| text.to_owned())
 }
 unsafe fn format_search(fm: &format_modifier, mut wp: *mut window_pane, s: &CStr) -> CString {
     unsafe {
@@ -5212,14 +5119,11 @@ unsafe fn format_bool_op_n(
 }
 unsafe fn format_session_name(es: &mut format_expand_state, fmt: &CStr) -> Option<CString> {
     unsafe {
-        let mut s: *mut session = ::core::ptr::null_mut::<session>();
         let name = format_expand1(&mut *es, fmt);
-        s = sessions_first();
-        while !s.is_null() {
-            if strcmp(session_name(s), name.as_ptr()) == 0 as ::core::ffi::c_int {
+        for s in session_owners() {
+            if strcmp(session_name(s.as_ptr()), name.as_ptr()) == 0 as ::core::ffi::c_int {
                 return Some(c"1".to_owned());
             }
-            s = sessions_after(s);
         }
         Some(c"0".to_owned())
     }
@@ -5293,7 +5197,7 @@ unsafe fn format_window_name(es: &mut format_expand_state, fmt: &CStr) -> Option
         let name = format_expand1(&mut *es, fmt);
         wl = winlinks_first(&raw mut (*(*ft).session()).windows);
         while !wl.is_null() {
-            if strcmp(cstr_ptr(&(*(*wl).window()).name), name.as_ptr()) == 0 as ::core::ffi::c_int {
+            if (*(*wl).window()).name.as_deref() == Some(name.as_c_str()) {
                 return Some(c"1".to_owned());
             }
             wl = winlinks_after(wl);
@@ -5320,9 +5224,9 @@ unsafe fn format_add_window_neighbor(
             c"%d".as_ptr(),
             fmt_args![(wl == session_get_curw(s)) as ::core::ffi::c_int],
         );
-        o = options_first(options_ptr(&(*(*wl).window()).options));
+        o = options_first((*(*wl).window()).options_ptr());
         while !o.is_null() {
-            oname = options_name(o);
+            oname = options_name(o).as_ptr();
             if *oname as ::core::ffi::c_int == '@' as i32 {
                 let prefixed = xasprintf(c"%s_%s".as_ptr(), fmt_args![prefix, oname]);
                 let oval =
@@ -5507,7 +5411,7 @@ unsafe fn format_loop_clients(
                 &mut *es,
                 c"format_loop_clients".as_ptr(),
                 c"client loop: %s".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name)],
+                fmt_args![(*c).name.as_deref()],
             );
             let mut last = 0 as ::core::ffi::c_int;
             if i == n - 1 {
@@ -6724,20 +6628,23 @@ unsafe fn format_expand1(es: &mut format_expand_state, fmt: &CStr) -> CString {
 }
 pub unsafe fn format_expand_time(ft: &mut format_tree, fmt: &CStr) -> CString {
     unsafe {
-        let mut es = format_expand_state::default();
-        es.ft = ft;
-        es.flags = FORMAT_EXPAND_TIME;
-        es.start_time = get_timer();
+        let mut es = format_expand_state {
+            ft,
+            flags: FORMAT_EXPAND_TIME,
+            start_time: get_timer(),
+            ..Default::default()
+        };
         format_expand1(&mut es, fmt)
     }
 }
 /// Expands `fmt` against `ft`, giving back the answer the caller owns.
 pub unsafe fn format_expand(ft: &mut format_tree, fmt: &CStr) -> CString {
     unsafe {
-        let mut es = format_expand_state::default();
-        es.ft = ft;
-        es.flags = 0 as ::core::ffi::c_int;
-        es.start_time = get_timer();
+        let mut es = format_expand_state {
+            ft,
+            start_time: get_timer(),
+            ..Default::default()
+        };
         format_expand1(&mut es, fmt)
     }
 }
@@ -6822,7 +6729,7 @@ pub unsafe fn format_defaults(
         if !c.is_null() && (*c).name.is_some() {
             log_debug(
                 c"%s: c=%s".as_ptr(),
-                fmt_args![c"format_defaults".as_ptr(), cstr_ptr(&(*c).name)],
+                fmt_args![c"format_defaults".as_ptr(), (*c).name.as_deref()],
             );
         } else {
             log_debug(
@@ -6899,7 +6806,7 @@ pub unsafe fn format_defaults(
         if !wp.is_null() {
             format_defaults_pane(&mut *ft, wp);
         }
-        pb = paste_get_top(::core::ptr::null_mut());
+        pb = paste_get_top(None);
         if !pb.is_null() {
             format_defaults_paste_buffer(&mut *ft, pb);
         }

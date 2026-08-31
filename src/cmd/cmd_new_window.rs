@@ -42,7 +42,6 @@ use crate::cmd::queue::{
     cmdq_insert_hook, cmdq_print,
 };
 use crate::environ::{environ_create_box, environ_put, environ_t};
-use crate::ffi::strcmp;
 use crate::fmt_args;
 use crate::format::format_single;
 use crate::resize::recalculate_sizes;
@@ -58,7 +57,7 @@ pub use crate::types::*;
 use crate::window::window_get_active;
 use crate::window::window_set_latest;
 use crate::window::{winlink_shuffle_up, winlinks_after, winlinks_first};
-use ::core::ffi::c_char;
+use ::core::ffi::CStr;
 use ::core::ptr::null_mut;
 use ::std::ffi::CString;
 pub const CMD_FIND_WINDOW: cmd_find_type = 1;
@@ -120,11 +119,11 @@ unsafe fn winlinks_of(s: *mut session) -> impl Iterator<Item = *mut winlink> {
 
 /// The one window of `s` whose name is `name`, as `Ok(null)` when none carries
 /// it and as `Err` when more than one does.
-unsafe fn only_window_named(s: *mut session, name: *const c_char) -> Result<*mut winlink, ()> {
+unsafe fn only_window_named(s: *mut session, name: &CStr) -> Result<*mut winlink, ()> {
     unsafe {
         let mut found: *mut winlink = null_mut();
         for wl in winlinks_of(s) {
-            if strcmp(cstr_ptr(&(*(*wl).window()).name), name) != 0 {
+            if (*(*wl).window()).name.as_deref() != Some(name) {
                 continue;
             }
             if found.is_null() {
@@ -158,7 +157,7 @@ unsafe fn spawn_environ(args: &args) -> Box<environ_t> {
         let mut env = environ_create_box();
         let env_ptr = &raw mut *env;
         for av in args_value_list(args, b'e') {
-            environ_put(env_ptr, (*av).value.string(), 0);
+            environ_put(env_ptr, (*av).value.string().as_ptr(), 0);
         }
         env
     }
@@ -212,7 +211,7 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval 
                 null_mut(),
                 null_mut(),
             );
-            let found = only_window_named(s, expanded.as_ptr());
+            let found = only_window_named(s, &expanded);
             wl = null_mut();
             let new_wl = match found {
                 Ok(new_wl) => new_wl,
@@ -295,14 +294,7 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval 
             cmdq_print(item, c"%s".as_ptr(), fmt_args![cp.as_ptr()]);
         }
 
-        let mut fs = cmd_find_state {
-            flags: 0,
-            s_ref: None,
-            wl_idx: None,
-            w_ref: None,
-            wp_id: None,
-            idx: 0,
-        };
+        let mut fs = cmd_find_state::default();
         cmd_find_from_winlink(&mut fs, new_wl, 0);
         cmdq_insert_hook(
             s,

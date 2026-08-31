@@ -127,23 +127,21 @@ fn tty_term_has_and_string_on_missing_code() {
 fn tty_term_number_and_flag_roundtrip_via_tyy_fixture() {
     let _guard = globals();
     let mut t = Tty::new();
-    unsafe {
-        // give the fixture a number and a flag
-        t.set_number(TTYC_COLORS, 256);
-        assert_eq!(tty_term_has(t.term(), TTYC_COLORS), 1);
-        assert_eq!(tty_term_number(t.term(), TTYC_COLORS), 256);
+    // give the fixture a number and a flag
+    t.set_number(TTYC_COLORS, 256);
+    assert_eq!(tty_term_has(t.term(), TTYC_COLORS), 1);
+    assert_eq!(tty_term_number(t.term(), TTYC_COLORS), 256);
 
-        // flag: AM is a boolean capability — set via raw slot to keep test deterministic
-        // Tty::set_number is for numbers; for flags write the slot directly
-        t.set_flag(TTYC_AM, 1);
-        assert_eq!(tty_term_has(t.term(), TTYC_AM), 1);
-        assert_eq!(tty_term_flag(t.term(), TTYC_AM), 1);
+    // flag: AM is a boolean capability — set via raw slot to keep test deterministic
+    // Tty::set_number is for numbers; for flags write the slot directly
+    t.set_flag(TTYC_AM, 1);
+    assert_eq!(tty_term_has(t.term(), TTYC_AM), 1);
+    assert_eq!(tty_term_flag(t.term(), TTYC_AM), 1);
 
-        // a second flag set to 0 still counts as present but answers 0
-        t.set_flag(TTYC_AX, 0);
-        assert_eq!(tty_term_has(t.term(), TTYC_AX), 1);
-        assert_eq!(tty_term_flag(t.term(), TTYC_AX), 0);
-    }
+    // a second flag set to 0 still counts as present but answers 0
+    t.set_flag(TTYC_AX, 0);
+    assert_eq!(tty_term_has(t.term(), TTYC_AX), 1);
+    assert_eq!(tty_term_flag(t.term(), TTYC_AX), 0);
 }
 
 #[test]

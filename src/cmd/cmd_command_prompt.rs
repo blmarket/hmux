@@ -160,7 +160,7 @@ pub(crate) static cmd_command_prompt_entry: cmd_entry = cmd_entry {
     exec: cmd_command_prompt_exec,
 };
 
-unsafe fn cmd_command_prompt_args_parse(
+fn cmd_command_prompt_args_parse(
     _args: &args,
     _idx: u_int,
     _cause: &mut Option<CString>,
@@ -217,21 +217,19 @@ unsafe fn split_prompts(
 
 /// The mode bit the flags ask for, at most one of them: the C tests these five
 /// in order and stops at the first that is there.
-unsafe fn mode_flag(args: &args) -> c_int {
-    unsafe {
-        for (flag, bit) in [
-            (b'1', PROMPT_SINGLE),
-            (b'N', PROMPT_NUMERIC),
-            (b'i', PROMPT_INCREMENTAL),
-            (b'k', PROMPT_KEY),
-            (b'e', PROMPT_BSPACE_EXIT),
-        ] {
-            if args_has(args, flag) != 0 {
-                return bit;
-            }
+fn mode_flag(args: &args) -> c_int {
+    for (flag, bit) in [
+        (b'1', PROMPT_SINGLE),
+        (b'N', PROMPT_NUMERIC),
+        (b'i', PROMPT_INCREMENTAL),
+        (b'k', PROMPT_KEY),
+        (b'e', PROMPT_BSPACE_EXIT),
+    ] {
+        if args_has(args, flag) != 0 {
+            return bit;
         }
-        0
     }
+    0
 }
 
 unsafe fn cmd_command_prompt_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {

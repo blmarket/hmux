@@ -4,7 +4,7 @@ pub use crate::types::*;
 use crate::text::utf8_stravis;
 use crate::xmalloc::xasprintf;
 use ::core::cell::UnsafeCell;
-use ::core::ffi::{CStr, c_char, c_int, c_longlong};
+use ::core::ffi::{CStr, c_int, c_longlong};
 use ::std::ffi::CString;
 use ::std::rc::{Rc, Weak};
 
@@ -46,7 +46,7 @@ impl HyperlinksRef {
 
     /// Removes all links while retaining the set and its inner-number cursor.
     pub(crate) fn reset(&self) {
-        unsafe { hyperlinks_reset(self.as_ptr()) };
+        hyperlinks_reset(unsafe { &mut *self.as_ptr() });
     }
 
     /// Makes a non-owning observation of this set.
@@ -72,7 +72,7 @@ impl HyperlinksWeak {
 
 impl Drop for hyperlinks {
     fn drop(&mut self) {
-        unsafe { hyperlinks_reset(self as *mut hyperlinks) };
+        hyperlinks_reset(self);
     }
 }
 
@@ -88,28 +88,22 @@ pub enum hyperlinks_uri_key {
 
 impl hyperlinks_uri_key {
     /// The key for a link with `internal_id`, `uri` and `inner`.
-    unsafe fn new(internal_id: *const c_char, uri: *const c_char, inner: u_int) -> Self {
-        unsafe {
-            if *internal_id == 0 {
-                hyperlinks_uri_key::Anonymous(inner)
-            } else {
-                hyperlinks_uri_key::Named(
-                    CStr::from_ptr(internal_id).to_owned(),
-                    CStr::from_ptr(uri).to_owned(),
-                )
-            }
+    fn new(internal_id: &CStr, uri: &CStr, inner: u_int) -> Self {
+        if internal_id.to_bytes().is_empty() {
+            hyperlinks_uri_key::Anonymous(inner)
+        } else {
+            hyperlinks_uri_key::Named(internal_id.to_owned(), uri.to_owned())
         }
     }
 
-    /// The key `hlu` hangs under.
-    unsafe fn of(hlu: *mut hyperlinks_uri) -> Self {
-        unsafe {
-            hyperlinks_uri_key::new(
-                cstr_ptr(&(*hlu).internal_id),
-                cstr_ptr(&(*hlu).uri),
-                (*hlu).inner,
-            )
-        }
+    /// The key `hlu` hangs under. A link that carries no internal id is
+    /// anonymous, which is what an absent one reads as too.
+    fn of(hlu: &hyperlinks_uri) -> Self {
+        hyperlinks_uri_key::new(
+            hlu.internal_id.as_deref().unwrap_or(c""),
+            hlu.uri.as_deref().unwrap_or(c""),
+            hlu.inner,
+        )
     }
 }
 
@@ -155,51 +149,43 @@ fn hyperlinks_unlist(hl: *const hyperlinks, inner: u_int) {
 
 /// Takes the link `inner` off the global list and out of both of `hl`'s
 /// trees, and frees it.
-unsafe fn hyperlinks_remove(hl: *mut hyperlinks, inner: u_int) {
-    unsafe {
-        hyperlinks_unlist(hl, inner);
-        let Some(hlu) = (*hl).by_inner.get(&inner) else {
-            return;
-        };
-        let key = hyperlinks_uri_key::of(&raw const **hlu as *mut hyperlinks_uri);
-        (*hl).by_uri.remove(&key);
-        let _ = (*hl).by_inner.remove(&inner);
-    }
+fn hyperlinks_remove(hl: &mut hyperlinks, inner: u_int) {
+    hyperlinks_unlist(hl, inner);
+    let Some(hlu) = hl.by_inner.get(&inner) else {
+        return;
+    };
+    let key = hyperlinks_uri_key::of(hlu);
+    hl.by_uri.remove(&key);
+    let _ = hl.by_inner.remove(&inner);
 }
 
 /// Drops the oldest link of any set, which is reached through the set it
 /// belongs to. A set that has gone took its links off the list as it went.
-unsafe fn hyperlinks_evict(listed: &hyperlinks_listed) {
-    unsafe {
-        match listed.set.upgrade() {
-            Some(hl) => hyperlinks_remove(hl.as_ptr(), listed.inner),
-            None => hyperlinks_unlist(listed.set.names(), listed.inner),
-        }
+fn hyperlinks_evict(listed: &hyperlinks_listed) {
+    match listed.set.upgrade() {
+        Some(hl) => hyperlinks_remove(unsafe { &mut *hl.as_ptr() }, listed.inner),
+        None => hyperlinks_unlist(listed.set.names(), listed.inner),
     }
 }
 
 /// Stores `uri_in` under `internal_id_in` and answers its inner number, or
-/// answers the number a link with that id and URI already has. A null or empty
-/// id makes an anonymous link, which is never shared. The oldest link of any
-/// set goes once the total reaches [`MAX_HYPERLINKS`].
+/// answers the number a link with that id and URI already has. An absent or
+/// empty id makes an anonymous link, which is never shared. The oldest link
+/// of any set goes once the total reaches [`MAX_HYPERLINKS`].
 pub(crate) unsafe fn hyperlinks_put(
     owner: &HyperlinksRef,
-    uri_in: *const c_char,
-    internal_id_in: *const c_char,
+    uri_in: &CStr,
+    internal_id_in: Option<&CStr>,
 ) -> u_int {
     unsafe {
         let hl = owner.as_ptr();
-        let internal_id_in = if internal_id_in.is_null() {
-            c"".as_ptr()
-        } else {
-            internal_id_in
-        };
+        let internal_id_in = internal_id_in.unwrap_or(c"");
 
         let uri = utf8_stravis(uri_in, VIS_OCTAL | VIS_CSTYLE);
         let internal_id = utf8_stravis(internal_id_in, VIS_OCTAL | VIS_CSTYLE);
 
-        if *internal_id_in != 0 {
-            let find = hyperlinks_uri_key::new(internal_id.as_ptr(), uri.as_ptr(), 0);
+        if !internal_id_in.to_bytes().is_empty() {
+            let find = hyperlinks_uri_key::new(&internal_id, &uri, 0);
             if let Some(&inner) = (*hl).by_uri.get(&find) {
                 return inner;
             }
@@ -216,8 +202,7 @@ pub(crate) unsafe fn hyperlinks_put(
             external_id: Some(external_id),
             uri: Some(uri),
         });
-        let hlu_ptr = &raw const *hlu as *mut hyperlinks_uri;
-        (*hl).by_uri.insert(hyperlinks_uri_key::of(hlu_ptr), inner);
+        (*hl).by_uri.insert(hyperlinks_uri_key::of(&hlu), inner);
         (*hl).by_inner.insert(inner, hlu);
 
         global_hyperlinks.queue().push_back(hyperlinks_listed {
@@ -250,12 +235,10 @@ pub fn hyperlinks_get(hl: &hyperlinks, inner: u_int) -> Option<(&CStr, &CStr, &C
 
 /// Frees every link in the set but not the set itself. The inner counter stays
 /// where it was, so a number the grid still holds is never handed out again.
-unsafe fn hyperlinks_reset(hl: *mut hyperlinks) {
-    unsafe {
-        let inners: Vec<u_int> = (*hl).by_inner.keys().copied().collect();
-        for inner in inners {
-            hyperlinks_remove(hl, inner);
-        }
+fn hyperlinks_reset(hl: &mut hyperlinks) {
+    let inners: Vec<u_int> = hl.by_inner.keys().copied().collect();
+    for inner in inners {
+        hyperlinks_remove(hl, inner);
     }
 }
 

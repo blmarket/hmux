@@ -1,6 +1,6 @@
 use crate::ffi::{regcomp, regexec, regfree};
 pub use crate::types::*;
-use ::core::ffi::{CStr, c_char, c_int};
+use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
 
 /// How many match slots the substitution gives `regexec`: the whole match and
@@ -15,7 +15,7 @@ struct Regex(regex_t);
 impl Regex {
     /// Compiles `pattern` under `flags`, or nothing when it is not a pattern.
     fn compile(pattern: &CStr, flags: c_int) -> Option<Regex> {
-        let mut r = unsafe { ::core::mem::MaybeUninit::<regex_t>::zeroed().assume_init() };
+        let mut r = regex_t::default();
         if unsafe { regcomp(&raw mut r, pattern.as_ptr(), flags) } != 0 {
             return None;
         }
@@ -128,21 +128,9 @@ fn substitute(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<
 
 /// `text` with every match of `pattern` replaced by `with`, or nothing when
 /// `pattern` does not compile.
-pub unsafe fn regsub(
-    pattern: *const c_char,
-    with: *const c_char,
-    text: *const c_char,
-    flags: c_int,
-) -> Option<CString> {
-    unsafe {
-        let answer = substitute(
-            CStr::from_ptr(pattern),
-            CStr::from_ptr(with),
-            CStr::from_ptr(text),
-            flags,
-        );
-        answer.map(|bytes| CString::from_vec_unchecked(bytes))
-    }
+pub fn regsub(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<CString> {
+    let answer = substitute(pattern, with, text, flags)?;
+    Some(unsafe { CString::from_vec_unchecked(answer) })
 }
 
 #[cfg(test)]

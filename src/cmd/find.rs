@@ -14,8 +14,7 @@ use crate::session::{
     session_activity_time, session_attached, session_get_curw, session_id, session_name,
 };
 use crate::session::{
-    session_alive, session_find, session_find_by_id_str, session_has, sessions_after,
-    sessions_first,
+    session_alive, session_find, session_find_by_id_str, session_has, session_owners,
 };
 pub use crate::types::*;
 use crate::window::PaneStack;
@@ -129,8 +128,7 @@ pub const CMD_FIND_SESSION: cmd_find_type = 2;
 pub const CMD_FIND_WINDOW: cmd_find_type = 1;
 pub const CMD_FIND_PANE: cmd_find_type = 0;
 pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
-pub const _PATH_DEV: [::core::ffi::c_char; 6] =
-    unsafe { ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"/dev/\0") };
+pub const _PATH_DEV: &CStr = c"/dev/";
 pub const RB_NEGINF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const RB_INF: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const CMD_FIND_PREFER_UNATTACHED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -192,9 +190,10 @@ unsafe fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pane {
             })
             .unwrap_or(::core::ptr::null_mut::<window_pane>());
         if wp.is_null()
-            && let Some(envent) = environ_find(&*environ_ptr(&(*c).environ), c"TMUX_PANE".as_ptr())
+            && let Some(value) = environ_find(&*environ_ptr(&(*c).environ), c"TMUX_PANE".as_ptr())
+                .and_then(environ_entry_value)
         {
-            wp = window_pane_find_by_id_str(environ_entry_value(envent));
+            wp = window_pane_find_by_id_str(value.as_ptr());
         }
         if !wp.is_null() {
             log_debug(
@@ -271,7 +270,6 @@ unsafe fn cmd_find_best_session(
     mut flags: ::core::ffi::c_int,
 ) -> *mut session {
     unsafe {
-        let mut s_loop: *mut session = ::core::ptr::null_mut::<session>();
         let mut s: *mut session = ::core::ptr::null_mut::<session>();
         let mut i: u_int = 0;
         log_debug(
@@ -288,12 +286,10 @@ unsafe fn cmd_find_best_session(
                 i = i.wrapping_add(1);
             }
         } else {
-            s_loop = sessions_first();
-            while !s_loop.is_null() {
-                if cmd_find_session_better(s_loop, s, flags) != 0 {
-                    s = s_loop;
+            for s_loop in session_owners() {
+                if cmd_find_session_better(s_loop.as_ptr(), s, flags) != 0 {
+                    s = s_loop.as_ptr();
                 }
-                s_loop = sessions_after(s_loop);
             }
         }
         s
@@ -302,7 +298,6 @@ unsafe fn cmd_find_best_session(
 unsafe fn cmd_find_best_session_with_window(fs: &mut cmd_find_state) -> ::core::ffi::c_int {
     unsafe {
         let mut slist: Vec<*mut session> = Vec::new();
-        let mut s: *mut session = ::core::ptr::null_mut::<session>();
         let w: *mut window = (*fs).window();
         if w.is_null() {
             return -(1 as ::core::ffi::c_int);
@@ -311,12 +306,10 @@ unsafe fn cmd_find_best_session_with_window(fs: &mut cmd_find_state) -> ::core::
             c"%s: window is @%u".as_ptr(),
             fmt_args![c"cmd_find_best_session_with_window".as_ptr(), (*w).id],
         );
-        s = sessions_first();
-        while !s.is_null() {
-            if !(session_has(s, w) == 0) {
-                slist.push(s);
+        for s_loop in session_owners() {
+            if !(session_has(s_loop.as_ptr(), w) == 0) {
+                slist.push(s_loop.as_ptr());
             }
-            s = sessions_after(s);
         }
         if !slist.is_empty() {
             (*fs).set_session(cmd_find_best_session(&slist, fs.flags));
@@ -391,7 +384,6 @@ unsafe fn cmd_find_get_session(
 ) -> ::core::ffi::c_int {
     unsafe {
         let mut s: *mut session = ::core::ptr::null_mut::<session>();
-        let mut s_loop: *mut session = ::core::ptr::null_mut::<session>();
         let mut c: *mut client = ::core::ptr::null_mut::<client>();
         log_debug(
             c"%s: %s".as_ptr(),
@@ -421,32 +413,33 @@ unsafe fn cmd_find_get_session(
             return -(1 as ::core::ffi::c_int);
         }
         s = ::core::ptr::null_mut::<session>();
-        s_loop = sessions_first();
-        while !s_loop.is_null() {
-            if strncmp(session, session_name(s_loop), strlen(session)) == 0 as ::core::ffi::c_int {
+        for s_loop in session_owners() {
+            if strncmp(session, session_name(s_loop.as_ptr()), strlen(session))
+                == 0 as ::core::ffi::c_int
+            {
                 if !s.is_null() {
                     return -(1 as ::core::ffi::c_int);
                 }
-                s = s_loop;
+                s = s_loop.as_ptr();
             }
-            s_loop = sessions_after(s_loop);
         }
         if !s.is_null() {
             (*fs).set_session(s);
             return 0 as ::core::ffi::c_int;
         }
         s = ::core::ptr::null_mut::<session>();
-        s_loop = sessions_first();
-        while !s_loop.is_null() {
-            if fnmatch(session, session_name(s_loop), 0 as ::core::ffi::c_int)
-                == 0 as ::core::ffi::c_int
+        for s_loop in session_owners() {
+            if fnmatch(
+                session,
+                session_name(s_loop.as_ptr()),
+                0 as ::core::ffi::c_int,
+            ) == 0 as ::core::ffi::c_int
             {
                 if !s.is_null() {
                     return -(1 as ::core::ffi::c_int);
                 }
-                s = s_loop;
+                s = s_loop.as_ptr();
             }
-            s_loop = sessions_after(s_loop);
         }
         if !s.is_null() {
             (*fs).set_session(s);
@@ -828,16 +821,16 @@ unsafe fn cmd_find_get_pane_with_window(
         -(1 as ::core::ffi::c_int)
     }
 }
-pub unsafe fn cmd_find_clear_state(fs: &mut cmd_find_state, mut flags: ::core::ffi::c_int) {
+pub fn cmd_find_clear_state(fs: &mut cmd_find_state, mut flags: ::core::ffi::c_int) {
     *fs = cmd_find_state::default();
     fs.flags = flags;
     fs.idx = -(1 as ::core::ffi::c_int);
 }
-pub unsafe fn cmd_find_empty_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
-    if (*fs).session().is_null()
-        && (*fs).winlink().is_null()
-        && (*fs).window().is_null()
-        && (*fs).pane().is_null()
+pub fn cmd_find_empty_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
+    if fs.session().is_null()
+        && fs.winlink().is_null()
+        && fs.window().is_null()
+        && fs.pane().is_null()
     {
         return 1 as ::core::ffi::c_int;
     }
@@ -903,7 +896,7 @@ unsafe fn cmd_find_log_state(mut prefix: *const ::core::ffi::c_char, fs: &mut cm
                     (*(*fs).winlink()).idx,
                     ((*(*fs).winlink()).window() == (*fs).window()) as ::core::ffi::c_int,
                     (*(*fs).window()).id,
-                    cstr_ptr(&(*(*fs).window()).name)
+                    (*(*fs).window()).name.as_deref()
                 ],
             );
         } else {
@@ -1051,11 +1044,13 @@ pub unsafe fn cmd_find_from_mouse(
         if (*m).valid == 0 {
             return -(1 as ::core::ffi::c_int);
         }
-        let mut found = (*fs).session();
-        let mut link = (*fs).winlink();
-        (*fs).set_pane(cmd_mouse_pane(m, &raw mut found, &raw mut link));
-        (*fs).set_session(found);
-        (*fs).set_winlink(link);
+        if let Some((found, link, pane)) = cmd_mouse_pane(m) {
+            (*fs).set_session(found);
+            (*fs).set_winlink(link);
+            (*fs).set_pane(pane);
+        } else {
+            (*fs).set_pane(::core::ptr::null_mut::<window_pane>());
+        }
         if (*fs).pane().is_null() {
             cmd_find_clear_state(fs, flags);
             return -(1 as ::core::ffi::c_int);
@@ -1241,11 +1236,13 @@ pub unsafe fn cmd_find_target(
                 let mut current_block_56: u64;
                 match type_0 {
                     CMD_FIND_PANE => {
-                        let mut found = (*fs).session();
-                        let mut link = (*fs).winlink();
-                        (*fs).set_pane(cmd_mouse_pane(m, &raw mut found, &raw mut link));
-                        (*fs).set_session(found);
-                        (*fs).set_winlink(link);
+                        if let Some((found, link, pane)) = cmd_mouse_pane(m) {
+                            (*fs).set_session(found);
+                            (*fs).set_winlink(link);
+                            (*fs).set_pane(pane);
+                        } else {
+                            (*fs).set_pane(::core::ptr::null_mut::<window_pane>());
+                        }
                         if !(*fs).pane().is_null() {
                             (*fs).set_window((*(*fs).winlink()).window());
                             current_block_56 = 7343950298149844727;
@@ -1261,9 +1258,12 @@ pub unsafe fn cmd_find_target(
                     }
                 }
                 if current_block_56 == 1142519184231123645 {
-                    let mut found = (*fs).session();
-                    (*fs).set_winlink(cmd_mouse_window(m, &raw mut found));
-                    (*fs).set_session(found);
+                    if let Some((found, link)) = cmd_mouse_window(m) {
+                        (*fs).set_session(found);
+                        (*fs).set_winlink(link);
+                    } else {
+                        (*fs).set_winlink(::core::ptr::null_mut::<winlink>());
+                    }
                     if (*fs).winlink().is_null() && !(*fs).session().is_null() {
                         (*fs).set_winlink(session_get_curw((*fs).session()));
                     }

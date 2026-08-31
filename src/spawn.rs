@@ -4,7 +4,7 @@ use crate::compat::fdforkpty;
 use crate::compat::systemd_move_to_new_cgroup;
 use crate::environ::{
     environ_copy, environ_entry_value, environ_find, environ_for_session, environ_log, environ_ptr,
-    environ_push, environ_set, environ_t,
+    environ_push, environ_set,
 };
 use crate::ffi::{
     __errno_location, _exit, chdir, close, closefrom, execl, execvp, getcwd, getpid, kill,
@@ -17,7 +17,7 @@ use crate::layout::{layout_assign_pane, layout_close_pane, layout_free, layout_i
 use crate::log::{log_close, log_debug};
 use crate::names::default_window_name;
 use crate::notify::{notify_session_window, notify_window};
-use crate::options::{options_get_number, options_get_string, options_ptr, options_set_number};
+use crate::options::{options_get_number, options_get_string, options_set_number};
 use crate::proc::proc_clear_signals;
 use crate::resize::default_window_size;
 use crate::screen::{screen_grid_ptr, screen_reinit};
@@ -144,10 +144,8 @@ pub const STDERR_FILENO: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const VERASE: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const IUTF8: ::core::ffi::c_int = 0o40000 as ::core::ffi::c_int;
 pub const TCSANOW: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const _PATH_DEFPATH: [::core::ffi::c_char; 14] =
-    unsafe { ::core::mem::transmute::<[u8; 14], [::core::ffi::c_char; 14]>(*b"/usr/bin:/bin\0") };
-pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
-    unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };
+pub const _PATH_DEFPATH: &CStr = c"/usr/bin:/bin";
+pub const _PATH_BSHELL: &CStr = c"/bin/sh";
 pub const MODE_CURSOR: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const MODE_CRLF: ::core::ffi::c_int = 0x4000 as ::core::ffi::c_int;
 pub const PANE_EXITED: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
@@ -174,10 +172,9 @@ unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, sc: &mut spawn_context
         let mut wl: *mut winlink = sc.wl;
         let mut wp0: *mut window_pane = sc.wp0;
         let item = spawn_item(sc);
-        let mut name: *const ::core::ffi::c_char = cmdq_get_name(&*item);
         log_debug(
             c"%s: %s, flags=%#x".as_ptr(),
-            fmt_args![from, name, sc.flags],
+            fmt_args![from, cmdq_get_name(&*item), sc.flags],
         );
         let tmp = if !wl.is_null() && !wp0.is_null() {
             xasprintf(c"wl=%d wp0=%%%u".as_ptr(), fmt_args![(*wl).idx, (*wp0).id])
@@ -199,7 +196,7 @@ unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, sc: &mut spawn_context
     }
 }
 /// The queue item the spawn was asked from, which is waiting on it.
-unsafe fn spawn_item(sc: &spawn_context) -> *mut cmdq_item {
+fn spawn_item(sc: &spawn_context) -> *mut cmdq_item {
     sc.item
         .as_ref()
         .and_then(|item| item.upgrade())
@@ -207,7 +204,7 @@ unsafe fn spawn_item(sc: &spawn_context) -> *mut cmdq_item {
 }
 
 /// The client the spawn was asked for, or none.
-unsafe fn spawn_client(sc: &spawn_context) -> *mut client {
+fn spawn_client(sc: &spawn_context) -> *mut client {
     sc.tc
         .as_ref()
         .and_then(ClientWeak::upgrade)
@@ -321,7 +318,7 @@ pub unsafe fn spawn_window(sc: &mut spawn_context, cause: &mut Option<CString>) 
             } else {
                 (*w).name = Some(sc.name.expect("the name just looked at").to_owned());
                 options_set_number(
-                    options_ptr(&(*w).options),
+                    (*w).options_ptr(),
                     c"automatic-rename".as_ptr(),
                     0 as ::core::ffi::c_longlong,
                 );
@@ -462,7 +459,7 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
         );
         if !c.is_null() && (*c).session.is_null() {
             let path = environ_find(&*environ_ptr(&(*c).environ), c"PATH".as_ptr())
-                .map(|ee| environ_entry_value(ee));
+                .and_then(environ_entry_value);
             if let Some(path) = path {
                 environ_set(
                     &mut *child,
@@ -494,11 +491,11 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
             c"SHELL".as_ptr(),
             0 as ::core::ffi::c_int,
             c"%s".as_ptr(),
-            fmt_args![cstr_ptr(&(*new_wp).shell)],
+            fmt_args![(*new_wp).shell.as_deref()],
         );
         log_debug(
             c"%s: shell=%s".as_ptr(),
-            fmt_args![c"spawn_pane".as_ptr(), cstr_ptr(&(*new_wp).shell)],
+            fmt_args![c"spawn_pane".as_ptr(), (*new_wp).shell.as_deref()],
         );
         if !(*new_wp).argv.is_empty() {
             let command = cmd_stringify_argv(&(*new_wp).argv);
@@ -509,7 +506,7 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
         }
         log_debug(
             c"%s: cwd=%s".as_ptr(),
-            fmt_args![c"spawn_pane".as_ptr(), cstr_ptr(&(*new_wp).cwd)],
+            fmt_args![c"spawn_pane".as_ptr(), (*new_wp).cwd.as_deref()],
         );
         cmd_log_argv(
             &(*new_wp).argv,
@@ -517,7 +514,7 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
             fmt_args![c"spawn_pane".as_ptr()],
         );
         environ_log(
-            &raw const *child as *mut environ_t,
+            &child,
             c"%s: environment ".as_ptr(),
             fmt_args![c"spawn_pane".as_ptr()],
         );
@@ -622,7 +619,7 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
                     ::core::ptr::null_mut::<sigset_t>(),
                 );
                 log_close();
-                environ_push(&mut *child);
+                environ_push(&child);
                 if (*new_wp).argv.len() > 1 {
                     let argvp: Vec<*mut ::core::ffi::c_char> = (*new_wp)
                         .argv
@@ -645,7 +642,7 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
                             fmt_args![cp.offset(1 as ::core::ffi::c_int as isize)],
                         )
                     } else {
-                        xasprintf(c"%s".as_ptr(), fmt_args![cstr_ptr(&(*new_wp).shell)])
+                        xasprintf(c"%s".as_ptr(), fmt_args![(*new_wp).shell.as_deref()])
                     };
                     execl(
                         cstr_ptr(&(*new_wp).shell),
@@ -665,7 +662,7 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
                         fmt_args![cp.offset(1 as ::core::ffi::c_int as isize)],
                     )
                 } else {
-                    xasprintf(c"-%s".as_ptr(), fmt_args![cstr_ptr(&(*new_wp).shell)])
+                    xasprintf(c"-%s".as_ptr(), fmt_args![(*new_wp).shell.as_deref()])
                 };
                 execl(
                     cstr_ptr(&(*new_wp).shell),

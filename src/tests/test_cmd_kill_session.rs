@@ -1,9 +1,9 @@
 use super::*;
-use crate::session::session_name;
 use crate::session::{
-    session_group_add, session_group_new, session_group_remove, session_groups, sessions,
+    session_group_add, session_group_new, session_group_remove, session_groups,
+    session_registry_remove, sessions_empty,
 };
-use crate::tests::test_fixtures::{Args, Registry, Session, Window, globals, link, unlink};
+use crate::tests::test_fixtures::{Args, Registry, Session, globals};
 
 /// An empty session group sitting in the server's group tree for the
 /// length of a test, so that [`session_group_contains`] finds it. It is made
@@ -31,33 +31,6 @@ impl Drop for Group {
 }
 
 #[test]
-fn windows_of_hands_over_the_sessions_winlinks_in_index_order() {
-    let _guard = globals();
-    let mut s = Session::new(50, "walked");
-    let mut first = Window::new(51, "first", 80, 24);
-    let mut second = Window::new(52, "second", 80, 24);
-    let mut third = Window::new(53, "third", 80, 24);
-    let wl2 = link(&mut s, &mut third, 2);
-    let wl0 = link(&mut s, &mut first, 0);
-    let wl1 = link(&mut s, &mut second, 1);
-
-    assert_eq!(
-        windows_of(s.ptr()).collect::<Vec<_>>(),
-        vec![wl0, wl1, wl2],
-        "the tree is walked by index, not by the order they were linked"
-    );
-
-    for wl in [wl0, wl1, wl2] {
-        unlink(&mut s, wl);
-    }
-    assert_eq!(
-        windows_of(s.ptr()).count(),
-        0,
-        "an empty session walks to nothing"
-    );
-}
-
-#[test]
 fn each_session_hands_over_every_session_and_survives_one_leaving_mid_walk() {
     let _guard = globals();
     let mut registry = Registry::new();
@@ -67,23 +40,19 @@ fn each_session_hands_over_every_session_and_survives_one_leaving_mid_walk() {
     registry.add_session(&mut bee);
     registry.add_session(&mut cee);
     registry.add_session(&mut ay);
-    unsafe {
-        let mut walked = Vec::new();
-        for s in each_session() {
-            walked.push(s);
-            sessions
-                .map()
-                .remove(::core::ffi::CStr::from_ptr(session_name(s)));
-        }
-
-        assert_eq!(
-            walked,
-            vec![ay.ptr(), bee.ptr(), cee.ptr()],
-            "the tree is keyed by name, and taking each session out as it \
-             arrives loses none of the ones behind it"
-        );
-        assert!(sessions.map().is_empty());
+    let mut walked = Vec::new();
+    for s in each_session() {
+        walked.push(s.as_ptr());
+        session_registry_remove(s.as_ptr());
     }
+
+    assert_eq!(
+        walked,
+        vec![ay.ptr(), bee.ptr(), cee.ptr()],
+        "the tree is keyed by name, and taking each session out as it \
+         arrives loses none of the ones behind it"
+    );
+    assert!(sessions_empty());
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use super::*;
 use crate::cmd::CmdqType;
-use crate::options::{options_ptr, options_set_number};
+use crate::options::options_set_number;
 use crate::reactor::Buf;
 use crate::session::session_options;
 use crate::terminfo::{TTYC_CUP, TtyCode};
@@ -74,7 +74,7 @@ impl Overlay {
 
     /// Numbers the window's panes from `base`, as `pane-base-index` does.
     fn base_index(&mut self, base: c_longlong) {
-        let wo = unsafe { options_ptr(&(*self.t.window(0)).options) };
+        let wo = unsafe { (*self.t.window(0)).options_ptr() };
         unsafe { options_set_number(wo, c"pane-base-index".as_ptr(), base) };
     }
 

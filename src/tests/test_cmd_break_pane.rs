@@ -1,6 +1,6 @@
 use super::*;
 use crate::cmd::cmd_find_from_winlink;
-use crate::layout::{layout_free_cell, layout_root_ptr};
+use crate::layout::layout_free_cell;
 use crate::session::session_get_curw;
 use crate::session::winlink_of;
 use crate::tests::test_fixtures::{
@@ -56,7 +56,7 @@ impl Drop for Created {
             for w_ref in &self.0 {
                 let w = w_ref.as_ptr();
                 crate::window::windows.map().remove(&(*w).id);
-                forget_panes(layout_root_ptr(&(*w).layout_root));
+                forget_panes((*w).layout_root_ptr());
                 layout_free_cell(w, (*w).layout_root.take());
                 layout_free_cell(w, (*w).saved_layout_root.take());
                 w_ref.mark_unmanaged();
@@ -327,7 +327,7 @@ fn a_single_pane_window_relinked_without_n_keeps_the_name_it_had() {
             "the relinked window keeps the name it came with"
         );
         assert_eq!(
-            options_get_number(options_ptr(&(*w_src).options), c"automatic-rename".as_ptr()),
+            options_get_number((*w_src).options_ptr(), c"automatic-rename".as_ptr()),
             1,
             "and its automatic renaming is left alone"
         );
@@ -421,7 +421,7 @@ fn a_single_pane_window_is_relinked_into_the_destination_session_and_n_renames_i
         assert_eq!((*panes[0]).window, w_src, "no new window was built");
         assert_eq!(seen(cstr_ptr(&(*w_src).name)), "moved");
         assert_eq!(
-            options_get_number(options_ptr(&(*w_src).options), c"automatic-rename".as_ptr()),
+            options_get_number((*w_src).options_ptr(), c"automatic-rename".as_ptr()),
             0,
             "-n switches automatic renaming off"
         );

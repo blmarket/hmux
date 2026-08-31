@@ -4,7 +4,7 @@ use crate::grid::{
     grid_set_tab,
 };
 use crate::tests::test_fixtures::globals;
-use ::core::ffi::{CStr, c_char, c_int};
+use ::core::ffi::{CStr, c_int};
 
 const SEPARATORS: &CStr = c" -_@";
 
@@ -16,21 +16,14 @@ impl Grid {
     /// ends in `\\` is marked as wrapping onto the next one.
     fn of(sx: u_int, lines: &[&str]) -> Grid {
         let g = Grid(grid_create(sx, lines.len() as u_int, 0));
-        let gc = unsafe { grid_default_cell };
+        let gc = grid_default_cell;
         for (py, line) in lines.iter().enumerate() {
             let (text, wrapped) = match line.strip_suffix('\\') {
                 Some(text) => (text, true),
                 None => (*line, false),
             };
             unsafe {
-                grid_set_cells(
-                    &mut *g.ptr(),
-                    0,
-                    py as u_int,
-                    &raw const gc,
-                    text.as_ptr() as *const c_char,
-                    text.len() as size_t,
-                );
+                grid_set_cells(&mut *g.ptr(), 0, py as u_int, &gc, text.as_bytes());
                 if wrapped {
                     grid_get_line(&mut *g.ptr(), py as u_int).flags |= GRID_LINE_WRAPPED;
                 }
@@ -50,22 +43,13 @@ impl Grid {
 
     /// Writes more text at (px, py), after what is there.
     fn write_after(&self, px: u_int, py: u_int, s: &str) {
-        let gc = unsafe { grid_default_cell };
-        unsafe {
-            grid_set_cells(
-                &mut *self.ptr(),
-                px,
-                py,
-                &raw const gc,
-                s.as_ptr() as *const c_char,
-                s.len() as size_t,
-            )
-        };
+        let gc = grid_default_cell;
+        unsafe { grid_set_cells(&mut *self.ptr(), px, py, &gc, s.as_bytes()) };
     }
 
     /// Writes a wide character and its padding at (px, py).
     fn wide(&self, px: u_int, py: u_int) {
-        let mut gc = unsafe { grid_default_cell };
+        let mut gc = grid_default_cell;
         gc.data.data[..3].copy_from_slice("\u{4e2d}".as_bytes());
         gc.data.have = 3;
         gc.data.size = 3;
@@ -78,7 +62,7 @@ impl Grid {
 
     /// Writes a tab of `width` columns and its padding at (px, py).
     fn tab(&self, px: u_int, py: u_int, width: u_int) {
-        let mut gc = unsafe { grid_default_cell };
+        let mut gc = grid_default_cell;
         unsafe {
             grid_set_tab(&raw mut gc, width);
             grid_set_cell(&mut *self.ptr(), px, py, &gc);
@@ -95,22 +79,22 @@ fn cursor(gr: &grid_reader<'_>) -> (u_int, u_int) {
 }
 
 fn right(gr: &mut grid_reader<'_>, wrap: c_int, all: c_int, onemore: c_int) -> (u_int, u_int) {
-    unsafe { grid_reader_cursor_right(&mut *gr, wrap, all, onemore) };
+    grid_reader_cursor_right(&mut *gr, wrap, all, onemore);
     cursor(gr)
 }
 
 fn left(gr: &mut grid_reader<'_>, wrap: c_int) -> (u_int, u_int) {
-    unsafe { grid_reader_cursor_left(&mut *gr, wrap) };
+    grid_reader_cursor_left(&mut *gr, wrap);
     cursor(gr)
 }
 
 fn next_word(gr: &mut grid_reader<'_>, separators: &CStr) -> (u_int, u_int) {
-    unsafe { grid_reader_cursor_next_word(&mut *gr, separators.as_ptr()) };
+    grid_reader_cursor_next_word(&mut *gr, separators);
     cursor(gr)
 }
 
 fn next_word_end(gr: &mut grid_reader<'_>, separators: &CStr) -> (u_int, u_int) {
-    unsafe { grid_reader_cursor_next_word_end(&mut *gr, separators.as_ptr()) };
+    grid_reader_cursor_next_word_end(&mut *gr, separators);
     cursor(gr)
 }
 
@@ -120,9 +104,7 @@ fn previous_word(
     already: c_int,
     stop_at_eol: c_int,
 ) -> (u_int, u_int) {
-    unsafe {
-        grid_reader_cursor_previous_word(&mut *gr, separators.as_ptr(), already, stop_at_eol)
-    };
+    grid_reader_cursor_previous_word(&mut *gr, separators, already, stop_at_eol);
     cursor(gr)
 }
 
@@ -138,13 +120,13 @@ fn one(s: &str) -> utf8_data {
 
 fn jump(gr: &mut grid_reader<'_>, s: &str) -> (c_int, (u_int, u_int)) {
     let jc = one(s);
-    let found = unsafe { grid_reader_cursor_jump(&mut *gr, &jc) };
+    let found = grid_reader_cursor_jump(&mut *gr, &jc);
     (found, cursor(gr))
 }
 
 fn jump_back(gr: &mut grid_reader<'_>, s: &str) -> (c_int, (u_int, u_int)) {
     let jc = one(s);
-    let found = unsafe { grid_reader_cursor_jump_back(&mut *gr, &jc) };
+    let found = grid_reader_cursor_jump_back(&mut *gr, &jc);
     (found, cursor(gr))
 }
 
@@ -155,7 +137,7 @@ fn a_reader_starts_where_it_is_told_to() {
     let mut gr = g.reader(2, 1);
     assert!(::core::ptr::eq(gr.gd, &*g.0));
     assert_eq!(cursor(&gr), (2, 1));
-    assert_eq!(unsafe { grid_reader_line_length(&mut gr) }, 2);
+    assert_eq!(grid_reader_line_length(&mut gr), 2);
 }
 
 #[test]
@@ -248,7 +230,7 @@ fn the_cursor_moves_up_and_down_and_off_padding() {
     g.wide(2, 1);
     let mut gr = g.reader(3, 0);
     assert_eq!(
-        unsafe {
+        {
             grid_reader_cursor_down(&mut gr);
             cursor(&gr)
         },
@@ -256,17 +238,17 @@ fn the_cursor_moves_up_and_down_and_off_padding() {
         "the cursor came down onto padding and moved off it"
     );
     assert_eq!(
-        unsafe {
+        {
             grid_reader_cursor_up(&mut gr);
             cursor(&gr)
         },
         (2, 0)
     );
     let mut top = g.reader(0, 0);
-    unsafe { grid_reader_cursor_up(&mut top) };
+    grid_reader_cursor_up(&mut top);
     assert_eq!(cursor(&top), (0, 0));
     let mut bottom = g.reader(0, 1);
-    unsafe { grid_reader_cursor_down(&mut bottom) };
+    grid_reader_cursor_down(&mut bottom);
     assert_eq!(cursor(&bottom), (0, 1));
 }
 
@@ -276,7 +258,7 @@ fn the_cursor_comes_off_padding_when_it_moves_up() {
     let g = Grid::of(10, &["a", "abcd"]);
     g.wide(1, 0);
     let mut gr = g.reader(2, 1);
-    unsafe { grid_reader_cursor_up(&mut gr) };
+    grid_reader_cursor_up(&mut gr);
     assert_eq!(cursor(&gr), (1, 0));
 }
 
@@ -285,15 +267,15 @@ fn the_ends_of_a_wrapped_line_are_the_ends_of_the_whole_run() {
     let _guard = globals();
     let g = Grid::of(10, &["abc\\", "de\\", "fg", "hi"]);
     let mut gr = g.reader(1, 1);
-    unsafe { grid_reader_cursor_start_of_line(&mut gr, 1) };
+    grid_reader_cursor_start_of_line(&mut gr, 1);
     assert_eq!(cursor(&gr), (0, 0));
-    unsafe { grid_reader_cursor_end_of_line(&mut gr, 1, 0) };
+    grid_reader_cursor_end_of_line(&mut gr, 1, 0);
     assert_eq!(cursor(&gr), (2, 2));
 
     let mut plain = g.reader(1, 1);
-    unsafe { grid_reader_cursor_start_of_line(&mut plain, 0) };
+    grid_reader_cursor_start_of_line(&mut plain, 0);
     assert_eq!(cursor(&plain), (0, 1));
-    unsafe { grid_reader_cursor_end_of_line(&mut plain, 0, 1) };
+    grid_reader_cursor_end_of_line(&mut plain, 0, 1);
     assert_eq!(cursor(&plain), (10, 1), "all is the width of the grid");
 }
 
@@ -302,8 +284,8 @@ fn the_cell_under_the_cursor_can_be_looked_for_in_a_set() {
     let _guard = globals();
     let g = Grid::of(10, &["ab"]);
     let mut gr = g.reader(1, 0);
-    assert_eq!(unsafe { grid_reader_in_set(&mut gr, c"b".as_ptr()) }, 1);
-    assert_eq!(unsafe { grid_reader_in_set(&mut gr, c"a".as_ptr()) }, 0);
+    assert_eq!(grid_reader_in_set(&mut gr, c"b"), 1);
+    assert_eq!(grid_reader_in_set(&mut gr, c"a"), 0);
 }
 
 #[test]
@@ -569,15 +551,15 @@ fn the_cursor_goes_back_to_the_first_thing_on_the_line() {
     let _guard = globals();
     let g = Grid::of(10, &["   abc", "      ", "  de\\", "fg"]);
     let mut gr = g.reader(5, 0);
-    unsafe { grid_reader_cursor_back_to_indentation(&mut gr) };
+    grid_reader_cursor_back_to_indentation(&mut gr);
     assert_eq!(cursor(&gr), (3, 0));
 
     let mut blank = g.reader(4, 1);
-    unsafe { grid_reader_cursor_back_to_indentation(&mut blank) };
+    grid_reader_cursor_back_to_indentation(&mut blank);
     assert_eq!(cursor(&blank), (4, 1), "a blank line leaves it alone");
 
     let mut wrapped = g.reader(1, 3);
-    unsafe { grid_reader_cursor_back_to_indentation(&mut wrapped) };
+    grid_reader_cursor_back_to_indentation(&mut wrapped);
     assert_eq!(
         cursor(&wrapped),
         (2, 2),
@@ -590,7 +572,7 @@ fn indentation_can_run_onto_the_next_line_of_a_wrapped_run() {
     let _guard = globals();
     let g = Grid::of(4, &["   \\", "ab"]);
     let mut gr = g.reader(1, 1);
-    unsafe { grid_reader_cursor_back_to_indentation(&mut gr) };
+    grid_reader_cursor_back_to_indentation(&mut gr);
     assert_eq!(cursor(&gr), (0, 1));
 }
 
@@ -601,6 +583,6 @@ fn indentation_of_tabs_is_walked_over_too() {
     g.tab(0, 0, 4);
     g.write_after(4, 0, "ab");
     let mut gr = g.reader(5, 0);
-    unsafe { grid_reader_cursor_back_to_indentation(&mut gr) };
+    grid_reader_cursor_back_to_indentation(&mut gr);
     assert_eq!(cursor(&gr), (4, 0));
 }

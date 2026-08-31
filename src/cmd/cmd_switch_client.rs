@@ -1,4 +1,4 @@
-use crate::arguments::{args_get, args_has};
+use crate::arguments::{args_get, args_get_str, args_has};
 use crate::cmd::cmd_get_args;
 use crate::cmd::find::{cmd_find_from_session, cmd_find_target};
 use crate::cmd::queue::{
@@ -230,7 +230,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> 
             server_client_set_key_table(tc, tablename);
             return CMD_RETURN_NORMAL;
         }
-        sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
+        sort_crit.order = sort_order_from_string(args_get_str(args, 'O' as i32 as u_char));
         if sort_crit.order as ::core::ffi::c_uint
             == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
             && args_has(args, 'O' as i32 as u_char) != 0

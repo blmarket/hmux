@@ -12,7 +12,7 @@ use crate::format::{format_add, format_create_from_target, format_expand};
 use crate::log::log_debug;
 use crate::options::options_find_choice;
 use crate::options::options_get_ptr;
-use crate::options::{options_get_number, options_get_string, options_ptr, options_table_entry};
+use crate::options::{options_get_number, options_get_string, options_table_entry};
 use crate::overlay::menu_create;
 use crate::overlay::{menu_add_item, menu_display};
 use crate::overlay::{popup_display, popup_modify, popup_present};
@@ -147,8 +147,7 @@ pub const OPTIONS_TABLE_STRING: options_table_type = 0;
 pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
     .wrapping_mul(2 as ::core::ffi::c_uint)
     .wrapping_add(1 as ::core::ffi::c_uint);
-pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
-    unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };
+pub const _PATH_BSHELL: &CStr = c"/bin/sh";
 pub const CMD_AFTERHOOK: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const CMD_CLIENT_CFLAG: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const MENU_NOMOUSE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -256,8 +255,7 @@ unsafe fn cmd_display_menu_get_pos(
         let mut s: *mut session = (*tc).session;
         let mut wl: *mut winlink = (*target).winlink();
         let mut wp: *mut window_pane = (*target).pane();
-        let mut ranges: *mut style_ranges = ::core::ptr::null_mut::<style_ranges>();
-        let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
+        let mut start: Option<u_int> = None;
         let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut yp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut top: ::core::ffi::c_int = 0;
@@ -296,30 +294,26 @@ unsafe fn cmd_display_menu_get_pos(
             position = options_get_number(session_options(s), c"status-position".as_ptr()) as u_int;
             line = 0 as u_int;
             while line < lines {
-                ranges = &raw mut (*(&raw mut (*tc).status.entries as *mut style_line_entry)
-                    .offset(line as isize))
-                .ranges;
-                sr = ::core::ptr::null_mut::<style_range>();
-                for candidate in (*ranges).iter_mut() {
-                    if candidate.type_0 as ::core::ffi::c_uint
-                        == STYLE_RANGE_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
-                        && candidate.argument == (*wl).idx as u_int
-                    {
-                        sr = candidate as *mut style_range;
-                        break;
-                    }
-                }
-                if !sr.is_null() {
+                start = (*tc).status.entries[line as usize]
+                    .ranges
+                    .iter()
+                    .find(|candidate| {
+                        candidate.type_0 as ::core::ffi::c_uint
+                            == STYLE_RANGE_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
+                            && candidate.argument == (*wl).idx as u_int
+                    })
+                    .map(|candidate| candidate.start);
+                if start.is_some() {
                     break;
                 }
                 line = line.wrapping_add(1);
             }
-            if !sr.is_null() {
+            if let Some(start) = start {
                 format_add(
                     &mut ft,
                     c"popup_window_status_line_x",
                     c"%u".as_ptr(),
-                    fmt_args![(*sr).start],
+                    fmt_args![start],
                 );
                 if position == 0 as u_int {
                     format_add(
@@ -580,7 +574,7 @@ unsafe fn cmd_display_menu_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> c
         let mut i: u_int = 0;
         let mut count: u_int = args_count(args);
         let mut o: *mut options =
-            options_ptr(&(*(*session_get_curw((*target).session())).window()).options);
+            (*(*session_get_curw((*target).session())).window()).options_ptr();
         let mut oe: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
         if (*tc).overlay().is_some() {
             return CMD_RETURN_NORMAL;
@@ -674,8 +668,11 @@ unsafe fn cmd_display_menu_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> c
                         value = args_get(args, 'b' as i32 as u_char);
                         if !value.is_null() {
                             oe = options_get_ptr(o, c"menu-border-lines".as_ptr());
-                            lines = options_find_choice(options_table_entry(oe), value, &mut cause)
-                                as box_lines;
+                            lines = options_find_choice(
+                                options_table_entry(oe).unwrap(),
+                                ::core::ffi::CStr::from_ptr(value),
+                                &mut cause,
+                            ) as box_lines;
                             if let Some(cause) = cause.as_ref() {
                                 cmdq_error(
                                     item,
@@ -763,7 +760,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> 
         let mut h: u_int = 0;
         let mut count: u_int = args_count(args);
         let mut env: Option<Box<environ_t>> = None;
-        let mut o: *mut options = options_ptr(&(*(*session_get_curw(s)).window()).options);
+        let mut o: *mut options = (*(*session_get_curw(s)).window()).options_ptr();
         let mut oe: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
         if args_has(args, 'C' as i32 as u_char) != 0 {
             server_client_clear_overlay(tc);
@@ -872,7 +869,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> 
                                     for av in args_value_list(args, 'e' as i32 as u_char) {
                                         environ_put(
                                             &mut *e,
-                                            (*av).value.string(),
+                                            (*av).value.string().as_ptr(),
                                             0 as ::core::ffi::c_int,
                                         );
                                     }
@@ -894,8 +891,11 @@ unsafe fn cmd_display_popup_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> 
                 current_block = 12556861819962772176;
             } else if !value.is_null() {
                 oe = options_get_ptr(o, c"popup-border-lines".as_ptr());
-                lines =
-                    options_find_choice(options_table_entry(oe), value, &mut cause) as box_lines;
+                lines = options_find_choice(
+                    options_table_entry(oe).unwrap(),
+                    ::core::ffi::CStr::from_ptr(value),
+                    &mut cause,
+                ) as box_lines;
                 if let Some(cause) = cause.as_ref() {
                     cmdq_error(
                         item,

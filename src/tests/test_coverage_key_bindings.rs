@@ -23,7 +23,7 @@ use crate::key_bindings::{
 };
 use crate::options::options_set_string;
 use crate::server::server_client_set_key_table;
-use crate::tests::test_fixtures::{Clients, Session, globals, seen};
+use crate::tests::test_fixtures::{Clients, Session, globals};
 use crate::types::*;
 use ::core::ffi::{CStr, c_int};
 use ::core::ptr::{null, null_mut};
@@ -112,7 +112,7 @@ unsafe fn table_names() -> Vec<String> {
         let mut names = Vec::new();
         let mut table = key_bindings_first_table();
         while !table.is_null() {
-            names.push(seen(key_table_name(table)));
+            names.push(key_table_name(table).to_string_lossy().into_owned());
             table = key_bindings_next_table(table);
         }
         names
@@ -128,7 +128,7 @@ fn key_bindings_get_table_looks_up_without_and_with_creation() {
         assert!(key_bindings_get_table(name.as_ptr(), 0).is_null());
 
         let table = ts.take(name);
-        assert_eq!(seen(key_table_name(table)), "kb-get-table");
+        assert_eq!(key_table_name(table), c"kb-get-table");
         assert!(key_table_is_empty(table));
         assert!(!key_table_has_defaults(table));
 
@@ -159,7 +159,7 @@ fn key_bindings_add_stores_a_parsed_command_list_and_replaces_it() {
         let bd = key_bindings_get(table, b'a' as key_code);
         assert!(!bd.is_null());
         assert_eq!(key_binding_key(bd), b'a' as key_code);
-        assert_eq!(seen(key_binding_tablename(bd)), "kb-add");
+        assert_eq!(key_binding_tablename(bd), Some(c"kb-add"));
         assert_eq!(key_binding_note(bd), Some(c"first note"));
         assert_eq!(key_binding_flags(bd), 0);
         assert_eq!(key_binding_cmdlist_ref(bd), first);
@@ -499,7 +499,7 @@ fn key_bindings_remove_table_rebinds_attached_clients() {
 
         let name = c"kb-detach";
         let table = ts.take(name);
-        server_client_set_key_table(c, key_table_name(table));
+        server_client_set_key_table(c, key_table_name(table).as_ptr());
         assert_eq!((*c).keytable(), table);
 
         key_bindings_remove_table(name.as_ptr());
@@ -585,14 +585,14 @@ fn key_bindings_has_repeat_scans_only_the_given_bindings() {
         let ba = key_bindings_get(table, b'a' as key_code);
         let bb = key_bindings_get(table, b'b' as key_code);
 
-        let mut plains = [ba, ba];
-        assert_eq!(key_bindings_has_repeat(plains.as_mut_ptr(), 0), 0);
-        assert_eq!(key_bindings_has_repeat(plains.as_mut_ptr(), 1), 0);
+        let plains = [ba, ba];
+        assert_eq!(key_bindings_has_repeat(&plains[..0]), 0);
+        assert_eq!(key_bindings_has_repeat(&plains[..1]), 0);
 
-        let mut leading = [bb, ba];
-        assert_eq!(key_bindings_has_repeat(leading.as_mut_ptr(), 1), 1);
-        let mut trailing = [ba, bb];
-        assert_eq!(key_bindings_has_repeat(trailing.as_mut_ptr(), 1), 0);
-        assert_eq!(key_bindings_has_repeat(trailing.as_mut_ptr(), 2), 1);
+        let leading = [bb, ba];
+        assert_eq!(key_bindings_has_repeat(&leading[..1]), 1);
+        let trailing = [ba, bb];
+        assert_eq!(key_bindings_has_repeat(&trailing[..1]), 0);
+        assert_eq!(key_bindings_has_repeat(&trailing[..2]), 1);
     }
 }

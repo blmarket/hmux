@@ -151,17 +151,15 @@ unsafe fn cmd_display_message_input(wp: *mut window_pane, item: *mut cmdq_item) 
 /// The accepted range is a `long long` up to `UINT_MAX`, and the answer is an
 /// `int`, so the top half of that range wraps negative exactly as upstream's
 /// does.
-unsafe fn cmd_display_message_delay(args: &args) -> Result<c_int, ::std::ffi::CString> {
-    unsafe {
-        if args_has(args, b'd') == 0 {
-            return Ok(-1);
-        }
-        let mut cause = None;
-        let delay = args_strtonum(args, b'd', 0, UINT_MAX as c_longlong, &mut cause);
-        match cause {
-            None => Ok(delay as c_int),
-            Some(cause) => Err(cause),
-        }
+fn cmd_display_message_delay(args: &args) -> Result<c_int, ::std::ffi::CString> {
+    if args_has(args, b'd') == 0 {
+        return Ok(-1);
+    }
+    let mut cause = None;
+    let delay = args_strtonum(args, b'd', 0, UINT_MAX as c_longlong, &mut cause);
+    match cause {
+        None => Ok(delay as c_int),
+        Some(cause) => Err(cause),
     }
 }
 

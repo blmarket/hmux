@@ -3,7 +3,7 @@ use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_target};
 use crate::fmt_args;
 use crate::format::format_single_from_target;
-use crate::options::{options_ptr, options_set_number};
+use crate::options::options_set_number;
 use crate::server::{server_redraw_window_borders, server_status_window};
 use crate::tmux::check_name;
 pub use crate::types::*;
@@ -158,7 +158,7 @@ unsafe fn cmd_rename_window_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> 
         }
         window_set_name((*wl).window(), name.as_ptr(), 0 as ::core::ffi::c_int);
         options_set_number(
-            options_ptr(&(*(*wl).window()).options),
+            (*(*wl).window()).options_ptr(),
             c"automatic-rename".as_ptr(),
             0 as ::core::ffi::c_longlong,
         );

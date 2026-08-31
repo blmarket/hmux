@@ -96,12 +96,11 @@ use crate::key_bindings::{
     key_binding_cmdlist_ref, key_binding_note, key_bindings_add, key_bindings_get_table,
     key_bindings_remove,
 };
-use crate::layout::layout_root_ptr;
 use crate::options::{
     OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
     options_table,
 };
-use crate::options::{options_create_boxed, options_default, options_free, options_ptr};
+use crate::options::{options_create_boxed, options_default, options_free};
 use crate::paste::{paste_free, paste_get_name, paste_set, paste_walk};
 use crate::reactor;
 use crate::reactor::{IoWatch, Reactor, Timer};
@@ -115,25 +114,34 @@ use ::std::ffi::CString;
 use ::std::sync::MutexGuard;
 
 /// The globals `main` sets up that the modules' tests need — the environment,
-/// the three option trees and the socket path the format engine reports —
-/// together with a turn at the rest of the process-wide state the server keeps
-/// in statics (the option trees themselves, the command parser's own globals,
-/// the notification queue and the UTF-8 trees and width cache). Cargo runs the
-/// tests on parallel threads, so every test that reaches any of it holds the
-/// guard this returns.
-pub(crate) fn globals() -> MutexGuard<'static, ()> {
-    static GLOBALS: ::std::sync::Mutex<()> = ::std::sync::Mutex::new(());
+/// the three option trees and the socket path the format engine reports.
+///
+/// This is one-time setup, not exclusion. A test that only *reads* what the
+/// server built at startup wants this and nothing more, and two such tests
+/// have no reason to wait for each other.
+pub(crate) fn globals_ready() {
     static SETUP: ::std::sync::Once = ::std::sync::Once::new();
-    let guard = GLOBALS
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
     SETUP.call_once(|| unsafe {
         crate::tmux::global_options_create();
         defaults(crate::tmux::global_options, OPTIONS_TABLE_SERVER);
         defaults(crate::tmux::global_s_options, OPTIONS_TABLE_SESSION);
         defaults(crate::tmux::global_w_options, OPTIONS_TABLE_WINDOW);
-        crate::tmux::socket_path = c"/tmp/tmux-fixture/default".as_ptr();
+        crate::tmux::socket_path = Some(c"/tmp/tmux-fixture/default".to_owned());
     });
+}
+
+/// [`globals_ready`], plus a turn at the process-wide state the server keeps
+/// in statics that a test goes on to *change*: the session, window and pane
+/// trees, the option trees, the command parser's own globals, the
+/// notification queue, and the UTF-8 trees and width cache. Cargo runs the
+/// tests on parallel threads, so a test that mutates any of that holds the
+/// guard this returns for as long as it is looking.
+pub(crate) fn globals() -> MutexGuard<'static, ()> {
+    static GLOBALS: ::std::sync::Mutex<()> = ::std::sync::Mutex::new(());
+    let guard = GLOBALS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    globals_ready();
     guard
 }
 
@@ -799,7 +807,7 @@ impl Window {
     }
 
     pub(crate) fn options(&self) -> *mut options {
-        unsafe { options_ptr(&(*self.window.as_ptr()).options) }
+        unsafe { (*self.window.as_ptr()).options_ptr() }
     }
 
     /// Puts `pane` at the end of the window's pane list and makes it active if
@@ -926,7 +934,7 @@ impl Pane {
     }
 
     pub(crate) fn options(&self) -> *mut options {
-        unsafe { options_ptr(&(*self.ptr).options) }
+        unsafe { (*self.ptr).options_ptr() }
     }
 }
 
@@ -992,7 +1000,7 @@ impl Layout {
     /// The tree as one line: each node is its type, size and offset, with its
     /// children in brackets.
     pub(crate) fn dump(&mut self) -> String {
-        unsafe { dump_cell(layout_root_ptr(&(*self.w()).layout_root)) }
+        unsafe { dump_cell((*self.w()).layout_root_ptr()) }
     }
 
     /// The sizes and offsets the panes themselves were given.
@@ -1265,7 +1273,7 @@ pub(crate) struct Registry;
 impl Registry {
     pub(crate) fn new() -> Registry {
         assert!(
-            crate::session::sessions.map().is_empty(),
+            crate::session::sessions_empty(),
             "the session tree is not empty"
         );
         assert!(
@@ -1281,13 +1289,7 @@ impl Registry {
 
     /// Puts `s` in the session tree, which is keyed by name.
     pub(crate) fn add_session(&mut self, s: &mut Session) {
-        let p = s.ptr();
-        unsafe {
-            let name = ::core::ffi::CStr::from_ptr(session_name(p)).to_owned();
-            crate::session::sessions
-                .map()
-                .insert(name, s.session.clone());
-        };
+        crate::session::session_registry_insert(&s.session);
     }
 
     /// Puts `w` in the window tree, which is keyed by id.
@@ -1717,10 +1719,10 @@ mod tests {
                 fmt_args![c"bar".as_ptr()],
             );
             assert_eq!(
-                seen(environ_entry_value(
+                environ_entry_value(
                     environ_find(&*env.ptr(), c"FOO".as_ptr()).expect("the entry just set"),
-                )),
-                "bar"
+                ),
+                Some(c"bar")
             );
         }
     }
@@ -1790,9 +1792,9 @@ mod tests {
             assert_eq!(first.screen(), &raw mut (*first.ptr()).base);
             assert!((*first.screen()).grid.is_some());
             assert_eq!((*first.ptr()).fd, -1);
-            assert_eq!(options_ptr(&(*first.ptr()).options), first.options());
+            assert_eq!((*first.ptr()).options_ptr(), first.options());
             assert_eq!(seen(cstr_ptr(&(*w.ptr()).name)), "fixture");
-            assert_eq!(options_ptr(&(*w.ptr()).options), w.options());
+            assert_eq!((*w.ptr()).options_ptr(), w.options());
         }
     }
 
@@ -1807,9 +1809,7 @@ mod tests {
         assert_eq!(l.count(), 2);
         assert_eq!(unsafe { (*l.pane(1)).id }, 2);
         assert_eq!(unsafe { (*l.w()).sx }, 80);
-        assert_eq!(l.window().options(), unsafe {
-            options_ptr(&(*l.w()).options)
-        });
+        assert_eq!(l.window().options(), unsafe { (*l.w()).options_ptr() });
     }
 
     #[test]
@@ -1901,7 +1901,7 @@ mod tests {
         let _guard = globals();
         {
             let store = Paste::new();
-            assert!(unsafe { crate::paste::paste_get_top(null_mut()) }.is_null());
+            assert!(unsafe { crate::paste::paste_get_top(None) }.is_null());
             let pb = store.add(c"fixture", "hello");
             assert!(!pb.is_null());
             unsafe {
@@ -1909,7 +1909,7 @@ mod tests {
                 assert_eq!(crate::paste::paste_get_name(c"fixture".as_ptr()), pb);
             }
         }
-        assert!(unsafe { crate::paste::paste_get_top(null_mut()) }.is_null());
+        assert!(unsafe { crate::paste::paste_get_top(None) }.is_null());
     }
 
     #[test]

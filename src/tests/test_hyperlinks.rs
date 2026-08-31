@@ -1,7 +1,5 @@
 use super::*;
 use crate::tests::test_fixtures::{globals, seen};
-use ::core::ffi::c_char;
-use ::core::ptr::null;
 use ::std::ffi::CString;
 use ::std::sync::{Mutex, MutexGuard};
 
@@ -39,13 +37,7 @@ impl Links {
     fn put(&self, uri: &str, id: Option<&str>) -> u_int {
         let uri = CString::new(uri).expect("no NUL");
         let id = id.map(|s| CString::new(s).expect("no NUL"));
-        unsafe {
-            hyperlinks_put(
-                &self.0,
-                uri.as_ptr(),
-                id.as_ref().map_or(null::<c_char>(), |s| s.as_ptr()),
-            )
-        }
+        unsafe { hyperlinks_put(&self.0, &uri, id.as_deref()) }
     }
 
     /// The URI, internal id and external id stored under `inner`.
@@ -258,24 +250,22 @@ fn reaching_the_limit_drops_the_oldest_link_of_any_set() {
 
 #[test]
 fn the_keys_order_by_id_then_uri_and_anonymous_links_by_inner() {
-    unsafe {
-        let named = |id: &CStr, uri: &CStr| hyperlinks_uri_key::new(id.as_ptr(), uri.as_ptr(), 0);
-        let anonymous = |inner| hyperlinks_uri_key::new(c"".as_ptr(), c"http://x".as_ptr(), inner);
+    let named = |id: &CStr, uri: &CStr| hyperlinks_uri_key::new(id, uri, 0);
+    let anonymous = |inner| hyperlinks_uri_key::new(c"", c"http://x", inner);
 
-        let a = named(c"id1", c"http://a");
-        let b = named(c"id1", c"http://b");
-        assert!(a < b);
-        assert!(b > a);
-        assert_eq!(a, a.clone());
+    let a = named(c"id1", c"http://a");
+    let b = named(c"id1", c"http://b");
+    assert!(a < b);
+    assert!(b > a);
+    assert_eq!(a, a.clone());
 
-        assert!(a < named(c"id2", c"http://a"));
+    assert!(a < named(c"id2", c"http://a"));
 
-        assert!(a < anonymous(0));
-        assert!(anonymous(0) > a);
+    assert!(a < anonymous(0));
+    assert!(anonymous(0) > a);
 
-        assert!(anonymous(3) < anonymous(7));
-        assert_eq!(anonymous(3), anonymous(3));
-    }
+    assert!(anonymous(3) < anonymous(7));
+    assert_eq!(anonymous(3), anonymous(3));
 }
 
 #[test]
@@ -302,7 +292,7 @@ fn both_trees_stay_sorted_as_links_come_and_go() {
                 let i = (next() as usize) % live.len();
                 let (_, inner) = live.remove(i);
                 assert!((*hl.ptr()).by_inner.contains_key(&inner), "round {round}");
-                hyperlinks_remove(hl.ptr(), inner);
+                hyperlinks_remove(&mut *hl.ptr(), inner);
             }
 
             assert_eq!(hl.len(), live.len(), "round {round}");

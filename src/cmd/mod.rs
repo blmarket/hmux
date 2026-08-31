@@ -632,11 +632,11 @@ pub unsafe fn cmd_get_alias(name: *const c_char) -> Option<CString> {
         let mut a = options_array_first(o);
         while !a.is_null() {
             let string = (*options_array_item_value(a)).string();
-            let value = CStr::from_ptr(string).to_bytes();
+            let value = string.to_bytes();
             if let Some(n) = value.iter().position(|&byte| byte == b'=')
                 && &value[..n] == wanted
             {
-                return Some(CStr::from_ptr(string.add(n + 1)).to_owned());
+                return Some(CStr::from_ptr(string.as_ptr().add(n + 1)).to_owned());
             }
             a = options_array_next(o, a);
         }
@@ -704,7 +704,7 @@ pub unsafe fn cmd_find(name: *const c_char, cause: &mut Option<CString>) -> *con
 pub unsafe fn cmd_parse(
     values: *mut args_value_t,
     count: u_int,
-    file: *const c_char,
+    file: Option<&CStr>,
     line: u_int,
     parse_flags: c_int,
 ) -> Result<Box<cmd>, CString> {
@@ -713,7 +713,7 @@ pub unsafe fn cmd_parse(
             return Err(xasprintf(c"no command".as_ptr(), fmt_args![]));
         }
         let mut cause: Option<CString> = None;
-        let entry = cmd_find((*values).value.string(), &mut cause);
+        let entry = cmd_find((*values).value.string().as_ptr(), &mut cause);
         if entry.is_null() {
             return Err(cause.expect("cmd_find gives a cause when it finds nothing"));
         }
@@ -734,11 +734,7 @@ pub unsafe fn cmd_parse(
             entry: &*entry,
             args: Some(args),
             group: 0,
-            file: if !file.is_null() {
-                Some(CStr::from_ptr(file).to_owned())
-            } else {
-                None
-            },
+            file: file.map(CStr::to_owned),
             line,
             parse_flags,
         }))
@@ -962,55 +958,53 @@ pub unsafe fn cmd_mouse_at(
     }
 }
 
-pub unsafe fn cmd_mouse_window(m: *mut mouse_event, sp: *mut *mut session) -> *mut winlink {
+/// The session a mouse event names, paired with the window link it points at.
+/// The link is null when the session has no such window.
+pub unsafe fn cmd_mouse_window(m: *mut mouse_event) -> Option<(*mut session, *mut winlink)> {
     unsafe {
         let m = &*m;
         if m.valid == 0 || m.s == -1 {
-            return null_mut::<winlink>();
+            return None;
         }
         let s = session_find_by_id(m.s as u_int);
         if s.is_null() {
-            return null_mut::<winlink>();
+            return None;
         }
         let wl = if m.w == -1 {
             session_get_curw(s)
         } else {
             let w = window_find_by_id(m.w as u_int);
             if w.is_null() {
-                return null_mut::<winlink>();
+                return None;
             }
             winlink_find_by_window(&raw mut (*s).windows, w)
         };
-        if !sp.is_null() {
-            *sp = s;
-        }
-        wl
+        Some((s, wl))
     }
 }
 
+/// The pane a mouse event names, with the session and window link it sits in.
 pub unsafe fn cmd_mouse_pane(
     m: *mut mouse_event,
-    sp: *mut *mut session,
-    wlp: *mut *mut winlink,
-) -> *mut window_pane {
+) -> Option<(*mut session, *mut winlink, *mut window_pane)> {
     unsafe {
-        let wl = cmd_mouse_window(m, sp);
+        let (s, wl) = cmd_mouse_window(m)?;
         if wl.is_null() {
-            return null_mut::<window_pane>();
+            return None;
         }
         let wp = if (*m).wp == -1 {
             window_get_active((*wl).window())
         } else {
             let wp = window_pane_find_by_id((*m).wp as u_int);
             if wp.is_null() || window_has_pane((*wl).window(), wp) == 0 {
-                return null_mut::<window_pane>();
+                return None;
             }
             wp
         };
-        if !wlp.is_null() {
-            *wlp = wl;
+        if wp.is_null() {
+            return None;
         }
-        wp
+        Some((s, wl, wp))
     }
 }
 

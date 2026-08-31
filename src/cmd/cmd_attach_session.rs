@@ -46,7 +46,7 @@ use crate::server::{
     server_client_set_key_table, server_client_set_session,
 };
 use crate::session::{
-    session_environ, session_options, session_set_current, session_set_cwd, sessions,
+    session_environ, session_options, session_set_current, session_set_cwd, sessions_empty,
 };
 pub use crate::types::*;
 use crate::window::window_set_active_pane;
@@ -132,7 +132,7 @@ pub unsafe fn cmd_attach_session(
     fflag: *const c_char,
 ) -> cmd_retval {
     unsafe {
-        if sessions.map().is_empty() {
+        if sessions_empty() {
             cmdq_error(item, c"no sessions".as_ptr(), fmt_args![]);
             return CMD_RETURN_ERROR;
         }

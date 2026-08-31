@@ -114,7 +114,7 @@ pub unsafe fn imsgbuf_init(imsgbuf: &mut imsgbuf, fd: c_int) -> c_int {
     }
 }
 
-pub unsafe fn imsgbuf_allow_fdpass(imsgbuf: &mut imsgbuf) {
+pub fn imsgbuf_allow_fdpass(imsgbuf: &mut imsgbuf) {
     imsgbuf.flags |= IMSG_ALLOW_FDPASS;
 }
 
@@ -170,7 +170,7 @@ pub unsafe fn imsgbuf_flush(imsgbuf: &mut imsgbuf) -> c_int {
     }
 }
 
-pub unsafe fn imsgbuf_clear(imsgbuf: &mut imsgbuf) {
+pub fn imsgbuf_clear(imsgbuf: &mut imsgbuf) {
     let _ = imsgbuf.w.take();
 }
 
@@ -325,7 +325,7 @@ pub unsafe fn imsg_composev(
 
 /// The header a message about to be sent carries. A message with no process
 /// of its own is sent as this one's.
-unsafe fn imsg_make_hdr(
+fn imsg_make_hdr(
     imsgbuf: &mut imsgbuf,
     type_0: uint32_t,
     id: uint32_t,

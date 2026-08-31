@@ -242,7 +242,7 @@ fn osdep_linux_pty_probe_is_documented() {
     unsafe {
         // tcgetpgrp on the slave may be -1 (no foreground pg) — we just
         // want the osdep helper to be exercised one way or the other.
-        let _ = crate::osdep_linux::osdep_get_name(slave, null_mut());
+        let _ = crate::osdep_linux::osdep_get_name(slave);
         let cwd = crate::osdep_linux::osdep_get_cwd(slave);
         // cwd may be None (no session) — just ensure no crash.
         if let Some(cwd) = cwd {

@@ -9,6 +9,8 @@ const UNKNOWN: key_code = KEYC_UNKNOWN as key_code;
 static OUT: Mutex<()> = Mutex::new(());
 
 fn lookup(string: &CStr) -> key_code {
+    // A character of more than three bytes is interned into the process-wide
+    // UTF-8 table, so this changes shared state and takes the guard.
     let _globals = crate::tests::test_fixtures::globals();
     unsafe { key_string_lookup_string(string.as_ptr()) }
 }
@@ -95,7 +97,17 @@ fn a_lone_printable_character_is_its_own_key() {
 fn a_utf8_character_becomes_a_wide_key() {
     assert_eq!(lookup(c"\xc3\xa9"), 0x4200a9c3);
     assert_eq!(lookup(c"\xe2\x82\xac"), 0x43ac82e2);
-    assert_eq!(lookup(c"\xf0\x9f\x98\x80"), 0x64000000);
+    // A character of more than three bytes does not fit in the key, so it is
+    // interned and the key carries the index it was given. That index counts
+    // up across the process, so what is fixed here is everything above it:
+    // the four-byte size and the two-column width.
+    let interned = lookup(c"\xf0\x9f\x98\x80");
+    assert_eq!(interned & !0x00ff_ffff, 0x6400_0000, "size and width bits");
+    assert_eq!(
+        lookup(c"\xf0\x9f\x98\x80"),
+        interned,
+        "the same character interns to the same key"
+    );
     assert_eq!(lookup(c"\xc3"), UNKNOWN);
     assert_eq!(lookup(c"\xc3\x41"), UNKNOWN);
     assert_eq!(lookup(c"M-\xc3\xa9"), 0x4200a9c3 | KEYC_META);

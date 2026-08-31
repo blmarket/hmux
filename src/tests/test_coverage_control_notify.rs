@@ -435,10 +435,10 @@ fn paste_buffer_lines_carry_the_buffer_name() {
     let ctrl = list.add("ctrl", 80, 24);
     let out = ControlOut::new(ctrl);
     unsafe {
-        control_notify_paste_buffer_changed(c"buf-one".as_ptr());
+        control_notify_paste_buffer_changed(Some(c"buf-one"));
         assert_eq!(out.written(), b"%paste-buffer-changed buf-one\n");
 
-        control_notify_paste_buffer_deleted(c"buf-two".as_ptr());
+        control_notify_paste_buffer_deleted(Some(c"buf-two"));
         assert_eq!(out.written(), b"%paste-buffer-deleted buf-two\n");
     }
 }

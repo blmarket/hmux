@@ -25,7 +25,7 @@ use crate::proc::proc_fork_and_daemon;
 use crate::proc::{proc_clear_signals, proc_loop, proc_set_signals, proc_start, proc_toggle_log};
 use crate::reactor;
 use crate::reactor::{Interest, IoWatch, Reactor, Timer, WatchMode};
-use crate::session::{session_attached, session_destroy, sessions, sessions_after, sessions_first};
+use crate::session::{session_attached, session_destroy, session_owners, sessions_empty};
 use crate::status::status_prompt_save_history;
 use crate::text::utf8_update_width_cache;
 use crate::tmux::{get_timer, setblocking};
@@ -296,7 +296,9 @@ pub unsafe fn server_create_socket(
         sa.sun_family = AF_UNIX as sa_family_t;
         size = strlcpy(
             &raw mut sa.sun_path as *mut ::core::ffi::c_char,
-            socket_path,
+            socket_path
+                .as_deref()
+                .map_or(::core::ptr::null(), CStr::as_ptr),
             ::core::mem::size_of::<[::core::ffi::c_char; 108]>() as size_t,
         ) as size_t;
         if size >= ::core::mem::size_of::<[::core::ffi::c_char; 108]>() as usize {
@@ -342,7 +344,7 @@ pub unsafe fn server_create_socket(
         }
         *cause = Some(xasprintf(
             c"error creating %s (%s)".as_ptr(),
-            fmt_args![socket_path, strerror(*__errno_location())],
+            fmt_args![socket_path.as_deref(), strerror(*__errno_location())],
         ));
         -(1 as ::core::ffi::c_int)
     }
@@ -478,8 +480,7 @@ fn server_loop() -> ::core::ffi::c_int {
         if options_get_number(global_options, c"exit-empty".as_ptr()) == 0 && server_exit == 0 {
             return 0 as ::core::ffi::c_int;
         }
-        if options_get_number(global_options, c"exit-unattached".as_ptr()) == 0
-            && !sessions.map().is_empty()
+        if options_get_number(global_options, c"exit-unattached".as_ptr()) == 0 && !sessions_empty()
         {
             return 0 as ::core::ffi::c_int;
         }
@@ -500,8 +501,6 @@ fn server_loop() -> ::core::ffi::c_int {
 }
 fn server_send_exit() {
     unsafe {
-        let mut s: *mut session = ::core::ptr::null_mut::<session>();
-        let mut s1: *mut session = ::core::ptr::null_mut::<session>();
         cmd_wait_for_flush();
         for c in client_walk_safe() {
             if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {
@@ -512,35 +511,31 @@ fn server_send_exit() {
             }
             (*c).session = ::core::ptr::null_mut::<session>();
         }
-        s = sessions_first();
-        while !s.is_null() && {
-            s1 = sessions_after(s);
-            1 as ::core::ffi::c_int != 0
-        } {
-            session_destroy(s, 1 as ::core::ffi::c_int, c"server_send_exit".as_ptr());
-            s = s1;
+        for s in session_owners() {
+            session_destroy(
+                s.as_ptr(),
+                1 as ::core::ffi::c_int,
+                c"server_send_exit".as_ptr(),
+            );
         }
     }
 }
 pub fn server_update_socket() {
     unsafe {
-        let mut s: *mut session = ::core::ptr::null_mut::<session>();
         static mut last: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-        let mut n: ::core::ffi::c_int = 0;
         let mut mode: ::core::ffi::c_int = 0;
-        n = 0 as ::core::ffi::c_int;
-        s = sessions_first();
-        while !s.is_null() {
-            if session_attached(s) != 0 as u_int {
-                n += 1;
-                break;
-            } else {
-                s = sessions_after(s);
-            }
-        }
+        let n = session_owners()
+            .iter()
+            .any(|s| session_attached(s.as_ptr()) != 0 as u_int)
+            as ::core::ffi::c_int;
         if n != last {
             last = n;
-            let path = OsStr::from_bytes(CStr::from_ptr(socket_path).to_bytes());
+            let Some(path) = socket_path
+                .as_deref()
+                .map(|path| OsStr::from_bytes(path.to_bytes()))
+            else {
+                return;
+            };
             let Ok(metadata) = fs::metadata(path) else {
                 return;
             };

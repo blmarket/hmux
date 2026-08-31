@@ -8,7 +8,7 @@ use crate::format::format_single;
 use crate::grid::grid_default_cell;
 use crate::layout::layout_close_pane;
 use crate::notify::{notify_pane, notify_session_window};
-use crate::options::{options_get_number, options_get_string, options_ptr};
+use crate::options::{options_get_number, options_get_string};
 use crate::proc::{peer_ptr, proc_send};
 use crate::resize::recalculate_sizes;
 use crate::screen::screen_grid_ptr;
@@ -19,8 +19,8 @@ use crate::screen::{
 use crate::session::{group_walk, session_activity_time, session_attached, session_options};
 use crate::session::{
     session_attach, session_destroy, session_detach, session_group_contains, session_group_count,
-    session_has, session_next_session, session_previous_session, session_renumber_windows,
-    session_select, sessions_after, sessions_first,
+    session_has, session_next_session, session_owners, session_previous_session,
+    session_renumber_windows, session_select,
 };
 use crate::session::{session_get_curw, session_set_curw};
 use crate::terminfo::{tty_term_of, tty_term_string};
@@ -482,13 +482,11 @@ pub unsafe fn server_redraw_window_borders(mut w: *mut window) {
 }
 pub unsafe fn server_status_window(mut w: *mut window) {
     unsafe {
-        let mut s: *mut session = ::core::ptr::null_mut::<session>();
-        s = sessions_first();
-        while !s.is_null() {
+        for s_ref in session_owners() {
+            let s = s_ref.as_ptr();
             if session_has(s, w) != 0 {
                 server_status_session(s);
             }
-            s = sessions_after(s);
         }
     }
 }
@@ -566,14 +564,9 @@ pub unsafe fn server_kill_pane(mut wp: *mut window_pane) {
 }
 pub unsafe fn server_kill_window(mut w: *mut window, mut renumber: ::core::ffi::c_int) {
     unsafe {
-        let mut s: *mut session = ::core::ptr::null_mut::<session>();
-        let mut s1: *mut session = ::core::ptr::null_mut::<session>();
         let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-        s = sessions_first();
-        while !s.is_null() && {
-            s1 = sessions_after(s);
-            1 as ::core::ffi::c_int != 0
-        } {
+        for s_ref in session_owners() {
+            let s = s_ref.as_ptr();
             if !(session_has(s, w) == 0) {
                 server_unzoom_window(w);
                 loop {
@@ -592,7 +585,6 @@ pub unsafe fn server_kill_window(mut w: *mut window, mut renumber: ::core::ffi::
                     server_renumber_session(s);
                 }
             }
-            s = s1;
         }
         recalculate_sizes();
     }
@@ -614,11 +606,8 @@ pub unsafe fn server_renumber_session(mut s: *mut session) {
 }
 pub fn server_renumber_all() {
     unsafe {
-        let mut s: *mut session = ::core::ptr::null_mut::<session>();
-        s = sessions_first();
-        while !s.is_null() {
-            server_renumber_session(s);
-            s = sessions_after(s);
+        for s in session_owners() {
+            server_renumber_session(s.as_ptr());
         }
     }
 }
@@ -706,7 +695,7 @@ pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::
             close((*wp).fd);
             (*wp).fd = -(1 as ::core::ffi::c_int);
         }
-        remain_on_exit = options_get_number(options_ptr(&(*wp).options), c"remain-on-exit".as_ptr())
+        remain_on_exit = options_get_number((*wp).options_ptr(), c"remain-on-exit".as_ptr())
             as ::core::ffi::c_int;
         if remain_on_exit != 0 as ::core::ffi::c_int && !(*wp).flags & PANE_STATUSREADY != 0 {
             return;
@@ -741,10 +730,7 @@ pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::
                 if notify != 0 {
                     notify_pane(c"pane-died".as_ptr(), wp);
                 }
-                s = options_get_string(
-                    options_ptr(&(*wp).options),
-                    c"remain-on-exit-format".as_ptr(),
-                );
+                s = options_get_string((*wp).options_ptr(), c"remain-on-exit-format".as_ptr());
                 if *s as ::core::ffi::c_int != '\0' as i32 {
                     screen_write_start_pane(&mut ctx, wp, &raw mut (*wp).base);
                     screen_write_scrollregion(&mut ctx, 0 as u_int, sy.wrapping_sub(1 as u_int));
@@ -821,14 +807,12 @@ unsafe fn server_find_session(
     mut f: Option<unsafe fn(*mut session, *mut session) -> ::core::ffi::c_int>,
 ) -> *mut session {
     unsafe {
-        let mut s_loop: *mut session = ::core::ptr::null_mut::<session>();
         let mut s_out: *mut session = ::core::ptr::null_mut::<session>();
-        s_loop = sessions_first();
-        while !s_loop.is_null() {
+        for s_ref in session_owners() {
+            let s_loop = s_ref.as_ptr();
             if s_loop != s && f.expect("non-null function pointer")(s_loop, s_out) != 0 {
                 s_out = s_loop;
             }
-            s_loop = sessions_after(s_loop);
         }
         s_out
     }
@@ -866,12 +850,9 @@ pub unsafe fn server_destroy_session(mut s: *mut session) {
         let mut s_new: *mut session = ::core::ptr::null_mut::<session>();
         let mut cs_new: *mut session = ::core::ptr::null_mut::<session>();
         let mut use_s: *mut session = ::core::ptr::null_mut::<session>();
-        let mut sort_crit: sort_criteria_t = {
-            sort_criteria_t {
-                order: SORT_NAME,
-                reversed: 0 as ::core::ffi::c_int,
-                order_seq: None,
-            }
+        let mut sort_crit = sort_criteria_t {
+            order: SORT_NAME,
+            ..Default::default()
         };
         let mut detach_on_destroy: ::core::ffi::c_int = 0;
         detach_on_destroy = options_get_number(session_options(s), c"detach-on-destroy".as_ptr())
@@ -915,11 +896,10 @@ pub unsafe fn server_destroy_session(mut s: *mut session) {
 }
 pub fn server_check_unattached() {
     unsafe {
-        let mut s: *mut session = ::core::ptr::null_mut::<session>();
         let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
         let mut current_block_3: u64;
-        s = sessions_first();
-        while !s.is_null() {
+        for s_ref in session_owners() {
+            let s = s_ref.as_ptr();
             if !(session_attached(s) != 0 as u_int) {
                 match options_get_number(session_options(s), c"destroy-unattached".as_ptr()) {
                     0 => {}
@@ -1024,7 +1004,6 @@ pub fn server_check_unattached() {
                     }
                 }
             }
-            s = sessions_after(s);
         }
     }
 }

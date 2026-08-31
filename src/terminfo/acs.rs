@@ -1,7 +1,7 @@
 use crate::tty::tty_client;
 use super::term::{tty_term_has, tty_term_number, tty_term_of};
 pub use crate::types::*;
-use ::core::ffi::{CStr, c_char, c_int};
+use ::core::ffi::{CStr, c_int};
 
 pub const TTYC_U8: tty_code_code = 230;
 pub const CLIENT_UTF8: c_int = 0x10000 as c_int;
@@ -371,18 +371,18 @@ static tty_acs_rounded_borders_list: [utf8_data; 13] = [
 /// `cell_type` is one of the thirteen border cell types the drawing code
 /// names, `CELL_INSIDE` through `CELL_OUTSIDE`; `CELL_SCROLLBAR` never reaches
 /// here, since both callers turn it away first.
-pub fn tty_acs_double_borders(cell_type: c_int) -> *const utf8_data {
-    &raw const tty_acs_double_borders_list[cell_type as usize]
+pub fn tty_acs_double_borders(cell_type: c_int) -> &'static utf8_data {
+    &tty_acs_double_borders_list[cell_type as usize]
 }
 
 /// See [`tty_acs_double_borders`] for the range of `cell_type`.
-pub fn tty_acs_heavy_borders(cell_type: c_int) -> *const utf8_data {
-    &raw const tty_acs_heavy_borders_list[cell_type as usize]
+pub fn tty_acs_heavy_borders(cell_type: c_int) -> &'static utf8_data {
+    &tty_acs_heavy_borders_list[cell_type as usize]
 }
 
 /// See [`tty_acs_double_borders`] for the range of `cell_type`.
-pub fn tty_acs_rounded_borders(cell_type: c_int) -> *const utf8_data {
-    &raw const tty_acs_rounded_borders_list[cell_type as usize]
+pub fn tty_acs_rounded_borders(cell_type: c_int) -> &'static utf8_data {
+    &tty_acs_rounded_borders_list[cell_type as usize]
 }
 
 /// Whether the terminal wants the ACS character set rather than UTF-8.
@@ -408,39 +408,39 @@ pub unsafe fn tty_acs_needed(tty: *mut tty) -> c_int {
 }
 
 /// The string to draw for the ACS key `ch`: the terminal's own translation
-/// when it wants ACS, and the UTF-8 character otherwise. Null if neither has
-/// one.
-pub unsafe fn tty_acs_get(tty: *mut tty, ch: u_char) -> *const c_char {
+/// when it wants ACS, and the UTF-8 character otherwise. Nothing if neither
+/// has one.
+///
+/// The terminal's own translation borrows from `tty`, so the answer lives only
+/// as long as the caller keeps that terminal; the module's own table is
+/// `'static`.
+pub unsafe fn tty_acs_get<'a>(tty: *mut tty, ch: u_char) -> Option<&'a CStr> {
     unsafe {
         if tty_acs_needed(tty) != 0 {
             let acs = &tty_term_of(&*tty).acs[ch as usize];
             if acs[0] == 0 {
-                return ::core::ptr::null::<c_char>();
+                return None;
             }
-            return &raw const acs[0];
+            return Some(CStr::from_ptr(acs.as_ptr()));
         }
         match tty_acs_table.binary_search_by_key(&ch, |entry| entry.key) {
-            Ok(i) => tty_acs_table[i].string.as_ptr(),
-            Err(_) => ::core::ptr::null::<c_char>(),
+            Ok(i) => Some(tty_acs_table[i].string),
+            Err(_) => None,
         }
     }
 }
 
-/// The ACS key for the UTF-8 string `s`, or -1 if there is none. Only two- and
-/// three-byte strings have one; `slen` picks the table, and `s` itself is read
-/// up to its terminating NUL, the way the C `strcmp` did.
-pub unsafe fn tty_acs_reverse_get(_tty: *mut tty, s: *const c_char, slen: size_t) -> c_int {
-    unsafe {
-        let table: &[tty_acs_reverse_entry] = match slen {
-            2 => &tty_acs_reverse2,
-            3 => &tty_acs_reverse3,
-            _ => return -1,
-        };
-        let key = CStr::from_ptr(s).to_bytes();
-        match table.binary_search_by(|entry| entry.string.to_bytes().cmp(key)) {
-            Ok(i) => table[i].key as c_int,
-            Err(_) => -1,
-        }
+/// The ACS key for the UTF-8 bytes in `s`, or -1 if there is none. Only two-
+/// and three-byte strings have one.
+pub fn tty_acs_reverse_get(s: &[u8]) -> c_int {
+    let table: &[tty_acs_reverse_entry] = match s.len() {
+        2 => &tty_acs_reverse2,
+        3 => &tty_acs_reverse3,
+        _ => return -1,
+    };
+    match table.binary_search_by(|entry| entry.string.to_bytes().cmp(s)) {
+        Ok(i) => table[i].key as c_int,
+        Err(_) => -1,
     }
 }
 

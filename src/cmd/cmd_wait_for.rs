@@ -3,6 +3,7 @@ use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client};
 use crate::fmt_args;
 use crate::log::log_debug;
+use crate::tree::GlobalTree;
 pub use crate::types::*;
 use ::core::ffi::CStr;
 use ::std::collections::btree_map::Entry;
@@ -47,12 +48,12 @@ struct WaitChannel {
     lockers: VecDeque<*mut cmdq_item>,
 }
 
-static mut WAIT_CHANNELS: BTreeMap<CString, WaitChannel> = BTreeMap::new();
+static WAIT_CHANNELS: GlobalTree<CString, WaitChannel> = GlobalTree::new();
 
 /// Every channel, in name order. tmux runs one command at a time on a single
 /// thread, which is what makes handing out the global safe.
 fn channels() -> &'static mut BTreeMap<CString, WaitChannel> {
-    unsafe { &mut WAIT_CHANNELS }
+    WAIT_CHANNELS.map()
 }
 
 /// The named channel, added empty if this is the first mention of it.

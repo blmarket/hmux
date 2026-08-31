@@ -1,17 +1,12 @@
 use super::*;
-use crate::options::{options_create_boxed, options_default, options_set_number};
 use crate::options::options_table;
+use crate::options::{options_create_boxed, options_default, options_set_number};
 use crate::tests::test_fixtures::{globals, zeroed_pane, zeroed_window};
 use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
 
 fn parse(input: &CStr) -> String {
-    unsafe {
-        parse_window_name(input.as_ptr())
-            .to_str()
-            .unwrap()
-            .to_owned()
-    }
+    parse_window_name(input).to_str().unwrap().to_owned()
 }
 
 fn blank_window() -> Box<window> {
@@ -64,6 +59,14 @@ fn an_absolute_path_is_reduced_to_its_last_component() {
     assert_eq!(parse(c"/usr/bin/"), "bin");
     assert_eq!(parse(c"/"), "/");
     assert_eq!(parse(c"./usr/bin/vi"), "./usr/bin/vi");
+}
+
+#[test]
+fn repeated_slashes_in_an_absolute_path_are_not_part_of_the_name() {
+    assert_eq!(parse(c"//"), "/");
+    assert_eq!(parse(c"///"), "/");
+    assert_eq!(parse(c"/usr//bin//"), "bin");
+    assert_eq!(parse(c"/usr/bin/vi//"), "vi");
 }
 
 #[test]
@@ -127,8 +130,7 @@ fn the_default_name_falls_back_to_the_pane_shell() {
 fn expired(name_time: timeval, now: timeval) -> c_int {
     let mut w = blank_window();
     w.name_time = name_time;
-    let mut now = now;
-    unsafe { name_time_expired(&raw mut *w, &raw mut now) }
+    name_time_expired(&w, now)
 }
 
 #[test]
@@ -222,9 +224,7 @@ fn the_name_timer_callback_only_logs() {
     let _guard = globals();
     let mut w = blank_window();
     w.id = 7;
-    unsafe {
-        name_time_callback(&raw mut *w);
-    }
+    name_time_callback(&w);
 }
 
 #[test]

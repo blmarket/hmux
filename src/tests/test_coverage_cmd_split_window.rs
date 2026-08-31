@@ -227,7 +227,7 @@ fn parsing_resolves_both_spellings_and_the_flags_the_hook_reads() {
 
         let values = args_value_list(args, b'e');
         assert_eq!(values.len(), 1, "a single -e value loops exactly once");
-        assert_eq!(seen((*values[0]).value.string()), "A=B");
+        assert_eq!((*values[0]).value.string(), c"A=B");
     }
 }
 

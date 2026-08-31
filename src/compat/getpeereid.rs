@@ -52,13 +52,11 @@ fn peer_of(s: c_int) -> Option<(uid_t, gid_t)> {
     Some((uc.uid, uc.gid))
 }
 
-pub unsafe fn getpeereid(s: c_int, uid: *mut uid_t, gid: *mut gid_t) -> c_int {
+pub fn getpeereid(s: c_int, uid: &mut uid_t, gid: &mut gid_t) -> c_int {
     match peer_of(s) {
         Some((peer_uid, peer_gid)) => {
-            unsafe {
-                *uid = peer_uid;
-                *gid = peer_gid;
-            }
+            *uid = peer_uid;
+            *gid = peer_gid;
             0
         }
         None => -1,

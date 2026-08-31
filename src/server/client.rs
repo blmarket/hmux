@@ -40,7 +40,7 @@ use crate::modes::window_copy_add;
 use crate::names::check_window_name;
 use crate::notify::notify_client;
 use crate::options::{
-    options_get_command, options_get_number, options_get_string, options_ptr, options_set_number,
+    options_get_command, options_get_number, options_get_string, options_set_number,
 };
 use crate::overlay::{
     menu_check_cb, menu_draw_cb, menu_free_box, menu_key_cb, menu_mode_cb, menu_resize_cb,
@@ -2429,10 +2429,8 @@ pub const STDIN_FILENO: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const STDOUT_FILENO: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const STDERR_FILENO: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const X_OK: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
-    unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };
-pub const _PATH_TTY: [::core::ffi::c_char; 9] =
-    unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"/dev/tty\0") };
+pub const _PATH_BSHELL: &CStr = c"/bin/sh";
+pub const _PATH_TTY: &CStr = c"/dev/tty";
 pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
 pub const RB_BLACK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const RB_RED: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
@@ -2862,7 +2860,8 @@ pub unsafe fn server_client_check_nested(mut c: *mut client) -> ::core::ffi::c_i
     unsafe {
         let envent = environ_find(&*environ_ptr(&(*c).environ), c"TMUX".as_ptr());
         if !envent
-            .is_some_and(|envent| *environ_entry_value(envent) as ::core::ffi::c_int != '\0' as i32)
+            .and_then(environ_entry_value)
+            .is_some_and(|value| !value.is_empty())
         {
             return 0 as ::core::ffi::c_int;
         }
@@ -2933,7 +2932,7 @@ unsafe fn server_client_is_default_key_table(
     mut table: *mut key_table,
 ) -> ::core::ffi::c_int {
     unsafe {
-        (strcmp(key_table_name(table), server_client_get_key_table(c)) == 0 as ::core::ffi::c_int)
+        (key_table_name(table) == CStr::from_ptr(server_client_get_key_table(c)))
             as ::core::ffi::c_int
     }
 }
@@ -3130,7 +3129,7 @@ pub unsafe fn server_client_open(
         {
             *cause = Some(xasprintf(
                 c"can't use %s".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).ttyname)],
+                fmt_args![(*c).ttyname.as_deref()],
             ));
             return -(1 as ::core::ffi::c_int);
         }
@@ -3360,7 +3359,7 @@ unsafe fn server_client_check_mouse_in_pane(
         let mut bdr_top: ::core::ffi::c_int = 0;
         let mut bdr_left: ::core::ffi::c_int = 0;
         let mut bdr_right: ::core::ffi::c_int = 0;
-        pane_status = options_get_number(options_ptr(&(*w).options), c"pane-border-status".as_ptr())
+        pane_status = options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr())
             as ::core::ffi::c_int;
         if window_pane_show_scrollbar(wp) != 0 {
             sb_w = (*wp).scrollbar_style.width;
@@ -3507,7 +3506,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
         log_debug(
             c"%s mouse %02x at %u,%u (last %u,%u) (%d)".as_ptr(),
             fmt_args![
-                cstr_ptr(&(*c).name),
+                (*c).name.as_deref(),
                 (*m).b,
                 (*m).x,
                 (*m).y,
@@ -3521,7 +3520,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
             if !lwp.is_null() {
                 log_debug(
                     c"%s mouse last pane %%%u".as_ptr(),
-                    fmt_args![cstr_ptr(&(*c).name), (*lwp).id],
+                    fmt_args![(*c).name.as_deref(), (*lwp).id],
                 );
             }
         }
@@ -3946,7 +3945,7 @@ unsafe fn server_client_is_bracket_paste(
             (*c).paste_time = current_time;
             log_debug(
                 c"%s: bracket paste on".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name)],
+                fmt_args![(*c).name.as_deref()],
             );
             return 0 as ::core::ffi::c_int;
         }
@@ -3957,7 +3956,7 @@ unsafe fn server_client_is_bracket_paste(
                 ((*c).flags as ::core::ffi::c_ulonglong & !CLIENT_BRACKETPASTING) as uint64_t;
             log_debug(
                 c"%s: bracket paste off".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name)],
+                fmt_args![(*c).name.as_deref()],
             );
             return 0 as ::core::ffi::c_int;
         }
@@ -3997,7 +3996,7 @@ unsafe fn server_client_is_assume_paste(mut c: *mut client) -> ::core::ffi::c_in
             (*c).paste_time = current_time;
             log_debug(
                 c"%s: assume paste on".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name)],
+                fmt_args![(*c).name.as_deref()],
             );
             return 0 as ::core::ffi::c_int;
         }
@@ -4006,7 +4005,7 @@ unsafe fn server_client_is_assume_paste(mut c: *mut client) -> ::core::ffi::c_in
                 ((*c).flags as ::core::ffi::c_ulonglong & !CLIENT_ASSUMEPASTING) as uint64_t;
             log_debug(
                 c"%s: assume paste off".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name)],
+                fmt_args![(*c).name.as_deref()],
             );
         }
         0 as ::core::ffi::c_int
@@ -4023,7 +4022,7 @@ unsafe fn server_client_update_latest(mut c: *mut client) {
             return;
         }
         window_set_latest(w, c);
-        if options_get_number(options_ptr(&(*w).options), c"window-size".as_ptr())
+        if options_get_number((*w).options_ptr(), c"window-size".as_ptr())
             == WINDOW_SIZE_LATEST as ::core::ffi::c_longlong
         {
             recalculate_size(w, 0 as ::core::ffi::c_int);
@@ -4211,8 +4210,7 @@ unsafe fn server_client_key_callback(
                                     || key0
                                         == prefix2 as ::core::ffi::c_ulonglong
                                             & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS))
-                                    && strcmp(key_table_name(table), c"prefix".as_ptr())
-                                        != 0 as ::core::ffi::c_int
+                                    && key_table_name(table) != c"prefix"
                                 {
                                     server_client_set_key_table(c, c"prefix".as_ptr());
                                     server_status_client(c);
@@ -4242,8 +4240,7 @@ unsafe fn server_client_key_callback(
                                         )
                                             as uint64_t;
                                         if prefix_delay > 0 as uint64_t
-                                            && strcmp(key_table_name(table), c"prefix".as_ptr())
-                                                == 0 as ::core::ffi::c_int
+                                            && key_table_name(table) == c"prefix"
                                             && server_client_key_table_activity_diff(c)
                                                 > prefix_delay
                                         {
@@ -4461,12 +4458,12 @@ unsafe fn server_client_key_callback(
                                             == KEYC_PASTE_END as ::core::ffi::c_ulong
                                                 as ::core::ffi::c_ulonglong))
                                 && options_get_number(
-                                    options_ptr(&(*wp).options),
+                                    (*wp).options_ptr(),
                                     c"remain-on-exit".as_ptr(),
                                 ) == 3 as ::core::ffi::c_longlong
                             {
                                 options_set_number(
-                                    options_ptr(&(*wp).options),
+                                    (*wp).options_ptr(),
                                     c"remain-on-exit".as_ptr(),
                                     0 as ::core::ffi::c_longlong,
                                 );
@@ -4709,7 +4706,7 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
                             c"%s: %s has %zu bytes used and %zu left for %%%u".as_ptr(),
                             fmt_args![
                                 c"server_client_check_pane_buffer".as_ptr(),
-                                cstr_ptr(&(*c).name),
+                                (*c).name.as_deref(),
                                 (*wpo).used.wrapping_sub((*wp).base_offset),
                                 new_size,
                                 (*wp).id
@@ -4819,7 +4816,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
                 c"%s: client %s mode %s".as_ptr(),
                 fmt_args![
                     c"server_client_reset_state".as_ptr(),
-                    cstr_ptr(&(*c).name),
+                    (*c).name.as_deref(),
                     screen_mode_to_string(mode).as_c_str()
                 ],
             );
@@ -4865,7 +4862,7 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
                     1 as u_int,
                     &mut ranges,
                 );
-                if screen_redraw_is_visible(&raw mut ranges, cx) == 0 {
+                if !screen_redraw_is_visible(Some(&ranges), cx) {
                     cursor = 0 as ::core::ffi::c_int;
                 }
                 if status_at_line(c) == 0 as ::core::ffi::c_int {
@@ -5040,7 +5037,7 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
             log_debug(
                 c"%s: redraw%s%s%s%s%s%s".as_ptr(),
                 fmt_args![
-                    cstr_ptr(&(*c).name),
+                    (*c).name.as_deref(),
                     if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
                         c" window".as_ptr()
                     } else {
@@ -5101,7 +5098,7 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
         } {
             log_debug(
                 c"%s: redraw deferred (%zu left)".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name), left],
+                fmt_args![(*c).name.as_deref(), left],
             );
             if !ev.is_set() {
                 ev.set_callback(move || {
@@ -5118,13 +5115,13 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
                     if (*wp).flags & 0x1 as ::core::ffi::c_int != 0 {
                         log_debug(
                             c"%s: pane %%%u needs redraw".as_ptr(),
-                            fmt_args![cstr_ptr(&(*c).name), (*wp).id],
+                            fmt_args![(*c).name.as_deref(), (*wp).id],
                         );
                         (*c).redraw_panes |= ((1 as ::core::ffi::c_int) << bit) as uint64_t;
                     } else if (*wp).flags & PANE_REDRAWSCROLLBAR != 0 {
                         log_debug(
                             c"%s: pane %%%u scrollbar needs redraw".as_ptr(),
-                            fmt_args![cstr_ptr(&(*c).name), (*wp).id],
+                            fmt_args![(*c).name.as_deref(), (*wp).id],
                         );
                         (*c).redraw_scrollbars |= ((1 as ::core::ffi::c_int) << bit) as uint64_t;
                     }
@@ -5153,7 +5150,7 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
         } else if needed != 0 {
             log_debug(
                 c"%s: redraw needed".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name)],
+                fmt_args![(*c).name.as_deref()],
             );
         }
         tty_flags = (*tty).flags & (TTY_BLOCK | TTY_FREEZE | TTY_NOCURSOR);
@@ -5215,7 +5212,7 @@ unsafe fn server_client_check_redraw(mut c: *mut client) {
             (*c).redraw = (*tty).out.as_ref().unwrap().len();
             log_debug(
                 c"%s: redraw added %zu bytes".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name), (*c).redraw],
+                fmt_args![(*c).name.as_deref(), (*c).redraw],
             );
         }
     }
@@ -5761,7 +5758,7 @@ unsafe fn server_client_dispatch_identify(
         }
         log_debug(
             c"client %p name is %s".as_ptr(),
-            fmt_args![c, cstr_ptr(&(*c).name)],
+            fmt_args![c, (*c).name.as_deref()],
         );
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             control_start(c);
@@ -5784,7 +5781,7 @@ unsafe fn server_client_dispatch_identify(
         {
             log_debug(
                 c"%s: paste time limit exceeded".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name)],
+                fmt_args![(*c).name.as_deref()],
             );
             (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong
                 & !(CLIENT_BRACKETPASTING | CLIENT_ASSUMEPASTING))
@@ -5830,17 +5827,19 @@ pub unsafe fn server_client_get_cwd(
         if !c.is_null() && (*c).session.is_null() && (*c).cwd.is_some() {
             return cstr_ptr(&(*c).cwd);
         }
-        if !s.is_null() && !session_cwd(s).is_null() {
-            return session_cwd(s);
+        if !s.is_null()
+            && let Some(cwd) = session_cwd(s)
+        {
+            return cwd.as_ptr();
         }
         if !c.is_null()
             && {
                 s = (*c).session;
                 !s.is_null()
             }
-            && !session_cwd(s).is_null()
+            && let Some(cwd) = session_cwd(s)
         {
-            return session_cwd(s);
+            return cwd.as_ptr();
         }
         home = find_home().map_or(::core::ptr::null(), CStr::as_ptr);
         if !home.is_null() {
@@ -5901,7 +5900,7 @@ pub unsafe fn server_client_set_flags(c: *mut client, flags: *const ::core::ffi:
             }
             log_debug(
                 c"client %s set flag %s".as_ptr(),
-                fmt_args![cstr_ptr(&(*c).name), next.as_ptr()],
+                fmt_args![(*c).name.as_deref(), next.as_ptr()],
             );
             if not != 0 {
                 if (*c).flags & CLIENT_READONLY as uint64_t != 0 {
@@ -6033,7 +6032,7 @@ pub unsafe fn server_client_set_pane(mut c: *mut client, mut wp: *mut window_pan
         (*cw).pane_id = Some((*wp).id);
         log_debug(
             c"%s pane now %%%u".as_ptr(),
-            fmt_args![cstr_ptr(&(*c).name), (*wp).id],
+            fmt_args![(*c).name.as_deref(), (*wp).id],
         );
     }
 }
@@ -6062,15 +6061,13 @@ pub unsafe fn server_client_print(
     unsafe {
         let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-        let source = buffer.as_slice().to_vec();
-        let size = source.len();
-        let mut source_with_nul = source;
+        let mut source_with_nul = buffer.as_slice().to_vec();
+        let size = source_with_nul.len();
         source_with_nul.push(0);
         let data = source_with_nul.as_ptr() as *const ::core::ffi::c_char;
         let visible = if parse == 0 {
             Some(utf8_stravisx(
-                data,
-                size,
+                &source_with_nul[..size],
                 VIS_OCTAL | VIS_CSTYLE | VIS_NOSLASH,
             ))
         } else {

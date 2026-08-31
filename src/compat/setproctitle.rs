@@ -51,7 +51,7 @@ pub unsafe fn setproctitle(fmt: *const c_char, args: &[FmtArg]) {
         let mut title = [0 as c_char; NAME];
         format_into(title.as_mut_ptr(), NAME, fmt, args);
         let name = thread_name(
-            CStr::from_ptr(getprogname()).to_bytes(),
+            getprogname().to_bytes(),
             CStr::from_ptr(title.as_ptr()).to_bytes(),
         );
         prctl(PR_SET_NAME, name.as_ptr());

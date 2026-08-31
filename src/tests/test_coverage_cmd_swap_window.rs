@@ -260,7 +260,7 @@ impl Group {
 impl Drop for Group {
     fn drop(&mut self) {
         unsafe {
-            let name = ::core::ffi::CStr::from_ptr(session_group_name(self.sg)).to_owned();
+            let name = session_group_name(self.sg).to_owned();
             for s in ::std::mem::take(&mut self.members) {
                 session_group_remove(s);
             }

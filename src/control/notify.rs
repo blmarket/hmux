@@ -1,7 +1,6 @@
 use super::state::control_write;
 use crate::fmt_args;
 use crate::format::format_single;
-use crate::layout::layout_root_ptr;
 use crate::server::client_walk;
 use crate::session::{session_get_curw, session_id, session_name};
 pub use crate::types::*;
@@ -124,7 +123,7 @@ pub unsafe fn control_notify_window_layout_changed(mut w: *mut window) {
         wl = winlinks_into(w)
             .next()
             .unwrap_or(::core::ptr::null_mut::<winlink>());
-        if wl.is_null() || layout_root_ptr(&(*w).layout_root).is_null() {
+        if wl.is_null() || (*w).layout_root_ptr().is_null() {
             return;
         }
         let cp = format_single(
@@ -224,13 +223,13 @@ pub unsafe fn control_notify_window_renamed(mut w: *mut window) {
                     control_write(
                         c,
                         c"%%window-renamed @%u %s".as_ptr(),
-                        fmt_args![(*w).id, cstr_ptr(&(*w).name)],
+                        fmt_args![(*w).id, (*w).name.as_deref()],
                     );
                 } else {
                     control_write(
                         c,
                         c"%%unlinked-window-renamed @%u %s".as_ptr(),
-                        fmt_args![(*w).id, cstr_ptr(&(*w).name)],
+                        fmt_args![(*w).id, (*w).name.as_deref()],
                     );
                 }
             }
@@ -260,7 +259,7 @@ pub unsafe fn control_notify_client_session_changed(mut cc: *mut client) {
                     control_write(
                         c,
                         c"%%client-session-changed %s $%u %s".as_ptr(),
-                        fmt_args![cstr_ptr(&(*cc).name), session_id(s), session_name(s)],
+                        fmt_args![(*cc).name.as_deref(), session_id(s), session_name(s)],
                     );
                 }
             }
@@ -277,7 +276,7 @@ pub unsafe fn control_notify_client_detached(mut cc: *mut client) {
                 control_write(
                     c,
                     c"%%client-detached %s".as_ptr(),
-                    fmt_args![cstr_ptr(&(*cc).name)],
+                    fmt_args![(*cc).name.as_deref()],
                 );
             }
         }
@@ -339,7 +338,7 @@ pub unsafe fn control_notify_session_window_changed(mut s: *mut session) {
         }
     }
 }
-pub unsafe fn control_notify_paste_buffer_changed(mut name: *const ::core::ffi::c_char) {
+pub unsafe fn control_notify_paste_buffer_changed(name: Option<&::core::ffi::CStr>) {
     unsafe {
         for c in client_walk() {
             if !c.is_null()
@@ -351,7 +350,7 @@ pub unsafe fn control_notify_paste_buffer_changed(mut name: *const ::core::ffi::
         }
     }
 }
-pub unsafe fn control_notify_paste_buffer_deleted(mut name: *const ::core::ffi::c_char) {
+pub unsafe fn control_notify_paste_buffer_deleted(name: Option<&::core::ffi::CStr>) {
     unsafe {
         for c in client_walk() {
             if !c.is_null()

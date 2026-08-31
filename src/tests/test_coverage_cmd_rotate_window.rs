@@ -28,7 +28,7 @@ use crate::cmd::cmd_rotate_window::{
 use crate::cmd::cmdq_get_current;
 use crate::cmd::{CMD_PARSE_ERROR, CMD_PARSE_SUCCESS, cmd_parse_from_string};
 use crate::layout::layout_cell_pane;
-use crate::layout::{layout_free, layout_init, layout_root_ptr};
+use crate::layout::{layout_free, layout_init};
 use crate::server::CLIENT_ALLREDRAWFLAGS;
 use crate::tests::test_fixtures::{
     Clients, Item, Pane, Registry, Session, Window, ensure_reactor, globals, link, unlink,
@@ -237,7 +237,7 @@ fn rotating_down_leaves_a_one_pane_window_whole_and_redraws_its_clients() {
 
         let wp = rig.pane.ptr();
         let w = rig.w();
-        let root = layout_root_ptr(&(*w).layout_root);
+        let root = (*w).layout_root_ptr();
         assert_eq!(run(&mut item), CMD_RETURN_NORMAL);
 
         assert_eq!(window_count_panes(w, 1), 1);
@@ -245,7 +245,7 @@ fn rotating_down_leaves_a_one_pane_window_whole_and_redraws_its_clients() {
         assert_eq!(window_panes_last(w), wp, "the list came back well formed");
         assert_eq!(window_get_active(w), wp, "the only pane stays active");
 
-        assert_eq!(layout_root_ptr(&(*w).layout_root), root);
+        assert_eq!((*w).layout_root_ptr(), root);
         assert_eq!(
             layout_cell_pane(w, (*wp).layout_cell),
             wp,
@@ -287,14 +287,14 @@ fn rotating_up_without_d_does_the_same_over_an_empty_client_list() {
 
         let wp = rig.pane.ptr();
         let w = rig.w();
-        let root = layout_root_ptr(&(*w).layout_root);
+        let root = (*w).layout_root_ptr();
         assert_eq!(run(&mut item), CMD_RETURN_NORMAL);
 
         assert_eq!(window_count_panes(w, 1), 1);
         assert_eq!(window_panes_first(w), wp);
         assert_eq!(window_panes_last(w), wp);
         assert_eq!(window_get_active(w), wp);
-        assert_eq!(layout_root_ptr(&(*w).layout_root), root);
+        assert_eq!((*w).layout_root_ptr(), root);
         assert_eq!(layout_cell_pane(w, (*wp).layout_cell), wp);
         assert_eq!((*w).flags & (WINDOW_ZOOMED | WINDOW_WASZOOMED), 0);
         assert!((*wp).resize_queue.is_empty());

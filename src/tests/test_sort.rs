@@ -50,62 +50,51 @@ fn at(sec: i64, usec: i64) -> timeval {
 
 #[test]
 fn an_order_is_read_back_from_its_name_whatever_its_case() {
-    unsafe {
-        assert_eq!(sort_order_from_string(c"activity".as_ptr()), SORT_ACTIVITY);
-        assert_eq!(sort_order_from_string(c"creation".as_ptr()), SORT_CREATION);
-        assert_eq!(sort_order_from_string(c"index".as_ptr()), SORT_INDEX);
-        assert_eq!(sort_order_from_string(c"modifier".as_ptr()), SORT_MODIFIER);
-        assert_eq!(sort_order_from_string(c"name".as_ptr()), SORT_NAME);
-        assert_eq!(sort_order_from_string(c"order".as_ptr()), SORT_ORDER);
-        assert_eq!(sort_order_from_string(c"size".as_ptr()), SORT_SIZE);
-        assert_eq!(sort_order_from_string(c"z".as_ptr()), SORT_Z);
-        assert_eq!(sort_order_from_string(c"ACTIVITY".as_ptr()), SORT_ACTIVITY);
-        assert_eq!(sort_order_from_string(c"Size".as_ptr()), SORT_SIZE);
-        assert_eq!(sort_order_from_string(c"Z".as_ptr()), SORT_Z);
-    }
+    assert_eq!(sort_order_from_string(Some(c"activity")), SORT_ACTIVITY);
+    assert_eq!(sort_order_from_string(Some(c"creation")), SORT_CREATION);
+    assert_eq!(sort_order_from_string(Some(c"index")), SORT_INDEX);
+    assert_eq!(sort_order_from_string(Some(c"modifier")), SORT_MODIFIER);
+    assert_eq!(sort_order_from_string(Some(c"name")), SORT_NAME);
+    assert_eq!(sort_order_from_string(Some(c"order")), SORT_ORDER);
+    assert_eq!(sort_order_from_string(Some(c"size")), SORT_SIZE);
+    assert_eq!(sort_order_from_string(Some(c"z")), SORT_Z);
+    assert_eq!(sort_order_from_string(Some(c"ACTIVITY")), SORT_ACTIVITY);
+    assert_eq!(sort_order_from_string(Some(c"Size")), SORT_SIZE);
+    assert_eq!(sort_order_from_string(Some(c"Z")), SORT_Z);
 }
 
 #[test]
 fn key_is_another_name_for_index_and_title_for_name() {
-    unsafe {
-        assert_eq!(sort_order_from_string(c"key".as_ptr()), SORT_INDEX);
-        assert_eq!(sort_order_from_string(c"title".as_ptr()), SORT_NAME);
-    }
+    assert_eq!(sort_order_from_string(Some(c"key")), SORT_INDEX);
+    assert_eq!(sort_order_from_string(Some(c"title")), SORT_NAME);
 }
 
 #[test]
 fn a_name_that_is_no_order_and_no_name_at_all_are_the_end() {
-    unsafe {
-        assert_eq!(sort_order_from_string(c"".as_ptr()), SORT_END);
-        assert_eq!(sort_order_from_string(c"nonesuch".as_ptr()), SORT_END);
-        assert_eq!(sort_order_from_string(c"activityx".as_ptr()), SORT_END);
-        assert_eq!(
-            sort_order_from_string(::core::ptr::null::<c_char>()),
-            SORT_END
-        );
-    }
+    assert_eq!(sort_order_from_string(Some(c"")), SORT_END);
+    assert_eq!(sort_order_from_string(Some(c"nonesuch")), SORT_END);
+    assert_eq!(sort_order_from_string(Some(c"activityx")), SORT_END);
+    assert_eq!(sort_order_from_string(None), SORT_END);
 }
 
 #[test]
 fn an_order_prints_as_its_first_name_and_the_end_prints_as_nothing() {
-    unsafe {
-        for (order, name) in [
-            (SORT_ACTIVITY, "activity"),
-            (SORT_CREATION, "creation"),
-            (SORT_INDEX, "index"),
-            (SORT_MODIFIER, "modifier"),
-            (SORT_NAME, "name"),
-            (SORT_ORDER, "order"),
-            (SORT_SIZE, "size"),
-            (SORT_Z, "z"),
-        ] {
-            let text = sort_order_to_string(order).expect("a name");
-            assert_eq!(text.to_str().expect("ascii"), name);
-            assert_eq!(sort_order_from_string(text.as_ptr()), order);
-        }
-        assert_eq!(sort_order_to_string(SORT_END), None);
-        assert_eq!(sort_order_to_string(SORT_END + 1), None);
+    for (order, name) in [
+        (SORT_ACTIVITY, "activity"),
+        (SORT_CREATION, "creation"),
+        (SORT_INDEX, "index"),
+        (SORT_MODIFIER, "modifier"),
+        (SORT_NAME, "name"),
+        (SORT_ORDER, "order"),
+        (SORT_SIZE, "size"),
+        (SORT_Z, "z"),
+    ] {
+        let text = sort_order_to_string(order).expect("a name");
+        assert_eq!(text.to_str().expect("ascii"), name);
+        assert_eq!(sort_order_from_string(Some(text)), order);
     }
+    assert_eq!(sort_order_to_string(SORT_END), None);
+    assert_eq!(sort_order_to_string(SORT_END + 1), None);
 }
 
 #[test]
@@ -223,7 +212,9 @@ fn buffers(order: sort_order, reversed: c_int) -> Vec<String> {
     unsafe {
         let mut c = crit(order, reversed);
         let l = sort_get_buffers(&c);
-        l.iter().map(|&pb| seen(paste_buffer_name(pb))).collect()
+        l.iter()
+            .map(|&pb| paste_buffer_name(&*pb).to_string_lossy().into_owned())
+            .collect()
     }
 }
 
@@ -651,7 +642,12 @@ fn no_sessions_at_all_hand_back_no_panes() {
 unsafe fn linked(l: &[*mut winlink]) -> Vec<String> {
     unsafe {
         l.iter()
-            .map(|&wl| seen(cstr_ptr(&(*(*wl).window()).name)))
+            .map(|&wl| {
+                (*(*wl).window())
+                    .name
+                    .as_deref()
+                    .map_or(String::new(), |name| name.to_string_lossy().into_owned())
+            })
             .collect()
     }
 }
@@ -975,7 +971,7 @@ fn each_table_keeps_its_place_when_its_own_run_is_turned_round() {
 #[test]
 fn a_table_with_no_bindings_hands_back_nothing() {
     let _guards = tables();
-    let mut table = Box::new(key_table::new(None));
+    let mut table = Box::new(key_table::new(CString::default()));
     unsafe {
         assert!(table_keys(&raw mut *table, SORT_INDEX, 0).is_empty());
     }
@@ -1308,13 +1304,13 @@ fn a_key_binding_comparison_answers_one_for_two_bindings_of_a_table() {
 
 /// A comparison that answers *greater* for every pair, which is the shape
 /// the key comparison takes for two bindings of one table.
-unsafe fn always_greater(_a: *mut c_int, _b: *mut c_int, _crit: &sort_criteria_t) -> c_int {
+fn always_greater(_a: *mut c_int, _b: *mut c_int) -> c_int {
     1
 }
 
 /// A comparison by what is pointed at: a consistent order, with a tie
 /// wherever two entries carry the same number.
-unsafe fn by_value(a: *mut c_int, b: *mut c_int, _crit: &sort_criteria_t) -> c_int {
+unsafe fn by_value(a: *mut c_int, b: *mut c_int) -> c_int {
     unsafe { *a - *b }
 }
 
@@ -1332,7 +1328,7 @@ fn a_comparison_that_answers_greater_for_every_pair_turns_the_list_round() {
     for len in 0..40 {
         let mut store: Vec<c_int> = (0..len).collect();
         let mut l = entries(&mut store);
-        unsafe { merge_sort(&mut l, always_greater, &crit(SORT_NAME, 0)) };
+        merge_sort(&mut l, &mut always_greater);
         let seen: Vec<c_int> = l.iter().map(|p| unsafe { **p }).collect();
         assert_eq!(
             seen,
@@ -1352,7 +1348,7 @@ fn entries_that_compare_equal_keep_the_order_they_came_in() {
         let mut store: Vec<c_int> = (0..len).map(|i| i % 3).collect();
         let came_in = entries(&mut store);
         let mut l = came_in.clone();
-        unsafe { merge_sort(&mut l, by_value, &crit(SORT_NAME, 0)) };
+        merge_sort(&mut l, &mut |a, b| unsafe { by_value(a, b) });
         let mut settled = came_in.clone();
         settled.sort_by_key(|p| unsafe { **p });
         assert_eq!(l, settled, "{len} entries");

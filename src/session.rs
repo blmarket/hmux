@@ -65,7 +65,9 @@ pub const WINLINK_ALERTFLAGS: c_int = WINLINK_BELL | WINLINK_ACTIVITY | WINLINK_
 pub const WINLINK_VISITED: c_int = 0x8;
 
 /// Every session the server holds, by name, which is what holds them alive.
-pub(crate) static sessions: GlobalTree<CString, SessionRef> = GlobalTree::new();
+/// It is reached from outside this module through [`session_owners`],
+/// [`sessions_empty`] and the registry calls, never as the tree itself.
+static sessions: GlobalTree<CString, SessionRef> = GlobalTree::new();
 
 static SESSION_HANDLES: GlobalTree<usize, SessionWeak> = GlobalTree::new();
 
@@ -122,6 +124,15 @@ pub(crate) fn session_ref_from_ptr(s: *mut session) -> Option<SessionRef> {
     None
 }
 
+/// Files a session in the registry under the name it carries, which is what
+/// makes it discoverable and what holds it alive.
+pub(crate) fn session_registry_insert(reference: &SessionRef) {
+    unsafe {
+        let name = name_of(cstr_ptr(&(*reference.as_ptr()).name)).to_owned();
+        sessions.map().insert(name, reference.clone());
+    }
+}
+
 pub(crate) fn session_registry_remove(s: *mut session) -> Option<SessionRef> {
     unsafe { sessions.map().remove(name_of(cstr_ptr(&(*s).name))) }
 }
@@ -129,6 +140,18 @@ pub(crate) fn session_registry_remove(s: *mut session) -> Option<SessionRef> {
 pub(crate) fn session_registry_clear() {
     sessions.map().clear();
     SESSION_HANDLES.map().clear();
+}
+
+/// Every session the server holds, in name order, each answered with as the
+/// owning handle the registry keeps rather than as a bare pointer, so that a
+/// session given up while a caller walks stays alive until the walk lets go.
+pub(crate) fn session_owners() -> Vec<SessionRef> {
+    sessions.map().values().cloned().collect()
+}
+
+/// Whether the server holds no session at all.
+pub(crate) fn sessions_empty() -> bool {
+    sessions.map().is_empty()
 }
 
 impl Drop for SessionStorage {
@@ -201,6 +224,13 @@ pub struct session {
 /// check, which is what keeps one bell from being reported twice.
 const SESSION_ALERTED: c_int = 0x1;
 
+impl session {
+    /// The session's own option set, or null for a session that carries none.
+    pub(crate) fn options_ptr(&self) -> *mut options {
+        options_ptr(&self.options)
+    }
+}
+
 /// The name the session is filed under.
 pub unsafe fn session_name(s: *const session) -> *const c_char {
     unsafe { cstr_ptr(&(*s).name) }
@@ -238,15 +268,16 @@ pub unsafe fn session_id(s: *const session) -> u_int {
     unsafe { (*s).id }
 }
 
-/// The directory a pane started in the session begins in.
-pub unsafe fn session_cwd(s: *const session) -> *const c_char {
-    unsafe { cstr_ptr(&(*s).cwd) }
+/// The directory a pane started in the session begins in, or nothing when
+/// the session has none.
+pub unsafe fn session_cwd(s: *const session) -> Option<&'static CStr> {
+    unsafe { (*s).cwd.as_deref() }
 }
 
 /// The session's options, which every option lookup for one of its windows or
 /// panes falls back through.
 pub unsafe fn session_options(s: *const session) -> *mut options {
-    unsafe { options_ptr(&(*s).options) }
+    unsafe { (*s).options_ptr() }
 }
 
 /// The environment a pane started in the session is given.
@@ -315,9 +346,9 @@ pub unsafe fn session_set_cwd(s: *mut session, cwd: CString) {
 pub unsafe fn session_rename(s: *mut session, name: CString) {
     unsafe {
         let held = session_registry_remove(s);
-        (*s).name = Some(name.clone());
+        (*s).name = Some(name);
         if let Some(held) = held {
-            sessions.map().insert(name, held);
+            session_registry_insert(&held);
         }
     }
 }
@@ -364,21 +395,6 @@ pub fn sessions_first() -> *mut session {
         .unwrap_or(null_mut::<session>())
 }
 
-/// The session after `s`, in name order.
-pub unsafe fn sessions_after(s: *mut session) -> *mut session {
-    unsafe {
-        sessions
-            .map()
-            .range::<CStr, _>((
-                Bound::Excluded(name_of(cstr_ptr(&(*s).name))),
-                Bound::Unbounded,
-            ))
-            .next()
-            .map(|(_, s)| s.as_ptr())
-            .unwrap_or(null_mut::<session>())
-    }
-}
-
 /// The first session group the server holds, in name order.
 pub fn session_groups_first() -> *mut session_group {
     session_groups
@@ -394,20 +410,17 @@ pub unsafe fn session_groups_after(sg: *mut session_group) -> *mut session_group
     unsafe {
         session_groups
             .map()
-            .range::<CStr, _>((
-                Bound::Excluded(name_of(cstr_ptr(&(*sg).name))),
-                Bound::Unbounded,
-            ))
+            .range::<CStr, _>((Bound::Excluded(session_group_name(sg)), Bound::Unbounded))
             .next()
             .map(|(_, sg)| &raw const **sg as *mut session_group)
             .unwrap_or(null_mut::<session_group>())
     }
 }
 
-/// Every session the server holds, in name order.
-fn each_session() -> impl Iterator<Item = *mut session> {
-    let all: Vec<*mut session> = sessions.map().values().map(SessionRef::as_ptr).collect();
-    all.into_iter()
+/// Every session the server holds, in name order, walked by the handles that
+/// own them.
+fn each_session() -> impl Iterator<Item = SessionRef> {
+    session_owners().into_iter()
 }
 
 /// Every session group the server holds, in name order.
@@ -465,27 +478,21 @@ unsafe fn panes_of(w: *mut window) -> impl Iterator<Item = *mut window_pane> {
 }
 
 /// The session of `name` in `head`.
-unsafe fn session_of_name(head: *mut sessions_t, name: &CStr) -> *mut session {
-    unsafe {
-        (*head)
-            .get(name)
-            .map(SessionRef::as_ptr)
-            .unwrap_or(null_mut::<session>())
-    }
+fn session_of_name(head: &sessions_t, name: &CStr) -> *mut session {
+    head.get(name)
+        .map(SessionRef::as_ptr)
+        .unwrap_or(null_mut::<session>())
 }
 
 /// The same, over the group tree.
-unsafe fn group_of_name(head: *mut session_groups_t, name: &CStr) -> *mut session_group {
-    unsafe {
-        (*head)
-            .get(name)
-            .map(|sg| &raw const **sg as *mut session_group)
-            .unwrap_or(null_mut::<session_group>())
-    }
+fn group_of_name(head: &session_groups_t, name: &CStr) -> *mut session_group {
+    head.get(name)
+        .map(|sg| &raw const **sg as *mut session_group)
+        .unwrap_or(null_mut::<session_group>())
 }
 
 pub unsafe fn session_alive(s: *mut session) -> c_int {
-    each_session().any(|s_loop| s_loop == s) as c_int
+    each_session().any(|s_loop| s_loop.as_ptr() == s) as c_int
 }
 
 pub unsafe fn session_find(name: *const c_char) -> *mut session {
@@ -507,7 +514,8 @@ pub unsafe fn session_find_by_id_str(s: *const c_char) -> *mut session {
 pub fn session_find_by_id(id: u_int) -> *mut session {
     unsafe {
         each_session()
-            .find(|s| (**s).id == id)
+            .find(|s| (*s.as_ptr()).id == id)
+            .map(|s| s.as_ptr())
             .unwrap_or(null_mut::<session>())
     }
 }
@@ -551,11 +559,10 @@ pub unsafe fn session_create(
                 }
             }
         }
-        let session_name = name_of(cstr_ptr(&(*s).name)).to_owned();
-        sessions.map().insert(session_name, reference);
+        session_registry_insert(&reference);
         log_debug(
             c"new session %s $%u".as_ptr(),
-            fmt_args![cstr_ptr(&(*s).name), (*s).id],
+            fmt_args![(*s).name.as_deref(), (*s).id],
         );
         if gettimeofday(&raw mut (*s).creation_time, null_mut::<c_void>()) != 0 {
             fatal(c"gettimeofday failed".as_ptr(), fmt_args![]);
@@ -570,7 +577,7 @@ fn session_defer_cleanup(reference: SessionRef) {
         let s = reference.as_ptr();
         log_debug(
             c"session %s freed".as_ptr(),
-            fmt_args![cstr_ptr(&(*s).name)],
+            fmt_args![(*s).name.as_deref()],
         );
     });
 }
@@ -580,14 +587,13 @@ pub unsafe fn session_destroy(s: *mut session, notify: c_int, from: *const c_cha
         let session_ref = session_ref_from_ptr(s);
         log_debug(
             c"session %s destroyed (%s)".as_ptr(),
-            fmt_args![cstr_ptr(&(*s).name), from],
+            fmt_args![(*s).name.as_deref(), from],
         );
         if (*s).curw_idx.is_none() {
             return;
         }
         (*s).curw_idx = None;
-        let session_name = name_of(cstr_ptr(&(*s).name)).to_owned();
-        sessions.map().remove(&session_name);
+        session_registry_remove(s);
         if notify != 0 {
             notify_session(c"session-closed".as_ptr(), s);
         }
@@ -626,7 +632,7 @@ unsafe fn session_lock_timer(s: *mut session) {
         log_debug(
             c"session %s locked, activity time %lld".as_ptr(),
             fmt_args![
-                cstr_ptr(&(*s).name),
+                (*s).name.as_deref(),
                 (*s).activity_time.tv_sec as c_longlong
             ],
         );
@@ -649,7 +655,7 @@ pub unsafe fn session_update_activity(s: *mut session, from: *mut timeval) {
             c"session $%u %s activity %lld.%06d".as_ptr(),
             fmt_args![
                 (*s).id,
-                cstr_ptr(&(*s).name),
+                (*s).name.as_deref(),
                 (*s).activity_time.tv_sec as c_longlong,
                 (*s).activity_time.tv_usec as c_int
             ],
@@ -661,7 +667,7 @@ pub unsafe fn session_update_activity(s: *mut session, from: *mut timeval) {
         }
         if (*s).attached != 0 {
             let mut tv = timeval {
-                tv_sec: options_get_number(options_ptr(&(*s).options), c"lock-after-time".as_ptr())
+                tv_sec: options_get_number((*s).options_ptr(), c"lock-after-time".as_ptr())
                     as __time_t,
                 tv_usec: 0 as __suseconds_t,
             };
@@ -679,7 +685,7 @@ unsafe fn session_in_sorted_order(
     sort_crit: &sort_criteria_t,
 ) -> Option<(Vec<*mut session>, usize)> {
     unsafe {
-        if sessions.map().is_empty() || session_alive(s) == 0 {
+        if sessions_empty() || session_alive(s) == 0 {
             return None;
         }
         let list = sort_get_sessions(sort_crit);
@@ -687,7 +693,7 @@ unsafe fn session_in_sorted_order(
             Some(i) => Some((list, i)),
             None => fatalx(
                 c"session %s not found in sorted list".as_ptr(),
-                fmt_args![cstr_ptr(&(*s).name)],
+                fmt_args![(*s).name.as_deref()],
             ),
         }
     }
@@ -900,8 +906,8 @@ pub unsafe fn session_group_find(name: *const c_char) -> *mut session_group {
 
 /// The name the group was made under, which is what `#{session_group}` shows
 /// and what a session joining by name is matched against.
-pub unsafe fn session_group_name(sg: *mut session_group) -> *const c_char {
-    unsafe { cstr_ptr(&(*sg).name) }
+pub unsafe fn session_group_name(sg: *mut session_group) -> &'static CStr {
+    unsafe { name_of(cstr_ptr(&(*sg).name)) }
 }
 
 pub unsafe fn session_group_new(name: *const c_char) -> *mut session_group {
@@ -912,10 +918,10 @@ pub unsafe fn session_group_new(name: *const c_char) -> *mut session_group {
         }
         let mut sg = Box::new(session_group {
             name: Some(CStr::from_ptr(name).to_owned()),
-            sessions: session_group_sessions::new(),
+            ..session_group::default()
         });
         let sg_ptr = &raw mut *sg;
-        let key = name_of(cstr_ptr(&(*sg_ptr).name)).to_owned();
+        let key = session_group_name(sg_ptr).to_owned();
         session_groups.map().insert(key, sg);
         sg_ptr
     }
@@ -961,7 +967,7 @@ pub(crate) unsafe fn session_group_remove(s: *mut session) {
         }
         group_unlink(sg, s);
         if (*sg).sessions.is_empty() {
-            let name = name_of(cstr_ptr(&(*sg).name)).to_owned();
+            let name = session_group_name(sg).to_owned();
             let _ = session_groups.map().remove(&name);
         }
     }
@@ -1076,8 +1082,7 @@ pub unsafe fn session_renumber_windows(s: *mut session) {
         let curw = session_get_curw(s);
         let marked = marked_pane.winlink();
         let mut old_wins = ::core::mem::take(&mut (*s).windows);
-        let mut new_idx =
-            options_get_number(options_ptr(&(*s).options), c"base-index".as_ptr()) as c_int;
+        let mut new_idx = options_get_number((*s).options_ptr(), c"base-index".as_ptr()) as c_int;
         let mut new_curw_idx = 0 as c_int;
         let mut marked_idx = -1;
         for wl in winlinks_of(&raw mut old_wins) {
@@ -1143,8 +1148,7 @@ pub unsafe fn session_theme_changed(s: *mut session) {
 /// pane holds beyond it there and then.
 pub unsafe fn session_update_history(s: *mut session) {
     unsafe {
-        let limit =
-            options_get_number(options_ptr(&(*s).options), c"history-limit".as_ptr()) as u_int;
+        let limit = options_get_number((*s).options_ptr(), c"history-limit".as_ptr()) as u_int;
         for wl in winlinks_of(&raw mut (*s).windows) {
             for wp in panes_of((*wl).window()) {
                 let gd = screen_grid_ptr(&raw mut (*wp).base);

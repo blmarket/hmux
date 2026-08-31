@@ -49,7 +49,7 @@ use crate::reactor::Buf;
 use crate::reactor::IoWatch;
 use crate::screen::{screen_grid_mut, screen_grid_ptr, screen_reset_hyperlinks};
 use crate::tests::test_fixtures::{
-    Item, Paste, StreamBuffer, Target, ascii, ensure_reactor, globals, seen, zeroed,
+    Item, Paste, StreamBuffer, Target, ascii, ensure_reactor, globals, zeroed,
 };
 use crate::types::*;
 use crate::window::{window_pane_reset_mode, window_pane_set_mode};
@@ -364,9 +364,11 @@ fn a_capture_without_b_gets_an_automatic_buffer_name() {
         let pb = paste_walk(::core::ptr::null_mut());
         assert!(!pb.is_null(), "an automatic buffer was created");
         assert!(
-            seen(paste_buffer_name(pb)).starts_with("buffer"),
+            paste_buffer_name(&*pb)
+                .to_string_lossy()
+                .starts_with("buffer"),
             "{} is not an automatic name",
-            seen(paste_buffer_name(pb))
+            paste_buffer_name(&*pb).to_string_lossy()
         );
         assert_eq!(buffer_bytes(pb), b"xyz\n\n\n");
         assert!(paste_walk(pb).is_null(), "only one buffer exists");
@@ -646,10 +648,10 @@ fn the_H_flag_lists_each_new_uri_once_and_joins_those_on_one_line() {
     unsafe {
         screen_reset_hyperlinks(&raw mut (*wp).base);
         let hl = (*wp).base.hyperlinks_ref().expect("a hyperlink store");
-        let a = hyperlinks_put(hl, c"https://example.com/a".as_ptr(), c"id-a".as_ptr());
-        let b = hyperlinks_put(hl, c"https://example.com/b".as_ptr(), c"id-b".as_ptr());
-        let c = hyperlinks_put(hl, c"https://example.com/c".as_ptr(), c"id-c".as_ptr());
-        let d = hyperlinks_put(hl, c"https://example.com/d".as_ptr(), c"id-d".as_ptr());
+        let a = hyperlinks_put(hl, c"https://example.com/a", Some(c"id-a"));
+        let b = hyperlinks_put(hl, c"https://example.com/b", Some(c"id-b"));
+        let c = hyperlinks_put(hl, c"https://example.com/c", Some(c"id-c"));
+        let d = hyperlinks_put(hl, c"https://example.com/d", Some(c"id-d"));
 
         write_linked_row(wp, 0, &[a, a, a]);
         write_linked_row(wp, 1, &[b, b, b]);
@@ -910,7 +912,7 @@ fn clear_history_empties_the_scrollback_and_H_resets_its_links() {
         assert_eq!((*screen_grid_ptr(&raw mut (*wp).base)).hsize, 2);
 
         let hl = (*wp).base.hyperlinks_ref().expect("a hyperlink store");
-        let inner = hyperlinks_put(hl, c"https://example.com/".as_ptr(), c"id".as_ptr());
+        let inner = hyperlinks_put(hl, c"https://example.com/", Some(c"id"));
         let hl_ptr = hl.as_ptr();
 
         let mut clear = Item::new()
@@ -1187,7 +1189,7 @@ fn the_H_flag_stops_collecting_at_a_screen_width_of_uris() {
             .map(|n| CString::new(format!("id{n}")).expect("an id"))
             .collect();
         let links: Vec<u_int> = (0..11)
-            .map(|n| hyperlinks_put(hl, uris[n].as_ptr(), ids[n].as_ptr()))
+            .map(|n| hyperlinks_put(hl, &uris[n], Some(&ids[n])))
             .collect();
 
         write_linked_row(wp, 0, &links[..10]);

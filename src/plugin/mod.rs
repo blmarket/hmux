@@ -227,10 +227,9 @@ unsafe fn set_if_default(name: &CStr, value: &CStr) {
             if o.is_null() {
                 continue;
             }
-            let entry = options_table_entry(o);
-            if entry.is_null() {
+            let Some(entry) = options_table_entry(o) else {
                 continue;
-            }
+            };
             if options_to_string(o, -1, 0) != options_default_to_string(entry) {
                 continue;
             }

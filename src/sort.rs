@@ -19,9 +19,7 @@ use crate::key_bindings::{
 };
 use crate::paste::{paste_buffer_data, paste_buffer_name, paste_buffer_order, paste_walk};
 use crate::server::client_walk;
-use crate::session::{
-    session_activity_time, session_id, session_name, sessions_after, sessions_first,
-};
+use crate::session::{session_activity_time, session_id, session_name, session_owners};
 pub use crate::types::*;
 use crate::window::{
     window_pane_index, window_pane_zindex, window_panes_first, window_panes_next, winlinks_after,
@@ -31,6 +29,7 @@ use ::core::cmp::Ordering;
 use ::core::ffi::{CStr, c_char, c_int};
 use ::core::iter::successors;
 use ::core::ptr::null_mut;
+use ::std::ffi::CString;
 pub const KEYC_MASK_MODIFIERS: ::core::ffi::c_ulonglong =
     0xff0000000000 as ::core::ffi::c_ulonglong;
 pub const RB_NEGINF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -79,11 +78,10 @@ fn buffers_in_order() -> impl Iterator<Item = *mut paste_buffer> {
     )
 }
 
-/// Every session the server holds, in the order its tree walks them.
+/// Every session the server holds, in the order its tree walks them, read out
+/// of the handles that own them.
 fn sessions_in_order() -> impl Iterator<Item = *mut session> {
-    successors(walked(sessions_first()), |s| {
-        walked(unsafe { sessions_after(*s) })
-    })
+    session_owners().into_iter().map(|s| s.as_ptr())
 }
 
 /// Every window linked into `s`, in index order.
@@ -121,16 +119,14 @@ unsafe fn bindings_of(table: *mut key_table) -> impl Iterator<Item = *mut key_bi
 /// turns the list round when the criteria are reversed. Everything else goes
 /// to [`merge_sort`] behind `cmp`.
 unsafe fn sort_list<T>(l: &mut [*mut T], cmp: Compare<T>, sort_crit: &sort_criteria_t) {
-    unsafe {
-        match sort_crit.order {
-            SORT_END => {}
-            SORT_ORDER => {
-                if sort_crit.reversed != 0 {
-                    l.reverse();
-                }
+    match sort_crit.order {
+        SORT_END => {}
+        SORT_ORDER => {
+            if sort_crit.reversed != 0 {
+                l.reverse();
             }
-            _ => merge_sort(l, cmp, sort_crit),
         }
+        _ => merge_sort(l, &mut |a, b| unsafe { cmp(a, b, sort_crit) }),
     }
 }
 
@@ -147,30 +143,28 @@ type Compare<T> = unsafe fn(*mut T, *mut T, &sort_criteria_t) -> c_int;
 /// down to an `int` — and every sort answers such a comparison its own way.
 /// This is the sort `qsort` ran for the module before it was written out, so
 /// the lists come out as they always did.
-unsafe fn merge_sort<T>(l: &mut [*mut T], cmp: Compare<T>, crit: &sort_criteria_t) {
-    unsafe {
-        let len = l.len();
-        if len <= 1 {
-            return;
-        }
-        let half = len / 2;
-        merge_sort(&mut l[..half], cmp, crit);
-        merge_sort(&mut l[half..], cmp, crit);
-
-        let left = l[..half].to_vec();
-        let (mut a, mut b, mut at) = (0, half, 0);
-        while a < left.len() && b < len {
-            if cmp(left[a], l[b], crit) <= 0 {
-                l[at] = left[a];
-                a += 1;
-            } else {
-                l[at] = l[b];
-                b += 1;
-            }
-            at += 1;
-        }
-        l[at..at + (left.len() - a)].copy_from_slice(&left[a..]);
+fn merge_sort<T>(l: &mut [*mut T], cmp: &mut impl FnMut(*mut T, *mut T) -> c_int) {
+    let len = l.len();
+    if len <= 1 {
+        return;
     }
+    let half = len / 2;
+    merge_sort(&mut l[..half], cmp);
+    merge_sort(&mut l[half..], cmp);
+
+    let left = l[..half].to_vec();
+    let (mut a, mut b, mut at) = (0, half, 0);
+    while a < left.len() && b < len {
+        if cmp(left[a], l[b]) <= 0 {
+            l[at] = left[a];
+            a += 1;
+        } else {
+            l[at] = l[b];
+            b += 1;
+        }
+        at += 1;
+    }
+    l[at..at + (left.len() - a)].copy_from_slice(&left[a..]);
 }
 
 /// The criteria a comparison works by, as the order to compare in and whether
@@ -188,29 +182,35 @@ fn settled(result: c_int, reversed: c_int) -> c_int {
     }
 }
 
+/// Two names, compared the way `strcmp` orders the bytes behind them.
+fn bytes_cmp(a: &[u8], b: &[u8]) -> c_int {
+    match a.cmp(b) {
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+        Ordering::Greater => 1,
+    }
+}
+
 /// Two of the server's C strings, compared the way `strcmp` orders them.
 unsafe fn text_cmp(a: *const c_char, b: *const c_char) -> c_int {
-    unsafe {
-        match CStr::from_ptr(a)
-            .to_bytes()
-            .cmp(CStr::from_ptr(b).to_bytes())
-        {
-            Ordering::Less => -1,
-            Ordering::Equal => 0,
-            Ordering::Greater => 1,
-        }
+    unsafe { bytes_cmp(CStr::from_ptr(a).to_bytes(), CStr::from_ptr(b).to_bytes()) }
+}
+
+/// Two of the names the server owns outright, ordered the same way. A name
+/// the server has not set orders as an empty one: every entry a collector
+/// gathers carries its name, so that stands where reading the name as a C
+/// string would have handed `strcmp` a null pointer.
+fn name_cmp(a: &Option<CString>, b: &Option<CString>) -> c_int {
+    fn bytes(s: &Option<CString>) -> &[u8] {
+        s.as_ref().map_or(&[][..], |s| s.as_bytes())
     }
+    bytes_cmp(bytes(a), bytes(b))
 }
 
 /// Whether two bindings sit in one table. This is what the key comparison
 /// answers where every other comparison answers how two entries order, so two
 /// bindings of a table answer *one* — not the zero that says they are equal —
 /// and two bindings of different tables answer zero.
-/// A C string as the comparisons read one: nothing when it is null.
-unsafe fn text_of(s: *const c_char) -> Option<&'static CStr> {
-    unsafe { s.as_ref().map(|_| CStr::from_ptr(s)) }
-}
-
 fn same_table(a: Option<&CStr>, b: Option<&CStr>) -> c_int {
     match (a, b) {
         (Some(a), Some(b)) => a.to_bytes().eq_ignore_ascii_case(b.to_bytes()) as c_int,
@@ -238,8 +238,11 @@ unsafe fn sort_buffer_cmp(
     unsafe {
         let (order, reversed) = criteria(crit);
         let mut result = match order {
-            SORT_NAME => text_cmp(paste_buffer_name(a0), paste_buffer_name(b0)),
-            SORT_CREATION => match paste_buffer_order(a0).cmp(&paste_buffer_order(b0)) {
+            SORT_NAME => bytes_cmp(
+                paste_buffer_name(&*a0).to_bytes(),
+                paste_buffer_name(&*b0).to_bytes(),
+            ),
+            SORT_CREATION => match paste_buffer_order(&*a0).cmp(&paste_buffer_order(&*b0)) {
                 Ordering::Greater => -1,
                 Ordering::Less => 1,
                 Ordering::Equal => 0,
@@ -250,7 +253,10 @@ unsafe fn sort_buffer_cmp(
             _ => 0,
         };
         if result == 0 {
-            result = text_cmp(paste_buffer_name(a0), paste_buffer_name(b0));
+            result = bytes_cmp(
+                paste_buffer_name(&*a0).to_bytes(),
+                paste_buffer_name(&*b0).to_bytes(),
+            );
         }
         settled(result, reversed)
     }
@@ -262,7 +268,7 @@ unsafe fn sort_client_cmp(a0: *mut client, b0: *mut client, crit: &sort_criteria
         let cb = &*b0;
         let (order, reversed) = criteria(crit);
         let mut result = match order {
-            SORT_NAME => text_cmp(cstr_ptr(&ca.name), cstr_ptr(&cb.name)),
+            SORT_NAME => name_cmp(&ca.name, &cb.name),
             SORT_SIZE => {
                 let width = ca.tty.sx.wrapping_sub(cb.tty.sx) as c_int;
                 if width == 0 {
@@ -276,7 +282,7 @@ unsafe fn sort_client_cmp(a0: *mut client, b0: *mut client, crit: &sort_criteria
             _ => 0,
         };
         if result == 0 {
-            result = text_cmp(cstr_ptr(&ca.name), cstr_ptr(&cb.name));
+            result = name_cmp(&ca.name, &cb.name);
         }
         settled(result, reversed)
     }
@@ -322,10 +328,7 @@ unsafe fn sort_pane_cmp(
                 let (_, bi) = window_pane_index(wpb);
                 ai.wrapping_sub(bi) as c_int
             }
-            SORT_NAME => text_cmp(
-                cstr_ptr(&(*a.screen()).title),
-                cstr_ptr(&(*b.screen()).title),
-            ),
+            SORT_NAME => name_cmp(&(*a.screen()).title, &(*b.screen()).title),
             SORT_Z => {
                 let (_, ai) = window_pane_zindex(wpa);
                 let (_, bi) = window_pane_zindex(wpb);
@@ -334,10 +337,7 @@ unsafe fn sort_pane_cmp(
             _ => 0,
         };
         if result == 0 {
-            result = text_cmp(
-                cstr_ptr(&(*a.screen()).title),
-                cstr_ptr(&(*b.screen()).title),
-            );
+            result = name_cmp(&(*a.screen()).title, &(*b.screen()).title);
         }
         settled(result, reversed)
     }
@@ -354,7 +354,7 @@ unsafe fn sort_winlink_cmp(a0: *mut winlink, b0: *mut winlink, crit: &sort_crite
             SORT_INDEX => wla.idx.wrapping_sub(wlb.idx),
             SORT_CREATION => by_creation(&wa.creation_time, &wb.creation_time),
             SORT_ACTIVITY => -by_creation(&wa.activity_time, &wb.activity_time),
-            SORT_NAME => text_cmp(cstr_ptr(&wa.name), cstr_ptr(&wb.name)),
+            SORT_NAME => name_cmp(&wa.name, &wb.name),
             SORT_SIZE => wa
                 .sx
                 .wrapping_mul(wa.sy)
@@ -362,7 +362,7 @@ unsafe fn sort_winlink_cmp(a0: *mut winlink, b0: *mut winlink, crit: &sort_crite
             _ => 0,
         };
         if result == 0 {
-            result = text_cmp(cstr_ptr(&wa.name), cstr_ptr(&wb.name));
+            result = name_cmp(&wa.name, &wb.name);
         }
         settled(result, reversed)
     }
@@ -375,12 +375,7 @@ unsafe fn sort_key_binding_cmp(
 ) -> c_int {
     unsafe {
         let (order, reversed) = criteria(crit);
-        let tables = || {
-            same_table(
-                text_of(key_binding_tablename(a0)),
-                text_of(key_binding_tablename(b0)),
-            )
-        };
+        let tables = || same_table(key_binding_tablename(a0), key_binding_tablename(b0));
         let mut result = match order {
             SORT_INDEX => key_binding_key(a0).wrapping_sub(key_binding_key(b0)) as c_int,
             SORT_MODIFIER => (key_binding_key(a0) & KEYC_MASK_MODIFIERS)
@@ -415,19 +410,17 @@ pub fn sort_next_order(sort_crit: &mut sort_criteria_t) {
     sort_crit.order = next_in(seq, sort_crit.order);
 }
 
-pub unsafe fn sort_order_from_string(order: *const c_char) -> sort_order {
-    unsafe {
-        if order.is_null() {
-            return SORT_END;
+pub fn sort_order_from_string(order: Option<&CStr>) -> sort_order {
+    let Some(order) = order else {
+        return SORT_END;
+    };
+    let name = order.to_bytes();
+    for (text, named) in ORDER_NAMES {
+        if name.eq_ignore_ascii_case(text.to_bytes()) {
+            return named;
         }
-        let name = CStr::from_ptr(order).to_bytes();
-        for (text, named) in ORDER_NAMES {
-            if name.eq_ignore_ascii_case(text.to_bytes()) {
-                return named;
-            }
-        }
-        SORT_END
     }
+    SORT_END
 }
 
 pub fn sort_order_to_string(order: sort_order) -> Option<&'static CStr> {

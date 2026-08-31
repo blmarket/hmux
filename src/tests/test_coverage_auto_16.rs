@@ -52,7 +52,7 @@ fn attr_tostring(attr: ::core::ffi::c_int) -> String {
 }
 
 fn attr_fromstring(s: &CStr) -> ::core::ffi::c_int {
-    unsafe { attributes_fromstring(s.as_ptr()) }
+    attributes_fromstring(s)
 }
 
 // ---------------------------------------------------------------------------

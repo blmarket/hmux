@@ -12,8 +12,6 @@ use crate::grid::{
     hyperlinks_uri_key,
 };
 use crate::tests::test_fixtures::{globals, seen};
-use ::core::ffi::c_char;
-use ::core::ptr::null;
 use ::std::ffi::CString;
 
 // ---------------------------------------------------------------------------
@@ -34,13 +32,7 @@ impl Links {
     fn put(&self, uri: &str, id: Option<&str>) -> u32 {
         let uri = CString::new(uri).expect("no NUL");
         let id = id.map(|s| CString::new(s).expect("no NUL"));
-        unsafe {
-            hyperlinks_put(
-                &self.0,
-                uri.as_ptr(),
-                id.as_ref().map_or(null::<c_char>(), |s| s.as_ptr()),
-            )
-        }
+        unsafe { hyperlinks_put(&self.0, &uri, id.as_deref()) }
     }
     /// The URI, internal id and external id stored under `inner`.
     fn get(&self, inner: u32) -> Option<(String, String, String)> {

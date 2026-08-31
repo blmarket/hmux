@@ -4,7 +4,7 @@ use crate::options::{options_get_only_ptr, options_get_ptr};
 use crate::style::{COLOUR_FLAG_RGB, colour_palette_free, colour_palette_get};
 use crate::tests::test_fixtures::zeroed_term;
 use crate::tests::test_fixtures::{
-    Args, Clients, Options, Pane, Registry, Session, Window, globals, link, seen, unlink,
+    Args, Clients, Options, Pane, Registry, Session, Window, globals, link, unlink,
 };
 use ::core::ffi::{CStr, c_int};
 use ::core::ptr::{null, null_mut};
@@ -13,7 +13,7 @@ use ::std::ffi::CString;
 pub const FORMAT_NOJOBS: c_int = 0x4;
 
 /// The table entry for a named option.
-fn entry_for(name: &CStr) -> *const options_table_entry_t {
+fn entry_for(name: &CStr) -> &'static options_table_entry_t {
     options_table
         .iter()
         .find(|oe| oe.name == name)
@@ -28,8 +28,8 @@ fn made_up(
     name: &'static CStr,
     type_0: options_table_type,
     flags: c_int,
-) -> Box<options_table_entry_t> {
-    Box::new(options_table_entry_t {
+) -> &'static mut options_table_entry_t {
+    Box::leak(Box::new(options_table_entry_t {
         name,
         alternative_name: None,
         type_0,
@@ -45,7 +45,7 @@ fn made_up(
         pattern: None,
         text: None,
         unit: None,
-    })
+    }))
 }
 
 /// The shapes no option in the real table has: an array of numbers, a
@@ -54,13 +54,13 @@ fn made_up(
 fn the_shapes_the_option_table_has_none_of() {
     let _guard = globals();
     let numbers = made_up(c"@numbers", OPTIONS_TABLE_NUMBER, OPTIONS_TABLE_IS_ARRAY);
-    let mut command = made_up(c"@command", OPTIONS_TABLE_COMMAND, 0);
+    let command = made_up(c"@command", OPTIONS_TABLE_COMMAND, 0);
     command.default_str = Some(c"no-such-command");
-    let mut flag = made_up(c"@flag", OPTIONS_TABLE_FLAG, 0);
+    let flag = made_up(c"@flag", OPTIONS_TABLE_FLAG, 0);
     flag.default_num = 1;
     let oo = Options::empty(null_mut());
     unsafe {
-        let o = options_empty(oo.ptr(), &raw const *numbers);
+        let o = options_empty(oo.ptr(), numbers);
         let mut cause: Option<CString> = None;
         assert_eq!(options_array_set(o, 0, c"1".as_ptr(), 0, &mut cause), -1);
         assert_eq!(
@@ -69,14 +69,14 @@ fn the_shapes_the_option_table_has_none_of() {
         );
         assert_eq!(options_array_set(o, 0, c"1".as_ptr(), 0, &mut None), -1);
 
-        let o = options_default(oo.ptr(), &raw const *command);
+        let o = options_default(oo.ptr(), command);
         assert!((*o).value.cmdlist().is_null());
 
         assert_eq!(
-            options_default_to_string(&raw const *flag).to_string_lossy(),
+            options_default_to_string(flag).to_string_lossy(),
             "on"
         );
-        let o = options_default(oo.ptr(), &raw const *flag);
+        let o = options_default(oo.ptr(), flag);
         assert_eq!(options_to_string(o, -1, 0).to_string_lossy(), "on");
         assert_eq!(options_to_string(o, -1, 1).to_string_lossy(), "1");
     }
@@ -96,9 +96,9 @@ unsafe fn from_string(oo: *mut options, name: &CStr, value: Option<&CStr>) -> Re
     unsafe {
         let mut cause = None;
         let oe = if name.to_bytes().first() == Some(&b'@') {
-            null::<options_table_entry_t>()
+            None
         } else {
-            entry_for(name)
+            Some(entry_for(name))
         };
         let answer = options_from_string(
             oo,
@@ -148,7 +148,7 @@ fn an_option_set_stays_in_order_however_it_is_filled_and_emptied() {
             let mut out = Vec::new();
             let mut o = options_first(oo);
             while !o.is_null() {
-                out.push(seen(options_name(o)));
+                out.push(options_name(o).to_string_lossy().into_owned());
                 o = options_next(o);
             }
             out
@@ -251,8 +251,10 @@ fn an_option_set_falls_back_on_its_parent() {
         let o = options_get_ptr(child.ptr(), c"status".as_ptr());
         assert!(!o.is_null());
         assert_eq!(options_owner(o), parent.ptr());
-        assert_eq!(seen(options_name(o)), "status");
-        assert_eq!(options_table_entry(o), entry_for(c"status"));
+        assert!(::core::ptr::eq(
+            options_table_entry(o).unwrap(),
+            entry_for(c"status"),
+        ));
     }
 }
 
@@ -262,13 +264,13 @@ fn an_option_is_found_under_the_name_it_used_to_have() {
     let oo = Options::defaults(OPTIONS_TABLE_WINDOW);
     unsafe {
         assert_eq!(
-            seen(options_map_name(c"clock-mode-color".as_ptr())),
+            options_map_name(c"clock-mode-color").to_string_lossy(),
             "clock-mode-colour"
         );
-        assert_eq!(seen(options_map_name(c"status".as_ptr())), "status");
+        assert_eq!(options_map_name(c"status"), c"status");
         let o = options_get_only_ptr(oo.ptr(), c"clock-mode-color".as_ptr());
         assert!(!o.is_null());
-        assert_eq!(seen(options_name(o)), "clock-mode-colour");
+        assert_eq!(options_name(o), c"clock-mode-colour");
     }
 }
 
@@ -301,7 +303,7 @@ fn the_entries_of_a_set_come_back_in_name_order() {
         let mut names = Vec::new();
         let mut o = options_first(oo.ptr());
         while !o.is_null() {
-            names.push(seen(options_name(o)));
+            names.push(options_name(o).to_string_lossy().into_owned());
             o = options_next(o);
         }
         assert_eq!(names, vec!["@a", "@b", "@c"]);
@@ -322,7 +324,7 @@ fn a_user_option_is_a_string_of_whatever_is_put_in_it() {
         );
         assert_eq!(options_is_string(o), 1);
         assert_eq!(options_is_array(o), 0);
-        assert!(options_table_entry(o).is_null());
+        assert!(options_table_entry(o).is_none());
         assert_eq!(string_of(oo.ptr(), c"@u"), "one");
         options_set_string(
             oo.ptr(),
@@ -474,7 +476,10 @@ fn an_array_option_takes_values_by_index_and_gives_them_back_in_order() {
         while !a.is_null() {
             items.push((
                 options_array_item_index(a),
-                seen((*options_array_item_value(a)).string()),
+                (*options_array_item_value(a))
+                    .string()
+                    .to_string_lossy()
+                    .into_owned(),
             ));
             a = options_array_next(o, a);
         }
@@ -482,7 +487,7 @@ fn an_array_option_takes_values_by_index_and_gives_them_back_in_order() {
             items,
             vec![(0, "zero!".to_string()), (2, "two".to_string())]
         );
-        assert_eq!(seen((*options_array_get(o, 2)).string()), "two");
+        assert_eq!((*options_array_get(o, 2)).string(), c"two");
         assert!(options_array_get(o, 1).is_null());
         assert_eq!(options_array_set(o, 2, null(), 0, &mut cause), 0);
         assert!(options_array_get(o, 2).is_null());
@@ -568,11 +573,11 @@ fn an_array_option_takes_a_whole_list_at_once() {
         let o = options_get_ptr(oo.ptr(), c"terminal-overrides".as_ptr());
         options_array_clear(o);
         let mut cause: Option<CString> = None;
-        assert_eq!(options_array_assign(o, c"a,b c".as_ptr(), &mut cause), 0);
+        assert_eq!(options_array_assign(o, Some(c"a,b c"), &mut cause), 0);
         assert_eq!(options_to_string(o, -1, 0).to_string_lossy(), "a b c");
-        assert_eq!(options_array_assign(o, c"".as_ptr(), &mut cause), 0);
+        assert_eq!(options_array_assign(o, Some(c""), &mut cause), 0);
         assert_eq!(options_to_string(o, -1, 0).to_string_lossy(), "a b c");
-        assert_eq!(options_array_assign(o, c",,d".as_ptr(), &mut cause), 0);
+        assert_eq!(options_array_assign(o, Some(c",,d"), &mut cause), 0);
         assert_eq!(options_to_string(o, -1, 0).to_string_lossy(), "a b c d");
     }
 }
@@ -584,10 +589,10 @@ fn an_array_with_no_separator_takes_the_whole_string_as_one() {
     unsafe {
         let o = options_get_ptr(oo.ptr(), c"window-linked".as_ptr());
         let mut cause: Option<CString> = None;
-        assert_eq!(options_array_assign(o, c"".as_ptr(), &mut cause), 0);
+        assert_eq!(options_array_assign(o, Some(c""), &mut cause), 0);
         assert!(options_array_first(o).is_null());
         assert_eq!(
-            options_array_assign(o, c"display-message ab".as_ptr(), &mut cause),
+            options_array_assign(o, Some(c"display-message ab"), &mut cause),
             0
         );
         assert_eq!(
@@ -595,7 +600,7 @@ fn an_array_with_no_separator_takes_the_whole_string_as_one() {
             "display-message ab"
         );
         assert_eq!(
-            options_array_assign(o, c"no-such-command".as_ptr(), &mut cause),
+            options_array_assign(o, Some(c"no-such-command"), &mut cause),
             -1
         );
         assert!(!cause.as_ref().unwrap().as_bytes().is_empty());
@@ -610,7 +615,7 @@ fn an_array_list_stops_at_the_first_value_it_cannot_take() {
         let o = options_get_ptr(oo.ptr(), c"pane-colours".as_ptr());
         let mut cause: Option<CString> = None;
         assert_eq!(
-            options_array_assign(o, c"red,nonsense,blue".as_ptr(), &mut cause),
+            options_array_assign(o, Some(c"red,nonsense,blue"), &mut cause),
             -1
         );
         assert_eq!(
@@ -624,31 +629,29 @@ fn an_array_list_stops_at_the_first_value_it_cannot_take() {
 #[test]
 fn an_option_name_carries_an_index_in_brackets() {
     let _guard = globals();
-    unsafe {
-        let mut idx = 0;
-        assert_eq!(
-            options_parse(c"status".as_ptr(), &raw mut idx)
-                .unwrap()
-                .to_str()
-                .unwrap(),
-            "status"
-        );
-        assert_eq!(idx, -1);
-        assert_eq!(
-            options_parse(c"a[3]".as_ptr(), &raw mut idx)
-                .unwrap()
-                .to_str()
-                .unwrap(),
-            "a"
-        );
-        assert_eq!(idx, 3);
-        assert!(options_parse(c"".as_ptr(), &raw mut idx).is_none());
-        assert!(options_parse(c"a[".as_ptr(), &raw mut idx).is_none());
-        assert!(options_parse(c"a[]".as_ptr(), &raw mut idx).is_none());
-        assert!(options_parse(c"a[3]b".as_ptr(), &raw mut idx).is_none());
-        assert!(options_parse(c"a[-1]".as_ptr(), &raw mut idx).is_none());
-        assert!(options_parse(c"a[x]".as_ptr(), &raw mut idx).is_none());
-    }
+    let mut idx = 0;
+    assert_eq!(
+        options_parse(c"status", &mut idx)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "status"
+    );
+    assert_eq!(idx, -1);
+    assert_eq!(
+        options_parse(c"a[3]", &mut idx)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "a"
+    );
+    assert_eq!(idx, 3);
+    assert!(options_parse(c"", &mut idx).is_none());
+    assert!(options_parse(c"a[", &mut idx).is_none());
+    assert!(options_parse(c"a[]", &mut idx).is_none());
+    assert!(options_parse(c"a[3]b", &mut idx).is_none());
+    assert!(options_parse(c"a[-1]", &mut idx).is_none());
+    assert!(options_parse(c"a[x]", &mut idx).is_none());
 }
 
 #[test]
@@ -658,57 +661,51 @@ fn an_option_is_looked_up_by_a_name_carrying_an_index() {
     let child = Options::empty(oo.ptr());
     unsafe {
         let mut idx = 0;
-        let o = options_parse_get(child.ptr(), c"status-left[2]".as_ptr(), &raw mut idx, 0);
+        let o = options_parse_get(child.ptr(), c"status-left[2]", &mut idx, 0);
         assert!(!o.is_null());
         assert_eq!(idx, 2);
-        assert!(options_parse_get(child.ptr(), c"status-left".as_ptr(), &raw mut idx, 1).is_null());
-        assert!(options_parse_get(child.ptr(), c"".as_ptr(), &raw mut idx, 0).is_null());
+        assert!(options_parse_get(child.ptr(), c"status-left", &mut idx, 1).is_null());
+        assert!(options_parse_get(child.ptr(), c"", &mut idx, 0).is_null());
     }
 }
 
 #[test]
 fn an_option_name_can_be_shortened_until_it_is_ambiguous() {
     let _guard = globals();
-    unsafe {
-        let mut idx = 0;
-        let mut ambiguous = 0;
-        assert_eq!(
-            options_match(c"status-inter".as_ptr(), &raw mut idx, &raw mut ambiguous)
-                .unwrap()
-                .to_string_lossy(),
-            "status-interval"
-        );
-        assert_eq!(ambiguous, 0);
-        assert!(options_match(c"status-l".as_ptr(), &raw mut idx, &raw mut ambiguous).is_none());
-        assert_eq!(ambiguous, 1);
-        assert_eq!(
-            options_match(c"status".as_ptr(), &raw mut idx, &raw mut ambiguous)
-                .unwrap()
-                .to_string_lossy(),
-            "status"
-        );
-        assert!(options_match(c"status-".as_ptr(), &raw mut idx, &raw mut ambiguous).is_none());
-        assert_eq!(ambiguous, 1);
-        assert!(options_match(c"nonsense".as_ptr(), &raw mut idx, &raw mut ambiguous).is_none());
-        assert_eq!(ambiguous, 0);
-        assert_eq!(
-            options_match(c"@user".as_ptr(), &raw mut idx, &raw mut ambiguous)
-                .unwrap()
-                .to_string_lossy(),
-            "@user"
-        );
-        assert!(options_match(c"".as_ptr(), &raw mut idx, &raw mut ambiguous).is_none());
-        assert_eq!(
-            options_match(
-                c"clock-mode-color".as_ptr(),
-                &raw mut idx,
-                &raw mut ambiguous
-            )
+    let mut idx = 0;
+    let mut ambiguous = 0;
+    assert_eq!(
+        options_match(c"status-inter", &mut idx, &mut ambiguous)
             .unwrap()
             .to_string_lossy(),
-            "clock-mode-colour"
-        );
-    }
+        "status-interval"
+    );
+    assert_eq!(ambiguous, 0);
+    assert!(options_match(c"status-l", &mut idx, &mut ambiguous).is_none());
+    assert_eq!(ambiguous, 1);
+    assert_eq!(
+        options_match(c"status", &mut idx, &mut ambiguous)
+            .unwrap()
+            .to_string_lossy(),
+        "status"
+    );
+    assert!(options_match(c"status-", &mut idx, &mut ambiguous).is_none());
+    assert_eq!(ambiguous, 1);
+    assert!(options_match(c"nonsense", &mut idx, &mut ambiguous).is_none());
+    assert_eq!(ambiguous, 0);
+    assert_eq!(
+        options_match(c"@user", &mut idx, &mut ambiguous)
+            .unwrap()
+            .to_string_lossy(),
+        "@user"
+    );
+    assert!(options_match(c"", &mut idx, &mut ambiguous).is_none());
+    assert_eq!(
+        options_match(c"clock-mode-color", &mut idx, &mut ambiguous)
+            .unwrap()
+            .to_string_lossy(),
+        "clock-mode-colour"
+    );
 }
 
 #[test]
@@ -720,29 +717,22 @@ fn an_option_is_looked_up_by_a_shortened_name() {
         let mut ambiguous = 0;
         let o = options_match_get(
             oo.ptr(),
-            c"status-inter".as_ptr(),
-            &raw mut idx,
+            c"status-inter",
+            &mut idx,
             1,
-            &raw mut ambiguous,
+            &mut ambiguous,
         );
-        assert_eq!(seen(options_name(o)), "status-interval");
+        assert_eq!(options_name(o), c"status-interval");
         assert!(
-            options_match_get(
-                oo.ptr(),
-                c"nonsense".as_ptr(),
-                &raw mut idx,
-                0,
-                &raw mut ambiguous
-            )
-            .is_null()
+            options_match_get(oo.ptr(), c"nonsense", &mut idx, 0, &mut ambiguous).is_null()
         );
         let child = Options::empty(oo.ptr());
         let o = options_match_get(
             child.ptr(),
-            c"status-inter".as_ptr(),
-            &raw mut idx,
+            c"status-inter",
+            &mut idx,
             0,
-            &raw mut ambiguous,
+            &mut ambiguous,
         );
         assert_eq!(options_owner(o), oo.ptr());
     }
@@ -902,7 +892,11 @@ fn a_choice_option_takes_one_of_its_choices_and_turns_over_with_none() {
 
         let mut cause = None;
         assert_eq!(
-            options_find_choice(entry_for(c"status-position"), c"top".as_ptr(), &mut cause),
+            options_find_choice(
+                entry_for(c"status-position"),
+                c"top",
+                &mut cause,
+            ),
             0
         );
         assert!(cause.is_none());
@@ -954,7 +948,7 @@ fn an_option_with_no_value_and_a_bad_name_is_turned_down() {
         assert_eq!(
             options_from_string(
                 oo.ptr(),
-                null(),
+                None,
                 c"nonsense".as_ptr(),
                 c"x".as_ptr(),
                 0,
@@ -1116,14 +1110,7 @@ fn the_scope_of_an_option_is_worked_out_from_its_name() {
         let mut oo = null_mut::<options>();
         let mut cause = None;
         let mut scope = |name: &CStr, oo: &mut *mut options, cause: &mut Option<CString>| {
-            options_scope_from_name(
-                &*args.ptr(),
-                0,
-                name.as_ptr(),
-                &raw mut *fs,
-                &raw mut *oo,
-                cause,
-            )
+            options_scope_from_name(&*args.ptr(), 0, name, &raw mut *fs, oo, cause)
         };
         assert_eq!(
             scope(c"copy-command", &mut oo, &mut cause),
@@ -1166,9 +1153,9 @@ fn the_scope_of_an_option_with_no_target_is_named_in_the_reason() {
                 options_scope_from_name(
                     &*args.ptr(),
                     0,
-                    c"status-left".as_ptr(),
+                    c"status-left",
                     &raw mut *fs,
-                    &raw mut oo,
+                    &mut oo,
                     &mut cause
                 ),
                 OPTIONS_TABLE_NONE
@@ -1183,9 +1170,9 @@ fn the_scope_of_an_option_with_no_target_is_named_in_the_reason() {
                 options_scope_from_name(
                     &*args.ptr(),
                     0,
-                    c"mode-keys".as_ptr(),
+                    c"mode-keys",
                     &raw mut *fs,
-                    &raw mut oo,
+                    &mut oo,
                     &mut cause
                 ),
                 OPTIONS_TABLE_NONE
@@ -1213,9 +1200,9 @@ fn the_scope_of_a_pane_option_follows_the_pane_flag() {
             options_scope_from_name(
                 &*args.ptr(),
                 0,
-                c"remain-on-exit".as_ptr(),
+                c"remain-on-exit",
                 &raw mut *fs,
-                &raw mut oo,
+                &mut oo,
                 &mut cause
             ),
             OPTIONS_TABLE_NONE
@@ -1225,9 +1212,9 @@ fn the_scope_of_a_pane_option_follows_the_pane_flag() {
             options_scope_from_name(
                 &*targeted.ptr(),
                 0,
-                c"remain-on-exit".as_ptr(),
+                c"remain-on-exit",
                 &raw mut *fs,
-                &raw mut oo,
+                &mut oo,
                 &mut cause
             ),
             OPTIONS_TABLE_NONE
@@ -1241,9 +1228,9 @@ fn the_scope_of_a_pane_option_follows_the_pane_flag() {
             options_scope_from_name(
                 &*args.ptr(),
                 0,
-                c"remain-on-exit".as_ptr(),
+                c"remain-on-exit",
                 &raw mut *fs,
-                &raw mut oo,
+                &mut oo,
                 &mut cause
             ),
             OPTIONS_TABLE_PANE
@@ -1253,9 +1240,9 @@ fn the_scope_of_a_pane_option_follows_the_pane_flag() {
             options_scope_from_name(
                 &*bare.ptr(),
                 0,
-                c"remain-on-exit".as_ptr(),
+                c"remain-on-exit",
                 &raw mut *fs,
-                &raw mut oo,
+                &mut oo,
                 &mut cause
             ),
             OPTIONS_TABLE_NONE
@@ -1276,9 +1263,9 @@ fn a_global_flag_names_the_global_option_set() {
             options_scope_from_name(
                 &*args.ptr(),
                 0,
-                c"status-left".as_ptr(),
+                c"status-left",
                 &raw mut *fs,
-                &raw mut oo,
+                &mut oo,
                 &mut cause
             ),
             OPTIONS_TABLE_SESSION
@@ -1288,9 +1275,9 @@ fn a_global_flag_names_the_global_option_set() {
             options_scope_from_name(
                 &*args.ptr(),
                 0,
-                c"mode-keys".as_ptr(),
+                c"mode-keys",
                 &raw mut *fs,
-                &raw mut oo,
+                &mut oo,
                 &mut cause
             ),
             OPTIONS_TABLE_WINDOW
@@ -1349,9 +1336,9 @@ fn the_scope_of_a_user_option_is_worked_out_from_the_flags() {
                 options_scope_from_name(
                     &*args.ptr(),
                     window_flag,
-                    c"@u".as_ptr(),
+                    c"@u",
                     &raw mut *fs,
-                    &raw mut oo,
+                    &mut oo,
                     &mut cause
                 ),
                 want,
@@ -1384,7 +1371,7 @@ fn a_user_option_with_no_target_is_turned_down() {
                     &*args.ptr(),
                     window_flag,
                     &raw mut *fs,
-                    &raw mut oo,
+                    &mut oo,
                     &mut cause
                 ),
                 OPTIONS_TABLE_NONE,
@@ -1441,7 +1428,7 @@ fn a_change_is_pushed_out_to_the_windows_panes_and_clients_it_reaches() {
             c"history-limit",
             c"nothing-in-particular",
         ] {
-            options_push_changes(name.as_ptr());
+            options_push_changes(name);
         }
         assert_ne!((*pane.ptr()).flags & PANE_STYLECHANGED, 0);
     }
@@ -1455,8 +1442,8 @@ fn a_status_change_starts_the_timers_again() {
     let _guard = globals();
     let list = Clients::new();
     unsafe {
-        options_push_changes(c"status".as_ptr());
-        options_push_changes(c"status-interval".as_ptr());
+        options_push_changes(c"status");
+        options_push_changes(c"status-interval");
     }
     drop(list);
 }
@@ -1529,10 +1516,7 @@ fn codepoint_widths_are_read_back_in_array_order() {
         assert!(options_codepoint_widths(oo.ptr()).is_empty());
         options_array_set(o, 1, c"U+E9=2".as_ptr(), 0, &mut None);
         options_array_set(o, 0, c"U+41=1".as_ptr(), 0, &mut None);
-        let specs: Vec<_> = options_codepoint_widths(oo.ptr())
-            .into_iter()
-            .map(|s| CStr::from_ptr(s).to_owned())
-            .collect();
+        let specs = options_codepoint_widths(oo.ptr());
         assert_eq!(specs, vec![c"U+41=1".to_owned(), c"U+E9=2".to_owned()]);
     }
 }

@@ -1,9 +1,10 @@
+use std::ffi::CStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::ffi::{localtime, strftime, strlcat, strlen, time};
+use crate::ffi::{localtime, strftime, strlcat, time};
 use crate::fmt_args;
 use crate::grid::grid_default_cell;
-use crate::options::{options_get_number, options_ptr};
+use crate::options::options_get_number;
 use crate::reactor::Timer;
 use crate::screen::{screen_free, screen_grid_ptr, screen_init, screen_resize};
 use crate::screen::{
@@ -115,525 +116,126 @@ pub struct window_clock_mode_data {
 pub const MODE_CURSOR: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const GRID_FLAG_NOPALETTE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
 pub const PANE_REDRAW: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub static window_clock_table: [[[::core::ffi::c_char; 5]; 5]; 14] = [
-    [
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-    ],
-    [
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-    ],
-    [
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-    ],
-    [
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-    ],
-    [
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-    ],
-    [
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-    ],
-    [
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-    ],
-    [
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-    ],
-    [
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-    ],
-    [
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-    ],
-    [
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-    ],
-    [
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-    ],
-    [
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-    ],
-    [
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-        [
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            0 as ::core::ffi::c_int as ::core::ffi::c_char,
-            1 as ::core::ffi::c_int as ::core::ffi::c_char,
-        ],
-    ],
+/// One 5x5 glyph, read off the picture its rows draw: a `#` lights the cell
+/// and anything else leaves it blank.
+const fn drawn(rows: [&str; 5]) -> [[bool; 5]; 5] {
+    let mut cells = [[false; 5]; 5];
+    let mut j = 0;
+    while j < 5 {
+        let row = rows[j].as_bytes();
+        let mut i = 0;
+        while i < 5 {
+            cells[j][i] = row[i] == b'#';
+            i += 1;
+        }
+        j += 1;
+    }
+    cells
+}
+
+/// The glyph for each character the clock face can draw, in the order
+/// [`window_clock_glyph`] looks them up: the ten digits `0` to `9`, then
+/// `:`, `A`, `P` and `M`.
+#[rustfmt::skip]
+pub static window_clock_table: [[[bool; 5]; 5]; 14] = [
+    drawn([
+        "#####",
+        "#...#",
+        "#...#",
+        "#...#",
+        "#####",
+    ]),
+    drawn([
+        "....#",
+        "....#",
+        "....#",
+        "....#",
+        "....#",
+    ]),
+    drawn([
+        "#####",
+        "....#",
+        "#####",
+        "#....",
+        "#####",
+    ]),
+    drawn([
+        "#####",
+        "....#",
+        "#####",
+        "....#",
+        "#####",
+    ]),
+    drawn([
+        "#...#",
+        "#...#",
+        "#####",
+        "....#",
+        "....#",
+    ]),
+    drawn([
+        "#####",
+        "#....",
+        "#####",
+        "....#",
+        "#####",
+    ]),
+    drawn([
+        "#####",
+        "#....",
+        "#####",
+        "#...#",
+        "#####",
+    ]),
+    drawn([
+        "#####",
+        "....#",
+        "....#",
+        "....#",
+        "....#",
+    ]),
+    drawn([
+        "#####",
+        "#...#",
+        "#####",
+        "#...#",
+        "#####",
+    ]),
+    drawn([
+        "#####",
+        "#...#",
+        "#####",
+        "....#",
+        "#####",
+    ]),
+    drawn([
+        ".....",
+        "..#..",
+        ".....",
+        "..#..",
+        ".....",
+    ]),
+    drawn([
+        "#####",
+        "#...#",
+        "#####",
+        "#...#",
+        "#...#",
+    ]),
+    drawn([
+        "#####",
+        "#...#",
+        "#####",
+        "#....",
+        "#....",
+    ]),
+    drawn([
+        "#...#",
+        "##.##",
+        "#.#.#",
+        "#...#",
+        "#...#",
+    ]),
 ];
 /// Now, as a span since the epoch; a clock set before the epoch reads as zero.
 fn window_clock_now() -> Duration {
@@ -730,6 +332,20 @@ pub(crate) unsafe fn window_clock_key(
         window_pane_reset_mode(wme.wp);
     }
 }
+/// The 5x5 glyph the clock face draws a character with: one per digit, and
+/// one each for the separator and the three letters an AM/PM time ends with.
+/// Anything else is drawn as a blank column.
+fn window_clock_glyph(ch: u8) -> Option<&'static [[bool; 5]; 5]> {
+    let idx = match ch {
+        b'0'..=b'9' => (ch - b'0') as usize,
+        b':' => 10,
+        b'A' => 11,
+        b'P' => 12,
+        b'M' => 13,
+        _ => return None,
+    };
+    Some(&window_clock_table[idx])
+}
 unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
     unsafe {
         let mut wp: *mut window_pane = (*wme).wp;
@@ -740,22 +356,14 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
         let mut s: *mut screen = &raw mut (*data).screen;
         let mut gc = grid_default_cell;
         let mut tim: [::core::ffi::c_char; 64] = [0; 64];
-        let mut ptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
         let mut t: time_t = 0;
         let mut tm: *mut tm = ::core::ptr::null_mut::<tm>();
-        let mut i: u_int = 0;
-        let mut j: u_int = 0;
         let mut x: u_int = 0;
         let mut y: u_int = 0;
-        let mut idx: u_int = 0;
-        colour = options_get_number(
-            options_ptr(&(*(*wp).window).options),
-            c"clock-mode-colour".as_ptr(),
-        ) as ::core::ffi::c_int;
-        style = options_get_number(
-            options_ptr(&(*(*wp).window).options),
-            c"clock-mode-style".as_ptr(),
-        ) as ::core::ffi::c_int;
+        colour = options_get_number((*(*wp).window).options_ptr(), c"clock-mode-colour".as_ptr())
+            as ::core::ffi::c_int;
+        style = options_get_number((*(*wp).window).options_ptr(), c"clock-mode-style".as_ptr())
+            as ::core::ffi::c_int;
         screen_write_start(&mut ctx, s);
         t = time(::core::ptr::null_mut::<time_t>());
         tm = localtime(&raw mut t);
@@ -803,18 +411,17 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
                 tm,
             );
         }
+        let digits = CStr::from_ptr(&raw const tim as *const ::core::ffi::c_char).to_bytes();
         screen_write_clearscreen(&mut ctx, 8 as u_int);
-        if ((*screen_grid_ptr(s)).sx as size_t)
-            < (6 as size_t).wrapping_mul(strlen(&raw mut tim as *mut ::core::ffi::c_char))
+        if ((*screen_grid_ptr(s)).sx as size_t) < (6 as size_t).wrapping_mul(digits.len())
             || (*screen_grid_ptr(s)).sy < 6 as u_int
         {
-            if (*screen_grid_ptr(s)).sx as size_t
-                >= strlen(&raw mut tim as *mut ::core::ffi::c_char)
+            if (*screen_grid_ptr(s)).sx as size_t >= digits.len()
                 && (*screen_grid_ptr(s)).sy != 0 as u_int
             {
-                x = ((*screen_grid_ptr(s)).sx.wrapping_div(2 as u_int) as size_t).wrapping_sub(
-                    strlen(&raw mut tim as *mut ::core::ffi::c_char).wrapping_div(2 as size_t),
-                ) as u_int;
+                x = ((*screen_grid_ptr(s)).sx.wrapping_div(2 as u_int) as size_t)
+                    .wrapping_sub(digits.len().wrapping_div(2 as size_t))
+                    as u_int;
                 y = (*screen_grid_ptr(s)).sy.wrapping_div(2 as u_int);
                 screen_write_cursormove(
                     &mut ctx,
@@ -829,15 +436,14 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
                     &mut ctx,
                     &raw mut gc,
                     c"%s".as_ptr(),
-                    fmt_args![&raw mut tim as *mut ::core::ffi::c_char],
+                    fmt_args![digits.as_ptr() as *const ::core::ffi::c_char],
                 );
             }
             screen_write_stop(&mut ctx);
             return;
         }
-        x = ((*screen_grid_ptr(s)).sx.wrapping_div(2 as u_int) as size_t).wrapping_sub(
-            (3 as size_t).wrapping_mul(strlen(&raw mut tim as *mut ::core::ffi::c_char)),
-        ) as u_int;
+        x = ((*screen_grid_ptr(s)).sx.wrapping_div(2 as u_int) as size_t)
+            .wrapping_sub((3 as size_t).wrapping_mul(digits.len())) as u_int;
         y = (*screen_grid_ptr(s))
             .sy
             .wrapping_div(2 as u_int)
@@ -846,50 +452,23 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
         gc.flags = (gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
         gc.bg = colour;
         gc.fg = colour;
-        let mut current_block_53: u64;
-        ptr = &raw mut tim as *mut ::core::ffi::c_char;
-        while *ptr as ::core::ffi::c_int != '\0' as i32 {
-            if *ptr as ::core::ffi::c_int >= '0' as i32 && *ptr as ::core::ffi::c_int <= '9' as i32
-            {
-                idx = (*ptr as ::core::ffi::c_int - '0' as i32) as u_int;
-                current_block_53 = 3934796541983872331;
-            } else if *ptr as ::core::ffi::c_int == ':' as i32 {
-                idx = 10 as u_int;
-                current_block_53 = 3934796541983872331;
-            } else if *ptr as ::core::ffi::c_int == 'A' as i32 {
-                idx = 11 as u_int;
-                current_block_53 = 3934796541983872331;
-            } else if *ptr as ::core::ffi::c_int == 'P' as i32 {
-                idx = 12 as u_int;
-                current_block_53 = 3934796541983872331;
-            } else if *ptr as ::core::ffi::c_int == 'M' as i32 {
-                idx = 13 as u_int;
-                current_block_53 = 3934796541983872331;
-            } else {
-                x = x.wrapping_add(6 as u_int);
-                current_block_53 = 17788412896529399552;
-            }
-            if current_block_53 == 3934796541983872331 {
-                j = 0 as u_int;
-                while j < 5 as u_int {
-                    i = 0 as u_int;
-                    while i < 5 as u_int {
+        for &ch in digits {
+            if let Some(glyph) = window_clock_glyph(ch) {
+                for j in 0..5 as u_int {
+                    for i in 0..5 as u_int {
                         screen_write_cursormove(
                             &mut ctx,
                             x.wrapping_add(i) as ::core::ffi::c_int,
                             y.wrapping_add(j) as ::core::ffi::c_int,
                             0 as ::core::ffi::c_int,
                         );
-                        if window_clock_table[idx as usize][j as usize][i as usize] != 0 {
-                            screen_write_putc(&mut ctx, &raw mut gc, '#' as i32 as u_char);
+                        if glyph[j as usize][i as usize] {
+                            screen_write_putc(&mut ctx, &gc, '#' as i32 as u_char);
                         }
-                        i = i.wrapping_add(1);
                     }
-                    j = j.wrapping_add(1);
                 }
-                x = x.wrapping_add(6 as u_int);
             }
-            ptr = ptr.offset(1);
+            x = x.wrapping_add(6 as u_int);
         }
         screen_write_stop(&mut ctx);
     }

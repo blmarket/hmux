@@ -2,11 +2,11 @@ use crate::ffi::time;
 use crate::fmt_args;
 use crate::notify::notify_paste_buffer;
 use crate::options::options_get_number;
+use crate::text::utf8_stravisx;
 use crate::tmux::clean_name;
 use crate::tmux::global_options;
 use crate::tree::GlobalTree;
 pub use crate::types::*;
-use crate::text::utf8_strvis;
 use crate::xmalloc::xasprintf;
 use ::core::cmp::Reverse;
 use ::core::ffi::{CStr, c_char, c_int};
@@ -36,10 +36,11 @@ static paste_by_time: GlobalTree<Reverse<u_int>, CString> = GlobalTree::new();
 /// through the `paste_buffer_*` accessors and changed only by going back
 /// through the store, which is what keeps the two trees below in step with
 /// each other.
+#[derive(Default)]
 #[repr(C)]
 pub struct paste_buffer {
     data: Vec<u8>,
-    name: Option<CString>,
+    name: CString,
     created: time_t,
     automatic: c_int,
     order: u_int,
@@ -66,16 +67,17 @@ fn newest_first() -> Vec<*mut paste_buffer> {
         .collect()
 }
 
-pub unsafe fn paste_buffer_name(pb: *mut paste_buffer) -> *const c_char {
-    unsafe { cstr_ptr(&(*pb).name) }
+/// The name the buffer is held under.
+pub fn paste_buffer_name(pb: &paste_buffer) -> &CStr {
+    &pb.name
 }
 
-pub unsafe fn paste_buffer_order(pb: *mut paste_buffer) -> u_int {
-    unsafe { (*pb).order }
+pub fn paste_buffer_order(pb: &paste_buffer) -> u_int {
+    pb.order
 }
 
-pub unsafe fn paste_buffer_created(pb: *mut paste_buffer) -> time_t {
-    unsafe { (*pb).created }
+pub fn paste_buffer_created(pb: &paste_buffer) -> time_t {
+    pb.created
 }
 
 /// The bytes the buffer holds, which are not necessarily a C string.
@@ -85,8 +87,8 @@ pub fn paste_buffer_data(pb: &paste_buffer) -> &[u8] {
 
 /// Whether the store named the buffer itself, which is what makes it one of
 /// the ones `buffer-limit` counts and drops the oldest of.
-pub unsafe fn paste_buffer_automatic(pb: *mut paste_buffer) -> c_int {
-    unsafe { (*pb).automatic }
+pub fn paste_buffer_automatic(pb: &paste_buffer) -> c_int {
+    pb.automatic
 }
 
 /// The next buffer by falling order, or the newest one when `pb` is null.
@@ -111,14 +113,14 @@ pub fn paste_is_empty() -> c_int {
 
 /// The newest automatic buffer, and a copy of its name through `name` if the
 /// caller wants one.
-pub unsafe fn paste_get_top(name: *mut Option<CString>) -> *mut paste_buffer {
+pub unsafe fn paste_get_top(name: Option<&mut Option<CString>>) -> *mut paste_buffer {
     unsafe {
         let found = newest_first().into_iter().find(|&pb| (*pb).automatic != 0);
         let Some(pb) = found else {
             return null_mut::<paste_buffer>();
         };
-        if !name.is_null() {
-            *name = Some(CStr::from_ptr(cstr_ptr(&(*pb).name)).to_owned());
+        if let Some(name) = name {
+            *name = Some((*pb).name.clone());
         }
         pb
     }
@@ -135,7 +137,7 @@ pub unsafe fn paste_get_name(name: *const c_char) -> *mut paste_buffer {
 
 pub unsafe fn paste_free(pb: *mut paste_buffer) {
     unsafe {
-        let name = CStr::from_ptr(cstr_ptr(&(*pb).name)).to_owned();
+        let name = (*pb).name.clone();
         let order = (*pb).order;
         let automatic = (*pb).automatic != 0;
         notify_paste_buffer(name.as_ptr(), 1);
@@ -173,21 +175,12 @@ pub unsafe fn paste_add(prefix: *const c_char, data: Vec<u8>) {
             }
         }
 
-        let mut pb = Box::new(paste_buffer {
-            data: Vec::new(),
-            name: None,
-            created: 0,
-            automatic: 0,
-            order: 0,
-        });
+        let mut pb = Box::new(paste_buffer::default());
         let pb_ptr = &raw mut *pb;
         loop {
-            (*pb_ptr).name = Some(xasprintf(
-                c"%s%u".as_ptr(),
-                fmt_args![prefix, paste_next_index],
-            ));
+            (*pb_ptr).name = xasprintf(c"%s%u".as_ptr(), fmt_args![prefix, paste_next_index]);
             paste_next_index = paste_next_index.wrapping_add(1);
-            if paste_get_name(cstr_ptr(&(*pb_ptr).name)).is_null() {
+            if paste_get_name((*pb_ptr).name.as_ptr()).is_null() {
                 break;
             }
         }
@@ -198,7 +191,7 @@ pub unsafe fn paste_add(prefix: *const c_char, data: Vec<u8>) {
         (*pb_ptr).created = time(null_mut::<time_t>());
         (*pb_ptr).order = paste_next_order;
         paste_next_order = paste_next_order.wrapping_add(1);
-        let name = CStr::from_ptr(cstr_ptr(&(*pb_ptr).name)).to_owned();
+        let name = (*pb_ptr).name.clone();
         let order = (*pb_ptr).order;
         paste_by_name.map().insert(name.clone(), pb);
         paste_by_time.map().insert(Reverse(order), name.clone());
@@ -238,18 +231,18 @@ pub unsafe fn paste_rename(oldname: *const c_char, newname: *const c_char) -> Re
             paste_free(pb_new);
         }
 
-        let old_name = CStr::from_ptr(cstr_ptr(&(*pb).name)).to_owned();
+        let old_name = (*pb).name.clone();
         let mut pb_box = paste_by_name
             .map()
             .remove(&old_name)
             .expect("paste buffer is indexed by its name");
         let pb = &raw mut *pb_box;
-        (*pb).name = Some(name);
+        (*pb).name = name;
         if (*pb).automatic != 0 {
             paste_num_automatic = paste_num_automatic.wrapping_sub(1);
         }
         (*pb).automatic = 0;
-        let new_name = CStr::from_ptr(cstr_ptr(&(*pb).name)).to_owned();
+        let new_name = (*pb).name.clone();
         paste_by_name.map().insert(new_name.clone(), pb_box);
         paste_by_time
             .map()
@@ -285,22 +278,20 @@ pub unsafe fn paste_set(data: Vec<u8>, name: *const c_char) -> Result<(), CStrin
 
         let mut pb = Box::new(paste_buffer {
             data,
-            name: Some(newname),
-            created: 0,
-            automatic: 0,
-            order: 0,
+            name: newname,
+            ..Default::default()
         });
         let pb_ptr = &raw mut *pb;
         (*pb_ptr).order = paste_next_order;
         paste_next_order = paste_next_order.wrapping_add(1);
         (*pb_ptr).created = time(null_mut::<time_t>());
 
-        let old = paste_get_name(cstr_ptr(&(*pb_ptr).name));
+        let old = paste_get_name((*pb_ptr).name.as_ptr());
         if !old.is_null() {
             paste_free(old);
         }
 
-        let name = CStr::from_ptr(cstr_ptr(&(*pb_ptr).name)).to_owned();
+        let name = (*pb_ptr).name.clone();
         let order = (*pb_ptr).order;
         paste_by_name.map().insert(name.clone(), pb);
         paste_by_time.map().insert(Reverse(order), name.clone());
@@ -313,35 +304,25 @@ pub unsafe fn paste_set(data: Vec<u8>, name: *const c_char) -> Result<(), CStrin
 pub unsafe fn paste_replace(pb: *mut paste_buffer, data: Vec<u8>) {
     unsafe {
         (*pb).data = data;
-        notify_paste_buffer(cstr_ptr(&(*pb).name), 0);
+        notify_paste_buffer((*pb).name.as_ptr(), 0);
     }
 }
 
 /// The first two hundred characters of a buffer, escaped for display, with
 /// trailing dots when there was more. The dots are written *at* the two
 /// hundredth character rather than after the escaping stopped, so an escaped
-/// form that ran long keeps whatever it wrote past there.
-pub unsafe fn paste_make_sample(pb: *mut paste_buffer) -> CString {
-    unsafe {
-        const FLAGS: c_int = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
-        const WIDTH: size_t = 200;
+/// form that ran long is cut back to two hundred before they go on.
+pub fn paste_make_sample(pb: &paste_buffer) -> CString {
+    const FLAGS: c_int = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
+    const WIDTH: usize = 200;
 
-        let len = ::core::cmp::min((*pb).data.len() as size_t, WIDTH);
-        let mut buf = vec![0u8; len * 4 + 4];
-        let used = utf8_strvis(
-            buf.as_mut_ptr() as *mut c_char,
-            (*pb).data.as_ptr() as *const c_char,
-            len,
-            FLAGS,
-        );
-        if (*pb).data.len() as size_t > WIDTH || used > WIDTH {
-            let dots = b"...";
-            let start = WIDTH;
-            buf[start..start + 3].copy_from_slice(dots);
-            buf[start + 3] = 0;
-        }
-        CStr::from_ptr(buf.as_ptr() as *const c_char).to_owned()
+    let len = ::core::cmp::min(pb.data.len(), WIDTH);
+    let mut sample = utf8_stravisx(&pb.data[..len], FLAGS).into_bytes();
+    if pb.data.len() > WIDTH || sample.len() > WIDTH {
+        sample.truncate(WIDTH);
+        sample.extend_from_slice(b"...");
     }
+    unsafe { CString::from_vec_unchecked(sample) }
 }
 
 #[cfg(test)]

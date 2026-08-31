@@ -167,6 +167,11 @@ pub mod tests {
     pub mod test_coverage_window_buffer;
     pub mod test_coverage_window_client;
     pub mod test_fixtures;
+    pub mod test_trait_io_watch;
+    pub mod test_trait_plugin;
+    pub mod test_trait_reactor;
+    pub mod test_trait_signal_watch;
+    pub mod test_trait_timer;
     pub mod test_leak_regressions;
 } // mod tests
 pub mod style;

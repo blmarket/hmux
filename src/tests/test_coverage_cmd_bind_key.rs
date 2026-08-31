@@ -30,7 +30,7 @@ use crate::key_bindings::{
     key_binding_note, key_binding_tablename, key_bindings_first, key_bindings_get,
     key_bindings_get_table, key_bindings_next, key_bindings_remove, key_bindings_remove_table,
 };
-use crate::tests::test_fixtures::{Item, globals, seen};
+use crate::tests::test_fixtures::{Item, globals};
 use crate::text::key_string_lookup_string;
 use crate::types::*;
 use ::core::ffi::CStr;
@@ -223,7 +223,7 @@ fn a_plain_word_command_is_reparsed_into_the_prefix_table_by_default() {
         let bd = key_bindings_get(table, key);
         assert!(!bd.is_null());
         assert_eq!(key_binding_key(bd), key);
-        assert_eq!(seen(key_binding_tablename(bd)), "prefix");
+        assert_eq!(key_binding_tablename(bd), Some(c"prefix"));
         assert!(key_binding_note(bd).is_none());
         assert_eq!(key_binding_flags(bd) & KEY_BINDING_REPEAT, 0);
 
@@ -250,7 +250,7 @@ fn the_n_flag_binds_into_the_root_table_instead_of_prefix() {
         let bd = key_bindings_get(table, 'c' as key_code | KEYC_CTRL);
         assert!(!bd.is_null());
         assert_eq!(key_binding_key(bd), 'c' as key_code | KEYC_CTRL);
-        assert_eq!(seen(key_binding_tablename(bd)), "root");
+        assert_eq!(key_binding_tablename(bd), Some(c"root"));
         assert_eq!(
             command_names(&key_binding_cmdlist_ref(bd)),
             vec!["display-panes"]
@@ -273,7 +273,7 @@ fn the_T_flag_names_the_table_and_wins_over_the_n_flag() {
         let bd = key_bindings_get(table, KEYC_F5);
         assert!(!bd.is_null());
         assert_eq!(key_binding_key(bd), KEYC_F5);
-        assert_eq!(seen(key_binding_tablename(bd)), "bk-T-flag");
+        assert_eq!(key_binding_tablename(bd), Some(c"bk-T-flag"));
 
         let mut with_n_too = bind_item(c"bind-key -n -T bk-T-flag a display-panes", 2);
         assert_eq!(exec_bind_key(&mut with_n_too), CMD_RETURN_NORMAL);

@@ -20,7 +20,6 @@ use crate::modes::{
     WINDOW_TREE_DEFAULT_COMMAND, WINDOW_TREE_DEFAULT_FORMAT, WINDOW_TREE_DEFAULT_KEY_FORMAT,
     WINDOW_TREE_NONE, WINDOW_TREE_PANE, WINDOW_TREE_SESSION, WINDOW_TREE_WINDOW,
 };
-use crate::options::options_ptr;
 use crate::session::{session_get_curw, session_id, session_name, session_options};
 use crate::tests::test_fixtures::{Pane, Session, Target, Window, globals, seen};
 use crate::types::{WindowMode, cstr_ptr};
@@ -146,8 +145,8 @@ fn window_pane_and_session_fixtures_hold_expected_invariants() {
         assert_eq!((*pane.ptr()).sy, 24);
         assert_eq!((*pane.ptr()).fd, -1);
         // options are present
-        assert!(!options_ptr(&(*win.ptr()).options).is_null());
-        assert!(!options_ptr(&(*pane.ptr()).options).is_null());
+        assert!(!(*win.ptr()).options_ptr().is_null());
+        assert!(!(*pane.ptr()).options_ptr().is_null());
         assert!(!session_options(sess.ptr()).is_null());
     }
 }

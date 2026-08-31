@@ -70,7 +70,7 @@ unsafe fn parse_words(
         cmd_parse(
             values.as_mut_ptr(),
             words.len() as u_int,
-            file.map_or(null(), CStr::as_ptr),
+            file,
             line,
             parse_flags,
         )
@@ -287,7 +287,7 @@ fn parsing_refuses_a_row_of_values_that_names_no_command() {
             cmdlist: None,
             cached: None,
         };
-        let cause = cmd_parse(&raw mut value, 1, null(), 0, 0)
+        let cause = cmd_parse(&raw mut value, 1, None, 0, 0)
             .err()
             .expect("a command list value names no command");
         assert_eq!(cause.to_str().unwrap(), "no command");
@@ -568,39 +568,39 @@ fn a_mouse_event_resolves_to_the_window_its_ids_name() {
         target.add_window(1, 80, 24);
 
         let mut m = *Box::new(mouse_event::default());
-        let mut sp: *mut session = null_mut();
 
         // An event nothing filled in points nowhere.
-        assert!(cmd_mouse_window(&raw mut m, &raw mut sp).is_null());
+        assert!(cmd_mouse_window(&raw mut m).is_none());
 
         // Nor does a valid one carrying no session.
         m.valid = 1;
         m.s = -1;
         m.w = -1;
-        assert!(cmd_mouse_window(&raw mut m, &raw mut sp).is_null());
+        assert!(cmd_mouse_window(&raw mut m).is_none());
 
         // Nor one naming a session that has gone.
         m.s = 99;
-        assert!(cmd_mouse_window(&raw mut m, &raw mut sp).is_null());
+        assert!(cmd_mouse_window(&raw mut m).is_none());
 
         // No window means the session's current one, and the session comes
-        // back through the out-pointer.
+        // back alongside it.
         m.s = 0;
         assert_eq!(
-            cmd_mouse_window(&raw mut m, &raw mut sp),
-            session_get_curw(target.session())
+            cmd_mouse_window(&raw mut m),
+            Some((target.session(), session_get_curw(target.session())))
         );
-        assert_eq!(sp, target.session());
 
         // A window id is looked up in the server's tree and then found among
         // the session's links.
         m.w = 1;
-        assert_eq!(cmd_mouse_window(&raw mut m, &raw mut sp), target.winlink(1));
+        assert_eq!(
+            cmd_mouse_window(&raw mut m),
+            Some((target.session(), target.winlink(1)))
+        );
 
-        // A window that has gone points nowhere, and the out-pointer may be
-        // declined.
+        // A window that has gone points nowhere.
         m.w = 99;
-        assert!(cmd_mouse_window(&raw mut m, null_mut()).is_null());
+        assert!(cmd_mouse_window(&raw mut m).is_none());
     }
 }
 
@@ -612,40 +612,40 @@ fn a_mouse_event_resolves_to_a_pane_inside_the_window_it_names() {
         target.add_window(1, 80, 24);
 
         let mut m = *Box::new(mouse_event::default());
-        let mut sp: *mut session = null_mut();
-        let mut wlp: *mut winlink = null_mut();
 
         // Nothing to resolve the window to is nothing to resolve the pane to.
-        assert!(cmd_mouse_pane(&raw mut m, &raw mut sp, &raw mut wlp).is_null());
+        assert!(cmd_mouse_pane(&raw mut m).is_none());
 
-        // No pane id means the window's active pane.
+        // No pane id means the window's active pane, and the session and
+        // window link come back with it.
         m.valid = 1;
         m.s = 0;
         m.w = -1;
         m.wp = -1;
         assert_eq!(
-            cmd_mouse_pane(&raw mut m, &raw mut sp, &raw mut wlp),
-            target.pane(0)
+            cmd_mouse_pane(&raw mut m),
+            Some((
+                target.session(),
+                session_get_curw(target.session()),
+                target.pane(0)
+            ))
         );
-        assert_eq!(sp, target.session());
-        assert_eq!(wlp, session_get_curw(target.session()));
 
         // A pane id is looked up in the server's tree and has to be in the
         // window the event named.
         m.wp = 0;
         assert_eq!(
-            cmd_mouse_pane(&raw mut m, &raw mut sp, &raw mut wlp),
-            target.pane(0)
+            cmd_mouse_pane(&raw mut m).map(|(_, _, wp)| wp),
+            Some(target.pane(0))
         );
 
         // The second window's pane is a real pane, but not this window's.
         m.wp = 1;
-        assert!(cmd_mouse_pane(&raw mut m, &raw mut sp, &raw mut wlp).is_null());
+        assert!(cmd_mouse_pane(&raw mut m).is_none());
 
-        // A pane that has gone points nowhere, and both out-pointers may be
-        // declined.
+        // A pane that has gone points nowhere.
         m.wp = 99;
-        assert!(cmd_mouse_pane(&raw mut m, null_mut(), null_mut()).is_null());
+        assert!(cmd_mouse_pane(&raw mut m).is_none());
     }
 }
 

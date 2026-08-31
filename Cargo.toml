@@ -1,6 +1,13 @@
 [workspace]
-members = [
-]
+members = ["hmux-agent", "hmux-rt"]
+
+# hmux-agent and hmux-rt are shared with the hmux/ daemon, which borrows them
+# as path dependencies from outside this workspace. Their lints live here, at
+# the workspace that owns them.
+[workspace.lints.clippy]
+disallowed_methods = "deny"
+await_holding_refcell_ref = "deny"
+
 [package]
 name = "tmux-c2rs"
 authors = ["C2Rust"]
@@ -20,8 +27,8 @@ name = "tmux"
 c2rust-bitfields = "0.22.1"
 libc = "0.2"
 lalrpop-util = { version = "0.23.1", default-features = false, features = ["std"] }
-hmux-agent = { path = "../hmux/hmux-agent" }
-hmux-rt = { path = "../hmux/hmux-rt" }
+hmux-agent = { path = "hmux-agent" }
+hmux-rt = { path = "hmux-rt" }
 bytes = "1"
 bytes-utils = "0.1.4"
 

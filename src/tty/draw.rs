@@ -403,7 +403,7 @@ unsafe fn tty_draw_line_clear(
         if nx == 1 as u_int {
             tty_putc(tty, ' ' as i32 as u_char);
         } else if nx == 2 as u_int {
-            tty_putn(tty, c"  ".as_ptr(), 2 as size_t, 2 as u_int);
+            tty_putn(tty, b"  ", 2 as u_int);
         } else {
             tty_repeat_space(tty, nx);
         };
@@ -439,7 +439,7 @@ pub unsafe fn tty_draw_line(
         let mut flags: ::core::ffi::c_int = 0;
         let mut empty: ::core::ffi::c_int = 0;
         let mut wrapped: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        let mut buf: [::core::ffi::c_char; 1000] = [0; 1000];
+        let mut buf: [u8; 1000] = [0; 1000];
         let mut len: size_t = 0;
         let mut current_state: tty_draw_line_state = TTY_DRAW_LINE_FIRST;
         let mut next_state: tty_draw_line_state = TTY_DRAW_LINE_FIRST;
@@ -593,10 +593,7 @@ pub unsafe fn tty_draw_line(
                     {
                         next_state = TTY_DRAW_LINE_SAME;
                     } else if grid_cells_look_equal(gcp, &raw mut last) != 0 {
-                        if (*gcp).data.size as usize
-                            > (::core::mem::size_of::<[::core::ffi::c_char; 1000]>() as usize)
-                                .wrapping_sub(len as usize)
-                        {
+                        if (*gcp).data.size as usize > buf.len().wrapping_sub(len) {
                             next_state = TTY_DRAW_LINE_FLUSH;
                         } else {
                             next_state = TTY_DRAW_LINE_SAME;
@@ -658,17 +655,11 @@ pub unsafe fn tty_draw_line(
                             tty_cursor(tty, atx.wrapping_add(i).wrapping_sub(width), aty);
                         }
                         if !(last.attr as ::core::ffi::c_int) & GRID_ATTR_CHARSET != 0 {
-                            tty_putn(
-                                tty,
-                                &raw mut buf as *mut ::core::ffi::c_char
-                                    as *const ::core::ffi::c_char,
-                                len,
-                                width,
-                            );
+                            tty_putn(tty, &buf[..len], width);
                         } else {
                             j = 0 as u_int;
                             while (j as size_t) < len {
-                                tty_putc(tty, buf[j as usize] as u_char);
+                                tty_putc(tty, buf[j as usize]);
                                 j = j.wrapping_add(1);
                             }
                         }
@@ -681,12 +672,9 @@ pub unsafe fn tty_draw_line(
                 if next_state as ::core::ffi::c_uint
                     != TTY_DRAW_LINE_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
-                    ::core::ptr::copy_nonoverlapping(
-                        &raw const (*gcp).data.data as *const u8,
-                        (&raw mut buf as *mut ::core::ffi::c_char).add(len) as *mut u8,
-                        (*gcp).data.size as size_t,
-                    );
-                    len = len.wrapping_add((*gcp).data.size as size_t);
+                    let size = (*gcp).data.size as usize;
+                    buf[len..len + size].copy_from_slice(&(*gcp).data.data[..size]);
+                    len = len.wrapping_add(size);
                     width = width.wrapping_add((*gcp).data.width as u_int);
                 }
                 if next_state as ::core::ffi::c_uint
